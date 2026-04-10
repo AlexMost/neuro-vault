@@ -23,6 +23,38 @@ function toPosixPath(notePath: string) {
   return notePath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
+function validateBlocks(blocksValue: unknown, filePath: string): SmartBlock[] {
+  if (blocksValue === undefined) {
+    return [];
+  }
+
+  if (!Array.isArray(blocksValue)) {
+    throw new Error(
+      `Smart Connections file ${filePath} must contain blocks as an array`,
+    );
+  }
+
+  return blocksValue.map((block, index) => {
+    if (typeof block !== 'object' || block === null) {
+      throw new Error(
+        `Smart Connections file ${filePath} has an invalid block at index ${index}`,
+      );
+    }
+
+    const text = (block as { text?: unknown }).text;
+
+    if (typeof text !== 'string' || text.trim() === '') {
+      throw new Error(
+        `Smart Connections file ${filePath} has a block without usable text at index ${index}`,
+      );
+    }
+
+    return {
+      text: text.trim(),
+    };
+  });
+}
+
 function parseSmartConnectionsRecord(
   rawJson: string,
   filePath: string,
@@ -59,9 +91,7 @@ function parseSmartConnectionsRecord(
     return value;
   });
 
-  const blocks = Array.isArray(parsed.blocks)
-    ? (parsed.blocks as SmartBlock[])
-    : [];
+  const blocks = validateBlocks(parsed.blocks, filePath);
 
   return {
     path: toPosixPath(parsed.path),
@@ -96,6 +126,12 @@ export async function loadSmartConnectionsCorpus(
     const rawJson = await fs.readFile(filePath, 'utf8');
     const source = parseSmartConnectionsRecord(rawJson, filePath);
 
+    if (sources.has(source.path)) {
+      throw new Error(
+        `Duplicate Smart Connections note path after normalization: ${source.path} from ${filePath} conflicts with an existing note`,
+      );
+    }
+
     sources.set(source.path, source);
   }
 
@@ -105,6 +141,8 @@ export async function loadSmartConnectionsCorpus(
     );
   }
 
+  getEmbeddingDimension(sources);
+
   return { sources };
 }
 
@@ -112,16 +150,37 @@ export function summarizeSmartConnectionsCorpus(
   corpus: SmartConnectionsCorpus,
 ): SmartConnectionsCorpusStats {
   let totalBlocks = 0;
-  let embeddingDimension = 0;
 
   for (const source of corpus.sources.values()) {
     totalBlocks += source.blocks.length;
-    embeddingDimension = Math.max(embeddingDimension, source.embedding.length);
   }
+
+  const embeddingDimension = getEmbeddingDimension(corpus.sources);
 
   return {
     totalNotes: corpus.sources.size,
     totalBlocks,
     embeddingDimension,
   };
+}
+
+function getEmbeddingDimension(sources: Map<string, SmartSource>) {
+  let expectedDimension: number | undefined;
+  let expectedPath: string | undefined;
+
+  for (const [sourcePath, source] of sources.entries()) {
+    if (expectedDimension === undefined) {
+      expectedDimension = source.embedding.length;
+      expectedPath = sourcePath;
+      continue;
+    }
+
+    if (source.embedding.length !== expectedDimension) {
+      throw new Error(
+        `Smart Connections corpus contains mixed embedding dimensions: ${expectedPath} has ${expectedDimension}, but ${sourcePath} has ${source.embedding.length}`,
+      );
+    }
+  }
+
+  return expectedDimension ?? 0;
 }

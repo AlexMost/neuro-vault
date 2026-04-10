@@ -1,0 +1,5 @@
+{
+  "path": "Folder/note-d.md",
+  "embedding": [1, 0, 0, 0],
+  "blocks": [{ "text": "delta concept" }]
+}

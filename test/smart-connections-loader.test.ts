@@ -1,19 +1,20 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
-import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
   loadSmartConnectionsCorpus,
   summarizeSmartConnectionsCorpus,
 } from '../src/smart-connections-loader.js';
+import type { SmartSource } from '../src/types.js';
 
-const fixturesRoot = path.resolve(
-  '/Users/amostovenko/git/neuro-vault/.worktrees/neuro-vault-mcp/test/fixtures/vault/.smart-env/multi',
-);
+const testDir = path.dirname(fileURLToPath(import.meta.url));
+const fixturesRoot = path.resolve(testDir, 'fixtures/vault/.smart-env/multi');
 
 async function makeVaultFixture(fileNames: string[]) {
-  const tempRoot = await fs.mkdtemp(path.join(process.cwd(), 'smart-loader-'));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'smart-loader-'));
   const vaultPath = path.join(tempRoot, 'vault');
   const smartEnvPath = path.join(vaultPath, '.smart-env', 'multi');
 
@@ -27,6 +28,12 @@ async function makeVaultFixture(fileNames: string[]) {
   }
 
   return { tempRoot, vaultPath, smartEnvPath };
+}
+
+function createCorpus(sources: Array<[string, SmartSource]>) {
+  return {
+    sources: new Map<string, SmartSource>(sources),
+  };
 }
 
 describe('loadSmartConnectionsCorpus', () => {
@@ -93,6 +100,82 @@ describe('loadSmartConnectionsCorpus', () => {
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
+  });
+
+  it('fails fast when two files normalize to the same note path', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+      'duplicate-path.ajson',
+    ]);
+
+    try {
+      await expect(loadSmartConnectionsCorpus(smartEnvPath)).rejects.toThrow(
+        /duplicate smart connections note path/i,
+      );
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when a block is missing usable text', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+      'invalid-blocks.ajson',
+    ]);
+
+    try {
+      await expect(loadSmartConnectionsCorpus(smartEnvPath)).rejects.toThrow(
+        /block without usable text/i,
+      );
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fails fast when note embeddings use mixed dimensions', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+      'mixed-dimension.ajson',
+    ]);
+
+    try {
+      await expect(loadSmartConnectionsCorpus(smartEnvPath)).rejects.toThrow(
+        /mixed embedding dimensions/i,
+      );
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('reports mixed embedding dimensions from the stats helper', () => {
+    const corpus = createCorpus([
+      [
+        'Folder/note-a.md',
+        {
+          path: 'Folder/note-a.md',
+          embedding: [1, 0, 0],
+          blocks: [{ text: 'alpha concept' }],
+        },
+      ],
+      [
+        'Folder/note-d.md',
+        {
+          path: 'Folder/note-d.md',
+          embedding: [0, 1, 0, 0],
+          blocks: [{ text: 'delta concept' }],
+        },
+      ],
+    ]);
+
+    expect(() => summarizeSmartConnectionsCorpus(corpus)).toThrow(
+      /mixed embedding dimensions/i,
+    );
   });
 
   it('fails fast when any .ajson file cannot be parsed or normalized', async () => {
