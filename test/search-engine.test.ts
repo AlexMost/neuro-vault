@@ -59,6 +59,25 @@ describe('findNeighbors', () => {
     expect(results[1]!.similarity).toBeGreaterThan(results[2]!.similarity);
   });
 
+  it('breaks ties deterministically and includes exact-threshold matches', () => {
+    const results = findNeighbors({
+      queryVector: [1, 0],
+      sources: [
+        makeSource('zeta.md', [1, 0]),
+        makeSource('beta.md', [0.5, 0.5]),
+        makeSource('alpha.md', [1, 0]),
+      ],
+      threshold: 1,
+      limit: 10,
+    });
+
+    expect(results.map((result) => result.path)).toEqual([
+      'alpha.md',
+      'zeta.md',
+    ]);
+    expect(results.every((result) => result.similarity >= 1)).toBe(true);
+  });
+
   it('respects the limit after sorting', () => {
     const results = findNeighbors({
       queryVector: [1, 0],
@@ -116,5 +135,25 @@ describe('findDuplicates', () => {
       note_b: 'bravo.md',
     });
     expect(results[0]!.similarity).toBeCloseTo(0.9999499987499375);
+  });
+
+  it('breaks ties deterministically and includes exact-threshold pairs', () => {
+    const results = findDuplicates({
+      sources: [
+        makeSource('zeta.md', [1, 0]),
+        makeSource('beta.md', [0, 1]),
+        makeSource('alpha.md', [1, 0]),
+        makeSource('gamma.md', [0, 1]),
+      ],
+      threshold: 1,
+    });
+
+    expect(
+      results.map((result) => [result.note_a, result.note_b]),
+    ).toEqual([
+      ['alpha.md', 'zeta.md'],
+      ['beta.md', 'gamma.md'],
+    ]);
+    expect(results.every((result) => result.similarity >= 1)).toBe(true);
   });
 });

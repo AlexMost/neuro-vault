@@ -19,6 +19,28 @@ function ensureSameDimensions(
   }
 }
 
+function compareStrings(left: string, right: string): number {
+  return left.localeCompare(right);
+}
+
+function compareSearchResults(left: SearchResult, right: SearchResult): number {
+  return (
+    right.similarity - left.similarity ||
+    compareStrings(left.path, right.path)
+  );
+}
+
+function compareDuplicatePairs(
+  left: DuplicatePair,
+  right: DuplicatePair,
+): number {
+  return (
+    right.similarity - left.similarity ||
+    compareStrings(left.note_a, right.note_a) ||
+    compareStrings(left.note_b, right.note_b)
+  );
+}
+
 export function cosineSimilarity(a: number[], b: number[]): number {
   validateVector(a, 'Vector a');
   validateVector(b, 'Vector b');
@@ -74,7 +96,7 @@ function toSearchResults(
     }
   }
 
-  results.sort((left, right) => right.similarity - left.similarity);
+  results.sort(compareSearchResults);
 
   return results;
 }
@@ -130,15 +152,15 @@ export function findDuplicates({
 
       if (similarity >= threshold) {
         duplicates.push({
-          note_a: left.path,
-          note_b: right.path,
+          note_a: compareStrings(left.path, right.path) <= 0 ? left.path : right.path,
+          note_b: compareStrings(left.path, right.path) <= 0 ? right.path : left.path,
           similarity,
         });
       }
     }
   }
 
-  duplicates.sort((left, right) => right.similarity - left.similarity);
+  duplicates.sort(compareDuplicatePairs);
 
   return duplicates;
 }
