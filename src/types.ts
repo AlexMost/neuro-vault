@@ -15,8 +15,8 @@ export interface SearchResult {
 }
 
 export interface DuplicatePair {
-  noteA: string;
-  noteB: string;
+  note_a: string;
+  note_b: string;
   similarity: number;
 }
 

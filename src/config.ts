@@ -24,9 +24,11 @@ export function parseConfig(argv: string[]): ServerConfig {
     throw new Error('--vault must be an absolute path');
   }
 
+  const normalizedVaultPath = path.resolve(vaultPath);
+
   return {
-    vaultPath,
-    smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
+    vaultPath: normalizedVaultPath,
+    smartEnvPath: path.join(normalizedVaultPath, '.smart-env', 'multi'),
     modelKey: DEFAULT_MODEL_KEY,
   };
 }
