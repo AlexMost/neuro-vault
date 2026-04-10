@@ -27,5 +27,6 @@ export interface ServerConfig {
 }
 
 export interface EmbeddingProvider {
+  initialize(): Promise<void>;
   embed(text: string): Promise<number[]>;
 }
