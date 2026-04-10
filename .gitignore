@@ -1,0 +1,4 @@
+.worktrees/
+.idea/
+node_modules/
+dist/
