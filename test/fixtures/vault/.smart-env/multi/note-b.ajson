@@ -1,0 +1,5 @@
+{
+  "path": "Folder/note-b.md",
+  "embedding": [0, 1, 0],
+  "blocks": [{ "text": "beta concept" }]
+}

@@ -1,0 +1,5 @@
+{
+  "path": "",
+  "embedding": "not-a-vector",
+  "blocks": [{ "text": "broken record" }]
+}

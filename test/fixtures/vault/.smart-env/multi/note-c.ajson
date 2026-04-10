@@ -1,0 +1,5 @@
+{
+  "path": "Folder/note-c.md",
+  "embedding": [0, 0, 1],
+  "blocks": [{ "text": "gamma concept" }]
+}
