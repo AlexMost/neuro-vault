@@ -1,7 +1,7 @@
 {
-  "name": "neuro-vault",
+  "name": "neuro-vault-mcp",
   "version": "1.0.0",
-  "description": "",
+  "description": "MCP server for semantic search over Obsidian vaults with Smart Connections data.",
   "homepage": "https://github.com/AlexMost/neuro-vault#readme",
   "bugs": {
     "url": "https://github.com/AlexMost/neuro-vault/issues"
@@ -11,10 +11,66 @@
     "url": "git+https://github.com/AlexMost/neuro-vault.git"
   },
   "license": "ISC",
+  "keywords": [
+    "mcp",
+    "obsidian",
+    "smart-connections",
+    "semantic-search",
+    "stdio",
+    "transformers"
+  ],
   "author": "",
-  "type": "commonjs",
-  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "neuro-vault-mcp": "./dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  }
+    "build": "tsup",
+    "dev": "tsx src/cli.ts",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "format:changelog": "prettier --write CHANGELOG.md",
+    "test": "vitest run",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/cli.js --vault",
+    "prerelease": "npm run build && npm run test && npm run lint && npm run format",
+    "release": "commit-and-tag-version",
+    "release:dry-run": "commit-and-tag-version --dry-run",
+    "prepublishOnly": "npm run build && npm run test && npm run lint && npm run format"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.15.1",
+    "@xenova/transformers": "^2.17.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.0",
+    "@types/node": "^22.15.18",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "commit-and-tag-version": "^12.6.1",
+    "eslint": "^9.25.0",
+    "prettier": "^3.5.3",
+    "tsup": "^8.5.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.2"
+  },
+  "commit-and-tag-version": {
+    "tagPrefix": "v",
+    "releaseCommitMessageFormat": "chore(release): {{currentTag}}",
+    "scripts": {
+      "postchangelog": "npm run format:changelog"
+    }
+  },
+  "packageManager": "npm@10.9.2"
 }

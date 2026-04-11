@@ -40,6 +40,7 @@
 ### Task 1: Scaffold the package and developer tooling
 
 **Files:**
+
 - Modify: `package.json`
 - Create: `tsconfig.json`
 - Create: `tsup.config.ts`
@@ -107,11 +108,13 @@ Starter `tsconfig.json` shape:
 - [ ] **Step 4: Verify the tooling boots**
 
 Run:
+
 - `npm install`
 - `npm run lint`
 - `npm run test`
 
 Expected:
+
 - install succeeds
 - lint succeeds or reports only missing source files that will be created next
 - test runner starts successfully even if current test suite is incomplete
@@ -126,6 +129,7 @@ git commit -m "chore: scaffold neuro vault mcp package tooling"
 ### Task 2: Define shared types and CLI config parsing
 
 **Files:**
+
 - Create: `src/types.ts`
 - Create: `src/config.ts`
 - Test: `test/config.test.ts`
@@ -142,8 +146,8 @@ Add tests for:
 Example assertion shape:
 
 ```ts
-expect(() => parseConfig(["node", "cli.js"])).toThrow("--vault")
-expect(parseConfig(["node", "cli.js", "--vault", "/tmp/vault"]).vaultPath).toBe("/tmp/vault")
+expect(() => parseConfig(['node', 'cli.js'])).toThrow('--vault');
+expect(parseConfig(['node', 'cli.js', '--vault', '/tmp/vault']).vaultPath).toBe('/tmp/vault');
 ```
 
 - [ ] **Step 2: Run config tests to verify failure**
@@ -172,6 +176,7 @@ Implement `parseConfig(argv)` with:
 - [ ] **Step 4: Run tests to verify pass**
 
 Run:
+
 - `npm test -- test/config.test.ts`
 - `npm run lint`
 
@@ -187,6 +192,7 @@ git commit -m "feat: add typed config parsing"
 ### Task 3: Load and normalize Smart Connections data
 
 **Files:**
+
 - Create: `src/smart-connections-loader.ts`
 - Test: `test/smart-connections-loader.test.ts`
 - Create: `test/fixtures/vault/.smart-env/multi/note-a.ajson`
@@ -235,6 +241,7 @@ Keep raw Smart Connections parsing isolated in one function so future format dri
 - [ ] **Step 4: Run tests to verify pass**
 
 Run:
+
 - `npm test -- test/smart-connections-loader.test.ts`
 - `npm run lint`
 
@@ -250,6 +257,7 @@ git commit -m "feat: add smart connections data loader"
 ### Task 4: Build the search engine
 
 **Files:**
+
 - Create: `src/search-engine.ts`
 - Test: `test/search-engine.test.ts`
 
@@ -266,8 +274,8 @@ Cover:
 Example expectations:
 
 ```ts
-expect(cosineSimilarity([1, 0], [1, 0])).toBeCloseTo(1)
-expect(cosineSimilarity([1, 0], [0, 1])).toBeCloseTo(0)
+expect(cosineSimilarity([1, 0], [1, 0])).toBeCloseTo(1);
+expect(cosineSimilarity([1, 0], [0, 1])).toBeCloseTo(0);
 ```
 
 - [ ] **Step 2: Run search-engine tests to verify failure**
@@ -293,6 +301,7 @@ Behavior constraints:
 - [ ] **Step 4: Run tests to verify pass**
 
 Run:
+
 - `npm test -- test/search-engine.test.ts`
 - `npm run lint`
 
@@ -308,6 +317,7 @@ git commit -m "feat: add vector search engine"
 ### Task 5: Add the embedding service abstraction
 
 **Files:**
+
 - Create: `src/embedding-service.ts`
 - Modify: `src/types.ts`
 - Create: `test/embedding-service.test.ts`
@@ -324,8 +334,8 @@ Cover:
 Mock the transformers pipeline instead of loading a real model:
 
 ```ts
-const pipelineFactory = vi.fn()
-pipelineFactory.mockResolvedValue(mockPipeline)
+const pipelineFactory = vi.fn();
+pipelineFactory.mockResolvedValue(mockPipeline);
 ```
 
 - [ ] **Step 2: Run tests to verify failure**
@@ -347,6 +357,7 @@ Design it so tests can inject a mock `EmbeddingProvider` and avoid model downloa
 - [ ] **Step 4: Run targeted tests to verify pass**
 
 Run:
+
 - `npm test -- test/embedding-service.test.ts`
 - `npm run lint`
 
@@ -362,6 +373,7 @@ git commit -m "feat: add embedding service abstraction"
 ### Task 6: Implement MCP tool handlers
 
 **Files:**
+
 - Create: `src/tool-handlers.ts`
 - Modify: `src/types.ts`
 - Test: `test/tool-handlers.test.ts`
@@ -395,7 +407,7 @@ createToolHandlers({
   embeddingProvider,
   searchEngine,
   modelKey,
-})
+});
 ```
 
 Each handler should:
@@ -408,6 +420,7 @@ Each handler should:
 - [ ] **Step 4: Run tests to verify pass**
 
 Run:
+
 - `npm test -- test/tool-handlers.test.ts`
 - `npm run lint`
 
@@ -423,6 +436,7 @@ git commit -m "feat: add neuro vault MCP tool handlers"
 ### Task 7: Wire the MCP stdio server and CLI entrypoint
 
 **Files:**
+
 - Create: `src/server.ts`
 - Create: `src/cli.ts`
 - Test: `test/server-smoke.test.ts`
@@ -459,6 +473,7 @@ Keep `src/server.ts` testable by separating server construction from process sta
 - [ ] **Step 4: Run tests and build to verify pass**
 
 Run:
+
 - `npm test -- test/server-smoke.test.ts`
 - `npm run test`
 - `npm run build`
@@ -475,6 +490,7 @@ git commit -m "feat: add stdio MCP server bootstrap"
 ### Task 8: Write README and package polish
 
 **Files:**
+
 - Create: `README.md`
 - Modify: `package.json`
 
@@ -495,6 +511,7 @@ Before editing, verify the README must cover:
 - [ ] **Step 2: Run final quality gate to identify missing docs**
 
 Run:
+
 - `npm run build`
 - `npm run lint`
 - `npm run format`
@@ -534,6 +551,7 @@ Also ensure `package.json` metadata is release-friendly:
 - [ ] **Step 4: Run final verification**
 
 Run:
+
 - `npm run format:write`
 - `npm run lint`
 - `npm run test`
@@ -551,28 +569,34 @@ git commit -m "docs: add usage guide for neuro vault MCP"
 ### Task 9: Pre-publish verification
 
 **Files:**
+
 - Modify as needed: any files touched in earlier tasks
 
 - [ ] **Step 1: Verify package contents**
 
 Run:
+
 - `npm pack --dry-run`
 
 Expected:
+
 - tarball contains `dist/`, `README.md`, and package metadata
 - tarball does not contain tests or raw fixture vault data unless intentionally included
 
 - [ ] **Step 2: Verify CLI help and startup path**
 
 Run:
+
 - `node dist/cli.js --vault /tmp/nonexistent`
 
 Expected:
+
 - clean startup error explaining that the vault or `.smart-env/multi` path is missing
 
 - [ ] **Step 3: Verify end-to-end repo quality**
 
 Run:
+
 - `npm run lint`
 - `npm run test`
 - `npm run build`
