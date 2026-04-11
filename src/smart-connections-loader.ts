@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
 import path from 'node:path';
 
 import type { SmartBlock, SmartSource } from './types.js';
@@ -103,7 +104,7 @@ function parseSmartConnectionsRecord(
 export async function loadSmartConnectionsCorpus(
   smartEnvPath: string,
 ): Promise<SmartConnectionsCorpus> {
-  let dirEntries: Awaited<ReturnType<typeof fs.readdir>>;
+  let dirEntries: Dirent[];
 
   try {
     dirEntries = await fs.readdir(smartEnvPath, { withFileTypes: true });
