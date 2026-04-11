@@ -17,6 +17,7 @@ import type {
 const DEFAULT_SEARCH_LIMIT = 10;
 const DEFAULT_SEARCH_THRESHOLD = 0.5;
 const DEFAULT_DUPLICATE_THRESHOLD = 0.9;
+const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
 
 export class ToolHandlerError extends Error {
   readonly code: ToolHandlerErrorCode;
@@ -43,9 +44,43 @@ export class ToolHandlerError extends Error {
 }
 
 function normalizeNotePath(notePath: string): string {
-  const normalized = notePath.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  const trimmed = notePath.trim();
 
-  if (!normalized) {
+  if (!trimmed) {
+    throw new ToolHandlerError(
+      'INVALID_ARGUMENT',
+      'note_path must not be empty',
+      {
+        details: { field: 'note_path' },
+      },
+    );
+  }
+
+  if (path.posix.isAbsolute(trimmed) || WINDOWS_ABSOLUTE_PATH_RE.test(trimmed)) {
+    throw new ToolHandlerError(
+      'INVALID_ARGUMENT',
+      'note_path must be vault-relative',
+      {
+        details: { field: 'note_path' },
+      },
+    );
+  }
+
+  const slashNormalized = trimmed.replace(/\\/g, '/');
+
+  if (slashNormalized.split('/').some((segment) => segment === '..')) {
+    throw new ToolHandlerError(
+      'INVALID_ARGUMENT',
+      'note_path must be vault-relative',
+      {
+        details: { field: 'note_path' },
+      },
+    );
+  }
+
+  const normalized = path.posix.normalize(slashNormalized);
+
+  if (normalized === '.') {
     throw new ToolHandlerError(
       'INVALID_ARGUMENT',
       'note_path must not be empty',
@@ -119,6 +154,16 @@ function readThreshold(
     throw new ToolHandlerError(
       'INVALID_ARGUMENT',
       `${field} must be a finite number`,
+      {
+        details: { field },
+      },
+    );
+  }
+
+  if (value < 0 || value > 1) {
+    throw new ToolHandlerError(
+      'INVALID_ARGUMENT',
+      `${field} must be between 0 and 1`,
       {
         details: { field },
       },

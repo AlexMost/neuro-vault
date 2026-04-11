@@ -219,6 +219,132 @@ describe('createToolHandlers', () => {
     }
   });
 
+  it('normalizes safe relative note paths', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: {
+          initialize: vi.fn(),
+          embed: vi.fn(),
+        },
+        searchEngine: { findNeighbors, findDuplicates },
+        modelKey: 'bge-micro-v2',
+      });
+
+      const results = await handlers.getSimilarNotes({
+        note_path: './Folder/note-a.md',
+        threshold: 0,
+      });
+
+      expect(results.map((result) => result.path)).toEqual([
+        'Folder/note-b.md',
+        'Folder/note-c.md',
+      ]);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects note path traversal attempts', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: {
+          initialize: vi.fn(),
+          embed: vi.fn(),
+        },
+        searchEngine: { findNeighbors, findDuplicates },
+        modelKey: 'bge-micro-v2',
+      });
+
+      await expect(
+        handlers.getSimilarNotes({ note_path: '../Folder/note-a.md' }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects Windows-style absolute note paths', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: {
+          initialize: vi.fn(),
+          embed: vi.fn(),
+        },
+        searchEngine: { findNeighbors, findDuplicates },
+        modelKey: 'bge-micro-v2',
+      });
+
+      await expect(
+        handlers.getSimilarNotes({ note_path: 'C:/vault/Folder/note-a.md' }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects thresholds below 0 and above 1', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: {
+          initialize: vi.fn(),
+          embed: vi.fn(),
+        },
+        searchEngine: { findNeighbors, findDuplicates },
+        modelKey: 'bge-micro-v2',
+      });
+
+      await expect(
+        handlers.searchNotes({ query: 'semantic query', threshold: -0.01 }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+
+      await expect(
+        handlers.searchNotes({ query: 'semantic query', threshold: 1.01 }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('returns matching duplicate pairs', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
