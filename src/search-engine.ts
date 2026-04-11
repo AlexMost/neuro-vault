@@ -24,16 +24,10 @@ function compareStrings(left: string, right: string): number {
 }
 
 function compareSearchResults(left: SearchResult, right: SearchResult): number {
-  return (
-    right.similarity - left.similarity ||
-    compareStrings(left.path, right.path)
-  );
+  return right.similarity - left.similarity || compareStrings(left.path, right.path);
 }
 
-function compareDuplicatePairs(
-  left: DuplicatePair,
-  right: DuplicatePair,
-): number {
+function compareDuplicatePairs(left: DuplicatePair, right: DuplicatePair): number {
   return (
     right.similarity - left.similarity ||
     compareStrings(left.note_a, right.note_a) ||

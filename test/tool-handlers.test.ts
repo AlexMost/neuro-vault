@@ -7,10 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { loadSmartConnectionsCorpus } from '../src/smart-connections-loader.js';
 import { findDuplicates, findNeighbors } from '../src/search-engine.js';
-import {
-  createToolHandlers,
-  ToolHandlerError,
-} from '../src/tool-handlers.js';
+import { createToolHandlers, ToolHandlerError } from '../src/tool-handlers.js';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.resolve(testDir, 'fixtures/vault/.smart-env/multi');
@@ -23,18 +20,13 @@ async function makeVaultFixture(fileNames: string[]) {
   await fs.mkdir(smartEnvPath, { recursive: true });
 
   for (const fileName of fileNames) {
-    await fs.copyFile(
-      path.join(fixturesRoot, fileName),
-      path.join(smartEnvPath, fileName),
-    );
+    await fs.copyFile(path.join(fixturesRoot, fileName), path.join(smartEnvPath, fileName));
   }
 
   return { tempRoot, vaultPath, smartEnvPath };
 }
 
-function createDuplicateCorpus(
-  corpus: Awaited<ReturnType<typeof loadSmartConnectionsCorpus>>,
-) {
+function createDuplicateCorpus(corpus: Awaited<ReturnType<typeof loadSmartConnectionsCorpus>>) {
   const sources = new Map(corpus.sources);
 
   sources.set('Folder/note-d.md', {
@@ -112,11 +104,9 @@ describe('createToolHandlers', () => {
         modelKey: 'bge-micro-v2',
       });
 
-      await expect(handlers.searchNotes({ query: '   ' })).rejects.toMatchObject(
-        {
-          code: 'INVALID_ARGUMENT',
-        },
-      );
+      await expect(handlers.searchNotes({ query: '   ' })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
       expect(embed).not.toHaveBeenCalled();
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
@@ -211,9 +201,7 @@ describe('createToolHandlers', () => {
         'Folder/note-b.md',
         'Folder/note-c.md',
       ]);
-      expect(results.map((result) => result.path)).not.toContain(
-        'Folder/note-a.md',
-      );
+      expect(results.map((result) => result.path)).not.toContain('Folder/note-a.md');
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }

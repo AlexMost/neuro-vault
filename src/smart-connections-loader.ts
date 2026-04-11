@@ -30,16 +30,12 @@ function validateBlocks(blocksValue: unknown, filePath: string): SmartBlock[] {
   }
 
   if (!Array.isArray(blocksValue)) {
-    throw new Error(
-      `Smart Connections file ${filePath} must contain blocks as an array`,
-    );
+    throw new Error(`Smart Connections file ${filePath} must contain blocks as an array`);
   }
 
   return blocksValue.map((block, index) => {
     if (typeof block !== 'object' || block === null) {
-      throw new Error(
-        `Smart Connections file ${filePath} has an invalid block at index ${index}`,
-      );
+      throw new Error(`Smart Connections file ${filePath} has an invalid block at index ${index}`);
     }
 
     const text = (block as { text?: unknown }).text;
@@ -56,10 +52,7 @@ function validateBlocks(blocksValue: unknown, filePath: string): SmartBlock[] {
   });
 }
 
-function parseSmartConnectionsRecord(
-  rawJson: string,
-  filePath: string,
-): SmartSource {
+function parseSmartConnectionsRecord(rawJson: string, filePath: string): SmartSource {
   let parsed: SmartConnectionsRecord;
 
   try {
@@ -71,15 +64,11 @@ function parseSmartConnectionsRecord(
   }
 
   if (typeof parsed.path !== 'string' || parsed.path.trim() === '') {
-    throw new Error(
-      `Smart Connections file ${filePath} is missing a usable note path`,
-    );
+    throw new Error(`Smart Connections file ${filePath} is missing a usable note path`);
   }
 
   if (!Array.isArray(parsed.embedding) || parsed.embedding.length === 0) {
-    throw new Error(
-      `Smart Connections file ${filePath} is missing a usable embedding vector`,
-    );
+    throw new Error(`Smart Connections file ${filePath} is missing a usable embedding vector`);
   }
 
   const embedding = parsed.embedding.map((value, index) => {
@@ -137,9 +126,7 @@ export async function loadSmartConnectionsCorpus(
   }
 
   if (sources.size === 0) {
-    throw new Error(
-      `No usable Smart Connections notes were found in ${smartEnvPath}`,
-    );
+    throw new Error(`No usable Smart Connections notes were found in ${smartEnvPath}`);
   }
 
   getEmbeddingDimension(sources);

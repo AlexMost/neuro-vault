@@ -3,10 +3,7 @@
 import { pathToFileURL } from 'node:url';
 
 import { parseConfig } from './config.js';
-import {
-  startNeuroVaultServer,
-  type NeuroVaultStartupDependencies,
-} from './server.js';
+import { startNeuroVaultServer, type NeuroVaultStartupDependencies } from './server.js';
 
 export async function main(
   argv: string[] = process.argv,

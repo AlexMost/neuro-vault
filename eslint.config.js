@@ -12,6 +12,10 @@ export default [
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+      },
       parser: tsParser,
       parserOptions: {
         project: false,

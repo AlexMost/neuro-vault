@@ -97,10 +97,8 @@ export class EmbeddingService implements EmbeddingProvider {
       'data' in embedding &&
       ArrayBuffer.isView((embedding as { data: unknown }).data)
     ) {
-      return Array.from(
-        (embedding as { data: ArrayLike<unknown> }).data,
-        (value, index) =>
-          this.normalizeEmbeddingValue(value, `embedding.data[${index}]`),
+      return Array.from((embedding as { data: ArrayLike<unknown> }).data, (value, index) =>
+        this.normalizeEmbeddingValue(value, `embedding.data[${index}]`),
       );
     }
 

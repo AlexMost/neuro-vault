@@ -53,9 +53,7 @@ export interface NeuroVaultServerDependencies {
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
-  toolHandlersFactory?: (
-    deps: ToolHandlerDependencies,
-  ) => ToolHandlers;
+  toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
   serverFactory?: () => ToolServer;
 }
 
@@ -63,9 +61,7 @@ export interface NeuroVaultStartupDependencies {
   loadCorpus?: (smartEnvPath: string) => Promise<SmartConnectionsCorpus>;
   embeddingServiceFactory?: (modelKey: string) => EmbeddingProvider;
   searchEngine?: SearchEngine;
-  toolHandlersFactory?: (
-    deps: ToolHandlerDependencies,
-  ) => ToolHandlers;
+  toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
   serverFactory?: () => ToolServer;
   transportFactory?: () => StdioServerTransport;
 }
@@ -132,9 +128,7 @@ function toToolErrorResponse(error: unknown): ToolResponse {
   };
 }
 
-async function invokeTool<T>(
-  handler: () => Promise<T>,
-): Promise<ToolResponse> {
+async function invokeTool<T>(handler: () => Promise<T>): Promise<ToolResponse> {
   try {
     const value = await handler();
     return toToolResponse(value);
@@ -213,8 +207,7 @@ export async function startNeuroVaultServer(
 ): Promise<void> {
   const loadCorpus = deps.loadCorpus ?? loadSmartConnectionsCorpus;
   const embeddingServiceFactory =
-    deps.embeddingServiceFactory ??
-    ((modelKey: string) => new EmbeddingService({ modelKey }));
+    deps.embeddingServiceFactory ?? ((modelKey: string) => new EmbeddingService({ modelKey }));
   const searchEngine = deps.searchEngine ?? { findNeighbors, findDuplicates };
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;

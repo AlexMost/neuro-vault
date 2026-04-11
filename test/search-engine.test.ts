@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SmartSource } from '../src/types.js';
-import {
-  cosineSimilarity,
-  findDuplicates,
-  findNeighbors,
-} from '../src/search-engine.js';
+import { cosineSimilarity, findDuplicates, findNeighbors } from '../src/search-engine.js';
 
 function makeSource(
   path: string,
@@ -49,11 +45,7 @@ describe('findNeighbors', () => {
       limit: 10,
     });
 
-    expect(results.map((result) => result.path)).toEqual([
-      'alpha.md',
-      'delta.md',
-      'bravo.md',
-    ]);
+    expect(results.map((result) => result.path)).toEqual(['alpha.md', 'delta.md', 'bravo.md']);
     expect(results.every((result) => result.similarity >= 0.5)).toBe(true);
     expect(results[0]!.similarity).toBeGreaterThan(results[1]!.similarity);
     expect(results[1]!.similarity).toBeGreaterThan(results[2]!.similarity);
@@ -71,10 +63,7 @@ describe('findNeighbors', () => {
       limit: 10,
     });
 
-    expect(results.map((result) => result.path)).toEqual([
-      'alpha.md',
-      'zeta.md',
-    ]);
+    expect(results.map((result) => result.path)).toEqual(['alpha.md', 'zeta.md']);
     expect(results.every((result) => result.similarity >= 1)).toBe(true);
   });
 
@@ -87,10 +76,7 @@ describe('findNeighbors', () => {
     });
 
     expect(results).toHaveLength(2);
-    expect(results.map((result) => result.path)).toEqual([
-      'alpha.md',
-      'delta.md',
-    ]);
+    expect(results.map((result) => result.path)).toEqual(['alpha.md', 'delta.md']);
   });
 
   it('excludes the source note path from the results', () => {
@@ -103,10 +89,7 @@ describe('findNeighbors', () => {
     });
 
     expect(results.map((result) => result.path)).not.toContain('alpha.md');
-    expect(results.map((result) => result.path)).toEqual([
-      'delta.md',
-      'bravo.md',
-    ]);
+    expect(results.map((result) => result.path)).toEqual(['delta.md', 'bravo.md']);
   });
 });
 
@@ -148,9 +131,7 @@ describe('findDuplicates', () => {
       threshold: 1,
     });
 
-    expect(
-      results.map((result) => [result.note_a, result.note_b]),
-    ).toEqual([
+    expect(results.map((result) => [result.note_a, result.note_b])).toEqual([
       ['alpha.md', 'zeta.md'],
       ['beta.md', 'gamma.md'],
     ]);

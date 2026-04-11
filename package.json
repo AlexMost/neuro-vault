@@ -37,7 +37,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/cli.ts",
-    "lint": "eslint . --rule no-undef:off",
+    "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "test": "vitest run"

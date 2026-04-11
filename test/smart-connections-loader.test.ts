@@ -21,10 +21,7 @@ async function makeVaultFixture(fileNames: string[]) {
   await fs.mkdir(smartEnvPath, { recursive: true });
 
   for (const fileName of fileNames) {
-    await fs.copyFile(
-      path.join(fixturesRoot, fileName),
-      path.join(smartEnvPath, fileName),
-    );
+    await fs.copyFile(path.join(fixturesRoot, fileName), path.join(smartEnvPath, fileName));
   }
 
   return { tempRoot, vaultPath, smartEnvPath };
@@ -75,9 +72,7 @@ describe('loadSmartConnectionsCorpus', () => {
         blocks: [{ text: 'alpha concept' }],
       });
       expect(noteA?.embedding).toEqual([1, 0, 0]);
-      expect(noteA?.embedding.every((value) => typeof value === 'number')).toBe(
-        true,
-      );
+      expect(noteA?.embedding.every((value) => typeof value === 'number')).toBe(true);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -173,9 +168,7 @@ describe('loadSmartConnectionsCorpus', () => {
       ],
     ]);
 
-    expect(() => summarizeSmartConnectionsCorpus(corpus)).toThrow(
-      /mixed embedding dimensions/i,
-    );
+    expect(() => summarizeSmartConnectionsCorpus(corpus)).toThrow(/mixed embedding dimensions/i);
   });
 
   it('fails fast when any .ajson file cannot be parsed or normalized', async () => {

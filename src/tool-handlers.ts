@@ -47,57 +47,37 @@ function normalizeNotePath(notePath: string): string {
   const trimmed = notePath.trim();
 
   if (!trimmed) {
-    throw new ToolHandlerError(
-      'INVALID_ARGUMENT',
-      'note_path must not be empty',
-      {
-        details: { field: 'note_path' },
-      },
-    );
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'note_path must not be empty', {
+      details: { field: 'note_path' },
+    });
   }
 
   if (path.posix.isAbsolute(trimmed) || WINDOWS_ABSOLUTE_PATH_RE.test(trimmed)) {
-    throw new ToolHandlerError(
-      'INVALID_ARGUMENT',
-      'note_path must be vault-relative',
-      {
-        details: { field: 'note_path' },
-      },
-    );
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'note_path must be vault-relative', {
+      details: { field: 'note_path' },
+    });
   }
 
   const slashNormalized = trimmed.replace(/\\/g, '/');
 
   if (slashNormalized.split('/').some((segment) => segment === '..')) {
-    throw new ToolHandlerError(
-      'INVALID_ARGUMENT',
-      'note_path must be vault-relative',
-      {
-        details: { field: 'note_path' },
-      },
-    );
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'note_path must be vault-relative', {
+      details: { field: 'note_path' },
+    });
   }
 
   const normalized = path.posix.normalize(slashNormalized);
 
   if (normalized === '.') {
-    throw new ToolHandlerError(
-      'INVALID_ARGUMENT',
-      'note_path must not be empty',
-      {
-        details: { field: 'note_path' },
-      },
-    );
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'note_path must not be empty', {
+      details: { field: 'note_path' },
+    });
   }
 
   if (path.posix.isAbsolute(normalized)) {
-    throw new ToolHandlerError(
-      'INVALID_ARGUMENT',
-      'note_path must be vault-relative',
-      {
-        details: { field: 'note_path' },
-      },
-    );
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'note_path must be vault-relative', {
+      details: { field: 'note_path' },
+    });
   }
 
   return normalized;
@@ -107,13 +87,9 @@ function normalizeQuery(query: string): string {
   const normalized = query.trim();
 
   if (!normalized) {
-    throw new ToolHandlerError(
-      'INVALID_ARGUMENT',
-      'query must not be empty',
-      {
-        details: { field: 'query' },
-      },
-    );
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'query must not be empty', {
+      details: { field: 'query' },
+    });
   }
 
   return normalized;
@@ -129,45 +105,29 @@ function readPositiveInteger(
   }
 
   if (!Number.isInteger(value) || value < 1) {
-    throw new ToolHandlerError(
-      'INVALID_ARGUMENT',
-      `${field} must be a positive integer`,
-      {
-        details: { field },
-      },
-    );
+    throw new ToolHandlerError('INVALID_ARGUMENT', `${field} must be a positive integer`, {
+      details: { field },
+    });
   }
 
   return value;
 }
 
-function readThreshold(
-  value: number | undefined,
-  defaultValue: number,
-  field: string,
-): number {
+function readThreshold(value: number | undefined, defaultValue: number, field: string): number {
   if (value === undefined) {
     return defaultValue;
   }
 
   if (!Number.isFinite(value)) {
-    throw new ToolHandlerError(
-      'INVALID_ARGUMENT',
-      `${field} must be a finite number`,
-      {
-        details: { field },
-      },
-    );
+    throw new ToolHandlerError('INVALID_ARGUMENT', `${field} must be a finite number`, {
+      details: { field },
+    });
   }
 
   if (value < 0 || value > 1) {
-    throw new ToolHandlerError(
-      'INVALID_ARGUMENT',
-      `${field} must be between 0 and 1`,
-      {
-        details: { field },
-      },
-    );
+    throw new ToolHandlerError('INVALID_ARGUMENT', `${field} must be between 0 and 1`, {
+      details: { field },
+    });
   }
 
   return value;
@@ -241,16 +201,8 @@ export function createToolHandlers({
   return {
     async searchNotes(input: SearchNotesInput): Promise<SearchResult[]> {
       const query = normalizeQuery(input.query);
-      const limit = readPositiveInteger(
-        input.limit,
-        DEFAULT_SEARCH_LIMIT,
-        'limit',
-      );
-      const threshold = readThreshold(
-        input.threshold,
-        DEFAULT_SEARCH_THRESHOLD,
-        'threshold',
-      );
+      const limit = readPositiveInteger(input.limit, DEFAULT_SEARCH_LIMIT, 'limit');
+      const threshold = readThreshold(input.threshold, DEFAULT_SEARCH_THRESHOLD, 'threshold');
 
       let queryVector: number[];
 
@@ -279,32 +231,18 @@ export function createToolHandlers({
       }
     },
 
-    async getSimilarNotes(
-      input: GetSimilarNotesInput,
-    ): Promise<SearchResult[]> {
+    async getSimilarNotes(input: GetSimilarNotesInput): Promise<SearchResult[]> {
       const notePath = normalizeNotePath(input.note_path);
       const source = loader.sources.get(notePath);
 
       if (!source) {
-        throw new ToolHandlerError(
-          'NOT_FOUND',
-          `No note found for path: ${notePath}`,
-          {
-            details: { note_path: notePath },
-          },
-        );
+        throw new ToolHandlerError('NOT_FOUND', `No note found for path: ${notePath}`, {
+          details: { note_path: notePath },
+        });
       }
 
-      const limit = readPositiveInteger(
-        input.limit,
-        DEFAULT_SEARCH_LIMIT,
-        'limit',
-      );
-      const threshold = readThreshold(
-        input.threshold,
-        DEFAULT_SEARCH_THRESHOLD,
-        'threshold',
-      );
+      const limit = readPositiveInteger(input.limit, DEFAULT_SEARCH_LIMIT, 'limit');
+      const threshold = readThreshold(input.threshold, DEFAULT_SEARCH_THRESHOLD, 'threshold');
 
       try {
         return toSearchResults(
@@ -324,14 +262,8 @@ export function createToolHandlers({
       }
     },
 
-    async findDuplicates(
-      input: FindDuplicatesInput = {},
-    ): Promise<DuplicatePair[]> {
-      const threshold = readThreshold(
-        input.threshold,
-        DEFAULT_DUPLICATE_THRESHOLD,
-        'threshold',
-      );
+    async findDuplicates(input: FindDuplicatesInput = {}): Promise<DuplicatePair[]> {
+      const threshold = readThreshold(input.threshold, DEFAULT_DUPLICATE_THRESHOLD, 'threshold');
 
       try {
         return searchEngine.findDuplicates({

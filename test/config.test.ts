@@ -13,9 +13,7 @@ describe('parseConfig', () => {
   });
 
   it('throws when vault path is not absolute', () => {
-    expect(() =>
-      parseConfig(['node', 'cli.js', '--vault', 'relative/vault']),
-    ).toThrow('absolute');
+    expect(() => parseConfig(['node', 'cli.js', '--vault', 'relative/vault'])).toThrow('absolute');
   });
 
   it('normalizes an absolute vault path before returning config', () => {
@@ -32,8 +30,6 @@ describe('parseConfig', () => {
   it('defaults the model key to bge-micro-v2', () => {
     const vaultPath = path.resolve('/tmp', 'vault');
 
-    expect(parseConfig(['node', 'cli.js', '--vault', vaultPath]).modelKey).toBe(
-      'bge-micro-v2',
-    );
+    expect(parseConfig(['node', 'cli.js', '--vault', vaultPath]).modelKey).toBe('bge-micro-v2');
   });
 });

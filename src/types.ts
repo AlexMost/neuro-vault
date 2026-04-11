@@ -39,10 +39,7 @@ export interface SearchEngine {
     limit?: number;
     excludePath?: string;
   }): SearchResult[];
-  findDuplicates(args: {
-    sources: Iterable<SmartSource>;
-    threshold: number;
-  }): DuplicatePair[];
+  findDuplicates(args: { sources: Iterable<SmartSource>; threshold: number }): DuplicatePair[];
 }
 
 export interface SearchNotesInput {
@@ -77,10 +74,7 @@ export interface ToolHandlerDependencies {
   modelKey: string;
 }
 
-export type ToolHandlerErrorCode =
-  | 'INVALID_ARGUMENT'
-  | 'NOT_FOUND'
-  | 'DEPENDENCY_ERROR';
+export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENCY_ERROR';
 
 export interface ToolHandlers {
   searchNotes(input: SearchNotesInput): Promise<SearchResult[]>;
