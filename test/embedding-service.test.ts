@@ -27,17 +27,16 @@ describe('EmbeddingService', () => {
     expect(typeof service.embed).toBe('function');
   });
 
-  it('rejects blank query text before model invocation', async () => {
+  it('rejects blank query text before model invocation on a cold start', async () => {
     const service = new EmbeddingService({ pipelineFactory });
 
-    await service.initialize();
-
     await expect(service.embed('   ')).rejects.toThrow(/blank/i);
+    expect(pipelineFactory).not.toHaveBeenCalled();
     expect(mockPipeline).not.toHaveBeenCalled();
   });
 
   it('calls the transformers pipeline with mean pooling and normalized output', async () => {
-    const mockVector = [0.25, 0.75];
+    const mockVector = { data: new Float32Array([0.25, 0.75]) };
     mockPipeline.mockResolvedValue(mockVector);
     const service = new EmbeddingService({ pipelineFactory });
 
@@ -51,7 +50,16 @@ describe('EmbeddingService', () => {
     });
     expect(mockPipeline).toHaveBeenCalledTimes(1);
     expect(mockPipeline).toHaveBeenCalledWith('semantic query');
-    expect(embedding).toEqual(mockVector);
+    expect(embedding).toEqual([0.25, 0.75]);
+  });
+
+  it('rejects non-finite embedding values from the model output', async () => {
+    mockPipeline.mockResolvedValue([1, Number.NaN]);
+    const service = new EmbeddingService({ pipelineFactory });
+
+    await service.initialize();
+
+    await expect(service.embed('semantic query')).rejects.toThrow(/non-finite/i);
   });
 
   it('initializes the model once even if initialize() is called repeatedly', async () => {

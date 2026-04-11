@@ -80,11 +80,15 @@ export class EmbeddingService implements EmbeddingProvider {
 
   private normalizeEmbedding(embedding: unknown): number[] {
     if (Array.isArray(embedding)) {
-      return embedding.map((value) => Number(value));
+      return embedding.map((value, index) =>
+        this.normalizeEmbeddingValue(value, `embedding[${index}]`),
+      );
     }
 
     if (ArrayBuffer.isView(embedding)) {
-      return Array.from(embedding as ArrayLike<number>, (value) => Number(value));
+      return Array.from(embedding as ArrayLike<unknown>, (value, index) =>
+        this.normalizeEmbeddingValue(value, `embedding[${index}]`),
+      );
     }
 
     if (
@@ -94,11 +98,23 @@ export class EmbeddingService implements EmbeddingProvider {
       ArrayBuffer.isView((embedding as { data: unknown }).data)
     ) {
       return Array.from(
-        (embedding as { data: ArrayLike<number> }).data,
-        (value) => Number(value),
+        (embedding as { data: ArrayLike<unknown> }).data,
+        (value, index) =>
+          this.normalizeEmbeddingValue(value, `embedding.data[${index}]`),
       );
     }
 
     throw new Error('Embedding pipeline returned an unsupported value');
+  }
+
+  private normalizeEmbeddingValue(value: unknown, label: string): number {
+    const numericValue =
+      typeof value === 'number' ? value : typeof value === 'bigint' ? Number(value) : NaN;
+
+    if (!Number.isFinite(numericValue)) {
+      throw new Error(`Embedding pipeline returned a non-finite value at ${label}`);
+    }
+
+    return numericValue;
   }
 }
