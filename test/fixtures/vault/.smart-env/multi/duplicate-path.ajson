@@ -1,5 +1,1 @@
-{
-  "path": "Folder/note-a.md",
-  "embedding": [1, 0, 0],
-  "blocks": [{ "text": "alpha duplicate" }]
-}
+"smart_sources:Folder/note-a.md": {"path":"Folder/note-a.md","embeddings":{"TaylorAI/bge-micro-v2":{"vec":[1,0,0]}},"blocks":{},"class_name":"SmartSource"},

@@ -42,7 +42,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
           {
             path: 'Folder/note-a.md',
             embedding: [1, 0, 0],
-            blocks: [{ text: 'alpha concept' }],
+            blocks: [{ key: 'Folder/note-a.md#alpha', heading: '#alpha', lines: [1, 3] as [number, number], embedding: [] }],
           },
         ],
       ]),
@@ -76,9 +76,10 @@ describe('Neuro Vault MCP server bootstrap', () => {
         vaultPath,
         smartEnvPath,
         modelKey: 'bge-micro-v2',
+        modelId: 'TaylorAI/bge-micro-v2',
       });
-      expect(loadCorpus).toHaveBeenCalledWith(smartEnvPath);
-      expect(embeddingServiceFactory).toHaveBeenCalledWith('bge-micro-v2');
+      expect(loadCorpus).toHaveBeenCalledWith(smartEnvPath, 'bge-micro-v2');
+      expect(embeddingServiceFactory).toHaveBeenCalledWith('TaylorAI/bge-micro-v2');
       expect(initialize).toHaveBeenCalledTimes(1);
       expect(toolHandlersFactory).toHaveBeenCalledTimes(1);
       expect(server.registerTool).toHaveBeenCalledTimes(4);
@@ -125,6 +126,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
             vaultPath,
             smartEnvPath,
             modelKey: 'bge-micro-v2',
+            modelId: 'TaylorAI/bge-micro-v2',
           },
           {
             loadCorpus: vi.fn().mockResolvedValue({ sources: new Map() }),

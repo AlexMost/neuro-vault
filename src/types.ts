@@ -1,5 +1,8 @@
 export interface SmartBlock {
-  text: string;
+  key: string;
+  heading: string;
+  lines: [number, number];
+  embedding: number[];
 }
 
 export interface SmartSource {
@@ -24,6 +27,7 @@ export interface ServerConfig {
   vaultPath: string;
   smartEnvPath: string;
   modelKey: string;
+  modelId: string;
 }
 
 export interface EmbeddingProvider {

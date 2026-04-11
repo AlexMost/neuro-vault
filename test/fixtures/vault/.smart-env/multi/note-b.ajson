@@ -1,5 +1,2 @@
-{
-  "path": "Folder/note-b.md",
-  "embedding": [0, 1, 0],
-  "blocks": [{ "text": "beta concept" }]
-}
+"smart_sources:Folder/note-b.md": {"path":"Folder/note-b.md","embeddings":{"TaylorAI/bge-micro-v2":{"vec":[0,1,0]}},"blocks":{"#beta concept":[1,3]},"class_name":"SmartSource"},
+"smart_blocks:Folder/note-b.md#beta concept": {"key":"Folder/note-b.md#beta concept","lines":[1,3],"embeddings":{},"class_name":"SmartBlock"},

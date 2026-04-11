@@ -6,7 +6,9 @@ import { cosineSimilarity, findDuplicates, findNeighbors } from '../src/search-e
 function makeSource(
   path: string,
   embedding: number[],
-  blocks: SmartSource['blocks'] = [{ text: `${path} block` }],
+  blocks: SmartSource['blocks'] = [
+    { key: `${path}#block`, heading: '#block', lines: [1, 3] as [number, number], embedding: [] },
+  ],
 ): SmartSource {
   return {
     path,

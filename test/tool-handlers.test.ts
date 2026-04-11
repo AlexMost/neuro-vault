@@ -26,19 +26,21 @@ async function makeVaultFixture(fileNames: string[]) {
   return { tempRoot, vaultPath, smartEnvPath };
 }
 
+const MODEL_KEY = 'bge-micro-v2';
+
 function createDuplicateCorpus(corpus: Awaited<ReturnType<typeof loadSmartConnectionsCorpus>>) {
   const sources = new Map(corpus.sources);
 
   sources.set('Folder/note-d.md', {
     path: 'Folder/note-d.md',
     embedding: [1, 0, 0],
-    blocks: [{ text: 'delta duplicate' }],
+    blocks: [{ key: 'Folder/note-d.md#delta', heading: '#delta', lines: [1, 3] as [number, number], embedding: [] }],
   });
 
   sources.set('Folder/note-e.md', {
     path: 'Folder/note-e.md',
     embedding: [1, 0, 0],
-    blocks: [{ text: 'echo duplicate' }],
+    blocks: [{ key: 'Folder/note-e.md#echo', heading: '#echo', lines: [1, 3] as [number, number], embedding: [] }],
   });
 
   return { sources };
@@ -53,7 +55,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const handlers = createToolHandlers({
         loader: corpus,
@@ -92,7 +94,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn();
       const handlers = createToolHandlers({
         loader: corpus,
@@ -121,7 +123,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockRejectedValue(new Error('model unavailable'));
       const handlers = createToolHandlers({
         loader: corpus,
@@ -152,7 +154,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const handlers = createToolHandlers({
         loader: corpus,
         embeddingProvider: {
@@ -181,7 +183,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const handlers = createToolHandlers({
         loader: corpus,
         embeddingProvider: {
@@ -215,7 +217,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const handlers = createToolHandlers({
         loader: corpus,
         embeddingProvider: {
@@ -248,7 +250,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const handlers = createToolHandlers({
         loader: corpus,
         embeddingProvider: {
@@ -277,7 +279,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const handlers = createToolHandlers({
         loader: corpus,
         embeddingProvider: {
@@ -306,7 +308,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const handlers = createToolHandlers({
         loader: corpus,
         embeddingProvider: {
@@ -341,7 +343,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const handlers = createToolHandlers({
         loader: createDuplicateCorpus(corpus),
         embeddingProvider: {
@@ -373,7 +375,7 @@ describe('createToolHandlers', () => {
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath);
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const handlers = createToolHandlers({
         loader: corpus,
         embeddingProvider: {

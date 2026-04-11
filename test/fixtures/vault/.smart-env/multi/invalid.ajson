@@ -1,5 +1,1 @@
-{
-  "path": "",
-  "embedding": "not-a-vector",
-  "blocks": [{ "text": "broken record" }]
-}
+"smart_sources:Folder/invalid.md": {"path":"","embeddings":{"TaylorAI/bge-micro-v2":{"vec":[1,0,0]}},"blocks":{},"class_name":"SmartSource"},

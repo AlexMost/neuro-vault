@@ -4,10 +4,9 @@ import path from 'node:path';
 
 import type { SmartBlock, SmartSource } from './types.js';
 
-interface SmartConnectionsRecord {
-  path: unknown;
-  embedding: unknown;
-  blocks?: unknown;
+interface AjsonEntry {
+  key: string;
+  value: Record<string, unknown>;
 }
 
 export interface SmartConnectionsCorpus {
@@ -37,67 +36,195 @@ function toPosixPath(notePath: string) {
   return normalized.replace(/^\.\//, '');
 }
 
-function validateBlocks(blocksValue: unknown, filePath: string): SmartBlock[] {
-  if (blocksValue === undefined) {
-    return [];
-  }
+export function parseAjsonContent(content: string): AjsonEntry[] {
+  const entries: AjsonEntry[] = [];
+  const len = content.length;
+  let pos = 0;
 
-  if (!Array.isArray(blocksValue)) {
-    throw new Error(`Smart Connections file ${filePath} must contain blocks as an array`);
-  }
+  while (pos < len) {
+    while (
+      pos < len &&
+      (content[pos] === ' ' ||
+        content[pos] === '\t' ||
+        content[pos] === '\n' ||
+        content[pos] === '\r' ||
+        content[pos] === ',')
+    ) {
+      pos++;
+    }
+    if (pos >= len) break;
 
-  return blocksValue.map((block, index) => {
-    if (typeof block !== 'object' || block === null) {
-      throw new Error(`Smart Connections file ${filePath} has an invalid block at index ${index}`);
+    if (content[pos] !== '"') break;
+
+    pos++;
+    let key = '';
+    while (pos < len && content[pos] !== '"') {
+      if (content[pos] === '\\') {
+        key += content[pos]!;
+        pos++;
+        if (pos < len) {
+          key += content[pos]!;
+          pos++;
+        }
+      } else {
+        key += content[pos]!;
+        pos++;
+      }
+    }
+    if (pos >= len) {
+      throw new Error('Unterminated key string in AJSON content');
+    }
+    pos++;
+
+    while (pos < len && content[pos] !== ':') pos++;
+    if (pos >= len) {
+      throw new Error(`Missing colon after key "${key}" in AJSON content`);
+    }
+    pos++;
+
+    while (pos < len && (content[pos] === ' ' || content[pos] === '\t')) pos++;
+
+    if (pos >= len || content[pos] !== '{') {
+      throw new Error(`Expected opening brace for key "${key}" in AJSON content`);
     }
 
-    const text = (block as { text?: unknown }).text;
+    const braceStart = pos;
+    let depth = 0;
+    let inString = false;
 
-    if (typeof text !== 'string' || text.trim() === '') {
+    while (pos < len) {
+      const ch = content[pos]!;
+      if (inString) {
+        if (ch === '\\') {
+          pos++;
+        } else if (ch === '"') {
+          inString = false;
+        }
+      } else {
+        if (ch === '"') {
+          inString = true;
+        } else if (ch === '{') {
+          depth++;
+        } else if (ch === '}') {
+          depth--;
+          if (depth === 0) {
+            pos++;
+            break;
+          }
+        }
+      }
+      pos++;
+    }
+
+    if (depth !== 0) {
+      throw new Error(`Unmatched braces for key "${key}" in AJSON content`);
+    }
+
+    const jsonStr = content.slice(braceStart, pos);
+
+    let value: Record<string, unknown>;
+    try {
+      value = JSON.parse(jsonStr) as Record<string, unknown>;
+    } catch (error) {
       throw new Error(
-        `Smart Connections file ${filePath} has a block without usable text at index ${index}`,
+        `Failed to parse JSON value for key "${key}": ${(error as Error).message}`,
       );
     }
 
-    return {
-      text: text.trim(),
-    };
+    entries.push({ key, value });
+  }
+
+  return entries;
+}
+
+function findEmbeddingVector(
+  embeddings: unknown,
+  modelKey: string,
+): number[] | null {
+  if (!embeddings || typeof embeddings !== 'object' || Array.isArray(embeddings)) {
+    return null;
+  }
+
+  const embeddingsObj = embeddings as Record<string, unknown>;
+  const matchingKey = Object.keys(embeddingsObj).find((k) => k.includes(modelKey));
+
+  if (!matchingKey) return null;
+
+  const entry = embeddingsObj[matchingKey] as { vec?: unknown } | undefined;
+  if (!entry || !Array.isArray(entry.vec) || entry.vec.length === 0) return null;
+
+  return entry.vec.map((v: unknown, i: number) => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) {
+      throw new Error(`Non-numeric embedding value at index ${i}`);
+    }
+    return v;
   });
 }
 
-function parseSmartConnectionsRecord(rawJson: string, filePath: string): SmartSource {
-  let parsed: SmartConnectionsRecord;
+function extractBlockDefinitions(
+  blocks: unknown,
+  filePath: string,
+): Array<{ heading: string; lines: [number, number] }> {
+  if (blocks === undefined || blocks === null) return [];
 
-  try {
-    parsed = JSON.parse(rawJson) as SmartConnectionsRecord;
-  } catch (error) {
+  if (typeof blocks !== 'object' || Array.isArray(blocks)) {
     throw new Error(
-      `Failed to parse Smart Connections file ${filePath}: ${(error as Error).message}`,
+      `Smart Connections file ${filePath} has an invalid blocks field (expected object)`,
     );
   }
 
-  if (typeof parsed.path !== 'string' || parsed.path.trim() === '') {
+  const result: Array<{ heading: string; lines: [number, number] }> = [];
+
+  for (const [heading, lines] of Object.entries(blocks as Record<string, unknown>)) {
+    if (
+      !Array.isArray(lines) ||
+      lines.length !== 2 ||
+      typeof lines[0] !== 'number' ||
+      typeof lines[1] !== 'number'
+    ) {
+      throw new Error(
+        `Smart Connections file ${filePath} has an invalid block line range for heading "${heading}"`,
+      );
+    }
+    result.push({ heading, lines: [lines[0], lines[1]] });
+  }
+
+  return result;
+}
+
+function parseSmartSourceEntry(
+  entry: AjsonEntry,
+  blockEmbeddings: Map<string, number[]>,
+  modelKey: string,
+  filePath: string,
+): SmartSource | null {
+  const value = entry.value;
+
+  const notePath =
+    typeof value.path === 'string' && value.path.trim() !== ''
+      ? value.path.trim()
+      : null;
+
+  if (!notePath) {
     throw new Error(`Smart Connections file ${filePath} is missing a usable note path`);
   }
 
-  if (!Array.isArray(parsed.embedding) || parsed.embedding.length === 0) {
-    throw new Error(`Smart Connections file ${filePath} is missing a usable embedding vector`);
+  const embedding = findEmbeddingVector(value.embeddings, modelKey);
+  if (!embedding) {
+    return null;
   }
 
-  const embedding = parsed.embedding.map((value, index) => {
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      throw new Error(
-        `Smart Connections file ${filePath} has a non-numeric embedding value at index ${index}`,
-      );
-    }
+  const normalizedPath = toPosixPath(notePath);
+  const blockDefs = extractBlockDefinitions(value.blocks, filePath);
 
-    return value;
+  const blocks: SmartBlock[] = blockDefs.map(({ heading, lines }) => {
+    const fullKey = `${normalizedPath}${heading}`;
+    const blockEmbedding = blockEmbeddings.get(fullKey) ?? [];
+    return { key: fullKey, heading, lines, embedding: blockEmbedding };
   });
 
-  const blocks = validateBlocks(parsed.blocks, filePath);
-
   return {
-    path: toPosixPath(parsed.path),
+    path: normalizedPath,
     embedding,
     blocks,
   };
@@ -105,6 +232,7 @@ function parseSmartConnectionsRecord(rawJson: string, filePath: string): SmartSo
 
 export async function loadSmartConnectionsCorpus(
   smartEnvPath: string,
+  modelKey: string,
 ): Promise<SmartConnectionsCorpus> {
   let dirEntries: Dirent[];
 
@@ -126,16 +254,39 @@ export async function loadSmartConnectionsCorpus(
 
   for (const fileName of files) {
     const filePath = path.join(smartEnvPath, fileName);
-    const rawJson = await fs.readFile(filePath, 'utf8');
-    const source = parseSmartConnectionsRecord(rawJson, filePath);
+    const content = await fs.readFile(filePath, 'utf8');
 
-    if (sources.has(source.path)) {
+    let entries: AjsonEntry[];
+    try {
+      entries = parseAjsonContent(content);
+    } catch (error) {
       throw new Error(
-        `Duplicate Smart Connections note path after normalization: ${source.path} from ${filePath} conflicts with an existing note`,
+        `Failed to parse Smart Connections file ${filePath}: ${(error as Error).message}`,
       );
     }
 
-    sources.set(source.path, source);
+    if (entries.length === 0) continue;
+
+    const blockEmbeddings = new Map<string, number[]>();
+    for (const entry of entries) {
+      if (entry.key.startsWith('smart_blocks:')) {
+        const blockKey = entry.key.slice('smart_blocks:'.length);
+        const embedding = findEmbeddingVector(entry.value.embeddings, modelKey);
+        if (embedding) {
+          blockEmbeddings.set(blockKey, embedding);
+        }
+      }
+    }
+
+    for (const entry of entries) {
+      if (!entry.key.startsWith('smart_sources:')) continue;
+
+      const source = parseSmartSourceEntry(entry, blockEmbeddings, modelKey, filePath);
+
+      if (!source) continue;
+
+      sources.set(source.path, source);
+    }
   }
 
   if (sources.size === 0) {

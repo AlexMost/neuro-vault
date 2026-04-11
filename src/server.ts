@@ -58,7 +58,7 @@ export interface NeuroVaultServerDependencies {
 }
 
 export interface NeuroVaultStartupDependencies {
-  loadCorpus?: (smartEnvPath: string) => Promise<SmartConnectionsCorpus>;
+  loadCorpus?: (smartEnvPath: string, modelKey: string) => Promise<SmartConnectionsCorpus>;
   embeddingServiceFactory?: (modelKey: string) => EmbeddingProvider;
   searchEngine?: SearchEngine;
   toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
@@ -207,15 +207,15 @@ export async function startNeuroVaultServer(
 ): Promise<void> {
   const loadCorpus = deps.loadCorpus ?? loadSmartConnectionsCorpus;
   const embeddingServiceFactory =
-    deps.embeddingServiceFactory ?? ((modelKey: string) => new EmbeddingService({ modelKey }));
+    deps.embeddingServiceFactory ?? ((modelId: string) => new EmbeddingService({ modelKey: modelId }));
   const searchEngine = deps.searchEngine ?? { findNeighbors, findDuplicates };
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;
 
-  const corpus = await loadCorpus(config.smartEnvPath);
+  const corpus = await loadCorpus(config.smartEnvPath, config.modelKey);
   ensureCorpusIsUsable(corpus);
 
-  const embeddingService = embeddingServiceFactory(config.modelKey);
+  const embeddingService = embeddingServiceFactory(config.modelId);
   await embeddingService.initialize();
 
   const server = createNeuroVaultServer({

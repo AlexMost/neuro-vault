@@ -24,6 +24,7 @@ describe('parseConfig', () => {
       vaultPath,
       smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
       modelKey: 'bge-micro-v2',
+      modelId: 'TaylorAI/bge-micro-v2',
     });
   });
 

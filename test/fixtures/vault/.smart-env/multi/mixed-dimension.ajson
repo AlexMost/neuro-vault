@@ -1,5 +1,1 @@
-{
-  "path": "Folder/note-d.md",
-  "embedding": [1, 0, 0, 0],
-  "blocks": [{ "text": "delta concept" }]
-}
+"smart_sources:Folder/note-d.md": {"path":"Folder/note-d.md","embeddings":{"TaylorAI/bge-micro-v2":{"vec":[1,0,0,0]}},"blocks":{},"class_name":"SmartSource"},

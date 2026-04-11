@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { ServerConfig } from './types.js';
 
 const DEFAULT_MODEL_KEY = 'bge-micro-v2';
+const DEFAULT_MODEL_ID = 'TaylorAI/bge-micro-v2';
 
 function getFlagValue(argv: string[], flag: string): string | undefined {
   const index = argv.indexOf(flag);
@@ -30,5 +31,6 @@ export function parseConfig(argv: string[]): ServerConfig {
     vaultPath: normalizedVaultPath,
     smartEnvPath: path.join(normalizedVaultPath, '.smart-env', 'multi'),
     modelKey: DEFAULT_MODEL_KEY,
+    modelId: DEFAULT_MODEL_ID,
   };
 }
