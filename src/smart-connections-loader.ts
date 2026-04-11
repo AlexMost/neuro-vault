@@ -28,9 +28,7 @@ function toPosixPath(notePath: string) {
     normalized === '.' ||
     normalized.split('/').some((segment) => segment === '..')
   ) {
-    throw new Error(
-      `Smart Connections path must be vault-relative and POSIX-like: ${notePath}`,
-    );
+    throw new Error(`Smart Connections path must be vault-relative and POSIX-like: ${notePath}`);
   }
 
   return normalized.replace(/^\.\//, '');
@@ -126,9 +124,7 @@ export function parseAjsonContent(content: string): AjsonEntry[] {
     try {
       value = JSON.parse(jsonStr) as Record<string, unknown>;
     } catch (error) {
-      throw new Error(
-        `Failed to parse JSON value for key "${key}": ${(error as Error).message}`,
-      );
+      throw new Error(`Failed to parse JSON value for key "${key}": ${(error as Error).message}`);
     }
 
     entries.push({ key, value });
@@ -137,10 +133,7 @@ export function parseAjsonContent(content: string): AjsonEntry[] {
   return entries;
 }
 
-function findEmbeddingVector(
-  embeddings: unknown,
-  modelKey: string,
-): number[] | null {
+function findEmbeddingVector(embeddings: unknown, modelKey: string): number[] | null {
   if (!embeddings || typeof embeddings !== 'object' || Array.isArray(embeddings)) {
     return null;
   }
@@ -201,9 +194,7 @@ function parseSmartSourceEntry(
   const value = entry.value;
 
   const notePath =
-    typeof value.path === 'string' && value.path.trim() !== ''
-      ? value.path.trim()
-      : null;
+    typeof value.path === 'string' && value.path.trim() !== '' ? value.path.trim() : null;
 
   if (!notePath) {
     throw new Error(`Smart Connections file ${filePath} is missing a usable note path`);

@@ -207,7 +207,8 @@ export async function startNeuroVaultServer(
 ): Promise<void> {
   const loadCorpus = deps.loadCorpus ?? loadSmartConnectionsCorpus;
   const embeddingServiceFactory =
-    deps.embeddingServiceFactory ?? ((modelId: string) => new EmbeddingService({ modelKey: modelId }));
+    deps.embeddingServiceFactory ??
+    ((modelId: string) => new EmbeddingService({ modelKey: modelId }));
   const searchEngine = deps.searchEngine ?? { findNeighbors, findDuplicates };
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;

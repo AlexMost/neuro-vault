@@ -28,8 +28,7 @@ export class EmbeddingService implements EmbeddingProvider {
 
   constructor(options: EmbeddingServiceOptions = {}) {
     this.modelKey = options.modelKey ?? DEFAULT_MODEL_KEY;
-    this.pipelineFactory =
-      options.pipelineFactory ?? (pipeline as unknown as PipelineFactory);
+    this.pipelineFactory = options.pipelineFactory ?? (pipeline as unknown as PipelineFactory);
   }
 
   async initialize(): Promise<void> {

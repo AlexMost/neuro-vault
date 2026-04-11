@@ -191,7 +191,14 @@ describe('loadSmartConnectionsCorpus', () => {
         {
           path: 'Folder/note-a.md',
           embedding: [1, 0, 0],
-          blocks: [{ key: 'Folder/note-a.md#alpha', heading: '#alpha', lines: [1, 3] as [number, number], embedding: [] }],
+          blocks: [
+            {
+              key: 'Folder/note-a.md#alpha',
+              heading: '#alpha',
+              lines: [1, 3] as [number, number],
+              embedding: [],
+            },
+          ],
         },
       ],
       [
@@ -199,7 +206,14 @@ describe('loadSmartConnectionsCorpus', () => {
         {
           path: 'Folder/note-d.md',
           embedding: [0, 1, 0, 0],
-          blocks: [{ key: 'Folder/note-d.md#delta', heading: '#delta', lines: [1, 3] as [number, number], embedding: [] }],
+          blocks: [
+            {
+              key: 'Folder/note-d.md#delta',
+              heading: '#delta',
+              lines: [1, 3] as [number, number],
+              embedding: [],
+            },
+          ],
         },
       ],
     ]);

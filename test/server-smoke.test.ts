@@ -42,7 +42,14 @@ describe('Neuro Vault MCP server bootstrap', () => {
           {
             path: 'Folder/note-a.md',
             embedding: [1, 0, 0],
-            blocks: [{ key: 'Folder/note-a.md#alpha', heading: '#alpha', lines: [1, 3] as [number, number], embedding: [] }],
+            blocks: [
+              {
+                key: 'Folder/note-a.md#alpha',
+                heading: '#alpha',
+                lines: [1, 3] as [number, number],
+                embedding: [],
+              },
+            ],
           },
         ],
       ]),
