@@ -1,7 +1,7 @@
 {
   "name": "neuro-vault-mcp",
   "version": "1.0.0",
-  "description": "",
+  "description": "MCP server for semantic search over Obsidian vaults with Smart Connections data.",
   "homepage": "https://github.com/AlexMost/neuro-vault#readme",
   "bugs": {
     "url": "https://github.com/AlexMost/neuro-vault/issues"
@@ -11,6 +11,14 @@
     "url": "git+https://github.com/AlexMost/neuro-vault.git"
   },
   "license": "ISC",
+  "keywords": [
+    "mcp",
+    "obsidian",
+    "smart-connections",
+    "semantic-search",
+    "stdio",
+    "transformers"
+  ],
   "author": "",
   "type": "module",
   "bin": {
@@ -29,7 +37,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/cli.ts",
-    "lint": "eslint .",
+    "lint": "eslint . --rule no-undef:off",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "test": "vitest run"
