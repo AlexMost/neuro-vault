@@ -44,12 +44,12 @@ describe('EmbeddingService', () => {
     const embedding = await service.embed('semantic query');
 
     expect(pipelineFactory).toHaveBeenCalledTimes(1);
-    expect(pipelineFactory).toHaveBeenCalledWith('feature-extraction', 'bge-micro-v2', {
+    expect(pipelineFactory).toHaveBeenCalledWith('feature-extraction', 'bge-micro-v2');
+    expect(mockPipeline).toHaveBeenCalledTimes(1);
+    expect(mockPipeline).toHaveBeenCalledWith('semantic query', {
       pooling: 'mean',
       normalize: true,
     });
-    expect(mockPipeline).toHaveBeenCalledTimes(1);
-    expect(mockPipeline).toHaveBeenCalledWith('semantic query');
     expect(embedding).toEqual([0.25, 0.75]);
   });
 

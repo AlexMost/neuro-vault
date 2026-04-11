@@ -5,35 +5,31 @@ import type { EmbeddingProvider } from './types.js';
 const DEFAULT_MODEL_KEY = 'bge-micro-v2';
 const EMBEDDING_TASK = 'feature-extraction';
 
-type EmbeddingPipeline = (text: string) => Promise<unknown>;
+type RawPipeline = (
+  text: string,
+  options: { pooling: 'mean'; normalize: true },
+) => Promise<unknown>;
 
-type EmbeddingPipelineFactory = (
-  task: string,
-  model: string,
-  options: {
-    pooling: 'mean';
-    normalize: true;
-  },
-) => Promise<EmbeddingPipeline>;
+type PipelineFactory = (task: string, model: string) => Promise<RawPipeline>;
 
 export interface EmbeddingServiceOptions {
   modelKey?: string;
-  pipelineFactory?: EmbeddingPipelineFactory;
+  pipelineFactory?: PipelineFactory;
 }
 
 export class EmbeddingService implements EmbeddingProvider {
   private readonly modelKey: string;
 
-  private readonly pipelineFactory: EmbeddingPipelineFactory;
+  private readonly pipelineFactory: PipelineFactory;
 
-  private pipeline?: EmbeddingPipeline;
+  private pipeline?: RawPipeline;
 
   private initialization: Promise<void> | null = null;
 
   constructor(options: EmbeddingServiceOptions = {}) {
     this.modelKey = options.modelKey ?? DEFAULT_MODEL_KEY;
     this.pipelineFactory =
-      options.pipelineFactory ?? (pipeline as unknown as EmbeddingPipelineFactory);
+      options.pipelineFactory ?? (pipeline as unknown as PipelineFactory);
   }
 
   async initialize(): Promise<void> {
@@ -47,19 +43,20 @@ export class EmbeddingService implements EmbeddingProvider {
     }
 
     const embeddingPipeline = await this.getPipeline();
-    return this.normalizeEmbedding(await embeddingPipeline(normalizedText));
+    const result = await embeddingPipeline(normalizedText, {
+      pooling: 'mean',
+      normalize: true,
+    });
+    return this.normalizeEmbedding(result);
   }
 
-  private async getPipeline(): Promise<EmbeddingPipeline> {
+  private async getPipeline(): Promise<RawPipeline> {
     if (this.pipeline) {
       return this.pipeline;
     }
 
     if (!this.initialization) {
-      this.initialization = this.pipelineFactory(EMBEDDING_TASK, this.modelKey, {
-        pooling: 'mean',
-        normalize: true,
-      })
+      this.initialization = this.pipelineFactory(EMBEDDING_TASK, this.modelKey)
         .then((embeddingPipeline) => {
           this.pipeline = embeddingPipeline;
         })
