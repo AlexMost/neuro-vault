@@ -21,7 +21,20 @@ export interface SmartConnectionsCorpusStats {
 }
 
 function toPosixPath(notePath: string) {
-  return notePath.replace(/\\/g, '/').replace(/^\.\//, '');
+  const normalized = path.posix.normalize(notePath.trim().replace(/\\/g, '/'));
+
+  if (
+    path.posix.isAbsolute(normalized) ||
+    /^[A-Za-z]:\//.test(normalized) ||
+    normalized === '.' ||
+    normalized.split('/').some((segment) => segment === '..')
+  ) {
+    throw new Error(
+      `Smart Connections path must be vault-relative and POSIX-like: ${notePath}`,
+    );
+  }
+
+  return normalized.replace(/^\.\//, '');
 }
 
 function validateBlocks(blocksValue: unknown, filePath: string): SmartBlock[] {

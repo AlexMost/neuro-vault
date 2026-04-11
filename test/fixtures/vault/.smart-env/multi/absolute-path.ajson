@@ -1,0 +1,5 @@
+{
+  "path": "/tmp/vault/Folder/absolute-note.md",
+  "embedding": [1, 0, 0],
+  "blocks": [{ "text": "absolute path should be rejected" }]
+}

@@ -187,4 +187,21 @@ describe('loadSmartConnectionsCorpus', () => {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('fails fast when a note path is absolute instead of vault-relative', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+      'absolute-path.ajson',
+    ]);
+
+    try {
+      await expect(loadSmartConnectionsCorpus(smartEnvPath)).rejects.toThrow(
+        /vault-relative and POSIX-like/i,
+      );
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
 });
