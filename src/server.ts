@@ -216,7 +216,6 @@ export async function startNeuroVaultServer(
   ensureCorpusIsUsable(corpus);
 
   const embeddingService = embeddingServiceFactory(config.modelId);
-  await embeddingService.initialize();
 
   const server = createNeuroVaultServer({
     loader: corpus,
@@ -228,4 +227,8 @@ export async function startNeuroVaultServer(
   });
 
   await server.connect(transportFactory());
+
+  embeddingService.initialize().catch(() => {
+    /* model will be loaded lazily on first search if pre-warm fails */
+  });
 }

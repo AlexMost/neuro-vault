@@ -80,7 +80,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
       });
       expect(loadCorpus).toHaveBeenCalledWith(smartEnvPath, 'bge-micro-v2');
       expect(embeddingServiceFactory).toHaveBeenCalledWith('TaylorAI/bge-micro-v2');
-      expect(initialize).toHaveBeenCalledTimes(1);
+      await vi.waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
       expect(toolHandlersFactory).toHaveBeenCalledTimes(1);
       expect(server.registerTool).toHaveBeenCalledTimes(4);
       expect(server.registeredToolNames).toEqual([
