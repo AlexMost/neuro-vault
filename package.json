@@ -40,7 +40,13 @@
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
-    "test": "vitest run"
+    "format:changelog": "prettier --write CHANGELOG.md",
+    "test": "vitest run",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/cli.js --vault",
+    "prerelease": "npm run build && npm run test && npm run lint && npm run format",
+    "release": "commit-and-tag-version",
+    "release:dry-run": "commit-and-tag-version --dry-run",
+    "prepublishOnly": "npm run build && npm run test && npm run lint && npm run format"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.1",
@@ -51,12 +57,20 @@
     "@types/node": "^22.15.18",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
+    "commit-and-tag-version": "^12.6.1",
     "eslint": "^9.25.0",
     "prettier": "^3.5.3",
     "tsup": "^8.5.0",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
     "vitest": "^3.1.2"
+  },
+  "commit-and-tag-version": {
+    "tagPrefix": "v",
+    "releaseCommitMessageFormat": "chore(release): {{currentTag}}",
+    "scripts": {
+      "postchangelog": "npm run format:changelog"
+    }
   },
   "packageManager": "npm@10.9.2"
 }
