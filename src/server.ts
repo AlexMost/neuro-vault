@@ -78,11 +78,6 @@ function defaultTransportFactory(): StdioServerTransport {
 }
 
 function toToolResponse(value: unknown): ToolResponse {
-  const structuredContent =
-    value !== null && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : { results: value };
-
   return {
     content: [
       {
@@ -90,7 +85,6 @@ function toToolResponse(value: unknown): ToolResponse {
         text: JSON.stringify(value, null, 2),
       },
     ] satisfies ToolContentBlock[],
-    structuredContent,
   };
 }
 

@@ -14,7 +14,6 @@ export interface SmartSource {
 export interface SearchResult {
   path: string;
   similarity: number;
-  blocks: SmartBlock[];
 }
 
 export interface DuplicatePair {

@@ -85,7 +85,6 @@ function toSearchResults(
       results.push({
         path: source.path,
         similarity,
-        blocks: source.blocks,
       });
     }
   }
