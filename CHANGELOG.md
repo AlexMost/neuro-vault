@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.2.0](https://github.com/AlexMost/neuro-vault/compare/v1.1.1...v1.2.0) (2026-04-12)
+
+### Features
+
+- use yargs for CLI arg parsing with --help support ([a6e0ae2](https://github.com/AlexMost/neuro-vault/commit/a6e0ae2d53371d5ee9525726b289c5332ac4d706))
+
 ## [1.1.1](https://github.com/AlexMost/neuro-vault/compare/v1.1.0...v1.1.1) (2026-04-12)
 
 ### Bug Fixes
