@@ -79,7 +79,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         transportFactory: vi.fn().mockReturnValue({}),
       });
 
-      expect(parseConfig(['node', 'cli.js', '--vault', vaultPath])).toEqual({
+      await expect(parseConfig(['node', 'cli.js', '--vault', vaultPath])).resolves.toEqual({
         vaultPath,
         smartEnvPath,
         modelKey: 'bge-micro-v2',

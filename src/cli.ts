@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { parseConfig } from './config.js';
 import { startNeuroVaultServer, type NeuroVaultStartupDependencies } from './server.js';
@@ -9,7 +10,7 @@ export async function main(
   argv: string[] = process.argv,
   deps: NeuroVaultStartupDependencies = {},
 ): Promise<void> {
-  const config = parseConfig(argv);
+  const config = await parseConfig(argv);
   await startNeuroVaultServer(config, deps);
 }
 
@@ -23,10 +24,17 @@ async function run(): Promise<void> {
   }
 }
 
-const isEntrypoint = process.argv[1]
-  ? import.meta.url === pathToFileURL(process.argv[1]).href
-  : false;
+function checkIsEntrypoint(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    const thisFile = fileURLToPath(import.meta.url);
+    const invokedFile = realpathSync(process.argv[1]);
+    return thisFile === invokedFile;
+  } catch {
+    return false;
+  }
+}
 
-if (isEntrypoint) {
+if (checkIsEntrypoint()) {
   void run();
 }
