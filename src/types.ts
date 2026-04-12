@@ -11,9 +11,15 @@ export interface SmartSource {
   blocks: SmartBlock[];
 }
 
+export interface SearchResultBlock {
+  heading: string;
+  lines: [number, number];
+}
+
 export interface SearchResult {
   path: string;
   similarity: number;
+  blocks: SearchResultBlock[];
 }
 
 export interface DuplicatePair {

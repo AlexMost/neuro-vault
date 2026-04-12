@@ -1,5 +1,7 @@
 import type { DuplicatePair, SearchResult, SmartSource } from './types.js';
 
+const MAX_BLOCKS_PER_RESULT = 5;
+
 function validateVector(vector: number[], label: string): void {
   if (vector.length === 0) {
     throw new Error(`${label} must not be empty`);
@@ -85,6 +87,10 @@ function toSearchResults(
       results.push({
         path: source.path,
         similarity,
+        blocks: source.blocks.slice(0, MAX_BLOCKS_PER_RESULT).map(({ heading, lines }) => ({
+          heading,
+          lines,
+        })),
       });
     }
   }
