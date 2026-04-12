@@ -1,3 +1,5 @@
+import { createRequire } from 'node:module';
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -18,8 +20,11 @@ import type {
   ToolHandlers,
 } from './types.js';
 
-const SERVER_NAME = 'neuro-vault-mcp';
-const SERVER_VERSION = '1.0.0';
+const require = createRequire(import.meta.url);
+const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json') as {
+  name: string;
+  version: string;
+};
 
 const searchNotesSchema = z.object({
   query: z.string(),
