@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.2.1](https://github.com/AlexMost/neuro-vault/compare/v1.2.0...v1.2.1) (2026-04-12)
+
+### Bug Fixes
+
+- read server version from package.json instead of hardcoding ([ca4e809](https://github.com/AlexMost/neuro-vault/commit/ca4e809007b29b8eab560f080dc21dddf923ea4b))
+
 ## [1.2.0](https://github.com/AlexMost/neuro-vault/compare/v1.1.1...v1.2.0) (2026-04-12)
 
 ### Features
