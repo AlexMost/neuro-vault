@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.1.1](https://github.com/AlexMost/neuro-vault/compare/v1.1.0...v1.1.1) (2026-04-12)
+
+### Bug Fixes
+
+- return top 5 blocks per result without embeddings ([52daa42](https://github.com/AlexMost/neuro-vault/commit/52daa422afc11586d0e20d221cbda16c1b5d6745))
+- strip embeddings and blocks from search results ([e26f8b6](https://github.com/AlexMost/neuro-vault/commit/e26f8b667a0b616acfc7898c01411b3e760e31d8))
+
 ## 1.1.0 (2026-04-11)
 
 ### Features
