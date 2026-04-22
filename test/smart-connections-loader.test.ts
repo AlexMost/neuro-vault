@@ -63,6 +63,16 @@ describe('parseAjsonContent', () => {
     const entries = parseAjsonContent(content);
     expect(entries).toHaveLength(1);
   });
+
+  it('skips entries with null values', () => {
+    const content =
+      '"smart_sources:note.md": {"path":"note.md"},"smart_blocks:note.md#heading": null,"smart_blocks:note.md#other": {"key":"note.md#other"},';
+    const entries = parseAjsonContent(content);
+
+    expect(entries).toHaveLength(2);
+    expect(entries[0]!.key).toBe('smart_sources:note.md');
+    expect(entries[1]!.key).toBe('smart_blocks:note.md#other');
+  });
 });
 
 describe('loadSmartConnectionsCorpus', () => {

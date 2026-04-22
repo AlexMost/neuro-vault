@@ -82,6 +82,11 @@ export function parseAjsonContent(content: string): AjsonEntry[] {
 
     while (pos < len && (content[pos] === ' ' || content[pos] === '\t')) pos++;
 
+    if (pos + 4 <= len && content.slice(pos, pos + 4) === 'null') {
+      pos += 4;
+      continue;
+    }
+
     if (pos >= len || content[pos] !== '{') {
       throw new Error(`Expected opening brace for key "${key}" in AJSON content`);
     }

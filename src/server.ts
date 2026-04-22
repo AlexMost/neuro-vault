@@ -82,9 +82,9 @@ When looking for information:
 1. Extract the core nouns and concepts from the user's message — strip away filler words, verbs, and context. For example, from "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build" — not the full sentence.
 2. Start with several SHORT keyword queries rather than one long phrase. Search each key concept separately and in small combinations. For example, try: "LLM", "agents", "LLM agents", "AI projects".
 3. Try synonyms and reformulations — the note may use different wording than the query.
-3. The vault may contain notes in multiple languages. Try queries in each language the user speaks (e.g. both Ukrainian and English).
-4. If a search returns no results, lower the threshold to 0.3 before giving up.
-5. Once you find a relevant note, use get_similar_notes to discover related content.
+4. The vault may contain notes in multiple languages. Try queries in each language the user speaks (e.g. both Ukrainian and English).
+5. If a search returns no results, lower the threshold to 0.3 before giving up.
+6. Once you find a relevant note, use get_similar_notes to discover related content.
 
 ## Reading results
 
