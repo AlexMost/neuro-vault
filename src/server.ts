@@ -71,11 +71,36 @@ export interface NeuroVaultStartupDependencies {
   transportFactory?: () => StdioServerTransport;
 }
 
+const SERVER_INSTRUCTIONS = `\
+This server provides semantic search over an Obsidian vault using Smart Connections embeddings.
+
+## Search strategy
+
+Semantic search works best with short, focused queries (1-4 words). Long sentences or full questions dilute the signal and often return no results.
+
+When looking for information:
+1. Extract the core nouns and concepts from the user's message — strip away filler words, verbs, and context. For example, from "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build" — not the full sentence.
+2. Start with several SHORT keyword queries rather than one long phrase. Search each key concept separately and in small combinations. For example, try: "LLM", "agents", "LLM agents", "AI projects".
+3. Try synonyms and reformulations — the note may use different wording than the query.
+3. The vault may contain notes in multiple languages. Try queries in each language the user speaks (e.g. both Ukrainian and English).
+4. If a search returns no results, lower the threshold to 0.3 before giving up.
+5. Once you find a relevant note, use get_similar_notes to discover related content.
+
+## Reading results
+
+Search results include block headings and line ranges — use these as pointers to read specific sections of the matched notes rather than reading entire files.
+`;
+
 function defaultServerFactory(): ToolServer {
-  return new McpServer({
-    name: SERVER_NAME,
-    version: SERVER_VERSION,
-  });
+  return new McpServer(
+    {
+      name: SERVER_NAME,
+      version: SERVER_VERSION,
+    },
+    {
+      instructions: SERVER_INSTRUCTIONS,
+    },
+  );
 }
 
 function defaultTransportFactory(): StdioServerTransport {
@@ -156,7 +181,8 @@ export function createNeuroVaultServer({
     'search_notes',
     {
       title: 'Search Notes',
-      description: 'Search Smart Connections notes by semantic similarity.',
+      description:
+        'Search notes by semantic similarity. Use short keyword queries (1-4 words), not full sentences. Make multiple calls with different keywords, synonyms, and languages to get comprehensive results. Lower the threshold (e.g. 0.3) if no results are found.',
       inputSchema: searchNotesSchema,
     },
     async (args) => invokeTool(() => handlers.searchNotes(args)),
@@ -166,7 +192,8 @@ export function createNeuroVaultServer({
     'get_similar_notes',
     {
       title: 'Get Similar Notes',
-      description: 'Find notes similar to a vault-relative note path.',
+      description:
+        'Find notes similar to a given note. Use this after search_notes finds a relevant note — it discovers related content without needing a text query. Pass a vault-relative POSIX path (e.g. "Folder/note.md").',
       inputSchema: getSimilarNotesSchema,
     },
     async (args) => invokeTool(() => handlers.getSimilarNotes(args)),
