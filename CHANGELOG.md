@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.3.0](https://github.com/AlexMost/neuro-vault/compare/v1.2.1...v1.3.0) (2026-04-22)
+
+### Features
+
+- added instructions how to use this MCP + improved descriptions ([27df75e](https://github.com/AlexMost/neuro-vault/commit/27df75ebcbc44d8963b2f18aa430d8f8c5e839e5))
+
 ## [1.2.1](https://github.com/AlexMost/neuro-vault/compare/v1.2.0...v1.2.1) (2026-04-12)
 
 ### Bug Fixes
