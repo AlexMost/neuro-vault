@@ -99,8 +99,8 @@ When vector search returns no results, the server automatically retries with a l
 If still nothing — search the vault files yourself using your own tools.
 
 ### 5. Reading results
-- \`results\` — notes ranked by embedding similarity, with block headings and line ranges
-- \`blockResults\` — (deep mode) individual note sections ranked by relevance
+- \`results\` — notes ranked by embedding similarity
+- \`blockResults\` — sections ranked by relevance (all modes: scoped to matched notes in quick, all sources in deep)
 
 Use block headings and line ranges as pointers to read specific sections rather than entire files.
 After finding a relevant note, use get_similar_notes to discover related content.
