@@ -75,7 +75,7 @@ export interface NeuroVaultStartupDependencies {
 }
 
 const SERVER_INSTRUCTIONS = `\
-Semantic search over an Obsidian vault. Only use when the question involves the user's personal notes, projects, or ideas.
+Semantic search over an Obsidian vault. Use when the user's vault may contain relevant context — their notes, projects, plans, tasks, learning materials, or ideas. This includes both direct requests ("find my notes on X") and questions where vault context would improve the answer ("what's on my agenda?", "what was I working on?").
 
 ## How to search
 
