@@ -11,15 +11,16 @@ export interface SmartSource {
   blocks: SmartBlock[];
 }
 
-export interface SearchResultBlock {
+export interface BlockSearchResult {
+  path: string;
   heading: string;
   lines: [number, number];
+  similarity: number;
 }
 
 export interface SearchResult {
   path: string;
   similarity: number;
-  blocks: SearchResultBlock[];
 }
 
 export interface DuplicatePair {
@@ -48,13 +49,24 @@ export interface SearchEngine {
     limit?: number;
     excludePath?: string;
   }): SearchResult[];
+  findBlockNeighbors(args: {
+    queryVector: number[];
+    sources: Iterable<SmartSource>;
+    threshold: number;
+    limit?: number;
+  }): BlockSearchResult[];
   findDuplicates(args: { sources: Iterable<SmartSource>; threshold: number }): DuplicatePair[];
 }
 
+export type SearchMode = 'quick' | 'deep';
+
 export interface SearchNotesInput {
   query: string;
+  mode?: SearchMode;
   limit?: number;
   threshold?: number;
+  expansion?: boolean;
+  expansion_limit?: number;
 }
 
 export interface GetSimilarNotesInput {
@@ -86,7 +98,7 @@ export interface ToolHandlerDependencies {
 export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENCY_ERROR';
 
 export interface ToolHandlers {
-  searchNotes(input: SearchNotesInput): Promise<SearchResult[]>;
+  searchNotes(input: SearchNotesInput): Promise<import('./retrieval-policy.js').RetrievalOutput>;
   getSimilarNotes(input: GetSimilarNotesInput): Promise<SearchResult[]>;
   findDuplicates(input?: FindDuplicatesInput): Promise<DuplicatePair[]>;
   getStats(): Promise<ToolStats>;

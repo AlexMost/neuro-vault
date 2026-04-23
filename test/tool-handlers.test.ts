@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import { loadSmartConnectionsCorpus } from '../src/smart-connections-loader.js';
-import { findDuplicates, findNeighbors } from '../src/search-engine.js';
+import { findBlockNeighbors, findDuplicates, findNeighbors } from '../src/search-engine.js';
 import { createToolHandlers, ToolHandlerError } from '../src/tool-handlers.js';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
@@ -23,7 +23,7 @@ async function makeVaultFixture(fileNames: string[]) {
     await fs.copyFile(path.join(fixturesRoot, fileName), path.join(smartEnvPath, fileName));
   }
 
-  return { tempRoot, vaultPath, smartEnvPath };
+  return { tempRoot, smartEnvPath };
 }
 
 const MODEL_KEY = 'bge-micro-v2';
@@ -77,24 +77,24 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed,
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 
-      const results = await handlers.searchNotes({
+      const result = await handlers.searchNotes({
         query: '  semantic query  ',
         threshold: 0,
       });
 
       expect(embed).toHaveBeenCalledTimes(1);
       expect(embed).toHaveBeenCalledWith('semantic query');
-      expect(results.map((result) => result.path)).toEqual([
+      expect(result.results.map((r) => r.path)).toEqual([
         'Folder/note-a.md',
         'Folder/note-b.md',
         'Folder/note-c.md',
       ]);
-      expect(results[0]!.similarity).toBeGreaterThan(results[1]!.similarity);
-      expect(results[1]!.similarity).toBeGreaterThan(results[2]!.similarity);
+      expect(result.results[0]!.similarity).toBeGreaterThan(result.results[1]!.similarity);
+      expect(result.results[1]!.similarity).toBeGreaterThan(result.results[2]!.similarity);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -116,7 +116,7 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed,
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 
@@ -145,7 +145,7 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed,
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 
@@ -175,7 +175,7 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed: vi.fn(),
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 
@@ -204,7 +204,7 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed: vi.fn(),
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 
@@ -238,7 +238,7 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed: vi.fn(),
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 
@@ -271,7 +271,7 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed: vi.fn(),
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 
@@ -300,7 +300,7 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed: vi.fn(),
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 
@@ -329,7 +329,7 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed: vi.fn(),
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 
@@ -364,7 +364,7 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed: vi.fn(),
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 
@@ -396,7 +396,7 @@ describe('createToolHandlers', () => {
           initialize: vi.fn(),
           embed: vi.fn(),
         },
-        searchEngine: { findNeighbors, findDuplicates },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
 

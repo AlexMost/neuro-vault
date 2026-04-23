@@ -19,7 +19,9 @@ function createFakeServer() {
     registeredToolNames,
     registerTool: vi.fn((name: string) => {
       registeredToolNames.push(name);
-      return {};
+      return {} as ReturnType<
+        import('@modelcontextprotocol/sdk/server/mcp.js').McpServer['registerTool']
+      >;
     }),
     connect: vi.fn().mockResolvedValue(undefined),
   };
@@ -59,7 +61,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
       embed: vi.fn(),
     });
     const toolHandlersFactory = vi.fn().mockReturnValue({
-      searchNotes: vi.fn().mockResolvedValue([]),
+      searchNotes: vi.fn().mockResolvedValue({ results: [] }),
       getSimilarNotes: vi.fn().mockResolvedValue([]),
       findDuplicates: vi.fn().mockResolvedValue([]),
       getStats: vi.fn().mockResolvedValue({

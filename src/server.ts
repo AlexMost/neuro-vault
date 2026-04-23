@@ -10,7 +10,7 @@ import {
   loadSmartConnectionsCorpus,
   type SmartConnectionsCorpus,
 } from './smart-connections-loader.js';
-import { findDuplicates, findNeighbors } from './search-engine.js';
+import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
 import { createToolHandlers, ToolHandlerError } from './tool-handlers.js';
 import type {
   EmbeddingProvider,
@@ -28,8 +28,11 @@ const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json'
 
 const searchNotesSchema = z.object({
   query: z.string(),
+  mode: z.enum(['quick', 'deep']).optional(),
   limit: z.number().int().positive().optional(),
   threshold: z.number().min(0).max(1).optional(),
+  expansion: z.boolean().optional(),
+  expansion_limit: z.number().int().positive().optional(),
 });
 
 const getSimilarNotesSchema = z.object({
@@ -72,23 +75,26 @@ export interface NeuroVaultStartupDependencies {
 }
 
 const SERVER_INSTRUCTIONS = `\
-This server provides semantic search over an Obsidian vault using Smart Connections embeddings.
+Semantic search over an Obsidian vault. Use when the user's vault may contain relevant context — their notes, projects, plans, tasks, learning materials, or ideas. This includes both direct requests ("find my notes on X") and questions where vault context would improve the answer ("what's on my agenda?", "what was I working on?").
 
-## Search strategy
+## How to search
 
-Semantic search works best with short, focused queries (1-4 words). Long sentences or full questions dilute the signal and often return no results.
-
-When looking for information:
-1. Extract the core nouns and concepts from the user's message — strip away filler words, verbs, and context. For example, from "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build" — not the full sentence.
-2. Start with several SHORT keyword queries rather than one long phrase. Search each key concept separately and in small combinations. For example, try: "LLM", "agents", "LLM agents", "AI projects".
+### 1. Write the query
+1. Extract the core nouns and concepts from the user's message — strip filler words and verbs. From "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build".
+2. Search each concept separately and in small combinations: "LLM", "agents", "LLM agents", "AI projects".
 3. Try synonyms and reformulations — the note may use different wording than the query.
-4. The vault may contain notes in multiple languages. Try queries in each language the user speaks (e.g. both Ukrainian and English).
+4. The vault may contain notes in multiple languages. Search in the language of the user's message + English.
 5. If a search returns no results, lower the threshold to 0.3 before giving up.
-6. Once you find a relevant note, use get_similar_notes to discover related content.
 
-## Reading results
+### 2. Choose mode
+- **quick** (default) — returns up to 3 notes, no expansion. Use for specific lookups.
+- **deep** — returns up to 8 notes + expands via similar notes. Use for broad topics.
+- Pass \`expansion: true\` in quick mode if you want expansion there too.
 
-Search results include block headings and line ranges — use these as pointers to read specific sections of the matched notes rather than reading entire files.
+### 3. Use the results
+- \`results\` — notes ranked by similarity; read the file by path
+- \`blockResults\` — sections ranked by relevance; use heading + line range to jump to the relevant part
+- After finding a relevant note, call get_similar_notes to discover related content
 `;
 
 function defaultServerFactory(): ToolServer {
@@ -182,7 +188,7 @@ export function createNeuroVaultServer({
     {
       title: 'Search Notes',
       description:
-        'Search notes by semantic similarity. Use short keyword queries (1-4 words), not full sentences. Make multiple calls with different keywords, synonyms, and languages to get comprehensive results. Lower the threshold (e.g. 0.3) if no results are found.',
+        'Search notes by semantic similarity. Pass a short keyword query (1-4 words). Choose mode: "quick" for specific lookups (1-2 notes), "deep" for broad topic overview with block-level search and expansion. Call multiple times with different queries for synonyms or multi-language searches.',
       inputSchema: searchNotesSchema,
     },
     async (args) => invokeTool(() => handlers.searchNotes(args)),
@@ -235,7 +241,7 @@ export async function startNeuroVaultServer(
   const embeddingServiceFactory =
     deps.embeddingServiceFactory ??
     ((modelId: string) => new EmbeddingService({ modelKey: modelId }));
-  const searchEngine = deps.searchEngine ?? { findNeighbors, findDuplicates };
+  const searchEngine = deps.searchEngine ?? { findNeighbors, findBlockNeighbors, findDuplicates };
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;
 

@@ -82,7 +82,7 @@ export class EmbeddingService implements EmbeddingProvider {
     }
 
     if (ArrayBuffer.isView(embedding)) {
-      return Array.from(embedding as ArrayLike<unknown>, (value, index) =>
+      return Array.from(embedding as unknown as ArrayLike<unknown>, (value, index) =>
         this.normalizeEmbeddingValue(value, `embedding[${index}]`),
       );
     }

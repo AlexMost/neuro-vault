@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import { executeRetrieval, type RetrievalOutput } from './retrieval-policy.js';
 import type {
   DuplicatePair,
   FindDuplicatesInput,
@@ -86,7 +87,7 @@ function normalizeNotePath(notePath: string): string {
 function normalizeQuery(query: string): string {
   const normalized = query.trim();
 
-  if (!normalized) {
+  if (normalized.length === 0) {
     throw new ToolHandlerError('INVALID_ARGUMENT', 'query must not be empty', {
       details: { field: 'query' },
     });
@@ -199,30 +200,29 @@ export function createToolHandlers({
   modelKey,
 }: ToolHandlerDependencies): ToolHandlers {
   return {
-    async searchNotes(input: SearchNotesInput): Promise<SearchResult[]> {
+    async searchNotes(input: SearchNotesInput): Promise<RetrievalOutput> {
       const query = normalizeQuery(input.query);
-      const limit = readPositiveInteger(input.limit, DEFAULT_SEARCH_LIMIT, 'limit');
-      const threshold = readThreshold(input.threshold, DEFAULT_SEARCH_THRESHOLD, 'threshold');
-
-      let queryVector: number[];
-
-      try {
-        queryVector = await embeddingProvider.embed(query);
-      } catch (error) {
-        throw wrapDependencyError(error, 'Failed to embed query text', {
-          modelKey,
-          operation: 'search_notes',
-        });
-      }
+      const mode = input.mode ?? 'quick';
+      const threshold =
+        input.threshold !== undefined
+          ? readThreshold(input.threshold, input.threshold, 'threshold')
+          : undefined;
+      const expansionLimit =
+        input.expansion_limit !== undefined
+          ? readPositiveInteger(input.expansion_limit, 3, 'expansion_limit')
+          : undefined;
 
       try {
-        return toSearchResults(
-          searchEngine,
-          queryVector,
-          loader.sources.values(),
+        return await executeRetrieval({
+          query,
+          mode,
           threshold,
-          limit,
-        );
+          expansion: input.expansion,
+          expansionLimit,
+          sources: loader.sources,
+          embeddingProvider,
+          searchEngine,
+        });
       } catch (error) {
         throw wrapDependencyError(error, 'Failed to search notes', {
           modelKey,

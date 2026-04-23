@@ -1,6 +1,4 @@
-import type { DuplicatePair, SearchResult, SmartSource } from './types.js';
-
-const MAX_BLOCKS_PER_RESULT = 5;
+import type { BlockSearchResult, DuplicatePair, SearchResult, SmartSource } from './types.js';
 
 function validateVector(vector: number[], label: string): void {
   if (vector.length === 0) {
@@ -84,14 +82,7 @@ function toSearchResults(
     const similarity = cosineSimilarity(queryVector, source.embedding);
 
     if (similarity >= threshold) {
-      results.push({
-        path: source.path,
-        similarity,
-        blocks: source.blocks.slice(0, MAX_BLOCKS_PER_RESULT).map(({ heading, lines }) => ({
-          heading,
-          lines,
-        })),
-      });
+      results.push({ path: source.path, similarity });
     }
   }
 
@@ -114,6 +105,54 @@ export function findNeighbors({
   excludePath?: string;
 }): SearchResult[] {
   const results = toSearchResults(queryVector, sources, threshold, excludePath);
+
+  return typeof limit === 'number' ? results.slice(0, limit) : results;
+}
+
+function compareBlockSearchResults(left: BlockSearchResult, right: BlockSearchResult): number {
+  return right.similarity - left.similarity || compareStrings(left.path, right.path);
+}
+
+export function findBlockNeighbors({
+  queryVector,
+  sources,
+  threshold,
+  limit,
+}: {
+  queryVector: number[];
+  sources: Iterable<SmartSource>;
+  threshold: number;
+  limit?: number;
+}): BlockSearchResult[] {
+  const results: BlockSearchResult[] = [];
+
+  for (const source of sources) {
+    for (const block of source.blocks) {
+      if (block.embedding.length === 0) {
+        continue;
+      }
+
+      ensureSameDimensions(
+        queryVector,
+        block.embedding,
+        'Query vector',
+        `Block vector for ${block.key}`,
+      );
+
+      const similarity = cosineSimilarity(queryVector, block.embedding);
+
+      if (similarity >= threshold) {
+        results.push({
+          path: source.path,
+          heading: block.heading,
+          lines: block.lines,
+          similarity,
+        });
+      }
+    }
+  }
+
+  results.sort(compareBlockSearchResults);
 
   return typeof limit === 'number' ? results.slice(0, limit) : results;
 }
