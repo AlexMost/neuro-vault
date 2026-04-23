@@ -84,18 +84,6 @@ function normalizeNotePath(notePath: string): string {
   return normalized;
 }
 
-function normalizeQuery(query: string): string {
-  const normalized = query.trim();
-
-  if (!normalized) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'query must not be empty', {
-      details: { field: 'query' },
-    });
-  }
-
-  return normalized;
-}
-
 function normalizeQueries(query: string | string[]): string[] {
   const raw = Array.isArray(query) ? query : [query];
   const normalized = raw.map((q) => q.trim()).filter((q) => q.length > 0);

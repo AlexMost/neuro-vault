@@ -236,9 +236,9 @@ describe('executeRetrieval', () => {
       });
       const obsidianSearch: TextSearchProvider = {
         isAvailable: vi.fn().mockResolvedValue(true),
-        search: vi.fn().mockResolvedValue([
-          { path: 'note-a.md', matchLine: 'some match', lineNumber: 5 },
-        ]),
+        search: vi
+          .fn()
+          .mockResolvedValue([{ path: 'note-a.md', matchLine: 'some match', lineNumber: 5 }]),
       };
 
       const output = await executeRetrieval({
@@ -268,9 +268,9 @@ describe('executeRetrieval', () => {
       };
       const grepSearch: TextSearchProvider = {
         isAvailable: vi.fn().mockResolvedValue(true),
-        search: vi.fn().mockResolvedValue([
-          { path: 'note-b.md', matchLine: 'grep match', lineNumber: 2 },
-        ]),
+        search: vi
+          .fn()
+          .mockResolvedValue([{ path: 'note-b.md', matchLine: 'grep match', lineNumber: 2 }]),
       };
 
       const output = await executeRetrieval({
@@ -297,9 +297,9 @@ describe('executeRetrieval', () => {
       });
       const grepSearch: TextSearchProvider = {
         isAvailable: vi.fn().mockResolvedValue(true),
-        search: vi.fn().mockResolvedValue([
-          { path: 'note-c.md', matchLine: 'match text', lineNumber: 10 },
-        ]),
+        search: vi
+          .fn()
+          .mockResolvedValue([{ path: 'note-c.md', matchLine: 'match text', lineNumber: 10 }]),
       };
 
       const output = await executeRetrieval({

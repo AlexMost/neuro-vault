@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SmartSource } from '../src/types.js';
-import { cosineSimilarity, findBlockNeighbors, findDuplicates, findNeighbors } from '../src/search-engine.js';
+import {
+  cosineSimilarity,
+  findBlockNeighbors,
+  findDuplicates,
+  findNeighbors,
+} from '../src/search-engine.js';
 
 function makeSource(
   path: string,

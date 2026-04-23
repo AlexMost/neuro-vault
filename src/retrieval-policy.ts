@@ -78,8 +78,6 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
   const limit = modeConfig.limit;
 
-  const sourcesIterable = sources.values();
-
   // Step 1: Multi-query vector search
   const allQueryVectors: Array<{ query: string; vector: number[] }> = [];
   for (const query of queries) {

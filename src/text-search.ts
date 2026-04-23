@@ -26,8 +26,8 @@ export class GrepSearchProvider implements TextSearchProvider {
       stdout = result.stdout;
     } catch (err: unknown) {
       // grep exits with code 1 when there are no matches — that's not an error
-      const execError = err as NodeJS.ErrnoException & { code?: number | string; stdout?: string };
-      if (execError.code === 1) {
+      const execError = err as { code?: unknown; stdout?: string };
+      if (execError.code === 1 || execError.code === '1') {
         return [];
       }
       throw err;
@@ -96,7 +96,11 @@ export class ObsidianCliSearchProvider implements TextSearchProvider {
 
         const afterPath = line.indexOf(':', colonIdx + 1);
         if (afterPath === -1) {
-          results.push({ path: line.slice(0, colonIdx), matchLine: line.slice(colonIdx + 1), lineNumber: 0 });
+          results.push({
+            path: line.slice(0, colonIdx),
+            matchLine: line.slice(colonIdx + 1),
+            lineNumber: 0,
+          });
           continue;
         }
 

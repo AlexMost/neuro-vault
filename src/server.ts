@@ -10,7 +10,7 @@ import {
   loadSmartConnectionsCorpus,
   type SmartConnectionsCorpus,
 } from './smart-connections-loader.js';
-import { findDuplicates, findNeighbors } from './search-engine.js';
+import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
 import { createToolHandlers, ToolHandlerError } from './tool-handlers.js';
 import { GrepSearchProvider, ObsidianCliSearchProvider } from './text-search.js';
 import type {
@@ -263,7 +263,7 @@ export async function startNeuroVaultServer(
   const embeddingServiceFactory =
     deps.embeddingServiceFactory ??
     ((modelId: string) => new EmbeddingService({ modelKey: modelId }));
-  const searchEngine = deps.searchEngine ?? { findNeighbors, findDuplicates };
+  const searchEngine = deps.searchEngine ?? { findNeighbors, findBlockNeighbors, findDuplicates };
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;
 
