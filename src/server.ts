@@ -12,6 +12,7 @@ import {
 } from './smart-connections-loader.js';
 import { findDuplicates, findNeighbors } from './search-engine.js';
 import { createToolHandlers, ToolHandlerError } from './tool-handlers.js';
+import { GrepSearchProvider, ObsidianCliSearchProvider } from './text-search.js';
 import type {
   EmbeddingProvider,
   SearchEngine,
@@ -27,9 +28,12 @@ const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json'
 };
 
 const searchNotesSchema = z.object({
-  query: z.string(),
+  query: z.union([z.string(), z.array(z.string())]),
+  mode: z.enum(['quick', 'deep']).optional(),
   limit: z.number().int().positive().optional(),
   threshold: z.number().min(0).max(1).optional(),
+  expansion: z.boolean().optional(),
+  expansion_limit: z.number().int().positive().optional(),
 });
 
 const getSimilarNotesSchema = z.object({
@@ -58,6 +62,9 @@ export interface NeuroVaultServerDependencies {
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
+  vaultPath: string;
+  obsidianSearch?: import('./types.js').TextSearchProvider;
+  grepSearch?: import('./types.js').TextSearchProvider;
   toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
   serverFactory?: () => ToolServer;
 }
@@ -74,21 +81,36 @@ export interface NeuroVaultStartupDependencies {
 const SERVER_INSTRUCTIONS = `\
 This server provides semantic search over an Obsidian vault using Smart Connections embeddings.
 
-## Search strategy
+## Search protocol
 
-Semantic search works best with short, focused queries (1-4 words). Long sentences or full questions dilute the signal and often return no results.
+Before calling search_notes, determine:
 
-When looking for information:
-1. Extract the core nouns and concepts from the user's message — strip away filler words, verbs, and context. For example, from "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build" — not the full sentence.
-2. Start with several SHORT keyword queries rather than one long phrase. Search each key concept separately and in small combinations. For example, try: "LLM", "agents", "LLM agents", "AI projects".
-3. Try synonyms and reformulations — the note may use different wording than the query.
-4. The vault may contain notes in multiple languages. Try queries in each language the user speaks (e.g. both Ukrainian and English).
-5. If a search returns no results, lower the threshold to 0.3 before giving up.
-6. Once you find a relevant note, use get_similar_notes to discover related content.
+### 1. Choose mode
+- **quick** — specific question, need 1-2 notes ("where is the neuro-vault project?", "show the API task")
+- **deep** — broad topic, need an overview ("everything about embeddings", "all AI project ideas")
 
-## Reading results
+### 2. Rewrite the query
+- Extract 2-4 key concepts (1-4 words each)
+- Remove filler words (remind, find, show)
+- Add synonyms and translations (UA ↔ EN if the user is bilingual)
+- Pass as an array: query: ["vector search", "пошук", "search optimization"]
 
-Search results include block headings and line ranges — use these as pointers to read specific sections of the matched notes rather than reading entire files.
+### 3. Use expansion wisely
+- In deep mode, expansion is on by default — it finds notes related to top results
+- For quick lookups, skip expansion (it's off by default)
+
+### 4. Fallback behavior
+When vector search returns no results, the server automatically:
+1. Retries with a lower similarity threshold
+2. Falls back to full-text search (obsidian-cli if available, then grep)
+
+### 5. Reading results
+- \`results\` — notes ranked by embedding similarity, with block headings and line ranges
+- \`blockResults\` — (deep mode) individual note sections ranked by relevance
+- \`textFallbackResults\` — raw text matches when vector search found nothing
+
+Use block headings and line ranges as pointers to read specific sections rather than entire files.
+After finding a relevant note, use get_similar_notes to discover related content.
 `;
 
 function defaultServerFactory(): ToolServer {
@@ -166,6 +188,9 @@ export function createNeuroVaultServer({
   embeddingProvider,
   searchEngine,
   modelKey,
+  vaultPath,
+  obsidianSearch,
+  grepSearch,
   toolHandlersFactory = createToolHandlers,
   serverFactory = defaultServerFactory,
 }: NeuroVaultServerDependencies): ToolServer {
@@ -175,6 +200,9 @@ export function createNeuroVaultServer({
     embeddingProvider,
     searchEngine,
     modelKey,
+    vaultPath,
+    obsidianSearch,
+    grepSearch,
   });
 
   server.registerTool(
@@ -182,7 +210,7 @@ export function createNeuroVaultServer({
     {
       title: 'Search Notes',
       description:
-        'Search notes by semantic similarity. Use short keyword queries (1-4 words), not full sentences. Make multiple calls with different keywords, synonyms, and languages to get comprehensive results. Lower the threshold (e.g. 0.3) if no results are found.',
+        'Search notes by semantic similarity. Pass query as a string or array of short keyword queries (1-4 words). Choose mode: "quick" for specific lookups (1-2 notes), "deep" for broad topic overview with block-level search and expansion. Supports synonyms and multi-language queries.',
       inputSchema: searchNotesSchema,
     },
     async (args) => invokeTool(() => handlers.searchNotes(args)),
@@ -243,12 +271,17 @@ export async function startNeuroVaultServer(
   ensureCorpusIsUsable(corpus);
 
   const embeddingService = embeddingServiceFactory(config.modelId);
+  const obsidianSearch = new ObsidianCliSearchProvider();
+  const grepSearch = new GrepSearchProvider();
 
   const server = createNeuroVaultServer({
     loader: corpus,
     embeddingProvider: embeddingService,
     searchEngine,
     modelKey: config.modelKey,
+    vaultPath: config.vaultPath,
+    obsidianSearch,
+    grepSearch,
     toolHandlersFactory: deps.toolHandlersFactory,
     serverFactory,
   });

@@ -59,7 +59,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
       embed: vi.fn(),
     });
     const toolHandlersFactory = vi.fn().mockReturnValue({
-      searchNotes: vi.fn().mockResolvedValue([]),
+      searchNotes: vi.fn().mockResolvedValue({ results: [] }),
       getSimilarNotes: vi.fn().mockResolvedValue([]),
       findDuplicates: vi.fn().mockResolvedValue([]),
       getStats: vi.fn().mockResolvedValue({
