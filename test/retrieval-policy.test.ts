@@ -78,8 +78,28 @@ describe('executeRetrieval', () => {
       );
     });
 
-    it('does not call findBlockNeighbors in quick mode', async () => {
-      const searchEngine = makeSearchEngine();
+    it('calls findBlockNeighbors in quick mode when vector results exist', async () => {
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
+      });
+      const embeddingProvider = makeEmbeddingProvider();
+
+      await executeRetrieval({
+        query: 'test query',
+        mode: 'quick',
+        sources,
+        embeddingProvider,
+        searchEngine,
+        vaultPath: '/vault',
+      });
+
+      expect(searchEngine.findBlockNeighbors).toHaveBeenCalled();
+    });
+
+    it('does not call findBlockNeighbors in quick mode when no vector results', async () => {
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi.fn().mockReturnValue([]),
+      });
       const embeddingProvider = makeEmbeddingProvider();
 
       await executeRetrieval({
@@ -403,9 +423,35 @@ describe('executeRetrieval', () => {
       expect(output.blockResults).toEqual(blockResults);
     });
 
-    it('does not return blockResults in quick mode', async () => {
+    it('returns blockResults in quick mode scoped to matched notes', async () => {
       const embeddingProvider = makeEmbeddingProvider();
-      const searchEngine = makeSearchEngine();
+      const blockResults = [makeBlockResult('note-a.md', 0.75)];
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
+        findBlockNeighbors: vi.fn().mockReturnValue(blockResults),
+      });
+
+      const output = await executeRetrieval({
+        query: 'test query',
+        mode: 'quick',
+        sources,
+        embeddingProvider,
+        searchEngine,
+        vaultPath: '/vault',
+      });
+
+      expect(output.blockResults).toBeDefined();
+      expect(output.blockResults).toEqual(blockResults);
+      // block search receives only matched sources, not all sources
+      const blockCall = (searchEngine.findBlockNeighbors as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(blockCall[0]).toMatchObject({ limit: 5 });
+    });
+
+    it('does not return blockResults in quick mode when no vector results', async () => {
+      const embeddingProvider = makeEmbeddingProvider();
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi.fn().mockReturnValue([]),
+      });
 
       const output = await executeRetrieval({
         query: 'test query',

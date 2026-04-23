@@ -11,6 +11,7 @@ import type {
 
 const FALLBACK_THRESHOLD = 0.3;
 const TEXT_SEARCH_LIMIT = 10;
+const QUICK_BLOCK_LIMIT = 5;
 
 interface ModeConfig {
   limit: number;
@@ -85,7 +86,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     });
   }
 
-  // Step 3: Block-level search (deep mode only)
+  // Step 3: Block-level search
   let blockResults: BlockSearchResult[] | undefined;
   if (mode === 'deep') {
     blockResults = searchEngine.findBlockNeighbors({
@@ -93,6 +94,15 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
       sources: sources.values(),
       threshold,
       limit,
+    });
+  } else if (vectorResults.length > 0) {
+    const matchedPaths = new Set(vectorResults.map((r) => r.path));
+    const matchedSources = [...sources.values()].filter((s) => matchedPaths.has(s.path));
+    blockResults = searchEngine.findBlockNeighbors({
+      queryVector,
+      sources: matchedSources,
+      threshold,
+      limit: QUICK_BLOCK_LIMIT,
     });
   }
 
