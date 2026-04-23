@@ -19,7 +19,7 @@ function makeSource(path: string, embedding: number[] = [1, 0]): SmartSource {
 }
 
 function makeSearchResult(path: string, similarity: number): SearchResult {
-  return { path, similarity, blocks: [] };
+  return { path, similarity };
 }
 
 function makeBlockResult(path: string, similarity: number): BlockSearchResult {
