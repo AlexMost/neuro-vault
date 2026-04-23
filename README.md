@@ -1,133 +1,289 @@
 # Neuro Vault MCP
 
-Neuro Vault MCP is a Model Context Protocol server for semantic search over an Obsidian vault that already has Smart Connections embeddings and note data on disk. It reads Smart Connections `.smart-env/multi/*.ajson` files, loads the corpus into memory, and exposes MCP tools over stdio so compatible clients can search the vault without extra infrastructure.
+**Semantic search over your Obsidian vault — right inside your AI assistant.**
 
-## Overview
+[![npm version](https://img.shields.io/npm/v/neuro-vault-mcp)](https://www.npmjs.com/package/neuro-vault-mcp)
+[![Node.js](https://img.shields.io/node/v/neuro-vault-mcp)](https://nodejs.org)
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 
-The server is started by an MCP host or from the command line with an explicit vault path:
+> "What did I write about that idea last month?"
 
-```bash
-neuro-vault-mcp --vault /absolute/path/to/vault
+Neuro Vault MCP connects your Obsidian vault to any MCP-compatible AI assistant. It reuses the embeddings already computed by [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) — no re-indexing, no extra infrastructure, no API keys.
+
+---
+
+## How It Works
+
+```
+Your question
+     │
+     ▼
+ AI assistant
+     │ rewrites to keyword queries + picks mode
+     ▼
+ search_notes (MCP tool)
+     │
+     ├─ vector search over Smart Connections embeddings
+     ├─ block-level search (deep mode)
+     ├─ expansion via similar notes (deep mode)
+     └─ full-text fallback via obsidian-cli (if installed)
+     │
+     ▼
+ Ranked results with note paths, similarity scores, section headings
 ```
 
-The vault path must be absolute. Neuro Vault MCP expects Smart Connections data in:
+The server loads `.smart-env/multi/*.ajson` into memory at startup and keeps it there. No background processes, no watchers, no database.
 
-```text
-<vault>/.smart-env/multi/*.ajson
-```
-
-On first run, the query embedding model is downloaded automatically. That initial model download may add noticeable startup latency.
+---
 
 ## Requirements
 
-- Node.js 20 or newer
-- An Obsidian vault on the local machine
-- Smart Connections data present in `<vault>/.smart-env/multi/*.ajson`
+- Node.js 20+
+- Obsidian vault with [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) plugin (embeddings must be generated)
+- Smart Connections data at `<vault>/.smart-env/multi/*.ajson`
 
-## Installation
+**Optional but recommended:** [obsidian-cli](https://github.com/Acylation/obsidian-cli) for full-text search fallback when vector search returns no results.
 
-Install globally:
+---
+
+## Quick Start
+
+**1. Install**
 
 ```bash
 npm install -g neuro-vault-mcp
 ```
 
-Or run it on demand with `npx`:
+**2. Configure your MCP client**
 
-```bash
-npx -y neuro-vault-mcp --vault /absolute/path/to/vault
-```
-
-## MCP Configuration Example
-
-Most MCP hosts just need the binary and vault argument:
-
-```json
-{
-  "command": "neuro-vault-mcp",
-  "args": ["--vault", "/absolute/path/to/vault"]
-}
-```
-
-If your host uses a more explicit JSON configuration, the same launch command applies:
+For Claude Code (`~/.claude/settings.json` or `.claude/settings.json` in your project):
 
 ```json
 {
   "mcpServers": {
     "neuro-vault": {
       "command": "neuro-vault-mcp",
-      "args": ["--vault", "/absolute/path/to/vault"]
+      "args": ["--vault", "/absolute/path/to/your/vault"]
     }
   }
 }
 ```
 
-## CLI Usage
+For Cursor or Windsurf (`.cursor/mcp.json` / `.windsurf/mcp.json`):
 
-After installing globally, launch the server directly from your shell:
-
-```bash
-neuro-vault-mcp --vault /absolute/path/to/vault
+```json
+{
+  "mcpServers": {
+    "neuro-vault": {
+      "command": "neuro-vault-mcp",
+      "args": ["--vault", "/absolute/path/to/your/vault"]
+    }
+  }
+}
 ```
 
-The process speaks MCP over stdio, so it is intended to be started by a compatible client or wrapper process rather than visited in a browser.
+Or run without installing using `npx`:
 
-## Available Tools
+```json
+{
+  "mcpServers": {
+    "neuro-vault": {
+      "command": "npx",
+      "args": ["-y", "neuro-vault-mcp", "--vault", "/absolute/path/to/your/vault"]
+    }
+  }
+}
+```
+
+**3. Try it**
+
+Ask your assistant:
+
+> "What did I write about building AI agents?"
+
+> "Find my notes on productivity systems"
+
+> "What are all my ideas related to embeddings?"
+
+On first run the embedding model downloads automatically (~40 MB). Subsequent starts are fast.
+
+---
+
+## Features
+
+### Mode-Based Search
+
+Every search picks a mode that controls retrieval depth:
+
+| Mode | Use when | Limit | Threshold | Expansion |
+|------|----------|-------|-----------|-----------|
+| `quick` | Specific question, need 1-2 notes | 3 | 0.50 | off |
+| `deep` | Broad topic, need an overview | 8 | 0.35 | on |
+
+The AI assistant picks the mode automatically based on your question. You can also pass it explicitly.
+
+### Multi-Query Search
+
+`search_notes` accepts a single string or an array of keyword queries. Results from all queries are merged and deduplicated, keeping the highest similarity score per note.
+
+```
+query: ["LLM agents", "AI automation", "language models"]
+```
+
+This lets the assistant search for synonyms, translations, and related concepts in one call.
+
+### Block-Level Results (Deep Mode)
+
+In `deep` mode the server also searches by individual note sections (blocks), not just whole notes. This surfaces the exact paragraphs that are most relevant, not just the note they live in.
+
+### Expansion (Deep Mode)
+
+After finding top results, the server uses their embeddings to discover neighboring notes. This catches related notes that don't directly match your query but are semantically close to what you found.
+
+### Automatic Fallback Chain
+
+When vector search returns nothing:
+
+1. Retry with a lower similarity threshold (0.3)
+2. Fall back to full-text search via `obsidian-cli` (if installed)
+3. Return empty — the AI assistant can search vault files using its own tools
+
+---
+
+## Tools Reference
 
 ### `search_notes`
 
-Search the loaded corpus by semantic similarity.
+Search the vault by semantic similarity.
 
-Parameters:
+```typescript
+search_notes({
+  query: string | string[],   // one query or several keyword queries
+  mode?: "quick" | "deep",    // default: "quick"
+  threshold?: number,          // override mode default (0–1)
+  expansion?: boolean,         // override mode default
+  expansion_limit?: number,    // how many top results to expand (default: 3)
+})
+```
 
-- `query` `string` required
-- `limit` `number` optional, default `10`, must be a positive integer
-- `threshold` `number` optional, default `0.5`, must be between `0` and `1`
+Returns `results` (ranked notes), and in deep mode also `blockResults` (ranked sections). If vector search found nothing and obsidian-cli is available, returns `textFallbackResults`.
+
+**Tips for better results:**
+- Use short keyword queries (1–4 words), not full sentences
+- Pass synonyms and translations as separate queries: `["embeddings", "векторний пошук", "vector search"]`
+- Lower the threshold to `0.3` if nothing comes back
+- Use `deep` mode for exploratory questions
+
+---
 
 ### `get_similar_notes`
 
-Find notes similar to a vault-relative note path.
+Find notes similar to a given note path.
 
-Parameters:
+```typescript
+get_similar_notes({
+  note_path: string,  // vault-relative POSIX path, e.g. "Projects/neuro-vault.md"
+  limit?: number,     // default: 10
+  threshold?: number, // default: 0.5
+})
+```
 
-- `note_path` `string` required, vault-relative and POSIX-style
-- `limit` `number` optional, default `10`, must be a positive integer
-- `threshold` `number` optional, default `0.5`, must be between `0` and `1`
+Use this after `search_notes` finds a relevant note — it discovers related content without needing a text query.
+
+---
 
 ### `find_duplicates`
 
 Find note pairs with high embedding similarity.
 
-Parameters:
+```typescript
+find_duplicates({
+  threshold?: number, // default: 0.9
+})
+```
 
-- `threshold` `number` optional, default `0.9`, must be between `0` and `1`
+Useful for vault maintenance: identifies notes that cover the same topic and could be merged.
+
+---
 
 ### `get_stats`
 
-Report corpus and embedding statistics.
+Report loaded corpus statistics.
 
-Parameters:
+Returns: `{ totalNotes, totalBlocks, embeddingDimension, modelKey }`
 
-- none
+---
 
-## Tool Output
+## AGENTS.md / CLAUDE.md Snippet
 
-All search-style tools return note paths relative to the vault, similarity scores, and the note blocks preserved from Smart Connections data. `get_stats` returns the loaded corpus size, block count, embedding dimension, and model key.
+Add this to your `AGENTS.md` or `CLAUDE.md` to help the AI assistant use the vault effectively:
 
-## Development Commands
+```markdown
+## Vault search
 
-```bash
-npm run build
-npm run lint
-npm run format
-npm run format:write
-npm run test
+Use the `search_notes` MCP tool to search my Obsidian vault before answering questions about my notes, projects, or ideas.
+
+Search protocol:
+1. Choose mode: `quick` for specific questions, `deep` for broad topics
+2. Rewrite the query: extract 2-4 keywords, remove filler words, add synonyms and UA↔EN translations
+3. Pass as an array: `query: ["keyword", "synonym", "переклад"]`
+
+Skip vault search for: general programming questions, translations, tasks with no personal knowledge component.
 ```
 
-## Limitations for v1
+---
+
+## Configuration
+
+### CLI Arguments
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--vault` | yes | Absolute path to the Obsidian vault directory |
+| `--help`  | no  | Show help |
+
+### Startup Behavior
+
+- Smart Connections `.ajson` files are loaded into memory once at startup
+- The embedding model (`TaylorAI/bge-micro-v2`) is downloaded on first run and cached by `@xenova/transformers`
+- If the vault path is missing or Smart Connections data is absent, the server exits immediately with an error
+
+### Troubleshooting
+
+**"Smart Connections directory does not exist"** — make sure the Smart Connections plugin has run and generated embeddings. Open Obsidian, let Smart Connections finish indexing, then restart the MCP server.
+
+**First startup is slow** — the embedding model (~40 MB) is downloading. Subsequent starts use the cached model.
+
+**Search returns nothing** — try lowering the threshold: `threshold: 0.3`. Also check that `get_stats` shows a non-zero `totalNotes`.
+
+**obsidian-cli fallback not working** — install [obsidian-cli](https://github.com/Acylation/obsidian-cli) and make sure it's on your `PATH`.
+
+---
+
+## Development
+
+```bash
+npm run build       # compile TypeScript to dist/
+npm run test        # run tests with vitest
+npm run lint        # ESLint
+npm run format      # check formatting with Prettier
+npm run format:write  # fix formatting
+```
+
+---
+
+## Limitations
 
 - Requires Smart Connections `.ajson` files already present in the vault
-- Uses in-memory search only, with no persistent index
-- Starts over stdio only, not HTTP or SSE
-- Loads the embedding model at startup, so the first run can be slow
-- Expects a local vault path and does not support remote vaults
+- In-memory search only — no persistent index, no background re-indexing
+- stdio transport only — not HTTP or SSE
+- Local vault path only — no remote vaults
+- Embedding model loaded at startup; first run can be slow
+
+---
+
+## License
+
+ISC — see [LICENSE](LICENSE).
+
+Changelog: [Releases](https://github.com/AlexMost/neuro-vault/releases)
