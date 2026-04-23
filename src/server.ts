@@ -79,30 +79,21 @@ This server provides semantic search over an Obsidian vault using Smart Connecti
 
 ## Search protocol
 
-Before calling search_notes, determine:
-
 ### 1. Choose mode
-- **quick** — specific question, need 1-2 notes ("where is the neuro-vault project?", "show the API task")
+- **quick** — specific question, need 1-2 notes ("where is the neuro-vault project?", "what's my note on X?")
 - **deep** — broad topic, need an overview ("everything about embeddings", "all AI project ideas")
 
-### 2. Rewrite the query
-- Extract 1-4 key concepts, remove filler words (remind, find, show)
-- One call per concept — call search_notes multiple times for synonyms and UA↔EN translations
-- Example: search "vector search", then "пошук", then "embeddings" as separate calls
+### 2. Write the query
+- Use 1-4 keywords — strip filler phrases like "find notes about", "show me", "remind me of"
+- One call per concept — make separate calls for synonyms and UA↔EN translations
+- Example: "vector search" → then "пошук" → then "embeddings"
 
-### 3. Use expansion wisely
-- In deep mode, expansion is on by default — it finds notes related to top results
-- For quick lookups, skip expansion (it's off by default)
+### 3. Reading results
+- \`results\` — notes ranked by similarity; use the path to read the file
+- \`blockResults\` — individual sections ranked by relevance; use heading + line range to read only the relevant part
 
-### 4. Fallback behavior
-When vector search returns no results, the server automatically retries with a lower similarity threshold (0.3).
+If vector search returns nothing the server retries automatically at a lower threshold.
 If still nothing — search the vault files yourself using your own tools.
-
-### 5. Reading results
-- \`results\` — notes ranked by embedding similarity
-- \`blockResults\` — sections ranked by relevance (all modes: scoped to matched notes in quick, all sources in deep)
-
-Use block headings and line ranges as pointers to read specific sections rather than entire files.
 After finding a relevant note, use get_similar_notes to discover related content.
 `;
 
