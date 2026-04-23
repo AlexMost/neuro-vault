@@ -257,7 +257,7 @@ describe('executeRetrieval', () => {
       expect(output.textFallbackResults![0]!.path).toBe('note-a.md');
     });
 
-    it('falls back to grep when obsidian is unavailable', async () => {
+    it('returns no textFallbackResults when obsidian is unavailable', async () => {
       const embeddingProvider = makeEmbeddingProvider();
       const searchEngine = makeSearchEngine({
         findNeighbors: vi.fn().mockReturnValue([]),
@@ -265,12 +265,6 @@ describe('executeRetrieval', () => {
       const obsidianSearch: TextSearchProvider = {
         isAvailable: vi.fn().mockResolvedValue(false),
         search: vi.fn().mockResolvedValue([]),
-      };
-      const grepSearch: TextSearchProvider = {
-        isAvailable: vi.fn().mockResolvedValue(true),
-        search: vi
-          .fn()
-          .mockResolvedValue([{ path: 'note-b.md', matchLine: 'grep match', lineNumber: 2 }]),
       };
 
       const output = await executeRetrieval({
@@ -281,39 +275,10 @@ describe('executeRetrieval', () => {
         searchEngine,
         vaultPath: '/vault',
         obsidianSearch,
-        grepSearch,
       });
 
       expect(obsidianSearch.search).not.toHaveBeenCalled();
-      expect(grepSearch.search).toHaveBeenCalledWith('test query', '/vault', 10);
-      expect(output.textFallbackResults).toHaveLength(1);
-      expect(output.textFallbackResults![0]!.path).toBe('note-b.md');
-    });
-
-    it('stores grep results in textFallbackResults when only grep is provided', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const searchEngine = makeSearchEngine({
-        findNeighbors: vi.fn().mockReturnValue([]),
-      });
-      const grepSearch: TextSearchProvider = {
-        isAvailable: vi.fn().mockResolvedValue(true),
-        search: vi
-          .fn()
-          .mockResolvedValue([{ path: 'note-c.md', matchLine: 'match text', lineNumber: 10 }]),
-      };
-
-      const output = await executeRetrieval({
-        queries: ['test query'],
-        mode: 'quick',
-        sources,
-        embeddingProvider,
-        searchEngine,
-        vaultPath: '/vault',
-        grepSearch,
-      });
-
-      expect(output.textFallbackResults).toHaveLength(1);
-      expect(output.results).toHaveLength(0);
+      expect(output.textFallbackResults).toBeUndefined();
     });
 
     it('does not trigger text fallback when vector results exist', async () => {
@@ -321,7 +286,7 @@ describe('executeRetrieval', () => {
       const searchEngine = makeSearchEngine({
         findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
       });
-      const grepSearch: TextSearchProvider = {
+      const obsidianSearch: TextSearchProvider = {
         isAvailable: vi.fn().mockResolvedValue(true),
         search: vi.fn().mockResolvedValue([]),
       };
@@ -333,10 +298,10 @@ describe('executeRetrieval', () => {
         embeddingProvider,
         searchEngine,
         vaultPath: '/vault',
-        grepSearch,
+        obsidianSearch,
       });
 
-      expect(grepSearch.search).not.toHaveBeenCalled();
+      expect(obsidianSearch.search).not.toHaveBeenCalled();
       expect(output.textFallbackResults).toBeUndefined();
     });
   });

@@ -112,7 +112,6 @@ export interface ToolHandlerDependencies {
   modelKey: string;
   vaultPath: string;
   obsidianSearch?: TextSearchProvider;
-  grepSearch?: TextSearchProvider;
 }
 
 export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENCY_ERROR';

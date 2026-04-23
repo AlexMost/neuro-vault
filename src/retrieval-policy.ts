@@ -35,7 +35,6 @@ export interface RetrievalInput {
   searchEngine: SearchEngine;
   vaultPath: string;
   obsidianSearch?: TextSearchProvider;
-  grepSearch?: TextSearchProvider;
 }
 
 export interface RetrievalOutput {
@@ -60,16 +59,8 @@ function mergeAndDeduplicate(a: SearchResult[], b: SearchResult[]): SearchResult
 }
 
 export async function executeRetrieval(input: RetrievalInput): Promise<RetrievalOutput> {
-  const {
-    queries,
-    mode,
-    sources,
-    embeddingProvider,
-    searchEngine,
-    vaultPath,
-    obsidianSearch,
-    grepSearch,
-  } = input;
+  const { queries, mode, sources, embeddingProvider, searchEngine, vaultPath, obsidianSearch } =
+    input;
 
   const modeConfig = MODE_DEFAULTS[mode];
 
@@ -152,13 +143,6 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
       const available = await obsidianSearch.isAvailable();
       if (available) {
         textFallbackResults = await obsidianSearch.search(firstQuery, vaultPath, TEXT_SEARCH_LIMIT);
-      }
-    }
-
-    if (textFallbackResults === undefined && grepSearch) {
-      const available = await grepSearch.isAvailable();
-      if (available) {
-        textFallbackResults = await grepSearch.search(firstQuery, vaultPath, TEXT_SEARCH_LIMIT);
       }
     }
   }

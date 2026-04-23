@@ -201,7 +201,6 @@ export function createToolHandlers({
   modelKey,
   vaultPath,
   obsidianSearch,
-  grepSearch,
 }: ToolHandlerDependencies): ToolHandlers {
   return {
     async searchNotes(input: SearchNotesInput): Promise<RetrievalOutput> {
@@ -228,7 +227,6 @@ export function createToolHandlers({
           searchEngine,
           vaultPath,
           obsidianSearch,
-          grepSearch,
         });
       } catch (error) {
         throw wrapDependencyError(error, 'Failed to search notes', {

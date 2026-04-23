@@ -1,66 +1,9 @@
 import { execFile as execFileCb } from 'node:child_process';
-import path from 'node:path';
 import { promisify } from 'node:util';
 
 import type { TextSearchProvider, TextSearchResult } from './types.js';
 
 const execFile = promisify(execFileCb);
-
-export class GrepSearchProvider implements TextSearchProvider {
-  async isAvailable(): Promise<boolean> {
-    return true;
-  }
-
-  async search(query: string, vaultPath: string, limit: number): Promise<TextSearchResult[]> {
-    let stdout: string;
-
-    try {
-      const result = await execFile(
-        'grep',
-        ['-rn', '--include=*.md', `-m`, String(limit), '--', query, vaultPath],
-        {
-          timeout: 10_000,
-          maxBuffer: 1024 * 1024,
-        },
-      );
-      stdout = result.stdout;
-    } catch (err: unknown) {
-      // grep exits with code 1 when there are no matches — that's not an error
-      const execError = err as { code?: unknown; stdout?: string };
-      if (execError.code === 1 || execError.code === '1') {
-        return [];
-      }
-      throw err;
-    }
-
-    const results: TextSearchResult[] = [];
-
-    for (const rawLine of stdout.split('\n')) {
-      const line = rawLine.trim();
-      if (!line) continue;
-
-      // Format: /absolute/path/file.md:lineNumber:matchLine
-      const colonIdx = line.indexOf(':');
-      if (colonIdx === -1) continue;
-
-      const afterPath = line.indexOf(':', colonIdx + 1);
-      if (afterPath === -1) continue;
-
-      const absPath = line.slice(0, colonIdx);
-      const lineNumberStr = line.slice(colonIdx + 1, afterPath);
-      const matchLine = line.slice(afterPath + 1);
-
-      const lineNumber = parseInt(lineNumberStr, 10);
-      if (isNaN(lineNumber)) continue;
-
-      const relativePath = path.relative(vaultPath, absPath);
-
-      results.push({ path: relativePath, matchLine, lineNumber });
-    }
-
-    return results;
-  }
-}
 
 export class ObsidianCliSearchProvider implements TextSearchProvider {
   async isAvailable(): Promise<boolean> {

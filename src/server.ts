@@ -12,7 +12,7 @@ import {
 } from './smart-connections-loader.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
 import { createToolHandlers, ToolHandlerError } from './tool-handlers.js';
-import { GrepSearchProvider, ObsidianCliSearchProvider } from './text-search.js';
+import { ObsidianCliSearchProvider } from './text-search.js';
 import type {
   EmbeddingProvider,
   SearchEngine,
@@ -64,7 +64,6 @@ export interface NeuroVaultServerDependencies {
   modelKey: string;
   vaultPath: string;
   obsidianSearch?: import('./types.js').TextSearchProvider;
-  grepSearch?: import('./types.js').TextSearchProvider;
   toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
   serverFactory?: () => ToolServer;
 }
@@ -102,7 +101,8 @@ Before calling search_notes, determine:
 ### 4. Fallback behavior
 When vector search returns no results, the server automatically:
 1. Retries with a lower similarity threshold
-2. Falls back to full-text search (obsidian-cli if available, then grep)
+2. Falls back to full-text search via obsidian-cli (if available)
+3. If still nothing found — search the vault files yourself using your own tools
 
 ### 5. Reading results
 - \`results\` — notes ranked by embedding similarity, with block headings and line ranges
@@ -190,7 +190,6 @@ export function createNeuroVaultServer({
   modelKey,
   vaultPath,
   obsidianSearch,
-  grepSearch,
   toolHandlersFactory = createToolHandlers,
   serverFactory = defaultServerFactory,
 }: NeuroVaultServerDependencies): ToolServer {
@@ -202,7 +201,6 @@ export function createNeuroVaultServer({
     modelKey,
     vaultPath,
     obsidianSearch,
-    grepSearch,
   });
 
   server.registerTool(
@@ -272,7 +270,6 @@ export async function startNeuroVaultServer(
 
   const embeddingService = embeddingServiceFactory(config.modelId);
   const obsidianSearch = new ObsidianCliSearchProvider();
-  const grepSearch = new GrepSearchProvider();
 
   const server = createNeuroVaultServer({
     loader: corpus,
@@ -281,7 +278,6 @@ export async function startNeuroVaultServer(
     modelKey: config.modelKey,
     vaultPath: config.vaultPath,
     obsidianSearch,
-    grepSearch,
     toolHandlersFactory: deps.toolHandlersFactory,
     serverFactory,
   });
