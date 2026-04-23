@@ -1,6 +1,6 @@
 # Neuro Vault MCP
 
-**Semantic search over your Obsidian vault — right inside your AI assistant.**
+**Semantic vault search and expansion for your Obsidian vault — right inside your AI assistant.**
 
 [![npm version](https://img.shields.io/npm/v/neuro-vault-mcp)](https://www.npmjs.com/package/neuro-vault-mcp)
 [![Node.js](https://img.shields.io/node/v/neuro-vault-mcp)](https://nodejs.org)
@@ -8,7 +8,7 @@
 
 > "What did I write about that idea last month?"
 
-Neuro Vault MCP connects your Obsidian vault to any MCP-compatible AI assistant. It reuses the embeddings already computed by [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) — no re-indexing, no extra infrastructure, no API keys.
+Neuro Vault MCP provides semantic search over your Obsidian vault and semantic expansion for related notes. Agents can combine it with structural tools for exact note, path, date, tag, property, and link lookups when those tools are available. It reuses the embeddings already computed by [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) — no re-indexing, no extra infrastructure, no API keys.
 
 ---
 
@@ -19,19 +19,30 @@ Your question
      │
      ▼
  AI assistant
-     │ rewrites to keyword queries + picks mode
+     │ routes by intent
      ▼
- search_notes (MCP tool)
+     ├──────────────► Structural tools
+     │               (exact file, title, path, daily note, tag, property, wikilink, backlink, link traversal)
      │
-     ├─ vector search over Smart Connections embeddings
-     ├─ block-level search (all modes)
-     └─ expansion via similar notes (deep mode)
-     │
-     ▼
- Ranked results with note paths, similarity scores, section headings
+     └──────────────► search_notes
+                     (semantic retrieval)
+                             │
+                             ▼
+                     get_similar_notes
+                     (semantic expansion)
 ```
 
 The server loads `.smart-env/multi/*.ajson` into memory at startup and keeps it there. No background processes, no watchers, no database.
+
+## Search Routing
+
+Tool routing and retrieval policy are related, but not the same thing.
+
+- Use structural tools first for exact file, title, path, daily note, tag, property, wikilink, backlink, and link traversal requests.
+- Use `search_notes` for fuzzy topic, concept, and semantic retrieval.
+- Use `get_similar_notes` after you already have a relevant note and want semantic expansion.
+- Treat the routing guidance as behavior, not enforcement; the server does not hard-block other tool choices.
+- Use semantic retrieval to find likely notes, then switch to structural tools when you need exact anchors.
 
 ---
 
@@ -205,15 +216,9 @@ Add this to your `AGENTS.md` or `CLAUDE.md` to help the AI assistant use the vau
 ```markdown
 ## Vault search
 
-Use the `search_notes` MCP tool to search my Obsidian vault before answering questions about my notes, projects, or ideas.
-
-Search protocol:
-
-1. Choose mode: `quick` for specific questions, `deep` for broad topics
-2. Rewrite the query: extract 2-4 keywords, remove filler words
-3. Call search_notes once per concept — use separate calls for synonyms and UA↔EN translations
-
-Skip vault search for: general programming questions, translations, tasks with no personal knowledge component.
+Use vault-aware tools when vault context matters.
+Do not guess about note contents when the vault can be searched.
+Follow the Neuro Vault MCP server instructions for routing and retrieval.
 ```
 
 ---

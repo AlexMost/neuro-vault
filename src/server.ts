@@ -75,9 +75,19 @@ export interface NeuroVaultStartupDependencies {
 }
 
 const SERVER_INSTRUCTIONS = `\
-Semantic search over an Obsidian vault. Use when the user's vault may contain relevant context — their notes, projects, plans, tasks, learning materials, or ideas. This includes both direct requests ("find my notes on X") and questions where vault context would improve the answer ("what's on my agenda?", "what was I working on?").
+Vault search guidance for an Obsidian vault. Use when the user's vault may contain relevant context — their notes, projects, plans, tasks, learning materials, or ideas. This includes both direct requests ("find my notes on X") and questions where vault context would improve the answer ("what's on my agenda?", "what was I working on?").
 
-## How to search
+## Search routing
+
+1. Choose the search class first: structural or semantic.
+2. If the user gives an exact anchor and structural tools are available, start there first.
+3. Prefer Obsidian CLI when available for exact note, path, date, tag, property, and link lookups.
+4. If Obsidian CLI is unavailable, use other structural file or navigation tools available in the current environment.
+5. Structural anchors include exact note title or filename, explicit path or folder, daily note by date or relative date, tag/property/wikilink, backlinks, or link traversal.
+6. Use \`search_notes\` when the user is recalling a topic fuzzily, asking a conceptual question, or does not know the exact note name.
+7. After a relevant note is found, use \`get_similar_notes\` to expand semantically related context.
+
+## Semantic search
 
 ### 1. Write the query
 1. Extract the core nouns and concepts from the user's message — strip filler words and verbs. From "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build".
@@ -188,7 +198,7 @@ export function createNeuroVaultServer({
     {
       title: 'Search Notes',
       description:
-        'Search notes by semantic similarity. Pass a short keyword query (1-4 words). Choose mode: "quick" for specific lookups (1-2 notes), "deep" for broad topic overview with block-level search and expansion. Call multiple times with different queries for synonyms or multi-language searches.',
+        'Search notes by semantic similarity for fuzzy recall, topic lookup, or cross-language matching. Pass a short keyword query (1-4 words). Choose mode: "quick" for specific lookups (up to 3 notes), "deep" for broad topic overview with block-level search and expansion. Call multiple times with different queries for synonyms or multi-language searches.',
       inputSchema: searchNotesSchema,
     },
     async (args) => invokeTool(() => handlers.searchNotes(args)),
@@ -199,7 +209,7 @@ export function createNeuroVaultServer({
     {
       title: 'Get Similar Notes',
       description:
-        'Find notes similar to a given note. Use this after search_notes finds a relevant note — it discovers related content without needing a text query. Pass a vault-relative POSIX path (e.g. "Folder/note.md").',
+        'Find semantically related notes after you already have a relevant note path. Pass a vault-relative POSIX path (e.g. "Folder/note.md").',
       inputSchema: getSimilarNotesSchema,
     },
     async (args) => invokeTool(() => handlers.getSimilarNotes(args)),
