@@ -442,9 +442,9 @@ describe('executeRetrieval', () => {
 
       expect(output.blockResults).toBeDefined();
       expect(output.blockResults).toEqual(blockResults);
-      // block search receives only matched sources, not all sources
+      // block search uses threshold 0 and limit 5 (scoping is via source filter)
       const blockCall = (searchEngine.findBlockNeighbors as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(blockCall[0]).toMatchObject({ limit: 5 });
+      expect(blockCall[0]).toMatchObject({ threshold: 0, limit: 5 });
     });
 
     it('does not return blockResults in quick mode when no vector results', async () => {

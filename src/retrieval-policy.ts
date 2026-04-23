@@ -101,7 +101,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     blockResults = searchEngine.findBlockNeighbors({
       queryVector,
       sources: matchedSources,
-      threshold,
+      threshold: 0,
       limit: QUICK_BLOCK_LIMIT,
     });
   }
