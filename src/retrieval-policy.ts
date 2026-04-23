@@ -5,12 +5,9 @@ import type {
   SearchMode,
   SearchResult,
   SmartSource,
-  TextSearchProvider,
-  TextSearchResult,
 } from './types.js';
 
 const FALLBACK_THRESHOLD = 0.3;
-const TEXT_SEARCH_LIMIT = 10;
 const QUICK_BLOCK_LIMIT = 5;
 
 interface ModeConfig {
@@ -34,14 +31,11 @@ export interface RetrievalInput {
   sources: Map<string, SmartSource>;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
-  vaultPath: string;
-  obsidianSearch?: TextSearchProvider;
 }
 
 export interface RetrievalOutput {
   results: SearchResult[];
   blockResults?: BlockSearchResult[];
-  textFallbackResults?: TextSearchResult[];
 }
 
 function deduplicateResults(results: SearchResult[]): SearchResult[] {
@@ -56,8 +50,7 @@ function deduplicateResults(results: SearchResult[]): SearchResult[] {
 }
 
 export async function executeRetrieval(input: RetrievalInput): Promise<RetrievalOutput> {
-  const { query, mode, sources, embeddingProvider, searchEngine, vaultPath, obsidianSearch } =
-    input;
+  const { query, mode, sources, embeddingProvider, searchEngine } = input;
 
   const modeConfig = MODE_DEFAULTS[mode];
 
@@ -125,18 +118,8 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   // Step 5: Apply final limit
   vectorResults = vectorResults.slice(0, limit);
 
-  // Step 6: Text fallback if no vector results
-  let textFallbackResults: TextSearchResult[] | undefined;
-  if (vectorResults.length === 0 && obsidianSearch) {
-    const available = await obsidianSearch.isAvailable();
-    if (available) {
-      textFallbackResults = await obsidianSearch.search(query, vaultPath, TEXT_SEARCH_LIMIT);
-    }
-  }
-
   return {
     results: vectorResults,
     ...(blockResults !== undefined ? { blockResults } : {}),
-    ...(textFallbackResults !== undefined ? { textFallbackResults } : {}),
   };
 }

@@ -18,12 +18,6 @@ export interface BlockSearchResult {
   similarity: number;
 }
 
-export interface TextSearchResult {
-  path: string;
-  matchLine: string;
-  lineNumber: number;
-}
-
 export interface SearchResult {
   path: string;
   similarity: number;
@@ -45,11 +39,6 @@ export interface ServerConfig {
 export interface EmbeddingProvider {
   initialize(): Promise<void>;
   embed(text: string): Promise<number[]>;
-}
-
-export interface TextSearchProvider {
-  isAvailable(): Promise<boolean>;
-  search(query: string, vaultPath: string, limit: number): Promise<TextSearchResult[]>;
 }
 
 export interface SearchEngine {
@@ -104,8 +93,6 @@ export interface ToolHandlerDependencies {
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
-  vaultPath: string;
-  obsidianSearch?: TextSearchProvider;
 }
 
 export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENCY_ERROR';

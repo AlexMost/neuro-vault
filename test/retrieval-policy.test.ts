@@ -6,7 +6,6 @@ import type {
   SearchEngine,
   SearchResult,
   SmartSource,
-  TextSearchProvider,
 } from '../src/types.js';
 import { executeRetrieval } from '../src/retrieval-policy.js';
 
@@ -70,7 +69,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(searchEngine.findNeighbors).toHaveBeenCalledWith(
@@ -90,7 +88,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(searchEngine.findBlockNeighbors).toHaveBeenCalled();
@@ -108,7 +105,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(searchEngine.findBlockNeighbors).not.toHaveBeenCalled();
@@ -126,7 +122,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(searchEngine.findNeighbors).toHaveBeenCalledWith(
@@ -144,7 +139,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(searchEngine.findBlockNeighbors).toHaveBeenCalled();
@@ -167,7 +161,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(2);
@@ -189,89 +182,10 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       // Only 1 call — no fallback retry since threshold is already at limit
       expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  describe('text fallback', () => {
-    it('tries obsidianSearch when vector search returns no results', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const searchEngine = makeSearchEngine({
-        findNeighbors: vi.fn().mockReturnValue([]),
-      });
-      const obsidianSearch: TextSearchProvider = {
-        isAvailable: vi.fn().mockResolvedValue(true),
-        search: vi
-          .fn()
-          .mockResolvedValue([{ path: 'note-a.md', matchLine: 'some match', lineNumber: 5 }]),
-      };
-
-      const output = await executeRetrieval({
-        query: 'test query',
-        mode: 'quick',
-        sources,
-        embeddingProvider,
-        searchEngine,
-        vaultPath: '/vault',
-        obsidianSearch,
-      });
-
-      expect(obsidianSearch.isAvailable).toHaveBeenCalled();
-      expect(obsidianSearch.search).toHaveBeenCalledWith('test query', '/vault', 10);
-      expect(output.textFallbackResults).toHaveLength(1);
-      expect(output.textFallbackResults![0]!.path).toBe('note-a.md');
-    });
-
-    it('returns no textFallbackResults when obsidian is unavailable', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const searchEngine = makeSearchEngine({
-        findNeighbors: vi.fn().mockReturnValue([]),
-      });
-      const obsidianSearch: TextSearchProvider = {
-        isAvailable: vi.fn().mockResolvedValue(false),
-        search: vi.fn().mockResolvedValue([]),
-      };
-
-      const output = await executeRetrieval({
-        query: 'test query',
-        mode: 'quick',
-        sources,
-        embeddingProvider,
-        searchEngine,
-        vaultPath: '/vault',
-        obsidianSearch,
-      });
-
-      expect(obsidianSearch.search).not.toHaveBeenCalled();
-      expect(output.textFallbackResults).toBeUndefined();
-    });
-
-    it('does not trigger text fallback when vector results exist', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const searchEngine = makeSearchEngine({
-        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
-      });
-      const obsidianSearch: TextSearchProvider = {
-        isAvailable: vi.fn().mockResolvedValue(true),
-        search: vi.fn().mockResolvedValue([]),
-      };
-
-      const output = await executeRetrieval({
-        query: 'test query',
-        mode: 'quick',
-        sources,
-        embeddingProvider,
-        searchEngine,
-        vaultPath: '/vault',
-        obsidianSearch,
-      });
-
-      expect(obsidianSearch.search).not.toHaveBeenCalled();
-      expect(output.textFallbackResults).toBeUndefined();
     });
   });
 
@@ -299,7 +213,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       // Should have been called at least twice (initial + expansion)
@@ -334,7 +247,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       const noteAPaths = output.results.filter((r) => r.path === 'note-a.md');
@@ -355,7 +267,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       // Only 1 call — no expansion
@@ -375,7 +286,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(searchEngine.findNeighbors).toHaveBeenCalledWith(
@@ -393,7 +303,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(searchEngine.findNeighbors).toHaveBeenCalledWith(
@@ -416,7 +325,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(output.blockResults).toBeDefined();
@@ -437,7 +345,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(output.blockResults).toBeDefined();
@@ -459,7 +366,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(output.blockResults).toBeUndefined();
@@ -482,7 +388,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(output.results).toHaveLength(3);
@@ -503,7 +408,6 @@ describe('executeRetrieval', () => {
         sources,
         embeddingProvider,
         searchEngine,
-        vaultPath: '/vault',
       });
 
       expect(output.results).toHaveLength(8);

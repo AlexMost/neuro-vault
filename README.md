@@ -24,9 +24,8 @@ Your question
  search_notes (MCP tool)
      │
      ├─ vector search over Smart Connections embeddings
-     ├─ block-level search (deep mode)
-     ├─ expansion via similar notes (deep mode)
-     └─ full-text fallback via obsidian-cli (if installed)
+     ├─ block-level search (all modes)
+     └─ expansion via similar notes (deep mode)
      │
      ▼
  Ranked results with note paths, similarity scores, section headings
@@ -41,8 +40,6 @@ The server loads `.smart-env/multi/*.ajson` into memory at startup and keeps it 
 - Node.js 20+
 - Obsidian vault with [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) plugin (embeddings must be generated)
 - Smart Connections data at `<vault>/.smart-env/multi/*.ajson`
-
-**Optional but recommended:** [obsidian-cli](https://github.com/Acylation/obsidian-cli) for full-text search fallback when vector search returns no results.
 
 ---
 
@@ -130,13 +127,9 @@ In `deep` mode the server also searches by individual note sections (blocks), no
 
 After finding top results, the server uses their embeddings to discover neighboring notes. This catches related notes that don't directly match your query but are semantically close to what you found.
 
-### Automatic Fallback Chain
+### Automatic Fallback
 
-When vector search returns nothing:
-
-1. Retry with a lower similarity threshold (0.3)
-2. Fall back to full-text search via `obsidian-cli` (if installed)
-3. Return empty — the AI assistant can search vault files using its own tools
+When vector search returns nothing, the server retries with a lower similarity threshold (0.3). If still nothing — the AI assistant can search vault files using its own tools.
 
 ---
 
@@ -156,7 +149,7 @@ search_notes({
 })
 ```
 
-Returns `results` (ranked notes), and in deep mode also `blockResults` (ranked sections). If vector search found nothing and obsidian-cli is available, returns `textFallbackResults`.
+Returns `results` (ranked notes) and `blockResults` (ranked sections — scoped to matched notes in quick mode, all sources in deep mode).
 
 **Tips for better results:**
 
@@ -247,8 +240,6 @@ Skip vault search for: general programming questions, translations, tasks with n
 **First startup is slow** — the embedding model (~40 MB) is downloading. Subsequent starts use the cached model.
 
 **Search returns nothing** — try lowering the threshold: `threshold: 0.3`. Also check that `get_stats` shows a non-zero `totalNotes`.
-
-**obsidian-cli fallback not working** — install [obsidian-cli](https://github.com/Acylation/obsidian-cli) and make sure it's on your `PATH`.
 
 ---
 

@@ -23,7 +23,7 @@ async function makeVaultFixture(fileNames: string[]) {
     await fs.copyFile(path.join(fixturesRoot, fileName), path.join(smartEnvPath, fileName));
   }
 
-  return { tempRoot, vaultPath, smartEnvPath };
+  return { tempRoot, smartEnvPath };
 }
 
 const MODEL_KEY = 'bge-micro-v2';
@@ -62,7 +62,7 @@ function createDuplicateCorpus(corpus: Awaited<ReturnType<typeof loadSmartConnec
 
 describe('createToolHandlers', () => {
   it('returns ranked search results for a query', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -79,7 +79,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       const result = await handlers.searchNotes({
@@ -102,7 +101,7 @@ describe('createToolHandlers', () => {
   });
 
   it('rejects an empty query before embedding', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -119,7 +118,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       await expect(handlers.searchNotes({ query: '   ' })).rejects.toMatchObject({
@@ -132,7 +130,7 @@ describe('createToolHandlers', () => {
   });
 
   it('surfaces embedding-provider failures as structured tool errors', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -149,7 +147,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       const searchPromise = handlers.searchNotes({ query: 'semantic query' });
@@ -164,7 +161,7 @@ describe('createToolHandlers', () => {
   });
 
   it('rejects an unknown note path for similar-note lookup', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -180,7 +177,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       await expect(
@@ -194,7 +190,7 @@ describe('createToolHandlers', () => {
   });
 
   it('excludes the source note from similar-note results', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -210,7 +206,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       const results = await handlers.getSimilarNotes({
@@ -229,7 +224,7 @@ describe('createToolHandlers', () => {
   });
 
   it('normalizes safe relative note paths', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -245,7 +240,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       const results = await handlers.getSimilarNotes({
@@ -263,7 +257,7 @@ describe('createToolHandlers', () => {
   });
 
   it('rejects note path traversal attempts', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -279,7 +273,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       await expect(
@@ -293,7 +286,7 @@ describe('createToolHandlers', () => {
   });
 
   it('rejects Windows-style absolute note paths', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -309,7 +302,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       await expect(
@@ -323,7 +315,7 @@ describe('createToolHandlers', () => {
   });
 
   it('rejects thresholds below 0 and above 1', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -339,7 +331,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       await expect(
@@ -359,7 +350,7 @@ describe('createToolHandlers', () => {
   });
 
   it('returns matching duplicate pairs', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -375,7 +366,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       const results = await handlers.findDuplicates({ threshold: 0.95 });
@@ -392,7 +382,7 @@ describe('createToolHandlers', () => {
   });
 
   it('returns corpus stats and the model key', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -408,7 +398,6 @@ describe('createToolHandlers', () => {
         },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
-        vaultPath,
       });
 
       await expect(handlers.getStats()).resolves.toEqual({

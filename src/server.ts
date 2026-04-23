@@ -12,7 +12,6 @@ import {
 } from './smart-connections-loader.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
 import { createToolHandlers, ToolHandlerError } from './tool-handlers.js';
-import { ObsidianCliSearchProvider } from './text-search.js';
 import type {
   EmbeddingProvider,
   SearchEngine,
@@ -62,8 +61,6 @@ export interface NeuroVaultServerDependencies {
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
-  vaultPath: string;
-  obsidianSearch?: import('./types.js').TextSearchProvider;
   toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
   serverFactory?: () => ToolServer;
 }
@@ -98,15 +95,12 @@ Before calling search_notes, determine:
 - For quick lookups, skip expansion (it's off by default)
 
 ### 4. Fallback behavior
-When vector search returns no results, the server automatically:
-1. Retries with a lower similarity threshold
-2. Falls back to full-text search via obsidian-cli (if available)
-3. If still nothing found — search the vault files yourself using your own tools
+When vector search returns no results, the server automatically retries with a lower similarity threshold (0.3).
+If still nothing — search the vault files yourself using your own tools.
 
 ### 5. Reading results
 - \`results\` — notes ranked by embedding similarity, with block headings and line ranges
 - \`blockResults\` — (deep mode) individual note sections ranked by relevance
-- \`textFallbackResults\` — raw text matches when vector search found nothing
 
 Use block headings and line ranges as pointers to read specific sections rather than entire files.
 After finding a relevant note, use get_similar_notes to discover related content.
@@ -187,8 +181,6 @@ export function createNeuroVaultServer({
   embeddingProvider,
   searchEngine,
   modelKey,
-  vaultPath,
-  obsidianSearch,
   toolHandlersFactory = createToolHandlers,
   serverFactory = defaultServerFactory,
 }: NeuroVaultServerDependencies): ToolServer {
@@ -198,8 +190,6 @@ export function createNeuroVaultServer({
     embeddingProvider,
     searchEngine,
     modelKey,
-    vaultPath,
-    obsidianSearch,
   });
 
   server.registerTool(
@@ -268,15 +258,12 @@ export async function startNeuroVaultServer(
   ensureCorpusIsUsable(corpus);
 
   const embeddingService = embeddingServiceFactory(config.modelId);
-  const obsidianSearch = new ObsidianCliSearchProvider();
 
   const server = createNeuroVaultServer({
     loader: corpus,
     embeddingProvider: embeddingService,
     searchEngine,
     modelKey: config.modelKey,
-    vaultPath: config.vaultPath,
-    obsidianSearch,
     toolHandlersFactory: deps.toolHandlersFactory,
     serverFactory,
   });

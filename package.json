@@ -42,7 +42,7 @@
     "format:write": "prettier --write .",
     "format:changelog": "prettier --write CHANGELOG.md",
     "test": "vitest run",
-    "inspect": "npx @modelcontextprotocol/inspector node dist/cli.js --vault",
+    "inspect": "npm run build && npx @modelcontextprotocol/inspector node dist/cli.js --vault",
     "prerelease": "npm run build && npm run test && npm run lint && npm run format",
     "release": "commit-and-tag-version",
     "release:dry-run": "commit-and-tag-version --dry-run",
