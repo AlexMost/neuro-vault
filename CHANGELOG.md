@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.4.0](https://github.com/AlexMost/neuro-vault/compare/v1.3.1...v1.4.0) (2026-04-23)
+
+### Features
+
+- add block-level search to search engine ([3a0eb34](https://github.com/AlexMost/neuro-vault/commit/3a0eb345fefcb45a2057f4ce1f1a881c8bfc0d95))
+- add text search fallbacks (grep + obsidian-cli) ([32844c7](https://github.com/AlexMost/neuro-vault/commit/32844c76911b3d9bb06866100c7032b4b68dcab4))
+- extend types for mode-based search pipeline ([65c14dd](https://github.com/AlexMost/neuro-vault/commit/65c14dde2ad19b4506ffe5628bfb6cc1f9da6105))
+- implement retrieval policy with mode defaults, multi-query, fallback, and expansion ([805d360](https://github.com/AlexMost/neuro-vault/commit/805d36098f71d32da572058f867d965058fcdbb7))
+- return blockResults in quick mode scoped to matched notes ([5f4af2a](https://github.com/AlexMost/neuro-vault/commit/5f4af2a5285d0774c9e471fc445faf695cfce7a5))
+- rewire search_notes to use retrieval policy with mode, multi-query, expansion ([eaa4e0d](https://github.com/AlexMost/neuro-vault/commit/eaa4e0daa4d4e3ee270c273f3feecdf3dd500af2))
+- update MCP schema, tool description, and SERVER_INSTRUCTIONS for context pipeline ([102bd06](https://github.com/AlexMost/neuro-vault/commit/102bd063588e54abedcfc4a92cff5179b415e449))
+
+### Bug Fixes
+
+- use threshold 0 for quick-mode block search ([5b13f2f](https://github.com/AlexMost/neuro-vault/commit/5b13f2f213347d73514e7004191b9a3dfa955a35))
+
 ## [1.3.1](https://github.com/AlexMost/neuro-vault/compare/v1.3.0...v1.3.1) (2026-04-22)
 
 ### Bug Fixes
