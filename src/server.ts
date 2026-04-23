@@ -85,8 +85,8 @@ This server provides semantic search over an Obsidian vault using Smart Connecti
 
 ### 2. Write the query
 - Use 1-4 keywords — strip filler phrases like "find notes about", "show me", "remind me of"
-- One call per concept — make separate calls for synonyms and UA↔EN translations
-- Example: "vector search" → then "пошук" → then "embeddings"
+- One call per concept — make separate calls for synonyms and cross-language variants
+- Always search in the user's language + English; if the vault mixes languages, try both
 
 ### 3. Expansion
 Deep mode runs expansion by default — it takes the top results and finds notes similar to them, catching related content that didn't directly match the query. Pass \`expansion: true\` to enable it in quick mode, or \`expansion_limit\` to control how many top results are used as seeds (default: 3).
