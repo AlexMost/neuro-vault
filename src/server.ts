@@ -75,29 +75,25 @@ export interface NeuroVaultStartupDependencies {
 }
 
 const SERVER_INSTRUCTIONS = `\
-This server provides semantic search over an Obsidian vault using Smart Connections embeddings.
+Semantic search over an Obsidian vault. Only use when the question involves the user's personal notes, projects, or ideas.
 
-## Search protocol
+## How to search
 
-### 1. Choose mode
-- **quick** — specific question, need 1-2 notes ("where is the neuro-vault project?", "what's my note on X?")
-- **deep** — broad topic, need an overview ("everything about embeddings", "all AI project ideas")
+### 1. Write the query
+- Use 1-4 keywords, not full sentences — strip "find notes about", "show me", "remind me of"
+- Make separate calls for synonyms and cross-language variants
+- Search in the language of the user's message + English
 
-### 2. Write the query
-- Use 1-4 keywords — strip filler phrases like "find notes about", "show me", "remind me of"
-- One call per concept — make separate calls for synonyms and cross-language variants
-- Always search in the user's language + English; if the vault mixes languages, try both
+### 2. Choose mode
+- **quick** (default) — returns up to 3 notes, no expansion. Use for specific lookups.
+- **deep** — returns up to 8 notes + expands via similar notes. Use for broad topics.
+- Pass \`expansion: true\` in quick mode if you want expansion there too.
+- Lower \`threshold\` (default 0.5/0.35) to find weaker matches; the server retries at 0.3 automatically if nothing is found.
 
-### 3. Expansion
-Deep mode runs expansion by default — it takes the top results and finds notes similar to them, catching related content that didn't directly match the query. Pass \`expansion: true\` to enable it in quick mode, or \`expansion_limit\` to control how many top results are used as seeds (default: 3).
-
-### 4. Reading results
-- \`results\` — notes ranked by similarity; use the path to read the file
-- \`blockResults\` — individual sections ranked by relevance; use heading + line range to read only the relevant part
-
-If vector search returns nothing the server retries automatically at a lower threshold.
-If still nothing — search the vault files yourself using your own tools.
-After finding a relevant note, use get_similar_notes to discover related content.
+### 3. Use the results
+- \`results\` — notes ranked by similarity; read the file by path
+- \`blockResults\` — sections ranked by relevance; use heading + line range to jump to the relevant part
+- After finding a relevant note, call get_similar_notes to discover related content
 `;
 
 function defaultServerFactory(): ToolServer {
