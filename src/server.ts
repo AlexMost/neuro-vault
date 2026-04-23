@@ -80,15 +80,16 @@ Semantic search over an Obsidian vault. Use when the user's vault may contain re
 ## How to search
 
 ### 1. Write the query
-- Use 1-4 keywords, not full sentences — strip "find notes about", "show me", "remind me of"
-- Make separate calls for synonyms and cross-language variants
-- Search in the language of the user's message + English
+1. Extract the core nouns and concepts from the user's message — strip filler words and verbs. From "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build".
+2. Search each concept separately and in small combinations: "LLM", "agents", "LLM agents", "AI projects".
+3. Try synonyms and reformulations — the note may use different wording than the query.
+4. The vault may contain notes in multiple languages. Search in the language of the user's message + English.
+5. If a search returns no results, lower the threshold to 0.3 before giving up.
 
 ### 2. Choose mode
 - **quick** (default) — returns up to 3 notes, no expansion. Use for specific lookups.
 - **deep** — returns up to 8 notes + expands via similar notes. Use for broad topics.
 - Pass \`expansion: true\` in quick mode if you want expansion there too.
-- Lower \`threshold\` (default 0.5/0.35) to find weaker matches; the server retries at 0.3 automatically if nothing is found.
 
 ### 3. Use the results
 - \`results\` — notes ranked by similarity; read the file by path
