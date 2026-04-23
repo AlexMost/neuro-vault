@@ -88,7 +88,10 @@ This server provides semantic search over an Obsidian vault using Smart Connecti
 - One call per concept — make separate calls for synonyms and UA↔EN translations
 - Example: "vector search" → then "пошук" → then "embeddings"
 
-### 3. Reading results
+### 3. Expansion
+Deep mode runs expansion by default — it takes the top results and finds notes similar to them, catching related content that didn't directly match the query. Pass \`expansion: true\` to enable it in quick mode, or \`expansion_limit\` to control how many top results are used as seeds (default: 3).
+
+### 4. Reading results
 - \`results\` — notes ranked by similarity; use the path to read the file
 - \`blockResults\` — individual sections ranked by relevance; use heading + line range to read only the relevant part
 
