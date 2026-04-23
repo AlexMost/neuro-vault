@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import { executeRetrieval, type RetrievalOutput } from './retrieval-policy.js';
 import type {
   DuplicatePair,
   FindDuplicatesInput,
@@ -87,6 +88,19 @@ function normalizeQuery(query: string): string {
   const normalized = query.trim();
 
   if (!normalized) {
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'query must not be empty', {
+      details: { field: 'query' },
+    });
+  }
+
+  return normalized;
+}
+
+function normalizeQueries(query: string | string[]): string[] {
+  const raw = Array.isArray(query) ? query : [query];
+  const normalized = raw.map((q) => q.trim()).filter((q) => q.length > 0);
+
+  if (normalized.length === 0) {
     throw new ToolHandlerError('INVALID_ARGUMENT', 'query must not be empty', {
       details: { field: 'query' },
     });
@@ -197,32 +211,37 @@ export function createToolHandlers({
   embeddingProvider,
   searchEngine,
   modelKey,
+  vaultPath,
+  obsidianSearch,
+  grepSearch,
 }: ToolHandlerDependencies): ToolHandlers {
   return {
-    async searchNotes(input: SearchNotesInput): Promise<SearchResult[]> {
-      const query = normalizeQuery(input.query);
-      const limit = readPositiveInteger(input.limit, DEFAULT_SEARCH_LIMIT, 'limit');
-      const threshold = readThreshold(input.threshold, DEFAULT_SEARCH_THRESHOLD, 'threshold');
-
-      let queryVector: number[];
-
-      try {
-        queryVector = await embeddingProvider.embed(query);
-      } catch (error) {
-        throw wrapDependencyError(error, 'Failed to embed query text', {
-          modelKey,
-          operation: 'search_notes',
-        });
-      }
+    async searchNotes(input: SearchNotesInput): Promise<RetrievalOutput> {
+      const queries = normalizeQueries(input.query);
+      const mode = input.mode ?? 'quick';
+      const threshold =
+        input.threshold !== undefined
+          ? readThreshold(input.threshold, input.threshold, 'threshold')
+          : undefined;
+      const expansionLimit =
+        input.expansion_limit !== undefined
+          ? readPositiveInteger(input.expansion_limit, 3, 'expansion_limit')
+          : undefined;
 
       try {
-        return toSearchResults(
-          searchEngine,
-          queryVector,
-          loader.sources.values(),
+        return await executeRetrieval({
+          queries,
+          mode,
           threshold,
-          limit,
-        );
+          expansion: input.expansion,
+          expansionLimit,
+          sources: loader.sources,
+          embeddingProvider,
+          searchEngine,
+          vaultPath,
+          obsidianSearch,
+          grepSearch,
+        });
       } catch (error) {
         throw wrapDependencyError(error, 'Failed to search notes', {
           modelKey,

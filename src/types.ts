@@ -118,7 +118,7 @@ export interface ToolHandlerDependencies {
 export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENCY_ERROR';
 
 export interface ToolHandlers {
-  searchNotes(input: SearchNotesInput): Promise<SearchResult[]>;
+  searchNotes(input: SearchNotesInput): Promise<import('./retrieval-policy.js').RetrievalOutput>;
   getSimilarNotes(input: GetSimilarNotesInput): Promise<SearchResult[]>;
   findDuplicates(input?: FindDuplicatesInput): Promise<DuplicatePair[]>;
   getStats(): Promise<ToolStats>;
