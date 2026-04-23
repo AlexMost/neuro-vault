@@ -25,7 +25,7 @@ const MODE_DEFAULTS: Record<SearchMode, ModeConfig> = {
 };
 
 export interface RetrievalInput {
-  queries: string[];
+  query: string;
   mode: SearchMode;
   threshold?: number;
   expansion?: boolean;
@@ -54,12 +54,8 @@ function deduplicateResults(results: SearchResult[]): SearchResult[] {
   return Array.from(best.values());
 }
 
-function mergeAndDeduplicate(a: SearchResult[], b: SearchResult[]): SearchResult[] {
-  return deduplicateResults([...a, ...b]);
-}
-
 export async function executeRetrieval(input: RetrievalInput): Promise<RetrievalOutput> {
-  const { queries, mode, sources, embeddingProvider, searchEngine, vaultPath, obsidianSearch } =
+  const { query, mode, sources, embeddingProvider, searchEngine, vaultPath, obsidianSearch } =
     input;
 
   const modeConfig = MODE_DEFAULTS[mode];
@@ -69,50 +65,35 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
   const limit = modeConfig.limit;
 
-  // Step 1: Multi-query vector search
-  const allQueryVectors: Array<{ query: string; vector: number[] }> = [];
-  for (const query of queries) {
-    const vector = await embeddingProvider.embed(query);
-    allQueryVectors.push({ query, vector });
-  }
+  // Step 1: Vector search
+  const queryVector = await embeddingProvider.embed(query);
 
-  let vectorResults: SearchResult[] = [];
-  for (const { vector } of allQueryVectors) {
-    const results = searchEngine.findNeighbors({
-      queryVector: vector,
-      sources: sources.values(),
-      threshold,
-      limit,
-    });
-    vectorResults = mergeAndDeduplicate(vectorResults, results);
-  }
+  let vectorResults: SearchResult[] = searchEngine.findNeighbors({
+    queryVector,
+    sources: sources.values(),
+    threshold,
+    limit,
+  });
 
-  // Step 2: Fallback — lower threshold if no results and threshold > FALLBACK_THRESHOLD
+  // Step 2: Fallback — lower threshold if no results
   if (vectorResults.length === 0 && threshold > FALLBACK_THRESHOLD) {
-    const firstVector = allQueryVectors[0]!.vector;
-    const fallbackResults = searchEngine.findNeighbors({
-      queryVector: firstVector,
+    vectorResults = searchEngine.findNeighbors({
+      queryVector,
       sources: sources.values(),
       threshold: FALLBACK_THRESHOLD,
       limit,
     });
-    vectorResults = fallbackResults;
   }
 
   // Step 3: Block-level search (deep mode only)
   let blockResults: BlockSearchResult[] | undefined;
   if (mode === 'deep') {
-    const allBlockResults: BlockSearchResult[] = [];
-    for (const { vector } of allQueryVectors) {
-      const results = searchEngine.findBlockNeighbors({
-        queryVector: vector,
-        sources: sources.values(),
-        threshold,
-        limit,
-      });
-      allBlockResults.push(...results);
-    }
-    blockResults = allBlockResults;
+    blockResults = searchEngine.findBlockNeighbors({
+      queryVector,
+      sources: sources.values(),
+      threshold,
+      limit,
+    });
   }
 
   // Step 4: Expansion
@@ -127,7 +108,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
         threshold,
         limit,
       });
-      vectorResults = mergeAndDeduplicate(vectorResults, expansionNeighbors);
+      vectorResults = deduplicateResults([...vectorResults, ...expansionNeighbors]);
     }
   }
 
@@ -136,14 +117,10 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
 
   // Step 6: Text fallback if no vector results
   let textFallbackResults: TextSearchResult[] | undefined;
-  if (vectorResults.length === 0) {
-    const firstQuery = queries[0]!;
-
-    if (obsidianSearch) {
-      const available = await obsidianSearch.isAvailable();
-      if (available) {
-        textFallbackResults = await obsidianSearch.search(firstQuery, vaultPath, TEXT_SEARCH_LIMIT);
-      }
+  if (vectorResults.length === 0 && obsidianSearch) {
+    const available = await obsidianSearch.isAvailable();
+    if (available) {
+      textFallbackResults = await obsidianSearch.search(query, vaultPath, TEXT_SEARCH_LIMIT);
     }
   }
 

@@ -28,7 +28,7 @@ const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json'
 };
 
 const searchNotesSchema = z.object({
-  query: z.union([z.string(), z.array(z.string())]),
+  query: z.string(),
   mode: z.enum(['quick', 'deep']).optional(),
   limit: z.number().int().positive().optional(),
   threshold: z.number().min(0).max(1).optional(),
@@ -89,10 +89,9 @@ Before calling search_notes, determine:
 - **deep** — broad topic, need an overview ("everything about embeddings", "all AI project ideas")
 
 ### 2. Rewrite the query
-- Extract 2-4 key concepts (1-4 words each)
-- Remove filler words (remind, find, show)
-- Add synonyms and translations (UA ↔ EN if the user is bilingual)
-- Pass as an array: query: ["vector search", "пошук", "search optimization"]
+- Extract 1-4 key concepts, remove filler words (remind, find, show)
+- One call per concept — call search_notes multiple times for synonyms and UA↔EN translations
+- Example: search "vector search", then "пошук", then "embeddings" as separate calls
 
 ### 3. Use expansion wisely
 - In deep mode, expansion is on by default — it finds notes related to top results
@@ -208,7 +207,7 @@ export function createNeuroVaultServer({
     {
       title: 'Search Notes',
       description:
-        'Search notes by semantic similarity. Pass query as a string or array of short keyword queries (1-4 words). Choose mode: "quick" for specific lookups (1-2 notes), "deep" for broad topic overview with block-level search and expansion. Supports synonyms and multi-language queries.',
+        'Search notes by semantic similarity. Pass a short keyword query (1-4 words). Choose mode: "quick" for specific lookups (1-2 notes), "deep" for broad topic overview with block-level search and expansion. Call multiple times with different queries for synonyms or multi-language searches.',
       inputSchema: searchNotesSchema,
     },
     async (args) => invokeTool(() => handlers.searchNotes(args)),

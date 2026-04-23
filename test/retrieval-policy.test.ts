@@ -65,7 +65,7 @@ describe('executeRetrieval', () => {
       const embeddingProvider = makeEmbeddingProvider();
 
       await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick',
         sources,
         embeddingProvider,
@@ -83,7 +83,7 @@ describe('executeRetrieval', () => {
       const embeddingProvider = makeEmbeddingProvider();
 
       await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick',
         sources,
         embeddingProvider,
@@ -101,7 +101,7 @@ describe('executeRetrieval', () => {
       const embeddingProvider = makeEmbeddingProvider();
 
       await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'deep',
         sources,
         embeddingProvider,
@@ -119,7 +119,7 @@ describe('executeRetrieval', () => {
       const embeddingProvider = makeEmbeddingProvider();
 
       await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'deep',
         sources,
         embeddingProvider,
@@ -128,57 +128,6 @@ describe('executeRetrieval', () => {
       });
 
       expect(searchEngine.findBlockNeighbors).toHaveBeenCalled();
-    });
-  });
-
-  describe('multi-query deduplication', () => {
-    it('deduplicates results by path and keeps highest similarity', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const searchEngine = makeSearchEngine({
-        findNeighbors: vi
-          .fn()
-          .mockReturnValueOnce([
-            makeSearchResult('note-a.md', 0.9),
-            makeSearchResult('note-b.md', 0.7),
-          ])
-          .mockReturnValueOnce([
-            makeSearchResult('note-a.md', 0.6), // duplicate, lower similarity
-            makeSearchResult('note-c.md', 0.8),
-          ]),
-      });
-
-      const output = await executeRetrieval({
-        queries: ['query one', 'query two'],
-        mode: 'quick',
-        sources,
-        embeddingProvider,
-        searchEngine,
-        vaultPath: '/vault',
-      });
-
-      // note-a.md should appear only once with the higher similarity (0.9)
-      const noteAPaths = output.results.filter((r) => r.path === 'note-a.md');
-      expect(noteAPaths).toHaveLength(1);
-      expect(noteAPaths[0]!.similarity).toBe(0.9);
-    });
-
-    it('embeds each query once', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const searchEngine = makeSearchEngine();
-
-      await executeRetrieval({
-        queries: ['first', 'second', 'third'],
-        mode: 'quick',
-        sources,
-        embeddingProvider,
-        searchEngine,
-        vaultPath: '/vault',
-      });
-
-      expect(embeddingProvider.embed).toHaveBeenCalledTimes(3);
-      expect(embeddingProvider.embed).toHaveBeenCalledWith('first');
-      expect(embeddingProvider.embed).toHaveBeenCalledWith('second');
-      expect(embeddingProvider.embed).toHaveBeenCalledWith('third');
     });
   });
 
@@ -193,7 +142,7 @@ describe('executeRetrieval', () => {
       });
 
       const output = await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick',
         sources,
         embeddingProvider,
@@ -214,7 +163,7 @@ describe('executeRetrieval', () => {
       });
 
       await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick',
         threshold: 0.3,
         sources,
@@ -242,7 +191,7 @@ describe('executeRetrieval', () => {
       };
 
       const output = await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick',
         sources,
         embeddingProvider,
@@ -268,7 +217,7 @@ describe('executeRetrieval', () => {
       };
 
       const output = await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick',
         sources,
         embeddingProvider,
@@ -292,7 +241,7 @@ describe('executeRetrieval', () => {
       };
 
       const output = await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick',
         sources,
         embeddingProvider,
@@ -323,7 +272,7 @@ describe('executeRetrieval', () => {
       });
 
       const output = await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'deep',
         expansion: true,
         expansionLimit: 1,
@@ -358,7 +307,7 @@ describe('executeRetrieval', () => {
       });
 
       const output = await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'deep',
         expansion: true,
         expansionLimit: 1,
@@ -380,7 +329,7 @@ describe('executeRetrieval', () => {
       });
 
       await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick',
         expansion: false,
         sources,
@@ -400,7 +349,7 @@ describe('executeRetrieval', () => {
       const searchEngine = makeSearchEngine();
 
       await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick',
         threshold: 0.7,
         sources,
@@ -419,7 +368,7 @@ describe('executeRetrieval', () => {
       const searchEngine = makeSearchEngine();
 
       await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'deep',
         sources,
         embeddingProvider,
@@ -442,7 +391,7 @@ describe('executeRetrieval', () => {
       });
 
       const output = await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'deep',
         sources,
         embeddingProvider,
@@ -459,7 +408,7 @@ describe('executeRetrieval', () => {
       const searchEngine = makeSearchEngine();
 
       const output = await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick',
         sources,
         embeddingProvider,
@@ -482,7 +431,7 @@ describe('executeRetrieval', () => {
       });
 
       const output = await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'quick', // limit = 3
         sources,
         embeddingProvider,
@@ -503,7 +452,7 @@ describe('executeRetrieval', () => {
       });
 
       const output = await executeRetrieval({
-        queries: ['test query'],
+        query: 'test query',
         mode: 'deep',
         sources,
         embeddingProvider,

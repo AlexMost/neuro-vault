@@ -84,9 +84,8 @@ function normalizeNotePath(notePath: string): string {
   return normalized;
 }
 
-function normalizeQueries(query: string | string[]): string[] {
-  const raw = Array.isArray(query) ? query : [query];
-  const normalized = raw.map((q) => q.trim()).filter((q) => q.length > 0);
+function normalizeQuery(query: string): string {
+  const normalized = query.trim();
 
   if (normalized.length === 0) {
     throw new ToolHandlerError('INVALID_ARGUMENT', 'query must not be empty', {
@@ -204,7 +203,7 @@ export function createToolHandlers({
 }: ToolHandlerDependencies): ToolHandlers {
   return {
     async searchNotes(input: SearchNotesInput): Promise<RetrievalOutput> {
-      const queries = normalizeQueries(input.query);
+      const query = normalizeQuery(input.query);
       const mode = input.mode ?? 'quick';
       const threshold =
         input.threshold !== undefined
@@ -217,7 +216,7 @@ export function createToolHandlers({
 
       try {
         return await executeRetrieval({
-          queries,
+          query,
           mode,
           threshold,
           expansion: input.expansion,

@@ -78,7 +78,7 @@ export interface SearchEngine {
 export type SearchMode = 'quick' | 'deep';
 
 export interface SearchNotesInput {
-  query: string | string[];
+  query: string;
   mode?: SearchMode;
   limit?: number;
   threshold?: number;

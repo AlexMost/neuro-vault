@@ -421,37 +421,4 @@ describe('createToolHandlers', () => {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
-
-  it('accepts an array of queries', async () => {
-    const { tempRoot, vaultPath, smartEnvPath } = await makeVaultFixture([
-      'note-a.ajson',
-      'note-b.ajson',
-      'note-c.ajson',
-    ]);
-
-    try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
-      const handlers = createToolHandlers({
-        loader: corpus,
-        embeddingProvider: {
-          initialize: vi.fn(),
-          embed,
-        },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-        modelKey: 'bge-micro-v2',
-        vaultPath,
-      });
-
-      const result = await handlers.searchNotes({
-        query: ['query one', 'query two'],
-        threshold: 0,
-      });
-
-      expect(embed).toHaveBeenCalledTimes(2);
-      expect(result.results.length).toBeGreaterThan(0);
-    } finally {
-      await fs.rm(tempRoot, { recursive: true, force: true });
-    }
-  });
 });

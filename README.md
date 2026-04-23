@@ -115,22 +115,12 @@ On first run the embedding model downloads automatically (~40 MB). Subsequent st
 
 Every search picks a mode that controls retrieval depth:
 
-| Mode | Use when | Limit | Threshold | Expansion |
-|------|----------|-------|-----------|-----------|
-| `quick` | Specific question, need 1-2 notes | 3 | 0.50 | off |
-| `deep` | Broad topic, need an overview | 8 | 0.35 | on |
+| Mode    | Use when                          | Limit | Threshold | Expansion |
+| ------- | --------------------------------- | ----- | --------- | --------- |
+| `quick` | Specific question, need 1-2 notes | 3     | 0.50      | off       |
+| `deep`  | Broad topic, need an overview     | 8     | 0.35      | on        |
 
 The AI assistant picks the mode automatically based on your question. You can also pass it explicitly.
-
-### Multi-Query Search
-
-`search_notes` accepts a single string or an array of keyword queries. Results from all queries are merged and deduplicated, keeping the highest similarity score per note.
-
-```
-query: ["LLM agents", "AI automation", "language models"]
-```
-
-This lets the assistant search for synonyms, translations, and related concepts in one call.
 
 ### Block-Level Results (Deep Mode)
 
@@ -158,7 +148,7 @@ Search the vault by semantic similarity.
 
 ```typescript
 search_notes({
-  query: string | string[],   // one query or several keyword queries
+  query: string,               // short keyword query (1-4 words)
   mode?: "quick" | "deep",    // default: "quick"
   threshold?: number,          // override mode default (0–1)
   expansion?: boolean,         // override mode default
@@ -169,8 +159,9 @@ search_notes({
 Returns `results` (ranked notes), and in deep mode also `blockResults` (ranked sections). If vector search found nothing and obsidian-cli is available, returns `textFallbackResults`.
 
 **Tips for better results:**
+
 - Use short keyword queries (1–4 words), not full sentences
-- Pass synonyms and translations as separate queries: `["embeddings", "векторний пошук", "vector search"]`
+- Call multiple times for synonyms and translations: `"embeddings"`, then `"векторний пошук"`, then `"vector search"`
 - Lower the threshold to `0.3` if nothing comes back
 - Use `deep` mode for exploratory questions
 
@@ -224,9 +215,10 @@ Add this to your `AGENTS.md` or `CLAUDE.md` to help the AI assistant use the vau
 Use the `search_notes` MCP tool to search my Obsidian vault before answering questions about my notes, projects, or ideas.
 
 Search protocol:
+
 1. Choose mode: `quick` for specific questions, `deep` for broad topics
-2. Rewrite the query: extract 2-4 keywords, remove filler words, add synonyms and UA↔EN translations
-3. Pass as an array: `query: ["keyword", "synonym", "переклад"]`
+2. Rewrite the query: extract 2-4 keywords, remove filler words
+3. Call search_notes once per concept — use separate calls for synonyms and UA↔EN translations
 
 Skip vault search for: general programming questions, translations, tasks with no personal knowledge component.
 ```
@@ -237,10 +229,10 @@ Skip vault search for: general programming questions, translations, tasks with n
 
 ### CLI Arguments
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| `--vault` | yes | Absolute path to the Obsidian vault directory |
-| `--help`  | no  | Show help |
+| Argument  | Required | Description                                   |
+| --------- | -------- | --------------------------------------------- |
+| `--vault` | yes      | Absolute path to the Obsidian vault directory |
+| `--help`  | no       | Show help                                     |
 
 ### Startup Behavior
 
