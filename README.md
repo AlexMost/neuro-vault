@@ -53,8 +53,10 @@ Tool routing and retrieval policy are related, but not the same thing.
 - Smart Connections data at `<vault>/.smart-env/multi/*.ajson`
 
 ---
-
 ## Quick Start
+
+<details>
+     <summary>Install instructions...</summary>
 
 **1. Install**
 
@@ -102,6 +104,7 @@ Or run without installing using `npx`:
   }
 }
 ```
+</details>
 
 **3. Try it**
 
