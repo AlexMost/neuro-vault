@@ -10,39 +10,17 @@ import type {
   SearchResult,
   SmartSource,
   ToolHandlerDependencies,
-  ToolHandlerErrorCode,
   ToolHandlers,
   ToolStats,
 } from './types.js';
+import { ToolHandlerError } from './lib/tool-response.js';
+
+export { ToolHandlerError } from './lib/tool-response.js';
 
 const DEFAULT_SEARCH_LIMIT = 10;
 const DEFAULT_SEARCH_THRESHOLD = 0.5;
 const DEFAULT_DUPLICATE_THRESHOLD = 0.9;
 const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
-
-export class ToolHandlerError extends Error {
-  readonly code: ToolHandlerErrorCode;
-
-  readonly details?: Record<string, unknown>;
-
-  constructor(
-    code: ToolHandlerErrorCode,
-    message: string,
-    options?: {
-      details?: Record<string, unknown>;
-      cause?: unknown;
-    },
-  ) {
-    super(message);
-    this.name = 'ToolHandlerError';
-    this.code = code;
-    this.details = options?.details;
-
-    if (options?.cause !== undefined) {
-      (this as Error & { cause?: unknown }).cause = options.cause;
-    }
-  }
-}
 
 function normalizeNotePath(notePath: string): string {
   const trimmed = notePath.trim();

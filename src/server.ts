@@ -2,7 +2,6 @@ import { createRequire } from 'node:module';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
 import { EmbeddingService } from './embedding-service.js';
@@ -11,7 +10,8 @@ import {
   type SmartConnectionsCorpus,
 } from './smart-connections-loader.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
-import { createToolHandlers, ToolHandlerError } from './tool-handlers.js';
+import { createToolHandlers } from './tool-handlers.js';
+import { invokeTool } from './lib/tool-response.js';
 import type {
   EmbeddingProvider,
   SearchEngine,
@@ -46,13 +46,6 @@ const findDuplicatesSchema = z.object({
 });
 
 type ToolServer = Pick<McpServer, 'registerTool' | 'connect'>;
-
-type ToolContentBlock = {
-  type: 'text';
-  text: string;
-};
-
-type ToolResponse = CallToolResult;
 
 export interface NeuroVaultServerDependencies {
   loader: {
@@ -121,60 +114,6 @@ function defaultServerFactory(): ToolServer {
 
 function defaultTransportFactory(): StdioServerTransport {
   return new StdioServerTransport();
-}
-
-function toToolResponse(value: unknown): ToolResponse {
-  return {
-    content: [
-      {
-        type: 'text',
-        text: JSON.stringify(value, null, 2),
-      },
-    ] satisfies ToolContentBlock[],
-  };
-}
-
-function toToolErrorResponse(error: unknown): ToolResponse {
-  if (error instanceof ToolHandlerError) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: error.message,
-        },
-      ],
-      structuredContent: {
-        code: error.code,
-        message: error.message,
-        details: error.details ?? null,
-      },
-      isError: true,
-    };
-  }
-
-  const message = error instanceof Error ? error.message : 'Unknown tool error';
-
-  return {
-    content: [
-      {
-        type: 'text',
-        text: message,
-      },
-    ],
-    structuredContent: {
-      message,
-    },
-    isError: true,
-  };
-}
-
-async function invokeTool<T>(handler: () => Promise<T>): Promise<ToolResponse> {
-  try {
-    const value = await handler();
-    return toToolResponse(value);
-  } catch (error) {
-    return toToolErrorResponse(error);
-  }
 }
 
 export function createNeuroVaultServer({
