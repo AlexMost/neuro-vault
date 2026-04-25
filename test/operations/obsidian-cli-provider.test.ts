@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { ObsidianCLIProvider } from '../../src/modules/operations/obsidian-cli-provider.js';
+import { ToolHandlerError } from '../../src/lib/tool-response.js';
 
 describe('ObsidianCLIProvider.readNote', () => {
   it('parses path and content from "<path>\\n---\\n<body>" stdout', async () => {
@@ -146,5 +147,73 @@ describe('ObsidianCLIProvider daily', () => {
       ['daily:append', 'content=- new task'],
       { timeout: 10_000 },
     );
+  });
+});
+
+describe('ObsidianCLIProvider error mapping', () => {
+  it('maps spawn ENOENT to CLI_NOT_FOUND', async () => {
+    const exec = vi.fn().mockRejectedValue(Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }));
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await expect(
+      provider.readNote({ identifier: { kind: 'name', value: 'foo' } }),
+    ).rejects.toMatchObject({ code: 'CLI_NOT_FOUND' });
+  });
+
+  it('maps stderr "Obsidian is not running" to CLI_UNAVAILABLE', async () => {
+    const exec = vi.fn().mockRejectedValue(
+      Object.assign(new Error('exit 1'), { code: 1, stdout: '', stderr: 'Obsidian is not running' }),
+    );
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await expect(
+      provider.readNote({ identifier: { kind: 'name', value: 'foo' } }),
+    ).rejects.toMatchObject({ code: 'CLI_UNAVAILABLE' });
+  });
+
+  it('maps stderr "already exists" on create to NOTE_EXISTS', async () => {
+    const exec = vi.fn().mockRejectedValue(
+      Object.assign(new Error('exit 1'), { code: 1, stdout: '', stderr: 'File already exists' }),
+    );
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await expect(
+      provider.createNote({ path: 'Inbox/x.md' }),
+    ).rejects.toMatchObject({ code: 'NOTE_EXISTS' });
+  });
+
+  it('maps stderr "not found" on read to NOT_FOUND', async () => {
+    const exec = vi.fn().mockRejectedValue(
+      Object.assign(new Error('exit 1'), { code: 1, stdout: '', stderr: 'File not found' }),
+    );
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await expect(
+      provider.readNote({ identifier: { kind: 'path', value: 'missing.md' } }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('maps timeout error (code ETIMEDOUT) to CLI_TIMEOUT', async () => {
+    const exec = vi.fn().mockRejectedValue(
+      Object.assign(new Error('timeout'), { killed: true, signal: 'SIGTERM', code: 'ETIMEDOUT' }),
+    );
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await expect(
+      provider.readNote({ identifier: { kind: 'name', value: 'x' } }),
+    ).rejects.toMatchObject({ code: 'CLI_TIMEOUT' });
+  });
+
+  it('maps anything else to CLI_ERROR with stderr in details', async () => {
+    const exec = vi.fn().mockRejectedValue(
+      Object.assign(new Error('exit 2'), { code: 2, stdout: '', stderr: 'weird thing happened' }),
+    );
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await expect(
+      provider.readNote({ identifier: { kind: 'name', value: 'x' } }),
+    ).rejects.toSatisfy((err: ToolHandlerError) => {
+      return err.code === 'CLI_ERROR' && err.details?.stderr === 'weird thing happened';
+    });
   });
 });

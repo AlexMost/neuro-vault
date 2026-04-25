@@ -1,3 +1,4 @@
+import { ToolHandlerError } from '../../lib/tool-response.js';
 import type {
   AppendDailyInput,
   CreateNoteInput,
@@ -48,8 +49,7 @@ export class ObsidianCLIProvider implements VaultProvider {
   }
 
   async readNote(input: ReadNoteInput): Promise<ReadNoteResult> {
-    const args = this.buildArgs('read', identifierToArg(input.identifier));
-    const { stdout } = await this.exec(this.binary, args, { timeout: this.timeoutMs });
+    const { stdout } = await this.runCommand('read', [identifierToArg(input.identifier)]);
     return this.parseReadOutput(stdout);
   }
 
@@ -65,29 +65,93 @@ export class ObsidianCLIProvider implements VaultProvider {
     if (input.template !== undefined) tokens.push(`template=${input.template}`);
     if (input.overwrite) tokens.push('overwrite');
 
-    const args = this.buildArgs('create', ...tokens);
-    await this.exec(this.binary, args, { timeout: this.timeoutMs });
+    await this.runCommand('create', tokens);
 
     return { path: input.path ?? input.name! };
   }
+
   async editNote(input: EditNoteInput): Promise<void> {
-    const command = input.position;
-    const args = this.buildArgs(
-      command,
+    await this.runCommand(input.position, [
       identifierToArg(input.identifier),
       `content=${input.content}`,
-    );
-    await this.exec(this.binary, args, { timeout: this.timeoutMs });
+    ]);
   }
+
   async readDaily(): Promise<DailyNoteResult> {
-    const args = this.buildArgs('daily:read');
-    const { stdout } = await this.exec(this.binary, args, { timeout: this.timeoutMs });
+    const { stdout } = await this.runCommand('daily:read', []);
     return this.parseReadOutput(stdout);
   }
 
   async appendDaily(input: AppendDailyInput): Promise<void> {
-    const args = this.buildArgs('daily:append', `content=${input.content}`);
-    await this.exec(this.binary, args, { timeout: this.timeoutMs });
+    await this.runCommand('daily:append', [`content=${input.content}`]);
+  }
+
+  private async runCommand(
+    command: string,
+    kvPairs: string[],
+  ): Promise<{ stdout: string; stderr: string }> {
+    const args = this.buildArgs(command, ...kvPairs);
+    try {
+      return await this.exec(this.binary, args, { timeout: this.timeoutMs });
+    } catch (error) {
+      throw this.mapExecError(error, command);
+    }
+  }
+
+  private mapExecError(error: unknown, command: string): ToolHandlerError {
+    const errObj = (error ?? {}) as {
+      code?: string | number;
+      killed?: boolean;
+      stderr?: string;
+      message?: string;
+    };
+    const stderr = (errObj.stderr ?? '').toString();
+
+    if (errObj.code === 'ENOENT') {
+      return new ToolHandlerError(
+        'CLI_NOT_FOUND',
+        `Obsidian CLI binary not found at '${this.binary}'. Install obsidian-cli and ensure Obsidian is running.`,
+        { details: { binary: this.binary }, cause: error },
+      );
+    }
+
+    if (errObj.code === 'ETIMEDOUT' || errObj.killed) {
+      return new ToolHandlerError(
+        'CLI_TIMEOUT',
+        `Obsidian CLI timed out after ${this.timeoutMs}ms.`,
+        { details: { timeoutMs: this.timeoutMs }, cause: error },
+      );
+    }
+
+    if (/not running|URI handler/i.test(stderr)) {
+      return new ToolHandlerError(
+        'CLI_UNAVAILABLE',
+        'Obsidian is not running. Start Obsidian and try again.',
+        { details: { stderr }, cause: error },
+      );
+    }
+
+    if (command === 'create' && /already exists/i.test(stderr)) {
+      return new ToolHandlerError(
+        'NOTE_EXISTS',
+        'Note already exists. Pass overwrite: true after confirming with the user.',
+        { details: { stderr }, cause: error },
+      );
+    }
+
+    if (/not found/i.test(stderr)) {
+      return new ToolHandlerError(
+        'NOT_FOUND',
+        `Note not found: ${stderr.trim() || 'unknown'}`,
+        { details: { stderr, command }, cause: error },
+      );
+    }
+
+    return new ToolHandlerError(
+      'CLI_ERROR',
+      `Obsidian CLI failed: ${stderr || errObj.message || 'unknown error'}`,
+      { details: { stderr, command, exitCode: errObj.code }, cause: error },
+    );
   }
 
   private buildArgs(command: string, ...kvPairs: string[]): string[] {
