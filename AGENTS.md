@@ -53,6 +53,28 @@ Trivial work (typo fix, dependency bump, doc tweak) does not need a spec.
 - New external command invocations use `execFile` with an args array — never `exec` with an interpolated string.
 - Format with prettier; lint with eslint. Both run in `prepublishOnly`.
 
+## Subagent dispatch — model and reasoning effort
+
+When dispatching subagents for plan execution, match the **model** and **reasoning effort** to the task complexity:
+
+| Task shape | Model | Reasoning effort |
+|---|---|---|
+| Mechanical refactor, single file, complete spec, file move/rename, exact-snippet implementation | `haiku` | low |
+| Multi-file integration, TDD with new logic, error mapping, debugging, pattern matching, tool registration | `sonnet` | medium |
+| Architectural design, cross-cutting changes, ambiguous requirements, final repo-wide code review | `opus` | high |
+
+Reviewer roles:
+- **Spec compliance review** — same model as the implementer (`haiku` / `sonnet`); the question is whether code matches a written spec, which is mechanical.
+- **Code quality review** — one tier above the implementer (mechanical → `sonnet`, integration → `opus`); judgment-heavy.
+- **Final pre-merge review** — always `opus` with high effort.
+
+Signals that you should escalate one tier:
+- Subagent reports `BLOCKED` or `DONE_WITH_CONCERNS` on a task you originally classified as mechanical.
+- The task description contains "design", "decide", "choose between", or open-ended success criteria.
+- The change touches more than three files, or crosses module boundaries.
+
+Default to the lowest tier that can plausibly succeed; cost and latency add up across a 30-task plan, and a re-dispatch with a stronger model is cheap compared to over-spending on every task.
+
 ## Release
 
 - `npm run release` uses `commit-and-tag-version` — driven by Conventional Commits.
