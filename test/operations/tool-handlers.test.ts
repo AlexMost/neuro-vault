@@ -42,3 +42,31 @@ describe('operations.readNote handler', () => {
     });
   });
 });
+
+describe('operations.readNote validation', () => {
+  it('rejects when neither name nor path is provided', async () => {
+    const handlers = createOperationsHandlers({ provider: fakeProvider() });
+    await expect(handlers.readNote({})).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+
+  it('rejects when both name and path are provided', async () => {
+    const handlers = createOperationsHandlers({ provider: fakeProvider() });
+    await expect(
+      handlers.readNote({ name: 'a', path: 'b.md' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+
+  it('rejects path traversal', async () => {
+    const handlers = createOperationsHandlers({ provider: fakeProvider() });
+    await expect(
+      handlers.readNote({ path: '../../etc/passwd' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+
+  it('rejects Windows absolute paths', async () => {
+    const handlers = createOperationsHandlers({ provider: fakeProvider() });
+    await expect(
+      handlers.readNote({ path: 'C:/vault/note.md' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+});
