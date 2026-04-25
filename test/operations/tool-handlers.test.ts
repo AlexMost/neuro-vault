@@ -112,3 +112,61 @@ describe('operations.createNote handler', () => {
     );
   });
 });
+
+describe('operations.editNote handler', () => {
+  it('forwards identifier, content, and position', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.editNote({
+      path: 'Notes/x.md',
+      content: 'tail',
+      position: 'append',
+    });
+
+    expect(provider.editNote).toHaveBeenCalledWith({
+      identifier: { kind: 'path', value: 'Notes/x.md' },
+      content: 'tail',
+      position: 'append',
+    });
+  });
+
+  it('rejects invalid path', async () => {
+    const handlers = createOperationsHandlers({ provider: fakeProvider() });
+    await expect(
+      handlers.editNote({ path: '../bad', content: 'x', position: 'append' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+});
+
+describe('operations.readDaily handler', () => {
+  it('forwards to provider.readDaily and returns the result', async () => {
+    const provider = fakeProvider({
+      readDaily: vi.fn().mockResolvedValue({ path: 'Daily/2026-04-25.md', content: 'today' }),
+    });
+    const handlers = createOperationsHandlers({ provider });
+
+    const result = await handlers.readDaily({});
+
+    expect(provider.readDaily).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ path: 'Daily/2026-04-25.md', content: 'today' });
+  });
+});
+
+describe('operations.appendDaily handler', () => {
+  it('forwards content', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.appendDaily({ content: '- task' });
+
+    expect(provider.appendDaily).toHaveBeenCalledWith({ content: '- task' });
+  });
+
+  it('rejects empty content', async () => {
+    const handlers = createOperationsHandlers({ provider: fakeProvider() });
+    await expect(
+      handlers.appendDaily({ content: '   ' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+});

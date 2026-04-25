@@ -78,14 +78,30 @@ export function createOperationsHandlers(
 
       return provider.createNote(passthrough);
     },
-    async editNote(_input: EditNoteToolInput) {
-      throw new Error('not implemented');
+    async editNote(input: EditNoteToolInput) {
+      const identifier = resolveIdentifier(input.name, input.path);
+      if (input.content === undefined || input.content === '') {
+        throw invalidArgument('content must not be empty', 'content');
+      }
+      if (input.position !== 'append' && input.position !== 'prepend') {
+        throw invalidArgument('position must be append or prepend', 'position');
+      }
+      return provider.editNote({
+        identifier,
+        content: input.content,
+        position: input.position,
+      });
     },
+
     async readDaily(_input: ReadDailyToolInput) {
-      throw new Error('not implemented');
+      return provider.readDaily();
     },
-    async appendDaily(_input: AppendDailyToolInput) {
-      throw new Error('not implemented');
+
+    async appendDaily(input: AppendDailyToolInput) {
+      if (input.content === undefined || input.content.trim() === '') {
+        throw invalidArgument('content must not be empty', 'content');
+      }
+      return provider.appendDaily({ content: input.content });
     },
   };
 }
