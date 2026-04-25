@@ -56,8 +56,27 @@ export function createOperationsHandlers(
       const identifier = resolveIdentifier(input.name, input.path);
       return provider.readNote({ identifier });
     },
-    async createNote(_input: CreateNoteToolInput) {
-      throw new Error('not implemented');
+    async createNote(input: CreateNoteToolInput) {
+      if (input.name === undefined && input.path === undefined) {
+        throw invalidArgument('Provide name or path', 'name');
+      }
+      if (input.name !== undefined && input.path !== undefined) {
+        throw invalidArgument('Provide exactly one of name or path', 'name');
+      }
+
+      const passthrough: CreateNoteToolInput = {};
+      if (input.name !== undefined) {
+        if (input.name.trim() === '') throw invalidArgument('name must not be empty', 'name');
+        passthrough.name = input.name.trim();
+      }
+      if (input.path !== undefined) {
+        passthrough.path = normalizePath(input.path);
+      }
+      if (input.content !== undefined) passthrough.content = input.content;
+      if (input.template !== undefined) passthrough.template = input.template;
+      if (input.overwrite !== undefined) passthrough.overwrite = input.overwrite;
+
+      return provider.createNote(passthrough);
     },
     async editNote(_input: EditNoteToolInput) {
       throw new Error('not implemented');

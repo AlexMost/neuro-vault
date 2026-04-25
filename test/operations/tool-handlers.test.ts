@@ -70,3 +70,45 @@ describe('operations.readNote validation', () => {
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 });
+
+describe('operations.createNote handler', () => {
+  it('forwards normalized fields to provider.createNote', async () => {
+    const provider = fakeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'Inbox/idea.md' }),
+    });
+    const handlers = createOperationsHandlers({ provider });
+
+    const result = await handlers.createNote({
+      path: 'Inbox/idea.md',
+      content: 'hello',
+      template: 'idea',
+      overwrite: true,
+    });
+
+    expect(provider.createNote).toHaveBeenCalledWith({
+      path: 'Inbox/idea.md',
+      content: 'hello',
+      template: 'idea',
+      overwrite: true,
+    });
+    expect(result).toEqual({ path: 'Inbox/idea.md' });
+  });
+
+  it('rejects when neither name nor path is provided', async () => {
+    const handlers = createOperationsHandlers({ provider: fakeProvider() });
+    await expect(
+      handlers.createNote({ content: 'hello' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+
+  it('normalizes path before forwarding', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.createNote({ path: './Inbox/x.md' });
+
+    expect(provider.createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'Inbox/x.md' }),
+    );
+  });
+});
