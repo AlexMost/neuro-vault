@@ -5,3 +5,6 @@ dist/
 coverage/
 *.tsbuildinfo
 .DS_Store
+
+# Implementation plans are local working artifacts; specs are the canonical record.
+docs/superpowers/plans/
