@@ -4,10 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createSemanticModule, type SemanticModuleDeps } from './modules/semantic/index.js';
-import {
-  createOperationsModule,
-  type OperationsModuleDeps,
-} from './modules/operations/index.js';
+import { createOperationsModule, type OperationsModuleDeps } from './modules/operations/index.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ServerConfig } from './types.js';
 

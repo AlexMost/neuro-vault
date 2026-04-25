@@ -36,7 +36,10 @@ const defaultExec: ExecFn = async (binary, args, options) => {
   const result = (await execFileAsync(binary, args, {
     timeout: options.timeout,
     maxBuffer: 10 * 1024 * 1024,
-  })) as unknown as { stdout: string | { toString: () => string }; stderr: string | { toString: () => string } };
+  })) as unknown as {
+    stdout: string | { toString: () => string };
+    stderr: string | { toString: () => string };
+  };
   return {
     stdout: typeof result.stdout === 'string' ? result.stdout : result.stdout.toString(),
     stderr: typeof result.stderr === 'string' ? result.stderr : result.stderr.toString(),
@@ -152,11 +155,10 @@ export class ObsidianCLIProvider implements VaultProvider {
     }
 
     if (/not found/i.test(stderr)) {
-      return new ToolHandlerError(
-        'NOT_FOUND',
-        `Note not found: ${stderr.trim() || 'unknown'}`,
-        { details: { stderr, command }, cause: error },
-      );
+      return new ToolHandlerError('NOT_FOUND', `Note not found: ${stderr.trim() || 'unknown'}`, {
+        details: { stderr, command },
+        cause: error,
+      });
     }
 
     return new ToolHandlerError(

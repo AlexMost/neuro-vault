@@ -35,26 +35,14 @@ describe('parseConfig', () => {
 
   it('disables operations when --no-operations is passed', async () => {
     const vaultPath = path.resolve('/tmp', 'vault');
-    const config = await parseConfig([
-      'node',
-      'cli.js',
-      '--vault',
-      vaultPath,
-      '--no-operations',
-    ]);
+    const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath, '--no-operations']);
 
     expect(config.operations.enabled).toBe(false);
   });
 
   it('disables semantic when --no-semantic is passed', async () => {
     const vaultPath = path.resolve('/tmp', 'vault');
-    const config = await parseConfig([
-      'node',
-      'cli.js',
-      '--vault',
-      vaultPath,
-      '--no-semantic',
-    ]);
+    const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath, '--no-semantic']);
 
     expect(config.semantic.enabled).toBe(false);
   });
@@ -76,14 +64,7 @@ describe('parseConfig', () => {
   it('rejects when both modules are disabled', async () => {
     const vaultPath = path.resolve('/tmp', 'vault');
     await expect(
-      parseConfig([
-        'node',
-        'cli.js',
-        '--vault',
-        vaultPath,
-        '--no-operations',
-        '--no-semantic',
-      ]),
+      parseConfig(['node', 'cli.js', '--vault', vaultPath, '--no-operations', '--no-semantic']),
     ).rejects.toThrow(/at least one module/i);
   });
 });

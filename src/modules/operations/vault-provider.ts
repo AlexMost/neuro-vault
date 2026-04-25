@@ -1,6 +1,4 @@
-export type NoteIdentifier =
-  | { kind: 'name'; value: string }
-  | { kind: 'path'; value: string };
+export type NoteIdentifier = { kind: 'name'; value: string } | { kind: 'path'; value: string };
 
 export interface ReadNoteInput {
   identifier: NoteIdentifier;

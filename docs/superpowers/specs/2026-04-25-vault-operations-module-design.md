@@ -92,16 +92,16 @@ LLM → MCP tool call
 // src/modules/operations/vault-provider.ts
 
 export type NoteIdentifier =
-  | { kind: 'name'; value: string }   // wikilink-style, resolves like Obsidian
-  | { kind: 'path'; value: string };  // exact vault-relative path
+  | { kind: 'name'; value: string } // wikilink-style, resolves like Obsidian
+  | { kind: 'path'; value: string }; // exact vault-relative path
 
 export interface ReadNoteInput {
   identifier: NoteIdentifier;
 }
 
 export interface ReadNoteResult {
-  path: string;     // vault-relative POSIX path
-  content: string;  // raw markdown
+  path: string; // vault-relative POSIX path
+  content: string; // raw markdown
 }
 
 export interface CreateNoteInput {
@@ -145,6 +145,7 @@ export interface VaultProvider {
 **Why a tagged union for `NoteIdentifier`:** Obsidian CLI distinguishes `file=` (resolves like a wikilink) from `path=` (exact). Encoding the choice in a tagged union makes intent explicit at every call site instead of two optional fields with a runtime XOR check.
 
 **What `VaultProvider` deliberately does not do:**
+
 - Does not parse frontmatter — clients receive raw markdown.
 - Does not normalize paths — that happens one layer up in `tool-handlers.ts`, matching the semantic module's pattern.
 - Does not validate business rules (empty content etc.) — also one layer up.
@@ -155,10 +156,10 @@ export interface VaultProvider {
 // src/modules/operations/obsidian-cli-provider.ts
 
 export interface ObsidianCLIProviderOptions {
-  binaryPath?: string;     // default: 'obsidian'
-  vaultName?: string;      // appended as `vault=<name>` if set
-  timeoutMs?: number;      // default: 10_000
-  exec?: ExecFn;           // injectable for tests
+  binaryPath?: string; // default: 'obsidian'
+  vaultName?: string; // appended as `vault=<name>` if set
+  timeoutMs?: number; // default: 10_000
+  exec?: ExecFn; // injectable for tests
 }
 
 type ExecFn = (
@@ -202,14 +203,14 @@ Parser splits on the first `\n---\n`. If the separator is absent, the whole stdo
 
 ### Error mapping
 
-| Signal | Error code | Message |
-|---|---|---|
-| spawn `ENOENT` | `CLI_NOT_FOUND` | `"Obsidian CLI binary not found at '<binary>'. Install it and ensure Obsidian is running."` |
-| stderr matches `not running` or `URI handler` | `CLI_UNAVAILABLE` | `"Obsidian is not running. Start Obsidian and try again."` |
-| timeout | `CLI_TIMEOUT` | `"Obsidian CLI timed out after <timeoutMs>ms."` |
-| `create` non-zero + stderr matches `already exists` | `NOTE_EXISTS` | `"Note already exists at <path>. Pass overwrite: true after confirming with the user."` |
-| `read`/`edit` non-zero + stderr matches `not found` | `NOT_FOUND` | `"Note not found: <identifier>"` |
-| Other non-zero exit | `CLI_ERROR` | `"Obsidian CLI failed: <stderr>"` |
+| Signal                                              | Error code        | Message                                                                                     |
+| --------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------- |
+| spawn `ENOENT`                                      | `CLI_NOT_FOUND`   | `"Obsidian CLI binary not found at '<binary>'. Install it and ensure Obsidian is running."` |
+| stderr matches `not running` or `URI handler`       | `CLI_UNAVAILABLE` | `"Obsidian is not running. Start Obsidian and try again."`                                  |
+| timeout                                             | `CLI_TIMEOUT`     | `"Obsidian CLI timed out after <timeoutMs>ms."`                                             |
+| `create` non-zero + stderr matches `already exists` | `NOTE_EXISTS`     | `"Note already exists at <path>. Pass overwrite: true after confirming with the user."`     |
+| `read`/`edit` non-zero + stderr matches `not found` | `NOT_FOUND`       | `"Note not found: <identifier>"`                                                            |
+| Other non-zero exit                                 | `CLI_ERROR`       | `"Obsidian CLI failed: <stderr>"`                                                           |
 
 The pattern list lives next to a comment that flags it as fragile by design — Obsidian CLI returns exit codes only, with human-readable stderr.
 
@@ -231,7 +232,7 @@ inputSchema: {
 }  // exactly one
 ```
 
-Description: *"Read a note's contents. Provide either `name` (wikilink-style, resolves like Obsidian) or `path` (vault-relative, exact). Returns `{ path, content }`."*
+Description: _"Read a note's contents. Provide either `name` (wikilink-style, resolves like Obsidian) or `path` (vault-relative, exact). Returns `{ path, content }`."_
 
 ### `create_note`
 
@@ -245,7 +246,7 @@ inputSchema: {
 }
 ```
 
-Description: *"Create a new note. Provide `name` or `path`. Optional `content` and `template`. **If a note with this path/name might already exist and the user has not explicitly asked to replace it, ask the user before passing `overwrite: true` — overwrite is destructive.** Default behavior fails when the note exists."*
+Description: _"Create a new note. Provide `name` or `path`. Optional `content` and `template`. **If a note with this path/name might already exist and the user has not explicitly asked to replace it, ask the user before passing `overwrite: true` — overwrite is destructive.** Default behavior fails when the note exists."_
 
 ### `edit_note`
 
@@ -258,7 +259,7 @@ inputSchema: {
 }
 ```
 
-Description: *"Add content to an existing note at the start (`prepend`) or end (`append`). Use `\n` for newlines."*
+Description: _"Add content to an existing note at the start (`prepend`) or end (`append`). Use `\n` for newlines."_
 
 ### `read_daily`
 
@@ -266,7 +267,7 @@ Description: *"Add content to an existing note at the start (`prepend`) or end (
 inputSchema: {}
 ```
 
-Description: *"Read today's daily note. Returns `{ path, content }`. Useful for 'what's on my agenda?'-style questions."*
+Description: _"Read today's daily note. Returns `{ path, content }`. Useful for 'what's on my agenda?'-style questions."_
 
 ### `append_daily`
 
@@ -276,7 +277,7 @@ inputSchema: {
 }
 ```
 
-Description: *"Append content to today's daily note. Use `\n` for newlines. Common uses: log a thought, add a task, mark progress."*
+Description: _"Append content to today's daily note. Use `\n` for newlines. Common uses: log a thought, add a task, mark progress."_
 
 ### Shared response wiring
 
@@ -286,12 +287,12 @@ Description: *"Append content to today's daily note. Use `\n` for newlines. Comm
 
 CLI flags in `src/config.ts`:
 
-| Flag | Default | Purpose |
-|---|---|---|
-| `--vault <path>` | required | absolute vault path (unchanged) |
-| `--operations` / `--no-operations` | `true` | enable/disable operations module |
-| `--semantic` / `--no-semantic` | `true` | enable/disable semantic module |
-| `--obsidian-cli <path>` | `obsidian` | override path to the `obsidian` binary |
+| Flag                               | Default    | Purpose                                |
+| ---------------------------------- | ---------- | -------------------------------------- |
+| `--vault <path>`                   | required   | absolute vault path (unchanged)        |
+| `--operations` / `--no-operations` | `true`     | enable/disable operations module       |
+| `--semantic` / `--no-semantic`     | `true`     | enable/disable semantic module         |
+| `--obsidian-cli <path>`            | `obsidian` | override path to the `obsidian` binary |
 
 Resulting `ServerConfig`:
 

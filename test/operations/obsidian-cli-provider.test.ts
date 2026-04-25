@@ -37,11 +37,9 @@ describe('ObsidianCLIProvider.readNote', () => {
 
     await provider.readNote({ identifier: { kind: 'path', value: 'Folder/note.md' } });
 
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['read', 'path=Folder/note.md'],
-      { timeout: 10_000 },
-    );
+    expect(exec).toHaveBeenCalledWith('obsidian', ['read', 'path=Folder/note.md'], {
+      timeout: 10_000,
+    });
   });
 
   it('appends vault=<name> to args when vaultName is set', async () => {
@@ -50,11 +48,9 @@ describe('ObsidianCLIProvider.readNote', () => {
 
     await provider.readNote({ identifier: { kind: 'path', value: 'Folder/x.md' } });
 
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['read', 'path=Folder/x.md', 'vault=Brain'],
-      { timeout: 10_000 },
-    );
+    expect(exec).toHaveBeenCalledWith('obsidian', ['read', 'path=Folder/x.md', 'vault=Brain'], {
+      timeout: 10_000,
+    });
   });
 });
 
@@ -82,11 +78,9 @@ describe('ObsidianCLIProvider.createNote', () => {
 
     await provider.createNote({ path: 'Inbox/x.md', overwrite: true });
 
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['create', 'path=Inbox/x.md', 'overwrite'],
-      { timeout: 10_000 },
-    );
+    expect(exec).toHaveBeenCalledWith('obsidian', ['create', 'path=Inbox/x.md', 'overwrite'], {
+      timeout: 10_000,
+    });
   });
 
   it('returns the path passed in (path identifier)', async () => {
@@ -110,11 +104,9 @@ describe('ObsidianCLIProvider.editNote', () => {
       position: 'append',
     });
 
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['append', 'file=Notes', 'content=new line'],
-      { timeout: 10_000 },
-    );
+    expect(exec).toHaveBeenCalledWith('obsidian', ['append', 'file=Notes', 'content=new line'], {
+      timeout: 10_000,
+    });
   });
 
   it('uses prepend command for position=prepend with path identifier', async () => {
@@ -155,17 +147,17 @@ describe('ObsidianCLIProvider daily', () => {
 
     await provider.appendDaily({ content: '- new task' });
 
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['daily:append', 'content=- new task'],
-      { timeout: 10_000 },
-    );
+    expect(exec).toHaveBeenCalledWith('obsidian', ['daily:append', 'content=- new task'], {
+      timeout: 10_000,
+    });
   });
 });
 
 describe('ObsidianCLIProvider error mapping', () => {
   it('maps spawn ENOENT to CLI_NOT_FOUND', async () => {
-    const exec = vi.fn().mockRejectedValue(Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }));
+    const exec = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }));
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
@@ -174,9 +166,15 @@ describe('ObsidianCLIProvider error mapping', () => {
   });
 
   it('maps stderr "Obsidian is not running" to CLI_UNAVAILABLE', async () => {
-    const exec = vi.fn().mockRejectedValue(
-      Object.assign(new Error('exit 1'), { code: 1, stdout: '', stderr: 'Obsidian is not running' }),
-    );
+    const exec = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('exit 1'), {
+          code: 1,
+          stdout: '',
+          stderr: 'Obsidian is not running',
+        }),
+      );
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
@@ -185,20 +183,24 @@ describe('ObsidianCLIProvider error mapping', () => {
   });
 
   it('maps stderr "already exists" on create to NOTE_EXISTS', async () => {
-    const exec = vi.fn().mockRejectedValue(
-      Object.assign(new Error('exit 1'), { code: 1, stdout: '', stderr: 'File already exists' }),
-    );
+    const exec = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('exit 1'), { code: 1, stdout: '', stderr: 'File already exists' }),
+      );
     const provider = new ObsidianCLIProvider({ exec });
 
-    await expect(
-      provider.createNote({ path: 'Inbox/x.md' }),
-    ).rejects.toMatchObject({ code: 'NOTE_EXISTS' });
+    await expect(provider.createNote({ path: 'Inbox/x.md' })).rejects.toMatchObject({
+      code: 'NOTE_EXISTS',
+    });
   });
 
   it('maps stderr "not found" on read to NOT_FOUND', async () => {
-    const exec = vi.fn().mockRejectedValue(
-      Object.assign(new Error('exit 1'), { code: 1, stdout: '', stderr: 'File not found' }),
-    );
+    const exec = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('exit 1'), { code: 1, stdout: '', stderr: 'File not found' }),
+      );
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
@@ -207,9 +209,11 @@ describe('ObsidianCLIProvider error mapping', () => {
   });
 
   it('maps timeout error (code ETIMEDOUT) to CLI_TIMEOUT', async () => {
-    const exec = vi.fn().mockRejectedValue(
-      Object.assign(new Error('timeout'), { killed: true, signal: 'SIGTERM', code: 'ETIMEDOUT' }),
-    );
+    const exec = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('timeout'), { killed: true, signal: 'SIGTERM', code: 'ETIMEDOUT' }),
+      );
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
@@ -218,15 +222,17 @@ describe('ObsidianCLIProvider error mapping', () => {
   });
 
   it('maps anything else to CLI_ERROR with stderr in details', async () => {
-    const exec = vi.fn().mockRejectedValue(
-      Object.assign(new Error('exit 2'), { code: 2, stdout: '', stderr: 'weird thing happened' }),
-    );
+    const exec = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('exit 2'), { code: 2, stdout: '', stderr: 'weird thing happened' }),
+      );
     const provider = new ObsidianCLIProvider({ exec });
 
-    await expect(
-      provider.readNote({ identifier: { kind: 'name', value: 'x' } }),
-    ).rejects.toSatisfy((err: ToolHandlerError) => {
-      return err.code === 'CLI_ERROR' && err.details?.stderr === 'weird thing happened';
-    });
+    await expect(provider.readNote({ identifier: { kind: 'name', value: 'x' } })).rejects.toSatisfy(
+      (err: ToolHandlerError) => {
+        return err.code === 'CLI_ERROR' && err.details?.stderr === 'weird thing happened';
+      },
+    );
   });
 });

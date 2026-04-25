@@ -23,8 +23,14 @@ function invalidArgument(message: string, field: string): ToolHandlerError {
 }
 
 function resolveIdentifier(name: string | undefined, pathArg: string | undefined): NoteIdentifier {
-  if ((name === undefined && pathArg === undefined) || (name !== undefined && pathArg !== undefined)) {
-    throw invalidArgument('Provide exactly one of name or path', name === undefined ? 'name' : 'path');
+  if (
+    (name === undefined && pathArg === undefined) ||
+    (name !== undefined && pathArg !== undefined)
+  ) {
+    throw invalidArgument(
+      'Provide exactly one of name or path',
+      name === undefined ? 'name' : 'path',
+    );
   }
   if (name !== undefined) {
     if (name.trim() === '') throw invalidArgument('name must not be empty', 'name');

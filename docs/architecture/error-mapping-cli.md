@@ -12,14 +12,14 @@ The Obsidian CLI does not return structured errors — it exits non-zero and pri
 
 ## Mapping
 
-| Signal | Error code | Meaning |
-|---|---|---|
-| spawn `ENOENT` | `CLI_NOT_FOUND` | Binary not found at the configured path. |
-| `ETIMEDOUT` / `killed` | `CLI_TIMEOUT` | Process did not finish within `timeoutMs`. |
-| stderr matches `not running` or `URI handler` | `CLI_UNAVAILABLE` | Binary exists but Obsidian is not running. |
-| `command === 'create'` and stderr matches `already exists` | `NOTE_EXISTS` | Hint to the LLM to ask the user before retrying with `overwrite: true`. |
-| stderr matches `not found` | `NOT_FOUND` | The note does not exist. |
-| Anything else | `CLI_ERROR` | Unknown failure; full `stderr` is in `details`. |
+| Signal                                                     | Error code        | Meaning                                                                 |
+| ---------------------------------------------------------- | ----------------- | ----------------------------------------------------------------------- |
+| spawn `ENOENT`                                             | `CLI_NOT_FOUND`   | Binary not found at the configured path.                                |
+| `ETIMEDOUT` / `killed`                                     | `CLI_TIMEOUT`     | Process did not finish within `timeoutMs`.                              |
+| stderr matches `not running` or `URI handler`              | `CLI_UNAVAILABLE` | Binary exists but Obsidian is not running.                              |
+| `command === 'create'` and stderr matches `already exists` | `NOTE_EXISTS`     | Hint to the LLM to ask the user before retrying with `overwrite: true`. |
+| stderr matches `not found`                                 | `NOT_FOUND`       | The note does not exist.                                                |
+| Anything else                                              | `CLI_ERROR`       | Unknown failure; full `stderr` is in `details`.                         |
 
 ## Caveats
 

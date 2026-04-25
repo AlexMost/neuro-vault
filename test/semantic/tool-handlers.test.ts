@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 
 import { loadSmartConnectionsCorpus } from '../../src/modules/semantic/smart-connections-loader.js';
-import { findBlockNeighbors, findDuplicates, findNeighbors } from '../../src/modules/semantic/search-engine.js';
+import {
+  findBlockNeighbors,
+  findDuplicates,
+  findNeighbors,
+} from '../../src/modules/semantic/search-engine.js';
 import { createToolHandlers, ToolHandlerError } from '../../src/modules/semantic/tool-handlers.js';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));

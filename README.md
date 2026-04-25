@@ -59,6 +59,7 @@ Tool routing and retrieval policy are related, but not the same thing.
 - Disable with `--no-operations` if you only want semantic search.
 
 ---
+
 ## Quick Start
 
 <details>
@@ -110,6 +111,7 @@ Or run without installing using `npx`:
   }
 }
 ```
+
 </details>
 
 **3. Try it**
@@ -273,7 +275,7 @@ Read today's daily note. Returns `{ path, content }`.
 Append content to today's daily note.
 
 ```typescript
-append_daily({ content: string })
+append_daily({ content: string });
 ```
 
 ---
@@ -296,13 +298,13 @@ Follow the Neuro Vault MCP server instructions for routing between semantic sear
 
 ### CLI Arguments
 
-| Argument            | Required | Default     | Description                                              |
-| ------------------- | -------- | ----------- | -------------------------------------------------------- |
-| `--vault`           | yes      | —           | Absolute path to the Obsidian vault directory            |
-| `--semantic`        | no       | `true`      | Enable semantic search module (`--no-semantic` to skip)  |
-| `--operations`      | no       | `true`      | Enable vault operations module (`--no-operations`)       |
-| `--obsidian-cli`    | no       | `obsidian`  | Path to the `obsidian` CLI binary (override only)        |
-| `--help`            | no       | —           | Show help                                                |
+| Argument         | Required | Default    | Description                                             |
+| ---------------- | -------- | ---------- | ------------------------------------------------------- |
+| `--vault`        | yes      | —          | Absolute path to the Obsidian vault directory           |
+| `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip) |
+| `--operations`   | no       | `true`     | Enable vault operations module (`--no-operations`)      |
+| `--obsidian-cli` | no       | `obsidian` | Path to the `obsidian` CLI binary (override only)       |
+| `--help`         | no       | —          | Show help                                               |
 
 ### Startup Behavior
 

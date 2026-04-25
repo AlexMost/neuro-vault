@@ -1,9 +1,17 @@
 import { EmbeddingService } from './embedding-service.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
-import { loadSmartConnectionsCorpus, type SmartConnectionsCorpus } from './smart-connections-loader.js';
+import {
+  loadSmartConnectionsCorpus,
+  type SmartConnectionsCorpus,
+} from './smart-connections-loader.js';
 import { createToolHandlers } from './tool-handlers.js';
 import { buildSemanticTools } from './tools.js';
-import type { EmbeddingProvider, SearchEngine, ToolHandlerDependencies, ToolHandlers } from './types.js';
+import type {
+  EmbeddingProvider,
+  SearchEngine,
+  ToolHandlerDependencies,
+  ToolHandlers,
+} from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 
 export interface SemanticModuleConfig {

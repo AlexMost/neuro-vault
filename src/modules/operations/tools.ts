@@ -37,11 +37,10 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Read Note',
         description:
-          'Read a note\'s contents. Provide either `name` (wikilink-style, resolves like Obsidian) or `path` (vault-relative, exact). Returns `{ path, content }`.',
+          "Read a note's contents. Provide either `name` (wikilink-style, resolves like Obsidian) or `path` (vault-relative, exact). Returns `{ path, content }`.",
         inputSchema: readNoteSchema,
       },
-      handler: async (args) =>
-        invokeTool(() => handlers.readNote(readNoteSchema.parse(args))),
+      handler: async (args) => invokeTool(() => handlers.readNote(readNoteSchema.parse(args))),
     },
     {
       name: 'create_note',
@@ -51,8 +50,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
           'Create a new note. Provide `name` or `path`. Optional `content` and `template`. If a note with this path/name might already exist and the user has not explicitly asked to replace it, ask the user before passing `overwrite: true` — overwrite is destructive. Default behavior fails when the note exists.',
         inputSchema: createNoteSchema,
       },
-      handler: async (args) =>
-        invokeTool(() => handlers.createNote(createNoteSchema.parse(args))),
+      handler: async (args) => invokeTool(() => handlers.createNote(createNoteSchema.parse(args))),
     },
     {
       name: 'edit_note',
@@ -62,8 +60,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
           'Add content to an existing note at the start (`prepend`) or end (`append`). Use \\n for newlines.',
         inputSchema: editNoteSchema,
       },
-      handler: async (args) =>
-        invokeTool(() => handlers.editNote(editNoteSchema.parse(args))),
+      handler: async (args) => invokeTool(() => handlers.editNote(editNoteSchema.parse(args))),
     },
     {
       name: 'read_daily',

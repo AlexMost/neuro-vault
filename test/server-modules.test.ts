@@ -54,17 +54,14 @@ describe('Neuro Vault MCP server bootstrap', () => {
     const loadCorpus = vi.fn().mockResolvedValue(fakeCorpus);
 
     try {
-      await main(
-        ['node', 'cli.js', '--vault', vaultPath, '--no-operations'],
-        {
-          semantic: {
-            loadCorpus,
-            embeddingServiceFactory: () => ({ initialize, embed: vi.fn() }),
-          },
-          serverFactory: () => server,
-          transportFactory: () => ({}) as never,
+      await main(['node', 'cli.js', '--vault', vaultPath, '--no-operations'], {
+        semantic: {
+          loadCorpus,
+          embeddingServiceFactory: () => ({ initialize, embed: vi.fn() }),
         },
-      );
+        serverFactory: () => server,
+        transportFactory: () => ({}) as never,
+      });
 
       expect(server.registeredToolNames).toEqual([
         'search_notes',
@@ -141,14 +138,11 @@ describe('Neuro Vault MCP server bootstrap', () => {
     };
 
     try {
-      await main(
-        ['node', 'cli.js', '--vault', vaultPath, '--no-semantic'],
-        {
-          operations: { vaultProviderFactory: () => fakeProvider },
-          serverFactory: () => server,
-          transportFactory: () => ({}) as never,
-        },
-      );
+      await main(['node', 'cli.js', '--vault', vaultPath, '--no-semantic'], {
+        operations: { vaultProviderFactory: () => fakeProvider },
+        serverFactory: () => server,
+        transportFactory: () => ({}) as never,
+      });
 
       expect(server.registeredToolNames).toEqual([
         'read_note',
@@ -180,7 +174,10 @@ describe('Neuro Vault MCP server bootstrap', () => {
       await main(['node', 'cli.js', '--vault', vaultPath], {
         semantic: {
           loadCorpus: vi.fn().mockResolvedValue(fakeCorpus),
-          embeddingServiceFactory: () => ({ initialize: vi.fn().mockResolvedValue(undefined), embed: vi.fn() }),
+          embeddingServiceFactory: () => ({
+            initialize: vi.fn().mockResolvedValue(undefined),
+            embed: vi.fn(),
+          }),
         },
         operations: { vaultProviderFactory: () => fakeProvider },
         serverFactory: () => server,
