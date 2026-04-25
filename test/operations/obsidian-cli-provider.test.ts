@@ -29,4 +29,17 @@ describe('ObsidianCLIProvider.readNote', () => {
 
     expect(result).toEqual({ path: '', content: 'just a body without sep' });
   });
+
+  it('builds path= token when identifier is a path', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'Folder/note.md\n---\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.readNote({ identifier: { kind: 'path', value: 'Folder/note.md' } });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['read', 'path=Folder/note.md'],
+      { timeout: 10_000 },
+    );
+  });
 });
