@@ -125,4 +125,95 @@ describe('Neuro Vault MCP server bootstrap', () => {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('registers five operations tools when only --operations is enabled', async () => {
+    const tempRoot = await createTempVaultPath();
+    const vaultPath = path.join(tempRoot, 'vault');
+    await fs.mkdir(vaultPath, { recursive: true });
+
+    const server = createFakeServer();
+    const fakeProvider = {
+      readNote: vi.fn(),
+      createNote: vi.fn(),
+      editNote: vi.fn(),
+      readDaily: vi.fn(),
+      appendDaily: vi.fn(),
+    };
+
+    try {
+      await main(
+        ['node', 'cli.js', '--vault', vaultPath, '--no-semantic'],
+        {
+          operations: { vaultProviderFactory: () => fakeProvider },
+          serverFactory: () => server,
+          transportFactory: () => ({}) as never,
+        },
+      );
+
+      expect(server.registeredToolNames).toEqual([
+        'read_note',
+        'create_note',
+        'edit_note',
+        'read_daily',
+        'append_daily',
+      ]);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('registers nine tools (4 semantic + 5 operations) when both modules are enabled', async () => {
+    const tempRoot = await createTempVaultPath();
+    const vaultPath = path.join(tempRoot, 'vault');
+    await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
+
+    const server = createFakeServer();
+    const fakeProvider = {
+      readNote: vi.fn(),
+      createNote: vi.fn(),
+      editNote: vi.fn(),
+      readDaily: vi.fn(),
+      appendDaily: vi.fn(),
+    };
+
+    try {
+      await main(['node', 'cli.js', '--vault', vaultPath], {
+        semantic: {
+          loadCorpus: vi.fn().mockResolvedValue(fakeCorpus),
+          embeddingServiceFactory: () => ({ initialize: vi.fn().mockResolvedValue(undefined), embed: vi.fn() }),
+        },
+        operations: { vaultProviderFactory: () => fakeProvider },
+        serverFactory: () => server,
+        transportFactory: () => ({}) as never,
+      });
+
+      expect(server.registeredToolNames).toEqual([
+        'search_notes',
+        'get_similar_notes',
+        'find_duplicates',
+        'get_stats',
+        'read_note',
+        'create_note',
+        'edit_note',
+        'read_daily',
+        'append_daily',
+      ]);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects startup when both modules are disabled', async () => {
+    const tempRoot = await createTempVaultPath();
+    const vaultPath = path.join(tempRoot, 'vault');
+    await fs.mkdir(vaultPath, { recursive: true });
+
+    try {
+      await expect(
+        main(['node', 'cli.js', '--vault', vaultPath, '--no-semantic', '--no-operations']),
+      ).rejects.toThrow(/at least one module/i);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
 });
