@@ -75,6 +75,18 @@ Signals that you should escalate one tier:
 
 Default to the lowest tier that can plausibly succeed; cost and latency add up across a 30-task plan, and a re-dispatch with a stronger model is cheap compared to over-spending on every task.
 
+## Subagent definition of done
+
+Every implementer subagent dispatched for a task in a plan MUST verify, before reporting `DONE`, that the working tree is in a fully green state:
+
+- `npm test` — all tests pass; the test count must not drop unintentionally.
+- `npm run lint` — clean (no errors).
+- `npx tsc --noEmit` — clean (no errors). This is the source of truth for typechecking; `tsup` uses `isolatedModules` so a `tsup` build alone is not sufficient.
+
+If any of those three checks fail, the subagent's status is NOT `DONE`. The correct status is `DONE_WITH_CONCERNS` (with the failure spelled out) or `BLOCKED`. The controller will not advance to the next task while any of the three checks is red.
+
+This applies even to refactor / move tasks where "no behavior change" is the goal — silent regressions caught a task later are far more expensive than re-running three short commands at the end of every task.
+
 ## Release
 
 - `npm run release` uses `commit-and-tag-version` — driven by Conventional Commits.
