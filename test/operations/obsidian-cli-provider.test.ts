@@ -43,6 +43,19 @@ describe('ObsidianCLIProvider.readNote', () => {
       { timeout: 10_000 },
     );
   });
+
+  it('appends vault=<name> to args when vaultName is set', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'Folder/x.md\n---\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'Brain' });
+
+    await provider.readNote({ identifier: { kind: 'path', value: 'Folder/x.md' } });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['read', 'path=Folder/x.md', 'vault=Brain'],
+      { timeout: 10_000 },
+    );
+  });
 });
 
 describe('ObsidianCLIProvider.createNote', () => {
