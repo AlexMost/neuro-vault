@@ -4,6 +4,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createSemanticModule, type SemanticModuleDeps } from './modules/semantic/index.js';
+import {
+  createOperationsModule,
+  type OperationsModuleDeps,
+} from './modules/operations/index.js';
+import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ServerConfig } from './types.js';
 
 const require = createRequire(import.meta.url);
@@ -16,6 +21,7 @@ type ToolServer = Pick<McpServer, 'registerTool' | 'connect'>;
 
 export interface NeuroVaultStartupDependencies {
   semantic?: SemanticModuleDeps;
+  operations?: OperationsModuleDeps;
   serverFactory?: () => ToolServer;
   transportFactory?: () => StdioServerTransport;
 }
@@ -68,29 +74,44 @@ export async function startNeuroVaultServer(
   config: ServerConfig,
   deps: NeuroVaultStartupDependencies = {},
 ): Promise<void> {
+  if (!config.semantic.enabled && !config.operations.enabled) {
+    throw new Error('No modules enabled — pass --semantic or --operations');
+  }
+
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;
   const server = serverFactory();
 
-  if (!config.semantic.enabled) {
-    throw new Error('No modules enabled — pass --semantic or --operations');
+  const registrations: ToolRegistration[] = [];
+  let warmup: () => Promise<void> = async () => {};
+
+  if (config.semantic.enabled) {
+    const semantic = await createSemanticModule(
+      {
+        smartEnvPath: config.semantic.smartEnvPath,
+        modelKey: config.semantic.modelKey,
+        modelId: config.semantic.modelId,
+      },
+      deps.semantic,
+    );
+    registrations.push(...semantic.tools);
+    warmup = semantic.warmup;
   }
 
-  const semantic = await createSemanticModule(
-    {
-      smartEnvPath: config.semantic.smartEnvPath,
-      modelKey: config.semantic.modelKey,
-      modelId: config.semantic.modelId,
-    },
-    deps.semantic,
-  );
+  if (config.operations.enabled) {
+    const operations = createOperationsModule(
+      { binaryPath: config.operations.binaryPath },
+      deps.operations,
+    );
+    registrations.push(...operations.tools);
+  }
 
-  for (const tool of semantic.tools) {
+  for (const tool of registrations) {
     server.registerTool(tool.name, tool.spec, tool.handler);
   }
 
   await server.connect(transportFactory());
-  void semantic.warmup().catch((error) => {
+  void warmup().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`semantic warmup failed: ${message}\n`);
   });
