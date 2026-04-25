@@ -1,3 +1,5 @@
+import type { RetrievalOutput } from './retrieval-policy.js';
+
 export interface SmartBlock {
   key: string;
   heading: string;
@@ -91,7 +93,7 @@ export interface ToolHandlerDependencies {
 export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENCY_ERROR';
 
 export interface ToolHandlers {
-  searchNotes(input: SearchNotesInput): Promise<import('./retrieval-policy.js').RetrievalOutput>;
+  searchNotes(input: SearchNotesInput): Promise<RetrievalOutput>;
   getSimilarNotes(input: GetSimilarNotesInput): Promise<SearchResult[]>;
   findDuplicates(input?: FindDuplicatesInput): Promise<DuplicatePair[]>;
   getStats(): Promise<ToolStats>;

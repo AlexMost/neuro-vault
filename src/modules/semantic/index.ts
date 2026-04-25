@@ -51,9 +51,7 @@ export async function createSemanticModule(
   return {
     tools: buildSemanticTools(handlers),
     warmup: async () => {
-      await embeddingService.initialize().catch(() => {
-        /* lazy load on first search if pre-warm fails */
-      });
+      await embeddingService.initialize();
     },
   };
 }

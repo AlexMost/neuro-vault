@@ -34,7 +34,7 @@ export function buildSemanticTools(handlers: ToolHandlers): ToolRegistration[] {
         inputSchema: searchNotesSchema,
       },
       handler: async (args) =>
-        invokeTool(() => handlers.searchNotes(args as Parameters<ToolHandlers['searchNotes']>[0])),
+        invokeTool(() => handlers.searchNotes(searchNotesSchema.parse(args))),
     },
     {
       name: 'get_similar_notes',
@@ -45,9 +45,7 @@ export function buildSemanticTools(handlers: ToolHandlers): ToolRegistration[] {
         inputSchema: getSimilarNotesSchema,
       },
       handler: async (args) =>
-        invokeTool(() =>
-          handlers.getSimilarNotes(args as Parameters<ToolHandlers['getSimilarNotes']>[0]),
-        ),
+        invokeTool(() => handlers.getSimilarNotes(getSimilarNotesSchema.parse(args))),
     },
     {
       name: 'find_duplicates',
@@ -57,9 +55,7 @@ export function buildSemanticTools(handlers: ToolHandlers): ToolRegistration[] {
         inputSchema: findDuplicatesSchema,
       },
       handler: async (args) =>
-        invokeTool(() =>
-          handlers.findDuplicates(args as Parameters<ToolHandlers['findDuplicates']>[0]),
-        ),
+        invokeTool(() => handlers.findDuplicates(findDuplicatesSchema.parse(args))),
     },
     {
       name: 'get_stats',

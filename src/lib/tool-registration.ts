@@ -8,7 +8,9 @@ export interface ToolRegistration {
     title?: string;
     description?: string;
     inputSchema?: ZodRawShapeCompat | AnySchema;
+    outputSchema?: ZodRawShapeCompat | AnySchema;
     annotations?: ToolAnnotations;
+    _meta?: Record<string, unknown>;
   };
   handler: (args: unknown) => Promise<CallToolResult>;
 }

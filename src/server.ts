@@ -90,5 +90,8 @@ export async function startNeuroVaultServer(
   }
 
   await server.connect(transportFactory());
-  await semantic.warmup();
+  void semantic.warmup().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`semantic warmup failed: ${message}\n`);
+  });
 }
