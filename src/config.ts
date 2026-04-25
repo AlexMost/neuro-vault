@@ -34,8 +34,14 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
 
   return {
     vaultPath: normalizedVaultPath,
-    smartEnvPath: path.join(normalizedVaultPath, '.smart-env', 'multi'),
-    modelKey: DEFAULT_MODEL_KEY,
-    modelId: DEFAULT_MODEL_ID,
+    semantic: {
+      enabled: true,
+      smartEnvPath: path.join(normalizedVaultPath, '.smart-env', 'multi'),
+      modelKey: DEFAULT_MODEL_KEY,
+      modelId: DEFAULT_MODEL_ID,
+    },
+    operations: {
+      enabled: false,
+    },
   };
 }

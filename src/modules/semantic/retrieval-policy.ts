@@ -5,7 +5,7 @@ import type {
   SearchMode,
   SearchResult,
   SmartSource,
-} from '../../types.js';
+} from './types.js';
 
 const FALLBACK_THRESHOLD = 0.3;
 const QUICK_BLOCK_LIMIT = 5;

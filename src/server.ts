@@ -2,23 +2,9 @@ import { createRequire } from 'node:module';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { z } from 'zod';
 
-import { EmbeddingService } from './modules/semantic/embedding-service.js';
-import {
-  loadSmartConnectionsCorpus,
-  type SmartConnectionsCorpus,
-} from './modules/semantic/smart-connections-loader.js';
-import { findBlockNeighbors, findDuplicates, findNeighbors } from './modules/semantic/search-engine.js';
-import { createToolHandlers } from './modules/semantic/tool-handlers.js';
-import { invokeTool } from './lib/tool-response.js';
-import type {
-  EmbeddingProvider,
-  SearchEngine,
-  ServerConfig,
-  ToolHandlerDependencies,
-  ToolHandlers,
-} from './types.js';
+import { createSemanticModule, type SemanticModuleDeps } from './modules/semantic/index.js';
+import type { ServerConfig } from './types.js';
 
 const require = createRequire(import.meta.url);
 const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json') as {
@@ -26,43 +12,10 @@ const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json'
   version: string;
 };
 
-const searchNotesSchema = z.object({
-  query: z.string(),
-  mode: z.enum(['quick', 'deep']).optional(),
-  limit: z.number().int().positive().optional(),
-  threshold: z.number().min(0).max(1).optional(),
-  expansion: z.boolean().optional(),
-  expansion_limit: z.number().int().positive().optional(),
-});
-
-const getSimilarNotesSchema = z.object({
-  note_path: z.string(),
-  limit: z.number().int().positive().optional(),
-  threshold: z.number().min(0).max(1).optional(),
-});
-
-const findDuplicatesSchema = z.object({
-  threshold: z.number().min(0).max(1).optional(),
-});
-
 type ToolServer = Pick<McpServer, 'registerTool' | 'connect'>;
 
-export interface NeuroVaultServerDependencies {
-  loader: {
-    sources: Map<string, import('./types.js').SmartSource>;
-  };
-  embeddingProvider: EmbeddingProvider;
-  searchEngine: SearchEngine;
-  modelKey: string;
-  toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
-  serverFactory?: () => ToolServer;
-}
-
 export interface NeuroVaultStartupDependencies {
-  loadCorpus?: (smartEnvPath: string, modelKey: string) => Promise<SmartConnectionsCorpus>;
-  embeddingServiceFactory?: (modelKey: string) => EmbeddingProvider;
-  searchEngine?: SearchEngine;
-  toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
+  semantic?: SemanticModuleDeps;
   serverFactory?: () => ToolServer;
   transportFactory?: () => StdioServerTransport;
 }
@@ -102,13 +55,8 @@ Vault search guidance for an Obsidian vault. Use when the user's vault may conta
 
 function defaultServerFactory(): ToolServer {
   return new McpServer(
-    {
-      name: SERVER_NAME,
-      version: SERVER_VERSION,
-    },
-    {
-      instructions: SERVER_INSTRUCTIONS,
-    },
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { instructions: SERVER_INSTRUCTIONS },
   );
 }
 
@@ -116,101 +64,31 @@ function defaultTransportFactory(): StdioServerTransport {
   return new StdioServerTransport();
 }
 
-export function createNeuroVaultServer({
-  loader,
-  embeddingProvider,
-  searchEngine,
-  modelKey,
-  toolHandlersFactory = createToolHandlers,
-  serverFactory = defaultServerFactory,
-}: NeuroVaultServerDependencies): ToolServer {
-  const server = serverFactory();
-  const handlers = toolHandlersFactory({
-    loader,
-    embeddingProvider,
-    searchEngine,
-    modelKey,
-  });
-
-  server.registerTool(
-    'search_notes',
-    {
-      title: 'Search Notes',
-      description:
-        'Search notes by semantic similarity for fuzzy recall, topic lookup, or cross-language matching. Pass a short keyword query (1-4 words). Choose mode: "quick" for specific lookups (up to 3 notes), "deep" for broad topic overview with block-level search and expansion. Call multiple times with different queries for synonyms or multi-language searches.',
-      inputSchema: searchNotesSchema,
-    },
-    async (args) => invokeTool(() => handlers.searchNotes(args)),
-  );
-
-  server.registerTool(
-    'get_similar_notes',
-    {
-      title: 'Get Similar Notes',
-      description:
-        'Find semantically related notes after you already have a relevant note path. Pass a vault-relative POSIX path (e.g. "Folder/note.md").',
-      inputSchema: getSimilarNotesSchema,
-    },
-    async (args) => invokeTool(() => handlers.getSimilarNotes(args)),
-  );
-
-  server.registerTool(
-    'find_duplicates',
-    {
-      title: 'Find Duplicates',
-      description: 'Identify note pairs with high embedding similarity.',
-      inputSchema: findDuplicatesSchema,
-    },
-    async (args) => invokeTool(() => handlers.findDuplicates(args)),
-  );
-
-  server.registerTool(
-    'get_stats',
-    {
-      title: 'Get Stats',
-      description: 'Report corpus and embedding statistics.',
-    },
-    async () => invokeTool(() => handlers.getStats()),
-  );
-
-  return server;
-}
-
-function ensureCorpusIsUsable(corpus: SmartConnectionsCorpus): void {
-  if (corpus.sources.size === 0) {
-    throw new Error('Loaded Smart Connections corpus is empty');
-  }
-}
-
 export async function startNeuroVaultServer(
   config: ServerConfig,
   deps: NeuroVaultStartupDependencies = {},
 ): Promise<void> {
-  const loadCorpus = deps.loadCorpus ?? loadSmartConnectionsCorpus;
-  const embeddingServiceFactory =
-    deps.embeddingServiceFactory ??
-    ((modelId: string) => new EmbeddingService({ modelKey: modelId }));
-  const searchEngine = deps.searchEngine ?? { findNeighbors, findBlockNeighbors, findDuplicates };
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;
+  const server = serverFactory();
 
-  const corpus = await loadCorpus(config.smartEnvPath, config.modelKey);
-  ensureCorpusIsUsable(corpus);
+  if (!config.semantic.enabled) {
+    throw new Error('No modules enabled — pass --semantic or --operations');
+  }
 
-  const embeddingService = embeddingServiceFactory(config.modelId);
+  const semantic = await createSemanticModule(
+    {
+      smartEnvPath: config.semantic.smartEnvPath,
+      modelKey: config.semantic.modelKey,
+      modelId: config.semantic.modelId,
+    },
+    deps.semantic,
+  );
 
-  const server = createNeuroVaultServer({
-    loader: corpus,
-    embeddingProvider: embeddingService,
-    searchEngine,
-    modelKey: config.modelKey,
-    toolHandlersFactory: deps.toolHandlersFactory,
-    serverFactory,
-  });
+  for (const tool of semantic.tools) {
+    server.registerTool(tool.name, tool.spec, tool.handler);
+  }
 
   await server.connect(transportFactory());
-
-  embeddingService.initialize().catch(() => {
-    /* model will be loaded lazily on first search if pre-warm fails */
-  });
+  await semantic.warmup();
 }

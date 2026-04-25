@@ -12,7 +12,7 @@ import type {
   ToolHandlerDependencies,
   ToolHandlers,
   ToolStats,
-} from '../../types.js';
+} from './types.js';
 import { ToolHandlerError } from '../../lib/tool-response.js';
 
 export { ToolHandlerError } from '../../lib/tool-response.js';
