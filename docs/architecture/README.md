@@ -11,6 +11,9 @@ These are living documents. Update the relevant file in the same change that alt
 - [retrieval-policy.md](./retrieval-policy.md) — search modes, threshold fallback, expansion
 - [embedding-pipeline.md](./embedding-pipeline.md) — `@xenova/transformers` lazy initialization and value normalization
 - [search-engine.md](./search-engine.md) — cosine similarity, neighbor / block / duplicate search
+- [module-structure.md](./module-structure.md) — how `src/modules/{semantic,operations}/` plug into the server
+- [vault-provider.md](./vault-provider.md) — the operations-module abstraction over the Obsidian CLI
+- [error-mapping-cli.md](./error-mapping-cli.md) — Obsidian CLI stderr → structured `ToolHandlerError` codes
 
 ## Reading order
 
