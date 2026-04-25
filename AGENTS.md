@@ -1,0 +1,60 @@
+# Agent Working Notes
+
+Conventions for AI agents (and humans) working on this repository.
+
+## Documentation layout
+
+```
+docs/
+  architecture/                  # one file per architectural concept (current state)
+  superpowers/
+    specs/                       # design specs — COMMITTED, canonical record
+    plans/                       # implementation plans — GITIGNORED, local only
+```
+
+### Specs (`docs/superpowers/specs/`)
+
+- Filename: `YYYY-MM-DD-<topic>-design.md`
+- Created during brainstorming, before any code is written.
+- One spec per feature or significant change.
+- Committed to git. This is the long-lived, reviewed record of what was decided and why.
+- A spec describes goal, scope, architecture, interfaces, error handling, testing strategy, and Definition of Done.
+- Specs do not get rewritten as the world changes — if a decision is revisited, write a new spec that supersedes the old one and link the two. The old spec stays so the history is readable.
+
+### Plans (`docs/superpowers/plans/`)
+
+- Created from a spec, by the writing-plans flow.
+- Step-by-step implementation breakdown for execution in a session.
+- **Gitignored.** Plans are local working artifacts that change frequently during execution. They are not the canonical record — the spec is.
+- If a plan reveals that the spec was wrong, fix the spec and commit that fix. The plan itself stays local.
+
+### Architecture docs (`docs/architecture/`)
+
+- One file per architectural concept (e.g. `module-structure.md`, `vault-provider.md`, `retrieval-policy.md`).
+- Describes the **current** state of the codebase, not future plans.
+- Each file answers: what is this concept, why does it exist, how does it interact with the rest of the system, what are its boundaries.
+- Updated when the concept it describes changes — these are living documents, not historical records.
+- A reader should be able to understand any one architectural concept by reading exactly one file.
+
+## Workflow for non-trivial work
+
+1. **Brainstorm** → write a spec to `docs/superpowers/specs/`. Commit it.
+2. **Plan** → derive an implementation plan from the spec into `docs/superpowers/plans/` (local only).
+3. **Implement** → follow the plan. Update the spec inline if a decision changes mid-flight.
+4. **Document** → if the change introduces or alters an architectural concept, update or add a file in `docs/architecture/` as part of the same change.
+
+Trivial work (typo fix, dependency bump, doc tweak) does not need a spec.
+
+## Coding conventions
+
+- TypeScript strict mode; module type is ESM.
+- Tests use vitest; mocks via `vi.fn()`. Prefer DI over module-level mocks.
+- Error responses go through `ToolHandlerError` so MCP clients receive structured `{ code, message, details }`.
+- New external command invocations use `execFile` with an args array — never `exec` with an interpolated string.
+- Format with prettier; lint with eslint. Both run in `prepublishOnly`.
+
+## Release
+
+- `npm run release` uses `commit-and-tag-version` — driven by Conventional Commits.
+- A release should bundle one logical unit of change (one spec → one release where reasonable).
+- Update the README in the same change that introduces user-facing behaviour.
