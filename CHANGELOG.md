@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.5.0](https://github.com/AlexMost/neuro-vault/compare/v1.4.1...v1.5.0) (2026-04-25)
+
+### Features
+
+- **config:** add --semantic / --operations / --obsidian-cli flags ([ca56876](https://github.com/AlexMost/neuro-vault/commit/ca568761b605d80e43bd940e83c5335149dbfcb9))
+- **operations:** add tool handlers with readNote ([ebb8825](https://github.com/AlexMost/neuro-vault/commit/ebb8825b17e8bbe356582e5c19997271b163b7d9))
+- **operations:** default ObsidianCLIProvider to real execFile ([4238729](https://github.com/AlexMost/neuro-vault/commit/4238729630e14658e6e1960ffd22397376290f39))
+- **operations:** define error codes and tool input types ([86ce189](https://github.com/AlexMost/neuro-vault/commit/86ce1899bc369f89948f4d3b342474fe21b983c0))
+- **operations:** define VaultProvider interface ([a373b3a](https://github.com/AlexMost/neuro-vault/commit/a373b3a1d0e2fcbfdd5b53b386fa16391ea4a5d8))
+- **operations:** export createOperationsModule ([202c473](https://github.com/AlexMost/neuro-vault/commit/202c473edc7b577ea469227362e371a2bf96e3d3))
+- **operations:** implement createNote ([ea5201b](https://github.com/AlexMost/neuro-vault/commit/ea5201b17e36383c6f4538231ef4e768dae1efb9))
+- **operations:** implement createNote handler ([da509f1](https://github.com/AlexMost/neuro-vault/commit/da509f1390612b6048bfb6da4585cbd5b18a0159))
+- **operations:** implement edit/read-daily/append-daily handlers ([a241706](https://github.com/AlexMost/neuro-vault/commit/a24170603394a8352d1536b57e22cfa9f4f7e360))
+- **operations:** implement editNote ([06d8c6e](https://github.com/AlexMost/neuro-vault/commit/06d8c6e5b7d6695b0e8175af991607a345a75f7a))
+- **operations:** implement readDaily and appendDaily ([633364c](https://github.com/AlexMost/neuro-vault/commit/633364c1bf639f8768c28f28b6d54326ca3f37ff))
+- **operations:** map CLI failures to ToolHandlerError codes ([a00cc57](https://github.com/AlexMost/neuro-vault/commit/a00cc577ce7a0cce6d4776f55ff24699baac5d71))
+- **operations:** register 5 vault operation tools ([cab7a66](https://github.com/AlexMost/neuro-vault/commit/cab7a660e927d10bd2b10e08dbc53a8afb084679))
+- **operations:** scaffold ObsidianCLIProvider with readNote ([cea119a](https://github.com/AlexMost/neuro-vault/commit/cea119a9fc35b0bc2603a004e68a9e75e16fda3b))
+- **server:** update instructions to cover operations + routing ([556da47](https://github.com/AlexMost/neuro-vault/commit/556da47c266b474faeba4df13564a0edf617e07e))
+- wire operations module into server ([04e93d0](https://github.com/AlexMost/neuro-vault/commit/04e93d09db75f7c26ae5ad7f68bc16911cfee0e5))
+
+### Bug Fixes
+
+- **tool-response:** return text block for void handlers ([bc54b57](https://github.com/AlexMost/neuro-vault/commit/bc54b578bdeec898805fb104e9e9a4b5e66c8d7d))
+
 ## [1.4.1](https://github.com/AlexMost/neuro-vault/compare/v1.4.0...v1.4.1) (2026-04-23)
 
 ## [1.4.0](https://github.com/AlexMost/neuro-vault/compare/v1.3.1...v1.4.0) (2026-04-23)
