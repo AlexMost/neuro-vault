@@ -5,9 +5,13 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { loadSmartConnectionsCorpus } from '../src/smart-connections-loader.js';
-import { findBlockNeighbors, findDuplicates, findNeighbors } from '../src/search-engine.js';
-import { createToolHandlers, ToolHandlerError } from '../src/tool-handlers.js';
+import { loadSmartConnectionsCorpus } from '../../src/modules/semantic/smart-connections-loader.js';
+import {
+  findBlockNeighbors,
+  findDuplicates,
+  findNeighbors,
+} from '../../src/modules/semantic/search-engine.js';
+import { createToolHandlers, ToolHandlerError } from '../../src/modules/semantic/tool-handlers.js';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.resolve(testDir, 'fixtures/vault/.smart-env/multi');

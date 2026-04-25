@@ -2,23 +2,11 @@ import { createRequire } from 'node:module';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { z } from 'zod';
 
-import { EmbeddingService } from './embedding-service.js';
-import {
-  loadSmartConnectionsCorpus,
-  type SmartConnectionsCorpus,
-} from './smart-connections-loader.js';
-import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
-import { createToolHandlers, ToolHandlerError } from './tool-handlers.js';
-import type {
-  EmbeddingProvider,
-  SearchEngine,
-  ServerConfig,
-  ToolHandlerDependencies,
-  ToolHandlers,
-} from './types.js';
+import { createSemanticModule, type SemanticModuleDeps } from './modules/semantic/index.js';
+import { createOperationsModule, type OperationsModuleDeps } from './modules/operations/index.js';
+import type { ToolRegistration } from './lib/tool-registration.js';
+import type { ServerConfig } from './types.js';
 
 const require = createRequire(import.meta.url);
 const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json') as {
@@ -26,68 +14,33 @@ const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json'
   version: string;
 };
 
-const searchNotesSchema = z.object({
-  query: z.string(),
-  mode: z.enum(['quick', 'deep']).optional(),
-  limit: z.number().int().positive().optional(),
-  threshold: z.number().min(0).max(1).optional(),
-  expansion: z.boolean().optional(),
-  expansion_limit: z.number().int().positive().optional(),
-});
-
-const getSimilarNotesSchema = z.object({
-  note_path: z.string(),
-  limit: z.number().int().positive().optional(),
-  threshold: z.number().min(0).max(1).optional(),
-});
-
-const findDuplicatesSchema = z.object({
-  threshold: z.number().min(0).max(1).optional(),
-});
-
 type ToolServer = Pick<McpServer, 'registerTool' | 'connect'>;
 
-type ToolContentBlock = {
-  type: 'text';
-  text: string;
-};
-
-type ToolResponse = CallToolResult;
-
-export interface NeuroVaultServerDependencies {
-  loader: {
-    sources: Map<string, import('./types.js').SmartSource>;
-  };
-  embeddingProvider: EmbeddingProvider;
-  searchEngine: SearchEngine;
-  modelKey: string;
-  toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
-  serverFactory?: () => ToolServer;
-}
-
 export interface NeuroVaultStartupDependencies {
-  loadCorpus?: (smartEnvPath: string, modelKey: string) => Promise<SmartConnectionsCorpus>;
-  embeddingServiceFactory?: (modelKey: string) => EmbeddingProvider;
-  searchEngine?: SearchEngine;
-  toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
+  semantic?: SemanticModuleDeps;
+  operations?: OperationsModuleDeps;
   serverFactory?: () => ToolServer;
   transportFactory?: () => StdioServerTransport;
 }
 
 const SERVER_INSTRUCTIONS = `\
-Vault search guidance for an Obsidian vault. Use when the user's vault may contain relevant context — their notes, projects, plans, tasks, learning materials, or ideas. This includes both direct requests ("find my notes on X") and questions where vault context would improve the answer ("what's on my agenda?", "what was I working on?").
+This server provides two capability sets for an Obsidian vault: semantic search (when enabled) and direct vault operations (when enabled). Use the right one based on the user's intent.
 
-## Search routing
+## When to use vault operations
 
-1. Choose the search class first: structural or semantic.
-2. If the user gives an exact anchor and structural tools are available, start there first.
-3. Prefer Obsidian CLI when available for exact note, path, date, tag, property, and link lookups.
-4. If Obsidian CLI is unavailable, use other structural file or navigation tools available in the current environment.
-5. Structural anchors include exact note title or filename, explicit path or folder, daily note by date or relative date, tag/property/wikilink, backlinks, or link traversal.
-6. Use \`search_notes\` when the user is recalling a topic fuzzily, asking a conceptual question, or does not know the exact note name.
-7. After a relevant note is found, use \`get_similar_notes\` to expand semantically related context.
+Use \`read_note\`, \`create_note\`, \`edit_note\`, \`read_daily\`, \`append_daily\` when the user asks to:
+- Read a specific note by name or path (\`read_note\`)
+- Create a new note, task, or idea (\`create_note\`)
+- Add content to an existing note (\`edit_note\`)
+- Read or update today's daily note (\`read_daily\` / \`append_daily\`)
 
-## Semantic search
+These tools route through the Obsidian CLI and require Obsidian to be running. If a call fails with \`CLI_NOT_FOUND\` or \`CLI_UNAVAILABLE\`, tell the user and stop — do not retry.
+
+\`create_note\` with \`overwrite: true\` is destructive. Always ask the user before overwriting an existing note.
+
+## When to use semantic search
+
+Use \`search_notes\` when the user is recalling a topic fuzzily, asking a conceptual question, or does not know the exact note name. Use \`get_similar_notes\` after a relevant note is found to expand semantically related context.
 
 ### 1. Write the query
 1. Extract the core nouns and concepts from the user's message — strip filler words and verbs. From "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build".
@@ -105,17 +58,16 @@ Vault search guidance for an Obsidian vault. Use when the user's vault may conta
 - \`results\` — notes ranked by similarity; read the file by path
 - \`blockResults\` — sections ranked by relevance; use heading + line range to jump to the relevant part
 - After finding a relevant note, call get_similar_notes to discover related content
+
+## Routing between operations and semantic
+
+If the user gives an exact anchor (note title, path, daily note, tag), prefer operations tools. If the user is recalling fuzzily or asking a conceptual question, prefer \`search_notes\`. After semantic search finds a relevant note, you can read it with \`read_note\` to see the full body.
 `;
 
 function defaultServerFactory(): ToolServer {
   return new McpServer(
-    {
-      name: SERVER_NAME,
-      version: SERVER_VERSION,
-    },
-    {
-      instructions: SERVER_INSTRUCTIONS,
-    },
+    { name: SERVER_NAME, version: SERVER_VERSION },
+    { instructions: SERVER_INSTRUCTIONS },
   );
 }
 
@@ -123,155 +75,49 @@ function defaultTransportFactory(): StdioServerTransport {
   return new StdioServerTransport();
 }
 
-function toToolResponse(value: unknown): ToolResponse {
-  return {
-    content: [
-      {
-        type: 'text',
-        text: JSON.stringify(value, null, 2),
-      },
-    ] satisfies ToolContentBlock[],
-  };
-}
-
-function toToolErrorResponse(error: unknown): ToolResponse {
-  if (error instanceof ToolHandlerError) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: error.message,
-        },
-      ],
-      structuredContent: {
-        code: error.code,
-        message: error.message,
-        details: error.details ?? null,
-      },
-      isError: true,
-    };
-  }
-
-  const message = error instanceof Error ? error.message : 'Unknown tool error';
-
-  return {
-    content: [
-      {
-        type: 'text',
-        text: message,
-      },
-    ],
-    structuredContent: {
-      message,
-    },
-    isError: true,
-  };
-}
-
-async function invokeTool<T>(handler: () => Promise<T>): Promise<ToolResponse> {
-  try {
-    const value = await handler();
-    return toToolResponse(value);
-  } catch (error) {
-    return toToolErrorResponse(error);
-  }
-}
-
-export function createNeuroVaultServer({
-  loader,
-  embeddingProvider,
-  searchEngine,
-  modelKey,
-  toolHandlersFactory = createToolHandlers,
-  serverFactory = defaultServerFactory,
-}: NeuroVaultServerDependencies): ToolServer {
-  const server = serverFactory();
-  const handlers = toolHandlersFactory({
-    loader,
-    embeddingProvider,
-    searchEngine,
-    modelKey,
-  });
-
-  server.registerTool(
-    'search_notes',
-    {
-      title: 'Search Notes',
-      description:
-        'Search notes by semantic similarity for fuzzy recall, topic lookup, or cross-language matching. Pass a short keyword query (1-4 words). Choose mode: "quick" for specific lookups (up to 3 notes), "deep" for broad topic overview with block-level search and expansion. Call multiple times with different queries for synonyms or multi-language searches.',
-      inputSchema: searchNotesSchema,
-    },
-    async (args) => invokeTool(() => handlers.searchNotes(args)),
-  );
-
-  server.registerTool(
-    'get_similar_notes',
-    {
-      title: 'Get Similar Notes',
-      description:
-        'Find semantically related notes after you already have a relevant note path. Pass a vault-relative POSIX path (e.g. "Folder/note.md").',
-      inputSchema: getSimilarNotesSchema,
-    },
-    async (args) => invokeTool(() => handlers.getSimilarNotes(args)),
-  );
-
-  server.registerTool(
-    'find_duplicates',
-    {
-      title: 'Find Duplicates',
-      description: 'Identify note pairs with high embedding similarity.',
-      inputSchema: findDuplicatesSchema,
-    },
-    async (args) => invokeTool(() => handlers.findDuplicates(args)),
-  );
-
-  server.registerTool(
-    'get_stats',
-    {
-      title: 'Get Stats',
-      description: 'Report corpus and embedding statistics.',
-    },
-    async () => invokeTool(() => handlers.getStats()),
-  );
-
-  return server;
-}
-
-function ensureCorpusIsUsable(corpus: SmartConnectionsCorpus): void {
-  if (corpus.sources.size === 0) {
-    throw new Error('Loaded Smart Connections corpus is empty');
-  }
-}
-
 export async function startNeuroVaultServer(
   config: ServerConfig,
   deps: NeuroVaultStartupDependencies = {},
 ): Promise<void> {
-  const loadCorpus = deps.loadCorpus ?? loadSmartConnectionsCorpus;
-  const embeddingServiceFactory =
-    deps.embeddingServiceFactory ??
-    ((modelId: string) => new EmbeddingService({ modelKey: modelId }));
-  const searchEngine = deps.searchEngine ?? { findNeighbors, findBlockNeighbors, findDuplicates };
+  if (!config.semantic.enabled && !config.operations.enabled) {
+    throw new Error('No modules enabled — pass --semantic or --operations');
+  }
+
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;
+  const server = serverFactory();
 
-  const corpus = await loadCorpus(config.smartEnvPath, config.modelKey);
-  ensureCorpusIsUsable(corpus);
+  const registrations: ToolRegistration[] = [];
+  let warmup: () => Promise<void> = async () => {};
 
-  const embeddingService = embeddingServiceFactory(config.modelId);
+  if (config.semantic.enabled) {
+    const semantic = await createSemanticModule(
+      {
+        smartEnvPath: config.semantic.smartEnvPath,
+        modelKey: config.semantic.modelKey,
+        modelId: config.semantic.modelId,
+      },
+      deps.semantic,
+    );
+    registrations.push(...semantic.tools);
+    warmup = semantic.warmup;
+  }
 
-  const server = createNeuroVaultServer({
-    loader: corpus,
-    embeddingProvider: embeddingService,
-    searchEngine,
-    modelKey: config.modelKey,
-    toolHandlersFactory: deps.toolHandlersFactory,
-    serverFactory,
-  });
+  if (config.operations.enabled) {
+    const operations = createOperationsModule(
+      { binaryPath: config.operations.binaryPath },
+      deps.operations,
+    );
+    registrations.push(...operations.tools);
+  }
+
+  for (const tool of registrations) {
+    server.registerTool(tool.name, tool.spec, tool.handler);
+  }
 
   await server.connect(transportFactory());
-
-  embeddingService.initialize().catch(() => {
-    /* model will be loaded lazily on first search if pre-warm fails */
+  void warmup().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`semantic warmup failed: ${message}\n`);
   });
 }

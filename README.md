@@ -52,7 +52,14 @@ Tool routing and retrieval policy are related, but not the same thing.
 - Obsidian vault with [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) plugin (embeddings must be generated)
 - Smart Connections data at `<vault>/.smart-env/multi/*.ajson`
 
+### Operations module (optional)
+
+- The [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) installed and on `PATH` (or pass `--obsidian-cli`).
+- Obsidian running with the URI handler available.
+- Disable with `--no-operations` if you only want semantic search.
+
 ---
+
 ## Quick Start
 
 <details>
@@ -104,6 +111,7 @@ Or run without installing using `npx`:
   }
 }
 ```
+
 </details>
 
 **3. Try it**
@@ -212,6 +220,66 @@ Returns: `{ totalNotes, totalBlocks, embeddingDimension, modelKey }`
 
 ---
 
+## Vault Operations
+
+Direct, structural operations on the vault via the Obsidian CLI. Requires Obsidian to be running.
+
+### `read_note`
+
+Read a note's contents.
+
+```typescript
+read_note({
+  name?: string,    // wikilink-style: "My Note"
+  path?: string,    // vault-relative: "Folder/My Note.md"
+})
+```
+
+Returns `{ path, content }`. Provide exactly one of `name` or `path`.
+
+### `create_note`
+
+Create a new note.
+
+```typescript
+create_note({
+  name?: string,
+  path?: string,
+  content?: string,
+  template?: string,
+  overwrite?: boolean,
+})
+```
+
+`overwrite: true` is destructive — the AI assistant will ask before passing it.
+
+### `edit_note`
+
+Add content to an existing note.
+
+```typescript
+edit_note({
+  name?: string,
+  path?: string,
+  content: string,
+  position: 'append' | 'prepend',
+})
+```
+
+### `read_daily`
+
+Read today's daily note. Returns `{ path, content }`.
+
+### `append_daily`
+
+Append content to today's daily note.
+
+```typescript
+append_daily({ content: string });
+```
+
+---
+
 ## AGENTS.md / CLAUDE.md Snippet
 
 Add this to your `AGENTS.md` or `CLAUDE.md` to help the AI assistant use the vault effectively:
@@ -221,7 +289,7 @@ Add this to your `AGENTS.md` or `CLAUDE.md` to help the AI assistant use the vau
 
 Use vault-aware tools when vault context matters.
 Do not guess about note contents when the vault can be searched.
-Follow the Neuro Vault MCP server instructions for routing and retrieval.
+Follow the Neuro Vault MCP server instructions for routing between semantic search (`search_notes`, `get_similar_notes`) and operations (`read_note`, `create_note`, `edit_note`, `read_daily`, `append_daily`).
 ```
 
 ---
@@ -230,10 +298,13 @@ Follow the Neuro Vault MCP server instructions for routing and retrieval.
 
 ### CLI Arguments
 
-| Argument  | Required | Description                                   |
-| --------- | -------- | --------------------------------------------- |
-| `--vault` | yes      | Absolute path to the Obsidian vault directory |
-| `--help`  | no       | Show help                                     |
+| Argument         | Required | Default    | Description                                             |
+| ---------------- | -------- | ---------- | ------------------------------------------------------- |
+| `--vault`        | yes      | —          | Absolute path to the Obsidian vault directory           |
+| `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip) |
+| `--operations`   | no       | `true`     | Enable vault operations module (`--no-operations`)      |
+| `--obsidian-cli` | no       | `obsidian` | Path to the `obsidian` CLI binary (override only)       |
+| `--help`         | no       | —          | Show help                                               |
 
 ### Startup Behavior
 
@@ -270,6 +341,7 @@ npm run format:write  # fix formatting
 - stdio transport only — not HTTP or SSE
 - Local vault path only — no remote vaults
 - Embedding model loaded at startup; first run can be slow
+- Operations tools require the Obsidian CLI and a running Obsidian instance — they fail gracefully per call when unavailable.
 
 ---
 
