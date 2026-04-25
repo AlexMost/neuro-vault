@@ -27,19 +27,23 @@ export interface NeuroVaultStartupDependencies {
 }
 
 const SERVER_INSTRUCTIONS = `\
-Vault search guidance for an Obsidian vault. Use when the user's vault may contain relevant context — their notes, projects, plans, tasks, learning materials, or ideas. This includes both direct requests ("find my notes on X") and questions where vault context would improve the answer ("what's on my agenda?", "what was I working on?").
+This server provides two capability sets for an Obsidian vault: semantic search (when enabled) and direct vault operations (when enabled). Use the right one based on the user's intent.
 
-## Search routing
+## When to use vault operations
 
-1. Choose the search class first: structural or semantic.
-2. If the user gives an exact anchor and structural tools are available, start there first.
-3. Prefer Obsidian CLI when available for exact note, path, date, tag, property, and link lookups.
-4. If Obsidian CLI is unavailable, use other structural file or navigation tools available in the current environment.
-5. Structural anchors include exact note title or filename, explicit path or folder, daily note by date or relative date, tag/property/wikilink, backlinks, or link traversal.
-6. Use \`search_notes\` when the user is recalling a topic fuzzily, asking a conceptual question, or does not know the exact note name.
-7. After a relevant note is found, use \`get_similar_notes\` to expand semantically related context.
+Use \`read_note\`, \`create_note\`, \`edit_note\`, \`read_daily\`, \`append_daily\` when the user asks to:
+- Read a specific note by name or path (\`read_note\`)
+- Create a new note, task, or idea (\`create_note\`)
+- Add content to an existing note (\`edit_note\`)
+- Read or update today's daily note (\`read_daily\` / \`append_daily\`)
 
-## Semantic search
+These tools route through the Obsidian CLI and require Obsidian to be running. If a call fails with \`CLI_NOT_FOUND\` or \`CLI_UNAVAILABLE\`, tell the user and stop — do not retry.
+
+\`create_note\` with \`overwrite: true\` is destructive. Always ask the user before overwriting an existing note.
+
+## When to use semantic search
+
+Use \`search_notes\` when the user is recalling a topic fuzzily, asking a conceptual question, or does not know the exact note name. Use \`get_similar_notes\` after a relevant note is found to expand semantically related context.
 
 ### 1. Write the query
 1. Extract the core nouns and concepts from the user's message — strip filler words and verbs. From "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build".
@@ -57,6 +61,10 @@ Vault search guidance for an Obsidian vault. Use when the user's vault may conta
 - \`results\` — notes ranked by similarity; read the file by path
 - \`blockResults\` — sections ranked by relevance; use heading + line range to jump to the relevant part
 - After finding a relevant note, call get_similar_notes to discover related content
+
+## Routing between operations and semantic
+
+If the user gives an exact anchor (note title, path, daily note, tag), prefer operations tools. If the user is recalling fuzzily or asking a conceptual question, prefer \`search_notes\`. After semantic search finds a relevant note, you can read it with \`read_note\` to see the full body.
 `;
 
 function defaultServerFactory(): ToolServer {
