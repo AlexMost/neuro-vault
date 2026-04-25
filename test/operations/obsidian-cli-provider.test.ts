@@ -84,3 +84,39 @@ describe('ObsidianCLIProvider.createNote', () => {
     expect(result).toEqual({ path: 'Inbox/x.md' });
   });
 });
+
+describe('ObsidianCLIProvider.editNote', () => {
+  it('uses append command for position=append', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.editNote({
+      identifier: { kind: 'name', value: 'Notes' },
+      content: 'new line',
+      position: 'append',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['append', 'file=Notes', 'content=new line'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('uses prepend command for position=prepend with path identifier', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.editNote({
+      identifier: { kind: 'path', value: 'Daily/foo.md' },
+      content: 'first',
+      position: 'prepend',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['prepend', 'path=Daily/foo.md', 'content=first'],
+      { timeout: 10_000 },
+    );
+  });
+});

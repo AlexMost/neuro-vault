@@ -70,8 +70,14 @@ export class ObsidianCLIProvider implements VaultProvider {
 
     return { path: input.path ?? input.name! };
   }
-  async editNote(_input: EditNoteInput): Promise<void> {
-    throw new Error('not implemented');
+  async editNote(input: EditNoteInput): Promise<void> {
+    const command = input.position;
+    const args = this.buildArgs(
+      command,
+      identifierToArg(input.identifier),
+      `content=${input.content}`,
+    );
+    await this.exec(this.binary, args, { timeout: this.timeoutMs });
   }
   async readDaily(): Promise<DailyNoteResult> {
     throw new Error('not implemented');
