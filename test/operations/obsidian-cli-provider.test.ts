@@ -18,4 +18,15 @@ describe('ObsidianCLIProvider.readNote', () => {
     expect(exec).toHaveBeenCalledWith('obsidian', ['read', 'file=My Note'], { timeout: 10_000 });
     expect(result).toEqual({ path: 'Folder/note.md', content: '# Hello\nbody\n' });
   });
+
+  it('falls back to whole stdout as content when separator is missing', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'just a body without sep', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.readNote({
+      identifier: { kind: 'path', value: 'Folder/note.md' },
+    });
+
+    expect(result).toEqual({ path: '', content: 'just a body without sep' });
+  });
 });
