@@ -1,4 +1,4 @@
-import type { BlockSearchResult, DuplicatePair, SearchResult, SmartSource } from './types.js';
+import type { BlockSearchResult, DuplicatePair, SearchResult, SmartSource } from '../../types.js';
 
 function validateVector(vector: number[], label: string): void {
   if (vector.length === 0) {

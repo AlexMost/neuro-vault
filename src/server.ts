@@ -4,13 +4,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { EmbeddingService } from './embedding-service.js';
+import { EmbeddingService } from './modules/semantic/embedding-service.js';
 import {
   loadSmartConnectionsCorpus,
   type SmartConnectionsCorpus,
-} from './smart-connections-loader.js';
-import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
-import { createToolHandlers } from './tool-handlers.js';
+} from './modules/semantic/smart-connections-loader.js';
+import { findBlockNeighbors, findDuplicates, findNeighbors } from './modules/semantic/search-engine.js';
+import { createToolHandlers } from './modules/semantic/tool-handlers.js';
 import { invokeTool } from './lib/tool-response.js';
 import type {
   EmbeddingProvider,

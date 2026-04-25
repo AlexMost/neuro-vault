@@ -1,6 +1,6 @@
 import { pipeline } from '@xenova/transformers';
 
-import type { EmbeddingProvider } from './types.js';
+import type { EmbeddingProvider } from '../../types.js';
 
 const DEFAULT_MODEL_KEY = 'bge-micro-v2';
 const EMBEDDING_TASK = 'feature-extraction';

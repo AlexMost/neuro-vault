@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import path from 'node:path';
 
-import type { SmartBlock, SmartSource } from './types.js';
+import type { SmartBlock, SmartSource } from '../../types.js';
 
 interface AjsonEntry {
   key: string;

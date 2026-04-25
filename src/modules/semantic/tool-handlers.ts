@@ -12,10 +12,10 @@ import type {
   ToolHandlerDependencies,
   ToolHandlers,
   ToolStats,
-} from './types.js';
-import { ToolHandlerError } from './lib/tool-response.js';
+} from '../../types.js';
+import { ToolHandlerError } from '../../lib/tool-response.js';
 
-export { ToolHandlerError } from './lib/tool-response.js';
+export { ToolHandlerError } from '../../lib/tool-response.js';
 
 const DEFAULT_SEARCH_LIMIT = 10;
 const DEFAULT_SEARCH_THRESHOLD = 0.5;
