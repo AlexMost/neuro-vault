@@ -80,10 +80,14 @@ export class ObsidianCLIProvider implements VaultProvider {
     await this.exec(this.binary, args, { timeout: this.timeoutMs });
   }
   async readDaily(): Promise<DailyNoteResult> {
-    throw new Error('not implemented');
+    const args = this.buildArgs('daily:read');
+    const { stdout } = await this.exec(this.binary, args, { timeout: this.timeoutMs });
+    return this.parseReadOutput(stdout);
   }
-  async appendDaily(_input: AppendDailyInput): Promise<void> {
-    throw new Error('not implemented');
+
+  async appendDaily(input: AppendDailyInput): Promise<void> {
+    const args = this.buildArgs('daily:append', `content=${input.content}`);
+    await this.exec(this.binary, args, { timeout: this.timeoutMs });
   }
 
   private buildArgs(command: string, ...kvPairs: string[]): string[] {

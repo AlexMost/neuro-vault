@@ -120,3 +120,31 @@ describe('ObsidianCLIProvider.editNote', () => {
     );
   });
 });
+
+describe('ObsidianCLIProvider daily', () => {
+  it('readDaily parses path and content from daily:read output', async () => {
+    const exec = vi.fn().mockResolvedValue({
+      stdout: 'Daily/2026-04-25.md\n---\n# Today\n',
+      stderr: '',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.readDaily();
+
+    expect(exec).toHaveBeenCalledWith('obsidian', ['daily:read'], { timeout: 10_000 });
+    expect(result).toEqual({ path: 'Daily/2026-04-25.md', content: '# Today\n' });
+  });
+
+  it('appendDaily passes content token', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.appendDaily({ content: '- new task' });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['daily:append', 'content=- new task'],
+      { timeout: 10_000 },
+    );
+  });
+});
