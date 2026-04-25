@@ -43,3 +43,44 @@ describe('ObsidianCLIProvider.readNote', () => {
     );
   });
 });
+
+describe('ObsidianCLIProvider.createNote', () => {
+  it('passes name, content, and template tokens', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.createNote({
+      name: 'Idea 42',
+      content: 'first thought',
+      template: 'idea',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['create', 'name=Idea 42', 'content=first thought', 'template=idea'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('appends overwrite token when overwrite is true', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.createNote({ path: 'Inbox/x.md', overwrite: true });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['create', 'path=Inbox/x.md', 'overwrite'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('returns the path passed in (path identifier)', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.createNote({ path: 'Inbox/x.md' });
+
+    expect(result).toEqual({ path: 'Inbox/x.md' });
+  });
+});

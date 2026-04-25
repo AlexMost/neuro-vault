@@ -53,8 +53,22 @@ export class ObsidianCLIProvider implements VaultProvider {
     return this.parseReadOutput(stdout);
   }
 
-  async createNote(_input: CreateNoteInput): Promise<CreateNoteResult> {
-    throw new Error('not implemented');
+  async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
+    if (input.name === undefined && input.path === undefined) {
+      throw new Error('createNote requires name or path');
+    }
+
+    const tokens: string[] = [];
+    if (input.name !== undefined) tokens.push(`name=${input.name}`);
+    if (input.path !== undefined) tokens.push(`path=${input.path}`);
+    if (input.content !== undefined) tokens.push(`content=${input.content}`);
+    if (input.template !== undefined) tokens.push(`template=${input.template}`);
+    if (input.overwrite) tokens.push('overwrite');
+
+    const args = this.buildArgs('create', ...tokens);
+    await this.exec(this.binary, args, { timeout: this.timeoutMs });
+
+    return { path: input.path ?? input.name! };
   }
   async editNote(_input: EditNoteInput): Promise<void> {
     throw new Error('not implemented');
