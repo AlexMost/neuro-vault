@@ -6,8 +6,8 @@ import type {
   SearchEngine,
   SearchResult,
   SmartSource,
-} from '../src/types.js';
-import { executeRetrieval } from '../src/retrieval-policy.js';
+} from '../../src/types.js';
+import { executeRetrieval } from '../../src/modules/semantic/retrieval-policy.js';
 
 function makeSource(path: string, embedding: number[] = [1, 0]): SmartSource {
   return {

@@ -8,8 +8,8 @@ import {
   loadSmartConnectionsCorpus,
   parseAjsonContent,
   summarizeSmartConnectionsCorpus,
-} from '../src/smart-connections-loader.js';
-import type { SmartSource } from '../src/types.js';
+} from '../../src/modules/semantic/smart-connections-loader.js';
+import type { SmartSource } from '../../src/types.js';
 
 const MODEL_KEY = 'bge-micro-v2';
 const testDir = path.dirname(fileURLToPath(import.meta.url));

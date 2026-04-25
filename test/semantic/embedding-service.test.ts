@@ -11,7 +11,7 @@ vi.mock('@xenova/transformers', () => ({
   pipeline: pipelineFactory,
 }));
 
-import { EmbeddingService } from '../src/embedding-service.js';
+import { EmbeddingService } from '../../src/modules/semantic/embedding-service.js';
 
 describe('EmbeddingService', () => {
   beforeEach(() => {
