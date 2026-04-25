@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { ToolHandlerError } from '../../lib/tool-response.js';
 import type {
   AppendDailyInput,
@@ -28,6 +30,19 @@ const DEFAULT_BINARY = 'obsidian';
 const DEFAULT_TIMEOUT_MS = 10_000;
 const SEPARATOR = '\n---\n';
 
+const execFileAsync = promisify(execFile);
+
+const defaultExec: ExecFn = async (binary, args, options) => {
+  const result = (await execFileAsync(binary, args, {
+    timeout: options.timeout,
+    maxBuffer: 10 * 1024 * 1024,
+  })) as unknown as { stdout: string | { toString: () => string }; stderr: string | { toString: () => string } };
+  return {
+    stdout: typeof result.stdout === 'string' ? result.stdout : result.stdout.toString(),
+    stderr: typeof result.stderr === 'string' ? result.stderr : result.stderr.toString(),
+  };
+};
+
 function identifierToArg(id: NoteIdentifier): string {
   return id.kind === 'name' ? `file=${id.value}` : `path=${id.value}`;
 }
@@ -42,10 +57,7 @@ export class ObsidianCLIProvider implements VaultProvider {
     this.binary = opts.binaryPath ?? DEFAULT_BINARY;
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.vaultName = opts.vaultName;
-    if (opts.exec === undefined) {
-      throw new Error('ObsidianCLIProvider: exec must be injected (real wiring lands later)');
-    }
-    this.exec = opts.exec;
+    this.exec = opts.exec ?? defaultExec;
   }
 
   async readNote(input: ReadNoteInput): Promise<ReadNoteResult> {
