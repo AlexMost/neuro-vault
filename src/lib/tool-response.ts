@@ -22,8 +22,9 @@ export class ToolHandlerError extends Error {
 type ToolContentBlock = { type: 'text'; text: string };
 
 export function toToolResponse(value: unknown): CallToolResult {
+  const text = value === undefined ? 'ok' : JSON.stringify(value, null, 2);
   return {
-    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] satisfies ToolContentBlock[],
+    content: [{ type: 'text', text }] satisfies ToolContentBlock[],
   };
 }
 
