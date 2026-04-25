@@ -40,3 +40,39 @@ startNeuroVaultServer(config, deps)
 ```
 
 If both modules are disabled, startup fails fast with a clear error.
+
+## End-to-end shape
+
+```mermaid
+flowchart LR
+    Client[MCP Client<br/>Claude Code / Cursor / Windsurf]
+    subgraph Server[neuro-vault-mcp]
+        direction TB
+        CLI[cli.ts<br/>config + flags]
+        Core[server.ts<br/>tool registration]
+        subgraph Semantic[Semantic module]
+            direction TB
+            Retrieval[Retrieval policy<br/>quick / deep]
+            Embed[Embedding service<br/>bge-micro-v2]
+            Search[Search engine<br/>cosine similarity]
+        end
+        subgraph Operations[Operations module]
+            direction TB
+            Provider[VaultProvider]
+            CLIProv[ObsidianCLIProvider<br/>execFile]
+        end
+        CLI --> Core
+        Core --> Semantic
+        Core --> Operations
+        Retrieval --> Embed
+        Retrieval --> Search
+        Provider --> CLIProv
+    end
+    Vault[(Obsidian vault<br/>.smart-env/multi/*.ajson)]
+    Obs[Obsidian app<br/>+ obsidian CLI]
+    Client <-->|stdio / MCP| Core
+    Search -. reads at startup .-> Vault
+    CLIProv -. execFile .-> Obs
+```
+
+The semantic module loads `.smart-env/multi/*.ajson` into memory once at startup and keeps it there. The operations module is a thin wrapper around the `obsidian` CLI invoked via `execFile`. Both modules can be enabled or disabled independently with `--semantic` / `--operations` flags.

@@ -1,77 +1,42 @@
 # Neuro Vault MCP
 
-**Semantic vault search and expansion for your Obsidian vault — right inside your AI assistant.**
+**Semantic vault search and direct vault operations for your Obsidian vault — right inside your AI assistant.**
 
 [![npm version](https://img.shields.io/npm/v/neuro-vault-mcp)](https://www.npmjs.com/package/neuro-vault-mcp)
 [![Node.js](https://img.shields.io/node/v/neuro-vault-mcp)](https://nodejs.org)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 
-> "What did I write about that idea last month?"
-
-Neuro Vault MCP provides semantic search over your Obsidian vault and semantic expansion for related notes. Agents can combine it with structural tools for exact note, path, date, tag, property, and link lookups when those tools are available. It reuses the embeddings already computed by [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) — no re-indexing, no extra infrastructure, no API keys.
+> "What did I write about that idea last month?" — and now your assistant can actually answer.
 
 ---
 
-## How It Works
+## ✨ Why Neuro Vault?
 
-```
-Your question
-     │
-     ▼
- AI assistant
-     │ routes by intent
-     ▼
-     ├──────────────► Structural tools
-     │               (exact file, title, path, daily note, tag, property, wikilink, backlink, link traversal)
-     │
-     └──────────────► search_notes
-                     (semantic retrieval)
-                             │
-                             ▼
-                     get_similar_notes
-                     (semantic expansion)
-```
-
-The server loads `.smart-env/multi/*.ajson` into memory at startup and keeps it there. No background processes, no watchers, no database.
-
-## Search Routing
-
-Tool routing and retrieval policy are related, but not the same thing.
-
-- Use structural tools first for exact file, title, path, daily note, tag, property, wikilink, backlink, and link traversal requests.
-- Use `search_notes` for fuzzy topic, concept, and semantic retrieval.
-- Use `get_similar_notes` after you already have a relevant note and want semantic expansion.
-- Treat the routing guidance as behavior, not enforcement; the server does not hard-block other tool choices.
-- Use semantic retrieval to find likely notes, then switch to structural tools when you need exact anchors.
+- 🧠 **Semantic search over your existing vault** — reuses [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) embeddings already in your vault. No re-indexing, no API keys, no extra infrastructure.
+- 🎯 **Mode-aware retrieval** — `quick` for direct lookups, `deep` for exploratory questions with block-level results and semantic expansion of related notes.
+- ✍️ **Direct vault operations** — read, create, append, and prepend notes (including daily notes) straight from your AI assistant via the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli).
+- ⚡ **Zero infrastructure** — local stdio MCP server, in-memory index, no database, no background processes, no watchers.
+- 🔌 **Drop-in for any MCP client** — Claude Code, Cursor, Windsurf — configuration is a single JSON block.
 
 ---
-
-## Requirements
-
-- Node.js 20+
-- Obsidian vault with [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) plugin (embeddings must be generated)
-- Smart Connections data at `<vault>/.smart-env/multi/*.ajson`
-
-### Operations module (optional)
-
-- The [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) installed and on `PATH` (or pass `--obsidian-cli`).
-- Obsidian running with the URI handler available.
-- Disable with `--no-operations` if you only want semantic search.
-
----
-
-## Quick Start
 
 <details>
-     <summary>Install instructions...</summary>
+<summary><b>📦 Install & MCP client config</b></summary>
 
-**1. Install**
+### Requirements
+
+- Node.js 20+
+- Obsidian vault with the [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) plugin (embeddings must be generated)
+- Smart Connections data at `<vault>/.smart-env/multi/*.ajson`
+- _For vault operations (optional):_ the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. Pass `--no-operations` to disable, or `--obsidian-cli /path` to point at a custom binary.
+
+### 1. Install
 
 ```bash
 npm install -g neuro-vault-mcp
 ```
 
-**2. Configure your MCP client**
+### 2. Configure your MCP client
 
 For Claude Code (`~/.claude/settings.json` or `.claude/settings.json` in your project):
 
@@ -112,79 +77,47 @@ Or run without installing using `npx`:
 }
 ```
 
-</details>
-
-**3. Try it**
+### 3. Try it
 
 Ask your assistant:
 
 > "What did I write about building AI agents?"
-
+>
 > "Find my notes on productivity systems"
-
+>
 > "What are all my ideas related to embeddings?"
 
 On first run the embedding model downloads automatically (~40 MB). Subsequent starts are fast.
 
----
-
-## Features
-
-### Mode-Based Search
-
-Every search picks a mode that controls retrieval depth:
-
-| Mode    | Use when                          | Limit | Threshold | Expansion |
-| ------- | --------------------------------- | ----- | --------- | --------- |
-| `quick` | Specific question, need 1-2 notes | 3     | 0.50      | off       |
-| `deep`  | Broad topic, need an overview     | 8     | 0.35      | on        |
-
-The AI assistant picks the mode automatically based on your question. You can also pass it explicitly.
-
-### Block-Level Results (Deep Mode)
-
-In `deep` mode the server also searches by individual note sections (blocks), not just whole notes. This surfaces the exact paragraphs that are most relevant, not just the note they live in.
-
-### Expansion (Deep Mode)
-
-After finding top results, the server uses their embeddings to discover neighboring notes. This catches related notes that don't directly match your query but are semantically close to what you found.
-
-### Automatic Fallback
-
-When vector search returns nothing, the server retries with a lower similarity threshold (0.3). If still nothing — the AI assistant can search vault files using its own tools.
+</details>
 
 ---
 
-## Tools Reference
+## 🔍 Semantic Search
 
-### `search_notes`
+Find notes by meaning, not by filename. The server embeds your query with `TaylorAI/bge-micro-v2`, runs cosine similarity against the Smart Connections corpus loaded into memory at startup, and returns ranked results with optional block-level matches and semantic expansion.
+
+### Tools
+
+#### `search_notes`
 
 Search the vault by semantic similarity.
 
 ```typescript
 search_notes({
   query: string,               // short keyword query (1-4 words)
-  mode?: "quick" | "deep",    // default: "quick"
+  mode?: "quick" | "deep",     // default: "quick"
   threshold?: number,          // override mode default (0–1)
   expansion?: boolean,         // override mode default
   expansion_limit?: number,    // how many top results to expand (default: 3)
 })
 ```
 
-Returns `results` (ranked notes) and `blockResults` (ranked sections — scoped to matched notes in quick mode, all sources in deep mode).
+Returns `results` (ranked notes) and `blockResults` (ranked sections — scoped to matched notes in `quick` mode, all sources in `deep` mode).
 
-**Tips for better results:**
+#### `get_similar_notes`
 
-- Use short keyword queries (1–4 words), not full sentences
-- Call multiple times for synonyms and translations: `"embeddings"`, then `"векторний пошук"`, then `"vector search"`
-- Lower the threshold to `0.3` if nothing comes back
-- Use `deep` mode for exploratory questions
-
----
-
-### `get_similar_notes`
-
-Find notes similar to a given note path.
+Find notes similar to a given note path. Use this after `search_notes` finds a relevant note — it discovers related content without needing a text query.
 
 ```typescript
 get_similar_notes({
@@ -194,13 +127,9 @@ get_similar_notes({
 })
 ```
 
-Use this after `search_notes` finds a relevant note — it discovers related content without needing a text query.
+#### `find_duplicates`
 
----
-
-### `find_duplicates`
-
-Find note pairs with high embedding similarity.
+Find note pairs with high embedding similarity. Useful for vault maintenance: identifies notes that cover the same topic and could be merged.
 
 ```typescript
 find_duplicates({
@@ -208,25 +137,45 @@ find_duplicates({
 })
 ```
 
-Useful for vault maintenance: identifies notes that cover the same topic and could be merged.
+#### `get_stats`
+
+Report loaded corpus statistics. Returns `{ totalNotes, totalBlocks, embeddingDimension, modelKey }`.
+
+### Behavior
+
+Every search picks a mode that controls retrieval depth:
+
+| Mode    | Use when                          | Limit | Threshold | Expansion |
+| ------- | --------------------------------- | ----- | --------- | --------- |
+| `quick` | Specific question, need 1-2 notes | 3     | 0.50      | off       |
+| `deep`  | Broad topic, need an overview     | 8     | 0.35      | on        |
+
+The AI assistant picks the mode automatically based on your question, or you can pass it explicitly.
+
+- **Block-level results (deep mode)** — the server also searches by individual note sections, surfacing the exact paragraphs that match, not just the notes that contain them.
+- **Expansion (deep mode)** — after finding top results, the server uses their embeddings to discover neighboring notes that don't directly match your query but are semantically close to what you found.
+- **Automatic fallback** — when vector search returns nothing, the server retries with a lower similarity threshold (0.3). If still nothing, the assistant can fall back to its own file-search tools.
+
+### Tips for better results
+
+- Use short keyword queries (1–4 words), not full sentences.
+- Call multiple times for synonyms and translations: `"embeddings"`, then `"векторний пошук"`, then `"vector search"`.
+- Lower the threshold to `0.3` if nothing comes back.
+- Use `deep` mode for exploratory questions.
 
 ---
 
-### `get_stats`
+## 🗂 Vault Operations
 
-Report loaded corpus statistics.
+> Requires the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. Pass `--no-operations` to disable.
 
-Returns: `{ totalNotes, totalBlocks, embeddingDimension, modelKey }`
+Read and write notes through Obsidian itself — the operations module shells out to the `obsidian` CLI, so changes are picked up by Smart Connections, sync, and any other plugin you have installed. No bypass of Obsidian's own state.
 
----
+### Tools
 
-## Vault Operations
+#### `read_note`
 
-Direct, structural operations on the vault via the Obsidian CLI. Requires Obsidian to be running.
-
-### `read_note`
-
-Read a note's contents.
+Read a note's contents. Provide exactly one of `name` or `path`.
 
 ```typescript
 read_note({
@@ -235,11 +184,11 @@ read_note({
 })
 ```
 
-Returns `{ path, content }`. Provide exactly one of `name` or `path`.
+Returns `{ path, content }`.
 
-### `create_note`
+#### `create_note`
 
-Create a new note.
+Create a new note. `overwrite: true` is destructive — the AI assistant will ask before passing it.
 
 ```typescript
 create_note({
@@ -251,9 +200,7 @@ create_note({
 })
 ```
 
-`overwrite: true` is destructive — the AI assistant will ask before passing it.
-
-### `edit_note`
+#### `edit_note`
 
 Add content to an existing note.
 
@@ -266,11 +213,11 @@ edit_note({
 })
 ```
 
-### `read_daily`
+#### `read_daily`
 
 Read today's daily note. Returns `{ path, content }`.
 
-### `append_daily`
+#### `append_daily`
 
 Append content to today's daily note.
 
@@ -280,21 +227,36 @@ append_daily({ content: string });
 
 ---
 
-## AGENTS.md / CLAUDE.md Snippet
+## 🏗 How it works
 
-Add this to your `AGENTS.md` or `CLAUDE.md` to help the AI assistant use the vault effectively:
-
-```markdown
-## Vault search
-
-Use vault-aware tools when vault context matters.
-Do not guess about note contents when the vault can be searched.
-Follow the Neuro Vault MCP server instructions for routing between semantic search (`search_notes`, `get_similar_notes`) and operations (`read_note`, `create_note`, `edit_note`, `read_daily`, `append_daily`).
+```mermaid
+flowchart LR
+    You([You]) --> AI[AI assistant]
+    AI <-->|MCP| NV[Neuro Vault]
+    NV <--> Vault[(Obsidian vault)]
 ```
+
+You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — semantic search uses embeddings already in `.smart-env/`, vault operations go through the `obsidian` CLI. No database, no background processes.
+
+For module wiring and internal data flow, see [docs/architecture/module-structure.md](./docs/architecture/module-structure.md).
 
 ---
 
-## Configuration
+<details>
+<summary><b>🧭 Search routing guidance</b></summary>
+
+Tool routing and retrieval policy are related, but not the same thing.
+
+- Use **structural tools** first (your assistant's own file/path/title tools, or vault operations) for exact file, title, path, daily note, tag, property, wikilink, backlink, and link-traversal requests.
+- Use `search_notes` for fuzzy topic, concept, and semantic retrieval.
+- Use `get_similar_notes` after you already have a relevant note and want semantic expansion.
+- Treat the routing guidance as behavior, not enforcement; the server does not hard-block other tool choices.
+- Use semantic retrieval to find likely notes, then switch to structural tools when you need exact anchors.
+
+</details>
+
+<details>
+<summary><b>⚙️ Configuration</b></summary>
 
 ### CLI Arguments
 
@@ -308,11 +270,26 @@ Follow the Neuro Vault MCP server instructions for routing between semantic sear
 
 ### Startup Behavior
 
-- Smart Connections `.ajson` files are loaded into memory once at startup
-- The embedding model (`TaylorAI/bge-micro-v2`) is downloaded on first run and cached by `@xenova/transformers`
-- If the vault path is missing or Smart Connections data is absent, the server exits immediately with an error
+- Smart Connections `.ajson` files are loaded into memory once at startup.
+- The embedding model (`TaylorAI/bge-micro-v2`) is downloaded on first run and cached by `@xenova/transformers`.
+- If the vault path is missing or Smart Connections data is absent, the server exits immediately with an error.
 
-### Troubleshooting
+### AGENTS.md / CLAUDE.md snippet
+
+Add this to your `AGENTS.md` or `CLAUDE.md` to help the AI assistant use the vault effectively:
+
+```markdown
+## Vault search
+
+Use vault-aware tools when vault context matters.
+Do not guess about note contents when the vault can be searched.
+Follow the Neuro Vault MCP server instructions for routing between semantic search (`search_notes`, `get_similar_notes`) and operations (`read_note`, `create_note`, `edit_note`, `read_daily`, `append_daily`).
+```
+
+</details>
+
+<details>
+<summary><b>🩺 Troubleshooting</b></summary>
 
 **"Smart Connections directory does not exist"** — make sure the Smart Connections plugin has run and generated embeddings. Open Obsidian, let Smart Connections finish indexing, then restart the MCP server.
 
@@ -320,32 +297,38 @@ Follow the Neuro Vault MCP server instructions for routing between semantic sear
 
 **Search returns nothing** — try lowering the threshold: `threshold: 0.3`. Also check that `get_stats` shows a non-zero `totalNotes`.
 
----
+**Vault operations fail with `CLI_NOT_FOUND` / `CLI_UNAVAILABLE`** — the `obsidian` CLI isn't on `PATH`, or Obsidian isn't running. Install the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli), or pass `--obsidian-cli /absolute/path/to/obsidian`. Disable the module with `--no-operations` if you only want semantic search.
 
-## Development
+</details>
+
+<details>
+<summary><b>🛠 Development</b></summary>
 
 ```bash
-npm run build       # compile TypeScript to dist/
-npm run test        # run tests with vitest
-npm run lint        # ESLint
-npm run format      # check formatting with Prettier
-npm run format:write  # fix formatting
+npm run build        # compile TypeScript to dist/
+npm run test         # run tests with vitest
+npm run lint         # ESLint
+npm run format       # check formatting with Prettier
+npm run format:write # fix formatting
 ```
 
----
+</details>
 
-## Limitations
+<details>
+<summary><b>🚧 Limitations</b></summary>
 
-- Requires Smart Connections `.ajson` files already present in the vault
-- In-memory search only — no persistent index, no background re-indexing
-- stdio transport only — not HTTP or SSE
-- Local vault path only — no remote vaults
-- Embedding model loaded at startup; first run can be slow
+- Requires Smart Connections `.ajson` files already present in the vault.
+- In-memory search only — no persistent index, no background re-indexing.
+- stdio transport only — not HTTP or SSE.
+- Local vault path only — no remote vaults.
+- Embedding model loaded at startup; first run can be slow.
 - Operations tools require the Obsidian CLI and a running Obsidian instance — they fail gracefully per call when unavailable.
 
+</details>
+
 ---
 
-## License
+## 📄 License
 
 ISC — see [LICENSE](LICENSE).
 
