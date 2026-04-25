@@ -166,15 +166,13 @@ describe('ObsidianCLIProvider error mapping', () => {
   });
 
   it('maps stderr "Obsidian is not running" to CLI_UNAVAILABLE', async () => {
-    const exec = vi
-      .fn()
-      .mockRejectedValue(
-        Object.assign(new Error('exit 1'), {
-          code: 1,
-          stdout: '',
-          stderr: 'Obsidian is not running',
-        }),
-      );
+    const exec = vi.fn().mockRejectedValue(
+      Object.assign(new Error('exit 1'), {
+        code: 1,
+        stdout: '',
+        stderr: 'Obsidian is not running',
+      }),
+    );
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
