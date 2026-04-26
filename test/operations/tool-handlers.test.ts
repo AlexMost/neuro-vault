@@ -309,3 +309,28 @@ describe('operations.readProperty handler', () => {
     });
   });
 });
+
+describe('operations.removeProperty handler', () => {
+  it('returns { ok: true } on success', async () => {
+    const provider = fakeProvider({
+      removeProperty: vi.fn().mockResolvedValue(undefined),
+    });
+    const handlers = createOperationsHandlers({ provider });
+
+    const result = await handlers.removeProperty({ path: 'a.md', name: 'status' });
+
+    expect(provider.removeProperty).toHaveBeenCalledWith({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'status',
+    });
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('returns { ok: true } even when provider already swallowed PROPERTY_NOT_FOUND', async () => {
+    const provider = fakeProvider({
+      removeProperty: vi.fn().mockResolvedValue(undefined),
+    });
+    const handlers = createOperationsHandlers({ provider });
+    expect(await handlers.removeProperty({ path: 'a.md', name: 'gone' })).toEqual({ ok: true });
+  });
+});
