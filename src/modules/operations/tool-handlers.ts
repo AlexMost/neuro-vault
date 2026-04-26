@@ -65,6 +65,27 @@ function resolvePropertyTarget(
   return { kind: 'path', value: normalizePath(pathArg!) };
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/;
+
+function validateDateValue(value: unknown, type: 'date' | 'datetime'): string {
+  if (typeof value !== 'string') {
+    throw invalidArgument(`value must be a string when type is ${type}`, 'value');
+  }
+  const re = type === 'date' ? DATE_RE : DATETIME_RE;
+  if (!re.test(value)) {
+    const expected = type === 'date' ? 'YYYY-MM-DD' : 'YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]';
+    throw invalidArgument(
+      `value must be ISO ${expected} when type is ${type} (obsidian-cli silently drops non-ISO values)`,
+      'value',
+    );
+  }
+  if (Number.isNaN(Date.parse(value))) {
+    throw invalidArgument(`value is not a valid ${type}`, 'value');
+  }
+  return value;
+}
+
 function inferTypeAndValidate(
   value: unknown,
   explicitType: SetPropertyToolInput['type'],
@@ -75,6 +96,10 @@ function inferTypeAndValidate(
       'value must not be null or undefined',
       { details: { value } },
     );
+  }
+
+  if (explicitType === 'date' || explicitType === 'datetime') {
+    return { value: validateDateValue(value, explicitType), type: explicitType };
   }
 
   if (Array.isArray(value)) {

@@ -162,20 +162,25 @@ export class ObsidianCLIProvider implements VaultProvider {
     const flag = includeFiles ? 'verbose' : 'total';
     const { stdout } = await this.runCommand('tag', [`name=${input.name}`, flag]);
 
+    // CLI prints `#<tag><whitespace><count>` on the first line, then files (verbose mode).
+    // Extract the trailing integer to be robust to tag names containing digits.
+    const COUNT_RE = /(\d+)\s*$/;
+
     if (includeFiles) {
       const lines = stdout
         .split('\n')
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-      const count = Number(lines[0]);
-      const files = lines.slice(1);
-      if (!Number.isFinite(count)) {
+      const match = lines[0]?.match(COUNT_RE);
+      if (!match) {
         throw new ToolHandlerError(
           'CLI_ERROR',
           `Could not parse tag output for '${input.name}': expected count on first line`,
           { details: { name: input.name, stdout: stdout.slice(0, 500) } },
         );
       }
+      const count = Number(match[1]);
+      const files = lines.slice(1);
       if (count === 0) {
         throw new ToolHandlerError('TAG_NOT_FOUND', `Tag not found: ${input.name}`, {
           details: { name: input.name },
@@ -184,14 +189,15 @@ export class ObsidianCLIProvider implements VaultProvider {
       return { name: input.name, count, files };
     }
 
-    const count = Number(stdout.trim());
-    if (!Number.isFinite(count)) {
+    const totalMatch = stdout.trim().match(COUNT_RE);
+    if (!totalMatch) {
       throw new ToolHandlerError(
         'CLI_ERROR',
         `Could not parse tag total for '${input.name}': expected numeric output`,
         { details: { name: input.name, stdout: stdout.slice(0, 500) } },
       );
     }
+    const count = Number(totalMatch[1]);
     if (count === 0) {
       throw new ToolHandlerError('TAG_NOT_FOUND', `Tag not found: ${input.name}`, {
         details: { name: input.name },

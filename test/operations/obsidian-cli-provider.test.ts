@@ -510,9 +510,9 @@ describe('ObsidianCLIProvider.listTags', () => {
 });
 
 describe('ObsidianCLIProvider.getTag', () => {
-  it('uses verbose flag when includeFiles is true', async () => {
+  it('uses verbose flag when includeFiles is true and parses #tag<ws>count header', async () => {
     const exec = vi.fn().mockResolvedValue({
-      stdout: '3\nFolder/a.md\nFolder/b.md\nFolder/c.md',
+      stdout: '#mcp\t3\nFolder/a.md\nFolder/b.md\nFolder/c.md',
       stderr: '',
     });
     const provider = new ObsidianCLIProvider({ exec });
@@ -531,8 +531,21 @@ describe('ObsidianCLIProvider.getTag', () => {
     });
   });
 
-  it('uses total flag when includeFiles is false', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: '7\n', stderr: '' });
+  it('parses verbose header with multiple-space separator and digit-bearing tag name', async () => {
+    const exec = vi.fn().mockResolvedValue({
+      stdout: '#year2026     5\na.md\nb.md\nc.md\nd.md\ne.md',
+      stderr: '',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.getTag({ name: 'year2026', includeFiles: true });
+
+    expect(result.count).toBe(5);
+    expect(result.files).toEqual(['a.md', 'b.md', 'c.md', 'd.md', 'e.md']);
+  });
+
+  it('uses total flag when includeFiles is false and parses #tag<ws>count', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '#obsidian\t7\n', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
 
     const result = await provider.getTag({ name: 'obsidian', includeFiles: false });
@@ -557,7 +570,7 @@ describe('ObsidianCLIProvider.getTag', () => {
   });
 
   it('throws TAG_NOT_FOUND when total returns 0', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: '0\n', stderr: '' });
+    const exec = vi.fn().mockResolvedValue({ stdout: '#nonsense\t0\n', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
     await expect(
       provider.getTag({ name: 'nonsense', includeFiles: false }),

@@ -236,6 +236,72 @@ describe('operations.setProperty handler', () => {
     );
   });
 
+  it('rejects non-ISO date format with INVALID_ARGUMENT', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await expect(
+      handlers.setProperty({ path: 'a.md', name: 'due', value: '03.05.2026', type: 'date' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(provider.setProperty).not.toHaveBeenCalled();
+  });
+
+  it('rejects logically invalid date with INVALID_ARGUMENT', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await expect(
+      handlers.setProperty({ path: 'a.md', name: 'due', value: '2026-13-45', type: 'date' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(provider.setProperty).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-string value when type=date', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await expect(
+      handlers.setProperty({
+        path: 'a.md',
+        name: 'due',
+        value: 12345 as unknown as string,
+        type: 'date',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(provider.setProperty).not.toHaveBeenCalled();
+  });
+
+  it('accepts ISO datetime with explicit type=datetime', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.setProperty({
+      path: 'a.md',
+      name: 'startedAt',
+      value: '2026-05-01T14:30:00Z',
+      type: 'datetime',
+    });
+
+    expect(provider.setProperty).toHaveBeenCalledWith(
+      expect.objectContaining({ value: '2026-05-01T14:30:00Z', type: 'datetime' }),
+    );
+  });
+
+  it('rejects space-separated datetime as non-ISO', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await expect(
+      handlers.setProperty({
+        path: 'a.md',
+        name: 'startedAt',
+        value: '2026-05-01 14:30:00',
+        type: 'datetime',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(provider.setProperty).not.toHaveBeenCalled();
+  });
+
   it('rejects array element containing comma', async () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
