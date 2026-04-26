@@ -62,6 +62,11 @@ export interface RemovePropertyInput {
   name: string;
 }
 
+export interface PropertyListEntry {
+  name: string;
+  count: number;
+}
+
 export interface VaultProvider {
   readNote(input: ReadNoteInput): Promise<ReadNoteResult>;
   createNote(input: CreateNoteInput): Promise<CreateNoteResult>;
@@ -71,4 +76,5 @@ export interface VaultProvider {
   setProperty(input: SetPropertyInput): Promise<void>;
   readProperty(input: ReadPropertyInput): Promise<ReadPropertyResult>;
   removeProperty(input: RemovePropertyInput): Promise<void>;
+  listProperties(): Promise<PropertyListEntry[]>;
 }

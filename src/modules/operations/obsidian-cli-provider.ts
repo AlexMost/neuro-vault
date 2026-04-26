@@ -8,6 +8,7 @@ import type {
   DailyNoteResult,
   EditNoteInput,
   NoteIdentifier,
+  PropertyListEntry,
   PropertyValue,
   ReadNoteInput,
   ReadNoteResult,
@@ -135,6 +136,15 @@ export class ObsidianCLIProvider implements VaultProvider {
     }
   }
 
+  async listProperties(): Promise<PropertyListEntry[]> {
+    const { stdout } = await this.runCommand('properties', [
+      'counts',
+      'sort=count',
+      'format=json',
+    ]);
+    return this.parseJsonList(stdout, 'properties');
+  }
+
   // Best-effort: a `text` property whose value happens to be "true" or "42"
   // will be coerced to boolean/number. Callers needing ground-truth types should
   // use read_note and parse frontmatter directly.
@@ -156,6 +166,25 @@ export class ObsidianCLIProvider implements VaultProvider {
   private serializeValue(value: PropertyValue): string {
     if (Array.isArray(value)) return value.map((v) => String(v)).join(',');
     return String(value);
+  }
+
+  private parseJsonList(
+    stdout: string,
+    command: string,
+  ): Array<{ name: string; count: number }> {
+    try {
+      const parsed = JSON.parse(stdout) as unknown;
+      if (!Array.isArray(parsed)) {
+        throw new Error('expected array');
+      }
+      return parsed as Array<{ name: string; count: number }>;
+    } catch (err) {
+      throw new ToolHandlerError(
+        'CLI_ERROR',
+        `Failed to parse JSON output of '${command}': ${(err as Error).message}`,
+        { details: { stdout: stdout.slice(0, 500), command }, cause: err },
+      );
+    }
   }
 
   private async runCommand(
