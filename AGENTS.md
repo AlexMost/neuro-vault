@@ -94,3 +94,13 @@ This applies even to refactor / move tasks where "no behavior change" is the goa
 - `npm run release` uses `commit-and-tag-version` — driven by Conventional Commits.
 - A release should bundle one logical unit of change (one spec → one release where reasonable).
 - Update the README in the same change that introduces user-facing behaviour.
+
+### Release flow
+
+Releases always happen on `main`. The sequence is:
+
+1. Open a PR from the feature branch to `main` and merge it.
+2. Check out `main`, pull, run `npm run release` — `commit-and-tag-version` bumps the version, updates `CHANGELOG.md`, and creates a git tag.
+3. Push commits and tags (`git push --follow-tags`). Optionally `npm publish` after explicit user approval.
+
+Never run `npm run release` on a feature branch — the version bump and changelog must land on `main` so the tag points at the merge commit and the changelog stays linear.
