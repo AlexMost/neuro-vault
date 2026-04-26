@@ -124,7 +124,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Set Property',
         description:
-          'Set a frontmatter property on a note. Provide either `file` (wikilink-style) or `path` (vault-relative). `value` may be string/number/boolean/array — `type` is inferred from the JS type unless given. For `date`/`datetime` you MUST pass `type` explicitly. Existing properties are overwritten.',
+          'Set a frontmatter property on a note. Provide either `file` (wikilink-style) or `path` (vault-relative). `value` may be string/number/boolean/array — `type` is inferred from the JS type unless given. For `date`/`datetime` you MUST pass `type` explicitly. List items must not contain commas (obsidian-cli limitation). Existing properties are overwritten.',
         inputSchema: setPropertySchema,
       },
       handler: async (args) =>
