@@ -7,6 +7,8 @@ import type {
   CreateNoteResult,
   DailyNoteResult,
   EditNoteInput,
+  GetTagInput,
+  GetTagResult,
   NoteIdentifier,
   PropertyListEntry,
   PropertyValue,
@@ -155,6 +157,35 @@ export class ObsidianCLIProvider implements VaultProvider {
     return this.parseJsonList<TagListEntry>(stdout, 'tags');
   }
 
+  async getTag(input: GetTagInput): Promise<GetTagResult> {
+    const includeFiles = input.includeFiles !== false; // default true
+    const flag = includeFiles ? 'verbose' : 'total';
+    const { stdout } = await this.runCommand('tag', [`name=${input.name}`, flag]);
+
+    if (includeFiles) {
+      const lines = stdout
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      const count = Number(lines[0]);
+      const files = lines.slice(1);
+      if (!Number.isFinite(count) || count === 0) {
+        throw new ToolHandlerError('TAG_NOT_FOUND', `Tag not found: ${input.name}`, {
+          details: { name: input.name },
+        });
+      }
+      return { name: input.name, count, files };
+    }
+
+    const count = Number(stdout.trim());
+    if (!Number.isFinite(count) || count === 0) {
+      throw new ToolHandlerError('TAG_NOT_FOUND', `Tag not found: ${input.name}`, {
+        details: { name: input.name },
+      });
+    }
+    return { name: input.name, count };
+  }
+
   // Best-effort: a `text` property whose value happens to be "true" or "42"
   // will be coerced to boolean/number. Callers needing ground-truth types should
   // use read_note and parse frontmatter directly.
@@ -256,6 +287,13 @@ export class ObsidianCLIProvider implements VaultProvider {
         `Property not found: ${stderr.trim() || 'unknown'}`,
         { details: { stderr, command }, cause: error },
       );
+    }
+
+    if (command === 'tag' && /tag not found/i.test(stderr)) {
+      return new ToolHandlerError('TAG_NOT_FOUND', `Tag not found: ${stderr.trim()}`, {
+        details: { stderr },
+        cause: error,
+      });
     }
 
     if (/not found/i.test(stderr)) {

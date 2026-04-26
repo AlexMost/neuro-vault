@@ -3,6 +3,7 @@ export type OperationsErrorCode =
   | 'NOT_FOUND'
   | 'NOTE_EXISTS'
   | 'PROPERTY_NOT_FOUND'
+  | 'TAG_NOT_FOUND'
   | 'CLI_NOT_FOUND'
   | 'CLI_UNAVAILABLE'
   | 'CLI_TIMEOUT'

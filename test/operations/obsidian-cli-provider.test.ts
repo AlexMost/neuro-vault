@@ -508,3 +508,59 @@ describe('ObsidianCLIProvider.listTags', () => {
     await expect(provider.listTags()).rejects.toMatchObject({ code: 'CLI_ERROR' });
   });
 });
+
+describe('ObsidianCLIProvider.getTag', () => {
+  it('uses verbose flag when includeFiles is true', async () => {
+    const exec = vi.fn().mockResolvedValue({
+      stdout: '3\nFolder/a.md\nFolder/b.md\nFolder/c.md',
+      stderr: '',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.getTag({ name: 'mcp', includeFiles: true });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['tag', 'name=mcp', 'verbose'],
+      { timeout: 10_000 },
+    );
+    expect(result).toEqual({
+      name: 'mcp',
+      count: 3,
+      files: ['Folder/a.md', 'Folder/b.md', 'Folder/c.md'],
+    });
+  });
+
+  it('uses total flag when includeFiles is false', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '7\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.getTag({ name: 'obsidian', includeFiles: false });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['tag', 'name=obsidian', 'total'],
+      { timeout: 10_000 },
+    );
+    expect(result).toEqual({ name: 'obsidian', count: 7 });
+  });
+
+  it('throws TAG_NOT_FOUND when stderr says tag not found', async () => {
+    const exec = vi.fn().mockRejectedValue({
+      code: 1,
+      stderr: 'tag not found: nonsense',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(
+      provider.getTag({ name: 'nonsense', includeFiles: true }),
+    ).rejects.toMatchObject({ code: 'TAG_NOT_FOUND' });
+  });
+
+  it('throws TAG_NOT_FOUND when total returns 0', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '0\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(
+      provider.getTag({ name: 'nonsense', includeFiles: false }),
+    ).rejects.toMatchObject({ code: 'TAG_NOT_FOUND' });
+  });
+});

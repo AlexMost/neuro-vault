@@ -72,6 +72,17 @@ export interface TagListEntry {
   count: number;
 }
 
+export interface GetTagInput {
+  name: string;
+  includeFiles?: boolean;
+}
+
+export interface GetTagResult {
+  name: string;
+  count: number;
+  files?: string[];
+}
+
 export interface VaultProvider {
   readNote(input: ReadNoteInput): Promise<ReadNoteResult>;
   createNote(input: CreateNoteInput): Promise<CreateNoteResult>;
@@ -83,4 +94,5 @@ export interface VaultProvider {
   removeProperty(input: RemovePropertyInput): Promise<void>;
   listProperties(): Promise<PropertyListEntry[]>;
   listTags(): Promise<TagListEntry[]>;
+  getTag(input: GetTagInput): Promise<GetTagResult>;
 }
