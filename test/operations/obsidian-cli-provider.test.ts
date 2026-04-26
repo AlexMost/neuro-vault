@@ -304,3 +304,82 @@ describe('ObsidianCLIProvider.setProperty', () => {
     expect(args[args.length - 1]).toBe('vault=Brain');
   });
 });
+
+describe('ObsidianCLIProvider.readProperty', () => {
+  it('builds property:read args with name and path', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'done', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.readProperty({
+      identifier: { kind: 'path', value: 'Tasks/x.md' },
+      name: 'status',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['property:read', 'name=status', 'path=Tasks/x.md'],
+      { timeout: 10_000 },
+    );
+    expect(result).toEqual({ value: 'done' });
+  });
+
+  it('parses "true"/"false" stdout as boolean', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'true\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    const result = await provider.readProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'done',
+    });
+    expect(result).toEqual({ value: true });
+  });
+
+  it('parses numeric-only stdout as number', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '42\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    const result = await provider.readProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'priority',
+    });
+    expect(result).toEqual({ value: 42 });
+  });
+
+  it('parses multi-line stdout as list of trimmed strings', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'one\ntwo\n three\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    const result = await provider.readProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'tags',
+    });
+    expect(result).toEqual({ value: ['one', 'two', 'three'] });
+  });
+
+  it('returns string value for plain non-numeric, non-boolean output', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'hello world\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    const result = await provider.readProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'note',
+    });
+    expect(result).toEqual({ value: 'hello world' });
+  });
+
+  it('throws PROPERTY_NOT_FOUND when stderr signals missing property', async () => {
+    const exec = vi.fn().mockRejectedValue({
+      code: 1,
+      stderr: 'property not found: foo',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(
+      provider.readProperty({
+        identifier: { kind: 'path', value: 'a.md' },
+        name: 'foo',
+      }),
+    ).rejects.toBeInstanceOf(ToolHandlerError);
+    await expect(
+      provider.readProperty({
+        identifier: { kind: 'path', value: 'a.md' },
+        name: 'foo',
+      }),
+    ).rejects.toMatchObject({ code: 'PROPERTY_NOT_FOUND' });
+  });
+});

@@ -11,6 +11,8 @@ import type {
   PropertyValue,
   ReadNoteInput,
   ReadNoteResult,
+  ReadPropertyInput,
+  ReadPropertyResult,
   SetPropertyInput,
   VaultProvider,
 } from './vault-provider.js';
@@ -110,6 +112,29 @@ export class ObsidianCLIProvider implements VaultProvider {
     await this.runCommand('property:set', tokens);
   }
 
+  async readProperty(input: ReadPropertyInput): Promise<ReadPropertyResult> {
+    const { stdout } = await this.runCommand('property:read', [
+      `name=${input.name}`,
+      identifierToArg(input.identifier),
+    ]);
+    return { value: this.parsePropertyValue(stdout) };
+  }
+
+  private parsePropertyValue(stdout: string): PropertyValue {
+    const trimmed = stdout.replace(/\s+$/, '');
+    if (trimmed === '') return '';
+    if (trimmed === 'true') return true;
+    if (trimmed === 'false') return false;
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+    if (trimmed.includes('\n')) {
+      return trimmed
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+    return trimmed;
+  }
+
   private serializeValue(value: PropertyValue): string {
     if (Array.isArray(value)) return value.map((v) => String(v)).join(',');
     return String(value);
@@ -165,6 +190,14 @@ export class ObsidianCLIProvider implements VaultProvider {
         'NOTE_EXISTS',
         'Note already exists. Pass overwrite: true after confirming with the user.',
         { details: { stderr }, cause: error },
+      );
+    }
+
+    if (command === 'property:read' && /property not found|not set/i.test(stderr)) {
+      return new ToolHandlerError(
+        'PROPERTY_NOT_FOUND',
+        `Property not found: ${stderr.trim() || 'unknown'}`,
+        { details: { stderr, command }, cause: error },
       );
     }
 

@@ -2,6 +2,7 @@ export type OperationsErrorCode =
   | 'INVALID_ARGUMENT'
   | 'NOT_FOUND'
   | 'NOTE_EXISTS'
+  | 'PROPERTY_NOT_FOUND'
   | 'CLI_NOT_FOUND'
   | 'CLI_UNAVAILABLE'
   | 'CLI_TIMEOUT'
