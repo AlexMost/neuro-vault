@@ -8,8 +8,10 @@ import type {
   DailyNoteResult,
   EditNoteInput,
   NoteIdentifier,
+  PropertyValue,
   ReadNoteInput,
   ReadNoteResult,
+  SetPropertyInput,
   VaultProvider,
 } from './vault-provider.js';
 
@@ -99,6 +101,18 @@ export class ObsidianCLIProvider implements VaultProvider {
 
   async appendDaily(input: AppendDailyInput): Promise<void> {
     await this.runCommand('daily:append', [`content=${input.content}`]);
+  }
+
+  async setProperty(input: SetPropertyInput): Promise<void> {
+    const tokens: string[] = [`name=${input.name}`, `value=${this.serializeValue(input.value)}`];
+    if (input.type !== undefined) tokens.push(`type=${input.type}`);
+    tokens.push(identifierToArg(input.identifier));
+    await this.runCommand('property:set', tokens);
+  }
+
+  private serializeValue(value: PropertyValue): string {
+    if (Array.isArray(value)) return value.map((v) => String(v)).join(',');
+    return String(value);
   }
 
   private async runCommand(

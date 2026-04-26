@@ -234,3 +234,73 @@ describe('ObsidianCLIProvider error mapping', () => {
     );
   });
 });
+
+describe('ObsidianCLIProvider.setProperty', () => {
+  it('builds property:set with explicit type and path target', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.setProperty({
+      identifier: { kind: 'path', value: 'Tasks/x.md' },
+      name: 'status',
+      value: 'done',
+      type: 'text',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['property:set', 'name=status', 'value=done', 'type=text', 'path=Tasks/x.md'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('uses file= token when identifier kind is name', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.setProperty({
+      identifier: { kind: 'name', value: 'My Note' },
+      name: 'priority',
+      value: '3',
+      type: 'number',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['property:set', 'name=priority', 'value=3', 'type=number', 'file=My Note'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('omits type token when type is undefined', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.setProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'tag',
+      value: 'x',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['property:set', 'name=tag', 'value=x', 'path=a.md'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('appends vault token when vaultName is set', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'Brain' });
+
+    await provider.setProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'k',
+      value: 'v',
+      type: 'text',
+    });
+
+    const args = exec.mock.calls[0][1] as string[];
+    expect(args[args.length - 1]).toBe('vault=Brain');
+  });
+});

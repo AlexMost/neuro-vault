@@ -38,10 +38,21 @@ export interface AppendDailyInput {
   content: string;
 }
 
+export type PropertyType = 'text' | 'list' | 'number' | 'checkbox' | 'date' | 'datetime';
+export type PropertyValue = string | number | boolean | string[] | number[];
+
+export interface SetPropertyInput {
+  identifier: NoteIdentifier;
+  name: string;
+  value: PropertyValue;
+  type?: PropertyType;
+}
+
 export interface VaultProvider {
   readNote(input: ReadNoteInput): Promise<ReadNoteResult>;
   createNote(input: CreateNoteInput): Promise<CreateNoteResult>;
   editNote(input: EditNoteInput): Promise<void>;
   readDaily(): Promise<DailyNoteResult>;
   appendDaily(input: AppendDailyInput): Promise<void>;
+  setProperty(input: SetPropertyInput): Promise<void>;
 }

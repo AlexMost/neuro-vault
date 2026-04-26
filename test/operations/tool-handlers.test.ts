@@ -10,6 +10,7 @@ function fakeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
     editNote: vi.fn().mockResolvedValue(undefined),
     readDaily: vi.fn().mockResolvedValue({ path: '', content: '' }),
     appendDaily: vi.fn().mockResolvedValue(undefined),
+    setProperty: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
