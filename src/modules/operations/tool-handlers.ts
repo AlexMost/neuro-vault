@@ -3,6 +3,9 @@ import type {
   AppendDailyToolInput,
   CreateNoteToolInput,
   EditNoteToolInput,
+  GetTagToolInput,
+  ListPropertiesToolInput,
+  ListTagsToolInput,
   OperationsErrorCode,
   OperationsToolHandlers,
   ReadDailyToolInput,
@@ -206,14 +209,19 @@ export function createOperationsHandlers(
       await provider.removeProperty({ identifier, name: input.name.trim() });
       return { ok: true as const };
     },
-    async listProperties() {
-      throw new Error('not implemented');
+    async listProperties(_input: ListPropertiesToolInput) {
+      return provider.listProperties();
     },
-    async listTags() {
-      throw new Error('not implemented');
+    async listTags(_input: ListTagsToolInput) {
+      return provider.listTags();
     },
-    async getTag() {
-      throw new Error('not implemented');
+    async getTag(input: GetTagToolInput) {
+      const stripped = (input.name ?? '').trim().replace(/^#/, '').trim();
+      if (stripped === '') {
+        throw invalidArgument('name must not be empty', 'name');
+      }
+      const includeFiles = input.include_files !== false;
+      return provider.getTag({ name: stripped, includeFiles });
     },
   };
 }

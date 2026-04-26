@@ -334,3 +334,69 @@ describe('operations.removeProperty handler', () => {
     expect(await handlers.removeProperty({ path: 'a.md', name: 'gone' })).toEqual({ ok: true });
   });
 });
+
+describe('operations.listProperties handler', () => {
+  it('forwards to provider', async () => {
+    const provider = fakeProvider({
+      listProperties: vi.fn().mockResolvedValue([{ name: 'status', count: 5 }]),
+    });
+    const handlers = createOperationsHandlers({ provider });
+    expect(await handlers.listProperties({})).toEqual([{ name: 'status', count: 5 }]);
+    expect(provider.listProperties).toHaveBeenCalled();
+  });
+});
+
+describe('operations.listTags handler', () => {
+  it('forwards to provider', async () => {
+    const provider = fakeProvider({
+      listTags: vi.fn().mockResolvedValue([{ name: 'mcp', count: 3 }]),
+    });
+    const handlers = createOperationsHandlers({ provider });
+    expect(await handlers.listTags({})).toEqual([{ name: 'mcp', count: 3 }]);
+  });
+});
+
+describe('operations.getTag handler', () => {
+  it('strips leading # from tag name', async () => {
+    const provider = fakeProvider({
+      getTag: vi.fn().mockResolvedValue({ name: 'mcp', count: 1, files: ['a.md'] }),
+    });
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.getTag({ name: '#mcp' });
+
+    expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: true });
+  });
+
+  it('passes includeFiles=false when include_files is false', async () => {
+    const provider = fakeProvider({
+      getTag: vi.fn().mockResolvedValue({ name: 'mcp', count: 1 }),
+    });
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.getTag({ name: 'mcp', include_files: false });
+
+    expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: false });
+  });
+
+  it('defaults includeFiles=true when include_files is omitted', async () => {
+    const provider = fakeProvider({
+      getTag: vi.fn().mockResolvedValue({ name: 'mcp', count: 1, files: [] }),
+    });
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.getTag({ name: 'mcp' });
+
+    expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: true });
+  });
+
+  it('rejects empty tag name', async () => {
+    const handlers = createOperationsHandlers({ provider: fakeProvider() });
+    await expect(handlers.getTag({ name: '' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+    await expect(handlers.getTag({ name: '#' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+  });
+});
