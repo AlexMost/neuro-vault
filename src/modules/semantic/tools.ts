@@ -30,7 +30,7 @@ export function buildSemanticTools(handlers: ToolHandlers): ToolRegistration[] {
       spec: {
         title: 'Search Notes',
         description:
-          'Search notes by semantic similarity for fuzzy recall, topic lookup, or cross-language matching. Pass a short keyword query (1-4 words). For synonyms, language variants (UA/EN), or reformulations, pass an array of 1-8 queries — they are batch-embedded server-side and returned as one merged ranked list with matched_queries on each result. Choose mode: "quick" for specific lookups (up to 3 notes), "deep" for broad topic overview with block-level search and expansion.',
+          'Search notes by semantic similarity for fuzzy recall, topic lookup, or cross-language matching. Pass a short keyword query (1-4 words). For synonyms, reformulations, or translations into the languages used in the vault, pass an array of 1-8 queries — they are batch-embedded server-side and returned as one merged ranked list with matched_queries on each result. Choose mode: "quick" for specific lookups (up to 3 notes), "deep" for broad topic overview with block-level search and expansion.',
         inputSchema: searchNotesSchema,
       },
       handler: async (args) =>

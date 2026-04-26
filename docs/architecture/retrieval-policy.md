@@ -66,7 +66,7 @@ Expansion catches notes that are semantically adjacent to top results but did no
 
 ## Multi-query
 
-`executeMultiRetrieval(input)` is a sibling of `executeRetrieval` for callers that want to search several reformulations at once (synonyms, UA/EN variants, related concepts). It runs the existing four-step pipeline once per query in parallel via `Promise.all`, then merges the per-query outputs.
+`executeMultiRetrieval(input)` is a sibling of `executeRetrieval` for callers that want to search several reformulations at once (synonyms, translations into the languages present in the vault, related concepts). It runs the existing four-step pipeline once per query in parallel via `Promise.all`, then merges the per-query outputs.
 
 Merge rule for note results:
 
