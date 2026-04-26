@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.6.0](https://github.com/AlexMost/neuro-vault/compare/v1.5.0...v1.6.0) (2026-04-26)
+
+### Features
+
+- **operations:** add getTag with verbose/total CLI modes ([4654e17](https://github.com/AlexMost/neuro-vault/commit/4654e17628dc24c20cb28dedb927de6ab92b07f6))
+- **operations:** add listProperties via CLI properties command ([0794e71](https://github.com/AlexMost/neuro-vault/commit/0794e712eb0cef4c6d88bf13524e820cc0c15656))
+- **operations:** add listTags via CLI tags command ([a41c31a](https://github.com/AlexMost/neuro-vault/commit/a41c31ae03cdf51e422ec22de9d1080529ee2032))
+- **operations:** add readProperty with value parsing and PROPERTY_NOT_FOUND ([6db611c](https://github.com/AlexMost/neuro-vault/commit/6db611c6790421997d691524f42616b27ce94dbf))
+- **operations:** add removeProperty (idempotent on missing property) ([5922043](https://github.com/AlexMost/neuro-vault/commit/5922043fcacaa5f7e04500985e56585495b5b03b))
+- **operations:** add setProperty to VaultProvider ([a0a7f61](https://github.com/AlexMost/neuro-vault/commit/a0a7f6153d4434990b25bed7240a7f934ae58e12))
+- **operations:** list_properties, list_tags, get_tag handlers ([6645faa](https://github.com/AlexMost/neuro-vault/commit/6645faac5921da459a1ca3c5493e034354be2194))
+- **operations:** read_property handler ([6c56533](https://github.com/AlexMost/neuro-vault/commit/6c5653367563637bd3c17b2d8018368266f9e71f))
+- **operations:** register 6 properties/tags MCP tools ([9fcb6c6](https://github.com/AlexMost/neuro-vault/commit/9fcb6c610926002fb3f1ff881f1242302d997884))
+- **operations:** remove_property handler (idempotent) ([eccec61](https://github.com/AlexMost/neuro-vault/commit/eccec612c38d1c45af687842d31952c9c685490e))
+- **operations:** set_property handler with type inference ([ec47653](https://github.com/AlexMost/neuro-vault/commit/ec47653ee48b9158089da6c829e3aee1bb101f83))
+
+### Bug Fixes
+
+- **operations:** distinguish CLI parser failure from TAG_NOT_FOUND in getTag ([1c6f7f5](https://github.com/AlexMost/neuro-vault/commit/1c6f7f56cc1d9668427e1276256bc65e42015c91))
+- **operations:** smoke-test fixes for set_property date and get_tag parser ([3d613a7](https://github.com/AlexMost/neuro-vault/commit/3d613a732d564ef22d3fecc55257363cbd703e22)), closes [#year2026](https://github.com/AlexMost/neuro-vault/issues/year2026)
+
 ## [1.5.0](https://github.com/AlexMost/neuro-vault/compare/v1.4.1...v1.5.0) (2026-04-25)
 
 ### Features
