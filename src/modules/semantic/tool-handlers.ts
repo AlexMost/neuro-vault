@@ -5,6 +5,7 @@ import type {
   DuplicatePair,
   FindDuplicatesInput,
   GetSimilarNotesInput,
+  PathExistsCheck,
   SearchEngine,
   SearchNotesInput,
   SearchResult,
@@ -171,12 +172,25 @@ function wrapDependencyError(
   });
 }
 
+async function buildExistingPathSet(
+  paths: Iterable<string>,
+  pathExists: PathExistsCheck,
+): Promise<Set<string>> {
+  const unique = new Set(paths);
+  const checks = await Promise.all(
+    [...unique].map(async (notePath) => [notePath, await pathExists(notePath)] as const),
+  );
+  return new Set(checks.filter(([, exists]) => exists).map(([notePath]) => notePath));
+}
+
 export function createToolHandlers({
   loader,
   embeddingProvider,
   searchEngine,
   modelKey,
+  pathExists,
 }: ToolHandlerDependencies): ToolHandlers {
+  const existsCheck: PathExistsCheck = pathExists ?? (async () => true);
   return {
     async searchNotes(input: SearchNotesInput): Promise<RetrievalOutput> {
       const query = normalizeQuery(input.query);
@@ -191,7 +205,7 @@ export function createToolHandlers({
           : undefined;
 
       try {
-        return await executeRetrieval({
+        const output = await executeRetrieval({
           query,
           mode,
           threshold,
@@ -201,6 +215,19 @@ export function createToolHandlers({
           embeddingProvider,
           searchEngine,
         });
+
+        const candidatePaths: string[] = [
+          ...output.results.map((r) => r.path),
+          ...(output.blockResults?.map((b) => b.path) ?? []),
+        ];
+        const existing = await buildExistingPathSet(candidatePaths, existsCheck);
+
+        return {
+          results: output.results.filter((r) => existing.has(r.path)),
+          ...(output.blockResults !== undefined
+            ? { blockResults: output.blockResults.filter((b) => existing.has(b.path)) }
+            : {}),
+        };
       } catch (error) {
         throw wrapDependencyError(error, 'Failed to search notes', {
           modelKey,
@@ -223,7 +250,7 @@ export function createToolHandlers({
       const threshold = readThreshold(input.threshold, DEFAULT_SEARCH_THRESHOLD, 'threshold');
 
       try {
-        return toSearchResults(
+        const results = toSearchResults(
           searchEngine,
           source.embedding,
           loader.sources.values(),
@@ -231,6 +258,11 @@ export function createToolHandlers({
           limit,
           notePath,
         );
+        const existing = await buildExistingPathSet(
+          results.map((r) => r.path),
+          existsCheck,
+        );
+        return results.filter((r) => existing.has(r.path));
       } catch (error) {
         throw wrapDependencyError(error, 'Failed to find similar notes', {
           modelKey,
@@ -244,10 +276,15 @@ export function createToolHandlers({
       const threshold = readThreshold(input.threshold, DEFAULT_DUPLICATE_THRESHOLD, 'threshold');
 
       try {
-        return searchEngine.findDuplicates({
+        const pairs = searchEngine.findDuplicates({
           sources: loader.sources.values(),
           threshold,
         });
+        const existing = await buildExistingPathSet(
+          pairs.flatMap((p) => [p.note_a, p.note_b]),
+          existsCheck,
+        );
+        return pairs.filter((p) => existing.has(p.note_a) && existing.has(p.note_b));
       } catch (error) {
         throw wrapDependencyError(error, 'Failed to find duplicate notes', {
           modelKey,

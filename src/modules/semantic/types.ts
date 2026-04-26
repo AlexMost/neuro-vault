@@ -81,6 +81,8 @@ export interface ToolStats {
   modelKey: string;
 }
 
+export type PathExistsCheck = (vaultRelativePath: string) => Promise<boolean>;
+
 export interface ToolHandlerDependencies {
   loader: {
     sources: Map<string, SmartSource>;
@@ -88,6 +90,7 @@ export interface ToolHandlerDependencies {
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
+  pathExists?: PathExistsCheck;
 }
 
 export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENCY_ERROR';

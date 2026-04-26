@@ -111,6 +111,7 @@ export async function startNeuroVaultServer(
   if (config.semantic.enabled) {
     const semantic = await createSemanticModule(
       {
+        vaultPath: config.vaultPath,
         smartEnvPath: config.semantic.smartEnvPath,
         modelKey: config.semantic.modelKey,
         modelId: config.semantic.modelId,

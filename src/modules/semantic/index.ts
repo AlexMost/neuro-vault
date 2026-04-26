@@ -1,3 +1,6 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
 import { EmbeddingService } from './embedding-service.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
 import {
@@ -8,6 +11,7 @@ import { createToolHandlers } from './tool-handlers.js';
 import { buildSemanticTools } from './tools.js';
 import type {
   EmbeddingProvider,
+  PathExistsCheck,
   SearchEngine,
   ToolHandlerDependencies,
   ToolHandlers,
@@ -15,6 +19,7 @@ import type {
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 
 export interface SemanticModuleConfig {
+  vaultPath: string;
   smartEnvPath: string;
   modelKey: string;
   modelId: string;
@@ -25,6 +30,18 @@ export interface SemanticModuleDeps {
   embeddingServiceFactory?: (modelId: string) => EmbeddingProvider;
   searchEngine?: SearchEngine;
   toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
+  pathExists?: PathExistsCheck;
+}
+
+function createDefaultPathExists(vaultPath: string): PathExistsCheck {
+  return async (vaultRelativePath) => {
+    try {
+      await fs.access(path.join(vaultPath, vaultRelativePath));
+      return true;
+    } catch {
+      return false;
+    }
+  };
 }
 
 export interface SemanticModule {
@@ -49,11 +66,13 @@ export async function createSemanticModule(
   }
 
   const embeddingService = embeddingServiceFactory(config.modelId);
+  const pathExists = deps.pathExists ?? createDefaultPathExists(config.vaultPath);
   const handlers = toolHandlersFactory({
     loader: corpus,
     embeddingProvider: embeddingService,
     searchEngine,
     modelKey: config.modelKey,
+    pathExists,
   });
 
   return {

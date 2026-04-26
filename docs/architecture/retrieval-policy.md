@@ -70,6 +70,12 @@ Expansion catches notes that are semantically adjacent to top results but did no
 - The final note count is bounded by `mode.limit`; block count by `QUICK_BLOCK_LIMIT` (quick) or `mode.limit` (deep).
 - A user-supplied `threshold` overrides the mode default; everything else uses mode defaults unless explicitly overridden.
 
+## Stale-path filtering
+
+The Smart Connections embeddings index is keyed by note path. When a file is moved (e.g. `Tasks/foo.md` → `Archive/foo.md`) Smart Connections may not evict the old entry, so `findNeighbors` can return a path that no longer exists on disk. The MCP `search_notes`, `get_similar_notes`, and `find_duplicates` handlers post-filter results through a `pathExists(vaultRelativePath)` predicate and drop entries (and duplicate pairs) whose paths are missing.
+
+The default predicate in `src/modules/semantic/index.ts` is a `fs.access` check rooted at the configured `--vault` directory. Tests inject a fake. The policy itself is unchanged — filtering happens at the handler boundary so the math layer stays pure.
+
 ## Boundaries
 
 - The policy does not validate inputs (the tool handler does that).

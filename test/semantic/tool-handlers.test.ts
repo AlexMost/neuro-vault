@@ -65,6 +65,92 @@ function createDuplicateCorpus(corpus: Awaited<ReturnType<typeof loadSmartConnec
 }
 
 describe('createToolHandlers', () => {
+  it('filters out search results whose paths no longer exist on disk', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
+      const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
+      const pathExists = vi.fn(async (notePath: string) => notePath !== 'Folder/note-b.md');
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: 'bge-micro-v2',
+        pathExists,
+      });
+
+      const result = await handlers.searchNotes({ query: 'semantic query', threshold: 0 });
+
+      expect(result.results.map((r) => r.path)).toEqual(['Folder/note-a.md', 'Folder/note-c.md']);
+      expect(result.blockResults?.map((b) => b.path) ?? []).not.toContain('Folder/note-b.md');
+      expect(pathExists).toHaveBeenCalledWith('Folder/note-b.md');
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('filters stale paths from get_similar_notes results', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
+      const pathExists = vi.fn(async (notePath: string) => notePath !== 'Folder/note-b.md');
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: 'bge-micro-v2',
+        pathExists,
+      });
+
+      const results = await handlers.getSimilarNotes({
+        note_path: 'Folder/note-a.md',
+        threshold: 0,
+      });
+
+      expect(results.map((r) => r.path)).toEqual(['Folder/note-c.md']);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('drops duplicate pairs whose paths no longer exist on disk', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
+      const pathExists = vi.fn(async (notePath: string) => notePath !== 'Folder/note-d.md');
+      const handlers = createToolHandlers({
+        loader: createDuplicateCorpus(corpus),
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: 'bge-micro-v2',
+        pathExists,
+      });
+
+      const results = await handlers.findDuplicates({ threshold: 0.95 });
+
+      expect(results.map((r) => [r.note_a, r.note_b])).toEqual([
+        ['Folder/note-a.md', 'Folder/note-e.md'],
+      ]);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('returns ranked search results for a query', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
