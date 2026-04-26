@@ -333,6 +333,13 @@ describe('operations.removeProperty handler', () => {
     const handlers = createOperationsHandlers({ provider });
     expect(await handlers.removeProperty({ path: 'a.md', name: 'gone' })).toEqual({ ok: true });
   });
+
+  it('rejects empty name with INVALID_ARGUMENT', async () => {
+    const handlers = createOperationsHandlers({ provider: fakeProvider() });
+    await expect(
+      handlers.removeProperty({ path: 'a.md', name: '' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
 });
 
 describe('operations.listProperties handler', () => {
@@ -353,6 +360,7 @@ describe('operations.listTags handler', () => {
     });
     const handlers = createOperationsHandlers({ provider });
     expect(await handlers.listTags({})).toEqual([{ name: 'mcp', count: 3 }]);
+    expect(provider.listTags).toHaveBeenCalled();
   });
 });
 
