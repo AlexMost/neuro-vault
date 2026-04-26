@@ -416,6 +416,15 @@ describe('ObsidianCLIProvider.listProperties', () => {
     const provider = new ObsidianCLIProvider({ exec });
     await expect(provider.listProperties()).rejects.toMatchObject({ code: 'CLI_ERROR' });
   });
+
+  it('throws CLI_ERROR when CLI emits valid JSON that is not an array', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '{"error":"unexpected"}', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(provider.listProperties()).rejects.toMatchObject({
+      code: 'CLI_ERROR',
+      message: expect.stringContaining('expected array'),
+    });
+  });
 });
 
 describe('ObsidianCLIProvider.removeProperty', () => {

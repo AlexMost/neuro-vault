@@ -142,7 +142,7 @@ export class ObsidianCLIProvider implements VaultProvider {
       'sort=count',
       'format=json',
     ]);
-    return this.parseJsonList(stdout, 'properties');
+    return this.parseJsonList<PropertyListEntry>(stdout, 'properties');
   }
 
   // Best-effort: a `text` property whose value happens to be "true" or "42"
@@ -168,16 +168,13 @@ export class ObsidianCLIProvider implements VaultProvider {
     return String(value);
   }
 
-  private parseJsonList(
-    stdout: string,
-    command: string,
-  ): Array<{ name: string; count: number }> {
+  private parseJsonList<T>(stdout: string, command: string): T[] {
     try {
       const parsed = JSON.parse(stdout) as unknown;
       if (!Array.isArray(parsed)) {
         throw new Error('expected array');
       }
-      return parsed as Array<{ name: string; count: number }>;
+      return parsed as T[];
     } catch (err) {
       throw new ToolHandlerError(
         'CLI_ERROR',
