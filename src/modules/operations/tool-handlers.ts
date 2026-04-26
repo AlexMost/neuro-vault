@@ -14,7 +14,12 @@ import type {
   RemovePropertyToolInput,
   SetPropertyToolInput,
 } from './types.js';
-import type { NoteIdentifier, PropertyType, PropertyValue, VaultProvider } from './vault-provider.js';
+import type {
+  NoteIdentifier,
+  PropertyType,
+  PropertyValue,
+  VaultProvider,
+} from './vault-provider.js';
 
 export interface OperationsHandlerDependencies {
   provider: VaultProvider;

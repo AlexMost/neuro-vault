@@ -52,14 +52,14 @@ test/server-modules.test.ts      # tool count 9 → 15 (when both modules on)
 
 Verified against `obsidian` CLI help output:
 
-| Tool             | CLI command       | Required args                                | Optional args                                                        |
-| ---------------- | ----------------- | -------------------------------------------- | -------------------------------------------------------------------- |
-| `set_property`   | `property:set`    | `name=<X>`, `value=<Y>`, target (`file`/`path`) | `type=text\|list\|number\|checkbox\|date\|datetime`                  |
-| `read_property`  | `property:read`   | `name=<X>`, target (`file`/`path`)           | —                                                                    |
-| `remove_property`| `property:remove` | `name=<X>`, target (`file`/`path`)           | —                                                                    |
-| `list_properties`| `properties`      | —                                            | always pass `counts sort=count format=json`                          |
-| `list_tags`      | `tags`            | —                                            | always pass `counts sort=count format=json`                          |
-| `get_tag`        | `tag`             | `name=<X>`                                   | `verbose` (when `include_files: true`); `total` (when `false`)       |
+| Tool              | CLI command       | Required args                                   | Optional args                                                  |
+| ----------------- | ----------------- | ----------------------------------------------- | -------------------------------------------------------------- |
+| `set_property`    | `property:set`    | `name=<X>`, `value=<Y>`, target (`file`/`path`) | `type=text\|list\|number\|checkbox\|date\|datetime`            |
+| `read_property`   | `property:read`   | `name=<X>`, target (`file`/`path`)              | —                                                              |
+| `remove_property` | `property:remove` | `name=<X>`, target (`file`/`path`)              | —                                                              |
+| `list_properties` | `properties`      | —                                               | always pass `counts sort=count format=json`                    |
+| `list_tags`       | `tags`            | —                                               | always pass `counts sort=count format=json`                    |
+| `get_tag`         | `tag`             | `name=<X>`                                      | `verbose` (when `include_files: true`); `total` (when `false`) |
 
 ## VaultProvider extensions
 
@@ -90,12 +90,18 @@ export interface RemovePropertyInput {
   name: string;
 }
 
-export interface PropertyListEntry { name: string; count: number; }
-export interface TagListEntry      { name: string; count: number; }
+export interface PropertyListEntry {
+  name: string;
+  count: number;
+}
+export interface TagListEntry {
+  name: string;
+  count: number;
+}
 
 export interface GetTagInput {
-  name: string;             // must NOT include leading '#'; handler strips it
-  includeFiles?: boolean;   // default true
+  name: string; // must NOT include leading '#'; handler strips it
+  includeFiles?: boolean; // default true
 }
 
 export interface GetTagResult {
@@ -151,15 +157,15 @@ getTag({ name:'mcp', includeFiles:false })
 
 ### Output parsing
 
-| Command                | Output                                       | Parser                                                                                         |
-| ---------------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `property:read`        | raw value as string                          | inference: `"true"`/`"false"` → boolean; numeric-only → number; multi-line stdout → list (split on `\n`, trim, drop empties); else string |
-| `property:set`         | empty / confirmation                         | ignored; success on exit 0                                                                     |
-| `property:remove`      | empty / confirmation / "not found"           | ignored on success; "not found" stderr is **swallowed** (idempotent)                           |
-| `properties` json      | `[{name,count}, ...]`                        | `JSON.parse(stdout)` → typed                                                                   |
-| `tags` json            | `[{name,count}, ...]`                        | `JSON.parse(stdout)` → typed                                                                   |
-| `tag verbose`          | format not in `--help`; expected: count + file list | parsed experimentally during impl; spec contract is `{name, count, files: string[]}`. If actual format diverges, provider parser is adjusted, tests fix the behavior, this spec is updated inline. |
-| `tag total`            | numeric-only stdout                          | `parseInt(stdout.trim())` → `count`                                                            |
+| Command           | Output                                              | Parser                                                                                                                                                                                             |
+| ----------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `property:read`   | raw value as string                                 | inference: `"true"`/`"false"` → boolean; numeric-only → number; multi-line stdout → list (split on `\n`, trim, drop empties); else string                                                          |
+| `property:set`    | empty / confirmation                                | ignored; success on exit 0                                                                                                                                                                         |
+| `property:remove` | empty / confirmation / "not found"                  | ignored on success; "not found" stderr is **swallowed** (idempotent)                                                                                                                               |
+| `properties` json | `[{name,count}, ...]`                               | `JSON.parse(stdout)` → typed                                                                                                                                                                       |
+| `tags` json       | `[{name,count}, ...]`                               | `JSON.parse(stdout)` → typed                                                                                                                                                                       |
+| `tag verbose`     | format not in `--help`; expected: count + file list | parsed experimentally during impl; spec contract is `{name, count, files: string[]}`. If actual format diverges, provider parser is adjusted, tests fix the behavior, this spec is updated inline. |
+| `tag total`       | numeric-only stdout                                 | `parseInt(stdout.trim())` → `count`                                                                                                                                                                |
 
 The `property:read` parser is **best-effort**. The CLI emits the raw rendered value; for ambiguous strings (e.g. a property whose actual stored type is `text` but contents are `"42"`), we'll return `42` as a number. Clients that need ground-truth types should call `read_note` and parse frontmatter YAML themselves. This trade-off is acceptable because the dominant use case is "what's the status?" / "which tags?" — not type-perfect round-tripping.
 
@@ -167,13 +173,13 @@ The `property:read` parser is **best-effort**. The CLI emits the raw rendered va
 
 Added on top of Batch 1's `mapExecError`:
 
-| Signal                                                          | Error code             | Notes                                                  |
-| --------------------------------------------------------------- | ---------------------- | ------------------------------------------------------ |
-| `property:read` — stderr matches `property not found`/`not set`, OR exit 0 with empty stdout | `PROPERTY_NOT_FOUND`   | exact patterns confirmed during impl smoke test        |
-| `property:remove` — same patterns above                          | (swallowed)            | idempotent; handler returns `{ ok: true }`             |
-| `tag` — stderr matches `tag not found`, OR `total` returns 0     | `TAG_NOT_FOUND`        | per task spec                                          |
-| `properties`/`tags` — `JSON.parse` throws                        | `CLI_ERROR`            | unexpected output format                               |
-| Other non-zero exits                                             | reuse Batch 1 mapping  | `NOT_FOUND` for missing files, `CLI_ERROR` otherwise   |
+| Signal                                                                                       | Error code            | Notes                                                |
+| -------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------- |
+| `property:read` — stderr matches `property not found`/`not set`, OR exit 0 with empty stdout | `PROPERTY_NOT_FOUND`  | exact patterns confirmed during impl smoke test      |
+| `property:remove` — same patterns above                                                      | (swallowed)           | idempotent; handler returns `{ ok: true }`           |
+| `tag` — stderr matches `tag not found`, OR `total` returns 0                                 | `TAG_NOT_FOUND`       | per task spec                                        |
+| `properties`/`tags` — `JSON.parse` throws                                                    | `CLI_ERROR`           | unexpected output format                             |
+| Other non-zero exits                                                                         | reuse Batch 1 mapping | `NOT_FOUND` for missing files, `CLI_ERROR` otherwise |
 
 ## Tool registrations
 
@@ -181,32 +187,26 @@ zod schemas in `tools.ts`:
 
 ```typescript
 const propertyTargetShape = {
-  file: z.string().optional(),    // wikilink-style → CLI file=
-  path: z.string().optional(),    // exact vault-relative → CLI path=
+  file: z.string().optional(), // wikilink-style → CLI file=
+  path: z.string().optional(), // exact vault-relative → CLI path=
 };
 
 const setPropertySchema = z.object({
   ...propertyTargetShape,
   name: z.string(),
-  value: z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.array(z.string()),
-    z.array(z.number()),
-  ]),
-  type: z.enum(['text','list','number','checkbox','date','datetime']).optional(),
+  value: z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.array(z.number())]),
+  type: z.enum(['text', 'list', 'number', 'checkbox', 'date', 'datetime']).optional(),
 });
 
-const readPropertySchema   = z.object({ ...propertyTargetShape, name: z.string() });
+const readPropertySchema = z.object({ ...propertyTargetShape, name: z.string() });
 const removePropertySchema = z.object({ ...propertyTargetShape, name: z.string() });
 
-const listPropertiesSchema = z.object({});  // vault-wide only
-const listTagsSchema       = z.object({});  // vault-wide only
+const listPropertiesSchema = z.object({}); // vault-wide only
+const listTagsSchema = z.object({}); // vault-wide only
 
 const getTagSchema = z.object({
   name: z.string(),
-  include_files: z.boolean().optional(),    // handler defaults to true
+  include_files: z.boolean().optional(), // handler defaults to true
 });
 ```
 
@@ -231,12 +231,12 @@ A new helper, `resolvePropertyTarget(file, path)`, mirrors Batch 1's `resolveIde
 
 Performed in the handler (not the provider) so the provider stays a thin CLI translator:
 
-| JS value                         | Inferred `type`  |
-| -------------------------------- | ---------------- |
-| `string`                         | `text`           |
-| `number`                         | `number`         |
-| `boolean`                        | `checkbox`       |
-| `Array<string \| number>`        | `list`           |
+| JS value                              | Inferred `type`                 |
+| ------------------------------------- | ------------------------------- |
+| `string`                              | `text`                          |
+| `number`                              | `number`                        |
+| `boolean`                             | `checkbox`                      |
+| `Array<string \| number>`             | `list`                          |
 | anything else (null/undefined/object) | reject `UNSUPPORTED_VALUE_TYPE` |
 
 Explicit `type` passed by the caller wins over inference. `date` / `datetime` require explicit `type` — the handler does not pattern-match strings like `2026-04-26`. If a string value is passed without `type`, it goes to CLI as `text`.

@@ -324,9 +324,9 @@ describe('operations.setProperty handler', () => {
   it('rejects neither file nor path', async () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
-    await expect(
-      handlers.setProperty({ name: 'x', value: 'y' } as never),
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    await expect(handlers.setProperty({ name: 'x', value: 'y' } as never)).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
   });
 
   it('rejects both file and path', async () => {
@@ -402,9 +402,9 @@ describe('operations.removeProperty handler', () => {
 
   it('rejects empty name with INVALID_ARGUMENT', async () => {
     const handlers = createOperationsHandlers({ provider: fakeProvider() });
-    await expect(
-      handlers.removeProperty({ path: 'a.md', name: '' }),
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    await expect(handlers.removeProperty({ path: 'a.md', name: '' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
   });
 });
 

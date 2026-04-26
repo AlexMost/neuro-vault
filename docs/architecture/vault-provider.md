@@ -51,4 +51,4 @@ Obsidian distinguishes `file=` (resolves like a wikilink) from `path=` (exact). 
 - It does not normalize paths. Path normalization happens one layer above (in `tool-handlers.ts`) so the provider can stay a thin shell.
 - It does not validate business rules (empty content, etc.). Handlers do that before calling.
 
-The one deliberate exception is `set_property`'s ISO format check for `date` / `datetime` types. That validation lives in the handler (not the provider) but happens *before* the CLI is invoked, because the CLI silently accepts non-ISO values and writes nothing — a pure pass-through would surface as a phantom success. This exception is explicit precisely because it violates the "no business-rule validation" rule.
+The one deliberate exception is `set_property`'s ISO format check for `date` / `datetime` types. That validation lives in the handler (not the provider) but happens _before_ the CLI is invoked, because the CLI silently accepts non-ISO values and writes nothing — a pure pass-through would surface as a phantom success. This exception is explicit precisely because it violates the "no business-rule validation" rule.

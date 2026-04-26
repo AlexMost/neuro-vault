@@ -73,7 +73,9 @@ export interface OperationsToolHandlers {
   readDaily(input: ReadDailyToolInput): Promise<{ path: string; content: string }>;
   appendDaily(input: AppendDailyToolInput): Promise<void>;
   setProperty(input: SetPropertyToolInput): Promise<{ ok: true }>;
-  readProperty(input: ReadPropertyToolInput): Promise<{ value: string | number | boolean | string[] | number[] }>;
+  readProperty(
+    input: ReadPropertyToolInput,
+  ): Promise<{ value: string | number | boolean | string[] | number[] }>;
   removeProperty(input: RemovePropertyToolInput): Promise<{ ok: true }>;
   listProperties(input: ListPropertiesToolInput): Promise<Array<{ name: string; count: number }>>;
   listTags(input: ListTagsToolInput): Promise<Array<{ name: string; count: number }>>;

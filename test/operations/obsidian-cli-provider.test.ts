@@ -437,11 +437,9 @@ describe('ObsidianCLIProvider.removeProperty', () => {
       name: 'status',
     });
 
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['property:remove', 'name=status', 'path=a.md'],
-      { timeout: 10_000 },
-    );
+    expect(exec).toHaveBeenCalledWith('obsidian', ['property:remove', 'name=status', 'path=a.md'], {
+      timeout: 10_000,
+    });
   });
 
   it('is idempotent — swallows "property not found" stderr', async () => {
@@ -485,11 +483,9 @@ describe('ObsidianCLIProvider.listTags', () => {
 
     const result = await provider.listTags();
 
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['tags', 'counts', 'sort=count', 'format=json'],
-      { timeout: 10_000 },
-    );
+    expect(exec).toHaveBeenCalledWith('obsidian', ['tags', 'counts', 'sort=count', 'format=json'], {
+      timeout: 10_000,
+    });
     expect(result).toEqual([
       { name: 'mcp', count: 5 },
       { name: 'obsidian', count: 3 },
@@ -519,11 +515,9 @@ describe('ObsidianCLIProvider.getTag', () => {
 
     const result = await provider.getTag({ name: 'mcp', includeFiles: true });
 
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['tag', 'name=mcp', 'verbose'],
-      { timeout: 10_000 },
-    );
+    expect(exec).toHaveBeenCalledWith('obsidian', ['tag', 'name=mcp', 'verbose'], {
+      timeout: 10_000,
+    });
     expect(result).toEqual({
       name: 'mcp',
       count: 3,
@@ -550,11 +544,9 @@ describe('ObsidianCLIProvider.getTag', () => {
 
     const result = await provider.getTag({ name: 'obsidian', includeFiles: false });
 
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['tag', 'name=obsidian', 'total'],
-      { timeout: 10_000 },
-    );
+    expect(exec).toHaveBeenCalledWith('obsidian', ['tag', 'name=obsidian', 'total'], {
+      timeout: 10_000,
+    });
     expect(result).toEqual({ name: 'obsidian', count: 7 });
   });
 
@@ -564,17 +556,17 @@ describe('ObsidianCLIProvider.getTag', () => {
       stderr: 'tag not found: nonsense',
     });
     const provider = new ObsidianCLIProvider({ exec });
-    await expect(
-      provider.getTag({ name: 'nonsense', includeFiles: true }),
-    ).rejects.toMatchObject({ code: 'TAG_NOT_FOUND' });
+    await expect(provider.getTag({ name: 'nonsense', includeFiles: true })).rejects.toMatchObject({
+      code: 'TAG_NOT_FOUND',
+    });
   });
 
   it('throws TAG_NOT_FOUND when total returns 0', async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: '#nonsense\t0\n', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
-    await expect(
-      provider.getTag({ name: 'nonsense', includeFiles: false }),
-    ).rejects.toMatchObject({ code: 'TAG_NOT_FOUND' });
+    await expect(provider.getTag({ name: 'nonsense', includeFiles: false })).rejects.toMatchObject({
+      code: 'TAG_NOT_FOUND',
+    });
   });
 
   it('throws CLI_ERROR when verbose output starts with non-numeric line', async () => {
@@ -583,16 +575,16 @@ describe('ObsidianCLIProvider.getTag', () => {
       stderr: '',
     });
     const provider = new ObsidianCLIProvider({ exec });
-    await expect(
-      provider.getTag({ name: 'mcp', includeFiles: true }),
-    ).rejects.toMatchObject({ code: 'CLI_ERROR' });
+    await expect(provider.getTag({ name: 'mcp', includeFiles: true })).rejects.toMatchObject({
+      code: 'CLI_ERROR',
+    });
   });
 
   it('throws CLI_ERROR when total output is non-numeric', async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: 'oops\n', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
-    await expect(
-      provider.getTag({ name: 'mcp', includeFiles: false }),
-    ).rejects.toMatchObject({ code: 'CLI_ERROR' });
+    await expect(provider.getTag({ name: 'mcp', includeFiles: false })).rejects.toMatchObject({
+      code: 'CLI_ERROR',
+    });
   });
 });

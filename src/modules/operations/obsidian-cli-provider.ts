@@ -140,20 +140,12 @@ export class ObsidianCLIProvider implements VaultProvider {
   }
 
   async listProperties(): Promise<PropertyListEntry[]> {
-    const { stdout } = await this.runCommand('properties', [
-      'counts',
-      'sort=count',
-      'format=json',
-    ]);
+    const { stdout } = await this.runCommand('properties', ['counts', 'sort=count', 'format=json']);
     return this.parseJsonList<PropertyListEntry>(stdout, 'properties');
   }
 
   async listTags(): Promise<TagListEntry[]> {
-    const { stdout } = await this.runCommand('tags', [
-      'counts',
-      'sort=count',
-      'format=json',
-    ]);
+    const { stdout } = await this.runCommand('tags', ['counts', 'sort=count', 'format=json']);
     return this.parseJsonList<TagListEntry>(stdout, 'tags');
   }
 

@@ -38,13 +38,7 @@ const propertyTargetShape = {
 const setPropertySchema = z.object({
   ...propertyTargetShape,
   name: z.string(),
-  value: z.union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.array(z.string()),
-    z.array(z.number()),
-  ]),
+  value: z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.array(z.number())]),
   type: z.enum(['text', 'list', 'number', 'checkbox', 'date', 'datetime']).optional(),
 });
 

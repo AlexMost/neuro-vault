@@ -12,18 +12,18 @@ The Obsidian CLI does not return structured errors — it exits non-zero and pri
 
 ## Mapping
 
-| Signal                                                              | Error code             | Meaning                                                                 |
-| ------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------- |
-| spawn `ENOENT`                                                      | `CLI_NOT_FOUND`        | Binary not found at the configured path.                                |
-| `ETIMEDOUT` / `killed`                                              | `CLI_TIMEOUT`          | Process did not finish within `timeoutMs`.                              |
-| stderr matches `not running` or `URI handler`                       | `CLI_UNAVAILABLE`      | Binary exists but Obsidian is not running.                              |
-| `command === 'create'` and stderr matches `already exists`          | `NOTE_EXISTS`          | Hint to the LLM to ask the user before retrying with `overwrite: true`. |
-| `command === 'property:read'/'property:remove'` and stderr matches `property not found` / `not set` | `PROPERTY_NOT_FOUND`   | The named frontmatter property is not present on the note.              |
-| `command === 'tag'` and stderr matches `tag not found`              | `TAG_NOT_FOUND`        | The named tag is not used anywhere in the vault.                        |
-| stderr matches `not found` (other commands)                         | `NOT_FOUND`            | The note does not exist.                                                |
-| Handler-side ISO date/datetime validation (before exec)             | `INVALID_ARGUMENT`     | `set_property` rejected a non-ISO `date`/`datetime` value up front.     |
-| Handler-side type guard (before exec)                               | `UNSUPPORTED_VALUE_TYPE` | `set_property` got a value whose JS type cannot be mapped to a property type. |
-| Anything else                                                       | `CLI_ERROR`            | Unknown failure; full `stderr` is in `details`.                         |
+| Signal                                                                                              | Error code               | Meaning                                                                       |
+| --------------------------------------------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------------- |
+| spawn `ENOENT`                                                                                      | `CLI_NOT_FOUND`          | Binary not found at the configured path.                                      |
+| `ETIMEDOUT` / `killed`                                                                              | `CLI_TIMEOUT`            | Process did not finish within `timeoutMs`.                                    |
+| stderr matches `not running` or `URI handler`                                                       | `CLI_UNAVAILABLE`        | Binary exists but Obsidian is not running.                                    |
+| `command === 'create'` and stderr matches `already exists`                                          | `NOTE_EXISTS`            | Hint to the LLM to ask the user before retrying with `overwrite: true`.       |
+| `command === 'property:read'/'property:remove'` and stderr matches `property not found` / `not set` | `PROPERTY_NOT_FOUND`     | The named frontmatter property is not present on the note.                    |
+| `command === 'tag'` and stderr matches `tag not found`                                              | `TAG_NOT_FOUND`          | The named tag is not used anywhere in the vault.                              |
+| stderr matches `not found` (other commands)                                                         | `NOT_FOUND`              | The note does not exist.                                                      |
+| Handler-side ISO date/datetime validation (before exec)                                             | `INVALID_ARGUMENT`       | `set_property` rejected a non-ISO `date`/`datetime` value up front.           |
+| Handler-side type guard (before exec)                                                               | `UNSUPPORTED_VALUE_TYPE` | `set_property` got a value whose JS type cannot be mapped to a property type. |
+| Anything else                                                                                       | `CLI_ERROR`              | Unknown failure; full `stderr` is in `details`.                               |
 
 `getTag` additionally falls through to `TAG_NOT_FOUND` when the CLI returns success with `count === 0`, and to `CLI_ERROR` when the first stdout line cannot be parsed as `#<tag><whitespace><count>`.
 
