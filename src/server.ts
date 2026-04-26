@@ -60,8 +60,8 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 
 ### 1. Write the query
 1. Extract the core nouns and concepts from the user's message — strip filler words and verbs. From "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build".
-2. For synonyms, reformulations, or multi-language variants, pass \\\`query\\\` as an array of 1-8 strings in a SINGLE call — the server batch-embeds them and returns one merged ranked list with \\\`matched_queries\\\` showing which query hit which note. Do not make multiple sequential calls for synonyms.
-3. The vault may contain notes in multiple languages. When unsure, send both the user's language and English in the same \\\`query\\\` array.
+2. For synonyms, reformulations, or multi-language variants, pass \`query\` as an array of 1-8 strings in a SINGLE call — the server batch-embeds them and returns one merged ranked list with \`matched_queries\` showing which query hit which note. Do not make multiple sequential calls for synonyms.
+3. The vault may contain notes in multiple languages. When unsure, send both the user's language and English in the same \`query\` array.
 4. If a search returns no results, lower the threshold to 0.3 before giving up.
 
 ### 2. Choose mode
