@@ -474,3 +474,37 @@ describe('ObsidianCLIProvider.removeProperty', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });
+
+describe('ObsidianCLIProvider.listTags', () => {
+  it('builds args with counts, sort=count, format=json', async () => {
+    const exec = vi.fn().mockResolvedValue({
+      stdout: '[{"name":"mcp","count":5},{"name":"obsidian","count":3}]',
+      stderr: '',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.listTags();
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['tags', 'counts', 'sort=count', 'format=json'],
+      { timeout: 10_000 },
+    );
+    expect(result).toEqual([
+      { name: 'mcp', count: 5 },
+      { name: 'obsidian', count: 3 },
+    ]);
+  });
+
+  it('returns empty array on []', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '[]', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    expect(await provider.listTags()).toEqual([]);
+  });
+
+  it('throws CLI_ERROR on garbled JSON', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'oops', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(provider.listTags()).rejects.toMatchObject({ code: 'CLI_ERROR' });
+  });
+});

@@ -16,6 +16,7 @@ import type {
   ReadPropertyResult,
   RemovePropertyInput,
   SetPropertyInput,
+  TagListEntry,
   VaultProvider,
 } from './vault-provider.js';
 
@@ -143,6 +144,15 @@ export class ObsidianCLIProvider implements VaultProvider {
       'format=json',
     ]);
     return this.parseJsonList<PropertyListEntry>(stdout, 'properties');
+  }
+
+  async listTags(): Promise<TagListEntry[]> {
+    const { stdout } = await this.runCommand('tags', [
+      'counts',
+      'sort=count',
+      'format=json',
+    ]);
+    return this.parseJsonList<TagListEntry>(stdout, 'tags');
   }
 
   // Best-effort: a `text` property whose value happens to be "true" or "42"

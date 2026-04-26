@@ -139,6 +139,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
       readProperty: vi.fn().mockResolvedValue({ value: '' }),
       removeProperty: vi.fn().mockResolvedValue(undefined),
       listProperties: vi.fn().mockResolvedValue([]),
+      listTags: vi.fn().mockResolvedValue([]),
     };
 
     try {
@@ -176,6 +177,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
       readProperty: vi.fn().mockResolvedValue({ value: '' }),
       removeProperty: vi.fn().mockResolvedValue(undefined),
       listProperties: vi.fn().mockResolvedValue([]),
+      listTags: vi.fn().mockResolvedValue([]),
     };
 
     try {
