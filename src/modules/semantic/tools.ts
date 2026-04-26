@@ -5,7 +5,7 @@ import type { ToolRegistration } from '../../lib/tool-registration.js';
 import type { ToolHandlers } from './types.js';
 
 const searchNotesSchema = z.object({
-  query: z.string(),
+  query: z.union([z.string(), z.array(z.string()).min(1).max(8)]),
   mode: z.enum(['quick', 'deep']).optional(),
   limit: z.number().int().positive().optional(),
   threshold: z.number().min(0).max(1).optional(),
@@ -30,7 +30,7 @@ export function buildSemanticTools(handlers: ToolHandlers): ToolRegistration[] {
       spec: {
         title: 'Search Notes',
         description:
-          'Search notes by semantic similarity for fuzzy recall, topic lookup, or cross-language matching. Pass a short keyword query (1-4 words). Choose mode: "quick" for specific lookups (up to 3 notes), "deep" for broad topic overview with block-level search and expansion. Call multiple times with different queries for synonyms or multi-language searches.',
+          'Search notes by semantic similarity for fuzzy recall, topic lookup, or cross-language matching. Pass a short keyword query (1-4 words). For synonyms, language variants (UA/EN), or reformulations, pass an array of 1-8 queries — they are batch-embedded server-side and returned as one merged ranked list with matched_queries on each result. Choose mode: "quick" for specific lookups (up to 3 notes), "deep" for broad topic overview with block-level search and expansion.',
         inputSchema: searchNotesSchema,
       },
       handler: async (args) =>
