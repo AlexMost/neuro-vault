@@ -109,5 +109,24 @@ export function createOperationsHandlers(
       }
       return provider.appendDaily({ content: input.content });
     },
+
+    async setProperty() {
+      throw new Error('not implemented');
+    },
+    async readProperty() {
+      throw new Error('not implemented');
+    },
+    async removeProperty() {
+      throw new Error('not implemented');
+    },
+    async listProperties() {
+      throw new Error('not implemented');
+    },
+    async listTags() {
+      throw new Error('not implemented');
+    },
+    async getTag() {
+      throw new Error('not implemented');
+    },
   };
 }

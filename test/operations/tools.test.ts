@@ -8,6 +8,12 @@ const noopHandlers = {
   editNote: vi.fn(),
   readDaily: vi.fn(),
   appendDaily: vi.fn(),
+  setProperty: vi.fn(),
+  readProperty: vi.fn(),
+  removeProperty: vi.fn(),
+  listProperties: vi.fn(),
+  listTags: vi.fn(),
+  getTag: vi.fn(),
 };
 
 describe('buildOperationsTools', () => {
