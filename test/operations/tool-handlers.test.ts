@@ -107,6 +107,33 @@ describe('operations.createNote handler', () => {
     });
   });
 
+  it('rejects path traversal', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+    await expect(
+      handlers.createNote({ path: '../../etc/passwd', content: 'x' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(provider.createNote).not.toHaveBeenCalled();
+  });
+
+  it('rejects Unix absolute path', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+    await expect(handlers.createNote({ path: '/tmp/escape.md' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+    expect(provider.createNote).not.toHaveBeenCalled();
+  });
+
+  it('rejects Windows absolute path', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+    await expect(handlers.createNote({ path: 'C:\\Users\\me\\note.md' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+    expect(provider.createNote).not.toHaveBeenCalled();
+  });
+
   it('normalizes path before forwarding', async () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
@@ -142,6 +169,15 @@ describe('operations.editNote handler', () => {
     await expect(
       handlers.editNote({ path: '../bad', content: 'x', position: 'append' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+
+  it('rejects Unix absolute path', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+    await expect(
+      handlers.editNote({ path: '/etc/passwd', content: 'x', position: 'append' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(provider.editNote).not.toHaveBeenCalled();
   });
 });
 
@@ -336,6 +372,24 @@ describe('operations.setProperty handler', () => {
       handlers.setProperty({ file: 'a', path: 'b.md', name: 'x', value: 'y' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
+
+  it('rejects path traversal', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+    await expect(
+      handlers.setProperty({ path: '../../etc/passwd', name: 'x', value: 'y' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(provider.setProperty).not.toHaveBeenCalled();
+  });
+
+  it('rejects absolute path', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+    await expect(
+      handlers.setProperty({ path: '/tmp/x.md', name: 'x', value: 'y' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(provider.setProperty).not.toHaveBeenCalled();
+  });
 });
 
 describe('operations.readProperty handler', () => {
@@ -405,6 +459,24 @@ describe('operations.removeProperty handler', () => {
     await expect(handlers.removeProperty({ path: 'a.md', name: '' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
+  });
+
+  it('rejects path traversal', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+    await expect(
+      handlers.removeProperty({ path: '../escape.md', name: 'x' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(provider.removeProperty).not.toHaveBeenCalled();
+  });
+
+  it('rejects absolute path', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+    await expect(handlers.removeProperty({ path: '/etc/passwd', name: 'x' })).rejects.toMatchObject(
+      { code: 'INVALID_ARGUMENT' },
+    );
+    expect(provider.removeProperty).not.toHaveBeenCalled();
   });
 });
 
