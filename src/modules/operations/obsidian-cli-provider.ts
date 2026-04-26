@@ -13,6 +13,7 @@ import type {
   ReadNoteResult,
   ReadPropertyInput,
   ReadPropertyResult,
+  RemovePropertyInput,
   SetPropertyInput,
   VaultProvider,
 } from './vault-provider.js';
@@ -120,6 +121,20 @@ export class ObsidianCLIProvider implements VaultProvider {
     return { value: this.parsePropertyValue(stdout) };
   }
 
+  async removeProperty(input: RemovePropertyInput): Promise<void> {
+    try {
+      await this.runCommand('property:remove', [
+        `name=${input.name}`,
+        identifierToArg(input.identifier),
+      ]);
+    } catch (err) {
+      if (err instanceof ToolHandlerError && err.code === 'PROPERTY_NOT_FOUND') {
+        return;
+      }
+      throw err;
+    }
+  }
+
   // Best-effort: a `text` property whose value happens to be "true" or "42"
   // will be coerced to boolean/number. Callers needing ground-truth types should
   // use read_note and parse frontmatter directly.
@@ -196,7 +211,10 @@ export class ObsidianCLIProvider implements VaultProvider {
       );
     }
 
-    if (command === 'property:read' && /property not found|not set/i.test(stderr)) {
+    if (
+      (command === 'property:read' || command === 'property:remove') &&
+      /property not found|not set/i.test(stderr)
+    ) {
       return new ToolHandlerError(
         'PROPERTY_NOT_FOUND',
         `Property not found: ${stderr.trim() || 'unknown'}`,

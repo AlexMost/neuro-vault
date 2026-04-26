@@ -383,3 +383,51 @@ describe('ObsidianCLIProvider.readProperty', () => {
     ).rejects.toMatchObject({ code: 'PROPERTY_NOT_FOUND' });
   });
 });
+
+describe('ObsidianCLIProvider.removeProperty', () => {
+  it('builds property:remove args', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.removeProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'status',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['property:remove', 'name=status', 'path=a.md'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('is idempotent — swallows "property not found" stderr', async () => {
+    const exec = vi.fn().mockRejectedValue({
+      code: 1,
+      stderr: 'property not found: status',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await expect(
+      provider.removeProperty({
+        identifier: { kind: 'path', value: 'a.md' },
+        name: 'status',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('still throws NOT_FOUND when the file itself is missing', async () => {
+    const exec = vi.fn().mockRejectedValue({
+      code: 1,
+      stderr: 'file not found: a.md',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await expect(
+      provider.removeProperty({
+        identifier: { kind: 'path', value: 'a.md' },
+        name: 'status',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});

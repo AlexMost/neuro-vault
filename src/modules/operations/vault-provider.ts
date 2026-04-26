@@ -57,6 +57,11 @@ export interface ReadPropertyResult {
   value: PropertyValue;
 }
 
+export interface RemovePropertyInput {
+  identifier: NoteIdentifier;
+  name: string;
+}
+
 export interface VaultProvider {
   readNote(input: ReadNoteInput): Promise<ReadNoteResult>;
   createNote(input: CreateNoteInput): Promise<CreateNoteResult>;
@@ -65,4 +70,5 @@ export interface VaultProvider {
   appendDaily(input: AppendDailyInput): Promise<void>;
   setProperty(input: SetPropertyInput): Promise<void>;
   readProperty(input: ReadPropertyInput): Promise<ReadPropertyResult>;
+  removeProperty(input: RemovePropertyInput): Promise<void>;
 }
