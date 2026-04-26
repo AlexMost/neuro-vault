@@ -177,7 +177,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Get Tag',
         description:
-          'Get info about one tag. Returns `{name, count}` and (by default) `files: string[]`. Pass `include_files: false` for popular tags where the file list would be large.',
+          'Get info about one tag. Returns `{name, count}` and (by default) `files: string[]`. The leading `#` on `name` is optional — both `ai` and `#ai` work. Pass `include_files: false` for popular tags where the file list would be large.',
         inputSchema: getTagSchema,
       },
       handler: async (args) => invokeTool(() => handlers.getTag(getTagSchema.parse(args))),

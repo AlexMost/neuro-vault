@@ -28,15 +28,31 @@ This server provides two capability sets for an Obsidian vault: semantic search 
 
 ## When to use vault operations
 
+### Notes (body)
+
 Use \`read_note\`, \`create_note\`, \`edit_note\`, \`read_daily\`, \`append_daily\` when the user asks to:
 - Read a specific note by name or path (\`read_note\`)
 - Create a new note, task, or idea (\`create_note\`)
 - Add content to an existing note (\`edit_note\`)
 - Read or update today's daily note (\`read_daily\` / \`append_daily\`)
 
-These tools route through the Obsidian CLI and require Obsidian to be running. If a call fails with \`CLI_NOT_FOUND\` or \`CLI_UNAVAILABLE\`, tell the user and stop — do not retry.
-
 \`create_note\` with \`overwrite: true\` is destructive. Always ask the user before overwriting an existing note.
+
+### Frontmatter properties
+
+Use \`set_property\`, \`read_property\`, \`remove_property\` when the user asks to read or modify a single YAML frontmatter field (status, due date, priority, etc.). Use \`list_properties\` to see what property names are already in use across the vault — useful before introducing a new one.
+
+\`set_property\` infers \`type\` from the JS value (string→text, number→number, boolean→checkbox, array→list). For \`date\`/\`datetime\` you MUST pass \`type\` explicitly AND use ISO format (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]\`) — non-ISO values are silently dropped by the CLI, so the tool rejects them up front. Existing values are overwritten without asking.
+
+If you only need the full frontmatter (and not a single field), call \`read_note\` and parse the YAML block — \`read_property\` is for one field at a time.
+
+### Tags
+
+Use \`list_tags\` to see all tags ranked by frequency, and \`get_tag\` to find which files use a specific tag. Pass \`include_files: false\` to \`get_tag\` for very popular tags where the full file list would be large. The leading \`#\` on tag names is optional — both \`ai\` and \`#ai\` work.
+
+### CLI availability
+
+All vault-operations tools route through the Obsidian CLI and require Obsidian to be running. If a call fails with \`CLI_NOT_FOUND\` or \`CLI_UNAVAILABLE\`, tell the user and stop — do not retry.
 
 ## When to use semantic search
 
@@ -61,7 +77,9 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 
 ## Routing between operations and semantic
 
-If the user gives an exact anchor (note title, path, daily note, tag), prefer operations tools. If the user is recalling fuzzily or asking a conceptual question, prefer \`search_notes\`. After semantic search finds a relevant note, you can read it with \`read_note\` to see the full body.
+If the user gives an exact anchor (note title, path, daily note, tag, frontmatter field), prefer operations tools. If the user is recalling fuzzily or asking a conceptual question, prefer \`search_notes\`. After semantic search finds a relevant note, you can read it with \`read_note\` (or \`read_property\` for a single field) to see the details.
+
+For tag-driven questions ("which notes are tagged X?", "show me everything in #ai") use \`get_tag\`, not \`search_notes\` — the answer is exact, not fuzzy.
 `;
 
 function defaultServerFactory(): ToolServer {

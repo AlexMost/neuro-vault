@@ -6,8 +6,8 @@ How the server is split into pluggable modules and how they are wired together a
 
 The codebase is organized into two modules under `src/modules/`:
 
-- `semantic/` — embedding-based search over a Smart Connections corpus (in-memory cosine search)
-- `operations/` — direct vault operations via the Obsidian CLI (`read_note`, `create_note`, `edit_note`, `read_daily`, `append_daily`)
+- `semantic/` — embedding-based search over a Smart Connections corpus (in-memory cosine search) — 4 tools
+- `operations/` — direct vault operations via the Obsidian CLI — 11 tools, grouped as note body (`read_note`, `create_note`, `edit_note`, `read_daily`, `append_daily`), frontmatter properties (`set_property`, `read_property`, `remove_property`, `list_properties`), and tags (`list_tags`, `get_tag`)
 
 Each module exports `createXModule(config, deps) → { tools: ToolRegistration[], warmup? }`. `src/server.ts` aggregates registrations from enabled modules and registers them with the underlying `McpServer`.
 
