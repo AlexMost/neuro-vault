@@ -7,6 +7,7 @@ import type {
   OperationsToolHandlers,
   ReadDailyToolInput,
   ReadNoteToolInput,
+  ReadPropertyToolInput,
   SetPropertyToolInput,
 } from './types.js';
 import type { NoteIdentifier, PropertyType, PropertyValue, VaultProvider } from './vault-provider.js';
@@ -189,8 +190,12 @@ export function createOperationsHandlers(
       await provider.setProperty({ identifier, name: input.name.trim(), value, type });
       return { ok: true as const };
     },
-    async readProperty() {
-      throw new Error('not implemented');
+    async readProperty(input: ReadPropertyToolInput) {
+      const identifier = resolvePropertyTarget(input.file, input.path);
+      if (!input.name || input.name.trim() === '') {
+        throw invalidArgument('name must not be empty', 'name');
+      }
+      return provider.readProperty({ identifier, name: input.name.trim() });
     },
     async removeProperty() {
       throw new Error('not implemented');

@@ -271,3 +271,41 @@ describe('operations.setProperty handler', () => {
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 });
+
+describe('operations.readProperty handler', () => {
+  it('forwards to provider with resolved path target', async () => {
+    const provider = fakeProvider({
+      readProperty: vi.fn().mockResolvedValue({ value: 'done' }),
+    });
+    const handlers = createOperationsHandlers({ provider });
+
+    const result = await handlers.readProperty({ path: 'a.md', name: 'status' });
+
+    expect(provider.readProperty).toHaveBeenCalledWith({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'status',
+    });
+    expect(result).toEqual({ value: 'done' });
+  });
+
+  it('forwards file target via wikilink kind', async () => {
+    const provider = fakeProvider({
+      readProperty: vi.fn().mockResolvedValue({ value: 42 }),
+    });
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.readProperty({ file: 'My Note', name: 'priority' });
+
+    expect(provider.readProperty).toHaveBeenCalledWith({
+      identifier: { kind: 'name', value: 'My Note' },
+      name: 'priority',
+    });
+  });
+
+  it('rejects when neither file nor path', async () => {
+    const handlers = createOperationsHandlers({ provider: fakeProvider() });
+    await expect(handlers.readProperty({ name: 'x' } as never)).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+  });
+});
