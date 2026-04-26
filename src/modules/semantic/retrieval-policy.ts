@@ -175,7 +175,13 @@ function mergeBlockResults(
       const key = `${block.path}\u0000${block.heading}\u0000${block.lines[0]}-${block.lines[1]}`;
       const existing = byKey.get(key);
       if (!existing) {
-        byKey.set(key, { ...block, matched_queries: [query] });
+        byKey.set(key, {
+          path: block.path,
+          heading: block.heading,
+          lines: block.lines,
+          similarity: block.similarity,
+          matched_queries: [query],
+        });
         continue;
       }
       if (block.similarity > existing.similarity) {
@@ -229,7 +235,8 @@ export async function executeMultiRetrieval(
   const perQueryLimit = input.limit ?? MODE_DEFAULTS[mode].limit;
   const cap = Math.min(perQueryLimit * queries.length, HARD_MERGE_CAP);
 
-  const truncated = mergedNotes.length > cap;
+  const truncated =
+    mergedNotes.length > cap || (mergedBlocks?.length ?? 0) > cap;
   const cappedNotes = mergedNotes.slice(0, cap);
   const cappedBlocks = mergedBlocks ? mergedBlocks.slice(0, cap) : undefined;
 
