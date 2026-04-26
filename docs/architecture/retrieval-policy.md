@@ -64,6 +64,22 @@ Deduplication keeps the highest similarity per path. The final `slice(0, limit)`
 
 Expansion catches notes that are semantically adjacent to top results but did not match the original query directly — typical for broad topical questions.
 
+## Multi-query
+
+`executeMultiRetrieval(input)` is a sibling of `executeRetrieval` for callers that want to search several reformulations at once (synonyms, UA/EN variants, related concepts). It runs the existing four-step pipeline once per query in parallel via `Promise.all`, then merges the per-query outputs.
+
+Merge rule for note results:
+
+- key by `path`
+- similarity is `max` across the queries that matched it
+- `matched_queries: string[]` records which queries surfaced this path
+
+Block results merge by `(path, heading, lines)` with the same max-similarity rule.
+
+After merging, results are sorted by similarity descending (with path tiebreak) and capped to `min(limit × N, 50)`, where `limit` is the per-query top-K (user-supplied or mode default) and `N` is the number of unique queries after dedupe. The hard ceiling of 50 bounds response size, not retrieval depth — `truncated: true` signals that more candidates existed than fit in the cap.
+
+The handler in `tool-handlers.ts` decides which path to run based on the runtime type of `input.query`: `string` keeps the legacy single-query shape (no `matched_queries`, no `truncated`); `string[]` (length 1–8 after dedupe) takes the multi-query path.
+
 ## Invariants
 
 - Results are sorted by similarity descending (the search engine guarantees this; the policy does not re-sort after expansion, but `dedupe` preserves the highest-similarity entry per path).
