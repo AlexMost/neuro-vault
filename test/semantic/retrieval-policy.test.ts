@@ -7,7 +7,7 @@ import type {
   SearchResult,
   SmartSource,
 } from '../../src/types.js';
-import { executeRetrieval } from '../../src/modules/semantic/retrieval-policy.js';
+import { executeMultiRetrieval, executeRetrieval } from '../../src/modules/semantic/retrieval-policy.js';
 
 function makeSource(path: string, embedding: number[] = [1, 0]): SmartSource {
   return {
@@ -412,5 +412,153 @@ describe('executeRetrieval', () => {
 
       expect(output.results).toHaveLength(8);
     });
+  });
+});
+
+describe('executeMultiRetrieval', () => {
+  const sources = makeSources([
+    ['note-a.md', [1, 0]],
+    ['note-b.md', [0.8, 0.2]],
+    ['note-c.md', [0, 1]],
+  ]);
+
+  it('merges results by path and aggregates matched_queries', async () => {
+    const embeddingProvider: EmbeddingProvider = {
+      initialize: vi.fn(),
+      embed: vi
+        .fn()
+        .mockResolvedValueOnce([1, 0]) // for query "alpha"
+        .mockResolvedValueOnce([0, 1]), // for query "beta"
+    };
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([
+          makeSearchResult('note-a.md', 0.9),
+          makeSearchResult('note-b.md', 0.7),
+        ])
+        .mockReturnValueOnce([
+          makeSearchResult('note-b.md', 0.6),
+          makeSearchResult('note-c.md', 0.5),
+        ]),
+    });
+
+    const output = await executeMultiRetrieval({
+      queries: ['alpha', 'beta'],
+      mode: 'quick',
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+
+    const byPath = new Map(output.results.map((r) => [r.path, r]));
+    expect(byPath.get('note-a.md')!.matched_queries).toEqual(['alpha']);
+    expect(byPath.get('note-b.md')!.matched_queries).toEqual(['alpha', 'beta']);
+    expect(byPath.get('note-b.md')!.similarity).toBe(0.7); // max wins
+    expect(byPath.get('note-c.md')!.matched_queries).toEqual(['beta']);
+  });
+
+  it('caps merged results to min(limit * N, 50) and sets truncated=true when over cap', async () => {
+    const embeddingProvider: EmbeddingProvider = {
+      initialize: vi.fn(),
+      embed: vi.fn().mockResolvedValue([1, 0]),
+    };
+    // 3 queries × 8 unique results (deep mode limit=8) = 24 merged.
+    // limit: 5 → cap = min(5*3, 50) = 15. 24 > 15, so truncated=true, results=15.
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce(
+          Array.from({ length: 8 }, (_, i) => makeSearchResult(`a-${i}.md`, 0.9 - i * 0.01)),
+        )
+        .mockReturnValueOnce(
+          Array.from({ length: 8 }, (_, i) => makeSearchResult(`b-${i}.md`, 0.9 - i * 0.01)),
+        )
+        .mockReturnValueOnce(
+          Array.from({ length: 8 }, (_, i) => makeSearchResult(`c-${i}.md`, 0.9 - i * 0.01)),
+        ),
+    });
+
+    const output = await executeMultiRetrieval({
+      queries: ['a', 'b', 'c'],
+      mode: 'deep',
+      limit: 5, // per-query top-K = 5 → cap = min(5*3, 50) = 15
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+
+    expect(output.results).toHaveLength(15);
+    expect(output.truncated).toBe(true);
+  });
+
+  it('sets truncated=false when merged count fits in cap', async () => {
+    const embeddingProvider: EmbeddingProvider = {
+      initialize: vi.fn(),
+      embed: vi.fn().mockResolvedValue([1, 0]),
+    };
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
+    });
+
+    const output = await executeMultiRetrieval({
+      queries: ['a', 'b'],
+      mode: 'quick',
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+
+    expect(output.truncated).toBe(false);
+  });
+
+  it('hard-caps merged results at 50 even when limit*N is larger', async () => {
+    const embeddingProvider: EmbeddingProvider = {
+      initialize: vi.fn(),
+      embed: vi.fn().mockResolvedValue([1, 0]),
+    };
+    // 8 queries × 8 unique results (deep mode) = 64 merged → cap = min(8*10, 50) = 50.
+    const mockResults = (offset: number) =>
+      Array.from({ length: 8 }, (_, i) => makeSearchResult(`q${offset}-${i}.md`, 0.9 - i * 0.01));
+    const findNeighbors = vi.fn();
+    for (let i = 0; i < 8; i++) findNeighbors.mockReturnValueOnce(mockResults(i));
+    const searchEngine = makeSearchEngine({ findNeighbors });
+
+    const output = await executeMultiRetrieval({
+      queries: ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7'],
+      mode: 'deep',
+      limit: 10,
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+
+    expect(output.results).toHaveLength(50);
+    expect(output.truncated).toBe(true);
+  });
+
+  it('caps to limit when N=1 (single-element array path)', async () => {
+    const embeddingProvider: EmbeddingProvider = {
+      initialize: vi.fn(),
+      embed: vi.fn().mockResolvedValue([1, 0]),
+    };
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValue(
+          Array.from({ length: 12 }, (_, i) => makeSearchResult(`a-${i}.md`, 0.9 - i * 0.01)),
+        ),
+    });
+
+    const output = await executeMultiRetrieval({
+      queries: ['only'],
+      mode: 'quick',
+      limit: 10,
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+
+    expect(output.results.length).toBeLessThanOrEqual(10);
   });
 });
