@@ -56,7 +56,7 @@ export interface SearchEngine {
 export type SearchMode = 'quick' | 'deep';
 
 export interface SearchNotesInput {
-  query: string;
+  query: string | string[];
   mode?: SearchMode;
   limit?: number;
   threshold?: number;
@@ -100,4 +100,12 @@ export interface ToolHandlers {
   getSimilarNotes(input: GetSimilarNotesInput): Promise<SearchResult[]>;
   findDuplicates(input?: FindDuplicatesInput): Promise<DuplicatePair[]>;
   getStats(): Promise<ToolStats>;
+}
+
+export interface MultiSearchResult extends SearchResult {
+  matched_queries: string[];
+}
+
+export interface MultiBlockSearchResult extends BlockSearchResult {
+  matched_queries: string[];
 }

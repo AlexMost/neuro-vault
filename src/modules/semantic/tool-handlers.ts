@@ -193,7 +193,8 @@ export function createToolHandlers({
   const existsCheck: PathExistsCheck = pathExists ?? (async () => true);
   return {
     async searchNotes(input: SearchNotesInput): Promise<RetrievalOutput> {
-      const query = normalizeQuery(input.query);
+      // TODO(multi-query): replaced by Array.isArray branching in a follow-up commit.
+      const query = normalizeQuery(input.query as string);
       const mode = input.mode ?? 'quick';
       const threshold =
         input.threshold !== undefined
