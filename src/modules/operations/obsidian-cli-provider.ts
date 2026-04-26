@@ -169,7 +169,14 @@ export class ObsidianCLIProvider implements VaultProvider {
         .filter((s) => s.length > 0);
       const count = Number(lines[0]);
       const files = lines.slice(1);
-      if (!Number.isFinite(count) || count === 0) {
+      if (!Number.isFinite(count)) {
+        throw new ToolHandlerError(
+          'CLI_ERROR',
+          `Could not parse tag output for '${input.name}': expected count on first line`,
+          { details: { name: input.name, stdout: stdout.slice(0, 500) } },
+        );
+      }
+      if (count === 0) {
         throw new ToolHandlerError('TAG_NOT_FOUND', `Tag not found: ${input.name}`, {
           details: { name: input.name },
         });
@@ -178,7 +185,14 @@ export class ObsidianCLIProvider implements VaultProvider {
     }
 
     const count = Number(stdout.trim());
-    if (!Number.isFinite(count) || count === 0) {
+    if (!Number.isFinite(count)) {
+      throw new ToolHandlerError(
+        'CLI_ERROR',
+        `Could not parse tag total for '${input.name}': expected numeric output`,
+        { details: { name: input.name, stdout: stdout.slice(0, 500) } },
+      );
+    }
+    if (count === 0) {
       throw new ToolHandlerError('TAG_NOT_FOUND', `Tag not found: ${input.name}`, {
         details: { name: input.name },
       });

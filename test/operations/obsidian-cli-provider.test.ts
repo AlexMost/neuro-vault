@@ -563,4 +563,23 @@ describe('ObsidianCLIProvider.getTag', () => {
       provider.getTag({ name: 'nonsense', includeFiles: false }),
     ).rejects.toMatchObject({ code: 'TAG_NOT_FOUND' });
   });
+
+  it('throws CLI_ERROR when verbose output starts with non-numeric line', async () => {
+    const exec = vi.fn().mockResolvedValue({
+      stdout: 'Files using #mcp:\nFolder/a.md',
+      stderr: '',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(
+      provider.getTag({ name: 'mcp', includeFiles: true }),
+    ).rejects.toMatchObject({ code: 'CLI_ERROR' });
+  });
+
+  it('throws CLI_ERROR when total output is non-numeric', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'oops\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(
+      provider.getTag({ name: 'mcp', includeFiles: false }),
+    ).rejects.toMatchObject({ code: 'CLI_ERROR' });
+  });
 });
