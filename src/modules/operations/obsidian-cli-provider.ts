@@ -120,8 +120,11 @@ export class ObsidianCLIProvider implements VaultProvider {
     return { value: this.parsePropertyValue(stdout) };
   }
 
+  // Best-effort: a `text` property whose value happens to be "true" or "42"
+  // will be coerced to boolean/number. Callers needing ground-truth types should
+  // use read_note and parse frontmatter directly.
   private parsePropertyValue(stdout: string): PropertyValue {
-    const trimmed = stdout.replace(/\s+$/, '');
+    const trimmed = stdout.trim();
     if (trimmed === '') return '';
     if (trimmed === 'true') return true;
     if (trimmed === 'false') return false;
