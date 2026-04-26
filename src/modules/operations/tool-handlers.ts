@@ -7,8 +7,9 @@ import type {
   OperationsToolHandlers,
   ReadDailyToolInput,
   ReadNoteToolInput,
+  SetPropertyToolInput,
 } from './types.js';
-import type { NoteIdentifier, VaultProvider } from './vault-provider.js';
+import type { NoteIdentifier, PropertyType, PropertyValue, VaultProvider } from './vault-provider.js';
 
 export interface OperationsHandlerDependencies {
   provider: VaultProvider;
@@ -37,6 +38,75 @@ function resolveIdentifier(name: string | undefined, pathArg: string | undefined
     return { kind: 'name', value: name.trim() };
   }
   return { kind: 'path', value: normalizePath(pathArg!) };
+}
+
+function resolvePropertyTarget(
+  file: string | undefined,
+  pathArg: string | undefined,
+): NoteIdentifier {
+  if (
+    (file === undefined && pathArg === undefined) ||
+    (file !== undefined && pathArg !== undefined)
+  ) {
+    throw invalidArgument(
+      'Provide exactly one of file or path',
+      file === undefined ? 'file' : 'path',
+    );
+  }
+  if (file !== undefined) {
+    if (file.trim() === '') throw invalidArgument('file must not be empty', 'file');
+    return { kind: 'name', value: file.trim() };
+  }
+  return { kind: 'path', value: normalizePath(pathArg!) };
+}
+
+function inferTypeAndValidate(
+  value: unknown,
+  explicitType: SetPropertyToolInput['type'],
+): { value: PropertyValue; type: PropertyType | undefined } {
+  if (value === null || value === undefined) {
+    throw new ToolHandlerError(
+      'UNSUPPORTED_VALUE_TYPE' satisfies OperationsErrorCode,
+      'value must not be null or undefined',
+      { details: { value } },
+    );
+  }
+
+  if (Array.isArray(value)) {
+    const stringified = value.map((v) => {
+      if (typeof v !== 'string' && typeof v !== 'number') {
+        throw new ToolHandlerError(
+          'UNSUPPORTED_VALUE_TYPE' satisfies OperationsErrorCode,
+          'list items must be string or number',
+          { details: { value } },
+        );
+      }
+      return String(v);
+    });
+    if (stringified.some((s) => s.includes(','))) {
+      throw invalidArgument(
+        'list items containing commas are not supported by obsidian-cli',
+        'value',
+      );
+    }
+    return { value: stringified, type: explicitType ?? 'list' };
+  }
+
+  if (typeof value === 'string') {
+    return { value, type: explicitType ?? 'text' };
+  }
+  if (typeof value === 'number') {
+    return { value, type: explicitType ?? 'number' };
+  }
+  if (typeof value === 'boolean') {
+    return { value, type: explicitType ?? 'checkbox' };
+  }
+
+  throw new ToolHandlerError(
+    'UNSUPPORTED_VALUE_TYPE' satisfies OperationsErrorCode,
+    `value of type ${typeof value} is not supported`,
+    { details: { value } },
+  );
 }
 
 function normalizePath(raw: string): string {
@@ -110,8 +180,14 @@ export function createOperationsHandlers(
       return provider.appendDaily({ content: input.content });
     },
 
-    async setProperty() {
-      throw new Error('not implemented');
+    async setProperty(input: SetPropertyToolInput) {
+      const identifier = resolvePropertyTarget(input.file, input.path);
+      if (!input.name || input.name.trim() === '') {
+        throw invalidArgument('name must not be empty', 'name');
+      }
+      const { value, type } = inferTypeAndValidate(input.value, input.type);
+      await provider.setProperty({ identifier, name: input.name.trim(), value, type });
+      return { ok: true as const };
     },
     async readProperty() {
       throw new Error('not implemented');

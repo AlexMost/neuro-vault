@@ -176,3 +176,98 @@ describe('operations.appendDaily handler', () => {
     });
   });
 });
+
+describe('operations.setProperty handler', () => {
+  it('infers type=text for string value', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.setProperty({ path: 'a.md', name: 'status', value: 'done' });
+
+    expect(provider.setProperty).toHaveBeenCalledWith({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'status',
+      value: 'done',
+      type: 'text',
+    });
+  });
+
+  it('infers type=number for number value', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.setProperty({ path: 'a.md', name: 'priority', value: 3 });
+
+    expect(provider.setProperty).toHaveBeenCalledWith(
+      expect.objectContaining({ value: 3, type: 'number' }),
+    );
+  });
+
+  it('infers type=checkbox for boolean value', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.setProperty({ path: 'a.md', name: 'done', value: true });
+
+    expect(provider.setProperty).toHaveBeenCalledWith(
+      expect.objectContaining({ value: true, type: 'checkbox' }),
+    );
+  });
+
+  it('infers type=list for array value', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.setProperty({ path: 'a.md', name: 'tags', value: ['mcp', 'todo'] });
+
+    expect(provider.setProperty).toHaveBeenCalledWith(
+      expect.objectContaining({ value: ['mcp', 'todo'], type: 'list' }),
+    );
+  });
+
+  it('explicit type overrides inference', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await handlers.setProperty({ path: 'a.md', name: 'due', value: '2026-05-01', type: 'date' });
+
+    expect(provider.setProperty).toHaveBeenCalledWith(
+      expect.objectContaining({ value: '2026-05-01', type: 'date' }),
+    );
+  });
+
+  it('rejects array element containing comma', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await expect(
+      handlers.setProperty({ path: 'a.md', name: 'tags', value: ['hello, world', 'ok'] }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(provider.setProperty).not.toHaveBeenCalled();
+  });
+
+  it('rejects null/undefined value with UNSUPPORTED_VALUE_TYPE', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+
+    await expect(
+      handlers.setProperty({ path: 'a.md', name: 'x', value: null as unknown as string }),
+    ).rejects.toMatchObject({ code: 'UNSUPPORTED_VALUE_TYPE' });
+  });
+
+  it('rejects neither file nor path', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+    await expect(
+      handlers.setProperty({ name: 'x', value: 'y' } as never),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+
+  it('rejects both file and path', async () => {
+    const provider = fakeProvider();
+    const handlers = createOperationsHandlers({ provider });
+    await expect(
+      handlers.setProperty({ file: 'a', path: 'b.md', name: 'x', value: 'y' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+});
