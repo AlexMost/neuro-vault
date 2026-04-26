@@ -3,12 +3,18 @@ import type {
   AppendDailyToolInput,
   CreateNoteToolInput,
   EditNoteToolInput,
+  GetTagToolInput,
+  ListPropertiesToolInput,
+  ListTagsToolInput,
   OperationsErrorCode,
   OperationsToolHandlers,
   ReadDailyToolInput,
   ReadNoteToolInput,
+  ReadPropertyToolInput,
+  RemovePropertyToolInput,
+  SetPropertyToolInput,
 } from './types.js';
-import type { NoteIdentifier, VaultProvider } from './vault-provider.js';
+import type { NoteIdentifier, PropertyType, PropertyValue, VaultProvider } from './vault-provider.js';
 
 export interface OperationsHandlerDependencies {
   provider: VaultProvider;
@@ -37,6 +43,100 @@ function resolveIdentifier(name: string | undefined, pathArg: string | undefined
     return { kind: 'name', value: name.trim() };
   }
   return { kind: 'path', value: normalizePath(pathArg!) };
+}
+
+function resolvePropertyTarget(
+  file: string | undefined,
+  pathArg: string | undefined,
+): NoteIdentifier {
+  if (
+    (file === undefined && pathArg === undefined) ||
+    (file !== undefined && pathArg !== undefined)
+  ) {
+    throw invalidArgument(
+      'Provide exactly one of file or path',
+      file === undefined ? 'file' : 'path',
+    );
+  }
+  if (file !== undefined) {
+    if (file.trim() === '') throw invalidArgument('file must not be empty', 'file');
+    return { kind: 'name', value: file.trim() };
+  }
+  return { kind: 'path', value: normalizePath(pathArg!) };
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/;
+
+function validateDateValue(value: unknown, type: 'date' | 'datetime'): string {
+  if (typeof value !== 'string') {
+    throw invalidArgument(`value must be a string when type is ${type}`, 'value');
+  }
+  const re = type === 'date' ? DATE_RE : DATETIME_RE;
+  if (!re.test(value)) {
+    const expected = type === 'date' ? 'YYYY-MM-DD' : 'YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]';
+    throw invalidArgument(
+      `value must be ISO ${expected} when type is ${type} (obsidian-cli silently drops non-ISO values)`,
+      'value',
+    );
+  }
+  if (Number.isNaN(Date.parse(value))) {
+    throw invalidArgument(`value is not a valid ${type}`, 'value');
+  }
+  return value;
+}
+
+function inferTypeAndValidate(
+  value: unknown,
+  explicitType: SetPropertyToolInput['type'],
+): { value: PropertyValue; type: PropertyType | undefined } {
+  if (value === null || value === undefined) {
+    throw new ToolHandlerError(
+      'UNSUPPORTED_VALUE_TYPE' satisfies OperationsErrorCode,
+      'value must not be null or undefined',
+      { details: { value } },
+    );
+  }
+
+  if (explicitType === 'date' || explicitType === 'datetime') {
+    return { value: validateDateValue(value, explicitType), type: explicitType };
+  }
+
+  if (Array.isArray(value)) {
+    const stringified = value.map((v) => {
+      if (typeof v !== 'string' && typeof v !== 'number') {
+        throw new ToolHandlerError(
+          'UNSUPPORTED_VALUE_TYPE' satisfies OperationsErrorCode,
+          'list items must be string or number',
+          { details: { value } },
+        );
+      }
+      return String(v);
+    });
+    if (stringified.some((s) => s.includes(','))) {
+      throw invalidArgument(
+        'list items containing commas are not supported by obsidian-cli',
+        'value',
+      );
+    }
+    return { value: stringified, type: explicitType ?? 'list' };
+  }
+
+  if (typeof value === 'string') {
+    return { value, type: explicitType ?? 'text' };
+  }
+  if (typeof value === 'number') {
+    return { value, type: explicitType ?? 'number' };
+  }
+  if (typeof value === 'boolean') {
+    return { value, type: explicitType ?? 'checkbox' };
+  }
+
+  throw new ToolHandlerError(
+    'UNSUPPORTED_VALUE_TYPE' satisfies OperationsErrorCode,
+    `value of type ${typeof value} is not supported`,
+    { details: { value } },
+  );
 }
 
 function normalizePath(raw: string): string {
@@ -108,6 +208,45 @@ export function createOperationsHandlers(
         throw invalidArgument('content must not be empty', 'content');
       }
       return provider.appendDaily({ content: input.content });
+    },
+
+    async setProperty(input: SetPropertyToolInput) {
+      const identifier = resolvePropertyTarget(input.file, input.path);
+      if (!input.name || input.name.trim() === '') {
+        throw invalidArgument('name must not be empty', 'name');
+      }
+      const { value, type } = inferTypeAndValidate(input.value, input.type);
+      await provider.setProperty({ identifier, name: input.name.trim(), value, type });
+      return { ok: true as const };
+    },
+    async readProperty(input: ReadPropertyToolInput) {
+      const identifier = resolvePropertyTarget(input.file, input.path);
+      if (!input.name || input.name.trim() === '') {
+        throw invalidArgument('name must not be empty', 'name');
+      }
+      return provider.readProperty({ identifier, name: input.name.trim() });
+    },
+    async removeProperty(input: RemovePropertyToolInput) {
+      const identifier = resolvePropertyTarget(input.file, input.path);
+      if (!input.name || input.name.trim() === '') {
+        throw invalidArgument('name must not be empty', 'name');
+      }
+      await provider.removeProperty({ identifier, name: input.name.trim() });
+      return { ok: true as const };
+    },
+    async listProperties(_input: ListPropertiesToolInput) {
+      return provider.listProperties();
+    },
+    async listTags(_input: ListTagsToolInput) {
+      return provider.listTags();
+    },
+    async getTag(input: GetTagToolInput) {
+      const stripped = (input.name ?? '').trim().replace(/^#/, '').trim();
+      if (stripped === '') {
+        throw invalidArgument('name must not be empty', 'name');
+      }
+      const includeFiles = input.include_files !== false;
+      return provider.getTag({ name: stripped, includeFiles });
     },
   };
 }

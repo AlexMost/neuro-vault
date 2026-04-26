@@ -14,7 +14,7 @@
 
 - 🧠 **Semantic search over your existing vault** — reuses [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) embeddings already in your vault. No re-indexing, no API keys, no extra infrastructure.
 - 🎯 **Mode-aware retrieval** — `quick` for direct lookups, `deep` for exploratory questions with block-level results and semantic expansion of related notes.
-- ✍️ **Direct vault operations** — read, create, append, and prepend notes (including daily notes) straight from your AI assistant via the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli).
+- ✍️ **Direct vault operations** — read, create, append, and prepend notes; manage frontmatter properties and inspect tags (including daily notes) straight from your AI assistant via the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli).
 - ⚡ **Zero infrastructure** — local stdio MCP server, in-memory index, no database, no background processes, no watchers.
 - 🔌 **Drop-in for any MCP client** — Claude Code, Cursor, Windsurf — configuration is a single JSON block.
 
@@ -224,6 +224,79 @@ Append content to today's daily note.
 ```typescript
 append_daily({ content: string });
 ```
+
+### Properties & Tags
+
+Inspect and modify frontmatter without paying the token cost of reading whole notes. Properties and tags are the metadata an LLM agent checks dozens of times per session — _"what's the `status` on Quarterly review?"_, _"mark this task done"_, _"how many notes tagged #mcp?"_. Short request, precise answer, no full-note reads.
+
+#### `set_property`
+
+Set a frontmatter property on a note. The YAML type is inferred from the JS value (`string` → text, `number` → number, `boolean` → checkbox, `Array` → list). For `date` / `datetime` pass `type` explicitly. List items must not contain commas (obsidian-cli limitation).
+
+```typescript
+set_property({
+  file?: string,           // wikilink-style: "My Note"
+  path?: string,           // vault-relative: "Tasks/Quarterly review.md"
+  name: string,            // property key, e.g. "status"
+  value: string | number | boolean | string[] | number[],
+  type?: 'text' | 'list' | 'number' | 'checkbox' | 'date' | 'datetime',
+})
+```
+
+Returns `{ ok: true }`. Existing properties are overwritten.
+
+#### `read_property`
+
+Read a single frontmatter property value. Use `read_note` if you need the full frontmatter or accurate type information.
+
+```typescript
+read_property({
+  file?: string,
+  path?: string,
+  name: string,
+})
+```
+
+Returns `{ value }`.
+
+#### `remove_property`
+
+Remove a frontmatter property. Idempotent — calling it on an absent property succeeds.
+
+```typescript
+remove_property({
+  file?: string,
+  path?: string,
+  name: string,
+})
+```
+
+Returns `{ ok: true }`.
+
+#### `list_properties`
+
+List all frontmatter properties used across the vault, sorted by occurrence count desc. Useful for understanding the vault's metadata ontology before calling `set_property`.
+
+Returns `[{ name, count }, ...]`.
+
+#### `list_tags`
+
+List all tags used across the vault, sorted by occurrence count desc.
+
+Returns `[{ name, count }, ...]`.
+
+#### `get_tag`
+
+Get count and (optionally) the file list for a single tag. Pass `include_files: false` for popular tags where the file list would be large.
+
+```typescript
+get_tag({
+  name: string,            // with or without leading "#"
+  include_files?: boolean, // default true
+})
+```
+
+Returns `{ name, count, files? }`.
 
 ---
 

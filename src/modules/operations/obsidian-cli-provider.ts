@@ -7,9 +7,18 @@ import type {
   CreateNoteResult,
   DailyNoteResult,
   EditNoteInput,
+  GetTagInput,
+  GetTagResult,
   NoteIdentifier,
+  PropertyListEntry,
+  PropertyValue,
   ReadNoteInput,
   ReadNoteResult,
+  ReadPropertyInput,
+  ReadPropertyResult,
+  RemovePropertyInput,
+  SetPropertyInput,
+  TagListEntry,
   VaultProvider,
 } from './vault-provider.js';
 
@@ -101,6 +110,141 @@ export class ObsidianCLIProvider implements VaultProvider {
     await this.runCommand('daily:append', [`content=${input.content}`]);
   }
 
+  async setProperty(input: SetPropertyInput): Promise<void> {
+    const tokens: string[] = [`name=${input.name}`, `value=${this.serializeValue(input.value)}`];
+    if (input.type !== undefined) tokens.push(`type=${input.type}`);
+    tokens.push(identifierToArg(input.identifier));
+    await this.runCommand('property:set', tokens);
+  }
+
+  async readProperty(input: ReadPropertyInput): Promise<ReadPropertyResult> {
+    const { stdout } = await this.runCommand('property:read', [
+      `name=${input.name}`,
+      identifierToArg(input.identifier),
+    ]);
+    return { value: this.parsePropertyValue(stdout) };
+  }
+
+  async removeProperty(input: RemovePropertyInput): Promise<void> {
+    try {
+      await this.runCommand('property:remove', [
+        `name=${input.name}`,
+        identifierToArg(input.identifier),
+      ]);
+    } catch (err) {
+      if (err instanceof ToolHandlerError && err.code === 'PROPERTY_NOT_FOUND') {
+        return;
+      }
+      throw err;
+    }
+  }
+
+  async listProperties(): Promise<PropertyListEntry[]> {
+    const { stdout } = await this.runCommand('properties', [
+      'counts',
+      'sort=count',
+      'format=json',
+    ]);
+    return this.parseJsonList<PropertyListEntry>(stdout, 'properties');
+  }
+
+  async listTags(): Promise<TagListEntry[]> {
+    const { stdout } = await this.runCommand('tags', [
+      'counts',
+      'sort=count',
+      'format=json',
+    ]);
+    return this.parseJsonList<TagListEntry>(stdout, 'tags');
+  }
+
+  async getTag(input: GetTagInput): Promise<GetTagResult> {
+    const includeFiles = input.includeFiles !== false; // default true
+    const flag = includeFiles ? 'verbose' : 'total';
+    const { stdout } = await this.runCommand('tag', [`name=${input.name}`, flag]);
+
+    // CLI prints `#<tag><whitespace><count>` on the first line, then files (verbose mode).
+    // Extract the trailing integer to be robust to tag names containing digits.
+    const COUNT_RE = /(\d+)\s*$/;
+
+    if (includeFiles) {
+      const lines = stdout
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      const match = lines[0]?.match(COUNT_RE);
+      if (!match) {
+        throw new ToolHandlerError(
+          'CLI_ERROR',
+          `Could not parse tag output for '${input.name}': expected count on first line`,
+          { details: { name: input.name, stdout: stdout.slice(0, 500) } },
+        );
+      }
+      const count = Number(match[1]);
+      const files = lines.slice(1);
+      if (count === 0) {
+        throw new ToolHandlerError('TAG_NOT_FOUND', `Tag not found: ${input.name}`, {
+          details: { name: input.name },
+        });
+      }
+      return { name: input.name, count, files };
+    }
+
+    const totalMatch = stdout.trim().match(COUNT_RE);
+    if (!totalMatch) {
+      throw new ToolHandlerError(
+        'CLI_ERROR',
+        `Could not parse tag total for '${input.name}': expected numeric output`,
+        { details: { name: input.name, stdout: stdout.slice(0, 500) } },
+      );
+    }
+    const count = Number(totalMatch[1]);
+    if (count === 0) {
+      throw new ToolHandlerError('TAG_NOT_FOUND', `Tag not found: ${input.name}`, {
+        details: { name: input.name },
+      });
+    }
+    return { name: input.name, count };
+  }
+
+  // Best-effort: a `text` property whose value happens to be "true" or "42"
+  // will be coerced to boolean/number. Callers needing ground-truth types should
+  // use read_note and parse frontmatter directly.
+  private parsePropertyValue(stdout: string): PropertyValue {
+    const trimmed = stdout.trim();
+    if (trimmed === '') return '';
+    if (trimmed === 'true') return true;
+    if (trimmed === 'false') return false;
+    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+    if (trimmed.includes('\n')) {
+      return trimmed
+        .split('\n')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+    return trimmed;
+  }
+
+  private serializeValue(value: PropertyValue): string {
+    if (Array.isArray(value)) return value.map((v) => String(v)).join(',');
+    return String(value);
+  }
+
+  private parseJsonList<T>(stdout: string, command: string): T[] {
+    try {
+      const parsed = JSON.parse(stdout) as unknown;
+      if (!Array.isArray(parsed)) {
+        throw new Error('expected array');
+      }
+      return parsed as T[];
+    } catch (err) {
+      throw new ToolHandlerError(
+        'CLI_ERROR',
+        `Failed to parse JSON output of '${command}': ${(err as Error).message}`,
+        { details: { stdout: stdout.slice(0, 500), command }, cause: err },
+      );
+    }
+  }
+
   private async runCommand(
     command: string,
     kvPairs: string[],
@@ -152,6 +296,24 @@ export class ObsidianCLIProvider implements VaultProvider {
         'Note already exists. Pass overwrite: true after confirming with the user.',
         { details: { stderr }, cause: error },
       );
+    }
+
+    if (
+      (command === 'property:read' || command === 'property:remove') &&
+      /property not found|not set/i.test(stderr)
+    ) {
+      return new ToolHandlerError(
+        'PROPERTY_NOT_FOUND',
+        `Property not found: ${stderr.trim() || 'unknown'}`,
+        { details: { stderr, command }, cause: error },
+      );
+    }
+
+    if (command === 'tag' && /tag not found/i.test(stderr)) {
+      return new ToolHandlerError('TAG_NOT_FOUND', `Tag not found: ${stderr.trim()}`, {
+        details: { stderr },
+        cause: error,
+      });
     }
 
     if (/not found/i.test(stderr)) {

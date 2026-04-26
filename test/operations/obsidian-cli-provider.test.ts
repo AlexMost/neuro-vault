@@ -234,3 +234,365 @@ describe('ObsidianCLIProvider error mapping', () => {
     );
   });
 });
+
+describe('ObsidianCLIProvider.setProperty', () => {
+  it('builds property:set with explicit type and path target', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.setProperty({
+      identifier: { kind: 'path', value: 'Tasks/x.md' },
+      name: 'status',
+      value: 'done',
+      type: 'text',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['property:set', 'name=status', 'value=done', 'type=text', 'path=Tasks/x.md'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('uses file= token when identifier kind is name', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.setProperty({
+      identifier: { kind: 'name', value: 'My Note' },
+      name: 'priority',
+      value: '3',
+      type: 'number',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['property:set', 'name=priority', 'value=3', 'type=number', 'file=My Note'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('omits type token when type is undefined', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.setProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'tag',
+      value: 'x',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['property:set', 'name=tag', 'value=x', 'path=a.md'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('appends vault token when vaultName is set', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'Brain' });
+
+    await provider.setProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'k',
+      value: 'v',
+      type: 'text',
+    });
+
+    const args = exec.mock.calls[0][1] as string[];
+    expect(args[args.length - 1]).toBe('vault=Brain');
+  });
+});
+
+describe('ObsidianCLIProvider.readProperty', () => {
+  it('builds property:read args with name and path', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'done', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.readProperty({
+      identifier: { kind: 'path', value: 'Tasks/x.md' },
+      name: 'status',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['property:read', 'name=status', 'path=Tasks/x.md'],
+      { timeout: 10_000 },
+    );
+    expect(result).toEqual({ value: 'done' });
+  });
+
+  it('parses "true"/"false" stdout as boolean', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'true\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    const result = await provider.readProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'done',
+    });
+    expect(result).toEqual({ value: true });
+  });
+
+  it('parses numeric-only stdout as number', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '42\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    const result = await provider.readProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'priority',
+    });
+    expect(result).toEqual({ value: 42 });
+  });
+
+  it('parses multi-line stdout as list of trimmed strings', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'one\ntwo\n three\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    const result = await provider.readProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'tags',
+    });
+    expect(result).toEqual({ value: ['one', 'two', 'three'] });
+  });
+
+  it('returns string value for plain non-numeric, non-boolean output', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'hello world\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    const result = await provider.readProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'note',
+    });
+    expect(result).toEqual({ value: 'hello world' });
+  });
+
+  it('throws PROPERTY_NOT_FOUND when stderr signals missing property', async () => {
+    const exec = vi.fn().mockRejectedValue({
+      code: 1,
+      stderr: 'property not found: foo',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(
+      provider.readProperty({
+        identifier: { kind: 'path', value: 'a.md' },
+        name: 'foo',
+      }),
+    ).rejects.toBeInstanceOf(ToolHandlerError);
+    await expect(
+      provider.readProperty({
+        identifier: { kind: 'path', value: 'a.md' },
+        name: 'foo',
+      }),
+    ).rejects.toMatchObject({ code: 'PROPERTY_NOT_FOUND' });
+  });
+});
+
+describe('ObsidianCLIProvider.listProperties', () => {
+  it('builds args with counts, sort=count, format=json', async () => {
+    const exec = vi.fn().mockResolvedValue({
+      stdout: '[{"name":"status","count":12},{"name":"tags","count":7}]',
+      stderr: '',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.listProperties();
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['properties', 'counts', 'sort=count', 'format=json'],
+      { timeout: 10_000 },
+    );
+    expect(result).toEqual([
+      { name: 'status', count: 12 },
+      { name: 'tags', count: 7 },
+    ]);
+  });
+
+  it('returns empty array when CLI emits []', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '[]', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    expect(await provider.listProperties()).toEqual([]);
+  });
+
+  it('throws CLI_ERROR on garbled JSON', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'not json', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(provider.listProperties()).rejects.toMatchObject({ code: 'CLI_ERROR' });
+  });
+
+  it('throws CLI_ERROR when CLI emits valid JSON that is not an array', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '{"error":"unexpected"}', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(provider.listProperties()).rejects.toMatchObject({
+      code: 'CLI_ERROR',
+      message: expect.stringContaining('expected array'),
+    });
+  });
+});
+
+describe('ObsidianCLIProvider.removeProperty', () => {
+  it('builds property:remove args', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.removeProperty({
+      identifier: { kind: 'path', value: 'a.md' },
+      name: 'status',
+    });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['property:remove', 'name=status', 'path=a.md'],
+      { timeout: 10_000 },
+    );
+  });
+
+  it('is idempotent — swallows "property not found" stderr', async () => {
+    const exec = vi.fn().mockRejectedValue({
+      code: 1,
+      stderr: 'property not found: status',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await expect(
+      provider.removeProperty({
+        identifier: { kind: 'path', value: 'a.md' },
+        name: 'status',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('still throws NOT_FOUND when the file itself is missing', async () => {
+    const exec = vi.fn().mockRejectedValue({
+      code: 1,
+      stderr: 'file not found: a.md',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await expect(
+      provider.removeProperty({
+        identifier: { kind: 'path', value: 'a.md' },
+        name: 'status',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});
+
+describe('ObsidianCLIProvider.listTags', () => {
+  it('builds args with counts, sort=count, format=json', async () => {
+    const exec = vi.fn().mockResolvedValue({
+      stdout: '[{"name":"mcp","count":5},{"name":"obsidian","count":3}]',
+      stderr: '',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.listTags();
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['tags', 'counts', 'sort=count', 'format=json'],
+      { timeout: 10_000 },
+    );
+    expect(result).toEqual([
+      { name: 'mcp', count: 5 },
+      { name: 'obsidian', count: 3 },
+    ]);
+  });
+
+  it('returns empty array on []', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '[]', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    expect(await provider.listTags()).toEqual([]);
+  });
+
+  it('throws CLI_ERROR on garbled JSON', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'oops', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(provider.listTags()).rejects.toMatchObject({ code: 'CLI_ERROR' });
+  });
+});
+
+describe('ObsidianCLIProvider.getTag', () => {
+  it('uses verbose flag when includeFiles is true and parses #tag<ws>count header', async () => {
+    const exec = vi.fn().mockResolvedValue({
+      stdout: '#mcp\t3\nFolder/a.md\nFolder/b.md\nFolder/c.md',
+      stderr: '',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.getTag({ name: 'mcp', includeFiles: true });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['tag', 'name=mcp', 'verbose'],
+      { timeout: 10_000 },
+    );
+    expect(result).toEqual({
+      name: 'mcp',
+      count: 3,
+      files: ['Folder/a.md', 'Folder/b.md', 'Folder/c.md'],
+    });
+  });
+
+  it('parses verbose header with multiple-space separator and digit-bearing tag name', async () => {
+    const exec = vi.fn().mockResolvedValue({
+      stdout: '#year2026     5\na.md\nb.md\nc.md\nd.md\ne.md',
+      stderr: '',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.getTag({ name: 'year2026', includeFiles: true });
+
+    expect(result.count).toBe(5);
+    expect(result.files).toEqual(['a.md', 'b.md', 'c.md', 'd.md', 'e.md']);
+  });
+
+  it('uses total flag when includeFiles is false and parses #tag<ws>count', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '#obsidian\t7\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.getTag({ name: 'obsidian', includeFiles: false });
+
+    expect(exec).toHaveBeenCalledWith(
+      'obsidian',
+      ['tag', 'name=obsidian', 'total'],
+      { timeout: 10_000 },
+    );
+    expect(result).toEqual({ name: 'obsidian', count: 7 });
+  });
+
+  it('throws TAG_NOT_FOUND when stderr says tag not found', async () => {
+    const exec = vi.fn().mockRejectedValue({
+      code: 1,
+      stderr: 'tag not found: nonsense',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(
+      provider.getTag({ name: 'nonsense', includeFiles: true }),
+    ).rejects.toMatchObject({ code: 'TAG_NOT_FOUND' });
+  });
+
+  it('throws TAG_NOT_FOUND when total returns 0', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '#nonsense\t0\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(
+      provider.getTag({ name: 'nonsense', includeFiles: false }),
+    ).rejects.toMatchObject({ code: 'TAG_NOT_FOUND' });
+  });
+
+  it('throws CLI_ERROR when verbose output starts with non-numeric line', async () => {
+    const exec = vi.fn().mockResolvedValue({
+      stdout: 'Files using #mcp:\nFolder/a.md',
+      stderr: '',
+    });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(
+      provider.getTag({ name: 'mcp', includeFiles: true }),
+    ).rejects.toMatchObject({ code: 'CLI_ERROR' });
+  });
+
+  it('throws CLI_ERROR when total output is non-numeric', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'oops\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    await expect(
+      provider.getTag({ name: 'mcp', includeFiles: false }),
+    ).rejects.toMatchObject({ code: 'CLI_ERROR' });
+  });
+});
