@@ -500,4 +500,142 @@ describe('createToolHandlers', () => {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('accepts a query array and returns matched_queries on each result', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
+      const embed = vi
+        .fn()
+        .mockResolvedValueOnce([0.7, 0.2, 0.1])
+        .mockResolvedValueOnce([0.1, 0.2, 0.7]);
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+
+      const output = (await handlers.searchNotes({
+        query: ['alpha', 'beta'],
+        threshold: 0,
+      })) as { results: Array<{ path: string; matched_queries: string[] }>; truncated: boolean };
+
+      expect(embed).toHaveBeenCalledTimes(2);
+      expect(embed).toHaveBeenNthCalledWith(1, 'alpha');
+      expect(embed).toHaveBeenNthCalledWith(2, 'beta');
+      expect(output.truncated).toBe(false);
+      for (const result of output.results) {
+        expect(Array.isArray(result.matched_queries)).toBe(true);
+        expect(result.matched_queries.length).toBeGreaterThan(0);
+      }
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects an empty query array', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+
+      await expect(handlers.searchNotes({ query: [] })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a query array longer than 8', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+
+      await expect(
+        handlers.searchNotes({
+          query: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'],
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('dedupes duplicate queries before embedding', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
+      const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+
+      await handlers.searchNotes({
+        query: ['  alpha  ', 'alpha', 'beta'],
+        threshold: 0,
+      });
+
+      expect(embed).toHaveBeenCalledTimes(2);
+      expect(embed).toHaveBeenNthCalledWith(1, 'alpha');
+      expect(embed).toHaveBeenNthCalledWith(2, 'beta');
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps single-string output shape unchanged (no matched_queries, no truncated)', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
+      const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
+      const handlers = createToolHandlers({
+        loader: corpus,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+
+      const output = (await handlers.searchNotes({
+        query: 'semantic query',
+        threshold: 0,
+      })) as unknown as Record<string, unknown>;
+
+      expect(output).not.toHaveProperty('matched_queries');
+      expect(output).not.toHaveProperty('truncated');
+      for (const result of output.results as Array<Record<string, unknown>>) {
+        expect(result).not.toHaveProperty('matched_queries');
+      }
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
 });
