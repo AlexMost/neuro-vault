@@ -123,7 +123,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('registers five operations tools when only --operations is enabled', async () => {
+  it('registers eleven operations tools when only --operations is enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
@@ -156,13 +156,19 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'edit_note',
         'read_daily',
         'append_daily',
+        'set_property',
+        'read_property',
+        'remove_property',
+        'list_properties',
+        'list_tags',
+        'get_tag',
       ]);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('registers nine tools (4 semantic + 5 operations) when both modules are enabled', async () => {
+  it('registers fifteen tools (4 semantic + 11 operations) when both modules are enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
@@ -206,6 +212,12 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'edit_note',
         'read_daily',
         'append_daily',
+        'set_property',
+        'read_property',
+        'remove_property',
+        'list_properties',
+        'list_tags',
+        'get_tag',
       ]);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });

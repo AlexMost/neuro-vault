@@ -30,6 +30,42 @@ const appendDailySchema = z.object({
   content: z.string(),
 });
 
+const propertyTargetShape = {
+  file: z.string().optional(),
+  path: z.string().optional(),
+};
+
+const setPropertySchema = z.object({
+  ...propertyTargetShape,
+  name: z.string(),
+  value: z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.array(z.string()),
+    z.array(z.number()),
+  ]),
+  type: z.enum(['text', 'list', 'number', 'checkbox', 'date', 'datetime']).optional(),
+});
+
+const readPropertySchema = z.object({
+  ...propertyTargetShape,
+  name: z.string(),
+});
+
+const removePropertySchema = z.object({
+  ...propertyTargetShape,
+  name: z.string(),
+});
+
+const listPropertiesSchema = z.object({});
+const listTagsSchema = z.object({});
+
+const getTagSchema = z.object({
+  name: z.string(),
+  include_files: z.boolean().optional(),
+});
+
 export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegistration[] {
   return [
     {
@@ -82,6 +118,69 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       },
       handler: async (args) =>
         invokeTool(() => handlers.appendDaily(appendDailySchema.parse(args))),
+    },
+    {
+      name: 'set_property',
+      spec: {
+        title: 'Set Property',
+        description:
+          'Set a frontmatter property on a note. Provide either `file` (wikilink-style) or `path` (vault-relative). `value` may be string/number/boolean/array — `type` is inferred from the JS type unless given. For `date`/`datetime` you MUST pass `type` explicitly. Existing properties are overwritten.',
+        inputSchema: setPropertySchema,
+      },
+      handler: async (args) =>
+        invokeTool(() => handlers.setProperty(setPropertySchema.parse(args))),
+    },
+    {
+      name: 'read_property',
+      spec: {
+        title: 'Read Property',
+        description:
+          'Read a frontmatter property value from a note. Returns `{ value }`. Use `read_note` if you need the full frontmatter or accurate type information.',
+        inputSchema: readPropertySchema,
+      },
+      handler: async (args) =>
+        invokeTool(() => handlers.readProperty(readPropertySchema.parse(args))),
+    },
+    {
+      name: 'remove_property',
+      spec: {
+        title: 'Remove Property',
+        description:
+          'Remove a frontmatter property from a note. Idempotent — succeeds whether or not the property existed.',
+        inputSchema: removePropertySchema,
+      },
+      handler: async (args) =>
+        invokeTool(() => handlers.removeProperty(removePropertySchema.parse(args))),
+    },
+    {
+      name: 'list_properties',
+      spec: {
+        title: 'List Properties',
+        description:
+          "List all frontmatter properties used across the vault, sorted by occurrence count desc. Returns `[{name, count}]`. Useful for understanding the vault's metadata ontology.",
+        inputSchema: listPropertiesSchema,
+      },
+      handler: async () => invokeTool(() => handlers.listProperties({})),
+    },
+    {
+      name: 'list_tags',
+      spec: {
+        title: 'List Tags',
+        description:
+          'List all tags used across the vault, sorted by occurrence count desc. Returns `[{name, count}]`.',
+        inputSchema: listTagsSchema,
+      },
+      handler: async () => invokeTool(() => handlers.listTags({})),
+    },
+    {
+      name: 'get_tag',
+      spec: {
+        title: 'Get Tag',
+        description:
+          'Get info about one tag. Returns `{name, count}` and (by default) `files: string[]`. Pass `include_files: false` for popular tags where the file list would be large.',
+        inputSchema: getTagSchema,
+      },
+      handler: async (args) => invokeTool(() => handlers.getTag(getTagSchema.parse(args))),
     },
   ];
 }
