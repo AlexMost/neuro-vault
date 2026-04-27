@@ -122,4 +122,4 @@ Returns `{ totalNotes, totalBlocks, embeddingDimension, modelKey }`.
 - Short keyword queries (1–4 words) outperform full sentences — embeddings are short-context.
 - Lower the threshold to 0.3 if nothing comes back; the server already auto-retries at 0.3 when an initial search returns empty.
 - For multilingual vaults, include translations in a single `query` array rather than calling repeatedly.
-- After semantic search finds a relevant note, switch to structural tools (`read_note`, `read_property`) for exact retrieval. See [Routing](./routing.md).
+- After semantic search finds a relevant note, switch to structural tools (`read_notes`, `read_property`) for exact retrieval. See [Routing](./routing.md).

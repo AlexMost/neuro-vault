@@ -13,6 +13,7 @@ These are living documents. Update the relevant file in the same change that alt
 - [search-engine.md](./search-engine.md) — cosine similarity, neighbor / block / duplicate search
 - [module-structure.md](./module-structure.md) — how `src/modules/{semantic,operations}/` plug into the server
 - [vault-provider.md](./vault-provider.md) — the operations-module abstraction over the Obsidian CLI
+- [vault-reader.md](./vault-reader.md) — the `FsVaultReader` abstraction for direct disk reads (decoupled from the Obsidian CLI)
 - [error-mapping-cli.md](./error-mapping-cli.md) — Obsidian CLI stderr → structured `ToolHandlerError` codes
 
 ## Reading order

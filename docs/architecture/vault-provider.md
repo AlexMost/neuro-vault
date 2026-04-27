@@ -9,7 +9,6 @@ The abstraction the operations module uses to talk to a vault, decoupled from ho
 ```typescript
 interface VaultProvider {
   // Note body
-  readNote(input): Promise<ReadNoteResult>;
   createNote(input): Promise<CreateNoteResult>;
   editNote(input): Promise<void>;
   readDaily(): Promise<DailyNoteResult>;
@@ -25,13 +24,15 @@ interface VaultProvider {
 }
 ```
 
+Note-body **batch reads** have moved out of `VaultProvider` to a separate `VaultReader` abstraction (`FsVaultReader`) that reads files directly from disk without going through the Obsidian CLI. See [`./vault-reader.md`](./vault-reader.md) for details.
+
 The default implementation, `ObsidianCLIProvider`, shells out to the `obsidian` CLI via `child_process.execFile`. The mapping from interface methods to CLI subcommands is straightforward: notes use `read` / `create` / `edit` / `daily` / `append`; properties use `property:set` / `property:read` / `property:remove` / `properties`; tags use `tags` / `tag`. `getTag` parses the CLI's `#<tag><whitespace><count>` first-line header with a regex that extracts the trailing integer, so tag names containing digits round-trip cleanly.
 
 ## Why it exists
 
 The MCP tools speak the same language: read or write something inside a vault. Putting that language behind an interface means:
 
-- Tool handlers do not import `child_process` or build CLI tokens. They call `provider.readNote(...)` and stay focused on input validation.
+- Tool handlers do not import `child_process` or build CLI tokens. They call `provider.createNote(...)`, `provider.editNote(...)`, etc. and stay focused on input validation.
 - Tests can hand in a fake provider without mocking process spawning.
 - An alternative backend (REST API, Obsidian plugin bridge, file-system-only) could replace the implementation without changing handlers.
 
@@ -54,6 +55,6 @@ Obsidian distinguishes `file=` (resolves like a wikilink) from `path=` (exact). 
 There are two deliberate exceptions:
 
 1. `set_property`'s ISO format check for `date` / `datetime` types. That validation lives in the handler (not the provider) but happens _before_ the CLI is invoked, because the CLI silently accepts non-ISO values and writes nothing — a pure pass-through would surface as a phantom success.
-2. `readNote` and `readDaily` return `{ path, frontmatter, content }`: the YAML frontmatter block is split out of the CLI's read output and parsed into an object (or `null` for missing/malformed YAML). Frontmatter is structured metadata, not free-form markdown, and every consumer wants it parsed; embedding raw YAML in `content` would just push the same parser into each caller. The CLI's `read` does not echo the file path, so the provider derives `path` from the input (`{ kind: 'path' }`) or via `obsidian file file=<name>` / `obsidian daily:path` when only a name is known. The split itself lives in `src/modules/operations/frontmatter.ts` so the provider does not own the YAML parser directly.
+2. `readDaily` returns `{ path, frontmatter, content }`: the YAML frontmatter block is split out of the CLI's read output and parsed into an object (or `null` for missing/malformed YAML). Frontmatter is structured metadata, not free-form markdown, and every consumer wants it parsed; embedding raw YAML in `content` would just push the same parser into each caller. The CLI's `daily` subcommand does not echo the file path, so the provider derives `path` via `obsidian daily:path`. The split itself lives in `src/modules/operations/frontmatter.ts` so the provider does not own the YAML parser directly.
 
 Both exceptions are explicit precisely because they violate the "no parsing / no validation" rule.

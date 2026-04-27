@@ -19,7 +19,7 @@ Add this to your `AGENTS.md` or `CLAUDE.md` to help the AI assistant use the vau
 
 Use vault-aware tools when vault context matters.
 Do not guess about note contents when the vault can be searched.
-Follow the Neuro Vault MCP server instructions for routing between semantic search (`search_notes`, `get_similar_notes`) and operations (`read_note`, `create_note`, `edit_note`, `read_daily`, `append_daily`).
+Follow the Neuro Vault MCP server instructions for routing between semantic search (`search_notes`, `get_similar_notes`) and operations (`read_notes`, `create_note`, `edit_note`, `read_daily`, `append_daily`).
 ```
 
 ## Troubleshooting
@@ -39,7 +39,7 @@ Follow the Neuro Vault MCP server instructions for routing between semantic sear
 - stdio transport only — not HTTP or SSE.
 - Local vault path only — no remote vaults.
 - Embedding model loaded at startup; first run can be slow.
-- Operations tools require the Obsidian CLI and a running Obsidian instance — they fail gracefully per call when unavailable.
+- Write operations (`create_note`, `edit_note`, properties, tags, daily notes) require the Obsidian CLI and a running Obsidian instance — they fail gracefully per call when unavailable. `read_notes` reads directly from disk and is not affected by this limitation.
 
 ## Development
 
@@ -50,3 +50,7 @@ npm run lint         # ESLint
 npm run format       # check formatting with Prettier
 npm run format:write # fix formatting
 ```
+
+## Migration to 2.0
+
+`read_note` has been removed from the MCP surface. Use `read_notes` for the single-note case as well: `{ "paths": ["Path/To/Note.md"] }`. Reads now go directly to the vault directory on disk and do not require Obsidian to be running.
