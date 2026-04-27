@@ -13,16 +13,12 @@ import { buildEditNoteTool } from './tools/edit-note.js';
 import { buildReadDailyTool } from './tools/read-daily.js';
 import { buildAppendDailyTool } from './tools/append-daily.js';
 import { buildSetPropertyTool } from './tools/set-property.js';
+import { buildReadPropertyTool } from './tools/read-property.js';
 
 const noteIdentifierShape = {
   name: z.string().optional(),
   path: z.string().optional(),
 };
-
-const readPropertySchema = z.object({
-  ...noteIdentifierShape,
-  key: z.string(),
-});
 
 const removePropertySchema = z.object({
   ...noteIdentifierShape,
@@ -44,17 +40,7 @@ export function buildOperationsTools(
     registerTool(buildReadDailyTool(deps)),
     registerTool(buildAppendDailyTool(deps)),
     registerTool(buildSetPropertyTool(deps)),
-    {
-      name: 'read_property',
-      spec: {
-        title: 'Read Property',
-        description:
-          'Read a frontmatter property value from a note. Provide `name` or `path`, plus `key`. Returns `{ value }`. Use `read_notes` if you need the full frontmatter or accurate type information.',
-        inputSchema: readPropertySchema,
-      },
-      handler: async (args) =>
-        invokeTool(() => handlers.readProperty(readPropertySchema.parse(args))),
-    },
+    registerTool(buildReadPropertyTool(deps)),
     {
       name: 'remove_property',
       spec: {
