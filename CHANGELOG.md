@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [3.1.0](https://github.com/AlexMost/neuro-vault/compare/v3.0.0...v3.1.0) (2026-04-27)
+
+### Features
+
+- **types:** add via_expansion flag to search result types ([e97633d](https://github.com/AlexMost/neuro-vault/commit/e97633d798c2f97db429dd4afdebf84333ff6919))
+
 ## [3.0.0](https://github.com/AlexMost/neuro-vault/compare/v1.7.0...v3.0.0) (2026-04-27)
 
 ### ⚠ BREAKING CHANGES
