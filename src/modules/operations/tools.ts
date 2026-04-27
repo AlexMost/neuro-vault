@@ -8,18 +8,12 @@ import type { VaultProvider } from './vault-provider.js';
 import type { VaultReader } from './vault-reader.js';
 import { buildReadNotesTool } from './tools/read-notes.js';
 import { buildQueryNotesTool } from './tools/query-notes.js';
+import { buildCreateNoteTool } from './tools/create-note.js';
 
 const noteIdentifierShape = {
   name: z.string().optional(),
   path: z.string().optional(),
 };
-
-const createNoteSchema = z.object({
-  ...noteIdentifierShape,
-  content: z.string().optional(),
-  template: z.string().optional(),
-  overwrite: z.boolean().optional(),
-});
 
 const editNoteSchema = z.object({
   ...noteIdentifierShape,
@@ -60,16 +54,7 @@ export function buildOperationsTools(
   return [
     registerTool(buildReadNotesTool(deps)),
     registerTool(buildQueryNotesTool(deps)),
-    {
-      name: 'create_note',
-      spec: {
-        title: 'Create Note',
-        description:
-          'Create a new note. Provide `name` or `path`. Optional `content` and `template`. If a note with this path/name might already exist and the user has not explicitly asked to replace it, ask the user before passing `overwrite: true` — overwrite is destructive. Default behavior fails when the note exists.',
-        inputSchema: createNoteSchema,
-      },
-      handler: async (args) => invokeTool(() => handlers.createNote(createNoteSchema.parse(args))),
-    },
+    registerTool(buildCreateNoteTool(deps)),
     {
       name: 'edit_note',
       spec: {
