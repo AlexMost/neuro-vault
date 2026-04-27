@@ -66,7 +66,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Read Notes',
         description:
-          "Read multiple notes in one call. `paths` is an array of 1–50 vault-relative POSIX paths; duplicates are de-duplicated and results returned in input order. `fields` projects which parts of each note to return — choose from `frontmatter` and `content`; default `['frontmatter','content']`. One missing or unreadable path does not fail the others — per-item errors come back inline. Prefer this over N `read_note` calls: a single MCP roundtrip and parallel disk reads. Reads are direct from disk and do not require Obsidian to be running.",
+          "Read multiple notes in one call. `paths` is an array of 1–50 vault-relative POSIX paths; duplicates are de-duplicated and results returned in input order. `fields` projects which parts of each note to return — choose from `frontmatter` and `content`; default `['frontmatter','content']`. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running.",
         inputSchema: readNotesSchema,
       },
       handler: async (args) => invokeTool(() => handlers.readNotes(readNotesSchema.parse(args))),

@@ -13,8 +13,6 @@ import type {
   NoteIdentifier,
   PropertyListEntry,
   PropertyValue,
-  ReadNoteInput,
-  ReadNoteResult,
   ReadPropertyInput,
   ReadPropertyResult,
   RemovePropertyInput,
@@ -70,13 +68,6 @@ export class ObsidianCLIProvider implements VaultProvider {
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.vaultName = opts.vaultName;
     this.exec = opts.exec ?? defaultExec;
-  }
-
-  async readNote(input: ReadNoteInput): Promise<ReadNoteResult> {
-    const path = await this.resolvePath(input.identifier);
-    const { stdout } = await this.runCommand('read', [identifierToArg(input.identifier)]);
-    const { frontmatter, content } = splitFrontmatter(stdout);
-    return { path, frontmatter, content };
   }
 
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
@@ -205,7 +196,7 @@ export class ObsidianCLIProvider implements VaultProvider {
 
   // Best-effort: a `text` property whose value happens to be "true" or "42"
   // will be coerced to boolean/number. Callers needing ground-truth types should
-  // use read_note and parse frontmatter directly.
+  // use read_notes and parse frontmatter directly.
   private parsePropertyValue(stdout: string): PropertyValue {
     const trimmed = stdout.trim();
     if (trimmed === '') return '';
@@ -331,22 +322,5 @@ export class ObsidianCLIProvider implements VaultProvider {
     const args = [command, ...kvPairs];
     if (this.vaultName) args.push(`vault=${this.vaultName}`);
     return args;
-  }
-
-  private async resolvePath(identifier: NoteIdentifier): Promise<string> {
-    if (identifier.kind === 'path') return identifier.value;
-    const { stdout } = await this.runCommand('file', [identifierToArg(identifier)]);
-    for (const line of stdout.split(/\r?\n/)) {
-      const idx = line.indexOf('\t');
-      if (idx === -1) continue;
-      if (line.slice(0, idx).trim() === 'path') {
-        return line.slice(idx + 1).trim();
-      }
-    }
-    throw new ToolHandlerError(
-      'CLI_ERROR',
-      `Could not resolve path for name '${identifier.value}': 'path' not found in obsidian file output`,
-      { details: { name: identifier.value, stdout: stdout.slice(0, 500) } },
-    );
   }
 }

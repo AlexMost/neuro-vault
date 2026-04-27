@@ -130,7 +130,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
     const server = createFakeServer();
     const fakeProvider = {
-      readNote: vi.fn(),
       createNote: vi.fn(),
       editNote: vi.fn(),
       readDaily: vi.fn(),
@@ -178,7 +177,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
     const server = createFakeServer();
     const fakeProvider = {
-      readNote: vi.fn(),
       createNote: vi.fn(),
       editNote: vi.fn(),
       readDaily: vi.fn(),

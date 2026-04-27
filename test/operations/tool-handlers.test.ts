@@ -6,7 +6,6 @@ import type { VaultReader, ReadNotesItem } from '../../src/modules/operations/va
 
 function fakeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
   return {
-    readNote: vi.fn().mockResolvedValue({ path: '', frontmatter: null, content: '' }),
     createNote: vi.fn().mockResolvedValue({ path: '' }),
     editNote: vi.fn().mockResolvedValue(undefined),
     readDaily: vi.fn().mockResolvedValue({ path: '', frontmatter: null, content: '' }),
