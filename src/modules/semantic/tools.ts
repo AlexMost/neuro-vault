@@ -14,7 +14,7 @@ const searchNotesSchema = z.object({
 });
 
 const getSimilarNotesSchema = z.object({
-  note_path: z.string(),
+  path: z.string(),
   limit: z.number().int().positive().optional(),
   threshold: z.number().min(0).max(1).optional(),
 });
@@ -41,7 +41,7 @@ export function buildSemanticTools(handlers: ToolHandlers): ToolRegistration[] {
       spec: {
         title: 'Get Similar Notes',
         description:
-          'Find semantically related notes after you already have a relevant note path. Pass a vault-relative POSIX path (e.g. "Folder/note.md").',
+          'Find semantically related notes after you already have a relevant note path. Pass a vault-relative POSIX path (e.g. "Folder/note.md") as `path`.',
         inputSchema: getSimilarNotesSchema,
       },
       handler: async (args) =>

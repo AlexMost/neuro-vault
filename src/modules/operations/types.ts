@@ -39,30 +39,30 @@ export interface AppendDailyToolInput {
 }
 
 export interface SetPropertyToolInput {
-  file?: string;
+  name?: string;
   path?: string;
-  name: string;
+  key: string;
   value: string | number | boolean | string[] | number[];
   type?: 'text' | 'list' | 'number' | 'checkbox' | 'date' | 'datetime';
 }
 
 export interface ReadPropertyToolInput {
-  file?: string;
+  name?: string;
   path?: string;
-  name: string;
+  key: string;
 }
 
 export interface RemovePropertyToolInput {
-  file?: string;
+  name?: string;
   path?: string;
-  name: string;
+  key: string;
 }
 
 export type ListPropertiesToolInput = Record<string, never>;
 export type ListTagsToolInput = Record<string, never>;
 
 export interface GetTagToolInput {
-  name: string;
+  tag: string;
   include_files?: boolean;
 }
 

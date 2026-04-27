@@ -121,7 +121,7 @@ Find notes similar to a given note path. Use this after `search_notes` finds a r
 
 ```typescript
 get_similar_notes({
-  note_path: string,  // vault-relative POSIX path, e.g. "Projects/neuro-vault.md"
+  path: string,       // vault-relative POSIX path, e.g. "Projects/neuro-vault.md"
   limit?: number,     // default: 10
   threshold?: number, // default: 0.5
 })
@@ -235,9 +235,9 @@ Set a frontmatter property on a note. The YAML type is inferred from the JS valu
 
 ```typescript
 set_property({
-  file?: string,           // wikilink-style: "My Note"
+  name?: string,           // wikilink-style: "My Note"
   path?: string,           // vault-relative: "Tasks/Quarterly review.md"
-  name: string,            // property key, e.g. "status"
+  key: string,             // property key, e.g. "status"
   value: string | number | boolean | string[] | number[],
   type?: 'text' | 'list' | 'number' | 'checkbox' | 'date' | 'datetime',
 })
@@ -251,9 +251,9 @@ Read a single frontmatter property value. Use `read_note` if you need the full f
 
 ```typescript
 read_property({
-  file?: string,
+  name?: string,
   path?: string,
-  name: string,
+  key: string,
 })
 ```
 
@@ -265,9 +265,9 @@ Remove a frontmatter property. Idempotent — calling it on an absent property s
 
 ```typescript
 remove_property({
-  file?: string,
+  name?: string,
   path?: string,
-  name: string,
+  key: string,
 })
 ```
 
@@ -291,12 +291,12 @@ Get count and (optionally) the file list for a single tag. Pass `include_files: 
 
 ```typescript
 get_tag({
-  name: string,            // with or without leading "#"
+  tag: string,             // with or without leading "#"
   include_files?: boolean, // default true
 })
 ```
 
-Returns `{ name, count, files? }`.
+Returns `{ name, count, files? }` — `name` is the stripped tag string (the same value you passed as `tag` input, minus any leading `#`).
 
 ---
 

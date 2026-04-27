@@ -228,7 +228,7 @@ describe('operations.setProperty handler', () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.setProperty({ path: 'a.md', name: 'status', value: 'done' });
+    await handlers.setProperty({ path: 'a.md', key: 'status', value: 'done' });
 
     expect(provider.setProperty).toHaveBeenCalledWith({
       identifier: { kind: 'path', value: 'a.md' },
@@ -242,7 +242,7 @@ describe('operations.setProperty handler', () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.setProperty({ path: 'a.md', name: 'priority', value: 3 });
+    await handlers.setProperty({ path: 'a.md', key: 'priority', value: 3 });
 
     expect(provider.setProperty).toHaveBeenCalledWith(
       expect.objectContaining({ value: 3, type: 'number' }),
@@ -253,7 +253,7 @@ describe('operations.setProperty handler', () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.setProperty({ path: 'a.md', name: 'done', value: true });
+    await handlers.setProperty({ path: 'a.md', key: 'done', value: true });
 
     expect(provider.setProperty).toHaveBeenCalledWith(
       expect.objectContaining({ value: true, type: 'checkbox' }),
@@ -264,7 +264,7 @@ describe('operations.setProperty handler', () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.setProperty({ path: 'a.md', name: 'tags', value: ['mcp', 'todo'] });
+    await handlers.setProperty({ path: 'a.md', key: 'tags', value: ['mcp', 'todo'] });
 
     expect(provider.setProperty).toHaveBeenCalledWith(
       expect.objectContaining({ value: ['mcp', 'todo'], type: 'list' }),
@@ -275,7 +275,7 @@ describe('operations.setProperty handler', () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.setProperty({ path: 'a.md', name: 'due', value: '2026-05-01', type: 'date' });
+    await handlers.setProperty({ path: 'a.md', key: 'due', value: '2026-05-01', type: 'date' });
 
     expect(provider.setProperty).toHaveBeenCalledWith(
       expect.objectContaining({ value: '2026-05-01', type: 'date' }),
@@ -287,7 +287,7 @@ describe('operations.setProperty handler', () => {
     const handlers = createOperationsHandlers({ provider });
 
     await expect(
-      handlers.setProperty({ path: 'a.md', name: 'due', value: '03.05.2026', type: 'date' }),
+      handlers.setProperty({ path: 'a.md', key: 'due', value: '03.05.2026', type: 'date' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(provider.setProperty).not.toHaveBeenCalled();
   });
@@ -297,7 +297,7 @@ describe('operations.setProperty handler', () => {
     const handlers = createOperationsHandlers({ provider });
 
     await expect(
-      handlers.setProperty({ path: 'a.md', name: 'due', value: '2026-13-45', type: 'date' }),
+      handlers.setProperty({ path: 'a.md', key: 'due', value: '2026-13-45', type: 'date' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(provider.setProperty).not.toHaveBeenCalled();
   });
@@ -309,7 +309,7 @@ describe('operations.setProperty handler', () => {
     await expect(
       handlers.setProperty({
         path: 'a.md',
-        name: 'due',
+        key: 'due',
         value: 12345 as unknown as string,
         type: 'date',
       }),
@@ -323,7 +323,7 @@ describe('operations.setProperty handler', () => {
 
     await handlers.setProperty({
       path: 'a.md',
-      name: 'startedAt',
+      key: 'startedAt',
       value: '2026-05-01T14:30:00Z',
       type: 'datetime',
     });
@@ -340,7 +340,7 @@ describe('operations.setProperty handler', () => {
     await expect(
       handlers.setProperty({
         path: 'a.md',
-        name: 'startedAt',
+        key: 'startedAt',
         value: '2026-05-01 14:30:00',
         type: 'datetime',
       }),
@@ -353,7 +353,7 @@ describe('operations.setProperty handler', () => {
     const handlers = createOperationsHandlers({ provider });
 
     await expect(
-      handlers.setProperty({ path: 'a.md', name: 'tags', value: ['hello, world', 'ok'] }),
+      handlers.setProperty({ path: 'a.md', key: 'tags', value: ['hello, world', 'ok'] }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(provider.setProperty).not.toHaveBeenCalled();
   });
@@ -363,23 +363,23 @@ describe('operations.setProperty handler', () => {
     const handlers = createOperationsHandlers({ provider });
 
     await expect(
-      handlers.setProperty({ path: 'a.md', name: 'x', value: null as unknown as string }),
+      handlers.setProperty({ path: 'a.md', key: 'x', value: null as unknown as string }),
     ).rejects.toMatchObject({ code: 'UNSUPPORTED_VALUE_TYPE' });
   });
 
-  it('rejects neither file nor path', async () => {
+  it('rejects when neither name nor path is provided', async () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
-    await expect(handlers.setProperty({ name: 'x', value: 'y' } as never)).rejects.toMatchObject({
+    await expect(handlers.setProperty({ key: 'x', value: 'y' } as never)).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
   });
 
-  it('rejects both file and path', async () => {
+  it('rejects when both name and path are provided', async () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
     await expect(
-      handlers.setProperty({ file: 'a', path: 'b.md', name: 'x', value: 'y' }),
+      handlers.setProperty({ name: 'a', path: 'b.md', key: 'x', value: 'y' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 
@@ -387,7 +387,7 @@ describe('operations.setProperty handler', () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
     await expect(
-      handlers.setProperty({ path: '../../etc/passwd', name: 'x', value: 'y' }),
+      handlers.setProperty({ path: '../../etc/passwd', key: 'x', value: 'y' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(provider.setProperty).not.toHaveBeenCalled();
   });
@@ -396,7 +396,7 @@ describe('operations.setProperty handler', () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
     await expect(
-      handlers.setProperty({ path: '/tmp/x.md', name: 'x', value: 'y' }),
+      handlers.setProperty({ path: '/tmp/x.md', key: 'x', value: 'y' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(provider.setProperty).not.toHaveBeenCalled();
   });
@@ -409,7 +409,7 @@ describe('operations.readProperty handler', () => {
     });
     const handlers = createOperationsHandlers({ provider });
 
-    const result = await handlers.readProperty({ path: 'a.md', name: 'status' });
+    const result = await handlers.readProperty({ path: 'a.md', key: 'status' });
 
     expect(provider.readProperty).toHaveBeenCalledWith({
       identifier: { kind: 'path', value: 'a.md' },
@@ -418,13 +418,13 @@ describe('operations.readProperty handler', () => {
     expect(result).toEqual({ value: 'done' });
   });
 
-  it('forwards file target via wikilink kind', async () => {
+  it('forwards name target via wikilink kind', async () => {
     const provider = fakeProvider({
       readProperty: vi.fn().mockResolvedValue({ value: 42 }),
     });
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.readProperty({ file: 'My Note', name: 'priority' });
+    await handlers.readProperty({ name: 'My Note', key: 'priority' });
 
     expect(provider.readProperty).toHaveBeenCalledWith({
       identifier: { kind: 'name', value: 'My Note' },
@@ -432,9 +432,9 @@ describe('operations.readProperty handler', () => {
     });
   });
 
-  it('rejects when neither file nor path', async () => {
+  it('rejects when neither name nor path is provided', async () => {
     const handlers = createOperationsHandlers({ provider: fakeProvider() });
-    await expect(handlers.readProperty({ name: 'x' } as never)).rejects.toMatchObject({
+    await expect(handlers.readProperty({ key: 'x' } as never)).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
   });
@@ -447,7 +447,7 @@ describe('operations.removeProperty handler', () => {
     });
     const handlers = createOperationsHandlers({ provider });
 
-    const result = await handlers.removeProperty({ path: 'a.md', name: 'status' });
+    const result = await handlers.removeProperty({ path: 'a.md', key: 'status' });
 
     expect(provider.removeProperty).toHaveBeenCalledWith({
       identifier: { kind: 'path', value: 'a.md' },
@@ -461,12 +461,12 @@ describe('operations.removeProperty handler', () => {
       removeProperty: vi.fn().mockResolvedValue(undefined),
     });
     const handlers = createOperationsHandlers({ provider });
-    expect(await handlers.removeProperty({ path: 'a.md', name: 'gone' })).toEqual({ ok: true });
+    expect(await handlers.removeProperty({ path: 'a.md', key: 'gone' })).toEqual({ ok: true });
   });
 
   it('rejects empty name with INVALID_ARGUMENT', async () => {
     const handlers = createOperationsHandlers({ provider: fakeProvider() });
-    await expect(handlers.removeProperty({ path: 'a.md', name: '' })).rejects.toMatchObject({
+    await expect(handlers.removeProperty({ path: 'a.md', key: '' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
   });
@@ -475,7 +475,7 @@ describe('operations.removeProperty handler', () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
     await expect(
-      handlers.removeProperty({ path: '../escape.md', name: 'x' }),
+      handlers.removeProperty({ path: '../escape.md', key: 'x' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(provider.removeProperty).not.toHaveBeenCalled();
   });
@@ -483,7 +483,7 @@ describe('operations.removeProperty handler', () => {
   it('rejects absolute path', async () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
-    await expect(handlers.removeProperty({ path: '/etc/passwd', name: 'x' })).rejects.toMatchObject(
+    await expect(handlers.removeProperty({ path: '/etc/passwd', key: 'x' })).rejects.toMatchObject(
       { code: 'INVALID_ARGUMENT' },
     );
     expect(provider.removeProperty).not.toHaveBeenCalled();
@@ -513,13 +513,13 @@ describe('operations.listTags handler', () => {
 });
 
 describe('operations.getTag handler', () => {
-  it('strips leading # from tag name', async () => {
+  it('strips leading # from tag', async () => {
     const provider = fakeProvider({
       getTag: vi.fn().mockResolvedValue({ name: 'mcp', count: 1, files: ['a.md'] }),
     });
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.getTag({ name: '#mcp' });
+    await handlers.getTag({ tag: '#mcp' });
 
     expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: true });
   });
@@ -530,7 +530,7 @@ describe('operations.getTag handler', () => {
     });
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.getTag({ name: 'mcp', include_files: false });
+    await handlers.getTag({ tag: 'mcp', include_files: false });
 
     expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: false });
   });
@@ -541,17 +541,17 @@ describe('operations.getTag handler', () => {
     });
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.getTag({ name: 'mcp' });
+    await handlers.getTag({ tag: 'mcp' });
 
     expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: true });
   });
 
-  it('rejects empty tag name', async () => {
+  it('rejects when tag is empty', async () => {
     const handlers = createOperationsHandlers({ provider: fakeProvider() });
-    await expect(handlers.getTag({ name: '' })).rejects.toMatchObject({
+    await expect(handlers.getTag({ tag: '' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
-    await expect(handlers.getTag({ name: '#' })).rejects.toMatchObject({
+    await expect(handlers.getTag({ tag: '#' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
   });

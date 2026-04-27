@@ -30,33 +30,28 @@ const appendDailySchema = z.object({
   content: z.string(),
 });
 
-const propertyTargetShape = {
-  file: z.string().optional(),
-  path: z.string().optional(),
-};
-
 const setPropertySchema = z.object({
-  ...propertyTargetShape,
-  name: z.string(),
+  ...noteIdentifierShape,
+  key: z.string(),
   value: z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.array(z.number())]),
   type: z.enum(['text', 'list', 'number', 'checkbox', 'date', 'datetime']).optional(),
 });
 
 const readPropertySchema = z.object({
-  ...propertyTargetShape,
-  name: z.string(),
+  ...noteIdentifierShape,
+  key: z.string(),
 });
 
 const removePropertySchema = z.object({
-  ...propertyTargetShape,
-  name: z.string(),
+  ...noteIdentifierShape,
+  key: z.string(),
 });
 
 const listPropertiesSchema = z.object({});
 const listTagsSchema = z.object({});
 
 const getTagSchema = z.object({
-  name: z.string(),
+  tag: z.string(),
   include_files: z.boolean().optional(),
 });
 
@@ -118,7 +113,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Set Property',
         description:
-          'Set a frontmatter property on a note. Provide either `file` (wikilink-style) or `path` (vault-relative). `value` may be string/number/boolean/array — `type` is inferred from the JS type unless given. For `date`/`datetime` you MUST pass `type` explicitly AND use ISO format (`YYYY-MM-DD` for date, `YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]` for datetime) — non-ISO values are silently dropped by obsidian-cli, so this tool rejects them up front. List items must not contain commas (obsidian-cli limitation). Existing properties are overwritten.',
+          'Set a frontmatter property on a note. Provide either `name` (wikilink-style) or `path` (vault-relative). `key` is the frontmatter property name (e.g. `status`, `due`). `value` may be string/number/boolean/array — `type` is inferred from the JS type unless given. For `date`/`datetime` you MUST pass `type` explicitly AND use ISO format (`YYYY-MM-DD` for date, `YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]` for datetime) — non-ISO values are silently dropped by obsidian-cli, so this tool rejects them up front. List items must not contain commas (obsidian-cli limitation). Existing properties are overwritten.',
         inputSchema: setPropertySchema,
       },
       handler: async (args) =>
@@ -129,7 +124,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Read Property',
         description:
-          'Read a frontmatter property value from a note. Returns `{ value }`. Use `read_note` if you need the full frontmatter or accurate type information.',
+          'Read a frontmatter property value from a note. Provide `name` or `path`, plus `key`. Returns `{ value }`. Use `read_note` if you need the full frontmatter or accurate type information.',
         inputSchema: readPropertySchema,
       },
       handler: async (args) =>
@@ -140,7 +135,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Remove Property',
         description:
-          'Remove a frontmatter property from a note. Idempotent — succeeds whether or not the property existed.',
+          'Remove a frontmatter property from a note. Provide `name` or `path`, plus `key`. Idempotent — succeeds whether or not the property existed.',
         inputSchema: removePropertySchema,
       },
       handler: async (args) =>
@@ -171,7 +166,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Get Tag',
         description:
-          'Get info about one tag. Returns `{name, count}` and (by default) `files: string[]`. The leading `#` on `name` is optional — both `ai` and `#ai` work. Pass `include_files: false` for popular tags where the file list would be large.',
+          'Get info about one tag. Provide `tag` (with or without the leading `#` — both `ai` and `#ai` work). Returns `{ name, count }` where `name` is the stripped tag string, plus `files: string[]` by default. Pass `include_files: false` for popular tags where the file list would be large.',
         inputSchema: getTagSchema,
       },
       handler: async (args) => invokeTool(() => handlers.getTag(getTagSchema.parse(args))),
