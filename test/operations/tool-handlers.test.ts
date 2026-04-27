@@ -641,4 +641,3 @@ describe('operations.listTags handler', () => {
     expect(provider.listTags).toHaveBeenCalled();
   });
 });
-

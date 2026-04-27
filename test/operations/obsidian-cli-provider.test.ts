@@ -497,4 +497,3 @@ describe('ObsidianCLIProvider.listTags', () => {
     await expect(provider.listTags()).rejects.toMatchObject({ code: 'CLI_ERROR' });
   });
 });
-
