@@ -3,106 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { ObsidianCLIProvider } from '../../src/modules/operations/obsidian-cli-provider.js';
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 
-describe('ObsidianCLIProvider.readNote', () => {
-  it('returns parsed frontmatter, body without YAML, and the input path', async () => {
-    const stdout =
-      '---\ntype: project\nstatus: active\ntags:\n  - ai\n  - mcp\n---\n\n## Body\nhello\n';
-    const exec = vi.fn().mockResolvedValue({ stdout, stderr: '' });
-    const provider = new ObsidianCLIProvider({ exec });
-
-    const result = await provider.readNote({
-      identifier: { kind: 'path', value: 'Projects/x.md' },
-    });
-
-    expect(exec).toHaveBeenCalledTimes(1);
-    expect(exec).toHaveBeenCalledWith('obsidian', ['read', 'path=Projects/x.md'], {
-      timeout: 10_000,
-    });
-    expect(result).toEqual({
-      path: 'Projects/x.md',
-      frontmatter: { type: 'project', status: 'active', tags: ['ai', 'mcp'] },
-      content: '\n## Body\nhello\n',
-    });
-  });
-
-  it('returns frontmatter null when the note has no frontmatter', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: 'just a body without yaml\n', stderr: '' });
-    const provider = new ObsidianCLIProvider({ exec });
-
-    const result = await provider.readNote({
-      identifier: { kind: 'path', value: 'Folder/note.md' },
-    });
-
-    expect(result).toEqual({
-      path: 'Folder/note.md',
-      frontmatter: null,
-      content: 'just a body without yaml\n',
-    });
-  });
-
-  it('returns frontmatter null and raw content when YAML is malformed', async () => {
-    const stdout = '---\ntype: project\n  bad: : indent\n---\n\n## Body\n';
-    const exec = vi.fn().mockResolvedValue({ stdout, stderr: '' });
-    const provider = new ObsidianCLIProvider({ exec });
-
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    try {
-      const result = await provider.readNote({
-        identifier: { kind: 'path', value: 'Folder/note.md' },
-      });
-
-      expect(result).toEqual({
-        path: 'Folder/note.md',
-        frontmatter: null,
-        content: stdout,
-      });
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
-  it('resolves path via "obsidian file" when identifier is a name', async () => {
-    const exec = vi
-      .fn()
-      .mockResolvedValueOnce({
-        stdout: 'path\tFolder/note.md\nname\tnote\nextension\tmd\n',
-        stderr: '',
-      })
-      .mockResolvedValueOnce({
-        stdout: '---\ntitle: Note\n---\n# Hello\n',
-        stderr: '',
-      });
-    const provider = new ObsidianCLIProvider({ exec });
-
-    const result = await provider.readNote({
-      identifier: { kind: 'name', value: 'note' },
-    });
-
-    expect(exec).toHaveBeenNthCalledWith(1, 'obsidian', ['file', 'file=note'], {
-      timeout: 10_000,
-    });
-    expect(exec).toHaveBeenNthCalledWith(2, 'obsidian', ['read', 'file=note'], {
-      timeout: 10_000,
-    });
-    expect(result).toEqual({
-      path: 'Folder/note.md',
-      frontmatter: { title: 'Note' },
-      content: '# Hello\n',
-    });
-  });
-
-  it('appends vault=<name> to args when vaultName is set', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
-    const provider = new ObsidianCLIProvider({ exec, vaultName: 'Brain' });
-
-    await provider.readNote({ identifier: { kind: 'path', value: 'Folder/x.md' } });
-
-    expect(exec).toHaveBeenCalledWith('obsidian', ['read', 'path=Folder/x.md', 'vault=Brain'], {
-      timeout: 10_000,
-    });
-  });
-});
-
 describe('ObsidianCLIProvider.createNote', () => {
   it('passes name, content, and template tokens', async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
@@ -234,7 +134,11 @@ describe('ObsidianCLIProvider error mapping', () => {
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
-      provider.readNote({ identifier: { kind: 'name', value: 'foo' } }),
+      provider.editNote({
+        identifier: { kind: 'name', value: 'foo' },
+        content: 'x',
+        position: 'append',
+      }),
     ).rejects.toMatchObject({ code: 'CLI_NOT_FOUND' });
   });
 
@@ -249,7 +153,11 @@ describe('ObsidianCLIProvider error mapping', () => {
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
-      provider.readNote({ identifier: { kind: 'name', value: 'foo' } }),
+      provider.editNote({
+        identifier: { kind: 'name', value: 'foo' },
+        content: 'x',
+        position: 'append',
+      }),
     ).rejects.toMatchObject({ code: 'CLI_UNAVAILABLE' });
   });
 
@@ -266,7 +174,7 @@ describe('ObsidianCLIProvider error mapping', () => {
     });
   });
 
-  it('maps stderr "not found" on read to NOT_FOUND', async () => {
+  it('maps stderr "not found" on edit to NOT_FOUND', async () => {
     const exec = vi
       .fn()
       .mockRejectedValue(
@@ -275,7 +183,11 @@ describe('ObsidianCLIProvider error mapping', () => {
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
-      provider.readNote({ identifier: { kind: 'path', value: 'missing.md' } }),
+      provider.editNote({
+        identifier: { kind: 'path', value: 'missing.md' },
+        content: 'x',
+        position: 'append',
+      }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
@@ -288,7 +200,11 @@ describe('ObsidianCLIProvider error mapping', () => {
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
-      provider.readNote({ identifier: { kind: 'name', value: 'x' } }),
+      provider.editNote({
+        identifier: { kind: 'name', value: 'x' },
+        content: 'x',
+        position: 'append',
+      }),
     ).rejects.toMatchObject({ code: 'CLI_TIMEOUT' });
   });
 
@@ -300,11 +216,15 @@ describe('ObsidianCLIProvider error mapping', () => {
       );
     const provider = new ObsidianCLIProvider({ exec });
 
-    await expect(provider.readNote({ identifier: { kind: 'name', value: 'x' } })).rejects.toSatisfy(
-      (err: ToolHandlerError) => {
-        return err.code === 'CLI_ERROR' && err.details?.stderr === 'weird thing happened';
-      },
-    );
+    await expect(
+      provider.editNote({
+        identifier: { kind: 'name', value: 'x' },
+        content: 'x',
+        position: 'append',
+      }),
+    ).rejects.toSatisfy((err: ToolHandlerError) => {
+      return err.code === 'CLI_ERROR' && err.details?.stderr === 'weird thing happened';
+    });
   });
 });
 

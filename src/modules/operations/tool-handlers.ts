@@ -9,7 +9,9 @@ import type {
   OperationsErrorCode,
   OperationsToolHandlers,
   ReadDailyToolInput,
-  ReadNoteToolInput,
+  ReadNotesField,
+  ReadNotesResultItem,
+  ReadNotesToolInput,
   ReadPropertyToolInput,
   RemovePropertyToolInput,
   SetPropertyToolInput,
@@ -20,9 +22,11 @@ import type {
   PropertyValue,
   VaultProvider,
 } from './vault-provider.js';
+import type { VaultReader } from './vault-reader.js';
 
 export interface OperationsHandlerDependencies {
   provider: VaultProvider;
+  reader: VaultReader;
 }
 
 const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
@@ -137,16 +141,108 @@ function normalizePath(raw: string): string {
   return slashed.replace(/^\.\//, '');
 }
 
+const VALID_FIELDS: readonly ReadNotesField[] = ['frontmatter', 'content'];
+const DEFAULT_FIELDS: ReadNotesField[] = ['frontmatter', 'content'];
+
+function validateReadNotesInput(input: ReadNotesToolInput): {
+  paths: string[];
+  fields: ReadNotesField[];
+} {
+  if (!Array.isArray(input.paths)) {
+    throw invalidArgument('paths must be an array', 'paths');
+  }
+  if (input.paths.length < 1 || input.paths.length > 50) {
+    throw invalidArgument('paths must contain between 1 and 50 entries', 'paths');
+  }
+  let fields: ReadNotesField[];
+  if (input.fields === undefined) {
+    fields = DEFAULT_FIELDS;
+  } else {
+    if (!Array.isArray(input.fields) || input.fields.length === 0) {
+      throw invalidArgument('fields must be a non-empty array when provided', 'fields');
+    }
+    for (const f of input.fields) {
+      if (!VALID_FIELDS.includes(f)) {
+        throw invalidArgument(
+          `unknown field '${String(f)}'; allowed: ${VALID_FIELDS.join(', ')}`,
+          'fields',
+        );
+      }
+    }
+    fields = input.fields;
+  }
+  return { paths: input.paths, fields };
+}
+
 export function createOperationsHandlers(
   deps: OperationsHandlerDependencies,
 ): OperationsToolHandlers {
-  const { provider } = deps;
+  const { provider, reader } = deps;
 
   return {
-    async readNote(input: ReadNoteToolInput) {
-      const identifier = resolveIdentifier(input.name, input.path);
-      return provider.readNote({ identifier });
+    async readNotes(input: ReadNotesToolInput) {
+      const { paths, fields } = validateReadNotesInput(input);
+
+      const seen = new Set<string>();
+      const deduped: string[] = [];
+      for (const p of paths) {
+        if (!seen.has(p)) {
+          seen.add(p);
+          deduped.push(p);
+        }
+      }
+
+      type Slot = { kind: 'invalid'; item: ReadNotesResultItem } | { kind: 'valid'; path: string };
+      const slots: Slot[] = deduped.map((raw) => {
+        try {
+          const normalized = normalizePath(raw);
+          return { kind: 'valid', path: normalized };
+        } catch (err) {
+          const message = err instanceof ToolHandlerError ? err.message : String(err);
+          return {
+            kind: 'invalid',
+            item: { path: raw, error: { code: 'INVALID_ARGUMENT' as const, message } },
+          };
+        }
+      });
+
+      const validPaths = slots
+        .filter((s): s is { kind: 'valid'; path: string } => s.kind === 'valid')
+        .map((s) => s.path);
+
+      const readerItems =
+        validPaths.length === 0 ? [] : await reader.readNotes({ paths: validPaths, fields });
+
+      const projected: ReadNotesResultItem[] = readerItems.map((item) => {
+        if ('error' in item) {
+          return item;
+        }
+        const out: {
+          path: string;
+          frontmatter?: Record<string, unknown> | null;
+          content?: string;
+        } = {
+          path: item.path,
+        };
+        if (fields.includes('frontmatter')) {
+          out.frontmatter = item.frontmatter;
+        }
+        if (fields.includes('content')) {
+          out.content = item.content;
+        }
+        return out;
+      });
+
+      let projectedIdx = 0;
+      const results: ReadNotesResultItem[] = slots.map((slot) => {
+        if (slot.kind === 'invalid') return slot.item;
+        return projected[projectedIdx++]!;
+      });
+
+      const errors = results.reduce((n, r) => n + ('error' in r ? 1 : 0), 0);
+      return { results, count: results.length, errors };
     },
+
     async createNote(input: CreateNoteToolInput) {
       if (input.name === undefined && input.path === undefined) {
         throw invalidArgument('Provide name or path', 'name');

@@ -9,7 +9,11 @@ const noteIdentifierShape = {
   path: z.string().optional(),
 };
 
-const readNoteSchema = z.object(noteIdentifierShape);
+const readNotesFieldSchema = z.enum(['frontmatter', 'content']);
+const readNotesSchema = z.object({
+  paths: z.array(z.string()).min(1).max(50),
+  fields: z.array(readNotesFieldSchema).min(1).optional(),
+});
 
 const createNoteSchema = z.object({
   ...noteIdentifierShape,
@@ -58,14 +62,14 @@ const getTagSchema = z.object({
 export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegistration[] {
   return [
     {
-      name: 'read_note',
+      name: 'read_notes',
       spec: {
-        title: 'Read Note',
+        title: 'Read Notes',
         description:
-          "Read a note's contents. Provide either `name` (wikilink-style, resolves like Obsidian) or `path` (vault-relative, exact). Returns `{ path, frontmatter, content }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed) and `content` is the body without the YAML block.",
-        inputSchema: readNoteSchema,
+          "Read multiple notes in one call. `paths` is an array of 1–50 vault-relative POSIX paths; duplicates are de-duplicated and results returned in input order. `fields` projects which parts of each note to return — choose from `frontmatter` and `content`; default `['frontmatter','content']`. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running.",
+        inputSchema: readNotesSchema,
       },
-      handler: async (args) => invokeTool(() => handlers.readNote(readNoteSchema.parse(args))),
+      handler: async (args) => invokeTool(() => handlers.readNotes(readNotesSchema.parse(args))),
     },
     {
       name: 'create_note',
@@ -124,7 +128,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Read Property',
         description:
-          'Read a frontmatter property value from a note. Provide `name` or `path`, plus `key`. Returns `{ value }`. Use `read_note` if you need the full frontmatter or accurate type information.',
+          'Read a frontmatter property value from a note. Provide `name` or `path`, plus `key`. Returns `{ value }`. Use `read_notes` if you need the full frontmatter or accurate type information.',
         inputSchema: readPropertySchema,
       },
       handler: async (args) =>

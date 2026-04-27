@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildOperationsTools } from '../../src/modules/operations/tools.js';
 
 const noopHandlers = {
-  readNote: vi.fn(),
+  readNotes: vi.fn(),
   createNote: vi.fn(),
   editNote: vi.fn(),
   readDaily: vi.fn(),
@@ -20,7 +20,7 @@ describe('buildOperationsTools', () => {
   it('returns 11 registrations with the expected names', () => {
     const tools = buildOperationsTools(noopHandlers);
     expect(tools.map((t) => t.name)).toEqual([
-      'read_note',
+      'read_notes',
       'create_note',
       'edit_note',
       'read_daily',
@@ -51,5 +51,14 @@ describe('buildOperationsTools', () => {
     const tools = buildOperationsTools(noopHandlers);
     const removeProperty = tools.find((t) => t.name === 'remove_property')!;
     expect(removeProperty.spec.description).toMatch(/idempotent/i);
+  });
+
+  it('read_notes description states 1–50, dedupe, per-item errors, and offline reads', () => {
+    const tools = buildOperationsTools(noopHandlers);
+    const readNotes = tools.find((t) => t.name === 'read_notes')!;
+    expect(readNotes.spec.description).toMatch(/1[–-]50/);
+    expect(readNotes.spec.description).toMatch(/de-duplicated/i);
+    expect(readNotes.spec.description).toMatch(/per-item errors/i);
+    expect(readNotes.spec.description).toMatch(/do not require Obsidian/i);
   });
 });

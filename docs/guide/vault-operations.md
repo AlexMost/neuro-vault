@@ -1,25 +1,46 @@
 # Vault Operations
 
-> Requires the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. Pass `--no-operations` to disable.
+> Write operations (`create_note`, `edit_note`, daily notes, properties, tags) require the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. Pass `--no-operations` to disable all operations tools. `read_notes` reads directly from disk and does **not** require Obsidian to be running.
 
 Read and write notes through Obsidian itself — the operations module shells out to the `obsidian` CLI, so changes are picked up by Smart Connections, sync, and any other plugin you have installed. No bypass of Obsidian's own state.
 
-All vault-operations tools accept `name` (wikilink-style) **or** `path` (vault-relative POSIX) for note identification — exactly one of the two. Both or neither yields `INVALID_ARGUMENT`.
+`read_notes` is the one exception: it reads files directly from the vault directory, making it fast and available even when Obsidian is not running.
+
+Most vault-operations tools accept `name` (wikilink-style) **or** `path` (vault-relative POSIX) for note identification — exactly one of the two. Both or neither yields `INVALID_ARGUMENT`. `read_notes` accepts `paths` only (no wikilink resolution); if you only have a note name, resolve it to a path with `search_notes` first.
 
 ## Notes
 
-### `read_note`
+### `read_notes`
 
-Read a note's contents.
+Batch-read 1–50 notes directly from disk. Returns per-item results in input order; failed paths carry an error rather than aborting the whole call. Does not require Obsidian to be running.
 
 ```typescript
-read_note({
-  name?: string,    // wikilink-style: "My Note"
-  path?: string,    // vault-relative: "Folder/My Note.md"
+read_notes({
+  paths: string[],                              // 1–50 vault-relative paths
+  fields?: ('frontmatter' | 'content')[],       // default: both
 })
 ```
 
-Returns `{ path, content }`.
+Returns `{ results, count, errors }` where each item in `results` is either `{ path, frontmatter?, content? }` (success) or `{ path, error: { code, message } }` (failure). `count` is the number of successfully read notes; `errors` is the count of failed items.
+
+**Example — read multiple notes, all fields (default):**
+
+```json
+{
+  "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md", "Archive/old-idea.md"]
+}
+```
+
+**Example — read frontmatter only across a list of paths (replaces N `read_property` calls when you need several keys):**
+
+```json
+{
+  "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md"],
+  "fields": ["frontmatter"]
+}
+```
+
+`fields: ['frontmatter']` returns the parsed YAML frontmatter for each note without loading the note body — useful when you need metadata (status, tags, due dates) across many notes at once.
 
 ### `create_note`
 
@@ -84,7 +105,7 @@ Returns `{ ok: true }`. Existing properties are overwritten.
 
 ### `read_property`
 
-Read a single frontmatter property value. Use `read_note` if you need the full frontmatter or accurate type information.
+Read a single frontmatter property value. Use `read_notes` with `fields: ['frontmatter']` if you need the full frontmatter or accurate type information across one or more notes.
 
 ```typescript
 read_property({

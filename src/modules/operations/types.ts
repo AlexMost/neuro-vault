@@ -8,11 +8,36 @@ export type OperationsErrorCode =
   | 'CLI_NOT_FOUND'
   | 'CLI_UNAVAILABLE'
   | 'CLI_TIMEOUT'
-  | 'CLI_ERROR';
+  | 'CLI_ERROR'
+  | 'READ_FAILED';
 
-export interface ReadNoteToolInput {
-  name?: string;
-  path?: string;
+export type ReadNotesField = 'frontmatter' | 'content';
+
+export interface ReadNotesToolInput {
+  paths: string[];
+  fields?: ReadNotesField[];
+}
+
+export interface ReadNotesResultItemSuccess {
+  path: string;
+  frontmatter?: Record<string, unknown> | null;
+  content?: string;
+}
+
+export interface ReadNotesResultItemError {
+  path: string;
+  error: {
+    code: 'NOT_FOUND' | 'INVALID_ARGUMENT' | 'READ_FAILED';
+    message: string;
+  };
+}
+
+export type ReadNotesResultItem = ReadNotesResultItemSuccess | ReadNotesResultItemError;
+
+export interface ReadNotesResult {
+  results: ReadNotesResultItem[];
+  count: number;
+  errors: number;
 }
 
 export interface CreateNoteToolInput {
@@ -67,11 +92,7 @@ export interface GetTagToolInput {
 }
 
 export interface OperationsToolHandlers {
-  readNote(input: ReadNoteToolInput): Promise<{
-    path: string;
-    frontmatter: Record<string, unknown> | null;
-    content: string;
-  }>;
+  readNotes(input: ReadNotesToolInput): Promise<ReadNotesResult>;
   createNote(input: CreateNoteToolInput): Promise<{ path: string }>;
   editNote(input: EditNoteToolInput): Promise<void>;
   readDaily(input: ReadDailyToolInput): Promise<{

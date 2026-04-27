@@ -1,15 +1,5 @@
 export type NoteIdentifier = { kind: 'name'; value: string } | { kind: 'path'; value: string };
 
-export interface ReadNoteInput {
-  identifier: NoteIdentifier;
-}
-
-export interface ReadNoteResult {
-  path: string;
-  frontmatter: Record<string, unknown> | null;
-  content: string;
-}
-
 export interface CreateNoteInput {
   name?: string;
   path?: string;
@@ -86,7 +76,6 @@ export interface GetTagResult {
 }
 
 export interface VaultProvider {
-  readNote(input: ReadNoteInput): Promise<ReadNoteResult>;
   createNote(input: CreateNoteInput): Promise<CreateNoteResult>;
   editNote(input: EditNoteInput): Promise<void>;
   readDaily(): Promise<DailyNoteResult>;
