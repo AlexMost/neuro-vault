@@ -49,7 +49,7 @@ export type FsReadFile = (absPath: string, encoding: 'utf8') => Promise<string>;
 export type FsStat = (absPath: string) => Promise<{ isDirectory(): boolean }>;
 export type FsGlob = (
   pattern: string,
-  options: { cwd: string; onlyFiles: boolean; dot: boolean },
+  options: { cwd: string; onlyFiles: boolean; dot: boolean; followSymbolicLinks: boolean },
 ) => Promise<string[]>;
 
 export interface FsVaultReaderOptions {
@@ -102,6 +102,7 @@ export class FsVaultReader implements VaultReader {
       cwd,
       onlyFiles: true,
       dot: false,
+      followSymbolicLinks: false,
     });
     if (!prefix) {
       return matches.map(toPosix).sort();

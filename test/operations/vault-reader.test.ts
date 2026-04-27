@@ -156,6 +156,7 @@ describe('FsVaultReader.scan', () => {
       cwd: '/v',
       onlyFiles: true,
       dot: false,
+      followSymbolicLinks: false,
     });
   });
 
@@ -201,6 +202,7 @@ describe('FsVaultReader.scan', () => {
       cwd: '/v',
       onlyFiles: true,
       dot: false,
+      followSymbolicLinks: false,
     });
   });
 
