@@ -9,8 +9,6 @@ const searchNotesSchema = z.object({
   mode: z.enum(['quick', 'deep']).optional(),
   limit: z.number().int().positive().optional(),
   threshold: z.number().min(0).max(1).optional(),
-  expansion: z.boolean().optional(),
-  expansion_limit: z.number().int().positive().optional(),
 });
 
 const getSimilarNotesSchema = z.object({
