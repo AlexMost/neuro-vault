@@ -64,19 +64,20 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 
 ### 1. Write the query
 1. Extract the core nouns and concepts from the user's message — strip filler words and verbs. From "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build".
-2. For synonyms, reformulations, or translations, pass \`query\` as an array of 1-8 strings in a SINGLE call — the server batch-embeds them and returns one merged ranked list with \`matched_queries\` showing which query hit which note. Do not make multiple sequential calls for synonyms.
+2. For synonyms, reformulations, or translations, pass \`query: string[]\` (1-8 strings) in a SINGLE call — the server batch-embeds all queries and returns one merged ranked list. \`limit\` always caps the final list regardless of how many queries you pass; passing more queries widens coverage but does not increase the result count.
 3. The vault may contain notes written in several languages. If you have evidence of which languages are in use (from prior reads, file names, or earlier results), include translations of the key concepts into each of those languages in the same \`query\` array.
 4. If a search returns no results, lower the threshold to 0.3 before giving up.
 
 ### 2. Choose mode
 - **quick** (default) — returns up to 3 notes plus block-level matches scoped to those notes. Use for specific lookups.
-- **deep** — returns up to 8 notes plus block-level matches across the whole vault, with semantic expansion to related notes. Use for broad topics.
-- Use \`limit\` to override the default note count in either mode.
+- **deep** — returns up to 8 notes plus block-level matches across the whole vault. After the merged top-\`limit\` seeds are selected, expansion runs once on those seeds to pull in related notes. Use for broad topics.
+- Use \`limit\` to override the default note count in either mode. Widening \`limit\` widens recall.
 
 ### 3. Use the results
 - \`results\` — notes ranked by similarity; read the file by path
 - \`matched_queries\` (only when \`query\` is an array) — which of your queries hit this note; lets you spot which synonym was load-bearing
-- \`truncated\` (only when \`query\` is an array) — true when more candidates were merged than fit in the cap
+- \`truncated\` (only when \`query\` is an array) — true when unique merged candidates exceeded \`limit\`; widen \`limit\` to see more
+- \`via_expansion: true\` (deep mode only) — marks results pulled in by post-merge expansion; these have no \`matched_queries\`
 - \`blockResults\` — sections ranked by relevance; use heading + line range to jump to the relevant part
 - After finding a relevant note, call get_similar_notes to discover related content
 
