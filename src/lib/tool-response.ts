@@ -23,9 +23,13 @@ type ToolContentBlock = { type: 'text'; text: string };
 
 export function toToolResponse(value: unknown): CallToolResult {
   const text = value === undefined ? 'ok' : JSON.stringify(value, null, 2);
-  return {
+  const result: CallToolResult = {
     content: [{ type: 'text', text }] satisfies ToolContentBlock[],
   };
+  if (value !== undefined && value !== null) {
+    result.structuredContent = value as { [x: string]: unknown };
+  }
+  return result;
 }
 
 export function toToolErrorResponse(error: unknown): CallToolResult {
@@ -35,7 +39,7 @@ export function toToolErrorResponse(error: unknown): CallToolResult {
       structuredContent: {
         code: error.code,
         message: error.message,
-        details: error.details ?? null,
+        details: error.details,
       },
       isError: true,
     };
