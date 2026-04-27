@@ -42,6 +42,7 @@ docs/
 2. **Plan** → derive an implementation plan from the spec into `docs/superpowers/plans/` (local only).
 3. **Implement** → follow the plan. Update the spec inline if a decision changes mid-flight.
 4. **Document** → if the change introduces or alters an architectural concept, update or add a file in `docs/architecture/` as part of the same change.
+5. **Open a PR** → push the branch and open a PR to `main` via `gh pr create`. Never push directly to `main`; the release flow expects a merge commit.
 
 Trivial work (typo fix, dependency bump, doc tweak) does not need a spec.
 
