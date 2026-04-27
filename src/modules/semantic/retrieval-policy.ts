@@ -11,7 +11,6 @@ import type {
 
 const FALLBACK_THRESHOLD = 0.3;
 const QUICK_BLOCK_LIMIT = 5;
-const HARD_MERGE_CAP = 50;
 
 interface ModeConfig {
   limit: number;
@@ -42,15 +41,41 @@ export interface RetrievalOutput {
   blockResults?: BlockSearchResult[];
 }
 
-function deduplicateResults(results: SearchResult[]): SearchResult[] {
-  const best = new Map<string, SearchResult>();
-  for (const result of results) {
-    const existing = best.get(result.path);
-    if (!existing || result.similarity > existing.similarity) {
-      best.set(result.path, result);
+// Helper: post-cap expansion. Used by both single- and multi-query.
+function computeExpansion(args: {
+  seeds: { path: string; similarity: number }[];
+  sources: Map<string, SmartSource>;
+  searchEngine: SearchEngine;
+  threshold: number;
+  perSeedLimit: number;
+  totalLimit: number;
+}): SearchResult[] {
+  const { seeds, sources, searchEngine, threshold, perSeedLimit, totalLimit } = args;
+  const seedPaths = new Set(seeds.map((s) => s.path));
+  const bestByPath = new Map<string, number>();
+
+  for (const seed of seeds) {
+    const source = sources.get(seed.path);
+    if (!source || source.embedding.length === 0) continue;
+    const neighbors = searchEngine.findNeighbors({
+      queryVector: source.embedding,
+      sources: sources.values(),
+      threshold,
+      limit: perSeedLimit,
+    });
+    for (const n of neighbors) {
+      if (seedPaths.has(n.path)) continue;
+      const cur = bestByPath.get(n.path);
+      if (cur === undefined || n.similarity > cur) {
+        bestByPath.set(n.path, n.similarity);
+      }
     }
   }
-  return Array.from(best.values());
+
+  return [...bestByPath.entries()]
+    .map(([path, similarity]) => ({ path, similarity, via_expansion: true as const }))
+    .sort((a, b) => b.similarity - a.similarity || a.path.localeCompare(b.path))
+    .slice(0, totalLimit);
 }
 
 export async function executeRetrieval(input: RetrievalInput): Promise<RetrievalOutput> {
@@ -103,27 +128,24 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     });
   }
 
-  // Step 4: Expansion
-  if (expansion && vectorResults.length > 0) {
-    const topResults = vectorResults.slice(0, expansionLimit);
-    for (const topResult of topResults) {
-      const source = sources.get(topResult.path);
-      if (!source || source.embedding.length === 0) continue;
-      const expansionNeighbors = searchEngine.findNeighbors({
-        queryVector: source.embedding,
-        sources: sources.values(),
-        threshold,
-        limit,
-      });
-      vectorResults = deduplicateResults([...vectorResults, ...expansionNeighbors]);
-    }
+  // Step 4: Cap seeds to `limit`
+  const cappedSeeds = vectorResults.slice(0, limit);
+
+  // Step 5: Post-cap expansion (deep only)
+  let expansionResults: SearchResult[] = [];
+  if (expansion && expansionLimit > 0 && cappedSeeds.length > 0) {
+    expansionResults = computeExpansion({
+      seeds: cappedSeeds,
+      sources,
+      searchEngine,
+      threshold,
+      perSeedLimit: limit,
+      totalLimit: expansionLimit,
+    });
   }
 
-  // Step 5: Apply final limit
-  vectorResults = vectorResults.slice(0, limit);
-
   return {
-    results: vectorResults,
+    results: [...cappedSeeds, ...expansionResults],
     ...(blockResults !== undefined ? { blockResults } : {}),
   };
 }
@@ -204,45 +226,87 @@ export async function executeMultiRetrieval(
 ): Promise<MultiRetrievalOutput> {
   const { queries, mode, sources, embeddingProvider, searchEngine } = input;
 
+  const modeConfig = MODE_DEFAULTS[mode];
+  const threshold = input.threshold ?? modeConfig.threshold;
+  const expansion = input.expansion ?? modeConfig.expansion;
+  const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
+  const limit = input.limit ?? modeConfig.limit;
+
+  // Step 1: per-query embed + retrieval (no expansion here)
   const perQueryOutputs = await Promise.all(
     queries.map(async (query) => {
-      const output = await executeRetrieval({
-        query,
-        mode,
-        threshold: input.threshold,
-        expansion: input.expansion,
-        expansionLimit: input.expansionLimit,
-        sources,
-        embeddingProvider,
-        searchEngine,
+      const queryVector = await embeddingProvider.embed(query);
+      let neighbors = searchEngine.findNeighbors({
+        queryVector,
+        sources: sources.values(),
+        threshold,
+        limit,
       });
-      return { query, output };
+      if (neighbors.length === 0 && threshold > FALLBACK_THRESHOLD) {
+        neighbors = searchEngine.findNeighbors({
+          queryVector,
+          sources: sources.values(),
+          threshold: FALLBACK_THRESHOLD,
+          limit,
+        });
+      }
+      let blocks: BlockSearchResult[] = [];
+      if (mode === 'deep') {
+        blocks = searchEngine.findBlockNeighbors({
+          queryVector,
+          sources: sources.values(),
+          threshold,
+          limit,
+        });
+      } else if (neighbors.length > 0) {
+        const matched = new Set(neighbors.map((r) => r.path));
+        const matchedSources = [...sources.values()].filter((s) => matched.has(s.path));
+        blocks = searchEngine.findBlockNeighbors({
+          queryVector,
+          sources: matchedSources,
+          threshold: 0,
+          limit: QUICK_BLOCK_LIMIT,
+        });
+      }
+      return { query, neighbors, blocks };
     }),
   );
 
+  // Step 2: merge
   const mergedNotes = mergeNoteResults(
-    perQueryOutputs.map(({ query, output }) => ({ query, results: output.results })),
+    perQueryOutputs.map(({ query, neighbors }) => ({ query, results: neighbors })),
   );
-
-  const anyBlocks = perQueryOutputs.some(({ output }) => output.blockResults !== undefined);
+  const anyBlocks = perQueryOutputs.some(({ blocks }) => blocks.length > 0);
   const mergedBlocks = anyBlocks
-    ? mergeBlockResults(
-        perQueryOutputs.map(({ query, output }) => ({
-          query,
-          blocks: output.blockResults ?? [],
-        })),
-      )
+    ? mergeBlockResults(perQueryOutputs.map(({ query, blocks }) => ({ query, blocks })))
     : undefined;
 
-  const perQueryLimit = input.limit ?? MODE_DEFAULTS[mode].limit;
-  const cap = Math.min(perQueryLimit * queries.length, HARD_MERGE_CAP);
+  // Step 3: cap to `limit` (final, independent of N)
+  const truncated = mergedNotes.length > limit || (mergedBlocks?.length ?? 0) > limit;
+  const cappedNotes = mergedNotes.slice(0, limit);
+  const cappedBlocks = mergedBlocks ? mergedBlocks.slice(0, limit) : undefined;
 
-  const truncated = mergedNotes.length > cap || (mergedBlocks?.length ?? 0) > cap;
-  const cappedNotes = mergedNotes.slice(0, cap);
-  const cappedBlocks = mergedBlocks ? mergedBlocks.slice(0, cap) : undefined;
+  // Step 4: post-cap expansion (deep only)
+  let expansionResults: MultiSearchResult[] = [];
+  if (expansion && expansionLimit > 0 && cappedNotes.length > 0) {
+    const seeds = cappedNotes.map((n) => ({ path: n.path, similarity: n.similarity }));
+    const raw = computeExpansion({
+      seeds,
+      sources,
+      searchEngine,
+      threshold,
+      perSeedLimit: limit,
+      totalLimit: expansionLimit,
+    });
+    expansionResults = raw.map((r) => ({
+      path: r.path,
+      similarity: r.similarity,
+      via_expansion: true as const,
+    }));
+  }
 
   return {
-    results: cappedNotes,
+    results: [...cappedNotes, ...expansionResults],
     ...(cappedBlocks !== undefined ? { blockResults: cappedBlocks } : {}),
     truncated,
   };
