@@ -145,13 +145,16 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
     try {
       await main(['node', 'cli.js', '--vault', vaultPath, '--no-semantic'], {
-        operations: { vaultProviderFactory: () => fakeProvider },
+        operations: {
+          vaultProviderFactory: () => fakeProvider,
+          vaultReaderFactory: () => ({ readNotes: vi.fn().mockResolvedValue([]) }),
+        },
         serverFactory: () => server,
         transportFactory: () => ({}) as never,
       });
 
       expect(server.registeredToolNames).toEqual([
-        'read_note',
+        'read_notes',
         'create_note',
         'edit_note',
         'read_daily',
@@ -197,7 +200,10 @@ describe('Neuro Vault MCP server bootstrap', () => {
             embed: vi.fn(),
           }),
         },
-        operations: { vaultProviderFactory: () => fakeProvider },
+        operations: {
+          vaultProviderFactory: () => fakeProvider,
+          vaultReaderFactory: () => ({ readNotes: vi.fn().mockResolvedValue([]) }),
+        },
         serverFactory: () => server,
         transportFactory: () => ({}) as never,
       });
@@ -207,7 +213,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'get_similar_notes',
         'find_duplicates',
         'get_stats',
-        'read_note',
+        'read_notes',
         'create_note',
         'edit_note',
         'read_daily',

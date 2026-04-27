@@ -125,7 +125,10 @@ export async function startNeuroVaultServer(
 
   if (config.operations.enabled) {
     const operations = createOperationsModule(
-      { binaryPath: config.operations.binaryPath },
+      {
+        vaultPath: config.vaultPath,
+        binaryPath: config.operations.binaryPath,
+      },
       deps.operations,
     );
     registrations.push(...operations.tools);
