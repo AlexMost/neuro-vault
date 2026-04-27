@@ -10,13 +10,12 @@ import { buildReadNotesTool } from './tools/read-notes.js';
 import { buildQueryNotesTool } from './tools/query-notes.js';
 import { buildCreateNoteTool } from './tools/create-note.js';
 import { buildEditNoteTool } from './tools/edit-note.js';
+import { buildReadDailyTool } from './tools/read-daily.js';
 
 const noteIdentifierShape = {
   name: z.string().optional(),
   path: z.string().optional(),
 };
-
-const readDailySchema = z.object({});
 
 const appendDailySchema = z.object({
   content: z.string(),
@@ -51,16 +50,7 @@ export function buildOperationsTools(
     registerTool(buildQueryNotesTool(deps)),
     registerTool(buildCreateNoteTool(deps)),
     registerTool(buildEditNoteTool(deps)),
-    {
-      name: 'read_daily',
-      spec: {
-        title: 'Read Daily',
-        description:
-          "Read today's daily note. Returns `{ path, frontmatter, content }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed) and `content` is the body without the YAML block. Useful for 'what's on my agenda?' questions.",
-        inputSchema: readDailySchema,
-      },
-      handler: async () => invokeTool(() => handlers.readDaily({})),
-    },
+    registerTool(buildReadDailyTool(deps)),
     {
       name: 'append_daily',
       spec: {
