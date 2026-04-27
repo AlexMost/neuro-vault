@@ -31,7 +31,7 @@ This server provides two capability sets for an Obsidian vault: semantic search 
 ### Notes (body)
 
 Use \`read_notes\`, \`create_note\`, \`edit_note\`, \`read_daily\`, \`append_daily\` when the user asks to:
-- Read one or more notes by path (\`read_notes\` — accepts an array of 1-50 vault-relative POSIX paths; prefer this over multiple sequential reads)
+- Read one or more notes by path (\`read_notes\` — accepts an array of 1–50 vault-relative POSIX paths; prefer this over multiple sequential reads)
 - Create a new note, task, or idea (\`create_note\`)
 - Add content to an existing note (\`edit_note\`)
 - Read or update today's daily note (\`read_daily\` / \`append_daily\`)
@@ -78,7 +78,7 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 
 ## Routing between operations and semantic
 
-If the user gives an exact anchor (note title, path, daily note, tag, frontmatter field), prefer operations tools. If the user is recalling fuzzily or asking a conceptual question, prefer \`search_notes\`. After semantic search finds a relevant note, you can read it with \`read_notes\` (passing the path in a one-element array, or batching with sibling paths) to see the details.
+If the user gives an exact anchor (note path, daily note, tag, frontmatter field), prefer operations tools. If the user is recalling fuzzily or asking a conceptual question, prefer \`search_notes\`. After semantic search finds a relevant note, you can read it with \`read_notes\` (passing the path in a one-element array, or batching with sibling paths) to see the details.
 
 For tag-driven questions ("which notes are tagged X?", "show me everything in #ai") use \`get_tag\`, not \`search_notes\` — the answer is exact, not fuzzy.
 `;
