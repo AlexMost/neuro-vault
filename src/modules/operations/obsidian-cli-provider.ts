@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { ToolHandlerError } from '../../lib/tool-response.js';
+import { splitFrontmatter } from './frontmatter.js';
 import type {
   AppendDailyInput,
   CreateNoteInput,
@@ -37,7 +38,6 @@ export interface ObsidianCLIProviderOptions {
 
 const DEFAULT_BINARY = 'obsidian';
 const DEFAULT_TIMEOUT_MS = 10_000;
-const SEPARATOR = '\n---\n';
 
 const execFileAsync = promisify(execFile);
 
@@ -73,8 +73,10 @@ export class ObsidianCLIProvider implements VaultProvider {
   }
 
   async readNote(input: ReadNoteInput): Promise<ReadNoteResult> {
+    const path = await this.resolvePath(input.identifier);
     const { stdout } = await this.runCommand('read', [identifierToArg(input.identifier)]);
-    return this.parseReadOutput(stdout);
+    const { frontmatter, content } = splitFrontmatter(stdout);
+    return { path, frontmatter, content };
   }
 
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
@@ -102,8 +104,11 @@ export class ObsidianCLIProvider implements VaultProvider {
   }
 
   async readDaily(): Promise<DailyNoteResult> {
+    const { stdout: pathStdout } = await this.runCommand('daily:path', []);
+    const path = pathStdout.trim();
     const { stdout } = await this.runCommand('daily:read', []);
-    return this.parseReadOutput(stdout);
+    const { frontmatter, content } = splitFrontmatter(stdout);
+    return { path, frontmatter, content };
   }
 
   async appendDaily(input: AppendDailyInput): Promise<void> {
@@ -328,14 +333,20 @@ export class ObsidianCLIProvider implements VaultProvider {
     return args;
   }
 
-  private parseReadOutput(stdout: string): ReadNoteResult {
-    const sepIndex = stdout.indexOf(SEPARATOR);
-    if (sepIndex === -1) {
-      return { path: '', content: stdout };
+  private async resolvePath(identifier: NoteIdentifier): Promise<string> {
+    if (identifier.kind === 'path') return identifier.value;
+    const { stdout } = await this.runCommand('file', [identifierToArg(identifier)]);
+    for (const line of stdout.split(/\r?\n/)) {
+      const idx = line.indexOf('\t');
+      if (idx === -1) continue;
+      if (line.slice(0, idx).trim() === 'path') {
+        return line.slice(idx + 1).trim();
+      }
     }
-    return {
-      path: stdout.slice(0, sepIndex),
-      content: stdout.slice(sepIndex + SEPARATOR.length),
-    };
+    throw new ToolHandlerError(
+      'CLI_ERROR',
+      `Could not resolve path for name '${identifier.value}': 'path' not found in obsidian file output`,
+      { details: { name: identifier.value, stdout: stdout.slice(0, 500) } },
+    );
   }
 }

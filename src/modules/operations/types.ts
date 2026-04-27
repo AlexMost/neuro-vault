@@ -67,10 +67,18 @@ export interface GetTagToolInput {
 }
 
 export interface OperationsToolHandlers {
-  readNote(input: ReadNoteToolInput): Promise<{ path: string; content: string }>;
+  readNote(input: ReadNoteToolInput): Promise<{
+    path: string;
+    frontmatter: Record<string, unknown> | null;
+    content: string;
+  }>;
   createNote(input: CreateNoteToolInput): Promise<{ path: string }>;
   editNote(input: EditNoteToolInput): Promise<void>;
-  readDaily(input: ReadDailyToolInput): Promise<{ path: string; content: string }>;
+  readDaily(input: ReadDailyToolInput): Promise<{
+    path: string;
+    frontmatter: Record<string, unknown> | null;
+    content: string;
+  }>;
   appendDaily(input: AppendDailyToolInput): Promise<void>;
   setProperty(input: SetPropertyToolInput): Promise<{ ok: true }>;
   readProperty(

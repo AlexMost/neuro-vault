@@ -4,46 +4,97 @@ import { ObsidianCLIProvider } from '../../src/modules/operations/obsidian-cli-p
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 
 describe('ObsidianCLIProvider.readNote', () => {
-  it('parses path and content from "<path>\\n---\\n<body>" stdout', async () => {
-    const exec = vi.fn().mockResolvedValue({
-      stdout: 'Folder/note.md\n---\n# Hello\nbody\n',
-      stderr: '',
-    });
-
+  it('returns parsed frontmatter, body without YAML, and the input path', async () => {
+    const stdout =
+      '---\ntype: project\nstatus: active\ntags:\n  - ai\n  - mcp\n---\n\n## Body\nhello\n';
+    const exec = vi.fn().mockResolvedValue({ stdout, stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
 
     const result = await provider.readNote({
-      identifier: { kind: 'name', value: 'My Note' },
+      identifier: { kind: 'path', value: 'Projects/x.md' },
     });
 
-    expect(exec).toHaveBeenCalledWith('obsidian', ['read', 'file=My Note'], { timeout: 10_000 });
-    expect(result).toEqual({ path: 'Folder/note.md', content: '# Hello\nbody\n' });
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(exec).toHaveBeenCalledWith('obsidian', ['read', 'path=Projects/x.md'], {
+      timeout: 10_000,
+    });
+    expect(result).toEqual({
+      path: 'Projects/x.md',
+      frontmatter: { type: 'project', status: 'active', tags: ['ai', 'mcp'] },
+      content: '\n## Body\nhello\n',
+    });
   });
 
-  it('falls back to whole stdout as content when separator is missing', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: 'just a body without sep', stderr: '' });
+  it('returns frontmatter null when the note has no frontmatter', async () => {
+    const exec = vi
+      .fn()
+      .mockResolvedValue({ stdout: 'just a body without yaml\n', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
 
     const result = await provider.readNote({
       identifier: { kind: 'path', value: 'Folder/note.md' },
     });
 
-    expect(result).toEqual({ path: '', content: 'just a body without sep' });
+    expect(result).toEqual({
+      path: 'Folder/note.md',
+      frontmatter: null,
+      content: 'just a body without yaml\n',
+    });
   });
 
-  it('builds path= token when identifier is a path', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: 'Folder/note.md\n---\n', stderr: '' });
+  it('returns frontmatter null and raw content when YAML is malformed', async () => {
+    const stdout = '---\ntype: project\n  bad: : indent\n---\n\n## Body\n';
+    const exec = vi.fn().mockResolvedValue({ stdout, stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
 
-    await provider.readNote({ identifier: { kind: 'path', value: 'Folder/note.md' } });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const result = await provider.readNote({
+        identifier: { kind: 'path', value: 'Folder/note.md' },
+      });
 
-    expect(exec).toHaveBeenCalledWith('obsidian', ['read', 'path=Folder/note.md'], {
+      expect(result).toEqual({
+        path: 'Folder/note.md',
+        frontmatter: null,
+        content: stdout,
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('resolves path via "obsidian file" when identifier is a name', async () => {
+    const exec = vi
+      .fn()
+      .mockResolvedValueOnce({
+        stdout: 'path\tFolder/note.md\nname\tnote\nextension\tmd\n',
+        stderr: '',
+      })
+      .mockResolvedValueOnce({
+        stdout: '---\ntitle: Note\n---\n# Hello\n',
+        stderr: '',
+      });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.readNote({
+      identifier: { kind: 'name', value: 'note' },
+    });
+
+    expect(exec).toHaveBeenNthCalledWith(1, 'obsidian', ['file', 'file=note'], {
       timeout: 10_000,
+    });
+    expect(exec).toHaveBeenNthCalledWith(2, 'obsidian', ['read', 'file=note'], {
+      timeout: 10_000,
+    });
+    expect(result).toEqual({
+      path: 'Folder/note.md',
+      frontmatter: { title: 'Note' },
+      content: '# Hello\n',
     });
   });
 
   it('appends vault=<name> to args when vaultName is set', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: 'Folder/x.md\n---\n', stderr: '' });
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec, vaultName: 'Brain' });
 
     await provider.readNote({ identifier: { kind: 'path', value: 'Folder/x.md' } });
@@ -128,17 +179,41 @@ describe('ObsidianCLIProvider.editNote', () => {
 });
 
 describe('ObsidianCLIProvider daily', () => {
-  it('readDaily parses path and content from daily:read output', async () => {
-    const exec = vi.fn().mockResolvedValue({
-      stdout: 'Daily/2026-04-25.md\n---\n# Today\n',
-      stderr: '',
-    });
+  it('readDaily resolves path from daily:path and parses frontmatter from daily:read', async () => {
+    const exec = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: 'Daily/2026-04-25.md\n', stderr: '' })
+      .mockResolvedValueOnce({
+        stdout: '---\nmood: ok\n---\n# Today\n',
+        stderr: '',
+      });
     const provider = new ObsidianCLIProvider({ exec });
 
     const result = await provider.readDaily();
 
-    expect(exec).toHaveBeenCalledWith('obsidian', ['daily:read'], { timeout: 10_000 });
-    expect(result).toEqual({ path: 'Daily/2026-04-25.md', content: '# Today\n' });
+    expect(exec).toHaveBeenNthCalledWith(1, 'obsidian', ['daily:path'], { timeout: 10_000 });
+    expect(exec).toHaveBeenNthCalledWith(2, 'obsidian', ['daily:read'], { timeout: 10_000 });
+    expect(result).toEqual({
+      path: 'Daily/2026-04-25.md',
+      frontmatter: { mood: 'ok' },
+      content: '# Today\n',
+    });
+  });
+
+  it('readDaily returns frontmatter null when daily note has no frontmatter', async () => {
+    const exec = vi
+      .fn()
+      .mockResolvedValueOnce({ stdout: 'Daily/2026-04-25.md\n', stderr: '' })
+      .mockResolvedValueOnce({ stdout: '# Today\nno yaml here\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    const result = await provider.readDaily();
+
+    expect(result).toEqual({
+      path: 'Daily/2026-04-25.md',
+      frontmatter: null,
+      content: '# Today\nno yaml here\n',
+    });
   });
 
   it('appendDaily passes content token', async () => {

@@ -5,10 +5,10 @@ import type { VaultProvider } from '../../src/modules/operations/vault-provider.
 
 function fakeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
   return {
-    readNote: vi.fn().mockResolvedValue({ path: '', content: '' }),
+    readNote: vi.fn().mockResolvedValue({ path: '', frontmatter: null, content: '' }),
     createNote: vi.fn().mockResolvedValue({ path: '' }),
     editNote: vi.fn().mockResolvedValue(undefined),
-    readDaily: vi.fn().mockResolvedValue({ path: '', content: '' }),
+    readDaily: vi.fn().mockResolvedValue({ path: '', frontmatter: null, content: '' }),
     appendDaily: vi.fn().mockResolvedValue(undefined),
     setProperty: vi.fn().mockResolvedValue(undefined),
     readProperty: vi.fn().mockResolvedValue({ value: '' }),
@@ -23,7 +23,9 @@ function fakeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
 describe('operations.readNote handler', () => {
   it('forwards a name identifier to the provider', async () => {
     const provider = fakeProvider({
-      readNote: vi.fn().mockResolvedValue({ path: 'Folder/note.md', content: 'body' }),
+      readNote: vi
+        .fn()
+        .mockResolvedValue({ path: 'Folder/note.md', frontmatter: { a: 1 }, content: 'body' }),
     });
     const handlers = createOperationsHandlers({ provider });
 
@@ -32,12 +34,14 @@ describe('operations.readNote handler', () => {
     expect(provider.readNote).toHaveBeenCalledWith({
       identifier: { kind: 'name', value: 'My Note' },
     });
-    expect(result).toEqual({ path: 'Folder/note.md', content: 'body' });
+    expect(result).toEqual({ path: 'Folder/note.md', frontmatter: { a: 1 }, content: 'body' });
   });
 
   it('forwards a path identifier to the provider', async () => {
     const provider = fakeProvider({
-      readNote: vi.fn().mockResolvedValue({ path: 'Folder/note.md', content: 'body' }),
+      readNote: vi
+        .fn()
+        .mockResolvedValue({ path: 'Folder/note.md', frontmatter: null, content: 'body' }),
     });
     const handlers = createOperationsHandlers({ provider });
 
@@ -184,14 +188,20 @@ describe('operations.editNote handler', () => {
 describe('operations.readDaily handler', () => {
   it('forwards to provider.readDaily and returns the result', async () => {
     const provider = fakeProvider({
-      readDaily: vi.fn().mockResolvedValue({ path: 'Daily/2026-04-25.md', content: 'today' }),
+      readDaily: vi
+        .fn()
+        .mockResolvedValue({ path: 'Daily/2026-04-25.md', frontmatter: null, content: 'today' }),
     });
     const handlers = createOperationsHandlers({ provider });
 
     const result = await handlers.readDaily({});
 
     expect(provider.readDaily).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ path: 'Daily/2026-04-25.md', content: 'today' });
+    expect(result).toEqual({
+      path: 'Daily/2026-04-25.md',
+      frontmatter: null,
+      content: 'today',
+    });
   });
 });
 
