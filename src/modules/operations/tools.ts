@@ -15,8 +15,8 @@ import { buildAppendDailyTool } from './tools/append-daily.js';
 import { buildSetPropertyTool } from './tools/set-property.js';
 import { buildReadPropertyTool } from './tools/read-property.js';
 import { buildRemovePropertyTool } from './tools/remove-property.js';
+import { buildListPropertiesTool } from './tools/list-properties.js';
 
-const listPropertiesSchema = z.object({});
 const listTagsSchema = z.object({});
 
 export function buildOperationsTools(
@@ -33,16 +33,7 @@ export function buildOperationsTools(
     registerTool(buildSetPropertyTool(deps)),
     registerTool(buildReadPropertyTool(deps)),
     registerTool(buildRemovePropertyTool(deps)),
-    {
-      name: 'list_properties',
-      spec: {
-        title: 'List Properties',
-        description:
-          "List all frontmatter properties used across the vault, sorted by occurrence count desc. Returns `[{name, count}]`. Useful for understanding the vault's metadata ontology.",
-        inputSchema: listPropertiesSchema,
-      },
-      handler: async () => invokeTool(() => handlers.listProperties({})),
-    },
+    registerTool(buildListPropertiesTool(deps)),
     {
       name: 'list_tags',
       spec: {
