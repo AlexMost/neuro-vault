@@ -157,6 +157,7 @@ function mergeNoteResults(
       if (result.similarity > existing.similarity) {
         existing.similarity = result.similarity;
       }
+      existing.matched_queries ??= [];
       if (!existing.matched_queries.includes(query)) {
         existing.matched_queries.push(query);
       }
