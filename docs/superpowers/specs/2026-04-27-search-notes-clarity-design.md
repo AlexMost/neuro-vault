@@ -53,8 +53,8 @@ The simplification is purely surface-level: `searchNotesSchema` shrinks, but `ex
 ```ts
 const searchNotesSchema = z.object({
   query: z.union([z.string(), z.array(z.string()).min(1).max(8)]),
-  mode: z.enum(['quick', 'deep']).optional(),     // default: quick
-  limit: z.number().int().positive().optional(),  // default: mode's limit (3 / 8)
+  mode: z.enum(['quick', 'deep']).optional(), // default: quick
+  limit: z.number().int().positive().optional(), // default: mode's limit (3 / 8)
   threshold: z.number().min(0).max(1).optional(), // default: mode's threshold (0.5 / 0.35)
 });
 ```
@@ -112,6 +112,7 @@ Wording may shift during implementation; the structure (Modes / Parameters / Exa
 ### README (slim landing)
 
 Sections to keep:
+
 - Title, badges, tagline.
 - ✨ Why Neuro Vault (features bullet list).
 - 🏗 How it works (mermaid diagram + one-paragraph blurb).
@@ -120,6 +121,7 @@ Sections to keep:
 - 📄 License.
 
 Sections to remove (move to guide):
+
 - Per-tool API reference (all `search_notes`, `get_similar_notes`, `find_duplicates`, `get_stats`, `read_note`, `create_note`, `edit_note`, `read_daily`, `append_daily`, `set_property`, `read_property`, `remove_property`, `list_properties`, `list_tags`, `get_tag` blocks).
 - Mode behavior table.
 - Tips for better results.

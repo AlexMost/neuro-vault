@@ -58,13 +58,13 @@ Trivial work (typo fix, dependency bump, doc tweak) does not need a spec.
 
 One concept = one parameter name across every tool the server exposes. New tools must follow this dictionary for any concept listed here; renames cost a major version.
 
-| Concept | Param | Used by |
-|---|---|---|
-| Vault-relative POSIX path | `path` | `read_note`, `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`, `get_similar_notes` |
-| Wikilink-style note identifier | `name` | `read_note`, `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property` |
-| Frontmatter property key | `key` | `set_property`, `read_property`, `remove_property` |
-| Tag name | `tag` | `get_tag` |
-| Semantic search query | `query` | `search_notes` |
+| Concept                        | Param   | Used by                                                                                                          |
+| ------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------- |
+| Vault-relative POSIX path      | `path`  | `read_note`, `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`, `get_similar_notes` |
+| Wikilink-style note identifier | `name`  | `read_note`, `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`                      |
+| Frontmatter property key       | `key`   | `set_property`, `read_property`, `remove_property`                                                               |
+| Tag name                       | `tag`   | `get_tag`                                                                                                        |
+| Semantic search query          | `query` | `search_notes`                                                                                                   |
 
 Tools that take both `name` and `path` for the same concept (note identifier) require exactly one — both or neither produces `INVALID_ARGUMENT`.
 

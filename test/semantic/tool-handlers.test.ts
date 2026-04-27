@@ -269,9 +269,7 @@ describe('createToolHandlers', () => {
         modelKey: 'bge-micro-v2',
       });
 
-      await expect(
-        handlers.getSimilarNotes({ path: 'Folder/missing.md' }),
-      ).rejects.toMatchObject({
+      await expect(handlers.getSimilarNotes({ path: 'Folder/missing.md' })).rejects.toMatchObject({
         code: 'NOT_FOUND',
       });
     } finally {
@@ -365,11 +363,11 @@ describe('createToolHandlers', () => {
         modelKey: 'bge-micro-v2',
       });
 
-      await expect(
-        handlers.getSimilarNotes({ path: '../Folder/note-a.md' }),
-      ).rejects.toMatchObject({
-        code: 'INVALID_ARGUMENT',
-      });
+      await expect(handlers.getSimilarNotes({ path: '../Folder/note-a.md' })).rejects.toMatchObject(
+        {
+          code: 'INVALID_ARGUMENT',
+        },
+      );
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }

@@ -1,6 +1,6 @@
 # Routing Between Tools
 
-Tool routing and retrieval policy are related, but not the same thing. Routing is about *which tool to call*; retrieval policy is about *what happens once `search_notes` is called*.
+Tool routing and retrieval policy are related, but not the same thing. Routing is about _which tool to call_; retrieval policy is about _what happens once `search_notes` is called_.
 
 ## Rules of thumb
 
@@ -12,16 +12,16 @@ Tool routing and retrieval policy are related, but not the same thing. Routing i
 
 ## Examples
 
-| User asks | Tool to use |
-|---|---|
-| "Read the note 'Q1 OKRs'" | `read_note({ name: "Q1 OKRs" })` |
-| "What's the status of Quarterly review?" | `read_property({ name: "Quarterly review", key: "status" })` |
-| "Show me all notes tagged #mcp" | `get_tag({ tag: "mcp" })` |
-| "What did I write about building AI agents?" | `search_notes({ query: "building AI agents" })` |
-| "Tell me everything I know about embeddings" | `search_notes({ query: "embeddings", mode: "deep" })` |
-| "Show me notes related to neuro-vault.md" | `get_similar_notes({ path: "Projects/neuro-vault.md" })` |
-| "Read today's daily note" | `read_daily()` |
-| "Append a TODO to today" | `append_daily({ content: "- [ ] new todo" })` |
+| User asks                                    | Tool to use                                                  |
+| -------------------------------------------- | ------------------------------------------------------------ |
+| "Read the note 'Q1 OKRs'"                    | `read_note({ name: "Q1 OKRs" })`                             |
+| "What's the status of Quarterly review?"     | `read_property({ name: "Quarterly review", key: "status" })` |
+| "Show me all notes tagged #mcp"              | `get_tag({ tag: "mcp" })`                                    |
+| "What did I write about building AI agents?" | `search_notes({ query: "building AI agents" })`              |
+| "Tell me everything I know about embeddings" | `search_notes({ query: "embeddings", mode: "deep" })`        |
+| "Show me notes related to neuro-vault.md"    | `get_similar_notes({ path: "Projects/neuro-vault.md" })`     |
+| "Read today's daily note"                    | `read_daily()`                                               |
+| "Append a TODO to today"                     | `append_daily({ content: "- [ ] new todo" })`                |
 
 ## Tag-driven questions are exact, not fuzzy
 

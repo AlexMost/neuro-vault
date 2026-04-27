@@ -17,9 +17,9 @@ search_notes({
 
 ### Modes
 
-| Mode    | Use when                          | `limit` default | `threshold` default | Block search                            | Expansion       |
-| ------- | --------------------------------- | --------------- | ------------------- | --------------------------------------- | --------------- |
-| `quick` | Specific question, need 1–2 notes | 3               | 0.50                | scoped to matched notes, threshold = 0, cap = 5 | off             |
+| Mode    | Use when                          | `limit` default | `threshold` default | Block search                                       | Expansion |
+| ------- | --------------------------------- | --------------- | ------------------- | -------------------------------------------------- | --------- |
+| `quick` | Specific question, need 1–2 notes | 3               | 0.50                | scoped to matched notes, threshold = 0, cap = 5    | off       |
 | `deep`  | Broad topic, need an overview     | 8               | 0.35                | across whole vault, threshold = mode, limit = mode | on, top-3 |
 
 `limit` widens or narrows the `results` array but does not affect `blockResults` (which is always capped by mode-specific logic). `expansion` is no longer a tool parameter — it is fixed by mode.
@@ -30,7 +30,7 @@ search_notes({
 {
   "results": [
     { "path": "Projects/neuro-vault.md", "similarity": 0.81 },
-    { "path": "Notes/embeddings.md",     "similarity": 0.74 }
+    { "path": "Notes/embeddings.md", "similarity": 0.74 }
   ],
   "blockResults": [
     {

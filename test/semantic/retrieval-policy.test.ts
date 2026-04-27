@@ -436,9 +436,7 @@ describe('executeRetrieval', () => {
       });
 
       expect(output.results).toHaveLength(7);
-      expect(findNeighbors).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 7 }),
-      );
+      expect(findNeighbors).toHaveBeenCalledWith(expect.objectContaining({ limit: 7 }));
     });
 
     it('overrides the mode default in deep mode', async () => {
@@ -459,9 +457,7 @@ describe('executeRetrieval', () => {
       });
 
       expect(output.results).toHaveLength(4);
-      expect(findNeighbors).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 4 }),
-      );
+      expect(findNeighbors).toHaveBeenCalledWith(expect.objectContaining({ limit: 4 }));
     });
 
     it('falls back to mode default when limit is omitted', async () => {
@@ -477,9 +473,7 @@ describe('executeRetrieval', () => {
         searchEngine,
       });
 
-      expect(findNeighbors).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 3 }),
-      );
+      expect(findNeighbors).toHaveBeenCalledWith(expect.objectContaining({ limit: 3 }));
     });
   });
 });

@@ -474,18 +474,18 @@ describe('operations.removeProperty handler', () => {
   it('rejects path traversal', async () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
-    await expect(
-      handlers.removeProperty({ path: '../escape.md', key: 'x' }),
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    await expect(handlers.removeProperty({ path: '../escape.md', key: 'x' })).rejects.toMatchObject(
+      { code: 'INVALID_ARGUMENT' },
+    );
     expect(provider.removeProperty).not.toHaveBeenCalled();
   });
 
   it('rejects absolute path', async () => {
     const provider = fakeProvider();
     const handlers = createOperationsHandlers({ provider });
-    await expect(handlers.removeProperty({ path: '/etc/passwd', key: 'x' })).rejects.toMatchObject(
-      { code: 'INVALID_ARGUMENT' },
-    );
+    await expect(handlers.removeProperty({ path: '/etc/passwd', key: 'x' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
     expect(provider.removeProperty).not.toHaveBeenCalled();
   });
 });
