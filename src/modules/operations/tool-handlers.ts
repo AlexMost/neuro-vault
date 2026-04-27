@@ -4,7 +4,6 @@ import type {
   AppendDailyToolInput,
   CreateNoteToolInput,
   EditNoteToolInput,
-  GetTagToolInput,
   ListPropertiesToolInput,
   ListTagsToolInput,
   OperationsErrorCode,
@@ -326,14 +325,6 @@ export function createOperationsHandlers(
     },
     async listTags(_input: ListTagsToolInput) {
       return provider.listTags();
-    },
-    async getTag(input: GetTagToolInput) {
-      const stripped = (input.tag ?? '').trim().replace(/^#/, '').trim();
-      if (stripped === '') {
-        throw invalidArgument('tag must not be empty', 'tag');
-      }
-      const includeFiles = input.include_files !== false;
-      return provider.getTag({ name: stripped, includeFiles });
     },
   };
 }

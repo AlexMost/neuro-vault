@@ -61,7 +61,7 @@ The reader is a thin fs adapter — it reads bytes and parses frontmatter, and
 that's all it knows about. Tag normalisation, filter evaluation, projection,
 and sorting are query-specific concerns. Putting them here keeps the reader
 honest (it can be reused by tools that don't care about queries) and gives the
-later Batch 2 migration (read-only `read_property` / `get_tag` / `list_tags` /
+later Batch 2 migration (read-only `read_property` / `list_tags` /
 `list_properties` moving onto the same scan + record pipeline) a natural home.
 
 ## Why MongoDB-query syntax (sift) and not a custom AST

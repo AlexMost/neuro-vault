@@ -20,13 +20,12 @@ interface VaultProvider {
   listProperties(): Promise<PropertyListEntry[]>;
   // Tags
   listTags(): Promise<TagListEntry[]>;
-  getTag(input): Promise<GetTagResult>;
 }
 ```
 
 Note-body **batch reads** have moved out of `VaultProvider` to a separate `VaultReader` abstraction (`FsVaultReader`) that reads files directly from disk without going through the Obsidian CLI. See [`./vault-reader.md`](./vault-reader.md) for details.
 
-The default implementation, `ObsidianCLIProvider`, shells out to the `obsidian` CLI via `child_process.execFile`. The mapping from interface methods to CLI subcommands is straightforward: notes use `read` / `create` / `edit` / `daily` / `append`; properties use `property:set` / `property:read` / `property:remove` / `properties`; tags use `tags` / `tag`. `getTag` parses the CLI's `#<tag><whitespace><count>` first-line header with a regex that extracts the trailing integer, so tag names containing digits round-trip cleanly.
+The default implementation, `ObsidianCLIProvider`, shells out to the `obsidian` CLI via `child_process.execFile`. The mapping from interface methods to CLI subcommands is straightforward: notes use `read` / `create` / `edit` / `daily` / `append`; properties use `property:set` / `property:read` / `property:remove` / `properties`; tags use `tags`. Listing notes that carry a specific tag is no longer a provider concern — clients use `query_notes` with a `tags` filter, which reads from disk directly via `VaultReader`.
 
 ## Why it exists
 

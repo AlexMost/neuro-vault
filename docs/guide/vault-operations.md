@@ -73,7 +73,7 @@ edit_note({
 
 ### `query_notes`
 
-Run a multi-criteria query against the vault using a MongoDB-style filter — replaces N+1 patterns like `get_tag` → `read_property × N` → in-head filtering with one call.
+Run a multi-criteria query against the vault using a MongoDB-style filter — replaces N+1 patterns like "list tags → read each note's property → filter in head" with one call. Also serves as the canonical way to list notes carrying a specific tag (`{ filter: { tags: '<name>' } }`).
 
 ```typescript
 query_notes({
@@ -202,15 +202,4 @@ List all tags used across the vault, sorted by occurrence count desc.
 
 Returns `[{ name, count }, ...]`.
 
-### `get_tag`
-
-Get count and (optionally) the file list for a single tag. Pass `include_files: false` for popular tags where the file list would be large.
-
-```typescript
-get_tag({
-  tag: string,             // with or without leading "#"
-  include_files?: boolean, // default true
-})
-```
-
-Returns `{ name, count, files? }` — `name` is the stripped tag string (the same value you passed as `tag` input, minus any leading `#`).
+To list the notes that carry a specific tag, use [`query_notes`](#query_notes) with `{ filter: { tags: '<name>' } }`.

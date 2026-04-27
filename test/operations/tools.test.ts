@@ -14,11 +14,10 @@ const noopHandlers = {
   removeProperty: vi.fn(),
   listProperties: vi.fn(),
   listTags: vi.fn(),
-  getTag: vi.fn(),
 };
 
 describe('buildOperationsTools', () => {
-  it('returns 12 registrations with the expected names', () => {
+  it('returns 11 registrations with the expected names', () => {
     const tools = buildOperationsTools(noopHandlers);
     expect(tools.map((t) => t.name)).toEqual([
       'read_notes',
@@ -32,7 +31,6 @@ describe('buildOperationsTools', () => {
       'remove_property',
       'list_properties',
       'list_tags',
-      'get_tag',
     ]);
   });
 

@@ -65,7 +65,6 @@ One concept = one parameter name across every tool the server exposes. New tools
 | Vault-relative POSIX path subtree | `path_prefix` | `query_notes`                                                                                       |
 | Wikilink-style note identifier    | `name`        | `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`                      |
 | Frontmatter property key          | `key`         | `set_property`, `read_property`, `remove_property`                                                  |
-| Tag name                          | `tag`         | `get_tag`                                                                                           |
 | Semantic search query             | `query`       | `search_notes`                                                                                      |
 | Structured query filter (MongoDB) | `filter`      | `query_notes`                                                                                       |
 

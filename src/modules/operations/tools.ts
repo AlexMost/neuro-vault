@@ -67,11 +67,6 @@ const removePropertySchema = z.object({
 const listPropertiesSchema = z.object({});
 const listTagsSchema = z.object({});
 
-const getTagSchema = z.object({
-  tag: z.string(),
-  include_files: z.boolean().optional(),
-});
-
 export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegistration[] {
   return [
     {
@@ -187,16 +182,6 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
         inputSchema: listTagsSchema,
       },
       handler: async () => invokeTool(() => handlers.listTags({})),
-    },
-    {
-      name: 'get_tag',
-      spec: {
-        title: 'Get Tag',
-        description:
-          'Get info about one tag. Provide `tag` (with or without the leading `#` — both `ai` and `#ai` work). Returns `{ name, count }` where `name` is the stripped tag string, plus `files: string[]` by default. Pass `include_files: false` for popular tags where the file list would be large.',
-        inputSchema: getTagSchema,
-      },
-      handler: async (args) => invokeTool(() => handlers.getTag(getTagSchema.parse(args))),
     },
   ];
 }

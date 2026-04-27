@@ -40,7 +40,7 @@ Use \`read_notes\`, \`create_note\`, \`edit_note\`, \`read_daily\`, \`append_dai
 
 ### Structured queries
 
-Use \`query_notes\` for multi-criteria questions that combine tags, frontmatter properties, and ranges — for example "active projects with #ai", "todo tasks created this week", "notes with deadline set". The \`filter\` is a MongoDB-style object evaluated against \`{ path, frontmatter, tags }\` — reference frontmatter keys as \`frontmatter.<key>\` and tags via the top-level \`tags\` field (no leading \`#\`). Supported operators: \`$eq\`, \`$ne\`, \`$in\`, \`$nin\`, \`$gt\`, \`$gte\`, \`$lt\`, \`$lte\`, \`$exists\`, \`$regex\`, \`$and\`, \`$or\`, \`$nor\`, \`$not\`. Prefer \`query_notes\` over \`get_tag\` + \`read_property × N\` whenever the question has more than one criterion. The result \`{ results, count, truncated }\` includes \`frontmatter\` always; pass \`include_content: true\` only when bodies are needed up-front (it can grow the response a lot). Reads directly from disk; does not need Obsidian running. \`limit\` defaults to 100 and is capped at 1000.
+Use \`query_notes\` for multi-criteria questions that combine tags, frontmatter properties, and ranges — for example "active projects with #ai", "todo tasks created this week", "notes with deadline set", "all notes tagged X". The \`filter\` is a MongoDB-style object evaluated against \`{ path, frontmatter, tags }\` — reference frontmatter keys as \`frontmatter.<key>\` and tags via the top-level \`tags\` field (no leading \`#\`). Supported operators: \`$eq\`, \`$ne\`, \`$in\`, \`$nin\`, \`$gt\`, \`$gte\`, \`$lt\`, \`$lte\`, \`$exists\`, \`$regex\`, \`$and\`, \`$or\`, \`$nor\`, \`$not\`. To list notes by a single tag use \`{ filter: { tags: 'X' } }\`. The result \`{ results, count, truncated }\` includes \`frontmatter\` always; pass \`include_content: true\` only when bodies are needed up-front (it can grow the response a lot). Reads directly from disk; does not need Obsidian running. \`limit\` defaults to 100 and is capped at 1000.
 
 ### Frontmatter properties
 
@@ -52,7 +52,7 @@ If you need frontmatter for one or more notes, call \`read_notes\` with \`fields
 
 ### Tags
 
-Use \`list_tags\` to see all tags ranked by frequency, and \`get_tag\` to find which files use a specific tag. Pass \`include_files: false\` to \`get_tag\` for very popular tags where the full file list would be large. The leading \`#\` on tag names is optional — both \`ai\` and \`#ai\` work.
+Use \`list_tags\` to see all tags ranked by frequency. To list the notes that carry a specific tag, call \`query_notes\` with \`{ filter: { tags: '<name>' } }\` (no leading \`#\`).
 
 ### CLI availability
 
@@ -84,7 +84,7 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 
 If the user gives an exact anchor (note path, daily note, tag, frontmatter field), prefer operations tools. If the user is recalling fuzzily or asking a conceptual question, prefer \`search_notes\`. After semantic search finds a relevant note, you can read it with \`read_notes\` (passing the path in a one-element array, or batching with sibling paths) to see the details.
 
-For tag-driven questions ("which notes are tagged X?", "show me everything in #ai") use \`get_tag\`, not \`search_notes\` — the answer is exact, not fuzzy.
+For tag-driven questions ("which notes are tagged X?", "show me everything in #ai") use \`query_notes\` with \`{ filter: { tags: '<name>' } }\`, not \`search_notes\` — the answer is exact, not fuzzy.
 `;
 
 function defaultServerFactory(): ToolServer {

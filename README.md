@@ -15,7 +15,7 @@
 - 🧠 **Semantic search over your existing vault** — reuses [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) embeddings already in your vault. No re-indexing, no API keys, no extra infrastructure.
 - 🎯 **Mode-aware retrieval** — `quick` for direct lookups, `deep` for exploratory questions with block-level results and semantic expansion of related notes.
 - ✍️ **Direct vault operations** — read, create, append, and prepend notes; manage frontmatter properties and inspect tags (including daily notes) straight from your AI assistant via the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli).
-- 🔎 **Structured queries** — one MongoDB-style call (`query_notes`) replaces N+1 chains like `get_tag` → `read_property × N`. Ask "active projects with #ai" or "todo tasks created this week" and get a single ranked response.
+- 🔎 **Structured queries** — one MongoDB-style call (`query_notes`) replaces N+1 chains like "list tags → read each note's property". Ask "active projects with #ai" or "todo tasks created this week" and get a single ranked response.
 - ⚡ **Zero infrastructure** — local stdio MCP server, in-memory index, no database, no background processes, no watchers.
 - 🔌 **Drop-in for any MCP client** — Claude Code, Cursor, Windsurf — configuration is a single JSON block.
 
