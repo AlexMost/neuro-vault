@@ -1,7 +1,20 @@
+import type { QueryNotesResult, QueryNotesToolInput } from './query/types.js';
+
+export type {
+  NoteRecord,
+  QueryNotesResult,
+  QueryNotesResultItem,
+  QueryNotesSort,
+  QueryNotesToolInput,
+} from './query/types.js';
+
 export type OperationsErrorCode =
   | 'INVALID_ARGUMENT'
+  | 'INVALID_FILTER'
+  | 'INVALID_PARAMS'
   | 'NOT_FOUND'
   | 'NOTE_EXISTS'
+  | 'PATH_NOT_FOUND'
   | 'PROPERTY_NOT_FOUND'
   | 'TAG_NOT_FOUND'
   | 'UNSUPPORTED_VALUE_TYPE'
@@ -93,6 +106,7 @@ export interface GetTagToolInput {
 
 export interface OperationsToolHandlers {
   readNotes(input: ReadNotesToolInput): Promise<ReadNotesResult>;
+  queryNotes(input: QueryNotesToolInput): Promise<QueryNotesResult>;
   createNote(input: CreateNoteToolInput): Promise<{ path: string }>;
   editNote(input: EditNoteToolInput): Promise<void>;
   readDaily(input: ReadDailyToolInput): Promise<{

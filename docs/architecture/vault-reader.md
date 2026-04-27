@@ -10,6 +10,7 @@ system, decoupled from the Obsidian app.
 ```typescript
 interface VaultReader {
   readNotes(input: { paths: string[]; fields: ReadNotesField[] }): Promise<ReadNotesItem[]>;
+  scan(opts?: { pathPrefix?: string }): Promise<string[]>;
 }
 ```
 
@@ -17,6 +18,14 @@ The default implementation, `FsVaultReader`, reads files from the vault root via
 `node:fs/promises.readFile` and parses YAML frontmatter via the shared
 `splitFrontmatter`. The vault root comes from the existing `--vault` startup
 flag.
+
+`scan` enumerates `.md` paths under the vault (or under an optional vault-relative
+`pathPrefix`) using `fast-glob`. It returns vault-relative POSIX paths, sorted.
+A missing `pathPrefix` directory throws `ScanPathNotFoundError`; an existing
+prefix with no `.md` files returns an empty array (not an error). The handler
+layer catches `ScanPathNotFoundError` and translates it to a `PATH_NOT_FOUND`
+`ToolHandlerError`. Like `readNotes`, `scan` does not cache; a caching reader is
+deferred to a future `VaultIndex`-style implementation.
 
 ## Why it exists separately from `VaultProvider`
 
@@ -46,12 +55,17 @@ carry an `error: { code, message }` with one of:
 ## What it deliberately does not do
 
 - It does not normalize paths. The handler runs `normalizePath` before calling
-  the reader; invalid paths never reach `readFile`.
+  the reader; invalid paths never reach `readFile`. `scan` similarly assumes a
+  pre-validated `pathPrefix`; the handler rejects absolute paths and `..` up
+  front and translates `ScanPathNotFoundError` into the tool error envelope.
 - It does not cache. Caching is deferred to a future `VaultIndex`.
 - It does not bound concurrency. `Promise.all` over up to 50 reads is safe on
   any modern OS; the kernel handles the parallelism.
 - It does not project fields. The handler decides which of `frontmatter` /
   `content` to include in each successful item.
+- It does not normalise tags or interpret frontmatter. `query_notes` builds a
+  `NoteRecord` (path / frontmatter / tags) from the reader's raw output in its
+  own module — the reader stays a thin fs adapter.
 
 ## What changes for v2
 

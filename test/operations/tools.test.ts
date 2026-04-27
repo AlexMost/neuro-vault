@@ -4,6 +4,7 @@ import { buildOperationsTools } from '../../src/modules/operations/tools.js';
 
 const noopHandlers = {
   readNotes: vi.fn(),
+  queryNotes: vi.fn(),
   createNote: vi.fn(),
   editNote: vi.fn(),
   readDaily: vi.fn(),
@@ -17,10 +18,11 @@ const noopHandlers = {
 };
 
 describe('buildOperationsTools', () => {
-  it('returns 11 registrations with the expected names', () => {
+  it('returns 12 registrations with the expected names', () => {
     const tools = buildOperationsTools(noopHandlers);
     expect(tools.map((t) => t.name)).toEqual([
       'read_notes',
+      'query_notes',
       'create_note',
       'edit_note',
       'read_daily',
@@ -32,6 +34,16 @@ describe('buildOperationsTools', () => {
       'list_tags',
       'get_tag',
     ]);
+  });
+
+  it('query_notes description names the supported operators and result fields', () => {
+    const tools = buildOperationsTools(noopHandlers);
+    const queryNotes = tools.find((t) => t.name === 'query_notes')!;
+    expect(queryNotes.spec.description).toMatch(/MongoDB/);
+    expect(queryNotes.spec.description).toMatch(/\$and/);
+    expect(queryNotes.spec.description).toMatch(/\$exists/);
+    expect(queryNotes.spec.description).toMatch(/truncated/);
+    expect(queryNotes.spec.description).toMatch(/include_content/);
   });
 
   it('create_note description tells the LLM to ask before overwriting', () => {

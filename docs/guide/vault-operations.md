@@ -1,6 +1,6 @@
 # Vault Operations
 
-> Write operations (`create_note`, `edit_note`, daily notes, properties, tags) require the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. Pass `--no-operations` to disable all operations tools. `read_notes` reads directly from disk and does **not** require Obsidian to be running.
+> Write operations (`create_note`, `edit_note`, daily notes, properties, tags) require the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. Pass `--no-operations` to disable all operations tools. `read_notes` and `query_notes` read directly from disk and do **not** require Obsidian to be running.
 
 Read and write notes through Obsidian itself — the operations module shells out to the `obsidian` CLI, so changes are picked up by Smart Connections, sync, and any other plugin you have installed. No bypass of Obsidian's own state.
 
@@ -68,6 +68,65 @@ edit_note({
   position: 'append' | 'prepend',
 })
 ```
+
+## Structured queries
+
+### `query_notes`
+
+Run a multi-criteria query against the vault using a MongoDB-style filter — replaces N+1 patterns like `get_tag` → `read_property × N` → in-head filtering with one call.
+
+```typescript
+query_notes({
+  filter: object,              // MongoDB-style query (see below)
+  path_prefix?: string,        // restrict scan to a subtree, e.g. "Projects/"
+  sort?: { field: string, order: 'asc' | 'desc' },
+  limit?: number,              // default 100, max 1000
+  include_content?: boolean,   // default false
+})
+```
+
+The filter is evaluated against a `NoteRecord` shape:
+
+```ts
+{
+  path: string,           // "Projects/foo.md"
+  frontmatter: object,    // parsed YAML, full passthrough
+  tags: string[],         // normalized, no leading "#", from frontmatter `tags:`
+}
+```
+
+Reference frontmatter keys with the dotted prefix `frontmatter.<key>`. Reference tags via the top-level `tags` array (sift exact-match against array elements).
+
+**Supported operators:** `$eq`, `$ne`, `$in`, `$nin`, `$gt`, `$gte`, `$lt`, `$lte`, `$exists`, `$regex`, `$and`, `$or`, `$nor`, `$not`. Anything else is rejected as `INVALID_FILTER`.
+
+**Examples:**
+
+```json
+// active todo tasks in active projects
+{ "frontmatter.status": "todo", "frontmatter.project_status": "active" }
+```
+
+```json
+// notes tagged #ai with status active or wip, created this year
+{
+  "$and": [
+    { "tags": "ai" },
+    { "$or": [{ "frontmatter.status": "active" }, { "frontmatter.status": "wip" }] },
+    { "frontmatter.created": { "$gte": "2026-01-01" } }
+  ]
+}
+```
+
+```json
+// notes that have a deadline set
+{ "frontmatter.deadline": { "$exists": true } }
+```
+
+**Tag matching is exact (sift default):** `"ai"` does NOT match `#ai/ml`. To match a hierarchy, write `{ "tags": { "$in": ["ai", "ai/ml"] } }` or `{ "tags": { "$regex": "^ai(/|$)" } }` explicitly.
+
+**Result shape:** `{ results: [{ path, frontmatter, content? }], count, truncated }`. `count === results.length` (what we returned), and `truncated === true` ⇔ matched count exceeded `limit`. When `truncated` is true, narrow the filter or raise `limit` (capped at 1000).
+
+`include_content: true` returns the body alongside metadata — saves a follow-up `read_notes` call when you know up-front that bodies are needed, but grows the response significantly. Default off.
 
 ## Daily notes
 

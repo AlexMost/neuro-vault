@@ -23,6 +23,7 @@ function fakeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
 function fakeReader(overrides: Partial<VaultReader> = {}): VaultReader {
   return {
     readNotes: vi.fn().mockResolvedValue([] as ReadNotesItem[]),
+    scan: vi.fn().mockResolvedValue([] as string[]),
     ...overrides,
   };
 }

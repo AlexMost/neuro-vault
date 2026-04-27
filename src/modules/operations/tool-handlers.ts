@@ -1,4 +1,5 @@
 import { ToolHandlerError } from '../../lib/tool-response.js';
+import { runQueryNotes } from './query/index.js';
 import type {
   AppendDailyToolInput,
   CreateNoteToolInput,
@@ -8,6 +9,7 @@ import type {
   ListTagsToolInput,
   OperationsErrorCode,
   OperationsToolHandlers,
+  QueryNotesToolInput,
   ReadDailyToolInput,
   ReadNotesField,
   ReadNotesResultItem,
@@ -241,6 +243,10 @@ export function createOperationsHandlers(
 
       const errors = results.reduce((n, r) => n + ('error' in r ? 1 : 0), 0);
       return { results, count: results.length, errors };
+    },
+
+    async queryNotes(input: QueryNotesToolInput) {
+      return runQueryNotes(input, reader);
     },
 
     async createNote(input: CreateNoteToolInput) {

@@ -123,7 +123,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('registers eleven operations tools when only --operations is enabled', async () => {
+  it('registers twelve operations tools when only --operations is enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
@@ -146,7 +146,10 @@ describe('Neuro Vault MCP server bootstrap', () => {
       await main(['node', 'cli.js', '--vault', vaultPath, '--no-semantic'], {
         operations: {
           vaultProviderFactory: () => fakeProvider,
-          vaultReaderFactory: () => ({ readNotes: vi.fn().mockResolvedValue([]) }),
+          vaultReaderFactory: () => ({
+            readNotes: vi.fn().mockResolvedValue([]),
+            scan: vi.fn().mockResolvedValue([]),
+          }),
         },
         serverFactory: () => server,
         transportFactory: () => ({}) as never,
@@ -154,6 +157,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
       expect(server.registeredToolNames).toEqual([
         'read_notes',
+        'query_notes',
         'create_note',
         'edit_note',
         'read_daily',
@@ -170,7 +174,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('registers fifteen tools (4 semantic + 11 operations) when both modules are enabled', async () => {
+  it('registers sixteen tools (4 semantic + 12 operations) when both modules are enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
@@ -200,7 +204,10 @@ describe('Neuro Vault MCP server bootstrap', () => {
         },
         operations: {
           vaultProviderFactory: () => fakeProvider,
-          vaultReaderFactory: () => ({ readNotes: vi.fn().mockResolvedValue([]) }),
+          vaultReaderFactory: () => ({
+            readNotes: vi.fn().mockResolvedValue([]),
+            scan: vi.fn().mockResolvedValue([]),
+          }),
         },
         serverFactory: () => server,
         transportFactory: () => ({}) as never,
@@ -212,6 +219,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'find_duplicates',
         'get_stats',
         'read_notes',
+        'query_notes',
         'create_note',
         'edit_note',
         'read_daily',
