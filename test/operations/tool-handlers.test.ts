@@ -513,13 +513,13 @@ describe('operations.listTags handler', () => {
 });
 
 describe('operations.getTag handler', () => {
-  it('strips leading # from tag name', async () => {
+  it('strips leading # from tag', async () => {
     const provider = fakeProvider({
       getTag: vi.fn().mockResolvedValue({ name: 'mcp', count: 1, files: ['a.md'] }),
     });
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.getTag({ name: '#mcp' });
+    await handlers.getTag({ tag: '#mcp' });
 
     expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: true });
   });
@@ -530,7 +530,7 @@ describe('operations.getTag handler', () => {
     });
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.getTag({ name: 'mcp', include_files: false });
+    await handlers.getTag({ tag: 'mcp', include_files: false });
 
     expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: false });
   });
@@ -541,17 +541,17 @@ describe('operations.getTag handler', () => {
     });
     const handlers = createOperationsHandlers({ provider });
 
-    await handlers.getTag({ name: 'mcp' });
+    await handlers.getTag({ tag: 'mcp' });
 
     expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: true });
   });
 
-  it('rejects empty tag name', async () => {
+  it('rejects when tag is empty', async () => {
     const handlers = createOperationsHandlers({ provider: fakeProvider() });
-    await expect(handlers.getTag({ name: '' })).rejects.toMatchObject({
+    await expect(handlers.getTag({ tag: '' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
-    await expect(handlers.getTag({ name: '#' })).rejects.toMatchObject({
+    await expect(handlers.getTag({ tag: '#' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
   });

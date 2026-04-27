@@ -226,9 +226,9 @@ export function createOperationsHandlers(
       return provider.listTags();
     },
     async getTag(input: GetTagToolInput) {
-      const stripped = (input.name ?? '').trim().replace(/^#/, '').trim();
+      const stripped = (input.tag ?? '').trim().replace(/^#/, '').trim();
       if (stripped === '') {
-        throw invalidArgument('name must not be empty', 'name');
+        throw invalidArgument('tag must not be empty', 'tag');
       }
       const includeFiles = input.include_files !== false;
       return provider.getTag({ name: stripped, includeFiles });

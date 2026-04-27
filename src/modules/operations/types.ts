@@ -62,7 +62,7 @@ export type ListPropertiesToolInput = Record<string, never>;
 export type ListTagsToolInput = Record<string, never>;
 
 export interface GetTagToolInput {
-  name: string;
+  tag: string;
   include_files?: boolean;
 }
 
