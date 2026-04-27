@@ -9,6 +9,7 @@ import {
 } from './smart-connections-loader.js';
 import { createToolHandlers } from './tool-handlers.js';
 import { buildSemanticTools } from './tools.js';
+import type { SearchNotesDeps } from './tools/search-notes.js';
 import type {
   EmbeddingProvider,
   PathExistsCheck,
@@ -75,8 +76,16 @@ export async function createSemanticModule(
     pathExists,
   });
 
+  const searchDeps: SearchNotesDeps = {
+    sources: corpus.sources,
+    embeddingProvider: embeddingService,
+    searchEngine,
+    modelKey: config.modelKey,
+    pathExists,
+  };
+
   return {
-    tools: buildSemanticTools(handlers),
+    tools: buildSemanticTools(handlers, searchDeps),
     warmup: async () => {
       await embeddingService.initialize();
     },
