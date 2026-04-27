@@ -1,8 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createOperationsHandlers } from '../../src/modules/operations/tool-handlers.js';
+import { buildReadNotesTool } from '../../src/modules/operations/tools/read-notes.js';
+import { buildQueryNotesTool } from '../../src/modules/operations/tools/query-notes.js';
+import { buildCreateNoteTool } from '../../src/modules/operations/tools/create-note.js';
+import { buildEditNoteTool } from '../../src/modules/operations/tools/edit-note.js';
+import { buildReadDailyTool } from '../../src/modules/operations/tools/read-daily.js';
+import { buildAppendDailyTool } from '../../src/modules/operations/tools/append-daily.js';
+import { buildSetPropertyTool } from '../../src/modules/operations/tools/set-property.js';
+import { buildReadPropertyTool } from '../../src/modules/operations/tools/read-property.js';
+import { buildRemovePropertyTool } from '../../src/modules/operations/tools/remove-property.js';
+import { buildListPropertiesTool } from '../../src/modules/operations/tools/list-properties.js';
+import { buildListTagsTool } from '../../src/modules/operations/tools/list-tags.js';
 import type { VaultProvider } from '../../src/modules/operations/vault-provider.js';
 import type { VaultReader, ReadNotesItem } from '../../src/modules/operations/vault-reader.js';
+
+function makeHandlers(deps: { provider: VaultProvider; reader: VaultReader }) {
+  return {
+    readNotes: buildReadNotesTool(deps).handler,
+    queryNotes: buildQueryNotesTool(deps).handler,
+    createNote: buildCreateNoteTool(deps).handler,
+    editNote: buildEditNoteTool(deps).handler,
+    readDaily: buildReadDailyTool(deps).handler,
+    appendDaily: buildAppendDailyTool(deps).handler,
+    setProperty: buildSetPropertyTool(deps).handler,
+    readProperty: buildReadPropertyTool(deps).handler,
+    removeProperty: buildRemovePropertyTool(deps).handler,
+    listProperties: buildListPropertiesTool(deps).handler,
+    listTags: buildListTagsTool(deps).handler,
+  };
+}
 
 function fakeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
   return {
@@ -34,7 +60,7 @@ describe('operations.readNotes handler', () => {
         .fn()
         .mockResolvedValue([{ path: 'Folder/n.md', frontmatter: { a: 1 }, content: 'body' }]),
     });
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader });
 
     const result = await handlers.readNotes({ paths: ['Folder/n.md'] });
 
@@ -56,7 +82,7 @@ describe('operations.readNotes handler', () => {
         { path: 'b.md', frontmatter: null, content: '' },
       ]),
     });
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader });
 
     const result = await handlers.readNotes({ paths: ['a.md', 'b.md', 'a.md'] });
 
@@ -74,7 +100,7 @@ describe('operations.readNotes handler', () => {
         .fn()
         .mockResolvedValue([{ path: 'a.md', frontmatter: { x: 1 }, content: 'body' }]),
     });
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader });
 
     const result = await handlers.readNotes({ paths: ['a.md'], fields: ['frontmatter'] });
 
@@ -88,7 +114,7 @@ describe('operations.readNotes handler', () => {
         .fn()
         .mockResolvedValue([{ path: 'a.md', frontmatter: { x: 1 }, content: 'body' }]),
     });
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader });
 
     const result = await handlers.readNotes({ paths: ['a.md'], fields: ['content'] });
 
@@ -97,7 +123,7 @@ describe('operations.readNotes handler', () => {
   });
 
   it('rejects 0 paths with INVALID_ARGUMENT (top-level)', async () => {
-    const handlers = createOperationsHandlers({
+    const handlers = makeHandlers({
       provider: fakeProvider(),
       reader: fakeReader(),
     });
@@ -107,7 +133,7 @@ describe('operations.readNotes handler', () => {
   });
 
   it('rejects 51 paths with INVALID_ARGUMENT (top-level)', async () => {
-    const handlers = createOperationsHandlers({
+    const handlers = makeHandlers({
       provider: fakeProvider(),
       reader: fakeReader(),
     });
@@ -118,7 +144,7 @@ describe('operations.readNotes handler', () => {
   });
 
   it('rejects empty fields with INVALID_ARGUMENT (top-level)', async () => {
-    const handlers = createOperationsHandlers({
+    const handlers = makeHandlers({
       provider: fakeProvider(),
       reader: fakeReader(),
     });
@@ -128,7 +154,7 @@ describe('operations.readNotes handler', () => {
   });
 
   it('rejects unknown field with INVALID_ARGUMENT (top-level)', async () => {
-    const handlers = createOperationsHandlers({
+    const handlers = makeHandlers({
       provider: fakeProvider(),
       reader: fakeReader(),
     });
@@ -141,7 +167,7 @@ describe('operations.readNotes handler', () => {
     const reader = fakeReader({
       readNotes: vi.fn().mockResolvedValue([{ path: 'a.md', frontmatter: null, content: 'a' }]),
     });
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader });
 
     const result = await handlers.readNotes({ paths: ['a.md', '../etc/passwd'] });
 
@@ -160,7 +186,7 @@ describe('operations.readNotes handler', () => {
 
   it('produces per-item INVALID_ARGUMENT for absolute paths', async () => {
     const reader = fakeReader({ readNotes: vi.fn().mockResolvedValue([]) });
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader });
 
     const result = await handlers.readNotes({ paths: ['/absolute.md'] });
 
@@ -180,7 +206,7 @@ describe('operations.readNotes handler', () => {
         { path: 'missing.md', error: { code: 'NOT_FOUND', message: 'Note not found: missing.md' } },
       ]),
     });
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader });
 
     const result = await handlers.readNotes({ paths: ['a.md', 'missing.md'] });
 
@@ -198,7 +224,7 @@ describe('operations.readNotes handler', () => {
       content: 'body',
     }));
     const reader = fakeReader({ readNotes: vi.fn().mockResolvedValue(items) });
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader });
 
     const result = await handlers.readNotes({
       paths: items.map((i) => i.path),
@@ -216,7 +242,7 @@ describe('operations.createNote handler', () => {
     const provider = fakeProvider({
       createNote: vi.fn().mockResolvedValue({ path: 'Inbox/idea.md' }),
     });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     const result = await handlers.createNote({
       path: 'Inbox/idea.md',
@@ -235,7 +261,7 @@ describe('operations.createNote handler', () => {
   });
 
   it('rejects when neither name nor path is provided', async () => {
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader: fakeReader() });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader: fakeReader() });
     await expect(handlers.createNote({ content: 'hello' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -243,7 +269,7 @@ describe('operations.createNote handler', () => {
 
   it('rejects path traversal', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     await expect(
       handlers.createNote({ path: '../../etc/passwd', content: 'x' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -252,7 +278,7 @@ describe('operations.createNote handler', () => {
 
   it('rejects Unix absolute path', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     await expect(handlers.createNote({ path: '/tmp/escape.md' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -261,7 +287,7 @@ describe('operations.createNote handler', () => {
 
   it('rejects Windows absolute path', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     await expect(handlers.createNote({ path: 'C:\\Users\\me\\note.md' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -270,7 +296,7 @@ describe('operations.createNote handler', () => {
 
   it('normalizes path before forwarding', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await handlers.createNote({ path: './Inbox/x.md' });
 
@@ -283,7 +309,7 @@ describe('operations.createNote handler', () => {
 describe('operations.editNote handler', () => {
   it('forwards identifier, content, and position', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await handlers.editNote({
       path: 'Notes/x.md',
@@ -299,7 +325,7 @@ describe('operations.editNote handler', () => {
   });
 
   it('rejects invalid path', async () => {
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader: fakeReader() });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader: fakeReader() });
     await expect(
       handlers.editNote({ path: '../bad', content: 'x', position: 'append' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -307,7 +333,7 @@ describe('operations.editNote handler', () => {
 
   it('rejects Unix absolute path', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     await expect(
       handlers.editNote({ path: '/etc/passwd', content: 'x', position: 'append' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -322,7 +348,7 @@ describe('operations.readDaily handler', () => {
         .fn()
         .mockResolvedValue({ path: 'Daily/2026-04-25.md', frontmatter: null, content: 'today' }),
     });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     const result = await handlers.readDaily({});
 
@@ -338,7 +364,7 @@ describe('operations.readDaily handler', () => {
 describe('operations.appendDaily handler', () => {
   it('forwards content', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await handlers.appendDaily({ content: '- task' });
 
@@ -346,7 +372,7 @@ describe('operations.appendDaily handler', () => {
   });
 
   it('rejects empty content', async () => {
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader: fakeReader() });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader: fakeReader() });
     await expect(handlers.appendDaily({ content: '   ' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -356,7 +382,7 @@ describe('operations.appendDaily handler', () => {
 describe('operations.setProperty handler', () => {
   it('infers type=text for string value', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await handlers.setProperty({ path: 'a.md', key: 'status', value: 'done' });
 
@@ -370,7 +396,7 @@ describe('operations.setProperty handler', () => {
 
   it('infers type=number for number value', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await handlers.setProperty({ path: 'a.md', key: 'priority', value: 3 });
 
@@ -381,7 +407,7 @@ describe('operations.setProperty handler', () => {
 
   it('infers type=checkbox for boolean value', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await handlers.setProperty({ path: 'a.md', key: 'done', value: true });
 
@@ -392,7 +418,7 @@ describe('operations.setProperty handler', () => {
 
   it('infers type=list for array value', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await handlers.setProperty({ path: 'a.md', key: 'tags', value: ['mcp', 'todo'] });
 
@@ -403,7 +429,7 @@ describe('operations.setProperty handler', () => {
 
   it('explicit type overrides inference', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await handlers.setProperty({ path: 'a.md', key: 'due', value: '2026-05-01', type: 'date' });
 
@@ -414,7 +440,7 @@ describe('operations.setProperty handler', () => {
 
   it('rejects non-ISO date format with INVALID_ARGUMENT', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await expect(
       handlers.setProperty({ path: 'a.md', key: 'due', value: '03.05.2026', type: 'date' }),
@@ -424,7 +450,7 @@ describe('operations.setProperty handler', () => {
 
   it('rejects logically invalid date with INVALID_ARGUMENT', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await expect(
       handlers.setProperty({ path: 'a.md', key: 'due', value: '2026-13-45', type: 'date' }),
@@ -434,7 +460,7 @@ describe('operations.setProperty handler', () => {
 
   it('rejects non-string value when type=date', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await expect(
       handlers.setProperty({
@@ -449,7 +475,7 @@ describe('operations.setProperty handler', () => {
 
   it('accepts ISO datetime with explicit type=datetime', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await handlers.setProperty({
       path: 'a.md',
@@ -465,7 +491,7 @@ describe('operations.setProperty handler', () => {
 
   it('rejects space-separated datetime as non-ISO', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await expect(
       handlers.setProperty({
@@ -480,7 +506,7 @@ describe('operations.setProperty handler', () => {
 
   it('rejects array element containing comma', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await expect(
       handlers.setProperty({ path: 'a.md', key: 'tags', value: ['hello, world', 'ok'] }),
@@ -490,7 +516,7 @@ describe('operations.setProperty handler', () => {
 
   it('rejects null/undefined value with UNSUPPORTED_VALUE_TYPE', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await expect(
       handlers.setProperty({ path: 'a.md', key: 'x', value: null as unknown as string }),
@@ -499,7 +525,7 @@ describe('operations.setProperty handler', () => {
 
   it('rejects when neither name nor path is provided', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     await expect(handlers.setProperty({ key: 'x', value: 'y' } as never)).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -507,7 +533,7 @@ describe('operations.setProperty handler', () => {
 
   it('rejects when both name and path are provided', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     await expect(
       handlers.setProperty({ name: 'a', path: 'b.md', key: 'x', value: 'y' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -515,7 +541,7 @@ describe('operations.setProperty handler', () => {
 
   it('rejects path traversal', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     await expect(
       handlers.setProperty({ path: '../../etc/passwd', key: 'x', value: 'y' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -524,7 +550,7 @@ describe('operations.setProperty handler', () => {
 
   it('rejects absolute path', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     await expect(
       handlers.setProperty({ path: '/tmp/x.md', key: 'x', value: 'y' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -537,7 +563,7 @@ describe('operations.readProperty handler', () => {
     const provider = fakeProvider({
       readProperty: vi.fn().mockResolvedValue({ value: 'done' }),
     });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     const result = await handlers.readProperty({ path: 'a.md', key: 'status' });
 
@@ -552,7 +578,7 @@ describe('operations.readProperty handler', () => {
     const provider = fakeProvider({
       readProperty: vi.fn().mockResolvedValue({ value: 42 }),
     });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     await handlers.readProperty({ name: 'My Note', key: 'priority' });
 
@@ -563,7 +589,7 @@ describe('operations.readProperty handler', () => {
   });
 
   it('rejects when neither name nor path is provided', async () => {
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader: fakeReader() });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader: fakeReader() });
     await expect(handlers.readProperty({ key: 'x' } as never)).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -575,7 +601,7 @@ describe('operations.removeProperty handler', () => {
     const provider = fakeProvider({
       removeProperty: vi.fn().mockResolvedValue(undefined),
     });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
 
     const result = await handlers.removeProperty({ path: 'a.md', key: 'status' });
 
@@ -590,12 +616,12 @@ describe('operations.removeProperty handler', () => {
     const provider = fakeProvider({
       removeProperty: vi.fn().mockResolvedValue(undefined),
     });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     expect(await handlers.removeProperty({ path: 'a.md', key: 'gone' })).toEqual({ ok: true });
   });
 
   it('rejects empty name with INVALID_ARGUMENT', async () => {
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader: fakeReader() });
+    const handlers = makeHandlers({ provider: fakeProvider(), reader: fakeReader() });
     await expect(handlers.removeProperty({ path: 'a.md', key: '' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -603,7 +629,7 @@ describe('operations.removeProperty handler', () => {
 
   it('rejects path traversal', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     await expect(handlers.removeProperty({ path: '../escape.md', key: 'x' })).rejects.toMatchObject(
       { code: 'INVALID_ARGUMENT' },
     );
@@ -612,7 +638,7 @@ describe('operations.removeProperty handler', () => {
 
   it('rejects absolute path', async () => {
     const provider = fakeProvider();
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     await expect(handlers.removeProperty({ path: '/etc/passwd', key: 'x' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -625,7 +651,7 @@ describe('operations.listProperties handler', () => {
     const provider = fakeProvider({
       listProperties: vi.fn().mockResolvedValue([{ name: 'status', count: 5 }]),
     });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     expect(await handlers.listProperties({})).toEqual([{ name: 'status', count: 5 }]);
     expect(provider.listProperties).toHaveBeenCalled();
   });
@@ -636,7 +662,7 @@ describe('operations.listTags handler', () => {
     const provider = fakeProvider({
       listTags: vi.fn().mockResolvedValue([{ name: 'mcp', count: 3 }]),
     });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
+    const handlers = makeHandlers({ provider, reader: fakeReader() });
     expect(await handlers.listTags({})).toEqual([{ name: 'mcp', count: 3 }]);
     expect(provider.listTags).toHaveBeenCalled();
   });
