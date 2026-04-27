@@ -7,7 +7,10 @@ import type {
   SearchResult,
   SmartSource,
 } from '../../src/types.js';
-import { executeMultiRetrieval, executeRetrieval } from '../../src/modules/semantic/retrieval-policy.js';
+import {
+  executeMultiRetrieval,
+  executeRetrieval,
+} from '../../src/modules/semantic/retrieval-policy.js';
 
 function makeSource(path: string, embedding: number[] = [1, 0]): SmartSource {
   return {

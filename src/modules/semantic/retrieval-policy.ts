@@ -235,8 +235,7 @@ export async function executeMultiRetrieval(
   const perQueryLimit = input.limit ?? MODE_DEFAULTS[mode].limit;
   const cap = Math.min(perQueryLimit * queries.length, HARD_MERGE_CAP);
 
-  const truncated =
-    mergedNotes.length > cap || (mergedBlocks?.length ?? 0) > cap;
+  const truncated = mergedNotes.length > cap || (mergedBlocks?.length ?? 0) > cap;
   const cappedNotes = mergedNotes.slice(0, cap);
   const cappedBlocks = mergedBlocks ? mergedBlocks.slice(0, cap) : undefined;
 
