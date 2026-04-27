@@ -21,13 +21,22 @@ export class ToolHandlerError extends Error {
 
 type ToolContentBlock = { type: 'text'; text: string };
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
 export function toToolResponse(value: unknown): CallToolResult {
   const text = value === undefined ? 'ok' : JSON.stringify(value, null, 2);
   const result: CallToolResult = {
     content: [{ type: 'text', text }] satisfies ToolContentBlock[],
   };
-  if (value !== undefined && value !== null) {
-    result.structuredContent = value as { [x: string]: unknown };
+  if (isPlainRecord(value)) {
+    result.structuredContent = value;
   }
   return result;
 }

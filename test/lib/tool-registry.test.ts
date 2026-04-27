@@ -41,6 +41,25 @@ describe('registerTool', () => {
     expect(result.structuredContent).toEqual({ y: 7 });
   });
 
+  it('omits structuredContent when the handler returns an array (MCP rejects array structuredContent)', async () => {
+    const schema = z.object({});
+    const tool: ITool<unknown, Array<{ name: string }>> = {
+      name: 'list',
+      description: 'list',
+      inputSchema: schema,
+      handler: async () => [{ name: 'a' }, { name: 'b' }],
+    };
+
+    const reg = registerTool(tool);
+    const result = await reg.handler({});
+
+    expect(result.structuredContent).toBeUndefined();
+    expect(result.content[0]).toMatchObject({
+      type: 'text',
+      text: JSON.stringify([{ name: 'a' }, { name: 'b' }], null, 2),
+    });
+  });
+
   it('translates a thrown ToolHandlerError into the structured error response', async () => {
     const { ToolHandlerError } = await import('../../src/lib/tool-response.js');
     const tool: ITool<{ x: number }, never> = {
