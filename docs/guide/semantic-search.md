@@ -69,7 +69,32 @@ Same shape as quick, but `results` can have up to `limit` entries (default 8) an
 ```
 
 - `matched_queries` lists which of your queries surfaced this path. If only one of your synonyms hit, that's a useful signal.
-- `truncated: true` means more candidates were merged than fit the cap (`min(limit × N, 50)`, where `N` is the unique-query count after dedupe). The user-supplied `limit` controls the merged-output cap; per-query retrieval always uses the mode default for its own top-K.
+- `truncated: true` means unique merged candidates exceeded `limit`. Widen `limit` to see more. `limit` is the **final** result count — it is not multiplied by the number of queries; passing more queries widens coverage, not result count.
+
+### Output shape — deep mode with expansion
+
+In `deep` mode, after the top-`limit` query results are merged and capped, expansion runs once on those seed results to pull in semantically related notes. Expansion-derived results carry `via_expansion: true` and have no `matched_queries`:
+
+```json
+{
+  "results": [
+    {
+      "path": "Notes/embeddings.md",
+      "similarity": 0.82,
+      "matched_queries": ["embeddings", "векторний пошук"]
+    },
+    {
+      "path": "Notes/vector-search-internals.md",
+      "similarity": 0.71,
+      "via_expansion": true
+    }
+  ],
+  "blockResults": [],
+  "truncated": false
+}
+```
+
+`matched_queries` and `via_expansion` are mutually exclusive: a result came from a query or from expansion, never both.
 
 ### Tuning threshold
 
@@ -78,12 +103,17 @@ Same shape as quick, but `results` can have up to `limit` entries (default 8) an
 - **0.30** — automatic fallback floor used when initial results are empty. Useful manual setting when you really do not want a "nothing found" answer.
 - **0.60+** — strict. Use when getting too much noise. Below ~0.7 weakens fast in this embedding model.
 
-### When to call multiple times
+### When to pass multiple queries
 
-You usually shouldn't. Pass an array `query` instead — it batch-embeds and returns one merged ranked list with `matched_queries`. Reasons to call more than once:
+Pass `query: string[]` (up to 8) instead of calling `search_notes` multiple times. The server batch-embeds all queries in parallel and returns one merged ranked list. Each result's `matched_queries` tells you which synonym was load-bearing.
 
-- The vault is multilingual and you have evidence of which languages are present from earlier reads — include translations in the same `query` array.
-- The first call returned nothing and lowering threshold did not help — try a different keyword set.
+Common patterns:
+
+- **Synonyms / reformulations** — `["LLM agents", "AI agent system", "autonomous agents"]`
+- **Cross-language** — `["optimization", "оптимізація"]` (UA/EN pair)
+- **Three-way synonym** — `["MCP server", "MCP сервер", "neuro-vault"]`
+
+The only reason to call more than once: the first call returned nothing and lowering the threshold didn't help — try a different keyword set.
 
 ## `get_similar_notes`
 

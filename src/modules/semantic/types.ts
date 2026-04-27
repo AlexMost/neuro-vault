@@ -23,6 +23,7 @@ export interface BlockSearchResult {
 export interface SearchResult {
   path: string;
   similarity: number;
+  via_expansion?: true;
 }
 
 export interface DuplicatePair {
@@ -101,7 +102,8 @@ export interface ToolHandlers {
 }
 
 export interface MultiSearchResult extends SearchResult {
-  matched_queries: string[];
+  matched_queries?: string[];
+  via_expansion?: true;
 }
 
 export interface MultiBlockSearchResult extends BlockSearchResult {
