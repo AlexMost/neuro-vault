@@ -25,6 +25,9 @@ import { validateFilter } from './whitelist.js';
 const DEFAULT_LIMIT = 100;
 const HARD_LIMIT_CAP = 1000;
 const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
+// Pipeline: read in bounded batches so a large vault never holds every note
+// body in memory at once and never opens an unbounded number of FDs.
+const READ_BATCH_SIZE = 32;
 
 interface ValidatedInput {
   filter: Record<string, unknown>;
@@ -57,24 +60,6 @@ export async function runQueryNotes(
     return { results: [], count: 0, truncated: false };
   }
 
-  const fields = validated.includeContent
-    ? (['frontmatter', 'content'] as const)
-    : (['frontmatter'] as const);
-  const items = await reader.readNotes({ paths, fields: [...fields] });
-
-  type Row = { record: NoteRecord; content?: string };
-  const rows: Row[] = [];
-  for (const item of items) {
-    if ('error' in item) {
-      if (item.error.code === 'READ_FAILED') {
-        process.stderr.write(`[neuro-vault] query_notes: ${item.error.message}\n`);
-      }
-      continue;
-    }
-    const record = toNoteRecord(item);
-    rows.push(validated.includeContent ? { record, content: item.content } : { record });
-  }
-
   let matcher: (record: NoteRecord) => boolean;
   try {
     matcher = sift(validated.filter) as unknown as (record: NoteRecord) => boolean;
@@ -83,12 +68,43 @@ export async function runQueryNotes(
     throw new ToolHandlerError('INVALID_FILTER', `filter rejected by sift: ${message}`);
   }
 
-  let matched: Row[];
-  try {
-    matched = rows.filter((r) => matcher(r.record));
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new ToolHandlerError('INVALID_FILTER', `filter execution failed: ${message}`);
+  const fields = validated.includeContent
+    ? (['frontmatter', 'content'] as const)
+    : (['frontmatter'] as const);
+
+  // Early-exit is safe only when scan order already gives us the top of the
+  // sorted output: scan returns paths in lexicographic ascending order, so
+  // "no sort" and "sort by path asc" win for free. Any other sort needs the
+  // full match set before we can know which entries land in the top `limit`.
+  const earlyExitAllowed =
+    !validated.sort || (validated.sort.field === 'path' && validated.sort.order === 'asc');
+
+  type Row = { record: NoteRecord; content?: string };
+  const matched: Row[] = [];
+
+  for (let i = 0; i < paths.length; i += READ_BATCH_SIZE) {
+    const slice = paths.slice(i, i + READ_BATCH_SIZE);
+    const items = await reader.readNotes({ paths: slice, fields: [...fields] });
+    for (const item of items) {
+      if ('error' in item) {
+        if (item.error.code === 'READ_FAILED') {
+          process.stderr.write(`[neuro-vault] query_notes: ${item.error.message}\n`);
+        }
+        continue;
+      }
+      const record = toNoteRecord(item);
+      let isMatch: boolean;
+      try {
+        isMatch = matcher(record);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new ToolHandlerError('INVALID_FILTER', `filter execution failed: ${message}`);
+      }
+      if (!isMatch) continue;
+      // Only keep `content` for matches — non-matches' bodies are dropped now.
+      matched.push(validated.includeContent ? { record, content: item.content } : { record });
+    }
+    if (earlyExitAllowed && matched.length > validated.limit) break;
   }
 
   if (validated.sort) {

@@ -252,4 +252,85 @@ describe('runQueryNotes', () => {
 
     expect(out).toEqual({ results: [], count: 0, truncated: false });
   });
+
+  it('early-exits when matches > limit and sort allows it (no sort)', async () => {
+    // 200 paths, all matching — we expect to stop reading after enough matches.
+    const notes: FakeNote[] = Array.from({ length: 200 }, (_, i) => ({
+      path: `n${String(i).padStart(4, '0')}.md`,
+      frontmatter: { type: 'project' },
+      content: '',
+    }));
+    const reader = buildReader(notes);
+
+    const out = await runQueryNotes(
+      { filter: { 'frontmatter.type': 'project' }, limit: 5 },
+      reader,
+    );
+
+    // Top-5 by scan order = first 5 paths.
+    expect(out.results.map((r) => r.path)).toEqual([
+      'n0000.md',
+      'n0001.md',
+      'n0002.md',
+      'n0003.md',
+      'n0004.md',
+    ]);
+    expect(out.truncated).toBe(true);
+    // Should not have read the entire 200 — at most a couple of batches.
+    const totalPathsRead = (reader.readNotes as ReturnType<typeof vi.fn>).mock.calls.reduce(
+      (acc, [arg]) => acc + (arg.paths as string[]).length,
+      0,
+    );
+    expect(totalPathsRead).toBeLessThan(notes.length);
+  });
+
+  it('does NOT early-exit when sort is by frontmatter (must scan all)', async () => {
+    const notes: FakeNote[] = Array.from({ length: 100 }, (_, i) => ({
+      path: `n${String(i).padStart(3, '0')}.md`,
+      frontmatter: { type: 'project', priority: i },
+      content: '',
+    }));
+    const reader = buildReader(notes);
+
+    const out = await runQueryNotes(
+      {
+        filter: { 'frontmatter.type': 'project' },
+        sort: { field: 'frontmatter.priority', order: 'desc' },
+        limit: 3,
+      },
+      reader,
+    );
+
+    expect(out.results.map((r) => r.path)).toEqual(['n099.md', 'n098.md', 'n097.md']);
+    expect(out.truncated).toBe(true);
+    const totalPathsRead = (reader.readNotes as ReturnType<typeof vi.fn>).mock.calls.reduce(
+      (acc, [arg]) => acc + (arg.paths as string[]).length,
+      0,
+    );
+    expect(totalPathsRead).toBe(notes.length);
+  });
+
+  it('reads in bounded batches rather than one mega-call', async () => {
+    const notes: FakeNote[] = Array.from({ length: 80 }, (_, i) => ({
+      path: `n${String(i).padStart(3, '0')}.md`,
+      frontmatter: { type: 'project' },
+      content: '',
+    }));
+    const reader = buildReader(notes);
+
+    await runQueryNotes(
+      {
+        filter: { 'frontmatter.type': 'nope' }, // no matches → forces full scan
+      },
+      reader,
+    );
+
+    const calls = (reader.readNotes as ReturnType<typeof vi.fn>).mock.calls;
+    // No single call should request more than the batch budget (32).
+    for (const [arg] of calls) {
+      expect((arg.paths as string[]).length).toBeLessThanOrEqual(32);
+    }
+    // 80 paths / 32 = 3 batches.
+    expect(calls.length).toBe(3);
+  });
 });

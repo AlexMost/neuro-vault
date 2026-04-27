@@ -26,18 +26,34 @@ leading `#` stripped and blanks dropped.
 
 1. Validates input shape (`limit` cap, `path_prefix` shape, `sort` field/order).
 2. Validates the filter against the operator allow-list.
-3. Calls `VaultReader.scan({ pathPrefix })` to get paths.
-4. Calls `VaultReader.readNotes({ paths, fields })`. `fields` is `['frontmatter']`
-   by default and `['frontmatter', 'content']` only when `include_content: true`.
+3. Calls `VaultReader.scan({ pathPrefix })` to get paths (lexicographic order).
+4. Iterates paths in **bounded batches of 32** through `VaultReader.readNotes`.
+   `fields` is `['frontmatter']` by default and `['frontmatter', 'content']`
+   only when `include_content: true`. Each batch is filtered immediately;
+   non-matching items (and their bodies, when `include_content: true`) are
+   discarded before the next batch is read.
 5. Drops per-item reader errors silently (`NOT_FOUND` is a `scan↔read` race;
    `READ_FAILED` warns once on stderr). Errors do not appear in `results` and do
    not affect `truncated`.
 6. Maps successful items through `toNoteRecord` and runs `sift(filter)` against
-   the records.
-7. Optional `sort` — by `path` or any `frontmatter.<key>`. Missing values sort
+   each record as the batch arrives.
+7. **Early-exit**: when `sort` is absent, or `sort` is `{field:'path', order:'asc'}`,
+   the loop stops after `matched.length > limit` because scan order already
+   gives the top of the sorted output. Other sorts (any `frontmatter.X`, or
+   `path desc`) require the full match set and scan all paths.
+8. Optional `sort` — by `path` or any `frontmatter.<key>`. Missing values sort
    last.
-8. Slices to `limit` (default 100, cap 1000) and computes `truncated` from the
+9. Slices to `limit` (default 100, cap 1000) and computes `truncated` from the
    pre-slice match count.
+
+### Why batched + early-exit
+
+A single `Promise.all(scan().map(read))` would peak at "entire vault body in
+RAM" and open one FD per note. On a 10k-note vault that is hundreds of MB and
+risks `EMFILE`. The batched pipeline caps memory at `BATCH × avg_note_size`
+(≈1–2 MB) and concurrent FDs at 32. Early-exit is a pure win: queries like
+"first 100 active projects" stop reading once that many matches are found,
+without changing the result.
 
 ## Why it exists separately from the reader
 
