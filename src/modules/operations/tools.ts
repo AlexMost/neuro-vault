@@ -11,15 +11,12 @@ import { buildQueryNotesTool } from './tools/query-notes.js';
 import { buildCreateNoteTool } from './tools/create-note.js';
 import { buildEditNoteTool } from './tools/edit-note.js';
 import { buildReadDailyTool } from './tools/read-daily.js';
+import { buildAppendDailyTool } from './tools/append-daily.js';
 
 const noteIdentifierShape = {
   name: z.string().optional(),
   path: z.string().optional(),
 };
-
-const appendDailySchema = z.object({
-  content: z.string(),
-});
 
 const setPropertySchema = z.object({
   ...noteIdentifierShape,
@@ -51,17 +48,7 @@ export function buildOperationsTools(
     registerTool(buildCreateNoteTool(deps)),
     registerTool(buildEditNoteTool(deps)),
     registerTool(buildReadDailyTool(deps)),
-    {
-      name: 'append_daily',
-      spec: {
-        title: 'Append Daily',
-        description:
-          "Append content to today's daily note. Use \\n for newlines. Common uses: log a thought, add a task, mark progress.",
-        inputSchema: appendDailySchema,
-      },
-      handler: async (args) =>
-        invokeTool(() => handlers.appendDaily(appendDailySchema.parse(args))),
-    },
+    registerTool(buildAppendDailyTool(deps)),
     {
       name: 'set_property',
       spec: {
