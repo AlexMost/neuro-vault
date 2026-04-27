@@ -26,9 +26,7 @@ describe('ObsidianCLIProvider.readNote', () => {
   });
 
   it('returns frontmatter null when the note has no frontmatter', async () => {
-    const exec = vi
-      .fn()
-      .mockResolvedValue({ stdout: 'just a body without yaml\n', stderr: '' });
+    const exec = vi.fn().mockResolvedValue({ stdout: 'just a body without yaml\n', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
 
     const result = await provider.readNote({

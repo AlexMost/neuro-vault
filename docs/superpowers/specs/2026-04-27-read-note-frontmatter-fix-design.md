@@ -24,7 +24,7 @@ The same parser is reused by `readDaily`, so `read_daily` has the identical bug.
 ## Non-goals
 
 - Cleaning up `edit_note` / `append_daily` response shape — they don't return content.
-- Wider tool naming standardization — tracked separately in *Standardize neuro-vault MCP tool parameter naming*.
+- Wider tool naming standardization — tracked separately in _Standardize neuro-vault MCP tool parameter naming_.
 - Backward-compatible response shape. The current `path` value is a literal bug; we treat the change as a fix, not a breaking change.
 
 ## Design
@@ -75,7 +75,7 @@ Parse logic, expressed as a single helper:
 function splitFrontmatter(raw: string): {
   frontmatter: Record<string, unknown> | null;
   content: string;
-}
+};
 ```
 
 - No frontmatter delimiters → `{ frontmatter: null, content: raw }`.
@@ -123,5 +123,5 @@ Existing tests for error mapping and other commands stay as is; they don't depen
 ## Connections
 
 - Supersedes the implicit assumption in `docs/architecture/vault-provider.md` that `obsidian read` returns `<path>\n---\n<body>`.
-- Future work: *Add batch read_notes to neuro-vault* will reuse the new response shape directly.
-- Future work: *Standardize neuro-vault MCP tool parameter naming* may revisit `name` vs `file` once this lands.
+- Future work: _Add batch read_notes to neuro-vault_ will reuse the new response shape directly.
+- Future work: _Standardize neuro-vault MCP tool parameter naming_ may revisit `name` vs `file` once this lands.
