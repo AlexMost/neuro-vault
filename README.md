@@ -13,7 +13,7 @@
 ## ✨ Why Neuro Vault?
 
 - 🧠 **Semantic search over your existing vault** — reuses [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) embeddings already in your vault. No re-indexing, no API keys, no extra infrastructure.
-- 🎯 **Mode-aware retrieval** — `quick` for direct lookups, `deep` for exploratory questions with block-level results and semantic expansion of related notes.
+- 🎯 **Mode-aware retrieval** — `quick` for direct lookups, `deep` for exploratory questions with block-level results and semantic expansion of related notes. Pass `query: string[]` (up to 8) for synonyms, reformulations, or cross-language pairs — one merged result list with `matched_queries` per entry.
 - ✍️ **Direct vault operations** — read, create, append, and prepend notes; manage frontmatter properties and inspect tags (including daily notes) straight from your AI assistant via the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli).
 - 🔎 **Structured queries** — one MongoDB-style call (`query_notes`) replaces N+1 chains like "list tags → read each note's property". Ask "active projects with #ai" or "todo tasks created this week" and get a single ranked response.
 - ⚡ **Zero infrastructure** — local stdio MCP server, in-memory index, no database, no background processes, no watchers.
