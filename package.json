@@ -37,6 +37,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/cli.ts",
+    "prepare": "git config core.hooksPath .githooks",
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
