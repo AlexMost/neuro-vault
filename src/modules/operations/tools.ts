@@ -9,17 +9,12 @@ import type { VaultReader } from './vault-reader.js';
 import { buildReadNotesTool } from './tools/read-notes.js';
 import { buildQueryNotesTool } from './tools/query-notes.js';
 import { buildCreateNoteTool } from './tools/create-note.js';
+import { buildEditNoteTool } from './tools/edit-note.js';
 
 const noteIdentifierShape = {
   name: z.string().optional(),
   path: z.string().optional(),
 };
-
-const editNoteSchema = z.object({
-  ...noteIdentifierShape,
-  content: z.string(),
-  position: z.enum(['append', 'prepend']),
-});
 
 const readDailySchema = z.object({});
 
@@ -55,16 +50,7 @@ export function buildOperationsTools(
     registerTool(buildReadNotesTool(deps)),
     registerTool(buildQueryNotesTool(deps)),
     registerTool(buildCreateNoteTool(deps)),
-    {
-      name: 'edit_note',
-      spec: {
-        title: 'Edit Note',
-        description:
-          'Add content to an existing note at the start (`prepend`) or end (`append`). Use \\n for newlines.',
-        inputSchema: editNoteSchema,
-      },
-      handler: async (args) => invokeTool(() => handlers.editNote(editNoteSchema.parse(args))),
-    },
+    registerTool(buildEditNoteTool(deps)),
     {
       name: 'read_daily',
       spec: {
