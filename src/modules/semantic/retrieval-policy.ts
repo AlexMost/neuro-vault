@@ -28,6 +28,7 @@ const MODE_DEFAULTS: Record<SearchMode, ModeConfig> = {
 export interface RetrievalInput {
   query: string;
   mode: SearchMode;
+  limit?: number;
   threshold?: number;
   expansion?: boolean;
   expansionLimit?: number;

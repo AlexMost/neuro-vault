@@ -416,6 +416,72 @@ describe('executeRetrieval', () => {
       expect(output.results).toHaveLength(8);
     });
   });
+
+  describe('user-supplied limit', () => {
+    it('overrides the mode default in quick mode', async () => {
+      const embeddingProvider = makeEmbeddingProvider();
+      const manyResults = Array.from({ length: 10 }, (_, i) =>
+        makeSearchResult(`note-${i}.md`, 0.9 - i * 0.05),
+      );
+      const findNeighbors = vi.fn().mockReturnValue(manyResults);
+      const searchEngine = makeSearchEngine({ findNeighbors });
+
+      const output = await executeRetrieval({
+        query: 'test query',
+        mode: 'quick',
+        limit: 7,
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      expect(output.results).toHaveLength(7);
+      expect(findNeighbors).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 7 }),
+      );
+    });
+
+    it('overrides the mode default in deep mode', async () => {
+      const embeddingProvider = makeEmbeddingProvider();
+      const manyResults = Array.from({ length: 15 }, (_, i) =>
+        makeSearchResult(`note-${i}.md`, 0.9 - i * 0.03),
+      );
+      const findNeighbors = vi.fn().mockReturnValue(manyResults);
+      const searchEngine = makeSearchEngine({ findNeighbors });
+
+      const output = await executeRetrieval({
+        query: 'test query',
+        mode: 'deep',
+        limit: 4,
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      expect(output.results).toHaveLength(4);
+      expect(findNeighbors).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 4 }),
+      );
+    });
+
+    it('falls back to mode default when limit is omitted', async () => {
+      const embeddingProvider = makeEmbeddingProvider();
+      const findNeighbors = vi.fn().mockReturnValue([]);
+      const searchEngine = makeSearchEngine({ findNeighbors });
+
+      await executeRetrieval({
+        query: 'test query',
+        mode: 'quick',
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      expect(findNeighbors).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 3 }),
+      );
+    });
+  });
 });
 
 describe('executeMultiRetrieval', () => {
