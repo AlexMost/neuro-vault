@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildSearchNotesTool } from '../../../src/modules/semantic/tools/search-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
+import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import {
   MODEL_KEY,
   makeVaultFixture,
@@ -13,6 +14,34 @@ import {
   findBlockNeighbors,
   loadSmartConnectionsCorpus,
 } from './_helpers.js';
+
+// Lightweight helpers for mock-only tests (no real corpus needed)
+function makeMockSource(path: string, embedding: number[] = [1, 0]): SmartSource {
+  return {
+    path,
+    embedding,
+    blocks: [],
+  };
+}
+
+function makeMockSources(paths: string[]): Map<string, SmartSource> {
+  return new Map(paths.map((p) => [p, makeMockSource(p)]));
+}
+
+function makeMockSearchEngine(
+  overrides: Partial<{
+    findNeighbors: SearchEngine['findNeighbors'];
+    findBlockNeighbors: SearchEngine['findBlockNeighbors'];
+    findDuplicates: SearchEngine['findDuplicates'];
+  }> = {},
+): SearchEngine {
+  return {
+    findNeighbors: vi.fn().mockReturnValue([]),
+    findBlockNeighbors: vi.fn().mockReturnValue([]),
+    findDuplicates: vi.fn().mockReturnValue([]),
+    ...overrides,
+  };
+}
 
 describe('searchNotes', () => {
   it('filters out search results whose paths no longer exist on disk', async () => {
@@ -334,5 +363,229 @@ describe('searchNotes', () => {
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
+  });
+
+  it('rejects a query array with an empty string element', () => {
+    const sources = makeMockSources(['note-a.md']);
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: makeMockSearchEngine(),
+        modelKey: MODEL_KEY,
+      }),
+    );
+
+    return expect(tool.handler({ query: [''] })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+  });
+
+  it('rejects a query array with a whitespace-only string element', () => {
+    const sources = makeMockSources(['note-a.md']);
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: makeMockSearchEngine(),
+        modelKey: MODEL_KEY,
+      }),
+    );
+
+    return expect(tool.handler({ query: ['  '] })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+  });
+
+  it('query: array length 1 still carries matched_queries on results', async () => {
+    const sources = makeMockSources(['note-a.md']);
+    const embed = vi.fn().mockResolvedValue([1, 0]);
+    const searchEngine = makeMockSearchEngine({
+      findNeighbors: vi.fn().mockReturnValue([{ path: 'note-a.md', similarity: 0.9 }]),
+    });
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine,
+        modelKey: MODEL_KEY,
+      }),
+    );
+
+    const output = (await tool.handler({ query: ['single'], threshold: 0 })) as {
+      results: Array<{ path: string; matched_queries?: string[] }>;
+      truncated: boolean;
+    };
+
+    expect(output.results).toHaveLength(1);
+    expect(output.results[0]!.matched_queries).toEqual(['single']);
+    expect(output.truncated).toBe(false);
+  });
+
+  it('multi-query: matched_queries lists only queries that returned the path (above-threshold)', async () => {
+    // Q1 returns note-a.md at 0.9; Q2 returns only note-b.md at 0.8.
+    // note-a.md should have matched_queries = ['q1'] only.
+    const sources = makeMockSources(['note-a.md', 'note-b.md']);
+    const embed = vi
+      .fn()
+      .mockResolvedValueOnce([1, 0]) // q1
+      .mockResolvedValueOnce([0, 1]); // q2
+    const searchEngine = makeMockSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }]) // q1
+        .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]), // q2 — note-a not returned
+    });
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine,
+        modelKey: MODEL_KEY,
+      }),
+    );
+
+    const output = (await tool.handler({ query: ['q1', 'q2'], threshold: 0 })) as {
+      results: Array<{ path: string; matched_queries?: string[] }>;
+      truncated: boolean;
+    };
+
+    const byPath = new Map(output.results.map((r) => [r.path, r]));
+    expect(byPath.get('note-a.md')!.matched_queries).toEqual(['q1']);
+    expect(byPath.get('note-b.md')!.matched_queries).toEqual(['q2']);
+  });
+
+  it('multi-query expansion: expanded results have via_expansion: true and no matched_queries', async () => {
+    // Seeds: note-a.md (from query). Expansion: exp.md.
+    const sources = makeMockSources(['note-a.md', 'exp.md']);
+    // Give note-a.md a non-empty embedding so expansion runs
+    sources.get('note-a.md')!.embedding = [1, 0];
+
+    const embed = vi.fn().mockResolvedValue([1, 0]);
+    const searchEngine = makeMockSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }]) // query
+        .mockReturnValueOnce([{ path: 'exp.md', similarity: 0.7 }]), // expansion
+    });
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine,
+        modelKey: MODEL_KEY,
+      }),
+    );
+
+    const output = (await tool.handler({ query: ['q1'], mode: 'deep', threshold: 0 })) as {
+      results: Array<{ path: string; matched_queries?: string[]; via_expansion?: true }>;
+      truncated: boolean;
+    };
+
+    const expanded = output.results.filter((r) => r.via_expansion);
+    expect(expanded.length).toBeGreaterThan(0);
+    expect(expanded.every((r) => r.via_expansion === true)).toBe(true);
+    expect(expanded.every((r) => r.matched_queries === undefined)).toBe(true);
+
+    const seeds = output.results.filter((r) => !r.via_expansion);
+    expect(seeds.every((r) => Array.isArray(r.matched_queries))).toBe(true);
+  });
+
+  it('quick mode multi-query never has via_expansion results', async () => {
+    const sources = makeMockSources(['note-a.md', 'note-b.md']);
+    const embed = vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]);
+    const searchEngine = makeMockSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }])
+        .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]),
+    });
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine,
+        modelKey: MODEL_KEY,
+      }),
+    );
+
+    const output = (await tool.handler({ query: ['q1', 'q2'], mode: 'quick', threshold: 0 })) as {
+      results: Array<{ path: string; via_expansion?: true }>;
+    };
+
+    expect(output.results.every((r) => !r.via_expansion)).toBe(true);
+    // findNeighbors called exactly twice (once per query), no expansion calls
+    expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(2);
+  });
+
+  it('query: string in deep mode emits via_expansion: true on expansion-derived results', async () => {
+    const sources = makeMockSources(['note-a.md', 'exp.md']);
+    sources.get('note-a.md')!.embedding = [1, 0];
+
+    const embed = vi.fn().mockResolvedValue([1, 0]);
+    const searchEngine = makeMockSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }]) // initial query
+        .mockReturnValueOnce([{ path: 'exp.md', similarity: 0.7 }]), // expansion
+    });
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine,
+        modelKey: MODEL_KEY,
+      }),
+    );
+
+    const output = (await tool.handler({ query: 'test query', mode: 'deep', threshold: 0 })) as {
+      results: Array<{ path: string; via_expansion?: true }>;
+    };
+
+    const expanded = output.results.filter((r) => r.via_expansion);
+    expect(expanded.length).toBeGreaterThan(0);
+    expect(expanded.every((r) => r.via_expansion === true)).toBe(true);
+
+    const nonExpanded = output.results.filter((r) => !r.via_expansion);
+    expect(nonExpanded.every((r) => r.via_expansion === undefined)).toBe(true);
+  });
+
+  it('multi-query final cap: limit=2 with 3 queries each returning 2 unique results → length ≤ 2', async () => {
+    const sources = makeMockSources(['a-0.md', 'a-1.md', 'b-0.md', 'b-1.md', 'c-0.md', 'c-1.md']);
+    const embed = vi.fn().mockResolvedValue([1, 0]);
+    const searchEngine = makeMockSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([
+          { path: 'a-0.md', similarity: 0.9 },
+          { path: 'a-1.md', similarity: 0.8 },
+        ])
+        .mockReturnValueOnce([
+          { path: 'b-0.md', similarity: 0.7 },
+          { path: 'b-1.md', similarity: 0.6 },
+        ])
+        .mockReturnValueOnce([
+          { path: 'c-0.md', similarity: 0.5 },
+          { path: 'c-1.md', similarity: 0.4 },
+        ]),
+    });
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine,
+        modelKey: MODEL_KEY,
+      }),
+    );
+
+    const output = (await tool.handler({
+      query: ['q1', 'q2', 'q3'],
+      mode: 'quick',
+      limit: 2,
+      threshold: 0,
+    })) as { results: unknown[]; truncated: boolean };
+
+    expect(output.results.length).toBeLessThanOrEqual(2);
+    expect(output.truncated).toBe(true);
   });
 });
