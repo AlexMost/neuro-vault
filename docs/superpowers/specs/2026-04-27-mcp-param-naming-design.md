@@ -8,11 +8,11 @@ Supersedes: —
 
 Tool input schemas across `neuro-vault` MCP use inconsistent parameter names for the same concept. The most painful case: the field `name` carries three unrelated meanings depending on which tool you call.
 
-| Tool group | Field `name` means |
-|---|---|
-| `read_note`, `create_note`, `edit_note` | wikilink-style note identifier |
-| `set_property`, `read_property`, `remove_property` | frontmatter property key |
-| `get_tag` | tag name |
+| Tool group                                         | Field `name` means             |
+| -------------------------------------------------- | ------------------------------ |
+| `read_note`, `create_note`, `edit_note`            | wikilink-style note identifier |
+| `set_property`, `read_property`, `remove_property` | frontmatter property key       |
+| `get_tag`                                          | tag name                       |
 
 To dodge that collision, property tools use `file` for the wikilink-style identifier — yet note tools call the same concept `name`. And the semantic tool `get_similar_notes` calls a vault-relative path `note_path`, while every other tool calls it `path`.
 
@@ -32,23 +32,23 @@ One concept → one parameter name across every tool the server exposes.
 
 ### Parameter dictionary
 
-| Concept | Name | Tools |
-|---|---|---|
-| Vault-relative POSIX path | `path` | `read_note`, `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`, `get_similar_notes` |
-| Wikilink-style note identifier | `name` | `read_note`, `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property` |
-| Frontmatter property key | `key` | `set_property`, `read_property`, `remove_property` |
-| Tag name | `tag` | `get_tag` |
-| Semantic query | `query` | `search_notes` |
+| Concept                        | Name    | Tools                                                                                                            |
+| ------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------- |
+| Vault-relative POSIX path      | `path`  | `read_note`, `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`, `get_similar_notes` |
+| Wikilink-style note identifier | `name`  | `read_note`, `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`                      |
+| Frontmatter property key       | `key`   | `set_property`, `read_property`, `remove_property`                                                               |
+| Tag name                       | `tag`   | `get_tag`                                                                                                        |
+| Semantic query                 | `query` | `search_notes`                                                                                                   |
 
 ### Per-tool changes
 
-| Tool | Before | After |
-|---|---|---|
-| `set_property` | `{ file?, path?, name, value, type? }` | `{ name?, path?, key, value, type? }` |
-| `read_property` | `{ file?, path?, name }` | `{ name?, path?, key }` |
-| `remove_property` | `{ file?, path?, name }` | `{ name?, path?, key }` |
-| `get_tag` | `{ name, include_files? }` | `{ tag, include_files? }` |
-| `get_similar_notes` | `{ note_path, limit?, threshold? }` | `{ path, limit?, threshold? }` |
+| Tool                | Before                                 | After                                 |
+| ------------------- | -------------------------------------- | ------------------------------------- |
+| `set_property`      | `{ file?, path?, name, value, type? }` | `{ name?, path?, key, value, type? }` |
+| `read_property`     | `{ file?, path?, name }`               | `{ name?, path?, key }`               |
+| `remove_property`   | `{ file?, path?, name }`               | `{ name?, path?, key }`               |
+| `get_tag`           | `{ name, include_files? }`             | `{ tag, include_files? }`             |
+| `get_similar_notes` | `{ note_path, limit?, threshold? }`    | `{ path, limit?, threshold? }`        |
 
 All other tools — `read_note`, `create_note`, `edit_note`, `read_daily`, `append_daily`, `list_properties`, `list_tags`, `search_notes`, `find_duplicates`, `get_stats` — already conform; no changes.
 
