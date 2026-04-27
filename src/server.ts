@@ -65,9 +65,9 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 4. If a search returns no results, lower the threshold to 0.3 before giving up.
 
 ### 2. Choose mode
-- **quick** (default) — returns up to 3 notes, no expansion. Use for specific lookups.
-- **deep** — returns up to 8 notes + expands via similar notes. Use for broad topics.
-- Pass \`expansion: true\` in quick mode if you want expansion there too.
+- **quick** (default) — returns up to 3 notes plus block-level matches scoped to those notes. Use for specific lookups.
+- **deep** — returns up to 8 notes plus block-level matches across the whole vault, with semantic expansion to related notes. Use for broad topics.
+- Use \`limit\` to override the default note count in either mode.
 
 ### 3. Use the results
 - \`results\` — notes ranked by similarity; read the file by path
