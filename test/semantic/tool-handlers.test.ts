@@ -113,7 +113,7 @@ describe('createToolHandlers', () => {
       });
 
       const results = await handlers.getSimilarNotes({
-        note_path: 'Folder/note-a.md',
+        path: 'Folder/note-a.md',
         threshold: 0,
       });
 
@@ -270,7 +270,7 @@ describe('createToolHandlers', () => {
       });
 
       await expect(
-        handlers.getSimilarNotes({ note_path: 'Folder/missing.md' }),
+        handlers.getSimilarNotes({ path: 'Folder/missing.md' }),
       ).rejects.toMatchObject({
         code: 'NOT_FOUND',
       });
@@ -299,7 +299,7 @@ describe('createToolHandlers', () => {
       });
 
       const results = await handlers.getSimilarNotes({
-        note_path: 'Folder/note-a.md',
+        path: 'Folder/note-a.md',
         threshold: 0,
       });
 
@@ -333,7 +333,7 @@ describe('createToolHandlers', () => {
       });
 
       const results = await handlers.getSimilarNotes({
-        note_path: './Folder/note-a.md',
+        path: './Folder/note-a.md',
         threshold: 0,
       });
 
@@ -366,7 +366,7 @@ describe('createToolHandlers', () => {
       });
 
       await expect(
-        handlers.getSimilarNotes({ note_path: '../Folder/note-a.md' }),
+        handlers.getSimilarNotes({ path: '../Folder/note-a.md' }),
       ).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
       });
@@ -395,7 +395,7 @@ describe('createToolHandlers', () => {
       });
 
       await expect(
-        handlers.getSimilarNotes({ note_path: 'C:/vault/Folder/note-a.md' }),
+        handlers.getSimilarNotes({ path: 'C:/vault/Folder/note-a.md' }),
       ).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
       });

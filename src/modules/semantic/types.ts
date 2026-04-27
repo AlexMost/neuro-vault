@@ -65,7 +65,7 @@ export interface SearchNotesInput {
 }
 
 export interface GetSimilarNotesInput {
-  note_path: string;
+  path: string;
   limit?: number;
   threshold?: number;
 }

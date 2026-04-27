@@ -33,36 +33,36 @@ function normalizeNotePath(notePath: string): string {
   const trimmed = notePath.trim();
 
   if (!trimmed) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'note_path must not be empty', {
-      details: { field: 'note_path' },
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must not be empty', {
+      details: { field: 'path' },
     });
   }
 
   if (path.posix.isAbsolute(trimmed) || WINDOWS_ABSOLUTE_PATH_RE.test(trimmed)) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'note_path must be vault-relative', {
-      details: { field: 'note_path' },
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must be vault-relative', {
+      details: { field: 'path' },
     });
   }
 
   const slashNormalized = trimmed.replace(/\\/g, '/');
 
   if (slashNormalized.split('/').some((segment) => segment === '..')) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'note_path must be vault-relative', {
-      details: { field: 'note_path' },
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must be vault-relative', {
+      details: { field: 'path' },
     });
   }
 
   const normalized = path.posix.normalize(slashNormalized);
 
   if (normalized === '.') {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'note_path must not be empty', {
-      details: { field: 'note_path' },
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must not be empty', {
+      details: { field: 'path' },
     });
   }
 
   if (path.posix.isAbsolute(normalized)) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'note_path must be vault-relative', {
-      details: { field: 'note_path' },
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must be vault-relative', {
+      details: { field: 'path' },
     });
   }
 
@@ -320,12 +320,12 @@ export function createToolHandlers({
     },
 
     async getSimilarNotes(input: GetSimilarNotesInput): Promise<SearchResult[]> {
-      const notePath = normalizeNotePath(input.note_path);
+      const notePath = normalizeNotePath(input.path);
       const source = loader.sources.get(notePath);
 
       if (!source) {
         throw new ToolHandlerError('NOT_FOUND', `No note found for path: ${notePath}`, {
-          details: { note_path: notePath },
+          details: { path: notePath },
         });
       }
 
@@ -350,7 +350,7 @@ export function createToolHandlers({
         throw wrapDependencyError(error, 'Failed to find similar notes', {
           modelKey,
           operation: 'get_similar_notes',
-          note_path: notePath,
+          path: notePath,
         });
       }
     },
