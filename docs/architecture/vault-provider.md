@@ -47,8 +47,13 @@ Obsidian distinguishes `file=` (resolves like a wikilink) from `path=` (exact). 
 
 ## What it deliberately does not do
 
-- It does not parse markdown, frontmatter, or block structure. Clients receive raw content.
+- It does not parse markdown body or block structure. Clients receive raw content.
 - It does not normalize paths. Path normalization happens one layer above (in `tool-handlers.ts`) so the provider can stay a thin shell.
 - It does not validate business rules (empty content, etc.). Handlers do that before calling.
 
-The one deliberate exception is `set_property`'s ISO format check for `date` / `datetime` types. That validation lives in the handler (not the provider) but happens _before_ the CLI is invoked, because the CLI silently accepts non-ISO values and writes nothing — a pure pass-through would surface as a phantom success. This exception is explicit precisely because it violates the "no business-rule validation" rule.
+There are two deliberate exceptions:
+
+1. `set_property`'s ISO format check for `date` / `datetime` types. That validation lives in the handler (not the provider) but happens _before_ the CLI is invoked, because the CLI silently accepts non-ISO values and writes nothing — a pure pass-through would surface as a phantom success.
+2. `readNote` and `readDaily` return `{ path, frontmatter, content }`: the YAML frontmatter block is split out of the CLI's read output and parsed into an object (or `null` for missing/malformed YAML). Frontmatter is structured metadata, not free-form markdown, and every consumer wants it parsed; embedding raw YAML in `content` would just push the same parser into each caller. The CLI's `read` does not echo the file path, so the provider derives `path` from the input (`{ kind: 'path' }`) or via `obsidian file file=<name>` / `obsidian daily:path` when only a name is known. The split itself lives in `src/modules/operations/frontmatter.ts` so the provider does not own the YAML parser directly.
+
+Both exceptions are explicit precisely because they violate the "no parsing / no validation" rule.

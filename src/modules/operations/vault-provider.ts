@@ -6,6 +6,7 @@ export interface ReadNoteInput {
 
 export interface ReadNoteResult {
   path: string;
+  frontmatter: Record<string, unknown> | null;
   content: string;
 }
 
@@ -31,6 +32,7 @@ export interface EditNoteInput {
 
 export interface DailyNoteResult {
   path: string;
+  frontmatter: Record<string, unknown> | null;
   content: string;
 }
 

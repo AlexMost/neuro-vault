@@ -67,7 +67,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Read Note',
         description:
-          "Read a note's contents. Provide either `name` (wikilink-style, resolves like Obsidian) or `path` (vault-relative, exact). Returns `{ path, content }`.",
+          "Read a note's contents. Provide either `name` (wikilink-style, resolves like Obsidian) or `path` (vault-relative, exact). Returns `{ path, frontmatter, content }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed) and `content` is the body without the YAML block.",
         inputSchema: readNoteSchema,
       },
       handler: async (args) => invokeTool(() => handlers.readNote(readNoteSchema.parse(args))),
@@ -97,7 +97,7 @@ export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegi
       spec: {
         title: 'Read Daily',
         description:
-          "Read today's daily note. Returns `{ path, content }`. Useful for 'what's on my agenda?' questions.",
+          "Read today's daily note. Returns `{ path, frontmatter, content }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed) and `content` is the body without the YAML block. Useful for 'what's on my agenda?' questions.",
         inputSchema: readDailySchema,
       },
       handler: async () => invokeTool(() => handlers.readDaily({})),

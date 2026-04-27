@@ -51,12 +51,13 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.1",
     "@xenova/transformers": "^2.17.2",
+    "yaml": "^2.8.3",
     "yargs": "^18.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",
-    "@types/yargs": "^17.0.35",
     "@types/node": "^22.15.18",
+    "@types/yargs": "^17.0.35",
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
     "commit-and-tag-version": "^12.6.1",
