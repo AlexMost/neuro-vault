@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [2.0.0](https://github.com/AlexMost/neuro-vault/compare/v1.7.2...v2.0.0) (2026-04-27)
+
+### ⚠ BREAKING CHANGES
+
+- **semantic:** search_notes no longer accepts expansion or
+  expansion_limit. Use mode to control expansion behavior.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- get_similar_notes now takes \`path\` instead of \`note_path\`,
+  matching every other tool that accepts a vault-relative path.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- get_tag now takes `tag` instead of `name`. Frees `name`
+  to mean "note identifier" consistently across the API.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- set_property, read_property, remove_property now take
+  `name`/`path` for the note identifier (mirroring read_note/edit_note) and
+  `key` for the frontmatter property name. The previous `file` and `name`
+  (as property key) are no longer accepted.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+### Features
+
+- **operations:** add VaultReader interface and FsVaultReader ([46011a1](https://github.com/AlexMost/neuro-vault/commit/46011a11b877cef60f57836ebc438682933228c3))
+- **operations:** replace read_note with batch read_notes ([1993725](https://github.com/AlexMost/neuro-vault/commit/1993725000cfdc8c3b9a01c675c431d6b0ac0b9f))
+- rename get_similar_notes input param (note_path→path) ([cc882d4](https://github.com/AlexMost/neuro-vault/commit/cc882d4193f8ba9af53251f7aaa82ee6690a9251))
+- rename get_tag input param (name→tag) ([c00fa5d](https://github.com/AlexMost/neuro-vault/commit/c00fa5d68ec5b0ed78101c877e8a8e338dbe4167))
+- rename property tool params (file→name, name→key) ([d989a02](https://github.com/AlexMost/neuro-vault/commit/d989a02f3aae864a8d787fe1b0ae2e6120ddeedf))
+- **semantic:** drop expansion params from search_notes public schema ([ad80083](https://github.com/AlexMost/neuro-vault/commit/ad80083733a22a59247689adad384fc9422dfe65))
+
+### Bug Fixes
+
+- **semantic:** honor user-supplied limit in executeRetrieval ([52baa52](https://github.com/AlexMost/neuro-vault/commit/52baa527f548216c1878cfe66a700383216054aa))
+- **server:** correct read_notes routing anchor and dash style ([bb370c8](https://github.com/AlexMost/neuro-vault/commit/bb370c814b14b07de1eabe81e955727235fd0253))
+
 ## [1.7.2](https://github.com/AlexMost/neuro-vault/compare/v1.7.1...v1.7.2) (2026-04-27)
 
 ## [1.7.1](https://github.com/AlexMost/neuro-vault/compare/v1.7.0...v1.7.1) (2026-04-27)
