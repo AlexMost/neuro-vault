@@ -33,5 +33,5 @@ export function createOperationsModule(
   const reader = readerFactory({ vaultRoot: config.vaultPath });
   const handlers = createOperationsHandlers({ provider, reader });
 
-  return { tools: buildOperationsTools(handlers) };
+  return { tools: buildOperationsTools(handlers, { provider, reader }) };
 }

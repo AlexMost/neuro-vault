@@ -1,19 +1,17 @@
 import { z } from 'zod';
 
 import { invokeTool } from '../../lib/tool-response.js';
+import { registerTool } from '../../lib/tool-registry.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 import type { OperationsToolHandlers } from './types.js';
+import type { VaultProvider } from './vault-provider.js';
+import type { VaultReader } from './vault-reader.js';
+import { buildReadNotesTool } from './tools/read-notes.js';
 
 const noteIdentifierShape = {
   name: z.string().optional(),
   path: z.string().optional(),
 };
-
-const readNotesFieldSchema = z.enum(['frontmatter', 'content']);
-const readNotesSchema = z.object({
-  paths: z.array(z.string()).min(1).max(50),
-  fields: z.array(readNotesFieldSchema).min(1).optional(),
-});
 
 const queryNotesSortSchema = z.object({
   field: z.string().min(1),
@@ -67,18 +65,12 @@ const removePropertySchema = z.object({
 const listPropertiesSchema = z.object({});
 const listTagsSchema = z.object({});
 
-export function buildOperationsTools(handlers: OperationsToolHandlers): ToolRegistration[] {
+export function buildOperationsTools(
+  handlers: OperationsToolHandlers,
+  deps: { provider: VaultProvider; reader: VaultReader },
+): ToolRegistration[] {
   return [
-    {
-      name: 'read_notes',
-      spec: {
-        title: 'Read Notes',
-        description:
-          "Read multiple notes in one call. `paths` is an array of 1–50 vault-relative POSIX paths; duplicates are de-duplicated and results returned in input order. `fields` projects which parts of each note to return — choose from `frontmatter` and `content`; default `['frontmatter','content']`. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running.",
-        inputSchema: readNotesSchema,
-      },
-      handler: async (args) => invokeTool(() => handlers.readNotes(readNotesSchema.parse(args))),
-    },
+    registerTool(buildReadNotesTool(deps)),
     {
       name: 'query_notes',
       spec: {
