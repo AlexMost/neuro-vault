@@ -11,7 +11,17 @@ import {
   findDuplicates,
   findNeighbors,
 } from '../../src/modules/semantic/search-engine.js';
-import { createToolHandlers, ToolHandlerError } from '../../src/modules/semantic/tool-handlers.js';
+import { buildSearchNotesTool } from '../../src/modules/semantic/tools/search-notes.js';
+import { buildGetSimilarNotesTool } from '../../src/modules/semantic/tools/get-similar-notes.js';
+import { buildFindDuplicatesTool } from '../../src/modules/semantic/tools/find-duplicates.js';
+import { buildGetStatsTool } from '../../src/modules/semantic/tools/get-stats.js';
+import { ToolHandlerError } from '../../src/lib/tool-response.js';
+import type {
+  EmbeddingProvider,
+  PathExistsCheck,
+  SearchEngine,
+  SmartSource,
+} from '../../src/modules/semantic/types.js';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.resolve(testDir, 'fixtures/vault/.smart-env/multi');
@@ -64,6 +74,29 @@ function createDuplicateCorpus(corpus: Awaited<ReturnType<typeof loadSmartConnec
   return { sources };
 }
 
+function makeHandlers(deps: {
+  sources: Map<string, SmartSource>;
+  embeddingProvider: EmbeddingProvider;
+  searchEngine: SearchEngine;
+  modelKey: string;
+  pathExists?: PathExistsCheck;
+}) {
+  const resolvedDeps = {
+    ...deps,
+    pathExists: deps.pathExists ?? (async () => true),
+  };
+  const searchNotesTool = buildSearchNotesTool(resolvedDeps);
+  const getSimilarNotesTool = buildGetSimilarNotesTool(resolvedDeps);
+  const findDuplicatesTool = buildFindDuplicatesTool(resolvedDeps);
+  const getStatsTool = buildGetStatsTool(resolvedDeps);
+  return {
+    searchNotes: searchNotesTool.handler,
+    getSimilarNotes: getSimilarNotesTool.handler,
+    findDuplicates: findDuplicatesTool.handler,
+    getStats: getStatsTool.handler,
+  };
+}
+
 describe('createToolHandlers', () => {
   it('filters out search results whose paths no longer exist on disk', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture([
@@ -76,8 +109,8 @@ describe('createToolHandlers', () => {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const pathExists = vi.fn(async (notePath: string) => notePath !== 'Folder/note-b.md');
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -104,8 +137,8 @@ describe('createToolHandlers', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const pathExists = vi.fn(async (notePath: string) => notePath !== 'Folder/note-b.md');
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -133,8 +166,8 @@ describe('createToolHandlers', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const pathExists = vi.fn(async (notePath: string) => notePath !== 'Folder/note-d.md');
-      const handlers = createToolHandlers({
-        loader: createDuplicateCorpus(corpus),
+      const handlers = makeHandlers({
+        sources: createDuplicateCorpus(corpus).sources,
         embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -161,8 +194,8 @@ describe('createToolHandlers', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed,
@@ -200,8 +233,8 @@ describe('createToolHandlers', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn();
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed,
@@ -229,8 +262,8 @@ describe('createToolHandlers', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockRejectedValue(new Error('model unavailable'));
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed,
@@ -259,8 +292,8 @@ describe('createToolHandlers', () => {
 
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed: vi.fn(),
@@ -286,8 +319,8 @@ describe('createToolHandlers', () => {
 
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed: vi.fn(),
@@ -320,8 +353,8 @@ describe('createToolHandlers', () => {
 
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed: vi.fn(),
@@ -353,8 +386,8 @@ describe('createToolHandlers', () => {
 
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed: vi.fn(),
@@ -382,8 +415,8 @@ describe('createToolHandlers', () => {
 
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed: vi.fn(),
@@ -411,8 +444,8 @@ describe('createToolHandlers', () => {
 
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed: vi.fn(),
@@ -446,8 +479,8 @@ describe('createToolHandlers', () => {
 
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const handlers = createToolHandlers({
-        loader: createDuplicateCorpus(corpus),
+      const handlers = makeHandlers({
+        sources: createDuplicateCorpus(corpus).sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed: vi.fn(),
@@ -478,8 +511,8 @@ describe('createToolHandlers', () => {
 
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: {
           initialize: vi.fn(),
           embed: vi.fn(),
@@ -488,7 +521,7 @@ describe('createToolHandlers', () => {
         modelKey: 'bge-micro-v2',
       });
 
-      await expect(handlers.getStats()).resolves.toEqual({
+      await expect(handlers.getStats({})).resolves.toEqual({
         totalNotes: 3,
         totalBlocks: 3,
         embeddingDimension: 3,
@@ -512,8 +545,8 @@ describe('createToolHandlers', () => {
         .fn()
         .mockResolvedValueOnce([0.7, 0.2, 0.1])
         .mockResolvedValueOnce([0.1, 0.2, 0.7]);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -541,8 +574,8 @@ describe('createToolHandlers', () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -560,8 +593,8 @@ describe('createToolHandlers', () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -586,8 +619,8 @@ describe('createToolHandlers', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -615,8 +648,8 @@ describe('createToolHandlers', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
-      const handlers = createToolHandlers({
-        loader: corpus,
+      const handlers = makeHandlers({
+        sources: corpus.sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,

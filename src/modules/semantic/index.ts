@@ -7,16 +7,8 @@ import {
   loadSmartConnectionsCorpus,
   type SmartConnectionsCorpus,
 } from './smart-connections-loader.js';
-import { createToolHandlers } from './tool-handlers.js';
-import { buildSemanticTools } from './tools.js';
-import type { SearchNotesDeps } from './tools/search-notes.js';
-import type {
-  EmbeddingProvider,
-  PathExistsCheck,
-  SearchEngine,
-  ToolHandlerDependencies,
-  ToolHandlers,
-} from './types.js';
+import { buildSemanticTools, type SemanticToolDeps } from './tools/index.js';
+import type { EmbeddingProvider, PathExistsCheck, SearchEngine } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 
 export interface SemanticModuleConfig {
@@ -30,7 +22,6 @@ export interface SemanticModuleDeps {
   loadCorpus?: (smartEnvPath: string, modelKey: string) => Promise<SmartConnectionsCorpus>;
   embeddingServiceFactory?: (modelId: string) => EmbeddingProvider;
   searchEngine?: SearchEngine;
-  toolHandlersFactory?: (deps: ToolHandlerDependencies) => ToolHandlers;
   pathExists?: PathExistsCheck;
 }
 
@@ -59,7 +50,6 @@ export async function createSemanticModule(
     deps.embeddingServiceFactory ??
     ((modelId: string) => new EmbeddingService({ modelKey: modelId }));
   const searchEngine = deps.searchEngine ?? { findNeighbors, findBlockNeighbors, findDuplicates };
-  const toolHandlersFactory = deps.toolHandlersFactory ?? createToolHandlers;
 
   const corpus = await loadCorpus(config.smartEnvPath, config.modelKey);
   if (corpus.sources.size === 0) {
@@ -68,15 +58,8 @@ export async function createSemanticModule(
 
   const embeddingService = embeddingServiceFactory(config.modelId);
   const pathExists = deps.pathExists ?? createDefaultPathExists(config.vaultPath);
-  const handlers = toolHandlersFactory({
-    loader: corpus,
-    embeddingProvider: embeddingService,
-    searchEngine,
-    modelKey: config.modelKey,
-    pathExists,
-  });
 
-  const searchDeps: SearchNotesDeps = {
+  const semanticDeps: SemanticToolDeps = {
     sources: corpus.sources,
     embeddingProvider: embeddingService,
     searchEngine,
@@ -85,7 +68,7 @@ export async function createSemanticModule(
   };
 
   return {
-    tools: buildSemanticTools(handlers, searchDeps),
+    tools: buildSemanticTools(semanticDeps),
     warmup: async () => {
       await embeddingService.initialize();
     },
