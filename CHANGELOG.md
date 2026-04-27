@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.7.0](https://github.com/AlexMost/neuro-vault/compare/v1.6.0...v1.7.0) (2026-04-27)
+
+### Features
+
+- **semantic:** accept query array in search_notes Zod schema ([e064ddd](https://github.com/AlexMost/neuro-vault/commit/e064ddd5c4142d0a2a762546cd4a73d8c7b66ed7))
+- **semantic:** add executeMultiRetrieval with merge by path ([74aaf03](https://github.com/AlexMost/neuro-vault/commit/74aaf030c48b98cfc8c3afef178596e1cbbf7dce))
+- **semantic:** handle string|string[] in searchNotes with merge ([7fdaf4e](https://github.com/AlexMost/neuro-vault/commit/7fdaf4ee2da44806c9427d9878e5432499567d14))
+- **semantic:** widen SearchNotesInput.query to string|string[] ([f8b88fb](https://github.com/AlexMost/neuro-vault/commit/f8b88fbbd807cc58ef2f52d4eebfb240828b11d9))
+
+### Bug Fixes
+
+- **semantic:** drop search results whose paths no longer exist on disk ([7fd2e19](https://github.com/AlexMost/neuro-vault/commit/7fd2e192e3bdc29a6c7720184d6a1d14ff82529d))
+- **server:** correct backtick escaping in SERVER_INSTRUCTIONS ([4036fea](https://github.com/AlexMost/neuro-vault/commit/4036fea5dfd98f66e7c39215b234329db38085a7))
+
 ## [1.6.0](https://github.com/AlexMost/neuro-vault/compare/v1.5.0...v1.6.0) (2026-04-26)
 
 ### Features
