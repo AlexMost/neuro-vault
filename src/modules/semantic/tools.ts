@@ -3,14 +3,9 @@ import { z } from 'zod';
 import { invokeTool } from '../../lib/tool-response.js';
 import { registerTool } from '../../lib/tool-registry.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
+import { buildGetSimilarNotesTool } from './tools/get-similar-notes.js';
 import { buildSearchNotesTool, type SearchNotesDeps } from './tools/search-notes.js';
 import type { ToolHandlers } from './types.js';
-
-const getSimilarNotesSchema = z.object({
-  path: z.string(),
-  limit: z.number().int().positive().optional(),
-  threshold: z.number().min(0).max(1).optional(),
-});
 
 const findDuplicatesSchema = z.object({
   threshold: z.number().min(0).max(1).optional(),
@@ -18,21 +13,11 @@ const findDuplicatesSchema = z.object({
 
 export function buildSemanticTools(
   handlers: ToolHandlers,
-  searchDeps: SearchNotesDeps,
+  deps: SearchNotesDeps,
 ): ToolRegistration[] {
   return [
-    registerTool(buildSearchNotesTool(searchDeps)),
-    {
-      name: 'get_similar_notes',
-      spec: {
-        title: 'Get Similar Notes',
-        description:
-          'Find semantically related notes after you already have a relevant note path. Pass a vault-relative POSIX path (e.g. "Folder/note.md") as `path`.',
-        inputSchema: getSimilarNotesSchema,
-      },
-      handler: async (args) =>
-        invokeTool(() => handlers.getSimilarNotes(getSimilarNotesSchema.parse(args))),
-    },
+    registerTool(buildSearchNotesTool(deps)),
+    registerTool(buildGetSimilarNotesTool(deps)),
     {
       name: 'find_duplicates',
       spec: {
