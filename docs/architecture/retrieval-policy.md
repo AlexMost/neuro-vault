@@ -13,6 +13,28 @@ How a search request becomes a ranked set of notes and blocks. This is the "poli
 
 The output is `{ results: SearchResult[], blockResults?: BlockSearchResult[] }`.
 
+## Flow
+
+```
+query
+  │
+  ▼
+[embed] ──► query_vector
+  │
+  ▼
+[findNeighbors threshold] ─► note results (top-K)
+  │   (if empty AND threshold>0.3: retry at 0.3)
+  ▼
+[block search] ──► block results
+  │   quick: scoped to matched notes, threshold=0, cap=5
+  │   deep:  whole corpus, threshold=mode, limit=mode
+  ▼
+[expansion] (deep only) ──► merge top-3 neighbors of top results
+  │
+  ▼
+slice(0, limit) ──► final
+```
+
 ## Why it exists
 
 The search engine is pure math; the LLM-facing tool needs a higher-level behaviour: "if the user wants a quick lookup, give me a few high-confidence matches; if the user is exploring, cast a wider net and surface relevant paragraphs." Encoding that behaviour as a policy keeps the math layer simple and gives one place to tune the trade-offs.
@@ -76,15 +98,15 @@ Merge rule for note results:
 
 Block results merge by `(path, heading, lines)` with the same max-similarity rule.
 
-After merging, results are sorted by similarity descending (with path tiebreak) and capped to `min(limit × N, 50)`, where `limit` is the per-query top-K (user-supplied or mode default) and `N` is the number of unique queries after dedupe. The hard ceiling of 50 bounds response size, not retrieval depth — `truncated: true` signals that more candidates existed than fit in the cap.
+After merging, results are sorted by similarity descending (with path tiebreak) and capped to `min(cap × N, 50)`, where `cap` is the user-supplied `limit` (or `mode.limit` if omitted) and `N` is the number of unique queries after dedupe. Per-query retrieval always uses `mode.limit` for its own top-K — the user-supplied `limit` only governs the merged-output cap, never the per-query depth. The hard ceiling of 50 bounds response size, not retrieval depth — `truncated: true` signals that more candidates existed than fit in the cap.
 
 The handler in `tool-handlers.ts` decides which path to run based on the runtime type of `input.query`: `string` keeps the legacy single-query shape (no `matched_queries`, no `truncated`); `string[]` (length 1–8 after dedupe) takes the multi-query path.
 
 ## Invariants
 
 - Results are sorted by similarity descending (the search engine guarantees this; the policy does not re-sort after expansion, but `dedupe` preserves the highest-similarity entry per path).
-- The final note count is bounded by `mode.limit`; block count by `QUICK_BLOCK_LIMIT` (quick) or `mode.limit` (deep).
-- A user-supplied `threshold` overrides the mode default; everything else uses mode defaults unless explicitly overridden.
+- The final note count is bounded by `input.limit ?? mode.limit`; block count by `QUICK_BLOCK_LIMIT` (quick) or `mode.limit` (deep).
+- User-supplied `threshold` and `limit` override the mode defaults; `expansion` and `expansionLimit` are fixed by mode (`quick`: off / 0; `deep`: on / 3) and not exposed to MCP callers.
 
 ## Stale-path filtering
 

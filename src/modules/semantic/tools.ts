@@ -9,8 +9,6 @@ const searchNotesSchema = z.object({
   mode: z.enum(['quick', 'deep']).optional(),
   limit: z.number().int().positive().optional(),
   threshold: z.number().min(0).max(1).optional(),
-  expansion: z.boolean().optional(),
-  expansion_limit: z.number().int().positive().optional(),
 });
 
 const getSimilarNotesSchema = z.object({
@@ -29,8 +27,24 @@ export function buildSemanticTools(handlers: ToolHandlers): ToolRegistration[] {
       name: 'search_notes',
       spec: {
         title: 'Search Notes',
-        description:
-          'Search notes by semantic similarity for fuzzy recall, topic lookup, or cross-language matching. Pass a short keyword query (1-4 words). For synonyms, reformulations, or translations into the languages used in the vault, pass an array of 1-8 queries — they are batch-embedded server-side and returned as one merged ranked list with matched_queries on each result. Choose mode: "quick" for specific lookups (up to 3 notes), "deep" for broad topic overview with block-level search and expansion.',
+        description: [
+          'Search notes by semantic similarity. Best for fuzzy recall, topic exploration, or cross-language matches. Pass short keyword queries (1-4 words), not sentences.',
+          '',
+          'MODES (pick based on intent):',
+          '- "quick" (default) — specific lookup. Returns up to 3 top notes plus block-level matches scoped to those notes. Use when you want one or two specific notes.',
+          '- "deep" — topic exploration. Returns up to 8 notes plus block-level matches across the whole vault, with semantic expansion to related notes. Use for "tell me about X" or building an overview.',
+          '',
+          'PARAMETERS:',
+          '- query (required): string, or array of 1-8 strings. Pass an array for synonyms / reformulations / translations — embedded in batch and merged into one ranked list with `matched_queries` per result.',
+          '- mode: "quick" | "deep" (default "quick").',
+          '- limit: max notes in `results`. Default 3 (quick) / 8 (deep). Override to widen or narrow the result set. Does not affect `blockResults` (quick: capped at 5; deep: capped at mode limit).',
+          '- threshold: min similarity, 0-1. Default 0.5 (quick) / 0.35 (deep). Raise to 0.6+ to cut weak matches; lower (e.g. 0.3) when nothing comes back.',
+          '',
+          'EXAMPLES:',
+          '- "where did I write about X?" → search_notes({query: "X"}) — quick.',
+          '- "what do I know about Y?" → search_notes({query: "Y", mode: "deep"}).',
+          '- multilingual: search_notes({query: ["embeddings", "векторний пошук"]}).',
+        ].join('\n'),
         inputSchema: searchNotesSchema,
       },
       handler: async (args) =>

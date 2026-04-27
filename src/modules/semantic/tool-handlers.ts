@@ -239,25 +239,19 @@ export function createToolHandlers({
         input.threshold !== undefined
           ? readThreshold(input.threshold, input.threshold, 'threshold')
           : undefined;
-      const expansionLimit =
-        input.expansion_limit !== undefined
-          ? readPositiveInteger(input.expansion_limit, 3, 'expansion_limit')
+      const limit =
+        input.limit !== undefined
+          ? readPositiveInteger(input.limit, input.limit, 'limit')
           : undefined;
 
       if (Array.isArray(input.query)) {
         const queries = normalizeQueryArray(input.query);
-        const limit =
-          input.limit !== undefined
-            ? readPositiveInteger(input.limit, input.limit, 'limit')
-            : undefined;
 
         try {
           const output = await executeMultiRetrieval({
             queries,
             mode,
             threshold,
-            expansion: input.expansion,
-            expansionLimit,
             limit,
             sources: loader.sources,
             embeddingProvider,
@@ -291,9 +285,8 @@ export function createToolHandlers({
         const output = await executeRetrieval({
           query,
           mode,
+          limit,
           threshold,
-          expansion: input.expansion,
-          expansionLimit,
           sources: loader.sources,
           embeddingProvider,
           searchEngine,

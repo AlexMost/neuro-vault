@@ -60,8 +60,6 @@ export interface SearchNotesInput {
   mode?: SearchMode;
   limit?: number;
   threshold?: number;
-  expansion?: boolean;
-  expansion_limit?: number;
 }
 
 export interface GetSimilarNotesInput {
