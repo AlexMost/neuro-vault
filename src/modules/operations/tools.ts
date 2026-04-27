@@ -14,16 +14,7 @@ import { buildReadDailyTool } from './tools/read-daily.js';
 import { buildAppendDailyTool } from './tools/append-daily.js';
 import { buildSetPropertyTool } from './tools/set-property.js';
 import { buildReadPropertyTool } from './tools/read-property.js';
-
-const noteIdentifierShape = {
-  name: z.string().optional(),
-  path: z.string().optional(),
-};
-
-const removePropertySchema = z.object({
-  ...noteIdentifierShape,
-  key: z.string(),
-});
+import { buildRemovePropertyTool } from './tools/remove-property.js';
 
 const listPropertiesSchema = z.object({});
 const listTagsSchema = z.object({});
@@ -41,17 +32,7 @@ export function buildOperationsTools(
     registerTool(buildAppendDailyTool(deps)),
     registerTool(buildSetPropertyTool(deps)),
     registerTool(buildReadPropertyTool(deps)),
-    {
-      name: 'remove_property',
-      spec: {
-        title: 'Remove Property',
-        description:
-          'Remove a frontmatter property from a note. Provide `name` or `path`, plus `key`. Idempotent — succeeds whether or not the property existed.',
-        inputSchema: removePropertySchema,
-      },
-      handler: async (args) =>
-        invokeTool(() => handlers.removeProperty(removePropertySchema.parse(args))),
-    },
+    registerTool(buildRemovePropertyTool(deps)),
     {
       name: 'list_properties',
       spec: {
