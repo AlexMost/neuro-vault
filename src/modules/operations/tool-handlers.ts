@@ -50,26 +50,6 @@ function resolveIdentifier(name: string | undefined, pathArg: string | undefined
   return { kind: 'path', value: normalizePath(pathArg!) };
 }
 
-function resolvePropertyTarget(
-  file: string | undefined,
-  pathArg: string | undefined,
-): NoteIdentifier {
-  if (
-    (file === undefined && pathArg === undefined) ||
-    (file !== undefined && pathArg !== undefined)
-  ) {
-    throw invalidArgument(
-      'Provide exactly one of file or path',
-      file === undefined ? 'file' : 'path',
-    );
-  }
-  if (file !== undefined) {
-    if (file.trim() === '') throw invalidArgument('file must not be empty', 'file');
-    return { kind: 'name', value: file.trim() };
-  }
-  return { kind: 'path', value: normalizePath(pathArg!) };
-}
-
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DATETIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/;
 
@@ -216,27 +196,27 @@ export function createOperationsHandlers(
     },
 
     async setProperty(input: SetPropertyToolInput) {
-      const identifier = resolvePropertyTarget(input.file, input.path);
-      if (!input.name || input.name.trim() === '') {
-        throw invalidArgument('name must not be empty', 'name');
+      const identifier = resolveIdentifier(input.name, input.path);
+      if (!input.key || input.key.trim() === '') {
+        throw invalidArgument('key must not be empty', 'key');
       }
       const { value, type } = inferTypeAndValidate(input.value, input.type);
-      await provider.setProperty({ identifier, name: input.name.trim(), value, type });
+      await provider.setProperty({ identifier, name: input.key.trim(), value, type });
       return { ok: true as const };
     },
     async readProperty(input: ReadPropertyToolInput) {
-      const identifier = resolvePropertyTarget(input.file, input.path);
-      if (!input.name || input.name.trim() === '') {
-        throw invalidArgument('name must not be empty', 'name');
+      const identifier = resolveIdentifier(input.name, input.path);
+      if (!input.key || input.key.trim() === '') {
+        throw invalidArgument('key must not be empty', 'key');
       }
-      return provider.readProperty({ identifier, name: input.name.trim() });
+      return provider.readProperty({ identifier, name: input.key.trim() });
     },
     async removeProperty(input: RemovePropertyToolInput) {
-      const identifier = resolvePropertyTarget(input.file, input.path);
-      if (!input.name || input.name.trim() === '') {
-        throw invalidArgument('name must not be empty', 'name');
+      const identifier = resolveIdentifier(input.name, input.path);
+      if (!input.key || input.key.trim() === '') {
+        throw invalidArgument('key must not be empty', 'key');
       }
-      await provider.removeProperty({ identifier, name: input.name.trim() });
+      await provider.removeProperty({ identifier, name: input.key.trim() });
       return { ok: true as const };
     },
     async listProperties(_input: ListPropertiesToolInput) {
