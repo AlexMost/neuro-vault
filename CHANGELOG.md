@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [1.7.1](https://github.com/AlexMost/neuro-vault/compare/v1.7.0...v1.7.1) (2026-04-27)
+
+### Bug Fixes
+
+- **operations:** return real path and parsed frontmatter from read_note ([cc5400a](https://github.com/AlexMost/neuro-vault/commit/cc5400a272431801634e66b2e167f0146d4443de))
+
 ## [1.7.0](https://github.com/AlexMost/neuro-vault/compare/v1.6.0...v1.7.0) (2026-04-27)
 
 ### Features

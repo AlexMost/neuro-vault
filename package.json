@@ -1,6 +1,6 @@
 {
   "name": "neuro-vault-mcp",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "MCP server for semantic search over Obsidian vaults with Smart Connections data.",
   "homepage": "https://github.com/AlexMost/neuro-vault#readme",
   "bugs": {
