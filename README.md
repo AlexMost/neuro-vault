@@ -72,7 +72,7 @@ User guide lives in [`docs/guide/`](./docs/guide/README.md):
 - [Semantic Search](./docs/guide/semantic-search.md) — `search_notes`, `get_similar_notes`, `find_duplicates`, `get_stats`
 - [Vault Operations](./docs/guide/vault-operations.md) — note CRUD, daily notes, properties, tags
 - [Routing Between Tools](./docs/guide/routing.md)
-- [Configuration](./docs/guide/configuration.md) — CLI args, troubleshooting, limitations, development
+- [Configuration](./docs/guide/configuration.md) — CLI args, troubleshooting, limitations, **migration to 2.0**, development
 
 Architecture / internals: [`docs/architecture/`](./docs/architecture/).
 
