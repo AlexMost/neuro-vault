@@ -1,6 +1,3 @@
-import { z } from 'zod';
-
-import { invokeTool } from '../../lib/tool-response.js';
 import { registerTool } from '../../lib/tool-registry.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 import type { OperationsToolHandlers } from './types.js';
@@ -16,8 +13,7 @@ import { buildSetPropertyTool } from './tools/set-property.js';
 import { buildReadPropertyTool } from './tools/read-property.js';
 import { buildRemovePropertyTool } from './tools/remove-property.js';
 import { buildListPropertiesTool } from './tools/list-properties.js';
-
-const listTagsSchema = z.object({});
+import { buildListTagsTool } from './tools/list-tags.js';
 
 export function buildOperationsTools(
   handlers: OperationsToolHandlers,
@@ -34,15 +30,6 @@ export function buildOperationsTools(
     registerTool(buildReadPropertyTool(deps)),
     registerTool(buildRemovePropertyTool(deps)),
     registerTool(buildListPropertiesTool(deps)),
-    {
-      name: 'list_tags',
-      spec: {
-        title: 'List Tags',
-        description:
-          'List all tags used across the vault, sorted by occurrence count desc. Returns `[{name, count}]`.',
-        inputSchema: listTagsSchema,
-      },
-      handler: async () => invokeTool(() => handlers.listTags({})),
-    },
+    registerTool(buildListTagsTool(deps)),
   ];
 }
