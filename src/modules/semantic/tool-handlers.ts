@@ -1,11 +1,16 @@
-import path from 'node:path';
-
 import {
   executeRetrieval,
   executeMultiRetrieval,
   type MultiRetrievalOutput,
   type RetrievalOutput,
 } from './retrieval-policy.js';
+import {
+  normalizeNotePath,
+  normalizeQuery,
+  normalizeQueryArray,
+  readPositiveInteger,
+  readThreshold,
+} from './tool-helpers.js';
 import type {
   DuplicatePair,
   FindDuplicatesInput,
@@ -26,133 +31,6 @@ export { ToolHandlerError } from '../../lib/tool-response.js';
 const DEFAULT_SEARCH_LIMIT = 10;
 const DEFAULT_SEARCH_THRESHOLD = 0.5;
 const DEFAULT_DUPLICATE_THRESHOLD = 0.9;
-const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
-const MAX_MULTI_QUERIES = 8;
-
-function normalizeNotePath(notePath: string): string {
-  const trimmed = notePath.trim();
-
-  if (!trimmed) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must not be empty', {
-      details: { field: 'path' },
-    });
-  }
-
-  if (path.posix.isAbsolute(trimmed) || WINDOWS_ABSOLUTE_PATH_RE.test(trimmed)) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must be vault-relative', {
-      details: { field: 'path' },
-    });
-  }
-
-  const slashNormalized = trimmed.replace(/\\/g, '/');
-
-  if (slashNormalized.split('/').some((segment) => segment === '..')) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must be vault-relative', {
-      details: { field: 'path' },
-    });
-  }
-
-  const normalized = path.posix.normalize(slashNormalized);
-
-  if (normalized === '.') {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must not be empty', {
-      details: { field: 'path' },
-    });
-  }
-
-  if (path.posix.isAbsolute(normalized)) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must be vault-relative', {
-      details: { field: 'path' },
-    });
-  }
-
-  return normalized;
-}
-
-function normalizeQuery(query: string): string {
-  const normalized = query.trim();
-
-  if (normalized.length === 0) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'query must not be empty', {
-      details: { field: 'query' },
-    });
-  }
-
-  return normalized;
-}
-
-function normalizeQueryArray(queries: string[]): string[] {
-  if (queries.length === 0) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'query array must not be empty', {
-      details: { field: 'query' },
-    });
-  }
-  if (queries.length > MAX_MULTI_QUERIES) {
-    throw new ToolHandlerError(
-      'INVALID_ARGUMENT',
-      `query array must contain at most ${MAX_MULTI_QUERIES} entries`,
-      { details: { field: 'query', max: MAX_MULTI_QUERIES, received: queries.length } },
-    );
-  }
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of queries) {
-    if (typeof raw !== 'string') {
-      throw new ToolHandlerError('INVALID_ARGUMENT', 'query array must contain strings', {
-        details: { field: 'query' },
-      });
-    }
-    const trimmed = raw.trim();
-    if (trimmed.length === 0) {
-      throw new ToolHandlerError('INVALID_ARGUMENT', 'query entries must not be empty', {
-        details: { field: 'query' },
-      });
-    }
-    if (!seen.has(trimmed)) {
-      seen.add(trimmed);
-      out.push(trimmed);
-    }
-  }
-  return out;
-}
-
-function readPositiveInteger(
-  value: number | undefined,
-  defaultValue: number,
-  field: string,
-): number {
-  if (value === undefined) {
-    return defaultValue;
-  }
-
-  if (!Number.isInteger(value) || value < 1) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', `${field} must be a positive integer`, {
-      details: { field },
-    });
-  }
-
-  return value;
-}
-
-function readThreshold(value: number | undefined, defaultValue: number, field: string): number {
-  if (value === undefined) {
-    return defaultValue;
-  }
-
-  if (!Number.isFinite(value)) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', `${field} must be a finite number`, {
-      details: { field },
-    });
-  }
-
-  if (value < 0 || value > 1) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', `${field} must be between 0 and 1`, {
-      details: { field },
-    });
-  }
-
-  return value;
-}
 
 function readEmbeddingDimension(sources: Iterable<SmartSource>): number {
   let dimension: number | undefined;
