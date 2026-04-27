@@ -1,6 +1,11 @@
 import path from 'node:path';
 
-import { executeRetrieval, type RetrievalOutput } from './retrieval-policy.js';
+import {
+  executeRetrieval,
+  executeMultiRetrieval,
+  type MultiRetrievalOutput,
+  type RetrievalOutput,
+} from './retrieval-policy.js';
 import type {
   DuplicatePair,
   FindDuplicatesInput,
@@ -22,6 +27,7 @@ const DEFAULT_SEARCH_LIMIT = 10;
 const DEFAULT_SEARCH_THRESHOLD = 0.5;
 const DEFAULT_DUPLICATE_THRESHOLD = 0.9;
 const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
+const MAX_MULTI_QUERIES = 8;
 
 function normalizeNotePath(notePath: string): string {
   const trimmed = notePath.trim();
@@ -73,6 +79,41 @@ function normalizeQuery(query: string): string {
   }
 
   return normalized;
+}
+
+function normalizeQueryArray(queries: string[]): string[] {
+  if (queries.length === 0) {
+    throw new ToolHandlerError('INVALID_ARGUMENT', 'query array must not be empty', {
+      details: { field: 'query' },
+    });
+  }
+  if (queries.length > MAX_MULTI_QUERIES) {
+    throw new ToolHandlerError(
+      'INVALID_ARGUMENT',
+      `query array must contain at most ${MAX_MULTI_QUERIES} entries`,
+      { details: { field: 'query', max: MAX_MULTI_QUERIES, received: queries.length } },
+    );
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of queries) {
+    if (typeof raw !== 'string') {
+      throw new ToolHandlerError('INVALID_ARGUMENT', 'query array must contain strings', {
+        details: { field: 'query' },
+      });
+    }
+    const trimmed = raw.trim();
+    if (trimmed.length === 0) {
+      throw new ToolHandlerError('INVALID_ARGUMENT', 'query entries must not be empty', {
+        details: { field: 'query' },
+      });
+    }
+    if (!seen.has(trimmed)) {
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+  }
+  return out;
 }
 
 function readPositiveInteger(
@@ -192,8 +233,7 @@ export function createToolHandlers({
 }: ToolHandlerDependencies): ToolHandlers {
   const existsCheck: PathExistsCheck = pathExists ?? (async () => true);
   return {
-    async searchNotes(input: SearchNotesInput): Promise<RetrievalOutput> {
-      const query = normalizeQuery(input.query);
+    async searchNotes(input: SearchNotesInput): Promise<RetrievalOutput | MultiRetrievalOutput> {
       const mode = input.mode ?? 'quick';
       const threshold =
         input.threshold !== undefined
@@ -203,6 +243,49 @@ export function createToolHandlers({
         input.expansion_limit !== undefined
           ? readPositiveInteger(input.expansion_limit, 3, 'expansion_limit')
           : undefined;
+
+      if (Array.isArray(input.query)) {
+        const queries = normalizeQueryArray(input.query);
+        const limit =
+          input.limit !== undefined
+            ? readPositiveInteger(input.limit, input.limit, 'limit')
+            : undefined;
+
+        try {
+          const output = await executeMultiRetrieval({
+            queries,
+            mode,
+            threshold,
+            expansion: input.expansion,
+            expansionLimit,
+            limit,
+            sources: loader.sources,
+            embeddingProvider,
+            searchEngine,
+          });
+
+          const candidatePaths: string[] = [
+            ...output.results.map((r) => r.path),
+            ...(output.blockResults?.map((b) => b.path) ?? []),
+          ];
+          const existing = await buildExistingPathSet(candidatePaths, existsCheck);
+
+          return {
+            results: output.results.filter((r) => existing.has(r.path)),
+            ...(output.blockResults !== undefined
+              ? { blockResults: output.blockResults.filter((b) => existing.has(b.path)) }
+              : {}),
+            truncated: output.truncated,
+          };
+        } catch (error) {
+          throw wrapDependencyError(error, 'Failed to search notes', {
+            modelKey,
+            operation: 'search_notes',
+          });
+        }
+      }
+
+      const query = normalizeQuery(input.query);
 
       try {
         const output = await executeRetrieval({

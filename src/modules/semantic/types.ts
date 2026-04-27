@@ -1,4 +1,4 @@
-import type { RetrievalOutput } from './retrieval-policy.js';
+import type { MultiRetrievalOutput, RetrievalOutput } from './retrieval-policy.js';
 
 export interface SmartBlock {
   key: string;
@@ -56,7 +56,7 @@ export interface SearchEngine {
 export type SearchMode = 'quick' | 'deep';
 
 export interface SearchNotesInput {
-  query: string;
+  query: string | string[];
   mode?: SearchMode;
   limit?: number;
   threshold?: number;
@@ -96,8 +96,16 @@ export interface ToolHandlerDependencies {
 export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENCY_ERROR';
 
 export interface ToolHandlers {
-  searchNotes(input: SearchNotesInput): Promise<RetrievalOutput>;
+  searchNotes(input: SearchNotesInput): Promise<RetrievalOutput | MultiRetrievalOutput>;
   getSimilarNotes(input: GetSimilarNotesInput): Promise<SearchResult[]>;
   findDuplicates(input?: FindDuplicatesInput): Promise<DuplicatePair[]>;
   getStats(): Promise<ToolStats>;
+}
+
+export interface MultiSearchResult extends SearchResult {
+  matched_queries: string[];
+}
+
+export interface MultiBlockSearchResult extends BlockSearchResult {
+  matched_queries: string[];
 }

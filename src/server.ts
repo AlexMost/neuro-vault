@@ -60,10 +60,9 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 
 ### 1. Write the query
 1. Extract the core nouns and concepts from the user's message — strip filler words and verbs. From "remind me what I wanted to build with LLM agents" the key concepts are "LLM", "agents", "build".
-2. Search each concept separately and in small combinations: "LLM", "agents", "LLM agents", "AI projects".
-3. Try synonyms and reformulations — the note may use different wording than the query.
-4. The vault may contain notes in multiple languages. Search in the language of the user's message + English.
-5. If a search returns no results, lower the threshold to 0.3 before giving up.
+2. For synonyms, reformulations, or translations, pass \`query\` as an array of 1-8 strings in a SINGLE call — the server batch-embeds them and returns one merged ranked list with \`matched_queries\` showing which query hit which note. Do not make multiple sequential calls for synonyms.
+3. The vault may contain notes written in several languages. If you have evidence of which languages are in use (from prior reads, file names, or earlier results), include translations of the key concepts into each of those languages in the same \`query\` array.
+4. If a search returns no results, lower the threshold to 0.3 before giving up.
 
 ### 2. Choose mode
 - **quick** (default) — returns up to 3 notes, no expansion. Use for specific lookups.
@@ -72,6 +71,8 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 
 ### 3. Use the results
 - \`results\` — notes ranked by similarity; read the file by path
+- \`matched_queries\` (only when \`query\` is an array) — which of your queries hit this note; lets you spot which synonym was load-bearing
+- \`truncated\` (only when \`query\` is an array) — true when more candidates were merged than fit in the cap
 - \`blockResults\` — sections ranked by relevance; use heading + line range to jump to the relevant part
 - After finding a relevant note, call get_similar_notes to discover related content
 
