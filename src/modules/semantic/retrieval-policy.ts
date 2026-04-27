@@ -61,7 +61,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const threshold = input.threshold ?? modeConfig.threshold;
   const expansion = input.expansion ?? modeConfig.expansion;
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
-  const limit = modeConfig.limit;
+  const limit = input.limit ?? modeConfig.limit;
 
   // Step 1: Vector search
   const queryVector = await embeddingProvider.embed(query);
