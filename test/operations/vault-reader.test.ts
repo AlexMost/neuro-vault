@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { FsVaultReader } from '../../src/modules/operations/vault-reader.js';
+import { FsVaultReader, ScanPathNotFoundError } from '../../src/modules/operations/vault-reader.js';
 
 function fakeReadFile(files: Record<string, string | { error: Error & { code?: string } }>) {
   return vi.fn(async (absPath: string, encoding: 'utf8') => {
@@ -130,5 +130,89 @@ describe('FsVaultReader', () => {
       frontmatter: { status: 'done' },
       content: '\nbody\n',
     });
+  });
+});
+
+describe('FsVaultReader.scan', () => {
+  function fakeStat(dirs: Set<string>) {
+    return vi.fn(async (absPath: string) => {
+      if (!dirs.has(absPath)) {
+        const err = new Error('ENOENT') as Error & { code?: string };
+        err.code = 'ENOENT';
+        throw err;
+      }
+      return { isDirectory: () => true };
+    });
+  }
+
+  it('scans the whole vault when no pathPrefix is given', async () => {
+    const glob = vi.fn(async () => ['a.md', 'sub/b.md', 'sub/deep/c.md']);
+    const reader = new FsVaultReader({ vaultRoot: '/v', glob });
+
+    const out = await reader.scan();
+
+    expect(out).toEqual(['a.md', 'sub/b.md', 'sub/deep/c.md']);
+    expect(glob).toHaveBeenCalledWith('**/*.md', {
+      cwd: '/v',
+      onlyFiles: true,
+      dot: false,
+      followSymbolicLinks: false,
+    });
+  });
+
+  it('treats trailing-slash and no-trailing-slash prefixes the same', async () => {
+    const stat = fakeStat(new Set(['/v/Projects']));
+    const glob = vi.fn(async () => ['x.md', 'sub/y.md']);
+    const reader = new FsVaultReader({ vaultRoot: '/v', stat, glob });
+
+    const a = await reader.scan({ pathPrefix: 'Projects' });
+    const b = await reader.scan({ pathPrefix: 'Projects/' });
+
+    expect(a).toEqual(['Projects/sub/y.md', 'Projects/x.md']);
+    expect(b).toEqual(a);
+  });
+
+  it('throws PATH_NOT_FOUND when prefix directory is missing', async () => {
+    const stat = fakeStat(new Set());
+    const glob = vi.fn();
+    const reader = new FsVaultReader({ vaultRoot: '/v', stat, glob });
+
+    await expect(reader.scan({ pathPrefix: 'Nope' })).rejects.toBeInstanceOf(ScanPathNotFoundError);
+    expect(glob).not.toHaveBeenCalled();
+  });
+
+  it('returns an empty array when prefix exists but contains no .md', async () => {
+    const stat = fakeStat(new Set(['/v/Empty']));
+    const glob = vi.fn(async () => []);
+    const reader = new FsVaultReader({ vaultRoot: '/v', stat, glob });
+
+    const out = await reader.scan({ pathPrefix: 'Empty' });
+
+    expect(out).toEqual([]);
+  });
+
+  it('strips ./ and treats "." as no prefix', async () => {
+    const glob = vi.fn(async () => ['x.md']);
+    const reader = new FsVaultReader({ vaultRoot: '/v', glob });
+
+    const out = await reader.scan({ pathPrefix: '.' });
+
+    expect(out).toEqual(['x.md']);
+    expect(glob).toHaveBeenCalledWith('**/*.md', {
+      cwd: '/v',
+      onlyFiles: true,
+      dot: false,
+      followSymbolicLinks: false,
+    });
+  });
+
+  it('returns POSIX paths even when fast-glob yields backslashes', async () => {
+    const stat = fakeStat(new Set(['/v/Projects']));
+    const glob = vi.fn(async () => ['sub\\y.md']);
+    const reader = new FsVaultReader({ vaultRoot: '/v', stat, glob });
+
+    const out = await reader.scan({ pathPrefix: 'Projects' });
+
+    expect(out).toEqual(['Projects/sub/y.md']);
   });
 });

@@ -7,7 +7,7 @@ How the server is split into pluggable modules and how they are wired together a
 The codebase is organized into two modules under `src/modules/`:
 
 - `semantic/` — embedding-based search over a Smart Connections corpus (in-memory cosine search) — 4 tools
-- `operations/` — direct vault operations — 11 tools, grouped as note body (`read_notes`, `create_note`, `edit_note`, `read_daily`, `append_daily`), frontmatter properties (`set_property`, `read_property`, `remove_property`, `list_properties`), and tags (`list_tags`, `get_tag`)
+- `operations/` — direct vault operations — 11 tools, grouped as note body (`read_notes`, `create_note`, `edit_note`, `read_daily`, `append_daily`), structured queries (`query_notes`), frontmatter properties (`set_property`, `read_property`, `remove_property`, `list_properties`), and tags (`list_tags`)
 
 Each module exports `createXModule(config, deps) → { tools: ToolRegistration[], warmup? }`. `src/server.ts` aggregates registrations from enabled modules and registers them with the underlying `McpServer`.
 
@@ -75,4 +75,4 @@ flowchart LR
     CLIProv -. execFile .-> Obs
 ```
 
-The semantic module loads `.smart-env/multi/*.ajson` into memory once at startup and keeps it there. The operations module is a thin wrapper around the `obsidian` CLI invoked via `execFile`. Reads (`read_notes`) go directly to the file system via `FsVaultReader`; the Obsidian CLI is used only for everything else (creates, edits, daily notes, properties, tags). Both modules can be enabled or disabled independently with `--semantic` / `--operations` flags.
+The semantic module loads `.smart-env/multi/*.ajson` into memory once at startup and keeps it there. The operations module is a thin wrapper around the `obsidian` CLI invoked via `execFile`. Reads (`read_notes`, `query_notes`) go directly to the file system via `FsVaultReader`; the Obsidian CLI is used only for everything else (creates, edits, daily notes, properties, listing tags). Both modules can be enabled or disabled independently with `--semantic` / `--operations` flags.

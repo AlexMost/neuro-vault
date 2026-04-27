@@ -139,14 +139,16 @@ describe('Neuro Vault MCP server bootstrap', () => {
       removeProperty: vi.fn().mockResolvedValue(undefined),
       listProperties: vi.fn().mockResolvedValue([]),
       listTags: vi.fn().mockResolvedValue([]),
-      getTag: vi.fn().mockResolvedValue({ name: '', count: 0 }),
     };
 
     try {
       await main(['node', 'cli.js', '--vault', vaultPath, '--no-semantic'], {
         operations: {
           vaultProviderFactory: () => fakeProvider,
-          vaultReaderFactory: () => ({ readNotes: vi.fn().mockResolvedValue([]) }),
+          vaultReaderFactory: () => ({
+            readNotes: vi.fn().mockResolvedValue([]),
+            scan: vi.fn().mockResolvedValue([]),
+          }),
         },
         serverFactory: () => server,
         transportFactory: () => ({}) as never,
@@ -154,6 +156,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
       expect(server.registeredToolNames).toEqual([
         'read_notes',
+        'query_notes',
         'create_note',
         'edit_note',
         'read_daily',
@@ -163,7 +166,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'remove_property',
         'list_properties',
         'list_tags',
-        'get_tag',
       ]);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
@@ -186,7 +188,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
       removeProperty: vi.fn().mockResolvedValue(undefined),
       listProperties: vi.fn().mockResolvedValue([]),
       listTags: vi.fn().mockResolvedValue([]),
-      getTag: vi.fn().mockResolvedValue({ name: '', count: 0 }),
     };
 
     try {
@@ -200,7 +201,10 @@ describe('Neuro Vault MCP server bootstrap', () => {
         },
         operations: {
           vaultProviderFactory: () => fakeProvider,
-          vaultReaderFactory: () => ({ readNotes: vi.fn().mockResolvedValue([]) }),
+          vaultReaderFactory: () => ({
+            readNotes: vi.fn().mockResolvedValue([]),
+            scan: vi.fn().mockResolvedValue([]),
+          }),
         },
         serverFactory: () => server,
         transportFactory: () => ({}) as never,
@@ -212,6 +216,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'find_duplicates',
         'get_stats',
         'read_notes',
+        'query_notes',
         'create_note',
         'edit_note',
         'read_daily',
@@ -221,7 +226,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'remove_property',
         'list_properties',
         'list_tags',
-        'get_tag',
       ]);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });

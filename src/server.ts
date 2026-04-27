@@ -38,6 +38,10 @@ Use \`read_notes\`, \`create_note\`, \`edit_note\`, \`read_daily\`, \`append_dai
 
 \`create_note\` with \`overwrite: true\` is destructive. Always ask the user before overwriting an existing note.
 
+### Structured queries
+
+Use \`query_notes\` for multi-criteria questions that combine tags, frontmatter properties, and ranges — for example "active projects with #ai", "todo tasks created this week", "notes with deadline set", "all notes tagged X". The \`filter\` is a MongoDB-style object evaluated against \`{ path, frontmatter, tags }\` — reference frontmatter keys as \`frontmatter.<key>\` and tags via the top-level \`tags\` field (no leading \`#\`). Supported operators: \`$eq\`, \`$ne\`, \`$in\`, \`$nin\`, \`$gt\`, \`$gte\`, \`$lt\`, \`$lte\`, \`$exists\`, \`$regex\`, \`$and\`, \`$or\`, \`$nor\`, \`$not\`. To list notes by a single tag use \`{ filter: { tags: 'X' } }\`. The result \`{ results, count, truncated }\` includes \`frontmatter\` always; pass \`include_content: true\` only when bodies are needed up-front (it can grow the response a lot). Reads directly from disk; does not need Obsidian running. \`limit\` defaults to 100 and is capped at 1000.
+
 ### Frontmatter properties
 
 Use \`set_property\`, \`read_property\`, \`remove_property\` when the user asks to read or modify a single YAML frontmatter field (status, due date, priority, etc.). Use \`list_properties\` to see what property names are already in use across the vault — useful before introducing a new one.
@@ -48,11 +52,11 @@ If you need frontmatter for one or more notes, call \`read_notes\` with \`fields
 
 ### Tags
 
-Use \`list_tags\` to see all tags ranked by frequency, and \`get_tag\` to find which files use a specific tag. Pass \`include_files: false\` to \`get_tag\` for very popular tags where the full file list would be large. The leading \`#\` on tag names is optional — both \`ai\` and \`#ai\` work.
+Use \`list_tags\` to see all tags ranked by frequency. To list the notes that carry a specific tag, call \`query_notes\` with \`{ filter: { tags: '<name>' } }\` (no leading \`#\`).
 
 ### CLI availability
 
-The vault-operations tools (other than \`read_notes\`) route through the Obsidian CLI and require Obsidian to be running. If a call fails with \`CLI_NOT_FOUND\` or \`CLI_UNAVAILABLE\`, tell the user and stop — do not retry. \`read_notes\` reads directly from disk and does not need Obsidian to be running.
+The vault-operations tools (other than \`read_notes\` and \`query_notes\`) route through the Obsidian CLI and require Obsidian to be running. If a call fails with \`CLI_NOT_FOUND\` or \`CLI_UNAVAILABLE\`, tell the user and stop — do not retry. \`read_notes\` and \`query_notes\` read directly from disk and do not need Obsidian to be running.
 
 ## When to use semantic search
 
@@ -80,7 +84,7 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 
 If the user gives an exact anchor (note path, daily note, tag, frontmatter field), prefer operations tools. If the user is recalling fuzzily or asking a conceptual question, prefer \`search_notes\`. After semantic search finds a relevant note, you can read it with \`read_notes\` (passing the path in a one-element array, or batching with sibling paths) to see the details.
 
-For tag-driven questions ("which notes are tagged X?", "show me everything in #ai") use \`get_tag\`, not \`search_notes\` — the answer is exact, not fuzzy.
+For tag-driven questions ("which notes are tagged X?", "show me everything in #ai") use \`query_notes\` with \`{ filter: { tags: '<name>' } }\`, not \`search_notes\` — the answer is exact, not fuzzy.
 `;
 
 function defaultServerFactory(): ToolServer {

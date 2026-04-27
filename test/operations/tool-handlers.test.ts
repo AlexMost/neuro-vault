@@ -15,7 +15,6 @@ function fakeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
     removeProperty: vi.fn().mockResolvedValue(undefined),
     listProperties: vi.fn().mockResolvedValue([]),
     listTags: vi.fn().mockResolvedValue([]),
-    getTag: vi.fn().mockResolvedValue({ name: '', count: 0 }),
     ...overrides,
   };
 }
@@ -23,6 +22,7 @@ function fakeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
 function fakeReader(overrides: Partial<VaultReader> = {}): VaultReader {
   return {
     readNotes: vi.fn().mockResolvedValue([] as ReadNotesItem[]),
+    scan: vi.fn().mockResolvedValue([] as string[]),
     ...overrides,
   };
 }
@@ -642,47 +642,3 @@ describe('operations.listTags handler', () => {
   });
 });
 
-describe('operations.getTag handler', () => {
-  it('strips leading # from tag', async () => {
-    const provider = fakeProvider({
-      getTag: vi.fn().mockResolvedValue({ name: 'mcp', count: 1, files: ['a.md'] }),
-    });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
-
-    await handlers.getTag({ tag: '#mcp' });
-
-    expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: true });
-  });
-
-  it('passes includeFiles=false when include_files is false', async () => {
-    const provider = fakeProvider({
-      getTag: vi.fn().mockResolvedValue({ name: 'mcp', count: 1 }),
-    });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
-
-    await handlers.getTag({ tag: 'mcp', include_files: false });
-
-    expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: false });
-  });
-
-  it('defaults includeFiles=true when include_files is omitted', async () => {
-    const provider = fakeProvider({
-      getTag: vi.fn().mockResolvedValue({ name: 'mcp', count: 1, files: [] }),
-    });
-    const handlers = createOperationsHandlers({ provider, reader: fakeReader() });
-
-    await handlers.getTag({ tag: 'mcp' });
-
-    expect(provider.getTag).toHaveBeenCalledWith({ name: 'mcp', includeFiles: true });
-  });
-
-  it('rejects when tag is empty', async () => {
-    const handlers = createOperationsHandlers({ provider: fakeProvider(), reader: fakeReader() });
-    await expect(handlers.getTag({ tag: '' })).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-    });
-    await expect(handlers.getTag({ tag: '#' })).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-    });
-  });
-});

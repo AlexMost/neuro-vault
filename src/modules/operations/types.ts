@@ -1,9 +1,21 @@
+import type { QueryNotesResult, QueryNotesToolInput } from './query/types.js';
+
+export type {
+  NoteRecord,
+  QueryNotesResult,
+  QueryNotesResultItem,
+  QueryNotesSort,
+  QueryNotesToolInput,
+} from './query/types.js';
+
 export type OperationsErrorCode =
   | 'INVALID_ARGUMENT'
+  | 'INVALID_FILTER'
+  | 'INVALID_PARAMS'
   | 'NOT_FOUND'
   | 'NOTE_EXISTS'
+  | 'PATH_NOT_FOUND'
   | 'PROPERTY_NOT_FOUND'
-  | 'TAG_NOT_FOUND'
   | 'UNSUPPORTED_VALUE_TYPE'
   | 'CLI_NOT_FOUND'
   | 'CLI_UNAVAILABLE'
@@ -86,13 +98,9 @@ export interface RemovePropertyToolInput {
 export type ListPropertiesToolInput = Record<string, never>;
 export type ListTagsToolInput = Record<string, never>;
 
-export interface GetTagToolInput {
-  tag: string;
-  include_files?: boolean;
-}
-
 export interface OperationsToolHandlers {
   readNotes(input: ReadNotesToolInput): Promise<ReadNotesResult>;
+  queryNotes(input: QueryNotesToolInput): Promise<QueryNotesResult>;
   createNote(input: CreateNoteToolInput): Promise<{ path: string }>;
   editNote(input: EditNoteToolInput): Promise<void>;
   readDaily(input: ReadDailyToolInput): Promise<{
@@ -108,5 +116,4 @@ export interface OperationsToolHandlers {
   removeProperty(input: RemovePropertyToolInput): Promise<{ ok: true }>;
   listProperties(input: ListPropertiesToolInput): Promise<Array<{ name: string; count: number }>>;
   listTags(input: ListTagsToolInput): Promise<Array<{ name: string; count: number }>>;
-  getTag(input: GetTagToolInput): Promise<{ name: string; count: number; files?: string[] }>;
 }

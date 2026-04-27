@@ -1,13 +1,14 @@
 import { ToolHandlerError } from '../../lib/tool-response.js';
+import { runQueryNotes } from './query/index.js';
 import type {
   AppendDailyToolInput,
   CreateNoteToolInput,
   EditNoteToolInput,
-  GetTagToolInput,
   ListPropertiesToolInput,
   ListTagsToolInput,
   OperationsErrorCode,
   OperationsToolHandlers,
+  QueryNotesToolInput,
   ReadDailyToolInput,
   ReadNotesField,
   ReadNotesResultItem,
@@ -243,6 +244,10 @@ export function createOperationsHandlers(
       return { results, count: results.length, errors };
     },
 
+    async queryNotes(input: QueryNotesToolInput) {
+      return runQueryNotes(input, reader);
+    },
+
     async createNote(input: CreateNoteToolInput) {
       if (input.name === undefined && input.path === undefined) {
         throw invalidArgument('Provide name or path', 'name');
@@ -320,14 +325,6 @@ export function createOperationsHandlers(
     },
     async listTags(_input: ListTagsToolInput) {
       return provider.listTags();
-    },
-    async getTag(input: GetTagToolInput) {
-      const stripped = (input.tag ?? '').trim().replace(/^#/, '').trim();
-      if (stripped === '') {
-        throw invalidArgument('tag must not be empty', 'tag');
-      }
-      const includeFiles = input.include_files !== false;
-      return provider.getTag({ name: stripped, includeFiles });
     },
   };
 }
