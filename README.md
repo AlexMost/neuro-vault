@@ -12,10 +12,11 @@
 
 ## ✨ Why Neuro Vault?
 
-- 🧠 **Semantic search over your existing vault** — reuses [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) embeddings already in your vault. No re-indexing, no API keys, no extra infrastructure.
-- 🎯 **Mode-aware retrieval** — `quick` for direct lookups, `deep` for exploratory questions with block-level results and semantic expansion of related notes. Pass `query: string[]` (up to 8) for synonyms, reformulations, or cross-language pairs — one merged result list with `matched_queries` per entry.
-- ✍️ **Direct vault operations** — read, create, append, and prepend notes; manage frontmatter properties and inspect tags (including daily notes) straight from your AI assistant via the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli).
-- 🔎 **Structured queries** — one MongoDB-style call (`query_notes`) replaces N+1 chains like "list tags → read each note's property". Ask "active projects with #ai" or "todo tasks created this week" and get a single ranked response.
+- 🧠 **Semantic search that already knows your vault** — reuses [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) embeddings. No re-indexing, no API keys, no extra infrastructure.
+- 🎯 **Quick or deep, your call** — fast direct lookups for "find that note", or exploratory mode with related-note expansion when the question is fuzzy.
+- 🧭 **A real navigation toolkit for your agent** — instead of grepping files and opening notes one by one, your assistant walks the vault like a database: filter by tags and properties, batch-read metadata, discover the structure, jump to semantic neighbours.
+- 🔎 **Ask structured questions in plain language** — _"active projects tagged #ai"_, _"todo tasks with a deadline this week"_, _"meeting notes from `Work/` newest first"_ — one call, ranked answer, no chains of reads.
+- ✍️ **Read and write through Obsidian itself** — create, append, edit notes, manage frontmatter and daily notes via the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli), so Smart Connections, sync, and other plugins stay in the loop.
 - ⚡ **Zero infrastructure** — local stdio MCP server, in-memory index, no database, no background processes, no watchers.
 - 🔌 **Drop-in for any MCP client** — Claude Code, Cursor, Windsurf — configuration is a single JSON block.
 
@@ -33,6 +34,22 @@ flowchart LR
 You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — semantic search uses embeddings already in `.smart-env/`, vault operations go through the `obsidian` CLI. No database, no background processes.
 
 For module wiring and internal data flow, see [docs/architecture/module-structure.md](./docs/architecture/module-structure.md).
+
+---
+
+## 🧭 Your vault, but queryable
+
+A plain-text vault is great for humans and rough on agents. Without the right tools, an assistant ends up listing folders, opening dozens of notes, and grepping inside each one just to answer a simple question.
+
+Neuro Vault gives your assistant a way to **ask the vault directly** — by tag, by frontmatter property, by folder, by similarity. Things like:
+
+> _"What are my active projects tagged #ai with a deadline this quarter?"_
+> _"Show meeting notes from `Work/` from the last two weeks."_
+> _"Find notes similar to this one I'm reading."_
+
+One question, one answer. Your assistant stops being a file browser and starts being an actual second brain.
+
+→ See [docs/guide/vault-operations.md](./docs/guide/vault-operations.md#query_notes) for the full query language and examples.
 
 ---
 
