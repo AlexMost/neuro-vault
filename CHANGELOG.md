@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [3.5.0](https://github.com/AlexMost/neuro-vault/compare/v3.4.0...v3.5.0) (2026-04-28)
+
+### Features
+
+- **lib:** coerce stringified JSON array of strings on string|string[] unions ([41a8358](https://github.com/AlexMost/neuro-vault/commit/41a83589ce15b4cd0f5040765dbc2cf2b3985adc))
+
 ## [3.4.0](https://github.com/AlexMost/neuro-vault/compare/v3.3.1...v3.4.0) (2026-04-28)
 
 ### Features
