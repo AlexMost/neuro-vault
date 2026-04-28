@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [3.2.0](https://github.com/AlexMost/neuro-vault/compare/v3.1.1...v3.2.0) (2026-04-28)
+
+### Features
+
+- **lib:** coerce primitive types in MCP tool params ([6d4e735](https://github.com/AlexMost/neuro-vault/commit/6d4e7357aed79020a106c9545b0a481861e2e9fa))
+
 ## [3.1.1](https://github.com/AlexMost/neuro-vault/compare/v3.1.0...v3.1.1) (2026-04-27)
 
 ### Bug Fixes
