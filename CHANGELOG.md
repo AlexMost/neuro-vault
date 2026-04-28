@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [3.2.1](https://github.com/AlexMost/neuro-vault/compare/v3.2.0...v3.2.1) (2026-04-28)
+
+### Bug Fixes
+
+- improved prompts added a role ([c584fe2](https://github.com/AlexMost/neuro-vault/commit/c584fe20430d14871b0fa8be83c90f46e4179a1c))
+
 ## [3.2.0](https://github.com/AlexMost/neuro-vault/compare/v3.1.1...v3.2.0) (2026-04-28)
 
 ### Features
