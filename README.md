@@ -1,12 +1,14 @@
 # Neuro Vault MCP
 
-**Semantic vault search and direct vault operations for your Obsidian vault — right inside your AI assistant.**
+> 🧠💾 **Plug your knowledge in like a USB drive.** Your Obsidian vault, available in every AI conversation — search it, query it, write to it. Same vault in Claude Code, Cursor, Windsurf — no copy-paste, no context-switching, no re-indexing.
 
 [![npm version](https://img.shields.io/npm/v/neuro-vault-mcp)](https://www.npmjs.com/package/neuro-vault-mcp)
 [![Node.js](https://img.shields.io/node/v/neuro-vault-mcp)](https://nodejs.org)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 
-> "What did I write about that idea last month?" — and now your assistant can actually answer.
+Your second brain stops being a folder you open between contexts and becomes a first-class participant in every project. Ask, recall, decide, write back — all without leaving the conversation.
+
+> _"What did I write about that idea last month?"_ — and now your assistant can actually answer.
 
 ---
 
@@ -22,6 +24,42 @@
 
 ---
 
+## 🧰 Two superpowers, one server
+
+Most "vault MCP" servers give you one or the other. Neuro Vault gives you both, and lets your assistant pick the right one per question:
+
+|                  | 🔭 **Semantic recall**                                                    | 🛠 **Vault operations**                                                        |
+| ---------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **What it does** | Finds notes by meaning, not keywords. Surfaces neighbours and duplicates. | Reads, writes, edits notes; manages frontmatter, tags, daily notes.            |
+| **Best for**     | _"What did I think about X?"_, fuzzy recall, exploratory research.        | Structured queries, capturing decisions, updating tasks, batch reads.          |
+| **Powered by**   | Smart Connections embeddings (already in your vault).                     | The official Obsidian CLI — Smart Connections, sync, plugins all stay in sync. |
+
+The two work together: semantic search finds the right region of the vault, vault operations let the assistant actually _do something_ with what it found.
+
+---
+
+## ✨ What it looks like in practice
+
+**Before:** _"Could you check my notes about that LangGraph experiment?"_
+→ Assistant lists `Notes/`, opens 12 files, greps for "LangGraph", gives up halfway, you paste the relevant note manually.
+
+**After:** _"Could you check my notes about that LangGraph experiment?"_
+→ One semantic search, top-3 ranked notes back, follow-up question already grounded in your own writing.
+
+A few more questions Neuro Vault makes one-shot:
+
+> _"What are my active projects tagged #ai with a deadline this quarter?"_
+> _"Show meeting notes from `Work/` from the last two weeks, newest first."_
+> _"Find notes similar to this one I'm reading."_
+> _"Append today's decision to the daily note."_
+> _"What did past-me write about retrieval policy before I started building it?"_
+
+One question, one answer. Your assistant stops being a file browser and starts being an actual second brain.
+
+→ See [docs/guide/vault-operations.md](./docs/guide/vault-operations.md#query_notes) for the full query language and examples.
+
+---
+
 ## 🏗 How it works
 
 ```mermaid
@@ -34,22 +72,6 @@ flowchart LR
 You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — semantic search uses embeddings already in `.smart-env/`, vault operations go through the `obsidian` CLI. No database, no background processes.
 
 For module wiring and internal data flow, see [docs/architecture/module-structure.md](./docs/architecture/module-structure.md).
-
----
-
-## 🧭 Your vault, but queryable
-
-A plain-text vault is great for humans and rough on agents. Without the right tools, an assistant ends up listing folders, opening dozens of notes, and grepping inside each one just to answer a simple question.
-
-Neuro Vault gives your assistant a way to **ask the vault directly** — by tag, by frontmatter property, by folder, by similarity. Things like:
-
-> _"What are my active projects tagged #ai with a deadline this quarter?"_
-> _"Show meeting notes from `Work/` from the last two weeks."_
-> _"Find notes similar to this one I'm reading."_
-
-One question, one answer. Your assistant stops being a file browser and starts being an actual second brain.
-
-→ See [docs/guide/vault-operations.md](./docs/guide/vault-operations.md#query_notes) for the full query language and examples.
 
 ---
 
