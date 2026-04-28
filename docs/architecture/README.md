@@ -16,6 +16,7 @@ These are living documents. Update the relevant file in the same change that alt
 - [vault-reader.md](./vault-reader.md) — the `FsVaultReader` abstraction for direct disk reads (decoupled from the Obsidian CLI)
 - [query.md](./query.md) — the `query_notes` pipeline: tag normalisation, MongoDB-query (sift) filtering, sort/limit
 - [error-mapping-cli.md](./error-mapping-cli.md) — Obsidian CLI stderr → structured `ToolHandlerError` codes
+- [input-coercion.md](./input-coercion.md) — how realistic stringification of MCP arguments is reshaped at the boundary, and the meaningful-error contract on coerce failure
 
 ## Reading order
 
