@@ -2,11 +2,7 @@
 
 > 🧠💾 **Plug your knowledge in like a USB drive.** Your Obsidian vault, available in every AI conversation — search it, query it, write to it. Same vault in Claude Code, Cursor, Windsurf — no copy-paste, no context-switching, no re-indexing.
 
-<p align="center">
-  <video src="https://github.com/AlexMost/neuro-vault/releases/download/v3.5.0/Neuro_Vault_for_Obsidian.mp4" controls width="800" muted>
-    Your viewer doesn't render embedded video — <a href="https://github.com/AlexMost/neuro-vault/releases/download/v3.5.0/Neuro_Vault_for_Obsidian.mp4">watch the demo</a>.
-  </video>
-</p>
+https://github.com/user-attachments/assets/0ba43373-3f97-4dc6-ab91-4f30bdafd0bf
 
 [![npm version](https://img.shields.io/npm/v/neuro-vault-mcp)](https://www.npmjs.com/package/neuro-vault-mcp)
 [![Node.js](https://img.shields.io/node/v/neuro-vault-mcp)](https://nodejs.org)
