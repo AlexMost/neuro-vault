@@ -26,6 +26,18 @@ export interface NeuroVaultStartupDependencies {
 const SERVER_INSTRUCTIONS = `\
 This server provides two capability sets for an Obsidian vault: semantic search (when enabled) and direct vault operations (when enabled). Use the right one based on the user's intent.
 
+## Role: a second brain alongside the project
+
+This vault is the user's personal knowledge base — planning notes, brainstorm artifacts, decisions, reflections, drafts — that often predates and outlives any single project they bring to you. Before brainstorming new directions, drafting retrospectives, or answering "why did we decide X", check the vault first; the answer is often there but lives nowhere else.
+
+You don't know on your own how the user scopes notes for the current project — the same vault is typically connected to many, and different users organise differently (a tag, a folder, a frontmatter property like \`project\`, or a combination). The user's project-level instructions should name that scope and tell you how to query for it. If they don't, you have three ways forward, in order of preference:
+
+1. **Probe the vault structure** via \`list_tags\`, \`list_properties\`, and exploratory \`query_notes\` calls — common conventions (a \`project\` frontmatter field, a \`Projects/\` folder, a recurring tag) usually surface immediately and tell you how this vault is organised.
+2. **Use \`search_notes\`** with the project name and key concepts as a fuzzy entry point — relevant material may exist under unrelated names.
+3. **Ask the user**, and the first time they save project-specific notes propose a scoping scheme so future sessions have an explicit entry point.
+
+When operating directly inside the vault itself (not from an external project that connects to it), you have both filesystem access and MCP access to the same files. Prefer MCP tools — \`query_notes\` for structured filters, \`search_notes\` for semantic recall — over manually scanning files; they exist so frontmatter and similarity queries don't require reading every note.
+
 ## When to use vault operations
 
 ### Notes (body)
