@@ -129,10 +129,18 @@ export function validateReadNotesInput(input: ReadNotesToolInput): {
   paths: string[];
   fields: ReadNotesField[];
 } {
-  if (!Array.isArray(input.paths)) {
-    throw invalidArgument('paths must be an array', 'paths');
+  let paths: string[];
+  if (typeof input.paths === 'string') {
+    if (input.paths === '') {
+      throw invalidArgument('paths must not be empty', 'paths');
+    }
+    paths = [input.paths];
+  } else if (Array.isArray(input.paths)) {
+    paths = input.paths;
+  } else {
+    throw invalidArgument('paths must be a string or an array of strings', 'paths');
   }
-  if (input.paths.length < 1 || input.paths.length > 50) {
+  if (paths.length < 1 || paths.length > 50) {
     throw invalidArgument('paths must contain between 1 and 50 entries', 'paths');
   }
   let fields: ReadNotesField[];
@@ -152,5 +160,5 @@ export function validateReadNotesInput(input: ReadNotesToolInput): {
     }
     fields = input.fields;
   }
-  return { paths: input.paths, fields };
+  return { paths, fields };
 }
