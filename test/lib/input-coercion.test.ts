@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { coerceInput } from '../../src/lib/input-coercion.js';
+import { coerceInput, wrapSchemaWithCoercion } from '../../src/lib/input-coercion.js';
 
 describe('coerceInput — number fields', () => {
   const schema = z.object({
@@ -131,5 +131,67 @@ describe('coerceInput — top-level oddities', () => {
   it('handles unknown extra keys without dropping them', () => {
     const schema = z.object({ a: z.number().optional() });
     expect(coerceInput(schema, { a: '1', extra: 'keep' })).toEqual({ a: 1, extra: 'keep' });
+  });
+});
+
+describe('wrapSchemaWithCoercion', () => {
+  it('produces a schema whose safeParse coerces stringified primitives end-to-end', () => {
+    const schema = z.object({
+      filter: z.record(z.string(), z.unknown()),
+      limit: z.number().int().min(1).max(1000).optional(),
+      include_content: z.boolean().optional(),
+    });
+    const wrapped = wrapSchemaWithCoercion(schema);
+
+    const result = wrapped.safeParse({
+      filter: '{"frontmatter.status":"evergreen","frontmatter.type":"note"}',
+      limit: '5',
+      include_content: 'false',
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({
+        filter: { 'frontmatter.status': 'evergreen', 'frontmatter.type': 'note' },
+        limit: 5,
+        include_content: false,
+      });
+    }
+  });
+
+  it('preserves optional fields (omitted fields stay valid, not in required-list)', () => {
+    const schema = z.object({
+      filter: z.record(z.string(), z.unknown()),
+      limit: z.number().int().optional(),
+      flag: z.boolean().optional(),
+    });
+    const wrapped = wrapSchemaWithCoercion(schema);
+
+    const result = wrapped.safeParse({ filter: { a: 1 } });
+    expect(result.success).toBe(true);
+  });
+
+  it('still rejects values that cannot be coerced (e.g. limit: "abc")', () => {
+    const schema = z.object({ limit: z.number().int() });
+    const wrapped = wrapSchemaWithCoercion(schema);
+
+    const result = wrapped.safeParse({ limit: 'abc' });
+    expect(result.success).toBe(false);
+  });
+
+  it('does not touch union-typed fields (paths: string | string[])', () => {
+    const schema = z.object({
+      paths: z.union([z.string().min(1), z.array(z.string()).min(1).max(50)]),
+    });
+    const wrapped = wrapSchemaWithCoercion(schema);
+
+    expect(wrapped.safeParse({ paths: 'x.md' }).success).toBe(true);
+    expect(wrapped.safeParse({ paths: ['a.md', 'b.md'] }).success).toBe(true);
+    expect(wrapped.safeParse({ paths: '' }).success).toBe(false);
+  });
+
+  it('returns the schema unchanged when it is not a ZodObject', () => {
+    const schema = z.string();
+    expect(wrapSchemaWithCoercion(schema)).toBe(schema);
   });
 });

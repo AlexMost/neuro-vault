@@ -18,7 +18,36 @@ describe('registerTool', () => {
     expect(reg.name).toBe('noop');
     expect(reg.spec.title).toBe('Noop');
     expect(reg.spec.description).toBe('does nothing');
-    expect(reg.spec.inputSchema).toBe(schema);
+    // spec.inputSchema is a coercion-wrapped variant of the original — the SDK
+    // validates against this so stringified primitives are accepted.
+    expect(reg.spec.inputSchema).toBeDefined();
+    expect(reg.spec.inputSchema).not.toBe(schema);
+  });
+
+  it('exposes a spec.inputSchema that itself coerces (the path the MCP SDK takes)', () => {
+    const schema = z.object({
+      limit: z.number().int().positive().optional(),
+      filter: z.record(z.string(), z.unknown()).optional(),
+      flag: z.boolean().optional(),
+    });
+    const tool: ITool<z.infer<typeof schema>, { ok: true }> = {
+      name: 'sdk-path',
+      description: 'sdk-path',
+      inputSchema: schema,
+      handler: async () => ({ ok: true }),
+    };
+
+    const reg = registerTool(tool);
+    const result = (reg.spec.inputSchema as z.ZodTypeAny).safeParse({
+      limit: '5',
+      filter: '{"tags":"x"}',
+      flag: 'false',
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({ limit: 5, filter: { tags: 'x' }, flag: false });
+    }
   });
 
   it('parses input through the schema before invoking the handler', async () => {

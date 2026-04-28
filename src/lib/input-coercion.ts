@@ -18,7 +18,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function coerceField(schema: ZodTypeAny, value: unknown): unknown {
+export function coerceFieldValue(schema: ZodTypeAny, value: unknown): unknown {
   if (value === null || value === undefined) return value;
   const inner = unwrap(schema);
 
@@ -61,8 +61,35 @@ export function coerceInput(schema: ZodTypeAny, value: unknown): unknown {
   const out: Record<string, unknown> = { ...value };
   for (const key of Object.keys(shape)) {
     if (key in out) {
-      out[key] = coerceField(shape[key], out[key]);
+      out[key] = coerceFieldValue(shape[key], out[key]);
     }
   }
   return out;
+}
+
+function wrapField(field: ZodTypeAny): ZodTypeAny {
+  let inner: ZodTypeAny = field;
+  let isOptional = false;
+  while (
+    inner instanceof z.ZodOptional ||
+    inner instanceof z.ZodNullable ||
+    inner instanceof z.ZodDefault
+  ) {
+    if (inner instanceof z.ZodOptional) isOptional = true;
+    const next = (inner as z.ZodOptional<ZodTypeAny>).unwrap();
+    if (!next) break;
+    inner = next as ZodTypeAny;
+  }
+  const wrapped = z.preprocess((v) => coerceFieldValue(inner, v), inner);
+  return isOptional ? wrapped.optional() : wrapped;
+}
+
+export function wrapSchemaWithCoercion(schema: ZodTypeAny): ZodTypeAny {
+  if (!(schema instanceof z.ZodObject)) return schema;
+  const shape = schema.shape as Record<string, ZodTypeAny>;
+  const newShape: Record<string, ZodTypeAny> = {};
+  for (const [key, field] of Object.entries(shape)) {
+    newShape[key] = wrapField(field);
+  }
+  return z.object(newShape);
 }
