@@ -12,14 +12,16 @@ Most vault-operations tools accept `name` (wikilink-style) **or** `path` (vault-
 
 ### `read_notes`
 
-Batch-read 1–50 notes directly from disk. Returns per-item results in input order; failed paths carry an error rather than aborting the whole call. Does not require Obsidian to be running.
+Read one or more notes directly from disk. Returns per-item results in input order; failed paths carry an error rather than aborting the whole call. Does not require Obsidian to be running.
 
 ```typescript
 read_notes({
-  paths: string[],                              // 1–50 vault-relative paths
+  paths: string | string[],                     // single path, or 1–50 vault-relative paths
   fields?: ('frontmatter' | 'content')[],       // default: both
 })
 ```
+
+`paths` accepts either a single path string (single-note read) or an array of 1–50 paths (batch read). The result shape is identical in both cases.
 
 Returns `{ results, count, errors }` where each item in `results` is either `{ path, frontmatter?, content? }` (success) or `{ path, error: { code, message } }` (failure). `count` is the number of successfully read notes; `errors` is the count of failed items.
 

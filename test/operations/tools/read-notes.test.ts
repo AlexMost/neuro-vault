@@ -19,6 +19,28 @@ describe('operations.readNotes handler', () => {
     });
   });
 
+  it('accepts a single string for paths and returns identical shape to the array form', async () => {
+    const reader = makeReader({
+      readNotes: async () => [{ path: 'Folder/n.md', frontmatter: { a: 1 }, content: 'body' }],
+    });
+    const tool = buildReadNotesTool({ reader });
+
+    const result = await tool.handler({ paths: 'Folder/n.md' });
+
+    expect(result).toEqual({
+      results: [{ path: 'Folder/n.md', frontmatter: { a: 1 }, content: 'body' }],
+      count: 1,
+      errors: 0,
+    });
+  });
+
+  it('rejects empty string for paths with INVALID_ARGUMENT (top-level)', async () => {
+    const tool = buildReadNotesTool({ reader: makeReader() });
+    await expect(tool.handler({ paths: '' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+    });
+  });
+
   it('dedupes paths preserving first-occurrence order', async () => {
     const reader = makeReader({
       readNotes: async () => [

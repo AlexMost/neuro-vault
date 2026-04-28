@@ -8,7 +8,7 @@ import type { VaultReader } from '../vault-reader.js';
 
 const readNotesFieldSchema = z.enum(['frontmatter', 'content']);
 const inputSchema = z.object({
-  paths: z.array(z.string()).min(1).max(50),
+  paths: z.union([z.string().min(1), z.array(z.string()).min(1).max(50)]),
   fields: z.array(readNotesFieldSchema).min(1).optional(),
 });
 
@@ -24,7 +24,7 @@ export function buildReadNotesTool(deps: ReadNotesDeps): ITool<Input, ReadNotesR
     name: 'read_notes',
     title: 'Read Notes',
     description:
-      "Read multiple notes in one call. `paths` is an array of 1–50 vault-relative POSIX paths; duplicates are de-duplicated and results returned in input order. `fields` projects which parts of each note to return — choose from `frontmatter` and `content`; default `['frontmatter','content']`. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running.",
+      "Read one or more notes in one call. `paths` is a vault-relative POSIX path string or an array of 1–50 such paths; duplicates are de-duplicated and results returned in input order. `fields` projects which parts of each note to return — choose from `frontmatter` and `content`; default `['frontmatter','content']`. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running.",
     inputSchema,
     handler: async (input) => {
       const { paths, fields } = validateReadNotesInput(input);

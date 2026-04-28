@@ -43,7 +43,7 @@ When operating directly inside the vault itself (not from an external project th
 ### Notes (body)
 
 Use \`read_notes\`, \`create_note\`, \`edit_note\`, \`read_daily\`, \`append_daily\` when the user asks to:
-- Read one or more notes by path (\`read_notes\` — accepts an array of 1–50 vault-relative POSIX paths; prefer this over multiple sequential reads)
+- Read one or more notes by path (\`read_notes\` — accepts a single vault-relative POSIX path string or an array of 1–50 such paths; prefer this over multiple sequential reads)
 - Create a new note, task, or idea (\`create_note\`)
 - Add content to an existing note (\`edit_note\`)
 - Read or update today's daily note (\`read_daily\` / \`append_daily\`)
@@ -95,7 +95,7 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 
 ## Routing between operations and semantic
 
-If the user gives an exact anchor (note path, daily note, tag, frontmatter field), prefer operations tools. If the user is recalling fuzzily or asking a conceptual question, prefer \`search_notes\`. After semantic search finds a relevant note, you can read it with \`read_notes\` (passing the path in a one-element array, or batching with sibling paths) to see the details.
+If the user gives an exact anchor (note path, daily note, tag, frontmatter field), prefer operations tools. If the user is recalling fuzzily or asking a conceptual question, prefer \`search_notes\`. After semantic search finds a relevant note, you can read it with \`read_notes\` (passing the path as a single string, or batching with sibling paths in an array) to see the details.
 
 For tag-driven questions ("which notes are tagged X?", "show me everything in #ai") use \`query_notes\` with \`{ filter: { tags: '<name>' } }\`, not \`search_notes\` — the answer is exact, not fuzzy.
 `;

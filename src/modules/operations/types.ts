@@ -26,7 +26,7 @@ export type OperationsErrorCode =
 export type ReadNotesField = 'frontmatter' | 'content';
 
 export interface ReadNotesToolInput {
-  paths: string[];
+  paths: string | string[];
   fields?: ReadNotesField[];
 }
 
