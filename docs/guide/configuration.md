@@ -41,6 +41,18 @@ Follow the Neuro Vault MCP server instructions for routing between semantic sear
 - Embedding model loaded at startup; first run can be slow.
 - Write operations (`create_note`, `edit_note`, properties, tags, daily notes) require the Obsidian CLI and a running Obsidian instance — they fail gracefully per call when unavailable. `read_notes` reads directly from disk and is not affected by this limitation.
 
+## Lenient input coercion
+
+Some MCP clients serialize every tool-call argument as a string. To keep these calls working, the server coerces stringified primitives at the top level of each tool's input schema before validation:
+
+- `number` fields accept numeric strings: `limit: "5"` → `5`, `threshold: "0.35"` → `0.35`.
+- `boolean` fields accept `"true"` / `"false"`: `include_content: "true"` → `true`.
+- `object` / `record` fields accept stringified JSON: `filter: '{"tags":"x"}'` → `{ tags: "x" }`.
+
+Coercion only fires when the schema unambiguously expects the target primitive — fields typed as `string | number` (e.g. `set_property.value`) are left as strings. Coercion is one level deep; the contents of a parsed `filter` object are not further transformed.
+
+When validation still fails, the server returns a structured `INVALID_PARAMS` error with a `details.issues` array (`[{ path, message, expected }]`) — not a raw zod dump.
+
 ## Development
 
 ```bash
