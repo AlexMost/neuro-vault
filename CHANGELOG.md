@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [3.4.0](https://github.com/AlexMost/neuro-vault/compare/v3.3.1...v3.4.0) (2026-04-28)
+
+### Features
+
+- **lib:** surface meaningful coerce-failure errors in MCP params ([9e41746](https://github.com/AlexMost/neuro-vault/commit/9e41746229263e02cb36ff50c80720244ae73770))
+
 ## [3.3.1](https://github.com/AlexMost/neuro-vault/compare/v3.3.0...v3.3.1) (2026-04-28)
 
 ### Bug Fixes
