@@ -60,6 +60,57 @@ describe('registerTool', () => {
     });
   });
 
+  it('coerces stringified primitives before invoking the handler', async () => {
+    const schema = z.object({
+      limit: z.number().int().positive().optional(),
+      filter: z.record(z.string(), z.unknown()).optional(),
+      flag: z.boolean().optional(),
+    });
+    let received: unknown = null;
+    const tool: ITool<z.infer<typeof schema>, { ok: true }> = {
+      name: 'coerce',
+      description: 'coerce',
+      inputSchema: schema,
+      handler: async (input) => {
+        received = input;
+        return { ok: true };
+      },
+    };
+
+    const reg = registerTool(tool);
+    const result = await reg.handler({
+      limit: '5',
+      filter: '{"tags":"x"}',
+      flag: 'true',
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(received).toEqual({ limit: 5, filter: { tags: 'x' }, flag: true });
+  });
+
+  it('returns INVALID_PARAMS with a structured issues list when validation fails', async () => {
+    const schema = z.object({ limit: z.number().int().positive() });
+    const tool: ITool<{ limit: number }, { ok: true }> = {
+      name: 'bad-input',
+      description: 'bad-input',
+      inputSchema: schema,
+      handler: async () => ({ ok: true }),
+    };
+
+    const reg = registerTool(tool);
+    const result = await reg.handler({ limit: 'abc' });
+
+    expect(result.isError).toBe(true);
+    const errPayload = result.structuredContent as {
+      code: string;
+      message: string;
+      details: { issues: Array<{ path: string; message: string; expected?: string }> };
+    };
+    expect(errPayload.code).toBe('INVALID_PARAMS');
+    expect(errPayload.message).toContain('limit');
+    expect(errPayload.details.issues[0]?.path).toBe('limit');
+  });
+
   it('translates a thrown ToolHandlerError into the structured error response', async () => {
     const { ToolHandlerError } = await import('../../src/lib/tool-response.js');
     const tool: ITool<{ x: number }, never> = {
