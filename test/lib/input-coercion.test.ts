@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { coerceInput, wrapSchemaWithCoercion } from '../../src/lib/input-coercion.js';
+import { CoerceError, coerceInput, wrapSchemaWithCoercion } from '../../src/lib/input-coercion.js';
 
 describe('coerceInput — number fields', () => {
   const schema = z.object({
@@ -17,8 +17,8 @@ describe('coerceInput — number fields', () => {
     expect(coerceInput(schema, { threshold: '0.35' })).toEqual({ threshold: 0.35 });
   });
 
-  it('leaves a non-numeric string alone (zod will reject)', () => {
-    expect(coerceInput(schema, { limit: 'abc' })).toEqual({ limit: 'abc' });
+  it('throws CoerceError on a non-numeric string', () => {
+    expect(() => coerceInput(schema, { limit: 'abc' })).toThrow(CoerceError);
   });
 
   it('leaves an empty string alone', () => {
@@ -51,8 +51,8 @@ describe('coerceInput — boolean fields', () => {
     });
   });
 
-  it('leaves other strings alone (zod will reject)', () => {
-    expect(coerceInput(schema, { overwrite: 'yes' })).toEqual({ overwrite: 'yes' });
+  it('throws CoerceError on a string that is not "true"/"false"', () => {
+    expect(() => coerceInput(schema, { overwrite: 'yes' })).toThrow(CoerceError);
   });
 
   it('leaves a boolean alone', () => {
@@ -77,16 +77,16 @@ describe('coerceInput — record/object fields', () => {
     });
   });
 
-  it('leaves unparseable JSON alone', () => {
-    expect(coerceInput(schema, { filter: 'not json' })).toEqual({ filter: 'not json' });
+  it('throws CoerceError on unparseable JSON', () => {
+    expect(() => coerceInput(schema, { filter: 'not json' })).toThrow(CoerceError);
   });
 
-  it('leaves a JSON-parseable array alone (object expected, not array)', () => {
-    expect(coerceInput(schema, { filter: '["a","b"]' })).toEqual({ filter: '["a","b"]' });
+  it('throws CoerceError when JSON parses to an array (object expected)', () => {
+    expect(() => coerceInput(schema, { filter: '["a","b"]' })).toThrow(CoerceError);
   });
 
-  it('leaves a JSON-parseable primitive alone', () => {
-    expect(coerceInput(schema, { filter: '5' })).toEqual({ filter: '5' });
+  it('throws CoerceError when JSON parses to a primitive (object expected)', () => {
+    expect(() => coerceInput(schema, { filter: '5' })).toThrow(CoerceError);
   });
 
   it('does not recurse into the parsed object (filter values stay as-is)', () => {
@@ -193,5 +193,79 @@ describe('wrapSchemaWithCoercion', () => {
   it('returns the schema unchanged when it is not a ZodObject', () => {
     const schema = z.string();
     expect(wrapSchemaWithCoercion(schema)).toBe(schema);
+  });
+});
+
+describe('wrapSchemaWithCoercion — meaningful coerce errors', () => {
+  function firstIssueMessage(
+    schema: ReturnType<typeof wrapSchemaWithCoercion>,
+    input: unknown,
+  ): string {
+    const result = schema.safeParse(input);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('unreachable');
+    return result.error.issues
+      .map((i) => `${i.path.join('.') || '<root>'}: ${i.message}`)
+      .join(' | ');
+  }
+
+  it('limit: "abc" → message names the field, mentions the bad value, and the expected shape', () => {
+    const wrapped = wrapSchemaWithCoercion(z.object({ limit: z.number().int() }));
+    const msg = firstIssueMessage(wrapped, { limit: 'abc' });
+    expect(msg).toMatch(/limit/);
+    expect(msg).toMatch(/abc/);
+    expect(msg).toMatch(/numeric|number/i);
+  });
+
+  it('filter: "not json" → message says parse failed and includes the raw input', () => {
+    const wrapped = wrapSchemaWithCoercion(z.object({ filter: z.record(z.string(), z.unknown()) }));
+    const msg = firstIssueMessage(wrapped, { filter: 'not json' });
+    expect(msg).toMatch(/filter/);
+    expect(msg).toMatch(/parse/i);
+    expect(msg).toMatch(/not json/);
+  });
+
+  it('filter: "[1,2,3]" → message reports parsed JSON resolved to array', () => {
+    const wrapped = wrapSchemaWithCoercion(z.object({ filter: z.record(z.string(), z.unknown()) }));
+    const msg = firstIssueMessage(wrapped, { filter: '[1,2,3]' });
+    expect(msg).toMatch(/filter/);
+    expect(msg).toMatch(/array/i);
+  });
+
+  it('filter: \'"hello"\' (valid JSON, primitive) → message reports primitive shape', () => {
+    const wrapped = wrapSchemaWithCoercion(z.object({ filter: z.record(z.string(), z.unknown()) }));
+    const msg = firstIssueMessage(wrapped, { filter: '"hello"' });
+    expect(msg).toMatch(/filter/);
+    expect(msg).toMatch(/string|primitive/i);
+  });
+
+  it('include_content: "maybe" → message names the field, mentions "true"/"false" and the bad value', () => {
+    const wrapped = wrapSchemaWithCoercion(z.object({ include_content: z.boolean().optional() }));
+    const msg = firstIssueMessage(wrapped, { include_content: 'maybe' });
+    expect(msg).toMatch(/include_content/);
+    expect(msg).toMatch(/true.*false|"true".*"false"/);
+    expect(msg).toMatch(/maybe/);
+  });
+
+  it('issue path points at the offending field, not <root>', () => {
+    const wrapped = wrapSchemaWithCoercion(z.object({ limit: z.number().int() }));
+    const result = wrapped.safeParse({ limit: 'abc' });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('unreachable');
+    expect(result.error.issues[0]?.path).toEqual(['limit']);
+  });
+
+  it('happy-path coerce still works (no regression on "5" → 5)', () => {
+    const wrapped = wrapSchemaWithCoercion(z.object({ limit: z.number().int() }));
+    const result = wrapped.safeParse({ limit: '5' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toEqual({ limit: 5 });
+  });
+
+  it('happy-path strict-typed still works (no regression on { limit: 5 })', () => {
+    const wrapped = wrapSchemaWithCoercion(z.object({ limit: z.number().int() }));
+    const result = wrapped.safeParse({ limit: 5 });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toEqual({ limit: 5 });
   });
 });

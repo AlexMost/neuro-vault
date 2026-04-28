@@ -140,6 +140,36 @@ describe('registerTool', () => {
     expect(errPayload.details.issues[0]?.path).toBe('limit');
   });
 
+  it('surfaces a meaningful coerce-failure message in INVALID_PARAMS without duplicating the field name', async () => {
+    const schema = z.object({
+      filter: z.record(z.string(), z.unknown()),
+      include_content: z.boolean().optional(),
+    });
+    const tool: ITool<z.infer<typeof schema>, { ok: true }> = {
+      name: 'coerce-fail',
+      description: 'coerce-fail',
+      inputSchema: schema,
+      handler: async () => ({ ok: true }),
+    };
+
+    const reg = registerTool(tool);
+    const result = await reg.handler({ filter: 'not json', include_content: 'maybe' });
+
+    expect(result.isError).toBe(true);
+    const errPayload = result.structuredContent as {
+      code: string;
+      message: string;
+      details: { issues: Array<{ path: string; message: string }> };
+    };
+    expect(errPayload.code).toBe('INVALID_PARAMS');
+    expect(errPayload.message).toMatch(/filter:\s+expected object or JSON-string of one/);
+    expect(errPayload.message).toMatch(/include_content:\s+expected boolean or "true"\/"false"/);
+    expect(errPayload.message).not.toMatch(/filter:\s+filter:/);
+    expect(errPayload.message).not.toMatch(/include_content:\s+include_content:/);
+    const paths = errPayload.details.issues.map((i) => i.path).sort();
+    expect(paths).toEqual(['filter', 'include_content']);
+  });
+
   it('translates a thrown ToolHandlerError into the structured error response', async () => {
     const { ToolHandlerError } = await import('../../src/lib/tool-response.js');
     const tool: ITool<{ x: number }, never> = {
