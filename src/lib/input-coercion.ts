@@ -36,6 +36,20 @@ function describeJsonShape(parsed: unknown): string {
   return typeof parsed;
 }
 
+function getUnionOptions(union: z.ZodUnion<z.ZodTypeAny[]>): ZodTypeAny[] {
+  const def = (union as unknown as { _def: { options?: ZodTypeAny[] } })._def;
+  return def.options ?? [];
+}
+
+function isStringArraySchema(schema: ZodTypeAny): boolean {
+  const inner = unwrap(schema);
+  if (!(inner instanceof z.ZodArray)) return false;
+  const def = (inner as unknown as { _def: { element?: ZodTypeAny; type?: ZodTypeAny } })._def;
+  const element = def.element ?? def.type;
+  if (!element) return false;
+  return unwrap(element) instanceof z.ZodString;
+}
+
 export function coerceFieldValue(schema: ZodTypeAny, value: unknown, fieldName = 'value'): unknown {
   if (value === null || value === undefined) return value;
   const inner = unwrap(schema);
@@ -84,6 +98,21 @@ export function coerceFieldValue(schema: ZodTypeAny, value: unknown, fieldName =
         fieldName,
         `expected object, parsed JSON resolved to ${describeJsonShape(parsed)}`,
       );
+    }
+    return value;
+  }
+
+  if (inner instanceof z.ZodUnion && typeof value === 'string') {
+    const options = getUnionOptions(inner as z.ZodUnion<z.ZodTypeAny[]>);
+    if (options.some(isStringArraySchema)) {
+      try {
+        const parsed = JSON.parse(value) as unknown;
+        if (Array.isArray(parsed) && parsed.every((x) => typeof x === 'string')) {
+          return parsed;
+        }
+      } catch {
+        /* not JSON — fall through, union's string branch will accept it */
+      }
     }
     return value;
   }

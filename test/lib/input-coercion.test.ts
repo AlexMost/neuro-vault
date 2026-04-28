@@ -122,6 +122,68 @@ describe('coerceInput — unions and arrays (no coercion)', () => {
   });
 });
 
+describe('coerceInput — string | array(string) union (read_notes.paths case)', () => {
+  const schema = z.object({
+    paths: z.union([z.string().min(1), z.array(z.string()).min(1).max(50)]),
+  });
+
+  it('parses a stringified JSON array of strings into the array branch', () => {
+    expect(coerceInput(schema, { paths: '["a.md","b.md"]' })).toEqual({
+      paths: ['a.md', 'b.md'],
+    });
+  });
+
+  it('leaves a plain (non-JSON) string alone — single path is legitimate', () => {
+    expect(coerceInput(schema, { paths: 'a.md' })).toEqual({ paths: 'a.md' });
+  });
+
+  it('leaves a real array alone (no regression on the strict-typed path)', () => {
+    expect(coerceInput(schema, { paths: ['a.md', 'b.md'] })).toEqual({
+      paths: ['a.md', 'b.md'],
+    });
+  });
+
+  it('leaves a string alone when JSON parses to non-array (no shape match)', () => {
+    expect(coerceInput(schema, { paths: '{"a":1}' })).toEqual({ paths: '{"a":1}' });
+  });
+
+  it('leaves a string alone when JSON parses to array of non-strings (no shape match)', () => {
+    expect(coerceInput(schema, { paths: '[1,2,3]' })).toEqual({ paths: '[1,2,3]' });
+  });
+
+  it('does NOT touch union(string|number|boolean) — set_property.value remains unchanged', () => {
+    const setPropertySchema = z.object({
+      value: z.union([z.string(), z.number(), z.boolean()]),
+    });
+    expect(coerceInput(setPropertySchema, { value: '[1,2,3]' })).toEqual({
+      value: '[1,2,3]',
+    });
+  });
+});
+
+describe('wrapSchemaWithCoercion — string | array(string) union, end-to-end', () => {
+  const schema = z.object({
+    paths: z.union([z.string().min(1), z.array(z.string()).min(1).max(50)]),
+  });
+
+  it('paths: \'["a.md","b.md"]\' → array result that passes the union', () => {
+    const wrapped = wrapSchemaWithCoercion(schema);
+    const result = wrapped.safeParse({ paths: '["a.md","b.md"]' });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data).toEqual({ paths: ['a.md', 'b.md'] });
+  });
+
+  it('regression: paths: "a.md" still passes as string', () => {
+    const wrapped = wrapSchemaWithCoercion(schema);
+    expect(wrapped.safeParse({ paths: 'a.md' }).success).toBe(true);
+  });
+
+  it('regression: paths: ["a.md","b.md"] still passes as array', () => {
+    const wrapped = wrapSchemaWithCoercion(schema);
+    expect(wrapped.safeParse({ paths: ['a.md', 'b.md'] }).success).toBe(true);
+  });
+});
+
 describe('coerceInput — top-level oddities', () => {
   it('returns non-object input unchanged when schema is z.object', () => {
     const schema = z.object({ x: z.number() });
