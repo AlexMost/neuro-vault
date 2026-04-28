@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [3.3.1](https://github.com/AlexMost/neuro-vault/compare/v3.3.0...v3.3.1) (2026-04-28)
+
+### Bug Fixes
+
+- **lib:** apply input coercion at the schema level so MCP SDK accepts stringified args ([87f73c4](https://github.com/AlexMost/neuro-vault/commit/87f73c42bb6e5858e88256c084ada5fdbfd7f4bb))
+
 ## [3.3.0](https://github.com/AlexMost/neuro-vault/compare/v3.2.1...v3.3.0) (2026-04-28)
 
 ### Features
