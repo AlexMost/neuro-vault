@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { buildBasenameIndex, type BasenameIndex } from '../../../src/lib/obsidian/index.js';
 import { loadSmartConnectionsCorpus } from '../../../src/lib/obsidian/smart-connections-loader.js';
 import {
   findBlockNeighbors,
@@ -75,12 +76,22 @@ export function makeHandlerDeps(deps: {
   searchEngine: SearchEngine;
   modelKey: string;
   pathExists?: PathExistsCheck;
+  basenameIndex?: BasenameIndex;
+  readNoteContent?: (vaultRelativePath: string) => Promise<string>;
 }) {
   return {
     ...deps,
     pathExists: deps.pathExists ?? (async () => true),
+    basenameIndex: deps.basenameIndex ?? buildBasenameIndex(deps.sources.keys()),
+    readNoteContent: deps.readNoteContent ?? (async () => ''),
   };
 }
 
-export { loadSmartConnectionsCorpus, findNeighbors, findDuplicates, findBlockNeighbors };
-export type { EmbeddingProvider, PathExistsCheck, SearchEngine, SmartSource };
+export {
+  loadSmartConnectionsCorpus,
+  findNeighbors,
+  findDuplicates,
+  findBlockNeighbors,
+  buildBasenameIndex,
+};
+export type { EmbeddingProvider, PathExistsCheck, SearchEngine, SmartSource, BasenameIndex };

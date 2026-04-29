@@ -66,6 +66,7 @@ export interface GetSimilarNotesInput {
   path: string;
   limit?: number;
   threshold?: number;
+  exclude_folders?: string[];
 }
 
 export interface FindDuplicatesInput {
@@ -95,7 +96,7 @@ export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENC
 
 export interface ToolHandlers {
   searchNotes(input: SearchNotesInput): Promise<RetrievalOutput | MultiRetrievalOutput>;
-  getSimilarNotes(input: GetSimilarNotesInput): Promise<SearchResult[]>;
+  getSimilarNotes(input: GetSimilarNotesInput): Promise<SimilarNoteResult[]>;
   findDuplicates(input?: FindDuplicatesInput): Promise<DuplicatePair[]>;
   getStats(): Promise<ToolStats>;
 }

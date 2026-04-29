@@ -7,6 +7,7 @@ import {
   loadSmartConnectionsCorpus,
   type SmartConnectionsCorpus,
 } from '../../lib/obsidian/smart-connections-loader.js';
+import { buildBasenameIndex } from '../../lib/obsidian/index.js';
 import { buildSemanticTools, type SemanticToolDeps } from './tools/index.js';
 import type { EmbeddingProvider, PathExistsCheck, SearchEngine } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
@@ -23,6 +24,7 @@ export interface SemanticModuleDeps {
   embeddingServiceFactory?: (modelId: string) => EmbeddingProvider;
   searchEngine?: SearchEngine;
   pathExists?: PathExistsCheck;
+  readNoteContent?: (vaultRelativePath: string) => Promise<string>;
 }
 
 function createDefaultPathExists(vaultPath: string): PathExistsCheck {
@@ -34,6 +36,12 @@ function createDefaultPathExists(vaultPath: string): PathExistsCheck {
       return false;
     }
   };
+}
+
+function createDefaultReadNoteContent(
+  vaultPath: string,
+): (vaultRelativePath: string) => Promise<string> {
+  return (vaultRelativePath) => fs.readFile(path.join(vaultPath, vaultRelativePath), 'utf8');
 }
 
 export interface SemanticModule {
@@ -58,6 +66,8 @@ export async function createSemanticModule(
 
   const embeddingService = embeddingServiceFactory(config.modelId);
   const pathExists = deps.pathExists ?? createDefaultPathExists(config.vaultPath);
+  const readNoteContent = deps.readNoteContent ?? createDefaultReadNoteContent(config.vaultPath);
+  const basenameIndex = buildBasenameIndex(corpus.sources.keys());
 
   const semanticDeps: SemanticToolDeps = {
     sources: corpus.sources,
@@ -65,6 +75,8 @@ export async function createSemanticModule(
     searchEngine,
     modelKey: config.modelKey,
     pathExists,
+    basenameIndex,
+    readNoteContent,
   };
 
   return {
