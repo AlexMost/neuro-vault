@@ -14,7 +14,6 @@ import type {
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_THRESHOLD = 0.5;
-const DEFAULT_EXCLUDE_FOLDERS: readonly string[] = ['Templates', 'System', 'Daily', 'Archive'];
 
 const inputSchema = z.object({
   path: z.string(),
@@ -174,9 +173,7 @@ export function buildGetSimilarNotesTool(
       }
       const limit = readPositiveInteger(input.limit, DEFAULT_LIMIT, 'limit');
       const threshold = readThreshold(input.threshold, DEFAULT_THRESHOLD, 'threshold');
-      const excludePrefixes = (input.exclude_folders ?? DEFAULT_EXCLUDE_FOLDERS).map(
-        normalizeExcludeEntry,
-      );
+      const excludePrefixes = (input.exclude_folders ?? []).map(normalizeExcludeEntry);
 
       try {
         const candidates = collectSemanticCandidates({

@@ -124,7 +124,7 @@ get_similar_notes({
   path: string,                // vault-relative POSIX path, e.g. "Projects/neuro-vault.md"
   limit?: number,              // default: 10
   threshold?: number,          // default: 0.5 (semantic branch only)
-  exclude_folders?: string[],  // default: ['Templates', 'System', 'Daily', 'Archive']
+  exclude_folders?: string[],  // default: [] (search all folders)
 })
 ```
 
@@ -146,7 +146,7 @@ Behaviour:
 - A result reachable purely via a forward link has **no** top-level `similarity`. Code that ranks by `similarity` must guard for `undefined`.
 - `threshold` filters the **semantic** branch only — forward-linked results bypass it.
 - Forward-linked results rank ahead of semantic-only ones; within each bucket, by `signals.semantic` desc, then path asc.
-- `exclude_folders` matches case-sensitively as `path === entry || path.startsWith(entry + '/')`. Pass `[]` to disable exclusions.
+- `exclude_folders` matches case-sensitively as `path === entry || path.startsWith(entry + '/')`. Defaults to `[]` (no exclusions); pass folder names to scope the search.
 
 > **Breaking change in v4.0.0** — the output shape gained the `signals` object and `similarity` became optional. Prior shape was `Array<{ path, similarity }>`.
 
