@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
-import { runQueryNotes } from '../query/index.js';
+import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
 import type { QueryNotesResult, QueryNotesToolInput } from '../types.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
 

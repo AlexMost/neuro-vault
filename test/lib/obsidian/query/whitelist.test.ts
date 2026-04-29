@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { ToolHandlerError } from '../../../src/lib/tool-response.js';
-import { validateFilter } from '../../../src/modules/operations/query/whitelist.js';
+import { ToolHandlerError } from '../../../../src/lib/tool-response.js';
+import { validateFilter } from '../../../../src/lib/obsidian/query/whitelist.js';
 
 describe('validateFilter', () => {
   it('accepts plain field equality', () => {
