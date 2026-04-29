@@ -63,11 +63,11 @@ Single source of truth for vault path normalization. Absorbs and unifies the hel
 | -------------------------------------- | --------------------- | ---------------------------- |
 | `operations/tool-helpers.ts`           | `normalizePath`       | `normalizeVaultPath`         |
 | `semantic/tool-helpers.ts`             | `normalizeNotePath`   | `normalizeVaultPath`         |
-| `operations/vault-reader.ts`           | `toPosix`             | `toPosixPath`                |
-| `semantic/smart-connections-loader.ts` | `toPosixPath`         | `toPosixPath`                |
+| `semantic/smart-connections-loader.ts` | `toPosixPath`         | `normalizeVaultPath`         |
+| `operations/vault-reader.ts`           | `toPosix`             | `toPosixSlashes`             |
 | `operations/vault-reader.ts`           | `normalizeScanPrefix` | `normalizeScanPrefix`        |
 
-The two `normalize*Path` helpers do conceptually the same job (validate vault-relative POSIX path: reject empty, absolute, Windows drive, `..` segments) — they merge into one canonical `normalizeVaultPath`. The two `toPosix*` helpers likewise merge.
+The three "validate vault-relative POSIX path" helpers (the two `normalize*Path` and the smart-connections `toPosixPath`) all do conceptually the same job — reject empty, absolute, Windows drive, `..` segments — and merge into one canonical `normalizeVaultPath`. The naive `toPosix` (slash-only conversion, no validation) is a different responsibility and keeps a separate identity under the more accurate name `toPosixSlashes`.
 
 Existing call-sites in `operations/tool-helpers.ts`, `semantic/tool-helpers.ts`, `vault-reader.ts`, `smart-connections-loader.ts` import from this module. The merge is the **one** behavior-adjacent change in this refactor; if the two source implementations differ in edge cases (e.g. handling of an empty string), the spec resolves to the **stricter** behavior and adds a test pinning the behavior. `paths.ts` itself throws a generic `Error`; tool-layer wrappers translate to `ToolHandlerError` exactly as today.
 
@@ -104,7 +104,7 @@ Barrel re-export of the public surface of this lib. Convenience for downstream c
 1. `npm test` — green; total test count is **the same or higher** (extracted `paths.test.ts` may add specific cases, but no test is dropped silently).
 2. `npm run lint` — clean.
 3. `npx tsc --noEmit` — clean (source of truth for typechecking; `tsup` alone is insufficient).
-4. Each of `normalizeVaultPath`, `toPosixPath`, `normalizeScanPrefix` has exactly one definition site (in `src/lib/obsidian/paths.ts`). The old names (`normalizePath`, `normalizeNotePath`, `toPosix`) are gone from the codebase. Verify with `grep -nE "function (normalizePath|normalizeNotePath|toPosix)\b" src/` returning empty.
+4. Each of `normalizeVaultPath`, `toPosixSlashes`, `normalizeScanPrefix` has exactly one definition site (in `src/lib/obsidian/paths.ts`). The old names (`normalizePath`, `normalizeNotePath`, `toPosix`, `toPosixPath`) are gone from the codebase as standalone utilities (the two MCP wrappers `normalizePath` and `normalizeNotePath` survive only as thin `ToolHandlerError`-mapping shims that delegate to `normalizeVaultPath`). Verify with `grep -nE "^(export )?function (toPosix|toPosixPath)\b" src/` returning empty.
 5. `src/lib/obsidian/index.ts` exports the public surface of the lib (frontmatter, vault-reader, vault-provider, smart-connections-loader, query, paths).
 6. No MCP public-API change. The README and `docs/architecture/` stay accurate; if any architecture doc named a moved file by path, that doc is updated as part of this change.
 7. Single PR to `main`. After merge: `npm run release` on `main` produces a minor version bump (internal restructure, no public-API change).
