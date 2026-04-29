@@ -16,6 +16,15 @@ export interface SearchResult {
   via_expansion?: true;
 }
 
+export interface SimilarNoteResult {
+  path: string;
+  similarity?: number;
+  signals: {
+    semantic?: number;
+    forward_link?: true;
+  };
+}
+
 export interface DuplicatePair {
   note_a: string;
   note_b: string;
@@ -57,6 +66,7 @@ export interface GetSimilarNotesInput {
   path: string;
   limit?: number;
   threshold?: number;
+  exclude_folders?: string[];
 }
 
 export interface FindDuplicatesInput {
@@ -86,7 +96,7 @@ export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENC
 
 export interface ToolHandlers {
   searchNotes(input: SearchNotesInput): Promise<RetrievalOutput | MultiRetrievalOutput>;
-  getSimilarNotes(input: GetSimilarNotesInput): Promise<SearchResult[]>;
+  getSimilarNotes(input: GetSimilarNotesInput): Promise<SimilarNoteResult[]>;
   findDuplicates(input?: FindDuplicatesInput): Promise<DuplicatePair[]>;
   getStats(): Promise<ToolStats>;
 }

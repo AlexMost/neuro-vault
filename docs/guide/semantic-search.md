@@ -117,17 +117,38 @@ The only reason to call more than once: the first call returned nothing and lowe
 
 ## `get_similar_notes`
 
-Find notes similar to a given note path. Use this **after** `search_notes` finds a relevant note — it discovers related content without needing a text query.
+Find notes related to a given note path — combining **semantic similarity** (embedding neighbours) with **forward links** (`[[wikilinks]]` from the note's body and frontmatter). Use this **after** `search_notes` finds a relevant note: it discovers related content without needing a text query, and it surfaces what the note's author already declared as relevant via wikilinks.
 
 ```typescript
 get_similar_notes({
-  path: string,       // vault-relative POSIX path, e.g. "Projects/neuro-vault.md"
-  limit?: number,     // default: 10
-  threshold?: number, // default: 0.5
+  path: string,                // vault-relative POSIX path, e.g. "Projects/neuro-vault.md"
+  limit?: number,              // default: 10
+  threshold?: number,          // default: 0.5 (semantic branch only)
+  exclude_folders?: string[],  // default: ['Templates', 'System', 'Daily', 'Archive']
 })
 ```
 
-Returns the same `[{ path, similarity }, ...]` shape as `search_notes` `results`.
+Returns:
+
+```typescript
+Array<{
+  path: string;
+  similarity?: number; // present iff a semantic score is set
+  signals: {
+    semantic?: number; // mirrors top-level similarity for caller convenience
+    forward_link?: true; // the query note links to this result via [[...]]
+  };
+}>;
+```
+
+Behaviour:
+
+- A result reachable purely via a forward link has **no** top-level `similarity`. Code that ranks by `similarity` must guard for `undefined`.
+- `threshold` filters the **semantic** branch only — forward-linked results bypass it.
+- Forward-linked results rank ahead of semantic-only ones; within each bucket, by `signals.semantic` desc, then path asc.
+- `exclude_folders` matches case-sensitively as `path === entry || path.startsWith(entry + '/')`. Pass `[]` to disable exclusions.
+
+> **Breaking change in v4.0.0** — the output shape gained the `signals` object and `similarity` became optional. Prior shape was `Array<{ path, similarity }>`.
 
 ## `find_duplicates`
 

@@ -11,7 +11,10 @@ import {
   findDuplicates,
   findBlockNeighbors,
   loadSmartConnectionsCorpus,
+  buildBasenameIndex,
+  makeSyntheticSource,
 } from './_helpers.js';
+import type { PathExistsCheck, SmartSource } from './_helpers.js';
 
 describe('getSimilarNotes', () => {
   it('filters stale paths from get_similar_notes results', async () => {
@@ -201,5 +204,129 @@ describe('getSimilarNotes', () => {
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('getSimilarNotes — graph signals', () => {
+  function makeSources(): Map<string, SmartSource> {
+    const m = new Map<string, SmartSource>();
+    // A is the query note; orthogonal embeddings for B/C/D so they only
+    // surface via forward link, not via semantic similarity.
+    m.set('Folder/A.md', makeSyntheticSource('Folder/A.md', [1, 0, 0]));
+    m.set('Folder/B.md', makeSyntheticSource('Folder/B.md', [0, 1, 0]));
+    m.set('Folder/C.md', makeSyntheticSource('Folder/C.md', [0, 1, 0]));
+    m.set('Folder/D.md', makeSyntheticSource('Folder/D.md', [0, 1, 0]));
+    // E is highly similar to A semantically but not linked.
+    m.set('Folder/E.md', makeSyntheticSource('Folder/E.md', [0.95, 0.05, 0]));
+    return m;
+  }
+
+  function buildTool(
+    opts: {
+      sources?: Map<string, SmartSource>;
+      body?: string;
+      pathExists?: PathExistsCheck;
+    } = {},
+  ) {
+    const sources = opts.sources ?? makeSources();
+    const body = opts.body ?? '# A\n\nSome text [[B]] and [[C]].\n';
+    const readNoteContent = vi.fn(async () => `---\nrelated: "[[D]]"\n---\n${body}`);
+    return buildGetSimilarNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+        pathExists: opts.pathExists,
+        basenameIndex: buildBasenameIndex(sources.keys()),
+        readNoteContent,
+      }),
+    );
+  }
+
+  it('surfaces forward-linked notes even when their semantic similarity is below threshold', async () => {
+    const tool = buildTool();
+    const results = await tool.handler({ path: 'Folder/A.md', threshold: 0.9 });
+    const paths = results.map((r) => r.path);
+    expect(paths).toContain('Folder/B.md');
+    expect(paths).toContain('Folder/C.md');
+    expect(paths).toContain('Folder/D.md');
+    for (const path of ['Folder/B.md', 'Folder/C.md', 'Folder/D.md']) {
+      const r = results.find((x) => x.path === path)!;
+      expect(r.signals.forward_link).toBe(true);
+    }
+  });
+
+  it('returns semantic-only neighbors with signals.semantic set', async () => {
+    const tool = buildTool({ body: '# A\n\nNo links here.\n' });
+    const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+    const e = results.find((r) => r.path === 'Folder/E.md');
+    expect(e).toBeDefined();
+    expect(e!.signals.semantic).toBeGreaterThan(0);
+    expect(e!.signals.forward_link).toBeUndefined();
+    expect(e!.similarity).toBe(e!.signals.semantic);
+  });
+
+  it('ranks forward-linked results ahead of semantic-only ones regardless of similarity', async () => {
+    const tool = buildTool();
+    const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+    const indexOf = (p: string) => results.findIndex((r) => r.path === p);
+    const eIdx = indexOf('Folder/E.md');
+    expect(eIdx).toBeGreaterThan(indexOf('Folder/B.md'));
+    expect(eIdx).toBeGreaterThan(indexOf('Folder/C.md'));
+    expect(eIdx).toBeGreaterThan(indexOf('Folder/D.md'));
+  });
+
+  it('combines signals when a path is both linked and semantically close', async () => {
+    const sources = makeSources();
+    sources.set('Folder/B.md', makeSyntheticSource('Folder/B.md', [0.99, 0.01, 0]));
+    const tool = buildTool({ sources });
+    const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+    const b = results.find((r) => r.path === 'Folder/B.md')!;
+    expect(b.signals.forward_link).toBe(true);
+    expect(b.signals.semantic).toBeGreaterThan(0);
+    expect(b.similarity).toBe(b.signals.semantic);
+  });
+
+  it('removes results matching exclude_folders prefixes', async () => {
+    const sources = makeSources();
+    sources.set('Templates/X.md', makeSyntheticSource('Templates/X.md', [0.99, 0, 0]));
+    const tool = buildTool({
+      sources,
+      body: '# A\n\n[[B]] [[Templates/X]]\n',
+    });
+    const results = await tool.handler({
+      path: 'Folder/A.md',
+      threshold: 0,
+      exclude_folders: ['Templates'],
+    });
+    expect(results.map((r) => r.path)).not.toContain('Templates/X.md');
+    expect(results.map((r) => r.path)).toContain('Folder/B.md');
+  });
+
+  it('honours limit and preserves linked-first ordering during truncation', async () => {
+    const tool = buildTool();
+    const results = await tool.handler({ path: 'Folder/A.md', threshold: 0, limit: 2 });
+    expect(results).toHaveLength(2);
+    for (const r of results) {
+      expect(r.signals.forward_link).toBe(true);
+    }
+  });
+
+  it('silently skips broken wikilinks without throwing', async () => {
+    const tool = buildTool({ body: '# A\n\n[[Nonexistent]] but [[B]] exists\n' });
+    const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+    expect(results.map((r) => r.path)).toContain('Folder/B.md');
+    expect(results.map((r) => r.path)).not.toContain('Nonexistent');
+  });
+
+  it('respects pathExists filter on linked targets too', async () => {
+    const tool = buildTool({
+      pathExists: vi.fn(async (p: string) => p !== 'Folder/B.md'),
+    });
+    const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+    expect(results.map((r) => r.path)).not.toContain('Folder/B.md');
+    expect(results.map((r) => r.path)).toContain('Folder/C.md');
+    expect(results.map((r) => r.path)).toContain('Folder/D.md');
   });
 });

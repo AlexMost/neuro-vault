@@ -16,6 +16,9 @@ Before this layer, vault-format knowledge was scattered across `src/modules/oper
 - **`vault-reader.ts`** — `VaultReader` interface and `FsVaultReader` (filesystem-backed implementation). Reads notes, splits frontmatter, supports subtree scanning. Reports stale-path conditions via `ScanPathNotFoundError`.
 - **`smart-connections-types.ts`** — `SmartBlock` / `SmartSource` interfaces describing the parsed shape of a Smart Connections AJSON record.
 - **`smart-connections-loader.ts`** — parses the Smart Connections plugin's `.ajson` corpus into a `Map<vaultPath, SmartSource>`. The semantic search module consumes this at startup.
+- **`wikilink.ts`** — `parseWikilinks(text)` extracts `[[...]]` occurrences from arbitrary text (matches embeds `![[...]]` too). `normalizeWikilinkTarget(raw)` strips `#heading` and `|alias` suffixes, returning the bare target.
+- **`frontmatter-links.ts`** — `extractWikilinksFromFrontmatter(fm)` recursively walks a parsed frontmatter object and collects `[[...]]` targets from every string value. Non-string leaves are ignored.
+- **`link-resolver.ts`** — `buildBasenameIndex(paths)` returns a `BasenameIndex` whose `resolve(target)` maps a wikilink target to a vault-relative path. Targets containing `/` are looked up as exact paths (with optional `.md` suffix); bare basenames fall back to a basename → paths index. On basename collision, the lexicographically smallest path wins (deterministic).
 - **`query/`** — the metadata query engine (`query_notes` tool's backend). MongoDB-style filter via `sift`, frontmatter + tags + path-prefix, deterministic sort, batched reads. Exports `runQueryNotes` plus the supporting types and a strict filter whitelist.
 
 ## What does _not_ live here
@@ -30,5 +33,5 @@ Before this layer, vault-format knowledge was scattered across `src/modules/oper
 
 - `src/modules/operations/index.ts` constructs `FsVaultReader` and wires it into the operations tools.
 - `src/modules/operations/tool-helpers.ts` and `src/modules/semantic/tool-helpers.ts` wrap `normalizeVaultPath` with `ToolHandlerError` translation under their existing public names (`normalizePath`, `normalizeNotePath`) so call sites in tool handlers don't need to know about the lib.
-- `src/modules/semantic/index.ts` calls `loadSmartConnectionsCorpus` at startup and passes the resulting `sources` map to its tool handlers.
+- `src/modules/semantic/index.ts` calls `loadSmartConnectionsCorpus` at startup, builds a `BasenameIndex` from the resulting `sources` keys, and passes both (alongside a `readNoteContent` helper closing over `vaultPath`) to its tool handlers. `get_similar_notes` uses these to extract and resolve `[[wikilinks]]` from the query note as forward-link signals.
 - `src/modules/operations/tools/query-notes.ts` calls `runQueryNotes` from `query/`.
