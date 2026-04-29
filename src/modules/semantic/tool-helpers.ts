@@ -1,48 +1,16 @@
-import path from 'node:path';
-
 import { ToolHandlerError } from '../../lib/tool-response.js';
+import { normalizeVaultPath } from '../../lib/obsidian/paths.js';
 
-export const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
 export const MAX_MULTI_QUERIES = 8;
 
 export function normalizeNotePath(notePath: string): string {
-  const trimmed = notePath.trim();
-
-  if (!trimmed) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must not be empty', {
+  try {
+    return normalizeVaultPath(notePath);
+  } catch (err) {
+    throw new ToolHandlerError('INVALID_ARGUMENT', (err as Error).message, {
       details: { field: 'path' },
     });
   }
-
-  if (path.posix.isAbsolute(trimmed) || WINDOWS_ABSOLUTE_PATH_RE.test(trimmed)) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must be vault-relative', {
-      details: { field: 'path' },
-    });
-  }
-
-  const slashNormalized = trimmed.replace(/\\/g, '/');
-
-  if (slashNormalized.split('/').some((segment) => segment === '..')) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must be vault-relative', {
-      details: { field: 'path' },
-    });
-  }
-
-  const normalized = path.posix.normalize(slashNormalized);
-
-  if (normalized === '.') {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must not be empty', {
-      details: { field: 'path' },
-    });
-  }
-
-  if (path.posix.isAbsolute(normalized)) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', 'path must be vault-relative', {
-      details: { field: 'path' },
-    });
-  }
-
-  return normalized;
 }
 
 export function normalizeQuery(query: string): string {
