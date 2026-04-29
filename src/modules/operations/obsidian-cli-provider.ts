@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { ToolHandlerError } from '../../lib/tool-response.js';
-import { splitFrontmatter } from './frontmatter.js';
+import { splitFrontmatter } from '../../lib/obsidian/frontmatter.js';
 import type {
   AppendDailyInput,
   CreateNoteInput,

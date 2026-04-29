@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { splitFrontmatter } from '../../src/modules/operations/frontmatter.js';
+import { splitFrontmatter } from '../../../src/lib/obsidian/frontmatter.js';
 
 describe('splitFrontmatter', () => {
   it('returns null frontmatter and full content when no delimiters', () => {

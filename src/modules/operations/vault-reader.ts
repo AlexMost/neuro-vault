@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import fastGlob from 'fast-glob';
 
-import { splitFrontmatter } from './frontmatter.js';
+import { splitFrontmatter } from '../../lib/obsidian/frontmatter.js';
 
 export type ReadNotesField = 'frontmatter' | 'content';
 
