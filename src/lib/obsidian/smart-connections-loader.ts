@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import path from 'node:path';
 
-import type { SmartBlock, SmartSource } from './types.js';
+import { normalizeVaultPath } from './paths.js';
+import type { SmartBlock, SmartSource } from './smart-connections-types.js';
 
 interface AjsonEntry {
   key: string;
@@ -17,21 +18,6 @@ export interface SmartConnectionsCorpusStats {
   totalNotes: number;
   totalBlocks: number;
   embeddingDimension: number;
-}
-
-function toPosixPath(notePath: string) {
-  const normalized = path.posix.normalize(notePath.trim().replace(/\\/g, '/'));
-
-  if (
-    path.posix.isAbsolute(normalized) ||
-    /^[A-Za-z]:\//.test(normalized) ||
-    normalized === '.' ||
-    normalized.split('/').some((segment) => segment === '..')
-  ) {
-    throw new Error(`Smart Connections path must be vault-relative and POSIX-like: ${notePath}`);
-  }
-
-  return normalized.replace(/^\.\//, '');
 }
 
 export function parseAjsonContent(content: string): AjsonEntry[] {
@@ -210,7 +196,7 @@ function parseSmartSourceEntry(
     return null;
   }
 
-  const normalizedPath = toPosixPath(notePath);
+  const normalizedPath = normalizeVaultPath(notePath);
   const blockDefs = extractBlockDefinitions(value.blocks, filePath);
 
   const blocks: SmartBlock[] = blockDefs.map(({ heading, lines }) => {

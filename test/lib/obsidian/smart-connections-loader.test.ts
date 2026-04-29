@@ -8,12 +8,12 @@ import {
   loadSmartConnectionsCorpus,
   parseAjsonContent,
   summarizeSmartConnectionsCorpus,
-} from '../../src/modules/semantic/smart-connections-loader.js';
-import type { SmartSource } from '../../src/types.js';
+} from '../../../src/lib/obsidian/smart-connections-loader.js';
+import type { SmartSource } from '../../../src/types.js';
 
 const MODEL_KEY = 'bge-micro-v2';
 const testDir = path.dirname(fileURLToPath(import.meta.url));
-const fixturesRoot = path.resolve(testDir, 'fixtures/vault/.smart-env/multi');
+const fixturesRoot = path.resolve(testDir, '../../semantic/fixtures/vault/.smart-env/multi');
 
 async function makeVaultFixture(fileNames: string[]) {
   const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'smart-loader-'));
@@ -258,7 +258,7 @@ describe('loadSmartConnectionsCorpus', () => {
 
     try {
       await expect(loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY)).rejects.toThrow(
-        /vault-relative and POSIX-like/i,
+        /vault-relative/i,
       );
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
