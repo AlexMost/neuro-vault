@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildOperationsTools } from '../../src/modules/operations/tools/index.js';
-import type { VaultProvider } from '../../src/modules/operations/vault-provider.js';
-import type { VaultReader } from '../../src/modules/operations/vault-reader.js';
+import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
+import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 
 const noopProvider = {
   createNote: vi.fn(),

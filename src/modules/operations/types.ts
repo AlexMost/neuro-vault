@@ -1,4 +1,4 @@
-import type { QueryNotesResult, QueryNotesToolInput } from './query/types.js';
+import type { QueryNotesResult, QueryNotesToolInput } from '../../lib/obsidian/query/types.js';
 
 export type {
   NoteRecord,
@@ -6,7 +6,7 @@ export type {
   QueryNotesResultItem,
   QueryNotesSort,
   QueryNotesToolInput,
-} from './query/types.js';
+} from '../../lib/obsidian/query/types.js';
 
 export type OperationsErrorCode =
   | 'INVALID_ARGUMENT'

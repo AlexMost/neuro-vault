@@ -1,7 +1,7 @@
 import { registerTool } from '../../../lib/tool-registry.js';
 import type { ToolRegistration } from '../../../lib/tool-registration.js';
-import type { VaultProvider } from '../vault-provider.js';
-import type { VaultReader } from '../vault-reader.js';
+import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
+import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
 import { buildAppendDailyTool } from './append-daily.js';
 import { buildCreateNoteTool } from './create-note.js';
 import { buildEditNoteTool } from './edit-note.js';

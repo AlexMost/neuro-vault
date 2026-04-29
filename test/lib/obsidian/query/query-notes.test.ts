@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ToolHandlerError } from '../../../src/lib/tool-response.js';
-import { runQueryNotes } from '../../../src/modules/operations/query/query-notes.js';
+import { ToolHandlerError } from '../../../../src/lib/tool-response.js';
+import { runQueryNotes } from '../../../../src/lib/obsidian/query/query-notes.js';
 import {
   ScanPathNotFoundError,
   type ReadNotesItem,
   type VaultReader,
-} from '../../../src/modules/operations/vault-reader.js';
+} from '../../../../src/lib/obsidian/vault-reader.js';
 
 interface FakeNote {
   path: string;

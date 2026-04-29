@@ -5,9 +5,12 @@ import type {
   ReadNotesToolInput,
   SetPropertyToolInput,
 } from './types.js';
-import type { NoteIdentifier, PropertyType, PropertyValue } from './vault-provider.js';
-
-export const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
+import type {
+  NoteIdentifier,
+  PropertyType,
+  PropertyValue,
+} from '../../lib/obsidian/vault-provider.js';
+import { normalizeVaultPath } from '../../lib/obsidian/paths.js';
 
 export function invalidArgument(message: string, field: string): ToolHandlerError {
   return new ToolHandlerError('INVALID_ARGUMENT' satisfies OperationsErrorCode, message, {
@@ -110,16 +113,11 @@ export function inferTypeAndValidate(
 }
 
 export function normalizePath(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) throw invalidArgument('path must not be empty', 'path');
-  const slashed = trimmed.replace(/\\/g, '/');
-  if (slashed.startsWith('/') || WINDOWS_ABSOLUTE_PATH_RE.test(slashed)) {
-    throw invalidArgument('path must be vault-relative', 'path');
+  try {
+    return normalizeVaultPath(raw);
+  } catch (err) {
+    throw invalidArgument((err as Error).message, 'path');
   }
-  if (slashed.split('/').some((segment) => segment === '..')) {
-    throw invalidArgument('path must be vault-relative', 'path');
-  }
-  return slashed.replace(/^\.\//, '');
 }
 
 export const VALID_FIELDS: readonly ReadNotesField[] = ['frontmatter', 'content'];

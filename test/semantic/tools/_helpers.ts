@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadSmartConnectionsCorpus } from '../../../src/modules/semantic/smart-connections-loader.js';
+import { loadSmartConnectionsCorpus } from '../../../src/lib/obsidian/smart-connections-loader.js';
 import {
   findBlockNeighbors,
   findDuplicates,

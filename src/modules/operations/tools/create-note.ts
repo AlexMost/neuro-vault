@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { invalidArgument, normalizePath } from '../tool-helpers.js';
 import type { CreateNoteToolInput } from '../types.js';
-import type { VaultProvider } from '../vault-provider.js';
+import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
 
 const inputSchema = z.object({
   name: z.string().optional(),

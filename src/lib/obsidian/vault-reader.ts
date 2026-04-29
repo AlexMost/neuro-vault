@@ -4,6 +4,7 @@ import path from 'node:path';
 import fastGlob from 'fast-glob';
 
 import { splitFrontmatter } from './frontmatter.js';
+import { normalizeScanPrefix, toPosixSlashes } from './paths.js';
 
 export type ReadNotesField = 'frontmatter' | 'content';
 
@@ -105,9 +106,9 @@ export class FsVaultReader implements VaultReader {
       followSymbolicLinks: false,
     });
     if (!prefix) {
-      return matches.map(toPosix).sort();
+      return matches.map(toPosixSlashes).sort();
     }
-    return matches.map((m) => `${prefix}/${toPosix(m)}`).sort();
+    return matches.map((m) => `${prefix}/${toPosixSlashes(m)}`).sort();
   }
 
   private async readOne(vaultRelativePath: string): Promise<ReadNotesItem> {
@@ -138,16 +139,4 @@ export class FsVaultReader implements VaultReader {
     const { frontmatter, content } = splitFrontmatter(raw);
     return { path: vaultRelativePath, frontmatter, content };
   }
-}
-
-function toPosix(p: string): string {
-  return p.replace(/\\/g, '/');
-}
-
-function normalizeScanPrefix(raw: string | undefined): string {
-  if (raw === undefined) return '';
-  const trimmed = raw.trim();
-  if (trimmed === '' || trimmed === '.' || trimmed === './') return '';
-  const slashed = trimmed.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
-  return slashed;
 }

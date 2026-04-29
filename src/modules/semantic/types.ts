@@ -1,17 +1,7 @@
 import type { MultiRetrievalOutput, RetrievalOutput } from './retrieval-policy.js';
+import type { SmartSource } from '../../lib/obsidian/smart-connections-types.js';
 
-export interface SmartBlock {
-  key: string;
-  heading: string;
-  lines: [number, number];
-  embedding: number[];
-}
-
-export interface SmartSource {
-  path: string;
-  embedding: number[];
-  blocks: SmartBlock[];
-}
+export type { SmartBlock, SmartSource } from '../../lib/obsidian/smart-connections-types.js';
 
 export interface BlockSearchResult {
   path: string;

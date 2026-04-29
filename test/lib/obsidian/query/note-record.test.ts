@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { toNoteRecord } from '../../../src/modules/operations/query/note-record.js';
+import { toNoteRecord } from '../../../../src/lib/obsidian/query/note-record.js';
 
 describe('toNoteRecord', () => {
   it('passes frontmatter through untouched', () => {

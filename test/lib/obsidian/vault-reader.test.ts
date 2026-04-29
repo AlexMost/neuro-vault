@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { FsVaultReader, ScanPathNotFoundError } from '../../src/modules/operations/vault-reader.js';
+import { FsVaultReader, ScanPathNotFoundError } from '../../../src/lib/obsidian/vault-reader.js';
 
 function fakeReadFile(files: Record<string, string | { error: Error & { code?: string } }>) {
   return vi.fn(async (absPath: string, encoding: 'utf8') => {

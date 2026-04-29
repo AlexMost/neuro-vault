@@ -6,7 +6,7 @@ import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engi
 import {
   loadSmartConnectionsCorpus,
   type SmartConnectionsCorpus,
-} from './smart-connections-loader.js';
+} from '../../lib/obsidian/smart-connections-loader.js';
 import { buildSemanticTools, type SemanticToolDeps } from './tools/index.js';
 import type { EmbeddingProvider, PathExistsCheck, SearchEngine } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
