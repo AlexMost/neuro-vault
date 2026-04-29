@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [4.0.0](https://github.com/AlexMost/neuro-vault/compare/v3.6.0...v4.0.0) (2026-04-29)
+
+### ⚠ BREAKING CHANGES
+
+- **semantic:** get_similar_notes output shape changes from
+  SearchResult[] to SimilarNoteResult[] — each item now carries a `signals`
+  object with optional `semantic` (number) and `forward_link` (true) fields.
+  Top-level `similarity` becomes optional (results reachable purely via
+  forward link have no semantic score).
+
+Adds `exclude_folders` parameter (default Templates, System, Daily,
+Archive). Forward-linked results rank ahead of semantic-only ones; within
+each bucket sort by semantic desc then path asc.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+### Features
+
+- **obsidian-lib:** add basename index for wikilink resolution ([3599a41](https://github.com/AlexMost/neuro-vault/commit/3599a419b7a62396bcd77bf49ff1efaf5d3af1d4))
+- **obsidian-lib:** add wikilink parser and target normalizer ([b3893f2](https://github.com/AlexMost/neuro-vault/commit/b3893f27233d430fe88d76d0faaf8ee2a48e43dd))
+- **obsidian-lib:** extract wikilinks from frontmatter values ([9509195](https://github.com/AlexMost/neuro-vault/commit/9509195f1e90ff24221ffb39082982b8a4828f4a))
+- **obsidian-lib:** re-export wikilink, frontmatter-links, link-resolver ([cea3e5a](https://github.com/AlexMost/neuro-vault/commit/cea3e5a67f39166322ab75a443266a93750502b6))
+- **semantic:** add SimilarNoteResult type for graph-signal output ([ab2ab2b](https://github.com/AlexMost/neuro-vault/commit/ab2ab2bfdb571767e0f69f480dbe7fc06e153c61))
+- **semantic:** rewrite get_similar_notes with forward-link signals ([fbc8a95](https://github.com/AlexMost/neuro-vault/commit/fbc8a9532f64d2b928221b82a2833fcdc733589e))
+
 ## [3.6.0](https://github.com/AlexMost/neuro-vault/compare/v3.5.0...v3.6.0) (2026-04-29)
 
 ### Features
