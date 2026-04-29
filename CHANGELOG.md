@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [4.0.1](https://github.com/AlexMost/neuro-vault/compare/v4.0.0...v4.0.1) (2026-04-29)
+
+### Bug Fixes
+
+- **semantic:** default get_similar_notes exclude_folders to empty ([a9dbb77](https://github.com/AlexMost/neuro-vault/commit/a9dbb77fbd01ba4748f8b9661a730439f73cedb9))
+
 ## [4.0.0](https://github.com/AlexMost/neuro-vault/compare/v3.6.0...v4.0.0) (2026-04-29)
 
 ### ⚠ BREAKING CHANGES
