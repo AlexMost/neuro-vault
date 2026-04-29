@@ -1,12 +1,6 @@
 import { z } from 'zod';
 
-import {
-  extractWikilinksFromFrontmatter,
-  normalizeWikilinkTarget,
-  parseWikilinks,
-  splitFrontmatter,
-  type BasenameIndex,
-} from '../../../lib/obsidian/index.js';
+import { getNoteLinks, type BasenameIndex } from '../../../lib/obsidian/index.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { normalizeNotePath, readPositiveInteger, readThreshold } from '../tool-helpers.js';
@@ -124,13 +118,9 @@ export function buildGetSimilarNotesTool(
         }
 
         // Step 3-5: read query note, extract wikilinks, resolve.
-        let body = '';
-        let frontmatter: Record<string, unknown> | null = null;
+        let linkedPaths: Set<string>;
         try {
-          const raw = await readNoteContent(notePath);
-          const split = splitFrontmatter(raw);
-          body = split.content;
-          frontmatter = split.frontmatter;
+          linkedPaths = await getNoteLinks({ notePath, readNoteContent, basenameIndex });
         } catch (err) {
           if (isEnoent(err)) {
             throw new ToolHandlerError(
@@ -140,20 +130,6 @@ export function buildGetSimilarNotesTool(
             );
           }
           throw err;
-        }
-
-        const rawTargets = [
-          ...parseWikilinks(body),
-          ...(frontmatter ? extractWikilinksFromFrontmatter(frontmatter) : []),
-        ];
-        const linkedPaths = new Set<string>();
-        for (const raw of rawTargets) {
-          const target = normalizeWikilinkTarget(raw);
-          if (!target) continue;
-          const resolved = basenameIndex.resolve(target);
-          if (!resolved) continue;
-          if (resolved === notePath) continue;
-          linkedPaths.add(resolved);
         }
 
         // Step 6: union by path.
