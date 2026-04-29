@@ -1,4 +1,4 @@
-import type { ReadNotesItemSuccess } from '../vault-reader.js';
+import type { ReadNotesItemSuccess } from '../../../lib/obsidian/vault-reader.js';
 import type { NoteRecord } from './types.js';
 
 export function toNoteRecord(item: ReadNotesItemSuccess): NoteRecord {

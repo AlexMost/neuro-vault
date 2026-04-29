@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { runQueryNotes } from '../../../src/modules/operations/query/query-notes.js';
-import { FsVaultReader } from '../../../src/modules/operations/vault-reader.js';
+import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 
 interface FixtureFile {
   path: string;

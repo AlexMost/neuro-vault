@@ -11,7 +11,7 @@ const sift: SiftFactory =
   typeof siftModule === 'function'
     ? (siftModule as unknown as SiftFactory)
     : (siftModule as unknown as { default: SiftFactory }).default;
-import { ScanPathNotFoundError, type VaultReader } from '../vault-reader.js';
+import { ScanPathNotFoundError, type VaultReader } from '../../../lib/obsidian/vault-reader.js';
 import { toNoteRecord } from './note-record.js';
 import type {
   NoteRecord,

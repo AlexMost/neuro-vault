@@ -4,7 +4,7 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { normalizePath, validateReadNotesInput } from '../tool-helpers.js';
 import type { ReadNotesResult, ReadNotesResultItem } from '../types.js';
-import type { VaultReader } from '../vault-reader.js';
+import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
 
 const readNotesFieldSchema = z.enum(['frontmatter', 'content']);
 const inputSchema = z.object({

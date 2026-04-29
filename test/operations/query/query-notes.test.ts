@@ -6,7 +6,7 @@ import {
   ScanPathNotFoundError,
   type ReadNotesItem,
   type VaultReader,
-} from '../../../src/modules/operations/vault-reader.js';
+} from '../../../src/lib/obsidian/vault-reader.js';
 
 interface FakeNote {
   path: string;
