@@ -16,6 +16,15 @@ export interface SearchResult {
   via_expansion?: true;
 }
 
+export interface SimilarNoteResult {
+  path: string;
+  similarity?: number;
+  signals: {
+    semantic?: number;
+    forward_link?: true;
+  };
+}
+
 export interface DuplicatePair {
   note_a: string;
   note_b: string;
