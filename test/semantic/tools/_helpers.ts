@@ -87,6 +87,14 @@ export function makeHandlerDeps(deps: {
   };
 }
 
+export function makeSyntheticSource(path: string, embedding: number[] = [1, 0, 0]): SmartSource {
+  return {
+    path,
+    embedding,
+    blocks: [],
+  };
+}
+
 export {
   loadSmartConnectionsCorpus,
   findNeighbors,
