@@ -68,15 +68,89 @@ function isExcluded(notePath: string, prefixes: readonly string[]): boolean {
   return false;
 }
 
-async function buildExistingPathSet(
-  paths: Iterable<string>,
-  pathExists: PathExistsCheck,
-): Promise<Set<string>> {
-  const unique = new Set(paths);
-  const checks = await Promise.all(
-    [...unique].map(async (notePath) => [notePath, await pathExists(notePath)] as const),
+function collectSemanticCandidates(args: {
+  searchEngine: SearchEngine;
+  queryVector: number[];
+  sources: Map<string, SmartSource>;
+  threshold: number;
+  excludePath: string;
+}): Map<string, Candidate> {
+  const results = args.searchEngine.findNeighbors({
+    queryVector: args.queryVector,
+    sources: args.sources.values(),
+    threshold: args.threshold,
+    excludePath: args.excludePath,
+  });
+  const candidates = new Map<string, Candidate>();
+  for (const r of results) {
+    candidates.set(r.path, { path: r.path, signals: { semantic: r.similarity } });
+  }
+  return candidates;
+}
+
+async function resolveForwardLinks(args: {
+  notePath: string;
+  readNoteContent: (vaultRelativePath: string) => Promise<string>;
+  basenameIndex: BasenameIndex;
+}): Promise<Set<string>> {
+  try {
+    return await getNoteLinks(args);
+  } catch (err) {
+    if (isEnoent(err)) {
+      throw new ToolHandlerError(
+        'NOT_FOUND',
+        `Query note file is missing on disk: ${args.notePath}`,
+        { details: { path: args.notePath }, cause: err },
+      );
+    }
+    throw err;
+  }
+}
+
+function mergeForwardLinks(candidates: Map<string, Candidate>, linkedPaths: Set<string>): void {
+  for (const linked of linkedPaths) {
+    const existing = candidates.get(linked);
+    if (existing) {
+      existing.signals.forward_link = true;
+    } else {
+      candidates.set(linked, { path: linked, signals: { forward_link: true } });
+    }
+  }
+}
+
+async function filterCandidates(args: {
+  candidates: Iterable<Candidate>;
+  excludePrefixes: readonly string[];
+  pathExists: PathExistsCheck;
+}): Promise<Candidate[]> {
+  const afterExclude = [...args.candidates].filter(
+    (c) => !isExcluded(c.path, args.excludePrefixes),
   );
-  return new Set(checks.filter(([, exists]) => exists).map(([notePath]) => notePath));
+  const uniquePaths = new Set(afterExclude.map((c) => c.path));
+  const checks = await Promise.all(
+    [...uniquePaths].map(async (p) => [p, await args.pathExists(p)] as const),
+  );
+  const existing = new Set(checks.filter(([, ok]) => ok).map(([p]) => p));
+  return afterExclude.filter((c) => existing.has(c.path));
+}
+
+function compareCandidates(a: Candidate, b: Candidate): number {
+  const aLink = a.signals.forward_link === true;
+  const bLink = b.signals.forward_link === true;
+  if (aLink !== bLink) return aLink ? -1 : 1;
+  const aSem = a.signals.semantic ?? Number.NEGATIVE_INFINITY;
+  const bSem = b.signals.semantic ?? Number.NEGATIVE_INFINITY;
+  if (aSem !== bSem) return bSem - aSem;
+  return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+}
+
+function toSimilarNoteResult(c: Candidate): SimilarNoteResult {
+  const signals: SimilarNoteResult['signals'] = {};
+  if (c.signals.semantic !== undefined) signals.semantic = c.signals.semantic;
+  if (c.signals.forward_link === true) signals.forward_link = true;
+  const result: SimilarNoteResult = { path: c.path, signals };
+  if (c.signals.semantic !== undefined) result.similarity = c.signals.semantic;
+  return result;
 }
 
 export function buildGetSimilarNotesTool(
@@ -105,75 +179,26 @@ export function buildGetSimilarNotesTool(
       );
 
       try {
-        // Step 2: semantic candidates (no limit yet — final truncation is post-union).
-        const semanticResults = searchEngine.findNeighbors({
+        const candidates = collectSemanticCandidates({
+          searchEngine,
           queryVector: source.embedding,
-          sources: sources.values(),
+          sources,
           threshold,
           excludePath: notePath,
         });
-        const candidates = new Map<string, Candidate>();
-        for (const r of semanticResults) {
-          candidates.set(r.path, { path: r.path, signals: { semantic: r.similarity } });
-        }
-
-        // Step 3-5: read query note, extract wikilinks, resolve.
-        let linkedPaths: Set<string>;
-        try {
-          linkedPaths = await getNoteLinks({ notePath, readNoteContent, basenameIndex });
-        } catch (err) {
-          if (isEnoent(err)) {
-            throw new ToolHandlerError(
-              'NOT_FOUND',
-              `Query note file is missing on disk: ${notePath}`,
-              { details: { path: notePath }, cause: err },
-            );
-          }
-          throw err;
-        }
-
-        // Step 6: union by path.
-        for (const linked of linkedPaths) {
-          const existing = candidates.get(linked);
-          if (existing) {
-            existing.signals.forward_link = true;
-          } else {
-            candidates.set(linked, { path: linked, signals: { forward_link: true } });
-          }
-        }
-
-        // Step 7: filter (exclude_folders + pathExists).
-        const candidateList = [...candidates.values()].filter(
-          (c) => !isExcluded(c.path, excludePrefixes),
-        );
-        const existing = await buildExistingPathSet(
-          candidateList.map((c) => c.path),
+        const linkedPaths = await resolveForwardLinks({
+          notePath,
+          readNoteContent,
+          basenameIndex,
+        });
+        mergeForwardLinks(candidates, linkedPaths);
+        const filtered = await filterCandidates({
+          candidates: candidates.values(),
+          excludePrefixes,
           pathExists,
-        );
-        const filtered = candidateList.filter((c) => existing.has(c.path));
-
-        // Step 8: sort. Forward-link first; then semantic desc; then path asc.
-        filtered.sort((a, b) => {
-          const aLink = a.signals.forward_link === true;
-          const bLink = b.signals.forward_link === true;
-          if (aLink !== bLink) return aLink ? -1 : 1;
-          const aSem = a.signals.semantic ?? Number.NEGATIVE_INFINITY;
-          const bSem = b.signals.semantic ?? Number.NEGATIVE_INFINITY;
-          if (aSem !== bSem) return bSem - aSem;
-          return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
         });
-
-        // Step 9: truncate.
-        const sliced = filtered.slice(0, limit);
-
-        return sliced.map((c): SimilarNoteResult => {
-          const signals: SimilarNoteResult['signals'] = {};
-          if (c.signals.semantic !== undefined) signals.semantic = c.signals.semantic;
-          if (c.signals.forward_link === true) signals.forward_link = true;
-          const result: SimilarNoteResult = { path: c.path, signals };
-          if (c.signals.semantic !== undefined) result.similarity = c.signals.semantic;
-          return result;
-        });
+        filtered.sort(compareCandidates);
+        return filtered.slice(0, limit).map(toSimilarNoteResult);
       } catch (error) {
         throw wrapDependencyError(error, 'Failed to find similar notes', {
           modelKey,
