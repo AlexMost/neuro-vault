@@ -5,7 +5,11 @@ import type {
   ReadNotesToolInput,
   SetPropertyToolInput,
 } from './types.js';
-import type { NoteIdentifier, PropertyType, PropertyValue } from './vault-provider.js';
+import type {
+  NoteIdentifier,
+  PropertyType,
+  PropertyValue,
+} from '../../lib/obsidian/vault-provider.js';
 
 export const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
 

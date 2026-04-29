@@ -1,6 +1,6 @@
 import { ObsidianCLIProvider, type ObsidianCLIProviderOptions } from './obsidian-cli-provider.js';
 import { buildOperationsTools, type OperationsToolDeps } from './tools/index.js';
-import type { VaultProvider } from './vault-provider.js';
+import type { VaultProvider } from '../../lib/obsidian/vault-provider.js';
 import { FsVaultReader, type VaultReader } from './vault-reader.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 

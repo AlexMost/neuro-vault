@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { invalidArgument } from '../tool-helpers.js';
-import type { VaultProvider } from '../vault-provider.js';
+import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
 
 const inputSchema = z.object({
   content: z.string(),

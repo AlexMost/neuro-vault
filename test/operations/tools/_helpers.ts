@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-import type { VaultProvider } from '../../../src/modules/operations/vault-provider.js';
+import type { VaultProvider } from '../../../src/lib/obsidian/vault-provider.js';
 import type { VaultReader, ReadNotesItem } from '../../../src/modules/operations/vault-reader.js';
 
 export function makeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {

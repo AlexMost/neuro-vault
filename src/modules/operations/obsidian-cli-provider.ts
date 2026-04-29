@@ -17,7 +17,7 @@ import type {
   SetPropertyInput,
   TagListEntry,
   VaultProvider,
-} from './vault-provider.js';
+} from '../../lib/obsidian/vault-provider.js';
 
 export type ExecFn = (
   binary: string,
