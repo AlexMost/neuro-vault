@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [3.6.0](https://github.com/AlexMost/neuro-vault/compare/v3.5.0...v3.6.0) (2026-04-29)
+
+### Features
+
+- **lib:** add src/lib/obsidian/paths with unified path helpers ([fe6184f](https://github.com/AlexMost/neuro-vault/commit/fe6184f0cb249d00c2337ef72c717af82edcd044))
+
 ## [3.5.0](https://github.com/AlexMost/neuro-vault/compare/v3.4.0...v3.5.0) (2026-04-28)
 
 ### Features
