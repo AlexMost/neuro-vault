@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
+import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
 import {
   executeMultiRetrieval,
   executeRetrieval,
@@ -49,7 +50,12 @@ const inputSchema = z.object({
 });
 
 type SearchNotesInput = z.infer<typeof inputSchema>;
-type SearchNotesOutput = RetrievalOutput | MultiRetrievalOutput;
+
+type EnrichResults<T extends { results: { path: string }[] }> = Omit<T, 'results'> & {
+  results: Array<T['results'][number] & { backlink_count: number }>;
+};
+
+type SearchNotesOutput = EnrichResults<RetrievalOutput> | EnrichResults<MultiRetrievalOutput>;
 
 export interface SearchNotesDeps {
   sources: Map<string, SmartSource>;
@@ -57,6 +63,7 @@ export interface SearchNotesDeps {
   searchEngine: SearchEngine;
   modelKey: string;
   pathExists: PathExistsCheck;
+  graph: WikilinkGraphIndex;
 }
 
 async function buildExistingPathSet(
@@ -84,7 +91,7 @@ function wrapDependencyError(
 export function buildSearchNotesTool(
   deps: SearchNotesDeps,
 ): ITool<SearchNotesInput, SearchNotesOutput> {
-  const { sources, embeddingProvider, searchEngine, modelKey, pathExists } = deps;
+  const { sources, embeddingProvider, searchEngine, modelKey, pathExists, graph } = deps;
 
   return {
     name: 'search_notes',
@@ -118,9 +125,14 @@ export function buildSearchNotesTool(
             ...output.results.map((r) => r.path),
             ...(output.blockResults?.map((b) => b.path) ?? []),
           ];
-          const existing = await buildExistingPathSet(candidatePaths, pathExists);
+          const [existing] = await Promise.all([
+            buildExistingPathSet(candidatePaths, pathExists),
+            graph.ensureFresh(),
+          ]);
           return {
-            results: output.results.filter((r) => existing.has(r.path)),
+            results: output.results
+              .filter((r) => existing.has(r.path))
+              .map((r) => ({ ...r, backlink_count: graph.getBacklinkCount(r.path) })),
             ...(output.blockResults !== undefined
               ? { blockResults: output.blockResults.filter((b) => existing.has(b.path)) }
               : {}),
@@ -149,9 +161,14 @@ export function buildSearchNotesTool(
           ...output.results.map((r) => r.path),
           ...(output.blockResults?.map((b) => b.path) ?? []),
         ];
-        const existing = await buildExistingPathSet(candidatePaths, pathExists);
+        const [existing] = await Promise.all([
+          buildExistingPathSet(candidatePaths, pathExists),
+          graph.ensureFresh(),
+        ]);
         return {
-          results: output.results.filter((r) => existing.has(r.path)),
+          results: output.results
+            .filter((r) => existing.has(r.path))
+            .map((r) => ({ ...r, backlink_count: graph.getBacklinkCount(r.path) })),
           ...(output.blockResults !== undefined
             ? { blockResults: output.blockResults.filter((b) => existing.has(b.path)) }
             : {}),

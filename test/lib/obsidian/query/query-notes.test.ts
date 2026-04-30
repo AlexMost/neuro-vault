@@ -7,6 +7,15 @@ import {
   type ReadNotesItem,
   type VaultReader,
 } from '../../../../src/lib/obsidian/vault-reader.js';
+import type { WikilinkGraphIndex } from '../../../../src/lib/obsidian/wikilink-graph.js';
+
+function buildFakeGraph(counts: Record<string, number>): WikilinkGraphIndex {
+  return {
+    ensureFresh: vi.fn().mockResolvedValue(undefined),
+    getBacklinkCount: vi.fn((p: string) => counts[p] ?? 0),
+    getNoteLinks: vi.fn(),
+  } as unknown as WikilinkGraphIndex;
+}
 
 interface FakeNote {
   path: string;
@@ -308,6 +317,85 @@ describe('runQueryNotes', () => {
       0,
     );
     expect(totalPathsRead).toBe(notes.length);
+  });
+
+  it('enriches every result with backlink_count from the graph', async () => {
+    const reader = buildReader(fixture);
+    const graph = buildFakeGraph({
+      'Projects/alpha.md': 7,
+      'Projects/beta.md': 2,
+    });
+
+    const out = await runQueryNotes(
+      { filter: { 'frontmatter.type': 'project' }, sort: { field: 'path', order: 'asc' } },
+      reader,
+      graph,
+    );
+
+    expect(out.results.map((r) => ({ path: r.path, backlink_count: r.backlink_count }))).toEqual([
+      { path: 'Projects/alpha.md', backlink_count: 7 },
+      { path: 'Projects/beta.md', backlink_count: 2 },
+    ]);
+    expect(graph.ensureFresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('defaults backlink_count to 0 for results not present in the graph', async () => {
+    const reader = buildReader(fixture);
+    const graph = buildFakeGraph({ 'Projects/alpha.md': 4 });
+
+    const out = await runQueryNotes(
+      { filter: { 'frontmatter.type': 'project' }, sort: { field: 'path', order: 'asc' } },
+      reader,
+      graph,
+    );
+
+    const beta = out.results.find((r) => r.path === 'Projects/beta.md');
+    expect(beta?.backlink_count).toBe(0);
+  });
+
+  it('sorts by backlink_count desc when requested', async () => {
+    const reader = buildReader(fixture);
+    const graph = buildFakeGraph({
+      'Projects/alpha.md': 1,
+      'Projects/beta.md': 9,
+      'Tasks/t1.md': 5,
+      'Areas/finance.md': 3,
+    });
+
+    const out = await runQueryNotes(
+      { filter: {}, sort: { field: 'backlink_count', order: 'desc' } },
+      reader,
+      graph,
+    );
+
+    expect(out.results.map((r) => r.path)).toEqual([
+      'Projects/beta.md',
+      'Tasks/t1.md',
+      'Areas/finance.md',
+      'Projects/alpha.md',
+    ]);
+  });
+
+  it('filters by backlink_count via sift operators', async () => {
+    const reader = buildReader(fixture);
+    const graph = buildFakeGraph({
+      'Projects/alpha.md': 1,
+      'Projects/beta.md': 9,
+      'Tasks/t1.md': 5,
+      'Areas/finance.md': 0,
+    });
+
+    const out = await runQueryNotes({ filter: { backlink_count: { $gte: 5 } } }, reader, graph);
+
+    expect(out.results.map((r) => r.path).sort()).toEqual(['Projects/beta.md', 'Tasks/t1.md']);
+  });
+
+  it('rejects unknown sort fields with the new whitelist message', async () => {
+    const reader = buildReader(fixture);
+
+    await expect(
+      runQueryNotes({ filter: {}, sort: { field: 'unknown', order: 'asc' } }, reader),
+    ).rejects.toThrow(/backlink_count/);
   });
 
   it('reads in bounded batches rather than one mega-call', async () => {

@@ -6,5 +6,6 @@ export * from './vault-reader.js';
 export * from './wikilink.js';
 export * from './link-resolver.js';
 export * from './note-links.js';
+export * from './wikilink-graph.js';
 export * from './smart-connections-loader.js';
 export * as query from './query/index.js';

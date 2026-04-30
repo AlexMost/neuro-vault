@@ -3,8 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { vi } from 'vitest';
+
 import { buildBasenameIndex, type BasenameIndex } from '../../../src/lib/obsidian/index.js';
 import { loadSmartConnectionsCorpus } from '../../../src/lib/obsidian/smart-connections-loader.js';
+import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 import {
   findBlockNeighbors,
   findDuplicates,
@@ -70,6 +73,14 @@ export function createDuplicateCorpus(
   return { sources };
 }
 
+export function makeFakeGraph(counts: Record<string, number> = {}): WikilinkGraphIndex {
+  return {
+    ensureFresh: vi.fn().mockResolvedValue(undefined),
+    getBacklinkCount: vi.fn((p: string) => counts[p] ?? 0),
+    getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
+  } as unknown as WikilinkGraphIndex;
+}
+
 export function makeHandlerDeps(deps: {
   sources: Map<string, SmartSource>;
   embeddingProvider: EmbeddingProvider;
@@ -78,12 +89,14 @@ export function makeHandlerDeps(deps: {
   pathExists?: PathExistsCheck;
   basenameIndex?: BasenameIndex;
   readNoteContent?: (vaultRelativePath: string) => Promise<string>;
+  graph?: WikilinkGraphIndex;
 }) {
   return {
     ...deps,
     pathExists: deps.pathExists ?? (async () => true),
     basenameIndex: deps.basenameIndex ?? buildBasenameIndex(deps.sources.keys()),
     readNoteContent: deps.readNoteContent ?? (async () => ''),
+    graph: deps.graph ?? makeFakeGraph(),
   };
 }
 
