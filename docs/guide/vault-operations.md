@@ -94,10 +94,11 @@ The filter is evaluated against a `NoteRecord` shape:
   path: string,           // "Projects/foo.md"
   frontmatter: object,    // parsed YAML, full passthrough
   tags: string[],         // normalized, no leading "#", from frontmatter `tags:`
+  backlink_count: number, // total inbound wikilinks + embeds across the vault
 }
 ```
 
-Reference frontmatter keys with the dotted prefix `frontmatter.<key>`. Reference tags via the top-level `tags` array (sift exact-match against array elements).
+Reference frontmatter keys with the dotted prefix `frontmatter.<key>`. Reference tags via the top-level `tags` array (sift exact-match against array elements). `backlink_count` is a top-level scalar — filterable (`{ backlink_count: { $gte: 5 } }`), sortable (`sort: { field: 'backlink_count', order: 'desc' }`), and always present on each result item.
 
 **Supported operators:** `$eq`, `$ne`, `$in`, `$nin`, `$gt`, `$gte`, `$lt`, `$lte`, `$exists`, `$regex`, `$and`, `$or`, `$nor`, `$not`. Anything else is rejected as `INVALID_FILTER`.
 
@@ -126,7 +127,7 @@ Reference frontmatter keys with the dotted prefix `frontmatter.<key>`. Reference
 
 **Tag matching is exact (sift default):** `"ai"` does NOT match `#ai/ml`. To match a hierarchy, write `{ "tags": { "$in": ["ai", "ai/ml"] } }` or `{ "tags": { "$regex": "^ai(/|$)" } }` explicitly.
 
-**Result shape:** `{ results: [{ path, frontmatter, content? }], count, truncated }`. `count === results.length` (what we returned), and `truncated === true` ⇔ matched count exceeded `limit`. When `truncated` is true, narrow the filter or raise `limit` (capped at 1000).
+**Result shape:** `{ results: [{ path, frontmatter, backlink_count, content? }], count, truncated }`. `count === results.length` (what we returned), and `truncated === true` ⇔ matched count exceeded `limit`. When `truncated` is true, narrow the filter or raise `limit` (capped at 1000).
 
 `include_content: true` returns the body alongside metadata — saves a follow-up `read_notes` call when you know up-front that bodies are needed, but grows the response significantly. Default off.
 
@@ -205,3 +206,36 @@ List all tags used across the vault, sorted by occurrence count desc.
 Returns `[{ name, count }, ...]`.
 
 To list the notes that carry a specific tag, use [`query_notes`](#query_notes) with `{ filter: { tags: '<name>' } }`.
+
+## Wikilink graph
+
+### `get_note_links`
+
+Return the wikilink adjacency for a single note: the full incoming and outgoing edge lists derived from the vault-wide wikilink graph (`[[X]]` and `![[X]]` embeds, in body or frontmatter).
+
+```typescript
+get_note_links({
+  path: string, // vault-relative POSIX path, e.g. "Projects/neuro-vault.md"
+});
+```
+
+Returns:
+
+```typescript
+{
+  incoming: { source: string }[],
+  outgoing: {
+    target: string,            // raw wikilink text (no display alias, no section anchor)
+    resolved: boolean,         // false ⇔ no note exists yet for this name
+    path?: string,             // vault path of the resolved target (only when resolved)
+  }[],
+}
+```
+
+- **Embeds count as wikilinks.** `![[X]]` produces an outgoing edge to `X`, exactly like `[[X]]`.
+- **Unresolved targets are kept** (`resolved: false`) — useful when surfacing concepts the user has anchored but not yet written.
+- **Self-links are dropped** — a note linking to itself does not appear in its own `incoming` or `outgoing`.
+- **Backed by an in-memory index** that rebuilds lazily on query when older than 3 minutes; the first call after a stale window pays the rebuild cost. No watchers, no background timers.
+- Reads directly from disk; does not require Obsidian to be running.
+
+Use this **after** `search_notes` or `query_notes` finds a starting note, to traverse the graph around it. For ranking by inbound popularity rather than walking edges, see `backlink_count` on `query_notes` and `search_notes` results.

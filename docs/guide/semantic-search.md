@@ -29,8 +29,8 @@ search_notes({
 ```json
 {
   "results": [
-    { "path": "Projects/neuro-vault.md", "similarity": 0.81 },
-    { "path": "Notes/embeddings.md", "similarity": 0.74 }
+    { "path": "Projects/neuro-vault.md", "similarity": 0.81, "backlink_count": 7 },
+    { "path": "Notes/embeddings.md", "similarity": 0.74, "backlink_count": 2 }
   ],
   "blockResults": [
     {
@@ -42,6 +42,8 @@ search_notes({
   ]
 }
 ```
+
+Each note result carries `backlink_count` — the total number of inbound wikilinks and `![[embeds]]` from across the vault, derived from the same in-memory index used by `get_note_links` and `query_notes`. Useful as a relevance signal when several results have similar similarity scores. Block-level results (`blockResults`) do not carry `backlink_count`.
 
 ### Output shape — `deep`
 

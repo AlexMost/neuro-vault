@@ -9,6 +9,7 @@ import {
   MODEL_KEY,
   makeVaultFixture,
   makeHandlerDeps,
+  makeFakeGraph,
   findNeighbors,
   findDuplicates,
   findBlockNeighbors,
@@ -548,6 +549,66 @@ describe('searchNotes', () => {
 
     const nonExpanded = output.results.filter((r) => !r.via_expansion);
     expect(nonExpanded.every((r) => r.via_expansion === undefined)).toBe(true);
+  });
+
+  it('enriches single-query results with backlink_count from the graph', async () => {
+    const sources = makeMockSources(['note-a.md', 'note-b.md']);
+    const embed = vi.fn().mockResolvedValue([1, 0]);
+    const searchEngine = makeMockSearchEngine({
+      findNeighbors: vi.fn().mockReturnValue([
+        { path: 'note-a.md', similarity: 0.9 },
+        { path: 'note-b.md', similarity: 0.8 },
+      ]),
+    });
+    const graph = makeFakeGraph({ 'note-a.md': 3, 'note-b.md': 0 });
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine,
+        modelKey: MODEL_KEY,
+        graph,
+      }),
+    );
+
+    const output = (await tool.handler({ query: 'topic', threshold: 0 })) as {
+      results: Array<{ path: string; backlink_count: number }>;
+    };
+
+    expect(graph.ensureFresh).toHaveBeenCalled();
+    const byPath = new Map(output.results.map((r) => [r.path, r]));
+    expect(byPath.get('note-a.md')!.backlink_count).toBe(3);
+    expect(byPath.get('note-b.md')!.backlink_count).toBe(0);
+  });
+
+  it('enriches multi-query results with backlink_count from the graph', async () => {
+    const sources = makeMockSources(['note-a.md', 'note-b.md']);
+    const embed = vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]);
+    const searchEngine = makeMockSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }])
+        .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]),
+    });
+    const graph = makeFakeGraph({ 'note-a.md': 5, 'note-b.md': 1 });
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine,
+        modelKey: MODEL_KEY,
+        graph,
+      }),
+    );
+
+    const output = (await tool.handler({ query: ['q1', 'q2'], threshold: 0 })) as {
+      results: Array<{ path: string; backlink_count: number }>;
+    };
+
+    expect(graph.ensureFresh).toHaveBeenCalled();
+    const byPath = new Map(output.results.map((r) => [r.path, r]));
+    expect(byPath.get('note-a.md')!.backlink_count).toBe(5);
+    expect(byPath.get('note-b.md')!.backlink_count).toBe(1);
   });
 
   it('multi-query final cap: limit=2 with 3 queries each returning 2 unique results → length ≤ 2', async () => {

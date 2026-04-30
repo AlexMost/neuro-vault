@@ -2,6 +2,7 @@ export interface NoteRecord {
   path: string;
   frontmatter: Record<string, unknown>;
   tags: string[];
+  backlink_count: number;
 }
 
 export interface QueryNotesSort {
@@ -20,6 +21,7 @@ export interface QueryNotesToolInput {
 export interface QueryNotesResultItem {
   path: string;
   frontmatter: Record<string, unknown>;
+  backlink_count: number;
   content?: string;
 }
 

@@ -2,6 +2,7 @@ import { ObsidianCLIProvider, type ObsidianCLIProviderOptions } from './obsidian
 import { buildOperationsTools, type OperationsToolDeps } from './tools/index.js';
 import type { VaultProvider } from '../../lib/obsidian/vault-provider.js';
 import { FsVaultReader, type VaultReader } from '../../lib/obsidian/vault-reader.js';
+import { WikilinkGraphIndex } from '../../lib/obsidian/wikilink-graph.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 
 export interface OperationsModuleConfig {
@@ -12,6 +13,7 @@ export interface OperationsModuleConfig {
 export interface OperationsModuleDeps {
   vaultProviderFactory?: (opts: ObsidianCLIProviderOptions) => VaultProvider;
   vaultReaderFactory?: (opts: { vaultRoot: string }) => VaultReader;
+  graph?: WikilinkGraphIndex;
 }
 
 export interface OperationsModule {
@@ -30,7 +32,8 @@ export function createOperationsModule(
 
   const provider = providerFactory({ binaryPath: config.binaryPath });
   const reader = readerFactory({ vaultRoot: config.vaultPath });
+  const graph = deps.graph ?? new WikilinkGraphIndex({ reader });
 
-  const toolDeps: OperationsToolDeps = { provider, reader };
+  const toolDeps: OperationsToolDeps = { provider, reader, graph };
   return { tools: buildOperationsTools(toolDeps) };
 }

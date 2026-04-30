@@ -8,6 +8,8 @@ import {
   type SmartConnectionsCorpus,
 } from '../../lib/obsidian/smart-connections-loader.js';
 import { buildBasenameIndex } from '../../lib/obsidian/index.js';
+import { FsVaultReader, type VaultReader } from '../../lib/obsidian/vault-reader.js';
+import { WikilinkGraphIndex } from '../../lib/obsidian/wikilink-graph.js';
 import { buildSemanticTools, type SemanticToolDeps } from './tools/index.js';
 import type { EmbeddingProvider, PathExistsCheck, SearchEngine } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
@@ -25,6 +27,8 @@ export interface SemanticModuleDeps {
   searchEngine?: SearchEngine;
   pathExists?: PathExistsCheck;
   readNoteContent?: (vaultRelativePath: string) => Promise<string>;
+  graph?: WikilinkGraphIndex;
+  vaultReaderFactory?: (opts: { vaultRoot: string }) => VaultReader;
 }
 
 function createDefaultPathExists(vaultPath: string): PathExistsCheck {
@@ -69,6 +73,14 @@ export async function createSemanticModule(
   const readNoteContent = deps.readNoteContent ?? createDefaultReadNoteContent(config.vaultPath);
   const basenameIndex = buildBasenameIndex(corpus.sources.keys());
 
+  let graph = deps.graph;
+  if (!graph) {
+    const readerFactory =
+      deps.vaultReaderFactory ?? ((opts) => new FsVaultReader({ vaultRoot: opts.vaultRoot }));
+    const reader = readerFactory({ vaultRoot: config.vaultPath });
+    graph = new WikilinkGraphIndex({ reader });
+  }
+
   const semanticDeps: SemanticToolDeps = {
     sources: corpus.sources,
     embeddingProvider: embeddingService,
@@ -77,6 +89,7 @@ export async function createSemanticModule(
     pathExists,
     basenameIndex,
     readNoteContent,
+    graph,
   };
 
   return {

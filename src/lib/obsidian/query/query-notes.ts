@@ -12,6 +12,7 @@ const sift: SiftFactory =
     ? (siftModule as unknown as SiftFactory)
     : (siftModule as unknown as { default: SiftFactory }).default;
 import { ScanPathNotFoundError, type VaultReader } from '../vault-reader.js';
+import type { WikilinkGraphIndex } from '../wikilink-graph.js';
 import { toNoteRecord } from './note-record.js';
 import type {
   NoteRecord,
@@ -40,9 +41,14 @@ interface ValidatedInput {
 export async function runQueryNotes(
   input: QueryNotesToolInput,
   reader: VaultReader,
+  graph?: WikilinkGraphIndex,
 ): Promise<QueryNotesResult> {
   const validated = validateInput(input);
   validateFilter(validated.filter);
+
+  if (graph) {
+    await graph.ensureFresh();
+  }
 
   let paths: string[];
   try {
@@ -92,7 +98,8 @@ export async function runQueryNotes(
         }
         continue;
       }
-      const record = toNoteRecord(item);
+      const backlinkCount = graph?.getBacklinkCount(item.path) ?? 0;
+      const record = toNoteRecord(item, backlinkCount);
       let isMatch: boolean;
       try {
         isMatch = matcher(record);
@@ -118,9 +125,14 @@ export async function runQueryNotes(
       ? {
           path: row.record.path,
           frontmatter: row.record.frontmatter,
+          backlink_count: row.record.backlink_count,
           content: row.content!,
         }
-      : { path: row.record.path, frontmatter: row.record.frontmatter },
+      : {
+          path: row.record.path,
+          frontmatter: row.record.frontmatter,
+          backlink_count: row.record.backlink_count,
+        },
   );
 
   return { results, count: results.length, truncated };
@@ -201,8 +213,15 @@ function validateSort(raw: unknown): QueryNotesSort {
   if (typeof obj.field !== 'string' || obj.field.trim() === '') {
     throw invalidParams('sort.field must be a non-empty string', 'sort.field');
   }
-  if (obj.field !== 'path' && !obj.field.startsWith('frontmatter.')) {
-    throw invalidParams('sort.field must be "path" or start with "frontmatter."', 'sort.field');
+  if (
+    obj.field !== 'path' &&
+    obj.field !== 'backlink_count' &&
+    !obj.field.startsWith('frontmatter.')
+  ) {
+    throw invalidParams(
+      'sort.field must be "path", "backlink_count", or start with "frontmatter."',
+      'sort.field',
+    );
   }
   if (obj.order !== 'asc' && obj.order !== 'desc') {
     throw invalidParams('sort.order must be "asc" or "desc"', 'sort.order');
@@ -221,6 +240,7 @@ function sortInPlace(rows: Array<{ record: NoteRecord }>, sort: QueryNotesSort):
 
 function readField(record: NoteRecord, field: string): unknown {
   if (field === 'path') return record.path;
+  if (field === 'backlink_count') return record.backlink_count;
   // field starts with "frontmatter." — drill in
   const segments = field.split('.').slice(1);
   let cursor: unknown = record.frontmatter;

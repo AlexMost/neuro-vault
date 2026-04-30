@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildOperationsTools } from '../../src/modules/operations/tools/index.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
+import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 
 const noopProvider = {
   createNote: vi.fn(),
@@ -21,10 +22,16 @@ const noopReader = {
   scan: vi.fn(),
 } as unknown as VaultReader;
 
-const noopDeps = { provider: noopProvider, reader: noopReader };
+const noopGraph = {
+  ensureFresh: vi.fn().mockResolvedValue(undefined),
+  getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
+  getBacklinkCount: vi.fn(() => 0),
+} as unknown as WikilinkGraphIndex;
+
+const noopDeps = { provider: noopProvider, reader: noopReader, graph: noopGraph };
 
 describe('buildOperationsTools', () => {
-  it('returns 11 registrations with the expected names', () => {
+  it('returns 12 registrations with the expected names', () => {
     const tools = buildOperationsTools(noopDeps);
     expect(tools.map((t) => t.name)).toEqual([
       'read_notes',
@@ -38,6 +45,7 @@ describe('buildOperationsTools', () => {
       'remove_property',
       'list_properties',
       'list_tags',
+      'get_note_links',
     ]);
   });
 

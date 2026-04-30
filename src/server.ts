@@ -5,6 +5,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 import { createSemanticModule, type SemanticModuleDeps } from './modules/semantic/index.js';
 import { createOperationsModule, type OperationsModuleDeps } from './modules/operations/index.js';
+import { FsVaultReader } from './lib/obsidian/vault-reader.js';
+import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ServerConfig } from './types.js';
 
@@ -52,7 +54,7 @@ Use \`read_notes\`, \`create_note\`, \`edit_note\`, \`read_daily\`, \`append_dai
 
 ### Structured queries
 
-Use \`query_notes\` for multi-criteria questions that combine tags, frontmatter properties, and ranges — for example "active projects with #ai", "todo tasks created this week", "notes with deadline set", "all notes tagged X". The \`filter\` is a MongoDB-style object evaluated against \`{ path, frontmatter, tags }\` — reference frontmatter keys as \`frontmatter.<key>\` and tags via the top-level \`tags\` field (no leading \`#\`). Supported operators: \`$eq\`, \`$ne\`, \`$in\`, \`$nin\`, \`$gt\`, \`$gte\`, \`$lt\`, \`$lte\`, \`$exists\`, \`$regex\`, \`$and\`, \`$or\`, \`$nor\`, \`$not\`. To list notes by a single tag use \`{ filter: { tags: 'X' } }\`. The result \`{ results, count, truncated }\` includes \`frontmatter\` always; pass \`include_content: true\` only when bodies are needed up-front (it can grow the response a lot). Reads directly from disk; does not need Obsidian running. \`limit\` defaults to 100 and is capped at 1000.
+Use \`query_notes\` for multi-criteria questions that combine tags, frontmatter properties, and ranges — for example "active projects with #ai", "todo tasks created this week", "notes with deadline set", "all notes tagged X". The \`filter\` is a MongoDB-style object evaluated against \`{ path, frontmatter, tags, backlink_count }\` — reference frontmatter keys as \`frontmatter.<key>\`, tags via the top-level \`tags\` field (no leading \`#\`), and \`backlink_count\` as a top-level scalar. Supported operators: \`$eq\`, \`$ne\`, \`$in\`, \`$nin\`, \`$gt\`, \`$gte\`, \`$lt\`, \`$lte\`, \`$exists\`, \`$regex\`, \`$and\`, \`$or\`, \`$nor\`, \`$not\`. To list notes by a single tag use \`{ filter: { tags: 'X' } }\`. \`backlink_count\` is filterable (\`{ backlink_count: { $gte: 5 } }\`) and sortable (\`sort: { field: 'backlink_count', order: 'desc' }\`). The result \`{ results, count, truncated }\` includes \`frontmatter\` and \`backlink_count\` always; pass \`include_content: true\` only when bodies are needed up-front (it can grow the response a lot). Reads directly from disk; does not need Obsidian running. \`limit\` defaults to 100 and is capped at 1000.
 
 ### Frontmatter properties
 
@@ -65,6 +67,10 @@ If you need frontmatter for one or more notes, call \`read_notes\` with \`fields
 ### Tags
 
 Use \`list_tags\` to see all tags ranked by frequency. To list the notes that carry a specific tag, call \`query_notes\` with \`{ filter: { tags: '<name>' } }\` (no leading \`#\`).
+
+### Wikilink graph
+
+Use \`get_note_links\` for "what links here / where does this point" questions about a single note. It returns the full \`{ incoming, outgoing }\` adjacency from the vault-wide wikilink graph (covers both \`[[X]]\` and \`![[X]]\` embeds, in body and frontmatter). \`outgoing\` entries carry \`resolved: bool\`; unresolved targets are kept verbatim — useful for surfacing concepts the user has anchored but not yet written. The same graph powers the \`backlink_count\` field on \`search_notes\` and \`query_notes\` results, which is the right signal when you only need ranking by inbound popularity rather than a full edge list.
 
 ### CLI availability
 
@@ -86,7 +92,7 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 - Use \`limit\` to override the default note count in either mode. Widening \`limit\` widens recall.
 
 ### 3. Use the results
-- \`results\` — notes ranked by similarity; read the file by path
+- \`results\` — notes ranked by similarity; read the file by path. Each result also carries \`backlink_count\` (vault-wide inbound wikilinks + embeds) — useful as a tiebreaker when several results share a similar similarity score.
 - \`matched_queries\` (only when \`query\` is an array) — which of your queries hit this note; lets you spot which synonym was load-bearing
 - \`truncated\` (only when \`query\` is an array) — true when unique merged candidates exceeded \`limit\`; widen \`limit\` to see more
 - \`via_expansion: true\` (deep mode only) — marks results pulled in by post-merge expansion; these have no \`matched_queries\`
@@ -123,6 +129,13 @@ export async function startNeuroVaultServer(
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;
   const server = serverFactory();
 
+  // The wikilink graph is a vault-level primitive consumed by both modules
+  // (operations: get_note_links + query_notes enrichment; semantic:
+  // search_notes enrichment). Build it once here so both modules share a
+  // single in-memory index.
+  const sharedReader = new FsVaultReader({ vaultRoot: config.vaultPath });
+  const sharedGraph = new WikilinkGraphIndex({ reader: sharedReader });
+
   const registrations: ToolRegistration[] = [];
   let warmup: () => Promise<void> = async () => {};
 
@@ -134,7 +147,7 @@ export async function startNeuroVaultServer(
         modelKey: config.semantic.modelKey,
         modelId: config.semantic.modelId,
       },
-      deps.semantic,
+      { graph: sharedGraph, ...deps.semantic },
     );
     registrations.push(...semantic.tools);
     warmup = semantic.warmup;
@@ -146,7 +159,7 @@ export async function startNeuroVaultServer(
         vaultPath: config.vaultPath,
         binaryPath: config.operations.binaryPath,
       },
-      deps.operations,
+      { graph: sharedGraph, ...deps.operations },
     );
     registrations.push(...operations.tools);
   }

@@ -14,6 +14,7 @@ describe('toNoteRecord', () => {
       path: 'a.md',
       frontmatter: { status: 'active', priority: 5, done: false, list: ['x', 'y'] },
       tags: [],
+      backlink_count: 0,
     });
   });
 
@@ -50,7 +51,7 @@ describe('toNoteRecord', () => {
   it('returns empty frontmatter and tags when frontmatter is null', () => {
     const record = toNoteRecord({ path: 'a.md', frontmatter: null, content: '' });
 
-    expect(record).toEqual({ path: 'a.md', frontmatter: {}, tags: [] });
+    expect(record).toEqual({ path: 'a.md', frontmatter: {}, tags: [], backlink_count: 0 });
   });
 
   it('drops null/undefined/empty entries inside the tags array', () => {
