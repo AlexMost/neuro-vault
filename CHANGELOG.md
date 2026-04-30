@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [4.1.0](https://github.com/AlexMost/neuro-vault/compare/v4.0.1...v4.1.0) (2026-04-30)
+
+### Features
+
+- add wikilink graph index with get_note_links and backlink_count ([17d3d89](https://github.com/AlexMost/neuro-vault/commit/17d3d8967429cc7f8c58fd7cbb2a7eacff26331d))
+
 ## [4.0.1](https://github.com/AlexMost/neuro-vault/compare/v4.0.0...v4.0.1) (2026-04-29)
 
 ### Bug Fixes
