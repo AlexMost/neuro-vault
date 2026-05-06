@@ -21,7 +21,8 @@ export type OperationsErrorCode =
   | 'CLI_UNAVAILABLE'
   | 'CLI_TIMEOUT'
   | 'CLI_ERROR'
-  | 'READ_FAILED';
+  | 'READ_FAILED'
+  | 'AMBIGUOUS_MATCH';
 
 export type ReadNotesField = 'frontmatter' | 'content';
 
@@ -60,14 +61,35 @@ export interface CreateNoteToolInput {
   overwrite?: boolean;
 }
 
-export type EditPositionToolInput = 'append' | 'prepend';
+export type EditPositionToolInput = 'append' | 'prepend' | 'replace' | 'replace_full';
 
-export interface EditNoteToolInput {
+export interface EditNoteAppendPrependInput {
   name?: string;
   path?: string;
   content: string;
-  position: EditPositionToolInput;
+  position: 'append' | 'prepend';
 }
+
+export interface EditNoteReplaceInput {
+  name?: string;
+  path?: string;
+  content: string;
+  position: 'replace';
+  find: string;
+  replace_all?: boolean;
+}
+
+export interface EditNoteReplaceFullInput {
+  name?: string;
+  path?: string;
+  content: string;
+  position: 'replace_full';
+}
+
+export type EditNoteToolInput =
+  | EditNoteAppendPrependInput
+  | EditNoteReplaceInput
+  | EditNoteReplaceFullInput;
 
 export type ReadDailyToolInput = Record<string, never>;
 
