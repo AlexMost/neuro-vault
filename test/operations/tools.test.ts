@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildOperationsTools } from '../../src/modules/operations/tools/index.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
+import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 
 const noopProvider = {
@@ -28,7 +29,17 @@ const noopGraph = {
   getBacklinkCount: vi.fn(() => 0),
 } as unknown as WikilinkGraphIndex;
 
-const noopDeps = { provider: noopProvider, reader: noopReader, graph: noopGraph };
+const noopWriter = {
+  replaceInNote: vi.fn(),
+  replaceFullBody: vi.fn(),
+} as unknown as VaultWriter;
+
+const noopDeps = {
+  provider: noopProvider,
+  reader: noopReader,
+  writer: noopWriter,
+  graph: noopGraph,
+};
 
 describe('buildOperationsTools', () => {
   it('returns 12 registrations with the expected names', () => {

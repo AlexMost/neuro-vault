@@ -2,6 +2,7 @@ import { registerTool } from '../../../lib/tool-registry.js';
 import type { ToolRegistration } from '../../../lib/tool-registration.js';
 import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
+import type { VaultWriter } from '../../../lib/obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
 import { buildAppendDailyTool } from './append-daily.js';
 import { buildCreateNoteTool } from './create-note.js';
@@ -19,6 +20,7 @@ import { buildSetPropertyTool } from './set-property.js';
 export interface OperationsToolDeps {
   provider: VaultProvider;
   reader: VaultReader;
+  writer: VaultWriter;
   graph: WikilinkGraphIndex;
 }
 
