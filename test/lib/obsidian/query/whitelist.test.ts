@@ -18,6 +18,14 @@ describe('validateFilter', () => {
     ).not.toThrow();
   });
 
+  it('accepts $options alongside $regex', () => {
+    expect(() =>
+      validateFilter({
+        tags: { $regex: '^ai', $options: 'i' },
+      }),
+    ).not.toThrow();
+  });
+
   it('accepts $and / $or composition', () => {
     expect(() =>
       validateFilter({
