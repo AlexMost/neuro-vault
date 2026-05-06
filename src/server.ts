@@ -47,7 +47,7 @@ When operating directly inside the vault itself (not from an external project th
 Use \`read_notes\`, \`create_note\`, \`edit_note\`, \`read_daily\`, \`append_daily\` when the user asks to:
 - Read one or more notes by path (\`read_notes\` — accepts a single vault-relative POSIX path string or an array of 1–50 such paths; prefer this over multiple sequential reads)
 - Create a new note, task, or idea (\`create_note\`)
-- Add content to an existing note (\`edit_note\`)
+- Add content to an existing note (\`edit_note\` supports \`position: 'replace'\` for exact-string find/replace (pass \`replace_all: true\` if intentional) and \`position: 'replace_full'\` to overwrite the whole body, in addition to \`append\` / \`prepend\`; all four leave frontmatter untouched)
 - Read or update today's daily note (\`read_daily\` / \`append_daily\`)
 
 \`create_note\` with \`overwrite: true\` is destructive. Always ask the user before overwriting an existing note.
