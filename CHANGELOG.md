@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.0.1](https://github.com/AlexMost/neuro-vault/compare/v5.0.0...v5.0.1) (2026-05-06)
+
+### Bug Fixes
+
+- **edit_note:** surface AMBIGUOUS_MATCH details in error message text ([1e56a4b](https://github.com/AlexMost/neuro-vault/commit/1e56a4b5cb60fa70dd9d5c1359dc1553b8bc0285))
+- **edit_note:** surface AMBIGUOUS_MATCH details in error message text ([5b7f8de](https://github.com/AlexMost/neuro-vault/commit/5b7f8de12c8be4f4f574fd6e40fe394162c0e8fb))
+
 ## [5.0.0](https://github.com/AlexMost/neuro-vault/compare/v4.2.0...v5.0.0) (2026-05-06)
 
 ### ⚠ BREAKING CHANGES
