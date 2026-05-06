@@ -2,6 +2,7 @@ import { ToolHandlerError } from '../../tool-response.js';
 import type { VaultReader } from '../vault-reader.js';
 import type { WikilinkGraphIndex } from '../wikilink-graph.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
+import { normalizeVaultPathPrefix } from './path-prefix.js';
 import { collectMatchingPaths } from './query-notes.js';
 import { validateFilter } from './whitelist.js';
 
@@ -18,8 +19,6 @@ export interface ListMatchingPathsDeps {
   graph?: WikilinkGraphIndex;
 }
 
-const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
-
 export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchingPaths {
   return async (filter) => {
     const { path_prefix, tags, frontmatter } = filter;
@@ -35,7 +34,12 @@ export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchi
       );
     }
 
-    const normalizedPrefix = hasPathPrefix ? normalizePathPrefix(path_prefix!) : undefined;
+    const normalizedPrefix = hasPathPrefix
+      ? normalizeVaultPathPrefix(
+          path_prefix!,
+          (message) => new ToolHandlerError('INVALID_FILTER', message),
+        )
+      : undefined;
 
     // Fast-path: only path_prefix → scan-only, never read frontmatter.
     if (hasPathPrefix && !hasTags && !hasFrontmatter) {
@@ -43,16 +47,15 @@ export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchi
       return new Set(paths);
     }
 
-    // Validate user-facing frontmatter filter BEFORE compiling (compileFilter
-    // flattens keys like { $where: ... } into dotted notation, which would
-    // escape the operator whitelist check in validateFilter).
+    // Validate the raw user-supplied frontmatter object before compileFilter
+    // rewrites top-level keys like `$where` into dotted paths (`frontmatter.$where`)
+    // that no longer trigger the operator allow-list check.
     if (hasFrontmatter) {
       validateFilter(frontmatter!);
     }
 
-    // General path: compile NoteFilter → internal sift filter, validate, delegate.
+    // General path: compile NoteFilter → internal sift filter, delegate.
     const internalFilter = compileFilter({ tags, frontmatter });
-    validateFilter(internalFilter);
     const effectiveFilter = applyDefaultRegexOptions(internalFilter);
 
     const rows = await collectMatchingPaths(
@@ -83,17 +86,4 @@ function compileFilter(parts: {
   }
   if (clauses.length === 1) return clauses[0]!;
   return { $and: clauses };
-}
-
-function normalizePathPrefix(raw: string): string | undefined {
-  const trimmed = raw.trim();
-  if (trimmed === '' || trimmed === '.' || trimmed === './') return undefined;
-  if (trimmed.startsWith('/') || WINDOWS_ABSOLUTE_PATH_RE.test(trimmed)) {
-    throw new ToolHandlerError('INVALID_FILTER', 'path_prefix must be vault-relative');
-  }
-  const slashed = trimmed.replace(/\\/g, '/').replace(/^\.\//, '');
-  if (slashed.split('/').some((segment) => segment === '..')) {
-    throw new ToolHandlerError('INVALID_FILTER', 'path_prefix must be vault-relative');
-  }
-  return slashed.replace(/\/+$/, '');
 }

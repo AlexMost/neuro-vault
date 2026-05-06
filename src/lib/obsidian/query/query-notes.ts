@@ -22,11 +22,11 @@ import type {
   QueryNotesToolInput,
 } from './types.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
+import { normalizeVaultPathPrefix } from './path-prefix.js';
 import { validateFilter } from './whitelist.js';
 
 const DEFAULT_LIMIT = 100;
 const HARD_LIMIT_CAP = 1000;
-const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
 // Pipeline: read in bounded batches so a large vault never holds every note
 // body in memory at once and never opens an unbounded number of FDs.
 const READ_BATCH_SIZE = 32;
@@ -233,16 +233,7 @@ function validateInput(input: QueryNotesToolInput): ValidatedInput {
 }
 
 function normalizeScanPrefixInput(raw: string): string | undefined {
-  const trimmed = raw.trim();
-  if (trimmed === '' || trimmed === '.' || trimmed === './') return undefined;
-  if (trimmed.startsWith('/') || WINDOWS_ABSOLUTE_PATH_RE.test(trimmed)) {
-    throw invalidParams('path_prefix must be vault-relative', 'path_prefix');
-  }
-  const slashed = trimmed.replace(/\\/g, '/').replace(/^\.\//, '');
-  if (slashed.split('/').some((segment) => segment === '..')) {
-    throw invalidParams('path_prefix must be vault-relative', 'path_prefix');
-  }
-  return slashed.replace(/\/+$/, '');
+  return normalizeVaultPathPrefix(raw, (message) => invalidParams(message, 'path_prefix'));
 }
 
 function validateSort(raw: unknown): QueryNotesSort {
