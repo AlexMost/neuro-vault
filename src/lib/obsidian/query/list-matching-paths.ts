@@ -1,4 +1,5 @@
 import { ToolHandlerError } from '../../tool-response.js';
+import { ScanPathNotFoundError } from '../vault-reader.js';
 import type { VaultReader } from '../vault-reader.js';
 import type { WikilinkGraphIndex } from '../wikilink-graph.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
@@ -43,8 +44,17 @@ export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchi
 
     // Fast-path: only path_prefix → scan-only, never read frontmatter.
     if (hasPathPrefix && !hasTags && !hasFrontmatter) {
-      const paths = await deps.reader.scan({ pathPrefix: normalizedPrefix });
-      return new Set(paths);
+      try {
+        const paths = await deps.reader.scan({ pathPrefix: normalizedPrefix });
+        return new Set(paths);
+      } catch (err) {
+        if (err instanceof ScanPathNotFoundError) {
+          throw new ToolHandlerError('PATH_NOT_FOUND', err.message, {
+            details: { path_prefix: normalizedPrefix },
+          });
+        }
+        throw err;
+      }
     }
 
     // Validate the raw user-supplied frontmatter object before compileFilter

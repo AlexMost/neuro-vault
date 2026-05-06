@@ -62,6 +62,18 @@ One question, one answer. Your assistant stops being a file browser and starts b
 
 ---
 
+### 🔍 Hybrid search: scope semantic with structural filters
+
+`search_notes` accepts an optional `filter` to narrow the candidate set **before** semantic ranking — combining the precision of `query_notes` with the recall of vector search. Useful when domain-relevant notes are crowded out by larger narrative clusters.
+
+```json
+{ "query": "trading lessons", "filter": { "tags": ["trading"] } }
+```
+
+`filter` accepts `path_prefix`, `tags` (ANY-of), and a `frontmatter` sift filter. Composition is `filter` AND `threshold` AND semantic. See the [Semantic Search guide](./docs/guide/semantic-search.md#pre-filter-filter-parameter) for full details.
+
+---
+
 ## 🏗 How it works
 
 ```mermaid
