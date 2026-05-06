@@ -79,9 +79,6 @@ describe('edit_note: targeted replace (replace field present)', () => {
     ).rejects.toMatchObject({
       code: 'AMBIGUOUS_MATCH',
       details: { matches: ['A/My Note.md', 'B/My Note.md'] },
-      // Candidate paths must also be in the human message for clients that
-      // only render the text content of the error.
-      message: expect.stringContaining('A/My Note.md, B/My Note.md'),
     });
     expect(writer.replaceInNote).not.toHaveBeenCalled();
   });

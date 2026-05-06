@@ -82,7 +82,7 @@ async function resolveToPath(input: Input, reader: VaultReader): Promise<string>
   if (matches.length > 1) {
     throw new ToolHandlerError(
       'AMBIGUOUS_MATCH' satisfies OperationsErrorCode,
-      `Multiple notes match name '${name}': ${matches.join(', ')}; pass an explicit path`,
+      `Multiple notes match name '${name}'; pass an explicit path`,
       { details: { name, matches } },
     );
   }

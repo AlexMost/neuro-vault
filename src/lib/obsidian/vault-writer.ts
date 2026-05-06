@@ -54,7 +54,7 @@ export class FsVaultWriter implements VaultWriter {
       }
       throw new ToolHandlerError(
         'AMBIGUOUS_MATCH',
-        `Find text matched ${result.lines.length} times in ${input.path} at lines ${result.lines.join(', ')}; make 'replace' more specific (extend the anchor with surrounding text) or omit it to rewrite the whole body`,
+        `Find text matched ${result.lines.length} times in ${input.path}; use a more specific anchor or omit the replace field to rewrite the whole body`,
         { details: { path: input.path, matches: result.lines } },
       );
     }

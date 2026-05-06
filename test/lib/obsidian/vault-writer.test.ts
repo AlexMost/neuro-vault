@@ -106,9 +106,6 @@ describe('FsVaultWriter.replaceInNote', () => {
     ).rejects.toMatchObject({
       code: 'AMBIGUOUS_MATCH',
       details: { matches: [1, 2, 3] },
-      // Line numbers must also surface in the human message so clients that
-      // render only `content[0].text` (no structuredContent) still see them.
-      message: expect.stringContaining('1, 2, 3'),
     });
     expect(fs.writeFile).not.toHaveBeenCalled();
   });
