@@ -43,7 +43,7 @@ interface CollectMatchingPathsInput {
   filter: Record<string, unknown>; // already-validated, regex-defaults applied
   pathPrefix: string | undefined;
   includeContent: boolean;
-  earlyExitAfter?: number; // pre-limit short-circuit; omit for full scan
+  earlyExitAfter?: number; // break after collecting > N matches (i.e. at most N+1); omit for full scan. The +1 lets the caller distinguish "exactly N" from "more than N" for truncation.
 }
 
 export interface CollectedRow {
@@ -56,6 +56,8 @@ interface CollectMatchingPathsDeps {
   graph?: WikilinkGraphIndex;
 }
 
+// Caller is responsible for calling `graph.ensureFresh()` before invoking
+// when accurate backlink counts matter — this helper does not refresh.
 export async function collectMatchingPaths(
   input: CollectMatchingPathsInput,
   deps: CollectMatchingPathsDeps,
@@ -144,7 +146,7 @@ export async function runQueryNotes(
 
   const matched = await collectMatchingPaths(
     {
-      filter: effectiveFilter as Record<string, unknown>,
+      filter: effectiveFilter,
       pathPrefix: validated.pathPrefix,
       includeContent: validated.includeContent,
       earlyExitAfter: earlyExitAllowed ? validated.limit : undefined,

@@ -2,8 +2,8 @@ const REGEX_KEY = '$regex';
 const OPTIONS_KEY = '$options';
 const DEFAULT_OPTIONS = 'i';
 
-export function applyDefaultRegexOptions(filter: unknown): unknown {
-  return walk(filter);
+export function applyDefaultRegexOptions(filter: Record<string, unknown>): Record<string, unknown> {
+  return walk(filter) as Record<string, unknown>;
 }
 
 function walk(value: unknown): unknown {
