@@ -2,6 +2,7 @@ import { ObsidianCLIProvider, type ObsidianCLIProviderOptions } from './obsidian
 import { buildOperationsTools, type OperationsToolDeps } from './tools/index.js';
 import type { VaultProvider } from '../../lib/obsidian/vault-provider.js';
 import { FsVaultReader, type VaultReader } from '../../lib/obsidian/vault-reader.js';
+import { FsVaultWriter, type VaultWriter } from '../../lib/obsidian/vault-writer.js';
 import { WikilinkGraphIndex } from '../../lib/obsidian/wikilink-graph.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 
@@ -13,6 +14,7 @@ export interface OperationsModuleConfig {
 export interface OperationsModuleDeps {
   vaultProviderFactory?: (opts: ObsidianCLIProviderOptions) => VaultProvider;
   vaultReaderFactory?: (opts: { vaultRoot: string }) => VaultReader;
+  vaultWriterFactory?: (opts: { vaultRoot: string }) => VaultWriter;
   graph?: WikilinkGraphIndex;
 }
 
@@ -29,11 +31,14 @@ export function createOperationsModule(
     ((opts: ObsidianCLIProviderOptions) => new ObsidianCLIProvider(opts));
   const readerFactory =
     deps.vaultReaderFactory ?? ((opts) => new FsVaultReader({ vaultRoot: opts.vaultRoot }));
+  const writerFactory =
+    deps.vaultWriterFactory ?? ((opts) => new FsVaultWriter({ vaultRoot: opts.vaultRoot }));
 
   const provider = providerFactory({ binaryPath: config.binaryPath });
   const reader = readerFactory({ vaultRoot: config.vaultPath });
+  const writer = writerFactory({ vaultRoot: config.vaultPath });
   const graph = deps.graph ?? new WikilinkGraphIndex({ reader });
 
-  const toolDeps: OperationsToolDeps = { provider, reader, graph };
+  const toolDeps: OperationsToolDeps = { provider, reader, writer, graph };
   return { tools: buildOperationsTools(toolDeps) };
 }

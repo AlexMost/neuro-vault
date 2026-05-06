@@ -42,40 +42,6 @@ describe('ObsidianCLIProvider.createNote', () => {
   });
 });
 
-describe('ObsidianCLIProvider.editNote', () => {
-  it('uses append command for position=append', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
-    const provider = new ObsidianCLIProvider({ exec });
-
-    await provider.editNote({
-      identifier: { kind: 'name', value: 'Notes' },
-      content: 'new line',
-      position: 'append',
-    });
-
-    expect(exec).toHaveBeenCalledWith('obsidian', ['append', 'file=Notes', 'content=new line'], {
-      timeout: 10_000,
-    });
-  });
-
-  it('uses prepend command for position=prepend with path identifier', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
-    const provider = new ObsidianCLIProvider({ exec });
-
-    await provider.editNote({
-      identifier: { kind: 'path', value: 'Daily/foo.md' },
-      content: 'first',
-      position: 'prepend',
-    });
-
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['prepend', 'path=Daily/foo.md', 'content=first'],
-      { timeout: 10_000 },
-    );
-  });
-});
-
 describe('ObsidianCLIProvider daily', () => {
   it('readDaily resolves path from daily:path and parses frontmatter from daily:read', async () => {
     const exec = vi
@@ -113,17 +79,6 @@ describe('ObsidianCLIProvider daily', () => {
       content: '# Today\nno yaml here\n',
     });
   });
-
-  it('appendDaily passes content token', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
-    const provider = new ObsidianCLIProvider({ exec });
-
-    await provider.appendDaily({ content: '- new task' });
-
-    expect(exec).toHaveBeenCalledWith('obsidian', ['daily:append', 'content=- new task'], {
-      timeout: 10_000,
-    });
-  });
 });
 
 describe('ObsidianCLIProvider error mapping', () => {
@@ -134,10 +89,10 @@ describe('ObsidianCLIProvider error mapping', () => {
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
-      provider.editNote({
+      provider.setProperty({
         identifier: { kind: 'name', value: 'foo' },
-        content: 'x',
-        position: 'append',
+        name: 'k',
+        value: 'v',
       }),
     ).rejects.toMatchObject({ code: 'CLI_NOT_FOUND' });
   });
@@ -153,10 +108,10 @@ describe('ObsidianCLIProvider error mapping', () => {
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
-      provider.editNote({
+      provider.setProperty({
         identifier: { kind: 'name', value: 'foo' },
-        content: 'x',
-        position: 'append',
+        name: 'k',
+        value: 'v',
       }),
     ).rejects.toMatchObject({ code: 'CLI_UNAVAILABLE' });
   });
@@ -183,10 +138,10 @@ describe('ObsidianCLIProvider error mapping', () => {
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
-      provider.editNote({
+      provider.setProperty({
         identifier: { kind: 'path', value: 'missing.md' },
-        content: 'x',
-        position: 'append',
+        name: 'k',
+        value: 'v',
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
@@ -200,10 +155,10 @@ describe('ObsidianCLIProvider error mapping', () => {
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
-      provider.editNote({
+      provider.setProperty({
         identifier: { kind: 'name', value: 'x' },
-        content: 'x',
-        position: 'append',
+        name: 'k',
+        value: 'v',
       }),
     ).rejects.toMatchObject({ code: 'CLI_TIMEOUT' });
   });
@@ -217,10 +172,10 @@ describe('ObsidianCLIProvider error mapping', () => {
     const provider = new ObsidianCLIProvider({ exec });
 
     await expect(
-      provider.editNote({
+      provider.setProperty({
         identifier: { kind: 'name', value: 'x' },
-        content: 'x',
-        position: 'append',
+        name: 'k',
+        value: 'v',
       }),
     ).rejects.toSatisfy((err: ToolHandlerError) => {
       return err.code === 'CLI_ERROR' && err.details?.stderr === 'weird thing happened';

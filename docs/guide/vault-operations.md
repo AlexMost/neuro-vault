@@ -1,10 +1,10 @@
 # Vault Operations
 
-> Write operations (`create_note`, `edit_note`, daily notes, properties, tags) require the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. Pass `--no-operations` to disable all operations tools. `read_notes` and `query_notes` read directly from disk and do **not** require Obsidian to be running.
+> CLI-routed operations (`create_note`, `read_daily`, properties, tags) require the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. `edit_note`, `read_notes`, and `query_notes` work directly against the filesystem and do **not** require Obsidian to be running. Pass `--no-operations` to disable all operations tools.
 
-Read and write notes through Obsidian itself — the operations module shells out to the `obsidian` CLI, so changes are picked up by Smart Connections, sync, and any other plugin you have installed. No bypass of Obsidian's own state.
+Most write paths shell out to the `obsidian` CLI, so changes are picked up immediately by Smart Connections, sync, and any other plugin you have installed. The exception is `edit_note` (in-place replace and full-body rewrite), which writes directly to disk — Obsidian's file watcher then notifies plugins on its own cadence.
 
-`read_notes` is the one exception: it reads files directly from the vault directory, making it fast and available even when Obsidian is not running.
+`read_notes` reads files directly from the vault directory, making it fast and available even when Obsidian is not running.
 
 Most vault-operations tools accept `name` (wikilink-style) **or** `path` (vault-relative POSIX) for note identification — exactly one of the two. Both or neither yields `INVALID_ARGUMENT`. `read_notes` accepts `paths` only (no wikilink resolution); if you only have a note name, resolve it to a path with `search_notes` first.
 
@@ -60,16 +60,27 @@ create_note({
 
 ### `edit_note`
 
-Add content to an existing note.
+Edit an existing note. The presence of `replace` selects the mode:
+
+- **With `replace`** — exact-string find/replace inside the body. The string in `replace` is located (case- and whitespace-sensitive) and swapped for `content`. Frontmatter is never touched.
+- **Without `replace`** — the entire body is overwritten with `content`. Frontmatter is preserved byte-for-byte. Pre-fetch the body with `read_notes` first if you need to keep parts of it.
 
 ```typescript
 edit_note({
   name?: string,
   path?: string,
   content: string,
-  position: 'append' | 'prepend',
-})
+  replace?: string,
+});
 ```
+
+Both modes write directly to disk and do not require Obsidian to be running.
+
+Errors:
+
+- `INVALID_ARGUMENT` — empty `replace`, both `name` and `path`, neither given.
+- `NOT_FOUND` — note path missing, wikilink unresolved, or `replace` text absent in body.
+- `AMBIGUOUS_MATCH` — `replace` matches more than once, or a `name` resolves to multiple paths. `details.matches` carries 1-based body line numbers (for replace ambiguity) or candidate paths (for name ambiguity). Resolution: make `replace` more specific, or omit it and rewrite the whole body.
 
 ## Structured queries
 
@@ -137,15 +148,17 @@ Reference frontmatter keys with the dotted prefix `frontmatter.<key>`. Reference
 
 ### `read_daily`
 
-Read today's daily note. Returns `{ path, content }`.
+Read today's daily note. Returns `{ path, frontmatter, content }`. The path is computed from the daily-notes plugin config; if the note does not yet exist, the result still carries the canonical path so callers can compose with `create_note`.
 
-### `append_daily`
+### Adding to today's daily note
 
-Append content to today's daily note.
+There is no dedicated `append_daily` tool — compose:
 
-```typescript
-append_daily({ content: string });
-```
+1. `read_daily()` → `{ path, content }` (or `{ path, content: '' }` if the note is empty / missing).
+2. If the note exists, call `edit_note({ path, content: existingBody + newContent })` (no `replace` field → full-body rewrite).
+3. If the note does not exist, call `create_note({ path, content: newContent })`.
+
+The trade-off vs the old `append_daily` is one extra read per write. In an agentic workflow this is invisible — the assistant typically reads daily-note context before writing anyway.
 
 ## Properties & Tags
 

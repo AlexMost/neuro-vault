@@ -1,5 +1,6 @@
 export interface BasenameIndex {
   resolve(target: string): string | null;
+  resolveAll(target: string): string[];
 }
 
 export function buildBasenameIndex(paths: Iterable<string>): BasenameIndex {
@@ -21,21 +22,27 @@ export function buildBasenameIndex(paths: Iterable<string>): BasenameIndex {
     list.sort();
   }
 
+  function resolveAll(target: string): string[] {
+    if (!target) return [];
+
+    if (target.includes('/')) {
+      if (exact.has(target)) return [target];
+      const withMd = target.endsWith('.md') ? target : `${target}.md`;
+      if (exact.has(withMd)) return [withMd];
+      return [];
+    }
+
+    const key = target.endsWith('.md') ? target.slice(0, -3) : target;
+    const matches = byBasename.get(key);
+    return matches ? [...matches] : [];
+  }
+
   return {
     resolve(target: string): string | null {
-      if (!target) return null;
-
-      if (target.includes('/')) {
-        if (exact.has(target)) return target;
-        const withMd = target.endsWith('.md') ? target : `${target}.md`;
-        if (exact.has(withMd)) return withMd;
-        return null;
-      }
-
-      const key = target.endsWith('.md') ? target.slice(0, -3) : target;
-      const matches = byBasename.get(key);
-      return matches && matches.length > 0 ? matches[0] : null;
+      const all = resolveAll(target);
+      return all.length > 0 ? all[0]! : null;
     },
+    resolveAll,
   };
 }
 

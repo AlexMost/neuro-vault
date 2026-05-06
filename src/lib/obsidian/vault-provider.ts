@@ -12,21 +12,9 @@ export interface CreateNoteResult {
   path: string;
 }
 
-export type EditPosition = 'append' | 'prepend';
-
-export interface EditNoteInput {
-  identifier: NoteIdentifier;
-  content: string;
-  position: EditPosition;
-}
-
 export interface DailyNoteResult {
   path: string;
   frontmatter: Record<string, unknown> | null;
-  content: string;
-}
-
-export interface AppendDailyInput {
   content: string;
 }
 
@@ -66,9 +54,7 @@ export interface TagListEntry {
 
 export interface VaultProvider {
   createNote(input: CreateNoteInput): Promise<CreateNoteResult>;
-  editNote(input: EditNoteInput): Promise<void>;
   readDaily(): Promise<DailyNoteResult>;
-  appendDaily(input: AppendDailyInput): Promise<void>;
   setProperty(input: SetPropertyInput): Promise<void>;
   readProperty(input: ReadPropertyInput): Promise<ReadPropertyResult>;
   removeProperty(input: RemovePropertyInput): Promise<void>;

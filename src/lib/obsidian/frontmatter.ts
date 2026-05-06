@@ -1,29 +1,25 @@
 import { parse as parseYaml } from 'yaml';
 
+import { splitRawFrontmatter } from './in-place-edit.js';
+
 export interface SplitResult {
   frontmatter: Record<string, unknown> | null;
   content: string;
 }
 
-const FRONTMATTER_OPEN = /^---[ \t]*\r?\n/;
-// Matches a closing fence either at the start of `afterOpen` (empty YAML body)
-// or after a preceding newline.
-const FRONTMATTER_CLOSE = /(^|\r?\n)---[ \t]*(\r?\n|$)/;
-
 export function splitFrontmatter(raw: string): SplitResult {
-  const openMatch = raw.match(FRONTMATTER_OPEN);
-  if (!openMatch) {
+  const { prefix, body } = splitRawFrontmatter(raw);
+  if (prefix === '') {
     return { frontmatter: null, content: raw };
   }
 
-  const afterOpen = raw.slice(openMatch[0].length);
-  const closeMatch = afterOpen.match(FRONTMATTER_CLOSE);
-  if (!closeMatch || closeMatch.index === undefined) {
-    return { frontmatter: null, content: raw };
-  }
-
-  const yamlBody = afterOpen.slice(0, closeMatch.index);
-  const content = afterOpen.slice(closeMatch.index + closeMatch[0].length);
+  // Strip the opening "---" line and closing "---" line from the prefix to get
+  // just the YAML body. The prefix is `---<eol>...---<eol>`.
+  const firstEol = prefix.indexOf('\n');
+  const yamlStart = firstEol + 1;
+  const lastFence = prefix.lastIndexOf('---');
+  const yamlBody = prefix.slice(yamlStart, lastFence);
+  const content = body;
 
   let parsed: unknown;
   try {
