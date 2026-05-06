@@ -60,16 +60,30 @@ create_note({
 
 ### `edit_note`
 
-Add content to an existing note.
+Edit an existing note. `position` selects the operation:
+
+- `append` — add `content` at the end of the body (via Obsidian CLI).
+- `prepend` — add `content` at the start of the body (via Obsidian CLI).
+- `replace` — exact-string find/replace inside the body (direct filesystem write). Requires `find`. If `find` matches more than once, the call fails with `AMBIGUOUS_MATCH` unless `replace_all: true`. Frontmatter is never touched.
+- `replace_full` — overwrite the entire body with `content` (direct filesystem write). Frontmatter is preserved byte-for-byte.
 
 ```typescript
 edit_note({
   name?: string,
   path?: string,
   content: string,
-  position: 'append' | 'prepend',
+  position: 'append' | 'prepend' | 'replace' | 'replace_full',
+  // when position === 'replace':
+  find?: string,
+  replace_all?: boolean, // default false
 })
 ```
+
+Errors:
+
+- `INVALID_ARGUMENT` — empty `find`, both `name` and `path`, neither given.
+- `NOT_FOUND` — note path missing, wikilink unresolved, or `find` text absent in body.
+- `AMBIGUOUS_MATCH` — multiple `find` matches without `replace_all`, or a `name` resolves to multiple paths. `details.matches` carries 1-based body line numbers (for find ambiguity) or candidate paths (for name ambiguity).
 
 ## Structured queries
 
