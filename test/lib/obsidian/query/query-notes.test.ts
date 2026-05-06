@@ -68,6 +68,11 @@ describe('runQueryNotes', () => {
       frontmatter: { type: 'area' },
       content: 'finance body',
     },
+    {
+      path: 'Projects/gamma.md',
+      frontmatter: { type: 'project', status: 'active', tags: ['AI'], priority: 1 },
+      content: 'gamma body',
+    },
   ];
 
   it('filters by simple frontmatter equality', async () => {
@@ -75,8 +80,11 @@ describe('runQueryNotes', () => {
 
     const out = await runQueryNotes({ filter: { 'frontmatter.status': 'active' } }, reader);
 
-    expect(out.results.map((r) => r.path)).toEqual(['Projects/alpha.md']);
-    expect(out.count).toBe(1);
+    expect(out.results.map((r) => r.path).sort()).toEqual([
+      'Projects/alpha.md',
+      'Projects/gamma.md',
+    ]);
+    expect(out.count).toBe(2);
     expect(out.truncated).toBe(false);
   });
 
@@ -106,6 +114,7 @@ describe('runQueryNotes', () => {
     expect(out.results.map((r) => r.path).sort()).toEqual([
       'Projects/alpha.md',
       'Projects/beta.md',
+      'Projects/gamma.md',
     ]);
   });
 
@@ -120,6 +129,7 @@ describe('runQueryNotes', () => {
     expect(out.results.map((r) => r.path).sort()).toEqual([
       'Projects/alpha.md',
       'Projects/beta.md',
+      'Projects/gamma.md',
     ]);
   });
 
@@ -171,7 +181,7 @@ describe('runQueryNotes', () => {
       reader,
     );
 
-    expect(out.count).toBe(2);
+    expect(out.count).toBe(3);
     expect(out.truncated).toBe(false);
   });
 
@@ -186,7 +196,11 @@ describe('runQueryNotes', () => {
       reader,
     );
 
-    expect(out.results.map((r) => r.path)).toEqual(['Projects/alpha.md', 'Projects/beta.md']);
+    expect(out.results.map((r) => r.path)).toEqual([
+      'Projects/alpha.md',
+      'Projects/beta.md',
+      'Projects/gamma.md',
+    ]);
   });
 
   it('rejects an absolute path_prefix with INVALID_PARAMS', async () => {
@@ -335,6 +349,7 @@ describe('runQueryNotes', () => {
     expect(out.results.map((r) => ({ path: r.path, backlink_count: r.backlink_count }))).toEqual([
       { path: 'Projects/alpha.md', backlink_count: 7 },
       { path: 'Projects/beta.md', backlink_count: 2 },
+      { path: 'Projects/gamma.md', backlink_count: 0 },
     ]);
     expect(graph.ensureFresh).toHaveBeenCalledTimes(1);
   });
@@ -373,6 +388,7 @@ describe('runQueryNotes', () => {
       'Tasks/t1.md',
       'Areas/finance.md',
       'Projects/alpha.md',
+      'Projects/gamma.md',
     ]);
   });
 
@@ -396,6 +412,28 @@ describe('runQueryNotes', () => {
     await expect(
       runQueryNotes({ filter: {}, sort: { field: 'unknown', order: 'asc' } }, reader),
     ).rejects.toThrow(/backlink_count/);
+  });
+
+  it('matches case-insensitively by default for $regex', async () => {
+    const reader = buildReader(fixture);
+    const graph = buildFakeGraph({});
+    const result = await runQueryNotes({ filter: { tags: { $regex: '^ai' } } }, reader, graph);
+    const paths = result.results.map((r) => r.path).sort();
+    expect(paths).toContain('Projects/alpha.md'); // tags: ['ai', 'mcp']
+    expect(paths).toContain('Projects/gamma.md'); // tags: ['AI']
+  });
+
+  it('honors explicit $options: "" for case-sensitive matching', async () => {
+    const reader = buildReader(fixture);
+    const graph = buildFakeGraph({});
+    const result = await runQueryNotes(
+      { filter: { tags: { $regex: '^ai', $options: '' } } },
+      reader,
+      graph,
+    );
+    const paths = result.results.map((r) => r.path);
+    expect(paths).toContain('Projects/alpha.md');
+    expect(paths).not.toContain('Projects/gamma.md');
   });
 
   it('reads in bounded batches rather than one mega-call', async () => {

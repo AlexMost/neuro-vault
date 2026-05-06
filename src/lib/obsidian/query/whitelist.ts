@@ -11,6 +11,7 @@ export const ALLOWED_OPERATORS: ReadonlySet<string> = new Set([
   '$lte',
   '$exists',
   '$regex',
+  '$options',
   '$and',
   '$or',
   '$nor',

@@ -100,7 +100,9 @@ The filter is evaluated against a `NoteRecord` shape:
 
 Reference frontmatter keys with the dotted prefix `frontmatter.<key>`. Reference tags via the top-level `tags` array (sift exact-match against array elements). `backlink_count` is a top-level scalar — filterable (`{ backlink_count: { $gte: 5 } }`), sortable (`sort: { field: 'backlink_count', order: 'desc' }`), and always present on each result item.
 
-**Supported operators:** `$eq`, `$ne`, `$in`, `$nin`, `$gt`, `$gte`, `$lt`, `$lte`, `$exists`, `$regex`, `$and`, `$or`, `$nor`, `$not`. Anything else is rejected as `INVALID_FILTER`.
+**Supported operators:** `$eq`, `$ne`, `$in`, `$nin`, `$gt`, `$gte`, `$lt`, `$lte`, `$exists`, `$regex`, `$options`, `$and`, `$or`, `$nor`, `$not`. Anything else is rejected as `INVALID_FILTER`.
+
+**`$regex` is case-insensitive by default.** `{ tags: { $regex: '^ai' } }` matches `#AI`, `#ai`, and `#Ai`. To opt out, pass `$options` explicitly — `{ $regex: '^ai', $options: '' }` for case-sensitive, `{ $regex: '^ai', $options: 'm' }` for multiline-only, `{ $regex: '^ai', $options: 'mi' }` for both.
 
 **Examples:**
 

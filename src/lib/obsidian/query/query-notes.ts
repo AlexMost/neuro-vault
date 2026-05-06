@@ -21,6 +21,7 @@ import type {
   QueryNotesSort,
   QueryNotesToolInput,
 } from './types.js';
+import { applyDefaultRegexOptions } from './default-regex-options.js';
 import { validateFilter } from './whitelist.js';
 
 const DEFAULT_LIMIT = 100;
@@ -45,6 +46,7 @@ export async function runQueryNotes(
 ): Promise<QueryNotesResult> {
   const validated = validateInput(input);
   validateFilter(validated.filter);
+  const effectiveFilter = applyDefaultRegexOptions(validated.filter);
 
   if (graph) {
     await graph.ensureFresh();
@@ -68,7 +70,7 @@ export async function runQueryNotes(
 
   let matcher: (record: NoteRecord) => boolean;
   try {
-    matcher = sift(validated.filter) as unknown as (record: NoteRecord) => boolean;
+    matcher = sift(effectiveFilter) as unknown as (record: NoteRecord) => boolean;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new ToolHandlerError('INVALID_FILTER', `filter rejected by sift: ${message}`);
