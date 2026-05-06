@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [4.2.0](https://github.com/AlexMost/neuro-vault/compare/v4.1.0...v4.2.0) (2026-05-06)
+
+### Features
+
+- **query:** add applyDefaultRegexOptions transform ([116500e](https://github.com/AlexMost/neuro-vault/commit/116500e10f4e1e81fe890c3275896800972f557f))
+- **query:** allow $options operator in query_notes filters ([2bd659d](https://github.com/AlexMost/neuro-vault/commit/2bd659d591f90f3271b60573ad7dfa2510875c53))
+- **query:** default $regex to case-insensitive in query_notes ([fca91e2](https://github.com/AlexMost/neuro-vault/commit/fca91e251643b9a1a24f101de785f2cb43df9b3f))
+
+### Bug Fixes
+
+- **query:** correct escaping in case-sensitive example in server.ts ([6baa8af](https://github.com/AlexMost/neuro-vault/commit/6baa8af610d09a87521b06494b3dc22c7db940a5))
+
 ## [4.1.0](https://github.com/AlexMost/neuro-vault/compare/v4.0.1...v4.1.0) (2026-04-30)
 
 ### Features
