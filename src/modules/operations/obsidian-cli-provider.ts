@@ -3,11 +3,9 @@ import { promisify } from 'node:util';
 import { ToolHandlerError } from '../../lib/tool-response.js';
 import { splitFrontmatter } from '../../lib/obsidian/frontmatter.js';
 import type {
-  AppendDailyInput,
   CreateNoteInput,
   CreateNoteResult,
   DailyNoteResult,
-  EditNoteInput,
   NoteIdentifier,
   PropertyListEntry,
   PropertyValue,
@@ -85,23 +83,12 @@ export class ObsidianCLIProvider implements VaultProvider {
     return { path: input.path ?? input.name! };
   }
 
-  async editNote(input: EditNoteInput): Promise<void> {
-    await this.runCommand(input.position, [
-      identifierToArg(input.identifier),
-      `content=${input.content}`,
-    ]);
-  }
-
   async readDaily(): Promise<DailyNoteResult> {
     const { stdout: pathStdout } = await this.runCommand('daily:path', []);
     const path = pathStdout.trim();
     const { stdout } = await this.runCommand('daily:read', []);
     const { frontmatter, content } = splitFrontmatter(stdout);
     return { path, frontmatter, content };
-  }
-
-  async appendDaily(input: AppendDailyInput): Promise<void> {
-    await this.runCommand('daily:append', [`content=${input.content}`]);
   }
 
   async setProperty(input: SetPropertyInput): Promise<void> {

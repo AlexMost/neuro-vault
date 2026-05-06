@@ -1,64 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildEditNoteTool } from '../../../src/modules/operations/tools/edit-note.js';
-import { makeProvider, makeReader, makeWriter } from './_helpers.js';
+import { makeReader, makeWriter } from './_helpers.js';
 
 function buildTool(
   overrides: {
-    provider?: ReturnType<typeof makeProvider>;
     reader?: ReturnType<typeof makeReader>;
     writer?: ReturnType<typeof makeWriter>;
   } = {},
 ) {
-  const provider = overrides.provider ?? makeProvider();
   const reader = overrides.reader ?? makeReader();
   const writer = overrides.writer ?? makeWriter();
-  const tool = buildEditNoteTool({ provider, reader, writer });
-  return { tool, provider, reader, writer };
+  const tool = buildEditNoteTool({ reader, writer });
+  return { tool, reader, writer };
 }
-
-describe('edit_note: append / prepend (existing path)', () => {
-  it('forwards identifier, content, and position to provider for append', async () => {
-    const { tool, provider, writer } = buildTool();
-    await tool.handler({ path: 'Notes/x.md', content: 'tail', position: 'append' });
-    expect(provider.editNote).toHaveBeenCalledWith({
-      identifier: { kind: 'path', value: 'Notes/x.md' },
-      content: 'tail',
-      position: 'append',
-    });
-    expect(writer.replaceInNote).not.toHaveBeenCalled();
-    expect(writer.replaceFullBody).not.toHaveBeenCalled();
-  });
-
-  it('forwards prepend the same way', async () => {
-    const { tool, provider } = buildTool();
-    await tool.handler({ path: 'Notes/x.md', content: 'head', position: 'prepend' });
-    expect(provider.editNote).toHaveBeenCalledWith({
-      identifier: { kind: 'path', value: 'Notes/x.md' },
-      content: 'head',
-      position: 'prepend',
-    });
-  });
-
-  it('rejects invalid path', async () => {
-    const { tool } = buildTool();
-    await expect(
-      tool.handler({ path: '../bad', content: 'x', position: 'append' }),
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-  });
-
-  it('rejects Unix absolute path', async () => {
-    const { tool, provider } = buildTool();
-    await expect(
-      tool.handler({ path: '/etc/passwd', content: 'x', position: 'append' }),
-    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-    expect(provider.editNote).not.toHaveBeenCalled();
-  });
-});
 
 describe('edit_note: replace', () => {
   it('routes to writer.replaceInNote with normalised path', async () => {
-    const { tool, writer, provider } = buildTool();
+    const { tool, writer } = buildTool();
     await tool.handler({
       path: 'Notes/x.md',
       content: 'new',
@@ -71,7 +30,6 @@ describe('edit_note: replace', () => {
       content: 'new',
       replaceAll: false,
     });
-    expect(provider.editNote).not.toHaveBeenCalled();
   });
 
   it('passes replace_all through', async () => {
@@ -92,6 +50,21 @@ describe('edit_note: replace', () => {
     const { tool, writer } = buildTool();
     await expect(
       tool.handler({ path: 'x.md', content: 'y', position: 'replace', find: '' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    expect(writer.replaceInNote).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid path', async () => {
+    const { tool } = buildTool();
+    await expect(
+      tool.handler({ path: '../bad', content: 'y', position: 'replace', find: 'x' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+  });
+
+  it('rejects Unix absolute path', async () => {
+    const { tool, writer } = buildTool();
+    await expect(
+      tool.handler({ path: '/etc/passwd', content: 'y', position: 'replace', find: 'x' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(writer.replaceInNote).not.toHaveBeenCalled();
   });
@@ -182,15 +155,15 @@ describe('edit_note: identifier validation', () => {
         name: 'X',
         path: 'X.md',
         content: 'y',
-        position: 'append',
+        position: 'replace_full',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 
   it('rejects when neither name nor path is provided', async () => {
     const { tool } = buildTool();
-    await expect(tool.handler({ content: 'y', position: 'append' } as never)).rejects.toMatchObject(
-      { code: 'INVALID_ARGUMENT' },
-    );
+    await expect(
+      tool.handler({ content: 'y', position: 'replace_full' } as never),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 });

@@ -123,7 +123,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('registers twelve operations tools when only --operations is enabled', async () => {
+  it('registers eleven operations tools when only --operations is enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
@@ -131,9 +131,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     const server = createFakeServer();
     const fakeProvider = {
       createNote: vi.fn(),
-      editNote: vi.fn(),
       readDaily: vi.fn(),
-      appendDaily: vi.fn(),
       setProperty: vi.fn().mockResolvedValue(undefined),
       readProperty: vi.fn().mockResolvedValue({ value: '' }),
       removeProperty: vi.fn().mockResolvedValue(undefined),
@@ -160,7 +158,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'create_note',
         'edit_note',
         'read_daily',
-        'append_daily',
         'set_property',
         'read_property',
         'remove_property',
@@ -173,7 +170,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('registers sixteen tools (4 semantic + 12 operations) when both modules are enabled', async () => {
+  it('registers fifteen tools (4 semantic + 11 operations) when both modules are enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
@@ -181,9 +178,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     const server = createFakeServer();
     const fakeProvider = {
       createNote: vi.fn(),
-      editNote: vi.fn(),
       readDaily: vi.fn(),
-      appendDaily: vi.fn(),
       setProperty: vi.fn().mockResolvedValue(undefined),
       readProperty: vi.fn().mockResolvedValue({ value: '' }),
       removeProperty: vi.fn().mockResolvedValue(undefined),
@@ -221,7 +216,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'create_note',
         'edit_note',
         'read_daily',
-        'append_daily',
         'set_property',
         'read_property',
         'remove_property',

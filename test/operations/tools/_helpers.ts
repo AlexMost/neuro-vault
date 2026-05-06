@@ -7,9 +7,7 @@ import type { VaultWriter } from '../../../src/lib/obsidian/vault-writer.js';
 export function makeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
   return {
     createNote: vi.fn().mockResolvedValue({ path: '' }),
-    editNote: vi.fn().mockResolvedValue(undefined),
     readDaily: vi.fn().mockResolvedValue({ path: '', frontmatter: null, content: '' }),
-    appendDaily: vi.fn().mockResolvedValue(undefined),
     setProperty: vi.fn().mockResolvedValue(undefined),
     readProperty: vi.fn().mockResolvedValue({ value: '' }),
     removeProperty: vi.fn().mockResolvedValue(undefined),

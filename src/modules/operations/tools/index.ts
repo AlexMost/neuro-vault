@@ -4,7 +4,6 @@ import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
 import type { VaultWriter } from '../../../lib/obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
-import { buildAppendDailyTool } from './append-daily.js';
 import { buildCreateNoteTool } from './create-note.js';
 import { buildEditNoteTool } from './edit-note.js';
 import { buildGetNoteLinksTool } from './get-note-links.js';
@@ -31,7 +30,6 @@ export function buildOperationsTools(deps: OperationsToolDeps): ToolRegistration
     registerTool(buildCreateNoteTool(deps)),
     registerTool(buildEditNoteTool(deps)),
     registerTool(buildReadDailyTool(deps)),
-    registerTool(buildAppendDailyTool(deps)),
     registerTool(buildSetPropertyTool(deps)),
     registerTool(buildReadPropertyTool(deps)),
     registerTool(buildRemovePropertyTool(deps)),

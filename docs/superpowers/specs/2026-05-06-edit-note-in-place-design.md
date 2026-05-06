@@ -1,5 +1,12 @@
 # Add in-place edit support to `edit_note`
 
+> **Superseded by `2026-05-06-edit-note-and-daily-redesign-design.md`** (same
+> day). This spec proposed adding `replace`/`replace_full` alongside the
+> existing `append`/`prepend`. The redesign goes further: it drops
+> `append`/`prepend` and the `append_daily` tool entirely, leaving a single
+> direct-filesystem write path. The implementation in this branch reflects the
+> redesign, not this spec.
+
 ## Goal
 
 Extend `edit_note` beyond `append` / `prepend` so MCP clients can fix wording

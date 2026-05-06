@@ -61,14 +61,7 @@ export interface CreateNoteToolInput {
   overwrite?: boolean;
 }
 
-export type EditPositionToolInput = 'append' | 'prepend' | 'replace' | 'replace_full';
-
-export interface EditNoteAppendPrependInput {
-  name?: string;
-  path?: string;
-  content: string;
-  position: 'append' | 'prepend';
-}
+export type EditPositionToolInput = 'replace' | 'replace_full';
 
 export interface EditNoteReplaceInput {
   name?: string;
@@ -86,16 +79,9 @@ export interface EditNoteReplaceFullInput {
   position: 'replace_full';
 }
 
-export type EditNoteToolInput =
-  | EditNoteAppendPrependInput
-  | EditNoteReplaceInput
-  | EditNoteReplaceFullInput;
+export type EditNoteToolInput = EditNoteReplaceInput | EditNoteReplaceFullInput;
 
 export type ReadDailyToolInput = Record<string, never>;
-
-export interface AppendDailyToolInput {
-  content: string;
-}
 
 export interface SetPropertyToolInput {
   name?: string;
@@ -130,7 +116,6 @@ export interface OperationsToolHandlers {
     frontmatter: Record<string, unknown> | null;
     content: string;
   }>;
-  appendDaily(input: AppendDailyToolInput): Promise<void>;
   setProperty(input: SetPropertyToolInput): Promise<{ ok: true }>;
   readProperty(
     input: ReadPropertyToolInput,

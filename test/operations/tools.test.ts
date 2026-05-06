@@ -8,9 +8,7 @@ import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.j
 
 const noopProvider = {
   createNote: vi.fn(),
-  editNote: vi.fn(),
   readDaily: vi.fn(),
-  appendDaily: vi.fn(),
   setProperty: vi.fn(),
   readProperty: vi.fn(),
   removeProperty: vi.fn(),
@@ -42,7 +40,7 @@ const noopDeps = {
 };
 
 describe('buildOperationsTools', () => {
-  it('returns 12 registrations with the expected names', () => {
+  it('returns 11 registrations with the expected names', () => {
     const tools = buildOperationsTools(noopDeps);
     expect(tools.map((t) => t.name)).toEqual([
       'read_notes',
@@ -50,7 +48,6 @@ describe('buildOperationsTools', () => {
       'create_note',
       'edit_note',
       'read_daily',
-      'append_daily',
       'set_property',
       'read_property',
       'remove_property',
