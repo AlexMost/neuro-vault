@@ -1,7 +1,12 @@
 import type { MultiRetrievalOutput, RetrievalOutput } from './retrieval-policy.js';
 import type { SmartSource } from '../../lib/obsidian/smart-connections-types.js';
+import type {
+  ListMatchingPaths,
+  NoteFilter,
+} from '../../lib/obsidian/query/list-matching-paths.js';
 
 export type { SmartBlock, SmartSource } from '../../lib/obsidian/smart-connections-types.js';
+export type { ListMatchingPaths, NoteFilter };
 
 export interface BlockSearchResult {
   path: string;
@@ -60,6 +65,7 @@ export interface SearchNotesInput {
   mode?: SearchMode;
   limit?: number;
   threshold?: number;
+  filter?: NoteFilter;
 }
 
 export interface GetSimilarNotesInput {
@@ -90,6 +96,7 @@ export interface ToolHandlerDependencies {
   searchEngine: SearchEngine;
   modelKey: string;
   pathExists?: PathExistsCheck;
+  listMatchingPaths: ListMatchingPaths;
 }
 
 export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENCY_ERROR';

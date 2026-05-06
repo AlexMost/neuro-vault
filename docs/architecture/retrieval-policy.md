@@ -114,8 +114,17 @@ The Smart Connections embeddings index is keyed by note path. When a file is mov
 
 The default predicate in `src/modules/semantic/index.ts` is a `fs.access` check rooted at the configured `--vault` directory. Tests inject a fake. The policy itself is unchanged — filtering happens at the handler boundary so the math layer stays pure.
 
+## Pre-filter
+
+When `search_notes` receives a `filter` parameter, the tool handler computes an allowed-paths set via `listMatchingPaths(filter)` (lib/obsidian/query) and narrows the `sources` Map before invoking `executeRetrieval` / `executeMultiRetrieval`. The retrieval policy itself is unchanged — expansion, multi-query merge, and block search all operate on the narrowed Map and therefore inherit the filter for free.
+
+Empty allowed set short-circuits to an empty result without invoking `embeddingProvider.embed` or `searchEngine`. Errors from `listMatchingPaths` map as: `INVALID_FILTER` → `INVALID_ARGUMENT`; anything else → `DEPENDENCY_ERROR`.
+
+Path_prefix-only filters use a fast-path inside `listMatchingPaths` that calls `vaultReader.scan({ pathPrefix })` and skips frontmatter reads entirely.
+
 ## Boundaries
 
 - The policy does not validate inputs (the tool handler does that).
 - The policy does not know about MCP, error codes, or response envelopes. It returns a plain object; the layer above wraps it.
 - The policy does not assume the search engine is in-memory. If a different engine is wired in, the same five-step pipeline still applies — only the cost shape changes.
+- The policy does not handle structural filtering — that is a pre-step in the tool handler.

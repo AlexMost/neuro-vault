@@ -12,6 +12,11 @@ search_notes({
   mode?: 'quick' | 'deep',      // default: 'quick'
   limit?: number,               // default: 3 (quick) / 8 (deep)
   threshold?: number,           // default: 0.5 (quick) / 0.35 (deep), 0–1
+  filter?: {                    // optional: narrow candidate set before ranking
+    path_prefix?: string,
+    tags?: string[],
+    frontmatter?: object,
+  },
 })
 ```
 
@@ -23,6 +28,26 @@ search_notes({
 | `deep`  | Broad topic, need an overview     | 8               | 0.35                | across whole vault, threshold = mode, limit = mode | on, top-3 |
 
 `limit` widens or narrows the `results` array but does not affect `blockResults` (which is always capped by mode-specific logic). `expansion` is no longer a tool parameter — it is fixed by mode.
+
+### Pre-filter (`filter` parameter)
+
+Pass `filter` to narrow the candidate set **before** semantic ranking. Useful when the vault contains many narrative notes that otherwise crowd the top-K on a niche query.
+
+```json
+{
+  "query": ["trading lessons", "торговельна рефлексія"],
+  "mode": "deep",
+  "filter": { "tags": ["trading"] }
+}
+```
+
+`filter` accepts three optional fields (at least one required):
+
+- `path_prefix` — scope to a vault subtree (e.g. `"Resources/"`).
+- `tags` — string array; matches any note carrying ANY of these tags (no leading `#`).
+- `frontmatter` — sift filter against frontmatter keys; same operator allow-list as `query_notes` (`$eq`, `$ne`, `$in`, `$nin`, `$gt`, `$gte`, `$lt`, `$lte`, `$exists`, `$regex`, `$and`, `$or`, `$nor`, `$not`).
+
+Composition: `filter` AND `threshold` AND semantic similarity. The output shape is unchanged — just smaller and more relevant.
 
 ### Output shape — `quick`
 

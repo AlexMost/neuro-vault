@@ -22,11 +22,11 @@ import type {
   QueryNotesToolInput,
 } from './types.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
+import { normalizeVaultPathPrefix } from './path-prefix.js';
 import { validateFilter } from './whitelist.js';
 
 const DEFAULT_LIMIT = 100;
 const HARD_LIMIT_CAP = 1000;
-const WINDOWS_ABSOLUTE_PATH_RE = /^[A-Za-z]:[\\/]/;
 // Pipeline: read in bounded batches so a large vault never holds every note
 // body in memory at once and never opens an unbounded number of FDs.
 const READ_BATCH_SIZE = 32;
@@ -39,56 +39,61 @@ interface ValidatedInput {
   includeContent: boolean;
 }
 
-export async function runQueryNotes(
-  input: QueryNotesToolInput,
-  reader: VaultReader,
-  graph?: WikilinkGraphIndex,
-): Promise<QueryNotesResult> {
-  const validated = validateInput(input);
-  validateFilter(validated.filter);
-  const effectiveFilter = applyDefaultRegexOptions(validated.filter);
+interface CollectMatchingPathsInput {
+  filter: Record<string, unknown>; // already-validated, regex-defaults applied
+  pathPrefix: string | undefined;
+  includeContent: boolean;
+  earlyExitAfter?: number; // break after collecting > N matches (i.e. at most N+1); omit for full scan. The +1 lets the caller distinguish "exactly N" from "more than N" for truncation.
+}
 
-  if (graph) {
-    await graph.ensureFresh();
-  }
+export interface CollectedRow {
+  record: NoteRecord;
+  content?: string;
+}
+
+interface CollectMatchingPathsDeps {
+  reader: VaultReader;
+  graph?: WikilinkGraphIndex;
+}
+
+// Caller is responsible for calling `graph.ensureFresh()` before invoking
+// when accurate backlink counts matter — this helper does not refresh.
+export async function collectMatchingPaths(
+  input: CollectMatchingPathsInput,
+  deps: CollectMatchingPathsDeps,
+): Promise<CollectedRow[]> {
+  const { filter, pathPrefix, includeContent, earlyExitAfter } = input;
+  const { reader, graph } = deps;
 
   let paths: string[];
   try {
-    paths = await reader.scan({ pathPrefix: validated.pathPrefix });
+    paths = await reader.scan({ pathPrefix });
   } catch (err) {
     if (err instanceof ScanPathNotFoundError) {
       throw new ToolHandlerError('PATH_NOT_FOUND', err.message, {
-        details: { path_prefix: validated.pathPrefix },
+        details: { path_prefix: pathPrefix },
       });
     }
     throw err;
   }
 
   if (paths.length === 0) {
-    return { results: [], count: 0, truncated: false };
+    return [];
   }
 
   let matcher: (record: NoteRecord) => boolean;
   try {
-    matcher = sift(effectiveFilter) as unknown as (record: NoteRecord) => boolean;
+    matcher = sift(filter) as unknown as (record: NoteRecord) => boolean;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new ToolHandlerError('INVALID_FILTER', `filter rejected by sift: ${message}`);
   }
 
-  const fields = validated.includeContent
+  const fields = includeContent
     ? (['frontmatter', 'content'] as const)
     : (['frontmatter'] as const);
 
-  // Early-exit is safe only when scan order already gives us the top of the
-  // sorted output: scan returns paths in lexicographic ascending order, so
-  // "no sort" and "sort by path asc" win for free. Any other sort needs the
-  // full match set before we can know which entries land in the top `limit`.
-  const earlyExitAllowed =
-    !validated.sort || (validated.sort.field === 'path' && validated.sort.order === 'asc');
-
-  type Row = { record: NoteRecord; content?: string };
-  const matched: Row[] = [];
+  const matched: CollectedRow[] = [];
 
   for (let i = 0; i < paths.length; i += READ_BATCH_SIZE) {
     const slice = paths.slice(i, i + READ_BATCH_SIZE);
@@ -111,10 +116,43 @@ export async function runQueryNotes(
       }
       if (!isMatch) continue;
       // Only keep `content` for matches — non-matches' bodies are dropped now.
-      matched.push(validated.includeContent ? { record, content: item.content } : { record });
+      matched.push(includeContent ? { record, content: item.content } : { record });
     }
-    if (earlyExitAllowed && matched.length > validated.limit) break;
+    if (earlyExitAfter !== undefined && matched.length > earlyExitAfter) break;
   }
+
+  return matched;
+}
+
+export async function runQueryNotes(
+  input: QueryNotesToolInput,
+  reader: VaultReader,
+  graph?: WikilinkGraphIndex,
+): Promise<QueryNotesResult> {
+  const validated = validateInput(input);
+  validateFilter(validated.filter);
+  const effectiveFilter = applyDefaultRegexOptions(validated.filter);
+
+  if (graph) {
+    await graph.ensureFresh();
+  }
+
+  // Early-exit is safe only when scan order already gives us the top of the
+  // sorted output: scan returns paths in lexicographic ascending order, so
+  // "no sort" and "sort by path asc" win for free. Any other sort needs the
+  // full match set before we can know which entries land in the top `limit`.
+  const earlyExitAllowed =
+    !validated.sort || (validated.sort.field === 'path' && validated.sort.order === 'asc');
+
+  const matched = await collectMatchingPaths(
+    {
+      filter: effectiveFilter,
+      pathPrefix: validated.pathPrefix,
+      includeContent: validated.includeContent,
+      earlyExitAfter: earlyExitAllowed ? validated.limit : undefined,
+    },
+    { reader, graph },
+  );
 
   if (validated.sort) {
     sortInPlace(matched, validated.sort);
@@ -195,16 +233,7 @@ function validateInput(input: QueryNotesToolInput): ValidatedInput {
 }
 
 function normalizeScanPrefixInput(raw: string): string | undefined {
-  const trimmed = raw.trim();
-  if (trimmed === '' || trimmed === '.' || trimmed === './') return undefined;
-  if (trimmed.startsWith('/') || WINDOWS_ABSOLUTE_PATH_RE.test(trimmed)) {
-    throw invalidParams('path_prefix must be vault-relative', 'path_prefix');
-  }
-  const slashed = trimmed.replace(/\\/g, '/').replace(/^\.\//, '');
-  if (slashed.split('/').some((segment) => segment === '..')) {
-    throw invalidParams('path_prefix must be vault-relative', 'path_prefix');
-  }
-  return slashed.replace(/\/+$/, '');
+  return normalizeVaultPathPrefix(raw, (message) => invalidParams(message, 'path_prefix'));
 }
 
 function validateSort(raw: unknown): QueryNotesSort {

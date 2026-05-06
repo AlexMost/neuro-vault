@@ -15,7 +15,14 @@ import {
   readPositiveInteger,
   readThreshold,
 } from '../tool-helpers.js';
-import type { EmbeddingProvider, PathExistsCheck, SearchEngine, SmartSource } from '../types.js';
+import type {
+  EmbeddingProvider,
+  ListMatchingPaths,
+  NoteFilter,
+  PathExistsCheck,
+  SearchEngine,
+  SmartSource,
+} from '../types.js';
 
 const SEARCH_NOTES_DESCRIPTION = [
   'Search notes by semantic similarity. Best for fuzzy recall, topic exploration, or cross-language matches. Pass short keyword queries (1-4 words), not sentences.',
@@ -40,13 +47,30 @@ const SEARCH_NOTES_DESCRIPTION = [
   '- "what do I know about Y?" → search_notes({query: "Y", mode: "deep"}).',
   '- multilingual pair: search_notes({query: ["embeddings", "векторний пошук"]}) — returns one merged list; notes matched by both queries appear with both in matched_queries.',
   '- multilingual deep: search_notes({query: ["optimization", "оптимізація"], mode: "deep"}) — merged top-`limit` seeds, then expansion once on the merged set.',
+  '',
+  'PRE-FILTER (filter parameter):',
+  '- filter: optional structural narrowing applied BEFORE semantic ranking. Best when vault has many narrative notes that crowd top-K on a niche query.',
+  '  Shape: { path_prefix?, tags?, frontmatter? }. At least one field required.',
+  '  - path_prefix: scope to a folder (e.g. "Resources/").',
+  '  - tags: notes that have ANY of these tags (OR within the array; no leading "#").',
+  '  - frontmatter: sift filter on frontmatter keys (e.g. { type: "reflection", status: "active" }). Same operator allow-list as query_notes.',
+  '  Composition: filter AND threshold AND semantic. Use this instead of querying twice and intersecting on the client.',
+  '- scoped recall: search_notes({query: "trading lessons", filter: {tags: ["trading"]}}) — semantic only inside notes tagged trading.',
+  '- scoped multi-query: search_notes({query: ["embeddings","векторний пошук"], filter: {path_prefix: "Resources/"}, mode: "deep"}).',
 ].join('\n');
+
+const filterSchema = z.object({
+  path_prefix: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  frontmatter: z.record(z.string(), z.unknown()).optional(),
+});
 
 const inputSchema = z.object({
   query: z.union([z.string(), z.array(z.string()).min(1).max(8)]),
   mode: z.enum(['quick', 'deep']).optional(),
   limit: z.number().int().positive().optional(),
   threshold: z.number().min(0).max(1).optional(),
+  filter: filterSchema.optional(),
 });
 
 type SearchNotesInput = z.infer<typeof inputSchema>;
@@ -64,6 +88,7 @@ export interface SearchNotesDeps {
   modelKey: string;
   pathExists: PathExistsCheck;
   graph: WikilinkGraphIndex;
+  listMatchingPaths: ListMatchingPaths;
 }
 
 async function buildExistingPathSet(
@@ -88,10 +113,37 @@ function wrapDependencyError(
   return new ToolHandlerError('DEPENDENCY_ERROR', message, { details, cause: error });
 }
 
+function isFilterEmpty(filter: NoteFilter): boolean {
+  const hasPath = filter.path_prefix !== undefined && filter.path_prefix !== '';
+  const hasTags = Array.isArray(filter.tags) && filter.tags.length > 0;
+  const hasFm = filter.frontmatter !== undefined && Object.keys(filter.frontmatter).length > 0;
+  return !hasPath && !hasTags && !hasFm;
+}
+
+function narrowSources(
+  sources: Map<string, SmartSource>,
+  allowed: Set<string>,
+): Map<string, SmartSource> {
+  const out = new Map<string, SmartSource>();
+  for (const path of allowed) {
+    const src = sources.get(path);
+    if (src) out.set(path, src);
+  }
+  return out;
+}
+
 export function buildSearchNotesTool(
   deps: SearchNotesDeps,
 ): ITool<SearchNotesInput, SearchNotesOutput> {
-  const { sources, embeddingProvider, searchEngine, modelKey, pathExists, graph } = deps;
+  const {
+    sources,
+    embeddingProvider,
+    searchEngine,
+    modelKey,
+    pathExists,
+    graph,
+    listMatchingPaths,
+  } = deps;
 
   return {
     name: 'search_notes',
@@ -109,6 +161,44 @@ export function buildSearchNotesTool(
           ? readPositiveInteger(input.limit, input.limit, 'limit')
           : undefined;
 
+      let effectiveSources = sources;
+
+      if (input.filter !== undefined) {
+        if (isFilterEmpty(input.filter)) {
+          throw new ToolHandlerError(
+            'INVALID_ARGUMENT',
+            'filter must specify at least one of: path_prefix, tags, frontmatter',
+          );
+        }
+
+        let allowed: Set<string>;
+        try {
+          allowed = await listMatchingPaths(input.filter);
+        } catch (error) {
+          if (error instanceof ToolHandlerError && error.code === 'INVALID_FILTER') {
+            throw new ToolHandlerError('INVALID_ARGUMENT', error.message, {
+              details: error.details,
+            });
+          }
+          throw wrapDependencyError(error, 'Failed to compute filter set', {
+            modelKey,
+            operation: 'search_notes',
+          });
+        }
+
+        if (allowed.size === 0) {
+          const isMulti = Array.isArray(input.query);
+          const isDeep = mode === 'deep';
+          return {
+            results: [],
+            ...(isDeep ? { blockResults: [] } : {}),
+            ...(isMulti ? { truncated: false } : {}),
+          } as SearchNotesOutput;
+        }
+
+        effectiveSources = narrowSources(sources, allowed);
+      }
+
       if (Array.isArray(input.query)) {
         const queries = normalizeQueryArray(input.query);
         try {
@@ -117,7 +207,7 @@ export function buildSearchNotesTool(
             mode,
             threshold,
             limit,
-            sources,
+            sources: effectiveSources,
             embeddingProvider,
             searchEngine,
           });
@@ -153,7 +243,7 @@ export function buildSearchNotesTool(
           mode,
           limit,
           threshold,
-          sources,
+          sources: effectiveSources,
           embeddingProvider,
           searchEngine,
         });

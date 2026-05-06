@@ -7,6 +7,7 @@ import { createSemanticModule, type SemanticModuleDeps } from './modules/semanti
 import { createOperationsModule, type OperationsModuleDeps } from './modules/operations/index.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
+import { createListMatchingPaths } from './lib/obsidian/query/index.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ServerConfig } from './types.js';
 
@@ -86,6 +87,10 @@ Use \`search_notes\` when the user is recalling a topic fuzzily, asking a concep
 3. The vault may contain notes written in several languages. If you have evidence of which languages are in use (from prior reads, file names, or earlier results), include translations of the key concepts into each of those languages in the same \`query\` array.
 4. If a search returns no results, lower the threshold to 0.3 before giving up.
 
+### 1a. Narrow scope when domain is known
+
+If the query is about a known folder, tag, or frontmatter dimension, pass \`filter\` to scope semantic search to that subset BEFORE ranking. This dramatically improves precision when the vault has many narrative notes that crowd top-K. Shape: \`{ path_prefix?, tags?, frontmatter? }\` (at least one). Tags match ANY-of (OR). \`frontmatter\` accepts the same sift operators as \`query_notes\`. Examples: \`filter: { tags: ['trading'] }\`, \`filter: { path_prefix: 'Resources/', frontmatter: { type: 'reflection' } }\`.
+
 ### 2. Choose mode
 - **quick** (default) — returns up to 3 notes plus block-level matches scoped to those notes. Use for specific lookups.
 - **deep** — returns up to 8 notes plus block-level matches across the whole vault. After the merged top-\`limit\` seeds are selected, expansion runs once on those seeds to pull in related notes. Use for broad topics.
@@ -135,6 +140,10 @@ export async function startNeuroVaultServer(
   // single in-memory index.
   const sharedReader = new FsVaultReader({ vaultRoot: config.vaultPath });
   const sharedGraph = new WikilinkGraphIndex({ reader: sharedReader });
+  const sharedListMatchingPaths = createListMatchingPaths({
+    reader: sharedReader,
+    graph: sharedGraph,
+  });
 
   const registrations: ToolRegistration[] = [];
   let warmup: () => Promise<void> = async () => {};
@@ -147,7 +156,11 @@ export async function startNeuroVaultServer(
         modelKey: config.semantic.modelKey,
         modelId: config.semantic.modelId,
       },
-      { graph: sharedGraph, ...deps.semantic },
+      {
+        graph: sharedGraph,
+        listMatchingPaths: sharedListMatchingPaths,
+        ...deps.semantic,
+      },
     );
     registrations.push(...semantic.tools);
     warmup = semantic.warmup;

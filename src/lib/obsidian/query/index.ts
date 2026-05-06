@@ -8,3 +8,9 @@ export type {
   QueryNotesSort,
   QueryNotesToolInput,
 } from './types.js';
+export { createListMatchingPaths } from './list-matching-paths.js';
+export type {
+  NoteFilter,
+  ListMatchingPaths,
+  ListMatchingPathsDeps,
+} from './list-matching-paths.js';

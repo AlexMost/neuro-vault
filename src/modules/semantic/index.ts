@@ -13,6 +13,7 @@ import { WikilinkGraphIndex } from '../../lib/obsidian/wikilink-graph.js';
 import { buildSemanticTools, type SemanticToolDeps } from './tools/index.js';
 import type { EmbeddingProvider, PathExistsCheck, SearchEngine } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
+import { createListMatchingPaths, type ListMatchingPaths } from '../../lib/obsidian/query/index.js';
 
 export interface SemanticModuleConfig {
   vaultPath: string;
@@ -29,6 +30,7 @@ export interface SemanticModuleDeps {
   readNoteContent?: (vaultRelativePath: string) => Promise<string>;
   graph?: WikilinkGraphIndex;
   vaultReaderFactory?: (opts: { vaultRoot: string }) => VaultReader;
+  listMatchingPaths?: ListMatchingPaths;
 }
 
 function createDefaultPathExists(vaultPath: string): PathExistsCheck {
@@ -74,11 +76,14 @@ export async function createSemanticModule(
   const basenameIndex = buildBasenameIndex(corpus.sources.keys());
 
   let graph = deps.graph;
-  if (!graph) {
+  let listMatchingPaths = deps.listMatchingPaths;
+
+  if (!graph || !listMatchingPaths) {
     const readerFactory =
       deps.vaultReaderFactory ?? ((opts) => new FsVaultReader({ vaultRoot: opts.vaultRoot }));
     const reader = readerFactory({ vaultRoot: config.vaultPath });
-    graph = new WikilinkGraphIndex({ reader });
+    if (!graph) graph = new WikilinkGraphIndex({ reader });
+    if (!listMatchingPaths) listMatchingPaths = createListMatchingPaths({ reader, graph });
   }
 
   const semanticDeps: SemanticToolDeps = {
@@ -90,6 +95,7 @@ export async function createSemanticModule(
     basenameIndex,
     readNoteContent,
     graph,
+    listMatchingPaths,
   };
 
   return {
