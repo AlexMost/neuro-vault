@@ -119,8 +119,7 @@ async function resolveToPath(input: Input, reader: VaultReader): Promise<string>
   if (name === '') {
     throw invalidArgument('name must not be empty', 'name');
   }
-  const allPaths = await reader.scan();
-  const matches = matchesByName(allPaths, name);
+  const matches = buildBasenameIndex(await reader.scan()).resolveAll(name);
   if (matches.length === 0) {
     throw new ToolHandlerError(
       'NOT_FOUND' satisfies OperationsErrorCode,
@@ -136,23 +135,4 @@ async function resolveToPath(input: Input, reader: VaultReader): Promise<string>
     );
   }
   return matches[0]!;
-}
-
-function matchesByName(allPaths: string[], name: string): string[] {
-  // Use BasenameIndex's first-match semantics for the unique-match case, but
-  // we also need to surface *all* candidates on ambiguity, so do a plain
-  // basename comparison here.
-  const index = buildBasenameIndex(allPaths);
-  const unique = index.resolve(name);
-  if (unique === null) return [];
-
-  const target = name.endsWith('.md') ? name.slice(0, -3) : name;
-  const all = allPaths.filter((p) => baseOf(p) === target);
-  return all.length > 0 ? all : [unique];
-}
-
-function baseOf(p: string): string {
-  const slash = p.lastIndexOf('/');
-  const tail = slash >= 0 ? p.slice(slash + 1) : p;
-  return tail.endsWith('.md') ? tail.slice(0, -3) : tail;
 }
