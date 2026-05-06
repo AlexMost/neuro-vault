@@ -1,5 +1,5 @@
 export interface FrontmatterSplit {
-  prefix: string; // raw "---\n…\n---\n" (or with CRLF), or empty string
+  prefix: string; // raw frontmatter slice including both fences and their EOLs, or empty string
   body: string;
 }
 

@@ -87,7 +87,6 @@ Behaviour:
 - Editing frontmatter (use `set_property` / `remove_property`).
 - Insert at arbitrary line number.
 - Block-reference based edits.
-- CRLF line-ending preservation — LF is assumed.
 
 ## Architecture
 
