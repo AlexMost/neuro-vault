@@ -15,6 +15,7 @@ import {
 } from '../../../src/modules/semantic/search-engine.js';
 import type {
   EmbeddingProvider,
+  ListMatchingPaths,
   PathExistsCheck,
   SearchEngine,
   SmartSource,
@@ -90,6 +91,7 @@ export function makeHandlerDeps(deps: {
   basenameIndex?: BasenameIndex;
   readNoteContent?: (vaultRelativePath: string) => Promise<string>;
   graph?: WikilinkGraphIndex;
+  listMatchingPaths?: ListMatchingPaths;
 }) {
   return {
     ...deps,
@@ -97,6 +99,7 @@ export function makeHandlerDeps(deps: {
     basenameIndex: deps.basenameIndex ?? buildBasenameIndex(deps.sources.keys()),
     readNoteContent: deps.readNoteContent ?? (async () => ''),
     graph: deps.graph ?? makeFakeGraph(),
+    listMatchingPaths: deps.listMatchingPaths ?? (async () => new Set()),
   };
 }
 
@@ -115,4 +118,11 @@ export {
   findBlockNeighbors,
   buildBasenameIndex,
 };
-export type { EmbeddingProvider, PathExistsCheck, SearchEngine, SmartSource, BasenameIndex };
+export type {
+  EmbeddingProvider,
+  ListMatchingPaths,
+  PathExistsCheck,
+  SearchEngine,
+  SmartSource,
+  BasenameIndex,
+};
