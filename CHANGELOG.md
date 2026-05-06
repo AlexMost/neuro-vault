@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.1.0](https://github.com/AlexMost/neuro-vault/compare/v5.0.1...v5.1.0) (2026-05-06)
+
+### Features
+
+- **query:** add listMatchingPaths helper ([1392382](https://github.com/AlexMost/neuro-vault/commit/13923829abea34ce9b64df1b6fbc301316e6813e))
+- **search_notes:** add structural pre-filter ([7c956d5](https://github.com/AlexMost/neuro-vault/commit/7c956d56e6067e64353525c695dabf7d6c4e328a))
+- **semantic:** add listMatchingPaths dependency to module ([50f063a](https://github.com/AlexMost/neuro-vault/commit/50f063a8d884a8ad0d074c6b75dc56602557b9b6))
+- **server:** wire listMatchingPaths from shared reader into semantic ([a8b1f52](https://github.com/AlexMost/neuro-vault/commit/a8b1f5237c5f9a380038591375e151b55463322f))
+
+### Bug Fixes
+
+- README discoverability + consistent fast-path scan error code ([7bb1cec](https://github.com/AlexMost/neuro-vault/commit/7bb1ceca0f34c640794b6916cd0f055223aa59af))
+
 ## [5.0.1](https://github.com/AlexMost/neuro-vault/compare/v5.0.0...v5.0.1) (2026-05-06)
 
 ### Bug Fixes
