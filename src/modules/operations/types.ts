@@ -61,25 +61,12 @@ export interface CreateNoteToolInput {
   overwrite?: boolean;
 }
 
-export type EditPositionToolInput = 'replace' | 'replace_full';
-
-export interface EditNoteReplaceInput {
+export interface EditNoteToolInput {
   name?: string;
   path?: string;
   content: string;
-  position: 'replace';
-  find: string;
-  replace_all?: boolean;
+  replace?: string;
 }
-
-export interface EditNoteReplaceFullInput {
-  name?: string;
-  path?: string;
-  content: string;
-  position: 'replace_full';
-}
-
-export type EditNoteToolInput = EditNoteReplaceInput | EditNoteReplaceFullInput;
 
 export type ReadDailyToolInput = Record<string, never>;
 

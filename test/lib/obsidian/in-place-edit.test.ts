@@ -45,58 +45,46 @@ describe('splitRawFrontmatter', () => {
 describe('applyReplace', () => {
   it('replaces a single occurrence', () => {
     const body = 'first line\nfind me here\nlast line\n';
-    expect(applyReplace(body, 'find me', 'changed', false)).toEqual({
+    expect(applyReplace(body, 'find me', 'changed')).toEqual({
       body: 'first line\nchanged here\nlast line\n',
     });
   });
 
   it('returns NOT_FOUND when find text is absent', () => {
     const body = 'no match here\n';
-    expect(applyReplace(body, 'xxx', 'yyy', false)).toEqual({ error: 'NOT_FOUND' });
+    expect(applyReplace(body, 'xxx', 'yyy')).toEqual({ error: 'NOT_FOUND' });
   });
 
-  it('returns AMBIGUOUS_MATCH with 1-based line numbers when multiple matches and replace_all=false', () => {
+  it('returns AMBIGUOUS_MATCH with 1-based line numbers when multiple matches', () => {
     const body = 'foo here\nand foo again\nfoo on third line\n';
-    const result = applyReplace(body, 'foo', 'bar', false);
-    expect(result).toEqual({ error: 'AMBIGUOUS_MATCH', lines: [1, 2, 3] });
-  });
-
-  it('replaces every occurrence when replace_all=true', () => {
-    const body = 'foo and foo and foo';
-    expect(applyReplace(body, 'foo', 'BAR', true)).toEqual({
-      body: 'BAR and BAR and BAR',
+    expect(applyReplace(body, 'foo', 'bar')).toEqual({
+      error: 'AMBIGUOUS_MATCH',
+      lines: [1, 2, 3],
     });
-  });
-
-  it('does not recurse when replacement contains the find text (replace_all=true)', () => {
-    const body = 'ab';
-    expect(applyReplace(body, 'ab', 'abab', true)).toEqual({ body: 'abab' });
   });
 
   it('allows empty replacement (deletes matched text)', () => {
     const body = 'keep [delete this] keep';
-    expect(applyReplace(body, '[delete this] ', '', false)).toEqual({
-      body: 'keep keep',
-    });
+    expect(applyReplace(body, '[delete this] ', '')).toEqual({ body: 'keep keep' });
   });
 
   it('treats whitespace-sensitive matches strictly', () => {
     const body = 'hello  world\n';
-    expect(applyReplace(body, 'hello world', 'x', false)).toEqual({ error: 'NOT_FOUND' });
+    expect(applyReplace(body, 'hello world', 'x')).toEqual({ error: 'NOT_FOUND' });
   });
 
   it('reports correct line numbers when the find spans a substring inside a longer line', () => {
     const body = 'aaa\nzz foo zz\nbar\nfoo at start';
-    const result = applyReplace(body, 'foo', 'X', false);
-    expect(result).toEqual({ error: 'AMBIGUOUS_MATCH', lines: [2, 4] });
+    expect(applyReplace(body, 'foo', 'X')).toEqual({
+      error: 'AMBIGUOUS_MATCH',
+      lines: [2, 4],
+    });
   });
 
-  it('treats $-patterns in the replacement as literal text (replaceAll=true)', () => {
-    const body = 'foo bar foo';
-    expect(applyReplace(body, 'foo', '$$$&', true)).toEqual({ body: '$$$& bar $$$&' });
-  });
-
-  it('handles replaceAll=true with exactly one match', () => {
-    expect(applyReplace('x', 'x', 'y', true)).toEqual({ body: 'y' });
+  it('inserts the replacement verbatim, not interpreted as a regex pattern', () => {
+    const body = 'unique anchor here';
+    expect(applyReplace(body, 'unique anchor', '$$$&')).toEqual({
+      body: '$$$& here',
+    });
   });
 });

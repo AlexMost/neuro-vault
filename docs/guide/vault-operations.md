@@ -60,30 +60,27 @@ create_note({
 
 ### `edit_note`
 
-Edit an existing note. `position` selects the operation:
+Edit an existing note. The presence of `replace` selects the mode:
 
-- `append` — add `content` at the end of the body (via Obsidian CLI).
-- `prepend` — add `content` at the start of the body (via Obsidian CLI).
-- `replace` — exact-string find/replace inside the body (direct filesystem write). Requires `find`. If `find` matches more than once, the call fails with `AMBIGUOUS_MATCH` unless `replace_all: true`. Frontmatter is never touched.
-- `replace_full` — overwrite the entire body with `content` (direct filesystem write). Frontmatter is preserved byte-for-byte.
+- **With `replace`** — exact-string find/replace inside the body. The string in `replace` is located (case- and whitespace-sensitive) and swapped for `content`. Frontmatter is never touched.
+- **Without `replace`** — the entire body is overwritten with `content`. Frontmatter is preserved byte-for-byte. Pre-fetch the body with `read_notes` first if you need to keep parts of it.
 
 ```typescript
 edit_note({
   name?: string,
   path?: string,
   content: string,
-  position: 'append' | 'prepend' | 'replace' | 'replace_full',
-  // when position === 'replace':
-  find?: string,
-  replace_all?: boolean, // default false
-})
+  replace?: string,
+});
 ```
+
+Both modes write directly to disk and do not require Obsidian to be running.
 
 Errors:
 
-- `INVALID_ARGUMENT` — empty `find`, both `name` and `path`, neither given.
-- `NOT_FOUND` — note path missing, wikilink unresolved, or `find` text absent in body.
-- `AMBIGUOUS_MATCH` — multiple `find` matches without `replace_all`, or a `name` resolves to multiple paths. `details.matches` carries 1-based body line numbers (for find ambiguity) or candidate paths (for name ambiguity).
+- `INVALID_ARGUMENT` — empty `replace`, both `name` and `path`, neither given.
+- `NOT_FOUND` — note path missing, wikilink unresolved, or `replace` text absent in body.
+- `AMBIGUOUS_MATCH` — `replace` matches more than once, or a `name` resolves to multiple paths. `details.matches` carries 1-based body line numbers (for replace ambiguity) or candidate paths (for name ambiguity). Resolution: make `replace` more specific, or omit it and rewrite the whole body.
 
 ## Structured queries
 
@@ -158,7 +155,7 @@ Read today's daily note. Returns `{ path, frontmatter, content }`. The path is c
 There is no dedicated `append_daily` tool — compose:
 
 1. `read_daily()` → `{ path, content }` (or `{ path, content: '' }` if the note is empty / missing).
-2. If the note exists, call `edit_note({ position: 'replace_full', path, content: existingBody + newContent })`.
+2. If the note exists, call `edit_note({ path, content: existingBody + newContent })` (no `replace` field → full-body rewrite).
 3. If the note does not exist, call `create_note({ path, content: newContent })`.
 
 The trade-off vs the old `append_daily` is one extra read per write. In an agentic workflow this is invisible — the assistant typically reads daily-note context before writing anyway.

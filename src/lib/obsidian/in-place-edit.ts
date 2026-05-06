@@ -32,12 +32,7 @@ export type ApplyReplaceResult =
   | { error: 'NOT_FOUND' }
   | { error: 'AMBIGUOUS_MATCH'; lines: number[] };
 
-export function applyReplace(
-  body: string,
-  find: string,
-  replacement: string,
-  replaceAll: boolean,
-): ApplyReplaceResult {
+export function applyReplace(body: string, find: string, replacement: string): ApplyReplaceResult {
   if (find === '') {
     // The tool layer rejects empty `find` with INVALID_ARGUMENT before reaching
     // this function. If we somehow get here, treat it as NOT_FOUND rather than
@@ -58,18 +53,12 @@ export function applyReplace(
     return { error: 'NOT_FOUND' };
   }
 
-  if (positions.length > 1 && !replaceAll) {
+  if (positions.length > 1) {
     return { error: 'AMBIGUOUS_MATCH', lines: positions.map((p) => lineNumberAt(body, p)) };
   }
 
-  if (positions.length === 1) {
-    const at = positions[0]!;
-    return { body: body.slice(0, at) + replacement + body.slice(at + find.length) };
-  }
-
-  // replaceAll === true and >1 matches — split/join never interprets $ patterns
-  // ($&, $', $`, $$, $n), unlike String.prototype.replaceAll.
-  return { body: body.split(find).join(replacement) };
+  const at = positions[0]!;
+  return { body: body.slice(0, at) + replacement + body.slice(at + find.length) };
 }
 
 function lineNumberAt(body: string, offset: number): number {

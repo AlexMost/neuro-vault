@@ -8,7 +8,6 @@ export interface ReplaceInNoteInput {
   path: string; // vault-relative POSIX path
   find: string;
   content: string;
-  replaceAll: boolean;
 }
 
 export interface ReplaceFullBodyInput {
@@ -46,7 +45,7 @@ export class FsVaultWriter implements VaultWriter {
     const raw = await this.readRaw(absPath, input.path);
     const { prefix, body } = splitRawFrontmatter(raw);
 
-    const result = applyReplace(body, input.find, input.content, input.replaceAll);
+    const result = applyReplace(body, input.find, input.content);
     if ('error' in result) {
       if (result.error === 'NOT_FOUND') {
         throw new ToolHandlerError('NOT_FOUND', `Find text not present in body of ${input.path}`, {
@@ -55,7 +54,7 @@ export class FsVaultWriter implements VaultWriter {
       }
       throw new ToolHandlerError(
         'AMBIGUOUS_MATCH',
-        `Find text matched ${result.lines.length} times in ${input.path}; pass replace_all=true or use a more specific anchor`,
+        `Find text matched ${result.lines.length} times in ${input.path}; use a more specific anchor or omit the replace field to rewrite the whole body`,
         { details: { path: input.path, matches: result.lines } },
       );
     }

@@ -17,17 +17,20 @@ boundary between "this server" and "the obsidian-cli".
 
 ## Scope
 
-Three breaking changes shipped together as one cohesive redesign (v5.0.0):
+Breaking changes shipped together as one cohesive redesign (v5.0.0):
 
-1. **`edit_note`**: drop `position: "append"` and `position: "prepend"`. The
-   tool's `position` union becomes `"replace" | "replace_full"`. Frontmatter
-   is still preserved by both modes.
+1. **`edit_note`**: drop the `position` discriminator entirely. The presence
+   of an optional `replace` field selects the mode — present means
+   exact-string find/replace inside the body; absent means overwrite the
+   entire body with `content`. Frontmatter is preserved byte-for-byte by
+   both modes. The `append`, `prepend`, `replace_all` knobs are gone.
 2. **`append_daily`**: remove entirely. The composable replacement is
-   `read_daily` → modify body locally → `edit_note({ position: "replace_full", path, content })`.
+   `read_daily` → modify body locally → `edit_note({ path, content })`.
 3. **Provider surface**: `VaultProvider.editNote` and
-   `VaultProvider.appendDaily` are deleted along with their `ObsidianCLIProvider`
-   implementations. The CLI provider's remaining write responsibilities are
-   `createNote`, `setProperty`, `readProperty`, `removeProperty`.
+   `VaultProvider.appendDaily` are deleted along with their
+   `ObsidianCLIProvider` implementations. The CLI provider's remaining
+   write responsibilities are `createNote`, `setProperty`, `readProperty`,
+   `removeProperty`.
 
 `read_daily` stays — it is the only way to obtain today's daily-note path
 (computed from the user's daily-notes plugin config) and its body in one
@@ -36,6 +39,29 @@ the CLI, which `read_daily` benefits from. If a caller wants to append
 content and the note does not yet exist, the composition is
 `create_note({ path, content })` (where the path is what `read_daily` would
 have returned).
+
+### `edit_note` shape
+
+```ts
+edit_note({
+  name?: string,        // wikilink-style identifier
+  path?: string,        // vault-relative POSIX path (exactly one of name / path)
+  content: string,
+  replace?: string,     // present → find/replace; absent → full-body rewrite
+})
+```
+
+With `replace`: the exact string is located in the body (case-sensitive,
+whitespace-sensitive). On a single match it is swapped for `content`. On
+zero matches the call fails with `NOT_FOUND`. On multiple matches it
+fails with `AMBIGUOUS_MATCH` listing the line numbers — the caller must
+make `replace` more specific or omit it to do a full rewrite. There is
+no "replace all" knob; that case is served by reading the body, doing
+the substitution locally, and rewriting via the no-`replace` mode.
+
+Without `replace`: `content` overwrites the entire body verbatim
+(empty content allowed; truncates body to zero length, frontmatter
+remains).
 
 ## Why
 
@@ -57,63 +83,73 @@ have returned).
 
 ## What stays
 
-- `replace` semantics: exact-string find/replace inside the body, frontmatter
-  untouched, `AMBIGUOUS_MATCH` on multi-match unless `replace_all: true`.
-- `replace_full` semantics: overwrite the entire body, frontmatter preserved
-  byte-for-byte; the note must already exist (`NOT_FOUND` otherwise — for
-  new notes use `create_note`).
+- Targeted-replace semantics (now selected by passing `replace`):
+  exact-string find/replace inside the body, frontmatter untouched,
+  `AMBIGUOUS_MATCH` on any multi-match. The fall-back for "I really want
+  to replace all occurrences" is the no-`replace` mode after a local
+  rewrite.
+- Full-body-replace semantics (now selected by omitting `replace`):
+  overwrite the entire body, frontmatter preserved byte-for-byte; the
+  note must already exist (`NOT_FOUND` otherwise — for new notes use
+  `create_note`).
 - `VaultWriter` interface and `FsVaultWriter` implementation.
 - Pure transform module `src/lib/obsidian/in-place-edit.ts`.
 - `BasenameIndex.resolveAll` for surfacing all candidate paths on name
   ambiguity.
-- All tests for the above.
+- All tests for the above (re-shaped to the new param names).
 
 ## What goes
 
-- `edit_note` schema: the `append` and `prepend` discriminator branches.
-- `appendOrPrepend` helper inside `src/modules/operations/tools/edit-note.ts`.
-- `EditNoteAppendPrependInput` interface in
-  `src/modules/operations/types.ts`. The `EditPositionToolInput` union
-  becomes `"replace" | "replace_full"`. The `EditNoteToolInput` union loses
-  one variant.
+- `edit_note` schema: the entire `position` discriminator, the `append`
+  and `prepend` modes, and the `replace_all` knob. The schema becomes a
+  single object with optional `replace`.
+- The `EditPositionToolInput` union and the per-variant interfaces in
+  `src/modules/operations/types.ts`. `EditNoteToolInput` becomes a single
+  flat interface.
 - `VaultProvider.editNote` method, `EditPosition`, `EditNoteInput` types,
-  `ObsidianCLIProvider.editNote` implementation, and the CLI provider tests
-  for it.
+  `ObsidianCLIProvider.editNote` implementation, and the CLI provider
+  tests for it.
+- `VaultWriter.replaceInNote.replaceAll` field; `applyReplace`'s
+  `replaceAll` parameter.
 - `append_daily` tool (`src/modules/operations/tools/append-daily.ts`).
 - `VaultProvider.appendDaily` method, `AppendDailyInput` type,
   `ObsidianCLIProvider.appendDaily` implementation, and the CLI provider
   tests for it.
 - `AppendDailyToolInput` type in `src/modules/operations/types.ts`.
-- All append-only fields from server prompt, README, guide.
+- All `position` / `append` / `prepend` / `replace_all` references in
+  server prompt, README, guide.
 
 ## Composable replacement flows
 
-| Old API                                | New flow                                                                              |
-| -------------------------------------- | ------------------------------------------------------------------------------------- |
-| `edit_note({ position: 'append' })`    | `read_notes([path])` → modify body → `edit_note({ position: 'replace_full' })`        |
-| `edit_note({ position: 'prepend' })`   | Same — locally place content at the start of the body                                 |
-| `append_daily({ content })`            | `read_daily()` → `edit_note({ position: 'replace_full', path, content: body + new })` |
-| `append_daily` to a non-existent daily | `read_daily()` → `create_note({ path, content })`                                     |
+| Old API                                | New flow                                                                               |
+| -------------------------------------- | -------------------------------------------------------------------------------------- |
+| `edit_note({ position: 'append' })`    | `read_notes([path])` → modify body → `edit_note({ path, content })` (no `replace`)     |
+| `edit_note({ position: 'prepend' })`   | Same — locally place content at the start of the body                                  |
+| Targeted edit (`replace`)              | `edit_note({ path, replace, content })`                                                |
+| Replace-all (was `replace_all: true`)  | `read_notes([path])` → `body.replaceAll(...)` locally → `edit_note({ path, content })` |
+| `append_daily({ content })`            | `read_daily()` → `edit_note({ path, content: body + new })`                            |
+| `append_daily` to a non-existent daily | `read_daily()` → `create_note({ path, content })`                                      |
 
-The trade-off is one extra `read_daily` (or `read_notes`) call per write.
-For the agentic workflow this is invisible — the assistant typically reads
-before writing anyway.
+The trade-off is one extra `read_daily` (or `read_notes`) call per write
+in the compose cases. For the agentic workflow this is invisible — the
+assistant typically reads before writing anyway.
 
 ## Migration note (for the changelog / README)
 
-> v5.0.0 is a breaking change. `edit_note` no longer accepts `position:
-"append"` or `position: "prepend"`; use the composable `read_notes` +
-> `edit_note({ position: "replace_full" })` flow. The `append_daily` tool
-> has been removed; use `read_daily` + `edit_note({ position:
-"replace_full" })`. The new write surface is direct-filesystem and does
-> not depend on Obsidian being running for `edit_note` operations (it is
-> still required for `create_note`, `set_property`, `remove_property`).
+> v5.0.0 is a breaking change. `edit_note` no longer takes a `position`
+> argument. Pass `replace` for a targeted find/replace inside the body;
+> omit it to overwrite the entire body with `content`. The `replace_all`
+> flag is gone — for replace-all semantics, read the body, do the
+> substitution locally, and call `edit_note` without `replace`. The
+> `append_daily` tool has been removed; compose with `read_daily` +
+> `edit_note` (or `create_note` when the daily note does not yet exist).
+> `edit_note` no longer requires Obsidian to be running.
 
 ## Definition of Done
 
-- `edit_note` schema accepts only `replace` and `replace_full`. Calls with
-  `append` or `prepend` now fail at schema validation with
-  `INVALID_ARGUMENT`.
+- `edit_note` schema is a single object with optional `replace`. Calls
+  with the old `position`, `append`, `prepend`, or `replace_all` fields
+  fail at schema validation.
 - `append_daily` tool is no longer registered; the MCP `tools/list` response
   no longer mentions it.
 - `VaultProvider` interface lists no `editNote` or `appendDaily`. The

@@ -8,21 +8,12 @@ import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
 import type { VaultWriter } from '../../../lib/obsidian/vault-writer.js';
 import type { OperationsErrorCode } from '../types.js';
 
-const baseShape = {
+const inputSchema = z.object({
   name: z.string().optional(),
   path: z.string().optional(),
   content: z.string(),
-};
-
-const inputSchema = z.discriminatedUnion('position', [
-  z.object({
-    ...baseShape,
-    position: z.literal('replace'),
-    find: z.string(),
-    replace_all: z.boolean().optional(),
-  }),
-  z.object({ ...baseShape, position: z.literal('replace_full') }),
-]);
+  replace: z.string().optional(),
+});
 
 type Input = z.infer<typeof inputSchema>;
 
@@ -37,13 +28,11 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, void> {
     name: 'edit_note',
     title: 'Edit Note',
     description:
-      'Edit an existing note. `position` selects the operation:\n' +
-      '- `replace` — exact-string find/replace inside the body. Requires `find`. ' +
-      'If `find` matches more than once, the call fails with `AMBIGUOUS_MATCH` ' +
-      'unless `replace_all: true`. Frontmatter is never touched.\n' +
-      '- `replace_full` — overwrite the entire body with `content`. Frontmatter is preserved byte-for-byte.\n' +
-      'For "add to end / start of body" use `read_notes` to fetch the current body, ' +
-      'modify it locally, and call `replace_full`. Use `\\n` for newlines.',
+      'Edit an existing note. Pass `replace` for a targeted find/replace inside the body, or omit it to overwrite the entire body. Frontmatter is preserved byte-for-byte either way. ' +
+      '\n\n' +
+      'With `replace`: the exact string in `replace` is located in the body (case- and whitespace-sensitive) and swapped for `content`. If the string is not found, the call fails with `NOT_FOUND`. If it appears more than once, the call fails with `AMBIGUOUS_MATCH` listing the line numbers — make `replace` more specific, or omit it to do a full rewrite.' +
+      '\n\n' +
+      'Without `replace`: the entire body is overwritten with `content`. Use this for whole-body rewrites; pre-fetch the body with `read_notes` if you need to preserve parts of it. Use `\\n` for newlines in either mode.',
     inputSchema,
     handler: async (input) => {
       if (
@@ -58,15 +47,14 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, void> {
 
       const path = await resolveToPath(input, reader);
 
-      if (input.position === 'replace') {
-        if (input.find === '') {
-          throw invalidArgument('find must not be empty', 'find');
+      if (input.replace !== undefined) {
+        if (input.replace === '') {
+          throw invalidArgument('replace must not be empty', 'replace');
         }
         return writer.replaceInNote({
           path,
-          find: input.find,
+          find: input.replace,
           content: input.content,
-          replaceAll: input.replace_all === true,
         });
       }
 

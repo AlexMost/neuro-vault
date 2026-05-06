@@ -36,7 +36,6 @@ describe('FsVaultWriter.replaceInNote', () => {
       path: 'n.md',
       find: 'find me',
       content: 'changed',
-      replaceAll: false,
     });
 
     expect(fs.files['/vault/n.md']).toBe('---\ntype: note\n---\nchanged here\nrest\n');
@@ -56,7 +55,6 @@ describe('FsVaultWriter.replaceInNote', () => {
       path: 'n.md',
       find: 'body body body',
       content: 'B',
-      replaceAll: false,
     });
 
     expect(fs.files['/vault/n.md']).toBe('---\n# inline comment\ntype: note   \nbody\n---\nB\n');
@@ -71,7 +69,7 @@ describe('FsVaultWriter.replaceInNote', () => {
     });
 
     await expect(
-      writer.replaceInNote({ path: 'gone.md', find: 'x', content: 'y', replaceAll: false }),
+      writer.replaceInNote({ path: 'gone.md', find: 'x', content: 'y' }),
     ).rejects.toMatchObject({
       code: 'NOT_FOUND',
       message: expect.stringContaining('gone.md'),
@@ -88,12 +86,12 @@ describe('FsVaultWriter.replaceInNote', () => {
     });
 
     await expect(
-      writer.replaceInNote({ path: 'n.md', find: 'xxx', content: 'y', replaceAll: false }),
+      writer.replaceInNote({ path: 'n.md', find: 'xxx', content: 'y' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(fs.writeFile).not.toHaveBeenCalled();
   });
 
-  it('throws AMBIGUOUS_MATCH with line numbers when multiple matches and replaceAll=false', async () => {
+  it('throws AMBIGUOUS_MATCH with line numbers when multiple matches', async () => {
     const fs = fakeFs({
       '/vault/n.md': '---\ntype: note\n---\nfoo\nbar foo\nfoo end\n',
     });
@@ -104,7 +102,7 @@ describe('FsVaultWriter.replaceInNote', () => {
     });
 
     await expect(
-      writer.replaceInNote({ path: 'n.md', find: 'foo', content: 'X', replaceAll: false }),
+      writer.replaceInNote({ path: 'n.md', find: 'foo', content: 'X' }),
     ).rejects.toMatchObject({
       code: 'AMBIGUOUS_MATCH',
       details: { matches: [1, 2, 3] },
