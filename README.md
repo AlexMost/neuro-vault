@@ -20,7 +20,7 @@ Your second brain stops being a folder you open between contexts and becomes a f
 - 🎯 **Quick or deep, your call** — fast direct lookups for "find that note", or exploratory mode with related-note expansion when the question is fuzzy.
 - 🧭 **A real navigation toolkit for your agent** — instead of grepping files and opening notes one by one, your assistant walks the vault like a database: filter by tags and properties, batch-read metadata, traverse the wikilink graph, discover the structure, jump to semantic neighbours.
 - 🔎 **Ask structured questions in plain language** — _"active projects tagged #ai"_, _"todo tasks with a deadline this week"_, _"meeting notes from `Work/` newest first"_ — one call, ranked answer, no chains of reads.
-- ✍️ **Read and write through Obsidian itself** — create, append/prepend/replace/replace_full notes, manage frontmatter and daily notes via the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli), so Smart Connections, sync, and other plugins stay in the loop.
+- ✍️ **Full write surface for your notes** — create, append, prepend, in-place replace, or rewrite the whole body; manage frontmatter, tags, and daily notes. Append/prepend and frontmatter ops route through the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) so Smart Connections, sync, and other plugins stay in the loop.
 - ⚡ **Zero infrastructure** — local stdio MCP server, in-memory index, no database, no background processes, no watchers.
 - 🔌 **Drop-in for any MCP client** — Claude Code, Cursor, Windsurf — configuration is a single JSON block.
 
@@ -30,11 +30,11 @@ Your second brain stops being a folder you open between contexts and becomes a f
 
 Most "vault MCP" servers give you one or the other. Neuro Vault gives you both, and lets your assistant pick the right one per question:
 
-|                  | 🔭 **Semantic recall**                                                    | 🛠 **Vault operations**                                                                                   |
-| ---------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **What it does** | Finds notes by meaning, not keywords. Surfaces neighbours and duplicates. | Reads, writes, edits notes (append/prepend/replace/replace_full); manages frontmatter, tags, daily notes. |
-| **Best for**     | _"What did I think about X?"_, fuzzy recall, exploratory research.        | Structured queries, capturing decisions, updating tasks, batch reads.                                     |
-| **Powered by**   | Smart Connections embeddings (already in your vault).                     | The official Obsidian CLI — Smart Connections, sync, plugins all stay in sync.                            |
+|                  | 🔭 **Semantic recall**                                                    | 🛠 **Vault operations**                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **What it does** | Finds notes by meaning, not keywords. Surfaces neighbours and duplicates. | Reads, writes, edits notes (append, prepend, in-place replace, full-body rewrite); manages frontmatter, tags, daily notes. |
+| **Best for**     | _"What did I think about X?"_, fuzzy recall, exploratory research.        | Structured queries, capturing decisions, updating tasks, batch reads.                                                      |
+| **Powered by**   | Smart Connections embeddings (already in your vault).                     | The official Obsidian CLI — Smart Connections, sync, plugins all stay in sync.                                             |
 
 The two work together: semantic search finds the right region of the vault, vault operations let the assistant actually _do something_ with what it found.
 
