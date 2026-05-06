@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.0.0](https://github.com/AlexMost/neuro-vault/compare/v4.2.0...v5.0.0) (2026-05-06)
+
+### ⚠ BREAKING CHANGES
+
+- edit_note no longer accepts position, find, or
+  replace_all. Pass replace?: string instead — present means find/replace,
+  absent means full-body rewrite. The shape is now { name?, path?,
+  content, replace? }.
+
+Spec updated inline (still unmerged): docs/superpowers/specs/2026-05-06-edit-note-and-daily-redesign-design.md
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- edit_note no longer accepts position 'append' or
+  'prepend'. Use read_notes + edit_note({ position: 'replace_full' }) to
+  add content at the end or start of a body. The append_daily tool has
+  been removed; use read_daily + edit_note({ position: 'replace_full' })
+  (or create_note when the daily note does not yet exist).
+
+Spec: docs/superpowers/specs/2026-05-06-edit-note-and-daily-redesign-design.md
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+### Features
+
+- drop append/prepend from edit_note and remove append_daily ([26a11c6](https://github.com/AlexMost/neuro-vault/commit/26a11c6da9312dfa9638bf159495fe6219113fb4))
+- **edit_note:** support replace and replace_full in-place modes ([ab50f5d](https://github.com/AlexMost/neuro-vault/commit/ab50f5d2b9ab28c6d6b23ec6b46b8d0595849018))
+- **in-place-edit:** applyReplace for exact find/replace with ambiguity reporting ([0157860](https://github.com/AlexMost/neuro-vault/commit/015786023b4ebabd4489316e68032387cb638a8b))
+- **in-place-edit:** splitRawFrontmatter for byte-preserving frontmatter splitting ([c1ef85d](https://github.com/AlexMost/neuro-vault/commit/c1ef85d03975442ac34772d9618baf428a3bde4d))
+- **operations:** expand EditNoteToolInput to a discriminated union ([c7c5da1](https://github.com/AlexMost/neuro-vault/commit/c7c5da19bb694c46503a79437aadacea6e6ca0ce))
+- simplify edit_note API — drop position, presence of replace discriminates ([ab0f4a4](https://github.com/AlexMost/neuro-vault/commit/ab0f4a42db8cf2f19f30b0ea9457fac5b38b772a))
+- **vault-writer:** add FsVaultWriter for direct-fs note writes ([d7769a6](https://github.com/AlexMost/neuro-vault/commit/d7769a6bacdec12e71e6ee34f897025c5028a56f))
+
+### Bug Fixes
+
+- **in-place-edit:** use split/join in applyReplace to avoid $-pattern expansion ([59babb1](https://github.com/AlexMost/neuro-vault/commit/59babb1d5e7f6395644a3bad384a2372bff47785))
+
 ## [4.2.0](https://github.com/AlexMost/neuro-vault/compare/v4.1.0...v4.2.0) (2026-05-06)
 
 ### Features
