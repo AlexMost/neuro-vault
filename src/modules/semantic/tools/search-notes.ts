@@ -188,17 +188,11 @@ export function buildSearchNotesTool(
 
         if (allowed.size === 0) {
           const isMulti = Array.isArray(input.query);
-          const isDeep = (input.mode ?? 'quick') === 'deep';
-          if (isMulti) {
-            return {
-              results: [],
-              ...(isDeep ? { blockResults: [] } : {}),
-              truncated: false,
-            } as SearchNotesOutput;
-          }
+          const isDeep = mode === 'deep';
           return {
             results: [],
             ...(isDeep ? { blockResults: [] } : {}),
+            ...(isMulti ? { truncated: false } : {}),
           } as SearchNotesOutput;
         }
 

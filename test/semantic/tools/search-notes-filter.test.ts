@@ -192,6 +192,31 @@ describe('search_notes — filter', () => {
     });
   });
 
+  it('deep mode: findBlockNeighbors receives only allowed sources', async () => {
+    const sources = makeSources(['Resources/a.md', 'Resources/b.md', 'Inbox/c.md']);
+    const findNeighbors = vi.fn().mockReturnValue([{ path: 'Resources/a.md', similarity: 0.9 }]);
+    const findBlockNeighbors = vi.fn().mockReturnValue([]);
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+        searchEngine: makeEngine({ findNeighbors, findBlockNeighbors }),
+        modelKey: 'm',
+        listMatchingPaths: async () => new Set(['Resources/a.md', 'Resources/b.md']),
+      }),
+    );
+
+    await tool.handler({
+      query: 'q',
+      mode: 'deep',
+      filter: { path_prefix: 'Resources/' },
+    });
+
+    expect(findBlockNeighbors).toHaveBeenCalled();
+    const passedToBlock = [...findBlockNeighbors.mock.calls[0]![0].sources];
+    expect(passedToBlock.map((s) => s.path).sort()).toEqual(['Resources/a.md', 'Resources/b.md']);
+  });
+
   it('multi-query merges within filtered subset', async () => {
     const sources = makeSources(['Resources/a.md', 'Resources/b.md', 'Inbox/c.md']);
     const findNeighbors = vi
