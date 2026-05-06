@@ -7,6 +7,7 @@ import { createSemanticModule, type SemanticModuleDeps } from './modules/semanti
 import { createOperationsModule, type OperationsModuleDeps } from './modules/operations/index.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
+import { createListMatchingPaths } from './lib/obsidian/query/index.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ServerConfig } from './types.js';
 
@@ -135,6 +136,10 @@ export async function startNeuroVaultServer(
   // single in-memory index.
   const sharedReader = new FsVaultReader({ vaultRoot: config.vaultPath });
   const sharedGraph = new WikilinkGraphIndex({ reader: sharedReader });
+  const sharedListMatchingPaths = createListMatchingPaths({
+    reader: sharedReader,
+    graph: sharedGraph,
+  });
 
   const registrations: ToolRegistration[] = [];
   let warmup: () => Promise<void> = async () => {};
@@ -147,7 +152,11 @@ export async function startNeuroVaultServer(
         modelKey: config.semantic.modelKey,
         modelId: config.semantic.modelId,
       },
-      { graph: sharedGraph, ...deps.semantic },
+      {
+        graph: sharedGraph,
+        listMatchingPaths: sharedListMatchingPaths,
+        ...deps.semantic,
+      },
     );
     registrations.push(...semantic.tools);
     warmup = semantic.warmup;
