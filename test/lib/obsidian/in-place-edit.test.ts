@@ -90,4 +90,13 @@ describe('applyReplace', () => {
     const result = applyReplace(body, 'foo', 'X', false);
     expect(result).toEqual({ error: 'AMBIGUOUS_MATCH', lines: [2, 4] });
   });
+
+  it('treats $-patterns in the replacement as literal text (replaceAll=true)', () => {
+    const body = 'foo bar foo';
+    expect(applyReplace(body, 'foo', '$$$&', true)).toEqual({ body: '$$$& bar $$$&' });
+  });
+
+  it('handles replaceAll=true with exactly one match', () => {
+    expect(applyReplace('x', 'x', 'y', true)).toEqual({ body: 'y' });
+  });
 });

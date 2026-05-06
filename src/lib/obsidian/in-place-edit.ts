@@ -67,9 +67,9 @@ export function applyReplace(
     return { body: body.slice(0, at) + replacement + body.slice(at + find.length) };
   }
 
-  // replaceAll === true and >1 matches — String.prototype.replaceAll iterates
-  // across the original string, never the replacement output.
-  return { body: body.replaceAll(find, replacement) };
+  // replaceAll === true and >1 matches — split/join never interprets $ patterns
+  // ($&, $', $`, $$, $n), unlike String.prototype.replaceAll.
+  return { body: body.split(find).join(replacement) };
 }
 
 function lineNumberAt(body: string, offset: number): number {
