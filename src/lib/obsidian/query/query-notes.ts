@@ -39,56 +39,59 @@ interface ValidatedInput {
   includeContent: boolean;
 }
 
-export async function runQueryNotes(
-  input: QueryNotesToolInput,
-  reader: VaultReader,
-  graph?: WikilinkGraphIndex,
-): Promise<QueryNotesResult> {
-  const validated = validateInput(input);
-  validateFilter(validated.filter);
-  const effectiveFilter = applyDefaultRegexOptions(validated.filter);
+interface CollectMatchingPathsInput {
+  filter: Record<string, unknown>; // already-validated, regex-defaults applied
+  pathPrefix: string | undefined;
+  includeContent: boolean;
+  earlyExitAfter?: number; // pre-limit short-circuit; omit for full scan
+}
 
-  if (graph) {
-    await graph.ensureFresh();
-  }
+export interface CollectedRow {
+  record: NoteRecord;
+  content?: string;
+}
+
+interface CollectMatchingPathsDeps {
+  reader: VaultReader;
+  graph?: WikilinkGraphIndex;
+}
+
+export async function collectMatchingPaths(
+  input: CollectMatchingPathsInput,
+  deps: CollectMatchingPathsDeps,
+): Promise<CollectedRow[]> {
+  const { filter, pathPrefix, includeContent, earlyExitAfter } = input;
+  const { reader, graph } = deps;
 
   let paths: string[];
   try {
-    paths = await reader.scan({ pathPrefix: validated.pathPrefix });
+    paths = await reader.scan({ pathPrefix });
   } catch (err) {
     if (err instanceof ScanPathNotFoundError) {
       throw new ToolHandlerError('PATH_NOT_FOUND', err.message, {
-        details: { path_prefix: validated.pathPrefix },
+        details: { path_prefix: pathPrefix },
       });
     }
     throw err;
   }
 
   if (paths.length === 0) {
-    return { results: [], count: 0, truncated: false };
+    return [];
   }
 
   let matcher: (record: NoteRecord) => boolean;
   try {
-    matcher = sift(effectiveFilter) as unknown as (record: NoteRecord) => boolean;
+    matcher = sift(filter) as unknown as (record: NoteRecord) => boolean;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new ToolHandlerError('INVALID_FILTER', `filter rejected by sift: ${message}`);
   }
 
-  const fields = validated.includeContent
+  const fields = includeContent
     ? (['frontmatter', 'content'] as const)
     : (['frontmatter'] as const);
 
-  // Early-exit is safe only when scan order already gives us the top of the
-  // sorted output: scan returns paths in lexicographic ascending order, so
-  // "no sort" and "sort by path asc" win for free. Any other sort needs the
-  // full match set before we can know which entries land in the top `limit`.
-  const earlyExitAllowed =
-    !validated.sort || (validated.sort.field === 'path' && validated.sort.order === 'asc');
-
-  type Row = { record: NoteRecord; content?: string };
-  const matched: Row[] = [];
+  const matched: CollectedRow[] = [];
 
   for (let i = 0; i < paths.length; i += READ_BATCH_SIZE) {
     const slice = paths.slice(i, i + READ_BATCH_SIZE);
@@ -111,10 +114,43 @@ export async function runQueryNotes(
       }
       if (!isMatch) continue;
       // Only keep `content` for matches — non-matches' bodies are dropped now.
-      matched.push(validated.includeContent ? { record, content: item.content } : { record });
+      matched.push(includeContent ? { record, content: item.content } : { record });
     }
-    if (earlyExitAllowed && matched.length > validated.limit) break;
+    if (earlyExitAfter !== undefined && matched.length > earlyExitAfter) break;
   }
+
+  return matched;
+}
+
+export async function runQueryNotes(
+  input: QueryNotesToolInput,
+  reader: VaultReader,
+  graph?: WikilinkGraphIndex,
+): Promise<QueryNotesResult> {
+  const validated = validateInput(input);
+  validateFilter(validated.filter);
+  const effectiveFilter = applyDefaultRegexOptions(validated.filter);
+
+  if (graph) {
+    await graph.ensureFresh();
+  }
+
+  // Early-exit is safe only when scan order already gives us the top of the
+  // sorted output: scan returns paths in lexicographic ascending order, so
+  // "no sort" and "sort by path asc" win for free. Any other sort needs the
+  // full match set before we can know which entries land in the top `limit`.
+  const earlyExitAllowed =
+    !validated.sort || (validated.sort.field === 'path' && validated.sort.order === 'asc');
+
+  const matched = await collectMatchingPaths(
+    {
+      filter: effectiveFilter as Record<string, unknown>,
+      pathPrefix: validated.pathPrefix,
+      includeContent: validated.includeContent,
+      earlyExitAfter: earlyExitAllowed ? validated.limit : undefined,
+    },
+    { reader, graph },
+  );
 
   if (validated.sort) {
     sortInPlace(matched, validated.sort);
