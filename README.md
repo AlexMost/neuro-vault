@@ -1,6 +1,6 @@
 # Neuro Vault MCP
 
-> 🧠💾 **Plug your knowledge in like a USB drive.** Your Obsidian vault, available in every AI conversation — search it, query it, write to it. Same vault in Claude Code, Cursor, Windsurf — no copy-paste, no context-switching, no re-indexing.
+> 🧠💾 **Make your personal vault usable by agents.** Low-token retrieval, explicit provenance, and safe writes for your Obsidian notes — in Claude Code, Cursor, Windsurf, and any MCP client.
 
 https://github.com/user-attachments/assets/0ba43373-3f97-4dc6-ab91-4f30bdafd0bf
 
@@ -8,7 +8,7 @@ https://github.com/user-attachments/assets/0ba43373-3f97-4dc6-ab91-4f30bdafd0bf
 [![Node.js](https://img.shields.io/node/v/neuro-vault-mcp)](https://nodejs.org)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
 
-Your second brain stops being a folder you open between contexts and becomes a first-class participant in every project. Ask, recall, decide, write back — all without leaving the conversation.
+Your second brain stops being a folder you open between contexts and becomes a first-class participant in every project. Agents can recall the right notes, inspect the evidence, and write back through vault-aware operations — without grepping the whole folder or flooding the context window.
 
 > _"What did I write about that idea last month?"_ — and now your assistant can actually answer.
 
@@ -18,6 +18,7 @@ Your second brain stops being a folder you open between contexts and becomes a f
 
 - 🧠 **Semantic search that already knows your vault** — reuses [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) embeddings. No re-indexing, no API keys, no extra infrastructure.
 - 🎯 **Quick or deep, your call** — fast direct lookups for "find that note", or exploratory mode with related-note expansion when the question is fuzzy.
+- 🧾 **Context with provenance, not mystery memory** — results come back with paths, matched queries, block-level snippets, and backlink counts so the assistant can show where an answer came from.
 - 🧭 **A real navigation toolkit for your agent** — instead of grepping files and opening notes one by one, your assistant walks the vault like a database: filter by tags and properties, batch-read metadata, traverse the wikilink graph, discover the structure, jump to semantic neighbours.
 - 🔎 **Ask structured questions in plain language** — _"active projects tagged #ai"_, _"todo tasks with a deadline this week"_, _"meeting notes from `Work/` newest first"_ — one call, ranked answer, no chains of reads.
 - ✍️ **Full write surface for your notes** — create, in-place replace, or rewrite the whole body; manage frontmatter, tags, and daily notes. Frontmatter and creation route through the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) so Smart Connections, sync, and other plugins stay in the loop; in-place edits write directly to disk and the watcher catches up.
