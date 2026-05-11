@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.2.0](https://github.com/AlexMost/neuro-vault/compare/v5.1.0...v5.2.0) (2026-05-11)
+
+### Features
+
+- **obsidian:** add SmartConnectionsCorpusIndex skeleton ([a8df22a](https://github.com/AlexMost/neuro-vault/commit/a8df22a49574c3c6cbb9f35862bba902b40fa954))
+- **obsidian:** coalesce concurrent corpus reloads ([f49ecf2](https://github.com/AlexMost/neuro-vault/commit/f49ecf20ed2b7f7123908e18cfd136789e845f92))
+
 ## [5.1.0](https://github.com/AlexMost/neuro-vault/compare/v5.0.1...v5.1.0) (2026-05-06)
 
 ### Features
