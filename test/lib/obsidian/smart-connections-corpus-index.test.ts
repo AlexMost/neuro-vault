@@ -104,4 +104,26 @@ describe('SmartConnectionsCorpusIndex', () => {
     expect([...index.getSources().keys()].sort()).toEqual(['A.md', 'B.md']);
     expect(index.getBasenameIndex().resolve('B')).toBe('B.md');
   });
+
+  it('reloads when an ajson file is removed', async () => {
+    const { tempRoot, smartEnvPath } = await makeSmartEnvDir(['a.ajson', 'b.ajson']);
+    tempDirs.push(tempRoot);
+
+    const loadCorpus = vi
+      .fn<LoadCorpusFn>()
+      .mockResolvedValueOnce(makeCorpus(['A.md', 'B.md']))
+      .mockResolvedValueOnce(makeCorpus(['A.md']));
+
+    const index = await createSmartConnectionsCorpusIndex({
+      smartEnvPath,
+      modelKey: MODEL_KEY,
+      loadCorpus,
+    });
+
+    await fs.unlink(path.join(smartEnvPath, 'b.ajson'));
+    await index.ensureFresh();
+
+    expect(loadCorpus).toHaveBeenCalledTimes(2);
+    expect([...index.getSources().keys()]).toEqual(['A.md']);
+  });
 });
