@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { getNoteLinks, type BasenameIndex } from '../../../lib/obsidian/index.js';
+import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { normalizeNotePath, readPositiveInteger, readThreshold } from '../tool-helpers.js';
@@ -25,12 +26,11 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface GetSimilarNotesDeps {
-  sources: Map<string, SmartSource>;
+  corpus: SmartConnectionsCorpusIndex;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
   pathExists: PathExistsCheck;
-  basenameIndex: BasenameIndex;
   readNoteContent: (vaultRelativePath: string) => Promise<string>;
 }
 
@@ -155,7 +155,7 @@ function toSimilarNoteResult(c: Candidate): SimilarNoteResult {
 export function buildGetSimilarNotesTool(
   deps: GetSimilarNotesDeps,
 ): ITool<Input, SimilarNoteResult[]> {
-  const { sources, searchEngine, modelKey, pathExists, basenameIndex, readNoteContent } = deps;
+  const { corpus, searchEngine, modelKey, pathExists, readNoteContent } = deps;
 
   return {
     name: 'get_similar_notes',
@@ -165,17 +165,20 @@ export function buildGetSimilarNotesTool(
     inputSchema,
     handler: async (input) => {
       const notePath = normalizeNotePath(input.path);
-      const source = sources.get(notePath);
-      if (!source) {
-        throw new ToolHandlerError('NOT_FOUND', `No note found for path: ${notePath}`, {
-          details: { path: notePath },
-        });
-      }
       const limit = readPositiveInteger(input.limit, DEFAULT_LIMIT, 'limit');
       const threshold = readThreshold(input.threshold, DEFAULT_THRESHOLD, 'threshold');
       const excludePrefixes = (input.exclude_folders ?? []).map(normalizeExcludeEntry);
 
       try {
+        const { sources, basenameIndex } = await corpus.snapshot();
+
+        const source = sources.get(notePath);
+        if (!source) {
+          throw new ToolHandlerError('NOT_FOUND', `No note found for path: ${notePath}`, {
+            details: { path: notePath },
+          });
+        }
+
         const candidates = collectSemanticCandidates({
           searchEngine,
           queryVector: source.embedding,

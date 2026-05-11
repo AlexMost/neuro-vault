@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { vi } from 'vitest';
 
 import { buildBasenameIndex, type BasenameIndex } from '../../../src/lib/obsidian/index.js';
+import type { SmartConnectionsCorpusIndex } from '../../../src/lib/obsidian/smart-connections-corpus-index.js';
 import { loadSmartConnectionsCorpus } from '../../../src/lib/obsidian/smart-connections-loader.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 import {
@@ -82,21 +83,32 @@ export function makeFakeGraph(counts: Record<string, number> = {}): WikilinkGrap
   } as unknown as WikilinkGraphIndex;
 }
 
+export function makeFakeCorpusIndex(
+  sources: Map<string, SmartSource>,
+): SmartConnectionsCorpusIndex {
+  const basenameIndex = buildBasenameIndex(sources.keys());
+  return {
+    snapshot: vi.fn().mockResolvedValue({ sources, basenameIndex }),
+  };
+}
+
 export function makeHandlerDeps(deps: {
   sources: Map<string, SmartSource>;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
   pathExists?: PathExistsCheck;
-  basenameIndex?: BasenameIndex;
+  corpus?: SmartConnectionsCorpusIndex;
   readNoteContent?: (vaultRelativePath: string) => Promise<string>;
   graph?: WikilinkGraphIndex;
   listMatchingPaths?: ListMatchingPaths;
 }) {
   return {
-    ...deps,
+    embeddingProvider: deps.embeddingProvider,
+    searchEngine: deps.searchEngine,
+    modelKey: deps.modelKey,
     pathExists: deps.pathExists ?? (async () => true),
-    basenameIndex: deps.basenameIndex ?? buildBasenameIndex(deps.sources.keys()),
+    corpus: deps.corpus ?? makeFakeCorpusIndex(deps.sources),
     readNoteContent: deps.readNoteContent ?? (async () => ''),
     graph: deps.graph ?? makeFakeGraph(),
     listMatchingPaths: deps.listMatchingPaths ?? (async () => new Set()),
@@ -125,4 +137,5 @@ export type {
   SearchEngine,
   SmartSource,
   BasenameIndex,
+  SmartConnectionsCorpusIndex,
 };

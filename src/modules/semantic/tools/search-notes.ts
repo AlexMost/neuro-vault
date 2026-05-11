@@ -15,6 +15,7 @@ import {
   readPositiveInteger,
   readThreshold,
 } from '../tool-helpers.js';
+import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import type {
   EmbeddingProvider,
   ListMatchingPaths,
@@ -82,7 +83,7 @@ type EnrichResults<T extends { results: { path: string }[] }> = Omit<T, 'results
 type SearchNotesOutput = EnrichResults<RetrievalOutput> | EnrichResults<MultiRetrievalOutput>;
 
 export interface SearchNotesDeps {
-  sources: Map<string, SmartSource>;
+  corpus: SmartConnectionsCorpusIndex;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
@@ -136,7 +137,7 @@ export function buildSearchNotesTool(
   deps: SearchNotesDeps,
 ): ITool<SearchNotesInput, SearchNotesOutput> {
   const {
-    sources,
+    corpus,
     embeddingProvider,
     searchEngine,
     modelKey,
@@ -151,6 +152,16 @@ export function buildSearchNotesTool(
     description: SEARCH_NOTES_DESCRIPTION,
     inputSchema,
     handler: async (input) => {
+      let sources: Map<string, SmartSource>;
+      try {
+        ({ sources } = await corpus.snapshot());
+      } catch (error) {
+        throw wrapDependencyError(error, 'Failed to search notes', {
+          modelKey,
+          operation: 'search_notes',
+        });
+      }
+
       const mode = input.mode ?? 'quick';
       const threshold =
         input.threshold !== undefined

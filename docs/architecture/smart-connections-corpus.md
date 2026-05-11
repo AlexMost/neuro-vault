@@ -44,5 +44,15 @@ Once built, the map is read-only: no one mutates it. The map is passed by refere
 ## Boundaries
 
 - The loader does not read note content (`.md`), only the embedding index. Note bodies are read on demand by tools.
-- The loader does not watch for changes. The corpus is loaded once at startup. Restart the server to pick up new embeddings.
+- The loader does not watch for changes; staleness is handled by the [Refresh](#refresh) wrapper, not by the loader itself.
 - The loader does not generate embeddings. That is the embedding pipeline's job, used at query time only.
+
+## Refresh
+
+The loader does not watch for changes, but the in-memory corpus is wrapped in a `SmartConnectionsCorpusIndex` (`src/lib/obsidian/smart-connections-corpus-index.ts`). Every semantic tool handler calls `corpus.snapshot()` to obtain the current `{ sources, basenameIndex }` pair before reading. `snapshot()` compares the `(max mtime, file count)` of `.smart-env/multi/*.ajson` against the values cached at last load and reloads the whole corpus when they differ; the `basenameIndex` is rebuilt at the same time, atomically with the sources swap. It then returns the stable `{ sources, basenameIndex }` pair — subsequent internal swaps do not mutate the caller's reference.
+
+Reload failure throws — we never silently serve a snapshot known to be inconsistent with disk. Tool handlers wrap the throw via the existing `wrapDependencyError` helper, so callers receive `ToolHandlerError('DEPENDENCY_ERROR', ...)`.
+
+Concurrent `snapshot()` calls share a single in-flight reload via an internal latch; the second caller awaits the first and returns once the swap completes. The mtime+file-count signature is captured BEFORE the reload begins, so any writes that land during the reload trigger another reload on the next call (eventually consistent, no silent staleness).
+
+Mirrors the pattern in `WikilinkGraphIndex.ensureFresh()` (`src/lib/obsidian/wikilink-graph.ts`).

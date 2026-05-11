@@ -4,6 +4,8 @@ import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { buildBasenameIndex } from '../src/lib/obsidian/index.js';
+import type { SmartConnectionsCorpusIndex } from '../src/lib/obsidian/smart-connections-corpus-index.js';
 import { main } from '../src/cli.js';
 import { startNeuroVaultServer } from '../src/server.js';
 
@@ -23,25 +25,32 @@ function createFakeServer() {
   };
 }
 
-const fakeCorpus = {
-  sources: new Map([
-    [
-      'Folder/note-a.md',
-      {
-        path: 'Folder/note-a.md',
-        embedding: [1, 0, 0],
-        blocks: [
-          {
-            key: 'Folder/note-a.md#alpha',
-            heading: '#alpha',
-            lines: [1, 3] as [number, number],
-            embedding: [],
-          },
-        ],
-      },
-    ],
-  ]),
-};
+const fakeSources = new Map([
+  [
+    'Folder/note-a.md',
+    {
+      path: 'Folder/note-a.md',
+      embedding: [1, 0, 0],
+      blocks: [
+        {
+          key: 'Folder/note-a.md#alpha',
+          heading: '#alpha',
+          lines: [1, 3] as [number, number],
+          embedding: [],
+        },
+      ],
+    },
+  ],
+]);
+
+function makeFakeCorpusIndex(
+  sources: typeof fakeSources = fakeSources,
+): SmartConnectionsCorpusIndex {
+  const basenameIndex = buildBasenameIndex(sources.keys());
+  return {
+    snapshot: vi.fn().mockResolvedValue({ sources, basenameIndex }),
+  };
+}
 
 describe('Neuro Vault MCP server bootstrap', () => {
   it('registers four semantic tools when only --semantic is enabled', async () => {
@@ -51,12 +60,12 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
     const server = createFakeServer();
     const initialize = vi.fn().mockResolvedValue(undefined);
-    const loadCorpus = vi.fn().mockResolvedValue(fakeCorpus);
+    const corpusFactory = vi.fn().mockResolvedValue(makeFakeCorpusIndex());
 
     try {
       await main(['node', 'cli.js', '--vault', vaultPath, '--no-operations'], {
         semantic: {
-          loadCorpus,
+          corpusFactory,
           embeddingServiceFactory: () => ({ initialize, embed: vi.fn() }),
         },
         serverFactory: () => server,
@@ -110,7 +119,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
           },
           {
             semantic: {
-              loadCorpus: vi.fn().mockResolvedValue({ sources: new Map() }),
+              corpusFactory: vi.fn().mockResolvedValue(makeFakeCorpusIndex(new Map())),
               embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
             },
             serverFactory: () => createFakeServer(),
@@ -189,7 +198,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     try {
       await main(['node', 'cli.js', '--vault', vaultPath], {
         semantic: {
-          loadCorpus: vi.fn().mockResolvedValue(fakeCorpus),
+          corpusFactory: vi.fn().mockResolvedValue(makeFakeCorpusIndex()),
           embeddingServiceFactory: () => ({
             initialize: vi.fn().mockResolvedValue(undefined),
             embed: vi.fn(),

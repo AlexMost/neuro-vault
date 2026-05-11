@@ -7,12 +7,11 @@ import {
   MODEL_KEY,
   makeVaultFixture,
   makeHandlerDeps,
+  makeSyntheticSource,
   findNeighbors,
   findDuplicates,
   findBlockNeighbors,
   loadSmartConnectionsCorpus,
-  buildBasenameIndex,
-  makeSyntheticSource,
 } from './_helpers.js';
 import type { PathExistsCheck, SmartSource } from './_helpers.js';
 
@@ -238,7 +237,6 @@ describe('getSimilarNotes — graph signals', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
         pathExists: opts.pathExists,
-        basenameIndex: buildBasenameIndex(sources.keys()),
         readNoteContent,
       }),
     );
