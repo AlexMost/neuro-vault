@@ -153,4 +153,45 @@ describe('SmartConnectionsCorpusIndex', () => {
     await index.ensureFresh();
     expect([...index.getSources().keys()].sort()).toEqual(['A.md', 'C.md']);
   });
+
+  it('shares a single in-flight reload across concurrent callers', async () => {
+    const { tempRoot, smartEnvPath } = await makeSmartEnvDir(['a.ajson']);
+    tempDirs.push(tempRoot);
+
+    let resolveSecondLoad: (() => void) | null = null;
+    const loadCorpus = vi
+      .fn<LoadCorpusFn>()
+      .mockResolvedValueOnce(makeCorpus(['A.md']))
+      .mockImplementationOnce(
+        () =>
+          new Promise<SmartConnectionsCorpus>((resolve) => {
+            resolveSecondLoad = () => resolve(makeCorpus(['A.md', 'B.md']));
+          }),
+      );
+
+    const index = await createSmartConnectionsCorpusIndex({
+      smartEnvPath,
+      modelKey: MODEL_KEY,
+      loadCorpus,
+    });
+
+    const future = new Date(Date.now() + 60_000);
+    await fs.utimes(path.join(smartEnvPath, 'a.ajson'), future, future);
+
+    const first = index.ensureFresh();
+    const second = index.ensureFresh();
+
+    // Wait until the in-flight loadCorpus call has been dispatched (I/O for
+    // readSignature must complete first, so we poll rather than assume
+    // a fixed number of microtask ticks).
+    await vi.waitFor(() => {
+      expect(loadCorpus).toHaveBeenCalledTimes(2); // 1 initial + 1 in-flight, NOT 3
+    });
+
+    resolveSecondLoad!();
+    await Promise.all([first, second]);
+
+    expect(loadCorpus).toHaveBeenCalledTimes(2);
+    expect([...index.getSources().keys()].sort()).toEqual(['A.md', 'B.md']);
+  });
 });

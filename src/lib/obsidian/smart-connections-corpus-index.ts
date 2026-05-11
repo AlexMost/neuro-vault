@@ -62,15 +62,29 @@ export async function createSmartConnectionsCorpusIndex(
   basenameIndex = buildBasenameIndex(sources.keys());
   signature = await readSignature(opts.smartEnvPath);
 
-  async function ensureFresh(): Promise<void> {
-    const current = await readSignature(opts.smartEnvPath);
-    if (signaturesEqual(current, signature)) return;
+  let inFlight: Promise<void> | null = null;
 
-    const next = await loadCorpus(opts.smartEnvPath, opts.modelKey);
-    const nextBasename = buildBasenameIndex(next.sources.keys());
-    sources = next.sources;
-    basenameIndex = nextBasename;
-    signature = current;
+  async function ensureFresh(): Promise<void> {
+    if (inFlight) {
+      await inFlight;
+      return;
+    }
+
+    inFlight = (async () => {
+      try {
+        const current = await readSignature(opts.smartEnvPath);
+        if (signaturesEqual(current, signature)) return;
+
+        const next = await loadCorpus(opts.smartEnvPath, opts.modelKey);
+        const nextBasename = buildBasenameIndex(next.sources.keys());
+        sources = next.sources;
+        basenameIndex = nextBasename;
+        signature = current;
+      } finally {
+        inFlight = null;
+      }
+    })();
+    await inFlight;
   }
 
   return {
