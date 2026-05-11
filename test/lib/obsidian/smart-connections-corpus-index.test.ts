@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createSmartConnectionsCorpusIndex } from '../../../src/lib/obsidian/smart-connections-corpus-index.js';
+import type { LoadCorpusFn } from '../../../src/lib/obsidian/smart-connections-corpus-index.js';
 import type { SmartConnectionsCorpus } from '../../../src/lib/obsidian/smart-connections-loader.js';
 import type { SmartSource } from '../../../src/lib/obsidian/smart-connections-types.js';
 
@@ -76,5 +77,31 @@ describe('SmartConnectionsCorpusIndex', () => {
     await index.ensureFresh();
 
     expect(loadCorpus).not.toHaveBeenCalled();
+  });
+
+  it('reloads when an ajson file mtime advances', async () => {
+    const { tempRoot, smartEnvPath } = await makeSmartEnvDir(['a.ajson']);
+    tempDirs.push(tempRoot);
+
+    const loadCorpus = vi
+      .fn<LoadCorpusFn>()
+      .mockResolvedValueOnce(makeCorpus(['A.md']))
+      .mockResolvedValueOnce(makeCorpus(['A.md', 'B.md']));
+
+    const index = await createSmartConnectionsCorpusIndex({
+      smartEnvPath,
+      modelKey: MODEL_KEY,
+      loadCorpus,
+    });
+
+    // Bump mtime by re-touching the file with a future timestamp.
+    const future = new Date(Date.now() + 60_000);
+    await fs.utimes(path.join(smartEnvPath, 'a.ajson'), future, future);
+
+    await index.ensureFresh();
+
+    expect(loadCorpus).toHaveBeenCalledTimes(2);
+    expect([...index.getSources().keys()].sort()).toEqual(['A.md', 'B.md']);
+    expect(index.getBasenameIndex().resolve('B')).toBe('B.md');
   });
 });
