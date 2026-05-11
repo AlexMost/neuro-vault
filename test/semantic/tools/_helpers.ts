@@ -86,10 +86,9 @@ export function makeFakeGraph(counts: Record<string, number> = {}): WikilinkGrap
 export function makeFakeCorpusIndex(
   sources: Map<string, SmartSource>,
 ): SmartConnectionsCorpusIndex {
+  const basenameIndex = buildBasenameIndex(sources.keys());
   return {
-    ensureFresh: vi.fn().mockResolvedValue(undefined),
-    getSources: () => sources,
-    getBasenameIndex: () => buildBasenameIndex(sources.keys()),
+    snapshot: vi.fn().mockResolvedValue({ sources, basenameIndex }),
   };
 }
 

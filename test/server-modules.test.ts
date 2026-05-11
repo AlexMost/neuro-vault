@@ -46,10 +46,9 @@ const fakeSources = new Map([
 function makeFakeCorpusIndex(
   sources: typeof fakeSources = fakeSources,
 ): SmartConnectionsCorpusIndex {
+  const basenameIndex = buildBasenameIndex(sources.keys());
   return {
-    ensureFresh: vi.fn().mockResolvedValue(undefined),
-    getSources: () => sources,
-    getBasenameIndex: () => buildBasenameIndex(sources.keys()),
+    snapshot: vi.fn().mockResolvedValue({ sources, basenameIndex }),
   };
 }
 

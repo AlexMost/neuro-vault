@@ -170,9 +170,7 @@ export function buildGetSimilarNotesTool(
       const excludePrefixes = (input.exclude_folders ?? []).map(normalizeExcludeEntry);
 
       try {
-        await corpus.ensureFresh();
-        const sources = corpus.getSources();
-        const basenameIndex = corpus.getBasenameIndex();
+        const { sources, basenameIndex } = await corpus.snapshot();
 
         const source = sources.get(notePath);
         if (!source) {

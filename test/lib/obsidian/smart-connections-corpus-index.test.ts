@@ -59,22 +59,24 @@ describe('SmartConnectionsCorpusIndex', () => {
     const { index, loadCorpus } = await setup(['a.ajson'], ['A.md']);
 
     expect(loadCorpus).toHaveBeenCalledTimes(1);
-    expect([...index.getSources().keys()]).toEqual(['A.md']);
+    const snap = await index.snapshot();
+    expect([...snap.sources.keys()]).toEqual(['A.md']);
   });
 
   it('builds a basename index over the initial corpus', async () => {
     const { index } = await setup(['a.ajson'], ['Folder/A.md', 'Other/B.md']);
 
-    expect(index.getBasenameIndex().resolve('A')).toBe('Folder/A.md');
-    expect(index.getBasenameIndex().resolve('B')).toBe('Other/B.md');
+    const snap = await index.snapshot();
+    expect(snap.basenameIndex.resolve('A')).toBe('Folder/A.md');
+    expect(snap.basenameIndex.resolve('B')).toBe('Other/B.md');
   });
 
   it('does not reload when nothing on disk has changed', async () => {
     const { index, loadCorpus } = await setup(['a.ajson'], ['A.md']);
     loadCorpus.mockClear();
 
-    await index.ensureFresh();
-    await index.ensureFresh();
+    await index.snapshot();
+    await index.snapshot();
 
     expect(loadCorpus).not.toHaveBeenCalled();
   });
@@ -98,11 +100,11 @@ describe('SmartConnectionsCorpusIndex', () => {
     const future = new Date(Date.now() + 60_000);
     await fs.utimes(path.join(smartEnvPath, 'a.ajson'), future, future);
 
-    await index.ensureFresh();
+    const snap = await index.snapshot();
 
     expect(loadCorpus).toHaveBeenCalledTimes(2);
-    expect([...index.getSources().keys()].sort()).toEqual(['A.md', 'B.md']);
-    expect(index.getBasenameIndex().resolve('B')).toBe('B.md');
+    expect([...snap.sources.keys()].sort()).toEqual(['A.md', 'B.md']);
+    expect(snap.basenameIndex.resolve('B')).toBe('B.md');
   });
 
   it('reloads when an ajson file is removed', async () => {
@@ -121,10 +123,10 @@ describe('SmartConnectionsCorpusIndex', () => {
     });
 
     await fs.unlink(path.join(smartEnvPath, 'b.ajson'));
-    await index.ensureFresh();
+    const snap = await index.snapshot();
 
     expect(loadCorpus).toHaveBeenCalledTimes(2);
-    expect([...index.getSources().keys()]).toEqual(['A.md']);
+    expect([...snap.sources.keys()]).toEqual(['A.md']);
   });
 
   it('keeps the old corpus when a reload fails and re-throws', async () => {
@@ -145,13 +147,12 @@ describe('SmartConnectionsCorpusIndex', () => {
     const future = new Date(Date.now() + 60_000);
     await fs.utimes(path.join(smartEnvPath, 'a.ajson'), future, future);
 
-    await expect(index.ensureFresh()).rejects.toThrow('boom');
-    expect([...index.getSources().keys()]).toEqual(['A.md']);
+    await expect(index.snapshot()).rejects.toThrow('boom');
 
-    // The signature was not advanced, so the next ensureFresh retries.
+    // The signature was not advanced, so the next snapshot retries.
     loadCorpus.mockResolvedValueOnce(makeCorpus(['A.md', 'C.md']));
-    await index.ensureFresh();
-    expect([...index.getSources().keys()].sort()).toEqual(['A.md', 'C.md']);
+    const snap = await index.snapshot();
+    expect([...snap.sources.keys()].sort()).toEqual(['A.md', 'C.md']);
   });
 
   it('shares a single in-flight reload across concurrent callers', async () => {
@@ -178,8 +179,8 @@ describe('SmartConnectionsCorpusIndex', () => {
     const future = new Date(Date.now() + 60_000);
     await fs.utimes(path.join(smartEnvPath, 'a.ajson'), future, future);
 
-    const first = index.ensureFresh();
-    const second = index.ensureFresh();
+    const first = index.snapshot();
+    const second = index.snapshot();
 
     // Wait until the in-flight loadCorpus call has been dispatched (I/O for
     // readSignature must complete first, so we poll rather than assume
@@ -189,9 +190,9 @@ describe('SmartConnectionsCorpusIndex', () => {
     });
 
     resolveSecondLoad!();
-    await Promise.all([first, second]);
+    const [snap] = await Promise.all([first, second]);
 
     expect(loadCorpus).toHaveBeenCalledTimes(2);
-    expect([...index.getSources().keys()].sort()).toEqual(['A.md', 'B.md']);
+    expect([...snap.sources.keys()].sort()).toEqual(['A.md', 'B.md']);
   });
 });

@@ -67,7 +67,8 @@ export async function createSemanticModule(
   const searchEngine = deps.searchEngine ?? { findNeighbors, findBlockNeighbors, findDuplicates };
 
   const corpus = await corpusFactory(config.smartEnvPath, config.modelKey);
-  if (corpus.getSources().size === 0) {
+  const initial = await corpus.snapshot();
+  if (initial.sources.size === 0) {
     throw new Error('Loaded Smart Connections corpus is empty');
   }
 

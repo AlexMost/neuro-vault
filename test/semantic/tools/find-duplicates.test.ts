@@ -8,7 +8,6 @@ import {
   makeVaultFixture,
   makeHandlerDeps,
   createDuplicateCorpus,
-  makeFakeCorpusIndex,
   findNeighbors,
   findDuplicates,
   findBlockNeighbors,
@@ -78,23 +77,5 @@ describe('findDuplicates', () => {
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
-  });
-
-  it('calls corpus.ensureFresh() before reading sources', async () => {
-    const sources = new Map();
-    const corpus = makeFakeCorpusIndex(sources);
-    const tool = buildFindDuplicatesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-        modelKey: MODEL_KEY,
-        corpus,
-      }),
-    );
-
-    await tool.handler({});
-
-    expect(corpus.ensureFresh).toHaveBeenCalled();
   });
 });

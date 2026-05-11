@@ -42,8 +42,7 @@ export function buildFindDuplicatesTool(deps: FindDuplicatesDeps): ITool<Input, 
     handler: async (input) => {
       const threshold = readThreshold(input.threshold, DEFAULT_DUPLICATE_THRESHOLD, 'threshold');
       try {
-        await corpus.ensureFresh();
-        const sources = corpus.getSources();
+        const { sources } = await corpus.snapshot();
         const pairs = searchEngine.findDuplicates({
           sources: sources.values(),
           threshold,

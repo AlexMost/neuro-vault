@@ -19,10 +19,13 @@ export interface CreateSmartConnectionsCorpusIndexOptions {
   loadCorpus?: LoadCorpusFn;
 }
 
+export interface CorpusSnapshot {
+  sources: Map<string, SmartSource>;
+  basenameIndex: BasenameIndex;
+}
+
 export interface SmartConnectionsCorpusIndex {
-  ensureFresh(): Promise<void>;
-  getSources(): Map<string, SmartSource>;
-  getBasenameIndex(): BasenameIndex;
+  snapshot(): Promise<CorpusSnapshot>;
 }
 
 interface DirectorySignature {
@@ -64,10 +67,10 @@ export async function createSmartConnectionsCorpusIndex(
 
   let inFlight: Promise<void> | null = null;
 
-  async function ensureFresh(): Promise<void> {
+  async function snapshot(): Promise<CorpusSnapshot> {
     if (inFlight) {
       await inFlight;
-      return;
+      return { sources, basenameIndex };
     }
 
     inFlight = (async () => {
@@ -85,11 +88,8 @@ export async function createSmartConnectionsCorpusIndex(
       }
     })();
     await inFlight;
+    return { sources, basenameIndex };
   }
 
-  return {
-    ensureFresh,
-    getSources: () => sources,
-    getBasenameIndex: () => basenameIndex,
-  };
+  return { snapshot };
 }

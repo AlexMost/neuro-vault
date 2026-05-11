@@ -47,8 +47,7 @@ export function buildGetStatsTool(deps: GetStatsDeps): ITool<Input, ToolStats> {
     inputSchema,
     handler: async () => {
       try {
-        await corpus.ensureFresh();
-        const sources = corpus.getSources();
+        const { sources } = await corpus.snapshot();
         let totalBlocks = 0;
         for (const source of sources.values()) {
           totalBlocks += source.blocks.length;

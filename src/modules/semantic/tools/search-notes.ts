@@ -154,8 +154,7 @@ export function buildSearchNotesTool(
     handler: async (input) => {
       let sources: Map<string, SmartSource>;
       try {
-        await corpus.ensureFresh();
-        sources = corpus.getSources();
+        ({ sources } = await corpus.snapshot());
       } catch (error) {
         throw wrapDependencyError(error, 'Failed to search notes', {
           modelKey,
