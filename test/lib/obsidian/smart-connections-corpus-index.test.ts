@@ -126,4 +126,31 @@ describe('SmartConnectionsCorpusIndex', () => {
     expect(loadCorpus).toHaveBeenCalledTimes(2);
     expect([...index.getSources().keys()]).toEqual(['A.md']);
   });
+
+  it('keeps the old corpus when a reload fails and re-throws', async () => {
+    const { tempRoot, smartEnvPath } = await makeSmartEnvDir(['a.ajson']);
+    tempDirs.push(tempRoot);
+
+    const loadCorpus = vi
+      .fn<LoadCorpusFn>()
+      .mockResolvedValueOnce(makeCorpus(['A.md']))
+      .mockRejectedValueOnce(new Error('boom'));
+
+    const index = await createSmartConnectionsCorpusIndex({
+      smartEnvPath,
+      modelKey: MODEL_KEY,
+      loadCorpus,
+    });
+
+    const future = new Date(Date.now() + 60_000);
+    await fs.utimes(path.join(smartEnvPath, 'a.ajson'), future, future);
+
+    await expect(index.ensureFresh()).rejects.toThrow('boom');
+    expect([...index.getSources().keys()]).toEqual(['A.md']);
+
+    // The signature was not advanced, so the next ensureFresh retries.
+    loadCorpus.mockResolvedValueOnce(makeCorpus(['A.md', 'C.md']));
+    await index.ensureFresh();
+    expect([...index.getSources().keys()].sort()).toEqual(['A.md', 'C.md']);
+  });
 });
