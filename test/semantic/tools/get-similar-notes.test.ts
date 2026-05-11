@@ -7,12 +7,12 @@ import {
   MODEL_KEY,
   makeVaultFixture,
   makeHandlerDeps,
+  makeFakeCorpusIndex,
+  makeSyntheticSource,
   findNeighbors,
   findDuplicates,
   findBlockNeighbors,
   loadSmartConnectionsCorpus,
-  buildBasenameIndex,
-  makeSyntheticSource,
 } from './_helpers.js';
 import type { PathExistsCheck, SmartSource } from './_helpers.js';
 
@@ -238,7 +238,6 @@ describe('getSimilarNotes — graph signals', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
         pathExists: opts.pathExists,
-        basenameIndex: buildBasenameIndex(sources.keys()),
         readNoteContent,
       }),
     );
@@ -328,5 +327,23 @@ describe('getSimilarNotes — graph signals', () => {
     expect(results.map((r) => r.path)).not.toContain('Folder/B.md');
     expect(results.map((r) => r.path)).toContain('Folder/C.md');
     expect(results.map((r) => r.path)).toContain('Folder/D.md');
+  });
+
+  it('calls corpus.ensureFresh() before reading sources', async () => {
+    const sources = new Map([['Folder/A.md', makeSyntheticSource('Folder/A.md', [1, 0, 0])]]);
+    const corpus = makeFakeCorpusIndex(sources);
+    const tool = buildGetSimilarNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+        corpus,
+      }),
+    );
+
+    await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+
+    expect(corpus.ensureFresh).toHaveBeenCalled();
   });
 });

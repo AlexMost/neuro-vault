@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
+import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { readThreshold } from '../tool-helpers.js';
-import type { DuplicatePair, PathExistsCheck, SearchEngine, SmartSource } from '../types.js';
+import type { DuplicatePair, PathExistsCheck, SearchEngine } from '../types.js';
 
 const DEFAULT_DUPLICATE_THRESHOLD = 0.9;
 
@@ -14,7 +15,7 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface FindDuplicatesDeps {
-  sources: Map<string, SmartSource>;
+  corpus: SmartConnectionsCorpusIndex;
   searchEngine: SearchEngine;
   modelKey: string;
   pathExists: PathExistsCheck;
@@ -32,7 +33,7 @@ async function buildExistingPathSet(
 }
 
 export function buildFindDuplicatesTool(deps: FindDuplicatesDeps): ITool<Input, DuplicatePair[]> {
-  const { sources, searchEngine, modelKey, pathExists } = deps;
+  const { corpus, searchEngine, modelKey, pathExists } = deps;
   return {
     name: 'find_duplicates',
     title: 'Find Duplicates',
@@ -41,6 +42,8 @@ export function buildFindDuplicatesTool(deps: FindDuplicatesDeps): ITool<Input, 
     handler: async (input) => {
       const threshold = readThreshold(input.threshold, DEFAULT_DUPLICATE_THRESHOLD, 'threshold');
       try {
+        await corpus.ensureFresh();
+        const sources = corpus.getSources();
         const pairs = searchEngine.findDuplicates({
           sources: sources.values(),
           threshold,

@@ -4,10 +4,9 @@ import path from 'node:path';
 import { EmbeddingService } from './embedding-service.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
 import {
-  loadSmartConnectionsCorpus,
-  type SmartConnectionsCorpus,
-} from '../../lib/obsidian/smart-connections-loader.js';
-import { buildBasenameIndex } from '../../lib/obsidian/index.js';
+  createSmartConnectionsCorpusIndex,
+  type SmartConnectionsCorpusIndex,
+} from '../../lib/obsidian/smart-connections-corpus-index.js';
 import { FsVaultReader, type VaultReader } from '../../lib/obsidian/vault-reader.js';
 import { WikilinkGraphIndex } from '../../lib/obsidian/wikilink-graph.js';
 import { buildSemanticTools, type SemanticToolDeps } from './tools/index.js';
@@ -23,7 +22,7 @@ export interface SemanticModuleConfig {
 }
 
 export interface SemanticModuleDeps {
-  loadCorpus?: (smartEnvPath: string, modelKey: string) => Promise<SmartConnectionsCorpus>;
+  corpusFactory?: (smartEnvPath: string, modelKey: string) => Promise<SmartConnectionsCorpusIndex>;
   embeddingServiceFactory?: (modelId: string) => EmbeddingProvider;
   searchEngine?: SearchEngine;
   pathExists?: PathExistsCheck;
@@ -59,21 +58,22 @@ export async function createSemanticModule(
   config: SemanticModuleConfig,
   deps: SemanticModuleDeps = {},
 ): Promise<SemanticModule> {
-  const loadCorpus = deps.loadCorpus ?? loadSmartConnectionsCorpus;
+  const corpusFactory =
+    deps.corpusFactory ??
+    ((smartEnvPath, modelKey) => createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey }));
   const embeddingServiceFactory =
     deps.embeddingServiceFactory ??
     ((modelId: string) => new EmbeddingService({ modelKey: modelId }));
   const searchEngine = deps.searchEngine ?? { findNeighbors, findBlockNeighbors, findDuplicates };
 
-  const corpus = await loadCorpus(config.smartEnvPath, config.modelKey);
-  if (corpus.sources.size === 0) {
+  const corpus = await corpusFactory(config.smartEnvPath, config.modelKey);
+  if (corpus.getSources().size === 0) {
     throw new Error('Loaded Smart Connections corpus is empty');
   }
 
   const embeddingService = embeddingServiceFactory(config.modelId);
   const pathExists = deps.pathExists ?? createDefaultPathExists(config.vaultPath);
   const readNoteContent = deps.readNoteContent ?? createDefaultReadNoteContent(config.vaultPath);
-  const basenameIndex = buildBasenameIndex(corpus.sources.keys());
 
   let graph = deps.graph;
   let listMatchingPaths = deps.listMatchingPaths;
@@ -87,12 +87,11 @@ export async function createSemanticModule(
   }
 
   const semanticDeps: SemanticToolDeps = {
-    sources: corpus.sources,
+    corpus,
     embeddingProvider: embeddingService,
     searchEngine,
     modelKey: config.modelKey,
     pathExists,
-    basenameIndex,
     readNoteContent,
     graph,
     listMatchingPaths,

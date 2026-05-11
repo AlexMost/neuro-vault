@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import type { SmartSource, ToolStats } from '../types.js';
@@ -9,7 +10,7 @@ const inputSchema = z.object({});
 type Input = z.infer<typeof inputSchema>;
 
 export interface GetStatsDeps {
-  sources: Map<string, SmartSource>;
+  corpus: SmartConnectionsCorpusIndex;
   modelKey: string;
 }
 
@@ -38,23 +39,33 @@ function readEmbeddingDimension(sources: Iterable<SmartSource>): number {
 }
 
 export function buildGetStatsTool(deps: GetStatsDeps): ITool<Input, ToolStats> {
-  const { sources, modelKey } = deps;
+  const { corpus, modelKey } = deps;
   return {
     name: 'get_stats',
     title: 'Get Stats',
     description: 'Report corpus and embedding statistics.',
     inputSchema,
     handler: async () => {
-      let totalBlocks = 0;
-      for (const source of sources.values()) {
-        totalBlocks += source.blocks.length;
+      try {
+        await corpus.ensureFresh();
+        const sources = corpus.getSources();
+        let totalBlocks = 0;
+        for (const source of sources.values()) {
+          totalBlocks += source.blocks.length;
+        }
+        return {
+          totalNotes: sources.size,
+          totalBlocks,
+          embeddingDimension: readEmbeddingDimension(sources.values()),
+          modelKey,
+        };
+      } catch (error) {
+        if (error instanceof ToolHandlerError) throw error;
+        throw new ToolHandlerError('DEPENDENCY_ERROR', 'Failed to get corpus stats', {
+          details: { modelKey, operation: 'get_stats' },
+          cause: error,
+        });
       }
-      return {
-        totalNotes: sources.size,
-        totalBlocks,
-        embeddingDimension: readEmbeddingDimension(sources.values()),
-        modelKey,
-      };
     },
   };
 }

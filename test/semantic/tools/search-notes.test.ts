@@ -9,6 +9,7 @@ import {
   MODEL_KEY,
   makeVaultFixture,
   makeHandlerDeps,
+  makeFakeCorpusIndex,
   makeFakeGraph,
   findNeighbors,
   findDuplicates,
@@ -648,5 +649,24 @@ describe('searchNotes', () => {
 
     expect(output.results.length).toBeLessThanOrEqual(2);
     expect(output.truncated).toBe(true);
+  });
+
+  it('calls corpus.ensureFresh() before reading sources', async () => {
+    const sources = makeMockSources(['note-a.md']);
+    const corpus = makeFakeCorpusIndex(sources);
+    const embed = vi.fn().mockResolvedValue([1, 0]);
+    const tool = buildSearchNotesTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: makeMockSearchEngine(),
+        modelKey: MODEL_KEY,
+        corpus,
+      }),
+    );
+
+    await tool.handler({ query: 'topic', mode: 'quick', threshold: 0 });
+
+    expect(corpus.ensureFresh).toHaveBeenCalled();
   });
 });

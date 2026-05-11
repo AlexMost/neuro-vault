@@ -7,6 +7,7 @@ import {
   MODEL_KEY,
   makeVaultFixture,
   makeHandlerDeps,
+  makeFakeCorpusIndex,
   findNeighbors,
   findDuplicates,
   findBlockNeighbors,
@@ -44,5 +45,23 @@ describe('getStats', () => {
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
+  });
+
+  it('calls corpus.ensureFresh() before reading sources', async () => {
+    const sources = new Map();
+    const corpus = makeFakeCorpusIndex(sources);
+    const tool = buildGetStatsTool(
+      makeHandlerDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+        corpus,
+      }),
+    );
+
+    await tool.handler({});
+
+    expect(corpus.ensureFresh).toHaveBeenCalled();
   });
 });
