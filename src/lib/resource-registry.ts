@@ -21,7 +21,7 @@ export function registerResource<O>(resource: IResource<O>): ResourceRegistratio
     },
     handler: async (uri) => {
       const payload = await resource.handler(uri);
-      const text = typeof payload === 'string' ? (payload as string) : JSON.stringify(payload);
+      const text = typeof payload === 'string' ? payload : JSON.stringify(payload);
       return {
         contents: [
           {

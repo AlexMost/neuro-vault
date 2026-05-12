@@ -1,4 +1,4 @@
-import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
+import type { ReadResourceCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 export interface ResourceRegistrationMetadata {
   title?: string;
@@ -10,5 +10,5 @@ export interface ResourceRegistration {
   name: string;
   uri: string;
   metadata: ResourceRegistrationMetadata;
-  handler: (uri: URL) => Promise<ReadResourceResult>;
+  handler: ReadResourceCallback;
 }
