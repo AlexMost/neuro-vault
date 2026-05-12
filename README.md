@@ -55,6 +55,7 @@ A few more questions Neuro Vault makes one-shot:
 > _"Show meeting notes from `Work/` from the last two weeks, newest first."_
 > _"Find notes similar to this one I'm reading."_
 > _"Append today's decision to the daily note."_
+> _"What's on my agenda today — and what did I capture in other notes since this morning?"_
 > _"What did past-me write about retrieval policy before I started building it?"_
 
 One question, one answer. Your assistant stops being a file browser and starts being an actual second brain.
