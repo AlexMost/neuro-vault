@@ -94,4 +94,13 @@ describe('buildOperationsTools', () => {
     expect(readNotes.spec.description).toMatch(/per-item errors/i);
     expect(readNotes.spec.description).toMatch(/do not require Obsidian/i);
   });
+
+  it('read_daily description mentions notes_today, projection, and the 200 cap', () => {
+    const tools = buildOperationsTools(noopDeps);
+    const readDaily = tools.find((t) => t.name === 'read_daily')!;
+    expect(readDaily.spec.description).toMatch(/notes_today/);
+    expect(readDaily.spec.description).toMatch(/created today/i);
+    expect(readDaily.spec.description).toMatch(/excluding daily notes/i);
+    expect(readDaily.spec.description).toMatch(/200/);
+  });
 });
