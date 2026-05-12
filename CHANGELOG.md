@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.4.0](https://github.com/AlexMost/neuro-vault/compare/v5.3.0...v5.4.0) (2026-05-12)
+
+### Features
+
+- **lib:** add computeVaultOverview snapshot function ([9cc1f4b](https://github.com/AlexMost/neuro-vault/commit/9cc1f4b65a4ddc0f0b7a512d1568170c799bee7c))
+- **lib:** add resource registration scaffolding ([f12f076](https://github.com/AlexMost/neuro-vault/commit/f12f076e45f2fb28d55cc526b644300021b76307))
+- **operations:** add get_vault_overview tool ([db1ecb3](https://github.com/AlexMost/neuro-vault/commit/db1ecb3327510879072086e0430cf4e65c9010fe))
+- **operations:** add vault://overview MCP resource ([7dc4a4f](https://github.com/AlexMost/neuro-vault/commit/7dc4a4f34a397ff33d1601d9258bc4641b77a6c4))
+- **operations:** wire get_vault_overview and vault://overview into module ([367484c](https://github.com/AlexMost/neuro-vault/commit/367484c431c2b67f9dce281e199e6372a4770679))
+- **server:** add readExternalAgentInstructions helper ([811a4a5](https://github.com/AlexMost/neuro-vault/commit/811a4a58de8e5ecf8f0a8b2125f68ca0a6f504a3))
+- **server:** build dynamic instructions per vault ([142da29](https://github.com/AlexMost/neuro-vault/commit/142da29d976ca415a60e99f5c95632e94f23aedb))
+- **server:** register module resources via registerResource ([cfbaf6c](https://github.com/AlexMost/neuro-vault/commit/cfbaf6cc3615fbcd631d9b7d12744132db43003e))
+
+### Bug Fixes
+
+- **lib:** tighten resource registration types and tests ([7d0d145](https://github.com/AlexMost/neuro-vault/commit/7d0d1451a125f833c0e1c6601f99ee03b6f49512))
+
 ## [5.3.0](https://github.com/AlexMost/neuro-vault/compare/v5.2.0...v5.3.0) (2026-05-12)
 
 ### Features
