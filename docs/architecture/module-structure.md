@@ -7,7 +7,7 @@ How the server is split into pluggable modules and how they are wired together a
 The codebase is organized into two modules under `src/modules/`:
 
 - `semantic/` — embedding-based search over a Smart Connections corpus (in-memory cosine search) — 4 tools
-- `operations/` — direct vault operations — 12 tools, grouped as note body (`read_notes`, `create_note`, `edit_note`, `read_daily`, `append_daily`), structured queries (`query_notes`), frontmatter properties (`set_property`, `read_property`, `remove_property`, `list_properties`), tags (`list_tags`), and vault overview (`get_vault_overview`)
+- `operations/` — direct vault operations — 12 tools, grouped as note body (`read_notes`, `create_note`, `edit_note`, `read_daily`), structured queries (`query_notes`), frontmatter properties (`set_property`, `read_property`, `remove_property`, `list_properties`), tags (`list_tags`), and vault overview (`get_vault_overview`)
 
 Each module exports `createXModule(config, deps) → { tools: ToolRegistration[], resources: ResourceRegistration[], warmup? }`. `src/server.ts` aggregates registrations from enabled modules and registers them with the underlying `McpServer`. Modules also expose `resources: ResourceRegistration[]`. Operations exposes one — `vault://overview`, a JSON snapshot of vault structure backed by the same `computeVaultOverview` function that powers the `get_vault_overview` tool. Semantic exposes no resources today. A module with no resources returns an empty array.
 

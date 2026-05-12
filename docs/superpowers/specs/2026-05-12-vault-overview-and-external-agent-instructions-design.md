@@ -214,7 +214,7 @@ No `ToolHandlerError` codes added; existing `INVALID_ARGUMENT`/`READ_FAILED` are
 
 - File absent → result equals base + hint, no warning emitted.
 - File present → result includes `## Vault-specific conventions` followed by file content.
-- File present but empty → still includes header (cheap, predictable; v1 doesn't try to be clever).
+- **File present but empty (or whitespace-only) → no `## Vault-specific conventions` section.** Suppressing the empty section keeps the instructions clean; the always-on hint still appears unconditionally.
 - Read error → fallback path; warning written to stderr (mockable).
 
 ### Existing tests

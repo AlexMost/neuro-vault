@@ -111,4 +111,20 @@ describe('buildServerInstructions', () => {
       await fs.rm(vault, { recursive: true, force: true });
     }
   });
+
+  it('omits the vault-specific section when the file exists but is empty', async () => {
+    const vault = await makeTempVault();
+    try {
+      const dir = path.join(vault, '.neuro-vault');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'for-external-agents.md'), '   \n\n   ', 'utf8');
+
+      const result = await buildServerInstructions(vault);
+      expect(result).not.toMatch(/## Vault-specific conventions/);
+      // The always-on hint still appears.
+      expect(result).toMatch(/get_vault_overview/);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
 });
