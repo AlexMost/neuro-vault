@@ -40,7 +40,7 @@ const noopDeps = {
 };
 
 describe('buildOperationsTools', () => {
-  it('returns 11 registrations with the expected names', () => {
+  it('returns 12 registrations with the expected names', () => {
     const tools = buildOperationsTools(noopDeps);
     expect(tools.map((t) => t.name)).toEqual([
       'read_notes',
@@ -54,6 +54,7 @@ describe('buildOperationsTools', () => {
       'list_properties',
       'list_tags',
       'get_note_links',
+      'get_vault_overview',
     ]);
   });
 
