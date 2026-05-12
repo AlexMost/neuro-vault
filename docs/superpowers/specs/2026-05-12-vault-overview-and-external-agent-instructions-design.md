@@ -8,7 +8,7 @@ Source task: `Tasks/Expose vault structure conventions via MCP` (vault)
 
 Дати зовнішньому агенту (підключеному до neuro-vault MCP з робочого проєкту, де `AGENTS.md` вокту не видно) два шари знання про вокт у момент `initialize`:
 
-1. **Snapshot стану** — доступний двома шляхами над одним і тим же compute-кодом: (а) tool `get_vault_overview`, який агент кличе явно; (б) MCP resource `vault://overview`, який клієнти, що auto-load'ять resources, забирають у контекст без виклику. Snapshot повертає top-level папки з counts, топ-теги, frontmatter properties із типами/частотами, total notes, топ-10 нот за backlinks. Закриває ~70% орієнтації і знімає потребу в ритуалі `list_tags + list_properties + query_notes` на старті сесії.
+1. **Snapshot стану** — доступний двома шляхами над одним і тим же compute-кодом: (а) tool `get_vault_overview`, який агент кличе явно; (б) MCP resource `vault://overview`, який клієнти, що auto-load'ять resources, забирають у контекст без виклику. Snapshot повертає top-level папки з counts, топ-теги, frontmatter properties (name + count), total notes, топ-10 нот за backlinks. Закриває ~70% орієнтації і знімає потребу в ритуалі `list_tags + list_properties + query_notes` на старті сесії.
 2. **Vault-specific конвенції** — те, що не виводиться зі snapshot (закриті набори значень `type`, заборонені папки, semantic intent). Живе у вокті, не в коді сервера, інжектиться в MCP `instructions` при `initialize`.
 
 ## Non-goals
@@ -29,8 +29,9 @@ get_vault_overview tool          vault://overview resource
               ▼                   ▼
         computeVaultOverview (lib/obsidian/vault-overview.ts)
               │
-              ├──► VaultReader.scan + readNotes(fields=['frontmatter'])  (one pass, batched)
-              └──► WikilinkGraphIndex.ensureFresh + getBacklinkCount     (existing primitive)
+              ├──► VaultReader.scan                                       (path enumeration)
+              ├──► VaultProvider.listTags + listProperties                (CLI-sourced counts)
+              └──► WikilinkGraphIndex.ensureFresh + getBacklinkCount      (existing primitive)
 
 buildServerInstructions(vaultPath) (server.ts)
     │
@@ -65,24 +66,22 @@ Caching: no overview-level cache. `WikilinkGraphIndex` already has a 3-minute TT
 interface VaultOverview {
   total_notes: number;
   folders: Array<{ path: string; count: number }>; // top-level only, sort by count desc
-  top_tags: Array<{ name: string; count: number }>; // top 30, sort by count desc
+  top_tags: Array<{ name: string; count: number }>; // top 30, sort by count desc; sourced from provider.listTags()
   properties: Array<{
     name: string;
     count: number;
-    types: string[]; // sorted unique JS-side types
-  }>; // top 30, sort by count desc
+  }>; // top 30, sort by count desc; sourced from provider.listProperties()
   top_by_backlinks: Array<{
     path: string;
     title: string; // basename without .md
     backlink_count: number;
-    type?: string; // frontmatter.type if present and string
   }>; // top 10, sort by backlink_count desc
 }
 ```
 
 **Description (for MCP clients)** — surfaces "call me first":
 
-> Returns a single snapshot of vault structure: top-level folders with note counts, top tags, frontmatter properties with inferred types, total note count, and the top 10 notes by inbound wikilinks. Call this once at the start of a session to orient yourself before reaching for `list_tags`, `list_properties`, or exploratory `query_notes`. Reads directly from disk; does not need Obsidian to be running.
+> Returns a single snapshot of vault structure: top-level folders with note counts, top tags, frontmatter properties, total note count, and the top 10 notes by inbound wikilinks. Call this once at the start of a session to orient yourself before reaching for `list_tags`, `list_properties`, or exploratory `query_notes`.
 
 ### Resource: `vault://overview`
 
@@ -123,22 +122,6 @@ Errors from `computeVaultOverview` propagate; the SDK turns them into a `ReadRes
 - `TOP_BACKLINKS_LIMIT = 10`
 
 These are hard-coded in v1 (no input params). If a future caller needs more, we add an optional `limits` field then; YAGNI now.
-
-### Type inference (properties)
-
-For each frontmatter value, derive a type label:
-
-| JS value                            | Label       |
-| ----------------------------------- | ----------- |
-| `null` / `undefined`                | `"null"`    |
-| `boolean`                           | `"boolean"` |
-| `number`                            | `"number"`  |
-| `Array`                             | `"list"`    |
-| `string` matching ISO date/datetime | `"date"`    |
-| any other `string`                  | `"string"`  |
-| `object` (non-array, non-null)      | `"object"`  |
-
-`types` per property is the sorted unique set across all notes that have that key. ISO date regex matches `^\d{4}-\d{2}-\d{2}(T...)?$` — same shape that `set_property` accepts.
 
 ### Folder aggregation
 
@@ -195,10 +178,10 @@ No `ToolHandlerError` codes added; existing `INVALID_ARGUMENT`/`READ_FAILED` are
 - Empty vault → empty arrays, total_notes 0.
 - Single note at root → folder `"/"` count 1.
 - Multiple folders, asserts sort order + top-level-only.
-- Property type inference: cover string / number / boolean / list / date / null / mixed types per key.
-- Tag counts from frontmatter `tags` field (array form and string form).
+- `top_tags` comes from `provider.listTags()`, passed through and sliced at `TOP_TAGS_LIMIT`.
+- `properties` comes from `provider.listProperties()`, passed through and sliced at `TOP_PROPERTIES_LIMIT`.
 - Top-10 backlinks: more than 10 candidates, ties broken by path asc.
-- Notes with read errors are skipped, not fatal.
+- No `type` field on `top_by_backlinks` entries.
 
 ### `get-vault-overview.test.ts` (tool-level)
 
@@ -231,7 +214,7 @@ No `ToolHandlerError` codes added; existing `INVALID_ARGUMENT`/`READ_FAILED` are
 
 1. `get_vault_overview` registered in operations module, callable via MCP, returns shape above.
 2. `vault://overview` resource registered, served by the same `computeVaultOverview` code path, returns identical payload to the tool.
-3. Tool and resource work without Obsidian CLI (verified by integration test that does not mock the CLI).
+3. Tool and resource require `provider.listTags()` / `provider.listProperties()` (Obsidian CLI must be running at call time). The old "does not need Obsidian to be running" claim is removed from tool description, guide, and README.
 4. `buildServerInstructions` reads `.neuro-vault/for-external-agents.md` when present, falls back gracefully when absent or unreadable.
 5. `get_vault_overview` / `vault://overview` are mentioned in the always-on hint regardless of whether the file exists.
 6. `npm test`, `npm run lint`, `npx tsc --noEmit` все зелене.

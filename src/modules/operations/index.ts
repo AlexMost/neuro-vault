@@ -45,6 +45,6 @@ export function createOperationsModule(
   const toolDeps: OperationsToolDeps = { provider, reader, writer, graph };
   return {
     tools: buildOperationsTools(toolDeps),
-    resources: buildOperationsResources({ reader, graph }),
+    resources: buildOperationsResources({ reader, provider, graph }),
   };
 }

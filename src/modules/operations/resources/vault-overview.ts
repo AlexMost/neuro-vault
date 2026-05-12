@@ -1,10 +1,12 @@
 import type { IResource } from '../../../lib/resource-registry.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
+import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
 import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
 import { computeVaultOverview, type VaultOverview } from '../../../lib/obsidian/vault-overview.js';
 
 export interface VaultOverviewResourceDeps {
   reader: VaultReader;
+  provider: VaultProvider;
   graph: WikilinkGraphIndex;
 }
 

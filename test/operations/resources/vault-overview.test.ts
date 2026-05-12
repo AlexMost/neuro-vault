@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildVaultOverviewResource } from '../../../src/modules/operations/resources/vault-overview.js';
-import { makeGraph, makeReader } from '../tools/_helpers.js';
+import { makeGraph, makeProvider, makeReader } from '../tools/_helpers.js';
 
 describe('operations.vaultOverview resource', () => {
   it('declares name, uri, and json mimeType', () => {
     const res = buildVaultOverviewResource({
       reader: makeReader(),
+      provider: makeProvider(),
       graph: makeGraph(),
     });
     expect(res.name).toBe('vault-overview');
@@ -18,12 +19,12 @@ describe('operations.vaultOverview resource', () => {
   it('returns the same snapshot as computeVaultOverview, JSON-encoded', async () => {
     const reader = makeReader({
       scan: vi.fn().mockResolvedValue(['Notes/a.md']),
-      readNotes: vi
-        .fn()
-        .mockResolvedValue([{ path: 'Notes/a.md', frontmatter: { tags: ['x'] }, content: '' }]),
+    });
+    const provider = makeProvider({
+      listTags: vi.fn().mockResolvedValue([{ name: 'x', count: 1 }]),
     });
     const graph = makeGraph();
-    const res = buildVaultOverviewResource({ reader, graph });
+    const res = buildVaultOverviewResource({ reader, provider, graph });
 
     const payload = await res.handler(new URL('vault://overview'));
 

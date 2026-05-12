@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildGetVaultOverviewTool } from '../../../src/modules/operations/tools/get-vault-overview.js';
-import { makeGraph, makeReader } from './_helpers.js';
+import { makeGraph, makeProvider, makeReader } from './_helpers.js';
 
 describe('operations.getVaultOverview tool', () => {
   it('declares the expected name, title, and empty input schema', () => {
     const tool = buildGetVaultOverviewTool({
       reader: makeReader(),
+      provider: makeProvider(),
       graph: makeGraph(),
     });
     expect(tool.name).toBe('get_vault_overview');
@@ -17,12 +18,12 @@ describe('operations.getVaultOverview tool', () => {
   it('computes the overview through computeVaultOverview', async () => {
     const reader = makeReader({
       scan: vi.fn().mockResolvedValue(['Notes/a.md']),
-      readNotes: vi
-        .fn()
-        .mockResolvedValue([{ path: 'Notes/a.md', frontmatter: { tags: ['x'] }, content: '' }]),
+    });
+    const provider = makeProvider({
+      listTags: vi.fn().mockResolvedValue([{ name: 'x', count: 1 }]),
     });
     const graph = makeGraph();
-    const tool = buildGetVaultOverviewTool({ reader, graph });
+    const tool = buildGetVaultOverviewTool({ reader, provider, graph });
 
     const result = await tool.handler({});
 
