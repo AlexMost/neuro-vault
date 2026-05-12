@@ -8,12 +8,11 @@ Source task: `Tasks/Expose vault structure conventions via MCP` (vault)
 
 Дати зовнішньому агенту (підключеному до neuro-vault MCP з робочого проєкту, де `AGENTS.md` вокту не видно) два шари знання про вокт у момент `initialize`:
 
-1. **Snapshot стану** — один tool, що повертає top-level папки з counts, топ-теги, frontmatter properties із типами/частотами, total notes, топ-10 нот за backlinks. Закриває ~70% орієнтації і знімає потребу в ритуалі `list_tags + list_properties + query_notes` на старті сесії.
+1. **Snapshot стану** — доступний двома шляхами над одним і тим же compute-кодом: (а) tool `get_vault_overview`, який агент кличе явно; (б) MCP resource `vault://overview`, який клієнти, що auto-load'ять resources, забирають у контекст без виклику. Snapshot повертає top-level папки з counts, топ-теги, frontmatter properties із типами/частотами, total notes, топ-10 нот за backlinks. Закриває ~70% орієнтації і знімає потребу в ритуалі `list_tags + list_properties + query_notes` на старті сесії.
 2. **Vault-specific конвенції** — те, що не виводиться зі snapshot (закриті набори значень `type`, заборонені папки, semantic intent). Живе у вокті, не в коді сервера, інжектиться в MCP `instructions` при `initialize`.
 
 ## Non-goals
 
-- MCP resource `vault://overview` (bonus layer для клієнтів, що auto-load resources; окрема задача).
 - Recent activity per folder (mtime); YAGNI до першого болю.
 - Hard `create_note` guard-rails (refuse у `Notes/`, `Resources/`, …) — окрема задача, явно винесена в source task.
 - Inline-теги в body для top_tags — overview це orientation, не exhaustive count. Frontmatter-тегів достатньо.
@@ -23,18 +22,20 @@ Source task: `Tasks/Expose vault structure conventions via MCP` (vault)
 ### Components
 
 ```
-get_vault_overview tool (modules/operations/tools/get-vault-overview.ts)
-    │
-    ▼
-computeVaultOverview (lib/obsidian/vault-overview.ts)
-    │
-    ├──► VaultReader.scan + readNotes(fields=['frontmatter'])  (one pass, batched)
-    └──► WikilinkGraphIndex.ensureFresh + getBacklinkCount     (existing primitive)
+get_vault_overview tool          vault://overview resource
+(operations/tools/...)           (operations/resources/...)
+            \                       /
+             \                     /
+              ▼                   ▼
+        computeVaultOverview (lib/obsidian/vault-overview.ts)
+              │
+              ├──► VaultReader.scan + readNotes(fields=['frontmatter'])  (one pass, batched)
+              └──► WikilinkGraphIndex.ensureFresh + getBacklinkCount     (existing primitive)
 
 buildServerInstructions(vaultPath) (server.ts)
     │
     ├──► static base text (current SERVER_INSTRUCTIONS, unchanged)
-    ├──► always-on: one-line hint про get_vault_overview
+    ├──► always-on: one-line hint про get_vault_overview / vault://overview
     └──► optional: <vaultPath>/.neuro-vault/for-external-agents.md
               ├─ ENOENT      → skip silently
               ├─ other error → stderr warning, skip
@@ -44,10 +45,13 @@ buildServerInstructions(vaultPath) (server.ts)
 ### Module placement
 
 - `src/modules/operations/tools/get-vault-overview.ts` — tool registration (zod schema, description, handler).
-- `src/lib/obsidian/vault-overview.ts` — pure computation: `(reader, graph) → VaultOverview`. Testable in isolation.
-- `src/server.ts` — `buildServerInstructions(vaultPath: string): Promise<string>`. `serverFactory` signature changes to accept the built string.
+- `src/modules/operations/resources/vault-overview.ts` — resource registration (`vault://overview`, metadata, readCallback).
+- `src/lib/obsidian/vault-overview.ts` — pure computation: `(reader, graph) → VaultOverview`. Testable in isolation; consumed by both the tool and the resource.
+- `src/lib/resource-registration.ts` + `src/lib/resource-registry.ts` — mirrors the existing `tool-registration` / `tool-registry` pair. `ResourceRegistration = { name, uri, metadata, handler }`. Minimal scaffolding for one resource now, but matches the established module pattern so a second resource is a one-liner.
+- `src/modules/operations/index.ts` — `OperationsModule` shape extends from `{ tools }` to `{ tools, resources }`. The `resources` array is always present (may be empty for other modules); the architecture doc gets updated to reflect the new contract.
+- `src/server.ts` — `buildServerInstructions(vaultPath: string): Promise<string>`. `serverFactory` signature changes to accept the built string. The server-level loop registers both tools and resources from each module.
 
-Decision: aggregation lives in `lib/obsidian/`, not inside the tool file. The tool is a thin adapter (zod + description); the logic is reusable, e.g. for a future `vault://overview` resource that would share the same computation.
+Caching: no overview-level cache. `WikilinkGraphIndex` already has a 3-minute TTL; the only remaining work per call is a single frontmatter scan (~tens of ms on a typical vault). YAGNI until measured.
 
 ## Interfaces
 
@@ -79,6 +83,38 @@ interface VaultOverview {
 **Description (for MCP clients)** — surfaces "call me first":
 
 > Returns a single snapshot of vault structure: top-level folders with note counts, top tags, frontmatter properties with inferred types, total note count, and the top 10 notes by inbound wikilinks. Call this once at the start of a session to orient yourself before reaching for `list_tags`, `list_properties`, or exploratory `query_notes`. Reads directly from disk; does not need Obsidian to be running.
+
+### Resource: `vault://overview`
+
+Same `VaultOverview` payload as the tool, served as an MCP resource for clients that auto-load resources into context (some IDEs) or let users browse them manually. Both paths share `computeVaultOverview`.
+
+**URI**: `vault://overview` (static — no template, no params).
+
+**Registration** (`McpServer.registerResource`):
+
+| Field         | Value                                                                                                         |
+| ------------- | ------------------------------------------------------------------------------------------------------------- |
+| `name`        | `vault-overview`                                                                                              |
+| `uri`         | `vault://overview`                                                                                            |
+| `title`       | `Vault Overview`                                                                                              |
+| `description` | Same one-paragraph blurb as the tool, with a note that the resource is the same data as `get_vault_overview`. |
+| `mimeType`    | `application/json`                                                                                            |
+
+**`readCallback`**: returns
+
+```ts
+{
+  contents: [
+    {
+      uri: 'vault://overview',
+      mimeType: 'application/json',
+      text: JSON.stringify(await computeVaultOverview(...)),
+    },
+  ],
+}
+```
+
+Errors from `computeVaultOverview` propagate; the SDK turns them into a `ReadResource` error response with the original message.
 
 **Constants**:
 
@@ -169,6 +205,11 @@ No `ToolHandlerError` codes added; existing `INVALID_ARGUMENT`/`READ_FAILED` are
 - Smoke test: builds tool with mocked deps, asserts schema validation accepts `{}`, output shape matches `VaultOverview`.
 - Verifies tool name, title, description constants.
 
+### `vault-overview-resource.test.ts` (resource-level)
+
+- Smoke test: resource registration shape — name, uri (`vault://overview`), mimeType (`application/json`).
+- `readCallback` returns a `contents` array of length 1 whose `text` parses back to the same `VaultOverview` returned by the underlying `computeVaultOverview` call (asserts tool and resource share the same data).
+
 ### `build-server-instructions.test.ts`
 
 - File absent → result equals base + hint, no warning emitted.
@@ -189,11 +230,12 @@ No `ToolHandlerError` codes added; existing `INVALID_ARGUMENT`/`READ_FAILED` are
 ## Definition of Done
 
 1. `get_vault_overview` registered in operations module, callable via MCP, returns shape above.
-2. Tool works without Obsidian CLI (verified by integration test that does not mock the CLI).
-3. `buildServerInstructions` reads `.neuro-vault/for-external-agents.md` when present, falls back gracefully when absent or unreadable.
-4. `get_vault_overview` is mentioned in the always-on hint regardless of whether the file exists.
-5. `npm test`, `npm run lint`, `npx tsc --noEmit` все зелене.
-6. README + architecture doc + vault-operations guide оновлено в тому ж PR.
+2. `vault://overview` resource registered, served by the same `computeVaultOverview` code path, returns identical payload to the tool.
+3. Tool and resource work without Obsidian CLI (verified by integration test that does not mock the CLI).
+4. `buildServerInstructions` reads `.neuro-vault/for-external-agents.md` when present, falls back gracefully when absent or unreadable.
+5. `get_vault_overview` / `vault://overview` are mentioned in the always-on hint regardless of whether the file exists.
+6. `npm test`, `npm run lint`, `npx tsc --noEmit` все зелене.
+7. README + architecture doc + vault-operations guide оновлено в тому ж PR. `module-structure.md` reflects the new `{ tools, resources }` module contract.
 
 ## Open questions
 
