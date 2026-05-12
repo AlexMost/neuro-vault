@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.3.0](https://github.com/AlexMost/neuro-vault/compare/v5.2.0...v5.3.0) (2026-05-12)
+
+### Features
+
+- **read_daily:** add notes_today to handler return type ([1aa868e](https://github.com/AlexMost/neuro-vault/commit/1aa868e7ac68515cd03262db8871ca2ed593a6f6))
+- **read_daily:** include notes_today in result ([31af93c](https://github.com/AlexMost/neuro-vault/commit/31af93c322ea654feba3e45701ee7fa9a6f128ee))
+
+### Bug Fixes
+
+- **create_note:** reject simultaneous content and template ([1954396](https://github.com/AlexMost/neuro-vault/commit/195439633e7223c325f671cfe5b637d96991f996))
+
 ## [5.2.0](https://github.com/AlexMost/neuro-vault/compare/v5.1.0...v5.2.0) (2026-05-11)
 
 ### Features
