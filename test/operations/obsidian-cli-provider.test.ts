@@ -4,21 +4,34 @@ import { ObsidianCLIProvider } from '../../src/modules/operations/obsidian-cli-p
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 
 describe('ObsidianCLIProvider.createNote', () => {
-  it('passes name, content, and template tokens', async () => {
+  it('passes name and content tokens', async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
 
     await provider.createNote({
       name: 'Idea 42',
       content: 'first thought',
-      template: 'idea',
     });
 
     expect(exec).toHaveBeenCalledWith(
       'obsidian',
-      ['create', 'name=Idea 42', 'content=first thought', 'template=idea'],
+      ['create', 'name=Idea 42', 'content=first thought'],
       { timeout: 10_000 },
     );
+  });
+
+  it('passes name and template tokens', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+
+    await provider.createNote({
+      name: 'Idea 42',
+      template: 'idea',
+    });
+
+    expect(exec).toHaveBeenCalledWith('obsidian', ['create', 'name=Idea 42', 'template=idea'], {
+      timeout: 10_000,
+    });
   });
 
   it('appends overwrite token when overwrite is true', async () => {
