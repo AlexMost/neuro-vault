@@ -84,6 +84,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'find_duplicates',
         'get_stats',
       ]);
+      expect(server.registeredResourceUris).toEqual([]);
       expect(server.connect).toHaveBeenCalledTimes(1);
       await vi.waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
     } finally {
@@ -181,6 +182,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'get_note_links',
         'get_vault_overview',
       ]);
+      expect(server.registeredResourceUris).toEqual(['vault://overview']);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -240,6 +242,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'get_note_links',
         'get_vault_overview',
       ]);
+      expect(server.registeredResourceUris).toEqual(['vault://overview']);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }

@@ -11,6 +11,7 @@ import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
+import type { ResourceRegistration } from './lib/resource-registration.js';
 import type { ServerConfig } from './types.js';
 
 const require = createRequire(import.meta.url);
@@ -178,7 +179,8 @@ export async function startNeuroVaultServer(
     graph: sharedGraph,
   });
 
-  const registrations: ToolRegistration[] = [];
+  const toolRegistrations: ToolRegistration[] = [];
+  const resourceRegistrations: ResourceRegistration[] = [];
   let warmup: () => Promise<void> = async () => {};
 
   if (config.semantic.enabled) {
@@ -195,7 +197,7 @@ export async function startNeuroVaultServer(
         ...deps.semantic,
       },
     );
-    registrations.push(...semantic.tools);
+    toolRegistrations.push(...semantic.tools);
     warmup = semantic.warmup;
   }
 
@@ -207,11 +209,16 @@ export async function startNeuroVaultServer(
       },
       { graph: sharedGraph, ...deps.operations },
     );
-    registrations.push(...operations.tools);
+    toolRegistrations.push(...operations.tools);
+    resourceRegistrations.push(...operations.resources);
   }
 
-  for (const tool of registrations) {
+  for (const tool of toolRegistrations) {
     server.registerTool(tool.name, tool.spec, tool.handler);
+  }
+
+  for (const resource of resourceRegistrations) {
+    server.registerResource(resource.name, resource.uri, resource.metadata, resource.handler);
   }
 
   await server.connect(transportFactory());
