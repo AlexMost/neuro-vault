@@ -25,7 +25,7 @@ export function buildCreateNoteTool(deps: CreateNoteDeps): ITool<Input, { path: 
     name: 'create_note',
     title: 'Create Note',
     description:
-      'Create a new note. Provide `name` or `path`. Optional `content` and `template`. If a note with this path/name might already exist and the user has not explicitly asked to replace it, ask the user before passing `overwrite: true` — overwrite is destructive. Default behavior fails when the note exists.',
+      'Create a new note. Provide `name` or `path` (exactly one). Optionally provide `content` (raw markdown for the note body and frontmatter) OR `template` (name of a vault template to apply) — these are mutually exclusive. If a note with this path/name might already exist and the user has not explicitly asked to replace it, ask the user before passing `overwrite: true` — overwrite is destructive. Default behavior fails when the note exists.',
     inputSchema,
     handler: async (input) => {
       if (input.name === undefined && input.path === undefined) {
@@ -33,6 +33,12 @@ export function buildCreateNoteTool(deps: CreateNoteDeps): ITool<Input, { path: 
       }
       if (input.name !== undefined && input.path !== undefined) {
         throw invalidArgument('Provide exactly one of name or path', 'name');
+      }
+      if (input.content !== undefined && input.template !== undefined) {
+        throw invalidArgument(
+          'content and template cannot be used together — call create_note with only one. If you want a note pre-filled from a template, omit content; if you want to write exact markdown, omit template.',
+          'content',
+        );
       }
 
       const passthrough: CreateNoteToolInput = {};
