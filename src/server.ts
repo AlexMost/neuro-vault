@@ -29,13 +29,7 @@ export async function readExternalAgentInstructions(vaultPath: string): Promise<
   try {
     const raw = await fs.readFile(filePath, 'utf8');
     return raw.trim();
-  } catch (err) {
-    const code = (err as { code?: string }).code;
-    if (code === 'ENOENT') return null;
-    const message = (err as Error).message;
-    process.stderr.write(
-      `[neuro-vault] could not read ${EXTERNAL_AGENT_INSTRUCTIONS_PATH}: ${message}\n`,
-    );
+  } catch {
     return null;
   }
 }

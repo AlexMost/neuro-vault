@@ -38,9 +38,8 @@ buildServerInstructions(vaultPath) (server.ts)
     ├──► static base text (current SERVER_INSTRUCTIONS, unchanged)
     ├──► always-on: one-line hint про get_vault_overview / vault://overview
     └──► optional: <vaultPath>/.neuro-vault/for-external-agents.md
-              ├─ ENOENT      → skip silently
-              ├─ other error → stderr warning, skip
-              └─ present     → append under "## Vault-specific conventions"
+              ├─ missing / unreadable → skip silently
+              └─ present              → append under "## Vault-specific conventions"
 ```
 
 ### Module placement
@@ -147,8 +146,7 @@ Where:
 
 - `GET_VAULT_OVERVIEW_HINT` is one paragraph telling the agent to call `get_vault_overview` once at session start.
 - `readExternalAgentInstructions(vaultPath)` reads `<vaultPath>/.neuro-vault/for-external-agents.md`:
-  - file missing → returns `null` silently;
-  - permission/other read error → `process.stderr.write` a one-line warning, returns `null`;
+  - file missing or unreadable → returns `null` silently. The file is opt-in by convention; there is no explicit "set" mechanism, so any read failure is treated the same as absence — no stderr noise for users who do not know the feature exists.
   - file present → returns its UTF-8 content trimmed.
 
 `serverFactory` signature changes from `() => ToolServer` to `(instructions: string) => ToolServer`. `startNeuroVaultServer` builds the string once and passes it in:
@@ -160,14 +158,13 @@ const server = serverFactory(instructions);
 
 ## Error handling
 
-| Surface                                                         | Behaviour                                                                                     |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `reader.scan()` fails                                           | Bubble as-is; tool handler returns `ToolHandlerError` (matches `query_notes`).                |
-| Individual note read fails                                      | Skip that note in aggregation; do **not** fail the whole overview.                            |
-| `graph.ensureFresh()` fails                                     | Bubble. Graph is already best-effort per note internally.                                     |
-| Empty vault (0 notes)                                           | Return `{ total_notes: 0, folders: [], top_tags: [], properties: [], top_by_backlinks: [] }`. |
-| `.neuro-vault/for-external-agents.md` missing                   | Silent skip; static + always-on hint only.                                                    |
-| `.neuro-vault/for-external-agents.md` read error (EACCES, etc.) | `process.stderr.write` warning; fall back to static + always-on hint.                         |
+| Surface                                                     | Behaviour                                                                                                               |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `reader.scan()` fails                                       | Bubble as-is; tool handler returns `ToolHandlerError` (matches `query_notes`).                                          |
+| Individual note read fails                                  | Skip that note in aggregation; do **not** fail the whole overview.                                                      |
+| `graph.ensureFresh()` fails                                 | Bubble. Graph is already best-effort per note internally.                                                               |
+| Empty vault (0 notes)                                       | Return `{ total_notes: 0, folders: [], top_tags: [], properties: [], top_by_backlinks: [] }`.                           |
+| `.neuro-vault/for-external-agents.md` missing or unreadable | Silent skip; static + always-on hint only. (Opt-in convention — no warning for users who have not enabled the feature.) |
 
 No `ToolHandlerError` codes added; existing `INVALID_ARGUMENT`/`READ_FAILED` are not raised by this tool because there is no user input.
 
@@ -198,7 +195,7 @@ No `ToolHandlerError` codes added; existing `INVALID_ARGUMENT`/`READ_FAILED` are
 - File absent → result equals base + hint, no warning emitted.
 - File present → result includes `## Vault-specific conventions` followed by file content.
 - **File present but empty (or whitespace-only) → no `## Vault-specific conventions` section.** Suppressing the empty section keeps the instructions clean; the always-on hint still appears unconditionally.
-- Read error → fallback path; warning written to stderr (mockable).
+- Path unreadable (e.g. is a directory) → fallback path; returns `null` silently.
 
 ### Existing tests
 
