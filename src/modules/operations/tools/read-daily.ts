@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
-import type { QueryNotesResult, QueryNotesToolInput } from '../../../lib/obsidian/query/types.js';
 import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
 import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
@@ -16,7 +15,7 @@ type Input = z.infer<typeof inputSchema>;
 
 export interface NotesTodayItem {
   path: string;
-  frontmatter: Record<string, unknown> | null;
+  frontmatter: Record<string, unknown>;
   backlink_count: number;
 }
 
@@ -27,22 +26,14 @@ export interface ReadDailyHandlerResult {
   notes_today: NotesTodayItem[];
 }
 
-export type RunQueryFn = (
-  input: QueryNotesToolInput,
-  reader: VaultReader,
-  graph?: WikilinkGraphIndex,
-) => Promise<QueryNotesResult>;
-
 export interface ReadDailyDeps {
   provider: VaultProvider;
   reader: VaultReader;
   graph: WikilinkGraphIndex;
-  runQuery?: RunQueryFn;
 }
 
 export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyHandlerResult> {
   const { provider, reader, graph } = deps;
-  const runQuery: RunQueryFn = deps.runQuery ?? runQueryNotes;
 
   return {
     name: 'read_daily',
@@ -53,7 +44,7 @@ export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyH
     handler: async (_input) => {
       const daily = await provider.readDaily();
       const today = deriveToday(daily.path);
-      const query = await runQuery(
+      const query = await runQueryNotes(
         {
           filter: {
             'frontmatter.created': { $regex: `^${today}` },
@@ -66,7 +57,7 @@ export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyH
         graph,
       );
 
-      const notesToday: NotesTodayItem[] = query.results.slice(0, NOTES_TODAY_CAP).map((item) => ({
+      const notesToday: NotesTodayItem[] = query.results.map((item) => ({
         path: item.path,
         frontmatter: item.frontmatter,
         backlink_count: item.backlink_count,

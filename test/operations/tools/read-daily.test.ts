@@ -1,29 +1,45 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildReadDailyTool } from '../../../src/modules/operations/tools/read-daily.js';
-import type { QueryNotesResult } from '../../../src/lib/obsidian/query/types.js';
-import { makeGraph, makeProvider, makeReader } from './_helpers.js';
+import { type ReadNotesItem, type VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
+import { makeGraph, makeProvider } from './_helpers.js';
 
-function makeRunQuery(result: QueryNotesResult) {
-  return vi.fn().mockResolvedValue(result);
+interface FakeNote {
+  path: string;
+  frontmatter: Record<string, unknown>;
 }
 
-function emptyQueryResult(): QueryNotesResult {
-  return { results: [], count: 0, truncated: false };
+function buildReader(notes: FakeNote[]): VaultReader {
+  return {
+    scan: vi.fn(async () => notes.map((n) => n.path)),
+    readNotes: vi.fn(async ({ paths }: { paths: string[] }): Promise<ReadNotesItem[]> => {
+      const byPath = new Map(notes.map((n) => [n.path, n]));
+      return paths.map((p) => {
+        const note = byPath.get(p);
+        if (!note) {
+          return { path: p, error: { code: 'NOT_FOUND' as const, message: 'missing' } };
+        }
+        return { path: note.path, frontmatter: note.frontmatter, content: '' };
+      });
+    }),
+  };
+}
+
+function dailyProvider(dailyPath: string, content = '') {
+  return makeProvider({
+    readDaily: vi.fn().mockResolvedValue({ path: dailyPath, frontmatter: null, content }),
+  });
 }
 
 describe('operations.readDaily handler', () => {
   it('forwards to provider.readDaily and returns daily fields unchanged', async () => {
-    const provider = makeProvider({
-      readDaily: vi
-        .fn()
-        .mockResolvedValue({ path: 'Daily/2026-05-12.md', frontmatter: null, content: 'today' }),
+    const provider = dailyProvider('Daily/2026-05-12.md', 'today');
+    const tool = buildReadDailyTool({
+      provider,
+      reader: buildReader([]),
+      graph: makeGraph(),
     });
-    const reader = makeReader();
-    const graph = makeGraph();
-    const runQuery = makeRunQuery(emptyQueryResult());
 
-    const tool = buildReadDailyTool({ provider, reader, graph, runQuery });
     const result = await tool.handler({});
 
     expect(provider.readDaily).toHaveBeenCalledTimes(1);
@@ -33,105 +49,85 @@ describe('operations.readDaily handler', () => {
   });
 
   it('returns notes_today: [] when no notes were created today', async () => {
-    const provider = makeProvider({
-      readDaily: vi
-        .fn()
-        .mockResolvedValue({ path: 'Daily/2026-05-12.md', frontmatter: null, content: '' }),
-    });
-    const runQuery = makeRunQuery(emptyQueryResult());
-
     const tool = buildReadDailyTool({
-      provider,
-      reader: makeReader(),
+      provider: dailyProvider('Daily/2026-05-12.md'),
+      reader: buildReader([
+        { path: 'Notes/old.md', frontmatter: { created: '2026-05-01', type: 'reflection' } },
+      ]),
       graph: makeGraph(),
-      runQuery,
     });
+
     const result = await tool.handler({});
 
     expect(result.notes_today).toEqual([]);
   });
 
-  it('builds a filter using the date from the daily-note basename and excludes type: daily', async () => {
-    const provider = makeProvider({
-      readDaily: vi
-        .fn()
-        .mockResolvedValue({ path: 'Daily/2026-05-12.md', frontmatter: null, content: '' }),
-    });
-    const runQuery = makeRunQuery(emptyQueryResult());
-
+  it('returns notes created today and excludes type: daily', async () => {
     const tool = buildReadDailyTool({
-      provider,
-      reader: makeReader(),
-      graph: makeGraph(),
-      runQuery,
-    });
-    await tool.handler({});
-
-    expect(runQuery).toHaveBeenCalledTimes(1);
-    const [input] = runQuery.mock.calls[0];
-    expect(input).toMatchObject({
-      filter: {
-        'frontmatter.created': { $regex: '^2026-05-12' },
-        'frontmatter.type': { $ne: 'daily' },
-      },
-      sort: { field: 'path', order: 'asc' },
-      limit: 200,
-    });
-  });
-
-  it('falls back to the local date when the basename is not YYYY-MM-DD', async () => {
-    const provider = makeProvider({
-      readDaily: vi
-        .fn()
-        .mockResolvedValue({ path: 'Daily/unusual-name.md', frontmatter: null, content: '' }),
-    });
-    const runQuery = makeRunQuery(emptyQueryResult());
-
-    const tool = buildReadDailyTool({
-      provider,
-      reader: makeReader(),
-      graph: makeGraph(),
-      runQuery,
-    });
-    await tool.handler({});
-
-    const [input] = runQuery.mock.calls[0];
-    const regex = (input.filter as { 'frontmatter.created': { $regex: string } })[
-      'frontmatter.created'
-    ].$regex;
-    expect(regex).toMatch(/^\^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it('projects query results to { path, frontmatter, backlink_count } and drops tags/content', async () => {
-    const provider = makeProvider({
-      readDaily: vi
-        .fn()
-        .mockResolvedValue({ path: 'Daily/2026-05-12.md', frontmatter: null, content: '' }),
-    });
-    const runQuery = makeRunQuery({
-      results: [
+      provider: dailyProvider('Daily/2026-05-12.md'),
+      reader: buildReader([
+        { path: 'Daily/2026-05-12.md', frontmatter: { created: '2026-05-12', type: 'daily' } },
         {
           path: 'Reflections/morning.md',
           frontmatter: { created: '2026-05-12', type: 'reflection' },
-          backlink_count: 2,
-          content: 'should be dropped',
-        } as unknown as QueryNotesResult['results'][number],
-        {
-          path: 'Tasks/buy-milk.md',
-          frontmatter: { created: '2026-05-12', type: 'task' },
-          backlink_count: 0,
         },
-      ],
-      count: 2,
-      truncated: false,
+        { path: 'Tasks/buy-milk.md', frontmatter: { created: '2026-05-12', type: 'task' } },
+        { path: 'Notes/old.md', frontmatter: { created: '2026-05-11', type: 'reflection' } },
+      ]),
+      graph: makeGraph(),
     });
 
+    const result = await tool.handler({});
+
+    expect(result.notes_today.map((n) => n.path)).toEqual([
+      'Reflections/morning.md',
+      'Tasks/buy-milk.md',
+    ]);
+  });
+
+  it('matches frontmatter.created when it is an ISO datetime, not just a date', async () => {
     const tool = buildReadDailyTool({
-      provider,
-      reader: makeReader(),
+      provider: dailyProvider('Daily/2026-05-12.md'),
+      reader: buildReader([
+        {
+          path: 'Notes/morning.md',
+          frontmatter: { created: '2026-05-12', type: 'reflection' },
+        },
+        {
+          path: 'Notes/afternoon.md',
+          frontmatter: { created: '2026-05-12T14:30:00', type: 'reflection' },
+        },
+        {
+          path: 'Notes/wrong-day.md',
+          frontmatter: { created: '2026-05-13T00:00:00', type: 'reflection' },
+        },
+      ]),
       graph: makeGraph(),
-      runQuery,
     });
+
+    const result = await tool.handler({});
+
+    expect(result.notes_today.map((n) => n.path)).toEqual([
+      'Notes/afternoon.md',
+      'Notes/morning.md',
+    ]);
+  });
+
+  it('projects each entry to { path, frontmatter, backlink_count } and drops content', async () => {
+    const graph = makeGraph({
+      getBacklinkCount: vi.fn((p: string) => (p === 'Reflections/morning.md' ? 2 : 0)),
+    });
+    const tool = buildReadDailyTool({
+      provider: dailyProvider('Daily/2026-05-12.md'),
+      reader: buildReader([
+        {
+          path: 'Reflections/morning.md',
+          frontmatter: { created: '2026-05-12', type: 'reflection' },
+        },
+      ]),
+      graph,
+    });
+
     const result = await tool.handler({});
 
     expect(result.notes_today).toEqual([
@@ -140,11 +136,6 @@ describe('operations.readDaily handler', () => {
         frontmatter: { created: '2026-05-12', type: 'reflection' },
         backlink_count: 2,
       },
-      {
-        path: 'Tasks/buy-milk.md',
-        frontmatter: { created: '2026-05-12', type: 'task' },
-        backlink_count: 0,
-      },
     ]);
     for (const item of result.notes_today) {
       expect(item).not.toHaveProperty('content');
@@ -152,60 +143,62 @@ describe('operations.readDaily handler', () => {
     }
   });
 
-  it('passes through whatever order the query engine returned (sort handled by engine)', async () => {
-    const provider = makeProvider({
-      readDaily: vi
-        .fn()
-        .mockResolvedValue({ path: 'Daily/2026-05-12.md', frontmatter: null, content: '' }),
-    });
-    const runQuery = makeRunQuery({
-      results: [
-        { path: 'A.md', frontmatter: { created: '2026-05-12' }, backlink_count: 0 },
-        { path: 'B.md', frontmatter: { created: '2026-05-12' }, backlink_count: 0 },
-        { path: 'C.md', frontmatter: { created: '2026-05-12' }, backlink_count: 0 },
-      ],
-      count: 3,
-      truncated: false,
+  it('sorts notes_today by path ascending', async () => {
+    const tool = buildReadDailyTool({
+      provider: dailyProvider('Daily/2026-05-12.md'),
+      reader: buildReader([
+        { path: 'C.md', frontmatter: { created: '2026-05-12' } },
+        { path: 'A.md', frontmatter: { created: '2026-05-12' } },
+        { path: 'B.md', frontmatter: { created: '2026-05-12' } },
+      ]),
+      graph: makeGraph(),
     });
 
-    const tool = buildReadDailyTool({
-      provider,
-      reader: makeReader(),
-      graph: makeGraph(),
-      runQuery,
-    });
     const result = await tool.handler({});
 
     expect(result.notes_today.map((n) => n.path)).toEqual(['A.md', 'B.md', 'C.md']);
   });
 
-  it('caps notes_today at 200 entries silently when the engine returns more', async () => {
-    const provider = makeProvider({
-      readDaily: vi
-        .fn()
-        .mockResolvedValue({ path: 'Daily/2026-05-12.md', frontmatter: null, content: '' }),
-    });
-    const oversized = Array.from({ length: 201 }, (_, i) => ({
+  it('caps notes_today at 200 entries when more notes match', async () => {
+    const oversized = Array.from({ length: 250 }, (_, i) => ({
       path: `Notes/${String(i).padStart(3, '0')}.md`,
       frontmatter: { created: '2026-05-12' },
-      backlink_count: 0,
     }));
-    const runQuery = makeRunQuery({
-      results: oversized,
-      count: oversized.length,
-      truncated: true,
+    const tool = buildReadDailyTool({
+      provider: dailyProvider('Daily/2026-05-12.md'),
+      reader: buildReader(oversized),
+      graph: makeGraph(),
     });
 
-    const tool = buildReadDailyTool({
-      provider,
-      reader: makeReader(),
-      graph: makeGraph(),
-      runQuery,
-    });
     const result = await tool.handler({});
 
     expect(result.notes_today.length).toBe(200);
     expect(result.notes_today[0].path).toBe('Notes/000.md');
     expect(result.notes_today[199].path).toBe('Notes/199.md');
+  });
+
+  it('uses the local date when the daily-note basename is not YYYY-MM-DD', async () => {
+    // The fallback path can't be asserted by date value (we don't pin Date.now in this
+    // suite). Instead: ensure the call does not throw and that today's notes can still
+    // be retrieved when the basename is unconventional and a note's `created` matches
+    // the system "today". We construct that "today" from new Date() ourselves.
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    const todayStr = `${y}-${m}-${d}`;
+
+    const tool = buildReadDailyTool({
+      provider: dailyProvider('Daily/unusual-name.md'),
+      reader: buildReader([
+        { path: 'Notes/match.md', frontmatter: { created: todayStr, type: 'reflection' } },
+        { path: 'Notes/old.md', frontmatter: { created: '2020-01-01', type: 'reflection' } },
+      ]),
+      graph: makeGraph(),
+    });
+
+    const result = await tool.handler({});
+
+    expect(result.notes_today.map((n) => n.path)).toEqual(['Notes/match.md']);
   });
 });

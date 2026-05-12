@@ -104,7 +104,7 @@ export interface OperationsToolHandlers {
     content: string;
     notes_today: Array<{
       path: string;
-      frontmatter: Record<string, unknown> | null;
+      frontmatter: Record<string, unknown>;
       backlink_count: number;
     }>;
   }>;
