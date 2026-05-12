@@ -148,14 +148,31 @@ Reference frontmatter keys with the dotted prefix `frontmatter.<key>`. Reference
 
 ### `read_daily`
 
-Read today's daily note. Returns `{ path, frontmatter, content }`. The path is computed from the daily-notes plugin config; if the note does not yet exist, the result still carries the canonical path so callers can compose with `create_note`.
+Read today's daily note. Returns:
+
+```typescript
+{
+  path: string; // canonical path of today's daily note
+  frontmatter: Record<string, unknown> | null;
+  content: string; // body without YAML block
+  notes_today: Array<{
+    path: string;
+    frontmatter: Record<string, unknown>;
+    backlink_count: number;
+  }>; // notes created today, type: daily excluded
+}
+```
+
+`notes_today` is the result of `query_notes({ "frontmatter.created": <today>, "frontmatter.type": { "$ne": "daily" } })`, sorted by `path` ascending, metadata only (no `content`), capped at 200 entries. It exists because the daily note is often near-empty while the real content of the day lives in separate notes tagged with `frontmatter.created`; this saves a follow-up `query_notes` call when answering _"what's on my agenda?"_ or _"what happened today?"_.
+
+The `path` is computed from the daily-notes plugin config; if the note does not yet exist, the result still carries the canonical path so callers can compose with `create_note`. "Today" is derived from the daily-note basename, so the date used to populate `notes_today` is always aligned with the daily-notes plugin's own notion of today.
 
 ### Adding to today's daily note
 
 There is no dedicated `append_daily` tool — compose:
 
-1. `read_daily()` → `{ path, content }` (or `{ path, content: '' }` if the note is empty / missing).
-2. If the note exists, call `edit_note({ path, content: existingBody + newContent })` (no `replace` field → full-body rewrite).
+1. `read_daily()` → `{ path, content, ... }` (or `{ path, content: '', ... }` if the note is empty / missing).
+2. If the note exists, call `edit_note({ path, content: existingBody + newContent })` (omit `replace` → full-body rewrite).
 3. If the note does not exist, call `create_note({ path, content: newContent })`.
 
 The trade-off vs the old `append_daily` is one extra read per write. In an agentic workflow this is invisible — the assistant typically reads daily-note context before writing anyway.
