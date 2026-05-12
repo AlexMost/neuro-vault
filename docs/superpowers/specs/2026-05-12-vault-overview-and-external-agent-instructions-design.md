@@ -1,0 +1,200 @@
+# Vault overview tool + vault-driven MCP instructions
+
+Date: 2026-05-12
+Status: Approved
+Source task: `Tasks/Expose vault structure conventions via MCP` (vault)
+
+## Goal
+
+Дати зовнішньому агенту (підключеному до neuro-vault MCP з робочого проєкту, де `AGENTS.md` вокту не видно) два шари знання про вокт у момент `initialize`:
+
+1. **Snapshot стану** — один tool, що повертає top-level папки з counts, топ-теги, frontmatter properties із типами/частотами, total notes, топ-10 нот за backlinks. Закриває ~70% орієнтації і знімає потребу в ритуалі `list_tags + list_properties + query_notes` на старті сесії.
+2. **Vault-specific конвенції** — те, що не виводиться зі snapshot (закриті набори значень `type`, заборонені папки, semantic intent). Живе у вокті, не в коді сервера, інжектиться в MCP `instructions` при `initialize`.
+
+## Non-goals
+
+- MCP resource `vault://overview` (bonus layer для клієнтів, що auto-load resources; окрема задача).
+- Recent activity per folder (mtime); YAGNI до першого болю.
+- Hard `create_note` guard-rails (refuse у `Notes/`, `Resources/`, …) — окрема задача, явно винесена в source task.
+- Inline-теги в body для top_tags — overview це orientation, не exhaustive count. Frontmatter-тегів достатньо.
+
+## Architecture
+
+### Components
+
+```
+get_vault_overview tool (modules/operations/tools/get-vault-overview.ts)
+    │
+    ▼
+computeVaultOverview (lib/obsidian/vault-overview.ts)
+    │
+    ├──► VaultReader.scan + readNotes(fields=['frontmatter'])  (one pass, batched)
+    └──► WikilinkGraphIndex.ensureFresh + getBacklinkCount     (existing primitive)
+
+buildServerInstructions(vaultPath) (server.ts)
+    │
+    ├──► static base text (current SERVER_INSTRUCTIONS, unchanged)
+    ├──► always-on: one-line hint про get_vault_overview
+    └──► optional: <vaultPath>/.neuro-vault/for-external-agents.md
+              ├─ ENOENT      → skip silently
+              ├─ other error → stderr warning, skip
+              └─ present     → append under "## Vault-specific conventions"
+```
+
+### Module placement
+
+- `src/modules/operations/tools/get-vault-overview.ts` — tool registration (zod schema, description, handler).
+- `src/lib/obsidian/vault-overview.ts` — pure computation: `(reader, graph) → VaultOverview`. Testable in isolation.
+- `src/server.ts` — `buildServerInstructions(vaultPath: string): Promise<string>`. `serverFactory` signature changes to accept the built string.
+
+Decision: aggregation lives in `lib/obsidian/`, not inside the tool file. The tool is a thin adapter (zod + description); the logic is reusable, e.g. for a future `vault://overview` resource that would share the same computation.
+
+## Interfaces
+
+### Tool: `get_vault_overview`
+
+**Input**: `{}` (empty object — overview is parameterless by design).
+
+**Output** (`VaultOverview`):
+
+```ts
+interface VaultOverview {
+  total_notes: number;
+  folders: Array<{ path: string; count: number }>; // top-level only, sort by count desc
+  top_tags: Array<{ name: string; count: number }>; // top 30, sort by count desc
+  properties: Array<{
+    name: string;
+    count: number;
+    types: string[]; // sorted unique JS-side types
+  }>; // top 30, sort by count desc
+  top_by_backlinks: Array<{
+    path: string;
+    title: string; // basename without .md
+    backlink_count: number;
+    type?: string; // frontmatter.type if present and string
+  }>; // top 10, sort by backlink_count desc
+}
+```
+
+**Description (for MCP clients)** — surfaces "call me first":
+
+> Returns a single snapshot of vault structure: top-level folders with note counts, top tags, frontmatter properties with inferred types, total note count, and the top 10 notes by inbound wikilinks. Call this once at the start of a session to orient yourself before reaching for `list_tags`, `list_properties`, or exploratory `query_notes`. Reads directly from disk; does not need Obsidian to be running.
+
+**Constants**:
+
+- `TOP_TAGS_LIMIT = 30`
+- `TOP_PROPERTIES_LIMIT = 30`
+- `TOP_BACKLINKS_LIMIT = 10`
+
+These are hard-coded in v1 (no input params). If a future caller needs more, we add an optional `limits` field then; YAGNI now.
+
+### Type inference (properties)
+
+For each frontmatter value, derive a type label:
+
+| JS value                            | Label       |
+| ----------------------------------- | ----------- |
+| `null` / `undefined`                | `"null"`    |
+| `boolean`                           | `"boolean"` |
+| `number`                            | `"number"`  |
+| `Array`                             | `"list"`    |
+| `string` matching ISO date/datetime | `"date"`    |
+| any other `string`                  | `"string"`  |
+| `object` (non-array, non-null)      | `"object"`  |
+
+`types` per property is the sorted unique set across all notes that have that key. ISO date regex matches `^\d{4}-\d{2}-\d{2}(T...)?$` — same shape that `set_property` accepts.
+
+### Folder aggregation
+
+Top-level only. For each note path `Foo/Bar/Baz.md`, the folder is `Foo`. For a root note `Baz.md`, the folder is `"/"` (sentinel for root). Sorted by count desc, then by path asc.
+
+### Server instructions
+
+`buildServerInstructions(vaultPath: string): Promise<string>` lives in `src/server.ts`:
+
+```ts
+async function buildServerInstructions(vaultPath: string): Promise<string> {
+  let result = STATIC_SERVER_INSTRUCTIONS; // unchanged current text
+  result += '\n\n' + GET_VAULT_OVERVIEW_HINT; // always-on
+  const extra = await readExternalAgentInstructions(vaultPath);
+  if (extra !== null) {
+    result += '\n\n## Vault-specific conventions\n\n' + extra;
+  }
+  return result;
+}
+```
+
+Where:
+
+- `GET_VAULT_OVERVIEW_HINT` is one paragraph telling the agent to call `get_vault_overview` once at session start.
+- `readExternalAgentInstructions(vaultPath)` reads `<vaultPath>/.neuro-vault/for-external-agents.md`:
+  - file missing → returns `null` silently;
+  - permission/other read error → `process.stderr.write` a one-line warning, returns `null`;
+  - file present → returns its UTF-8 content trimmed.
+
+`serverFactory` signature changes from `() => ToolServer` to `(instructions: string) => ToolServer`. `startNeuroVaultServer` builds the string once and passes it in:
+
+```ts
+const instructions = await buildServerInstructions(config.vaultPath);
+const server = serverFactory(instructions);
+```
+
+## Error handling
+
+| Surface                                                         | Behaviour                                                                                     |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `reader.scan()` fails                                           | Bubble as-is; tool handler returns `ToolHandlerError` (matches `query_notes`).                |
+| Individual note read fails                                      | Skip that note in aggregation; do **not** fail the whole overview.                            |
+| `graph.ensureFresh()` fails                                     | Bubble. Graph is already best-effort per note internally.                                     |
+| Empty vault (0 notes)                                           | Return `{ total_notes: 0, folders: [], top_tags: [], properties: [], top_by_backlinks: [] }`. |
+| `.neuro-vault/for-external-agents.md` missing                   | Silent skip; static + always-on hint only.                                                    |
+| `.neuro-vault/for-external-agents.md` read error (EACCES, etc.) | `process.stderr.write` warning; fall back to static + always-on hint.                         |
+
+No `ToolHandlerError` codes added; existing `INVALID_ARGUMENT`/`READ_FAILED` are not raised by this tool because there is no user input.
+
+## Testing strategy
+
+### `vault-overview.test.ts` (unit, in-memory reader/graph)
+
+- Empty vault → empty arrays, total_notes 0.
+- Single note at root → folder `"/"` count 1.
+- Multiple folders, asserts sort order + top-level-only.
+- Property type inference: cover string / number / boolean / list / date / null / mixed types per key.
+- Tag counts from frontmatter `tags` field (array form and string form).
+- Top-10 backlinks: more than 10 candidates, ties broken by path asc.
+- Notes with read errors are skipped, not fatal.
+
+### `get-vault-overview.test.ts` (tool-level)
+
+- Smoke test: builds tool with mocked deps, asserts schema validation accepts `{}`, output shape matches `VaultOverview`.
+- Verifies tool name, title, description constants.
+
+### `build-server-instructions.test.ts`
+
+- File absent → result equals base + hint, no warning emitted.
+- File present → result includes `## Vault-specific conventions` followed by file content.
+- File present but empty → still includes header (cheap, predictable; v1 doesn't try to be clever).
+- Read error → fallback path; warning written to stderr (mockable).
+
+### Existing tests
+
+`server.test.ts` (if it covers `defaultServerFactory`) updated for new `instructions` parameter.
+
+## Documentation updates
+
+- `README.md` — add `get_vault_overview` to the tool list with a one-line description; brief note on `.neuro-vault/for-external-agents.md`.
+- `docs/architecture/mcp-server-shape.md` — extend the "server instructions" paragraph to describe the dynamic layer.
+- `docs/guide/vault-operations.md` — short subsection on `get_vault_overview` (next to `list_tags` / `list_properties`).
+
+## Definition of Done
+
+1. `get_vault_overview` registered in operations module, callable via MCP, returns shape above.
+2. Tool works without Obsidian CLI (verified by integration test that does not mock the CLI).
+3. `buildServerInstructions` reads `.neuro-vault/for-external-agents.md` when present, falls back gracefully when absent or unreadable.
+4. `get_vault_overview` is mentioned in the always-on hint regardless of whether the file exists.
+5. `npm test`, `npm run lint`, `npx tsc --noEmit` все зелене.
+6. README + architecture doc + vault-operations guide оновлено в тому ж PR.
+
+## Open questions
+
+None at spec-write time. If implementation surfaces a question (e.g. how to count tags when frontmatter `tags` is a string vs. array), fix the spec inline and continue.
