@@ -16,7 +16,8 @@ existing return shape, so existing callers keep working unchanged.
 ## Scope
 
 - Add `notes_today: Array<{ path, frontmatter, backlink_count }>` to the
-  `read_daily` return shape.
+  `read_daily` return shape (each item's `frontmatter` is non-null — only notes
+  with a parseable `frontmatter.created` value can match the filter).
 - Always populated, no caller-facing parameters.
 - Metadata only — no `content`, no `tags`. Callers fetch bodies they care
   about via `read_notes`.
@@ -107,7 +108,7 @@ in the tool handler, not in `runQueryNotes`.
   content: string;
   notes_today: Array<{
     path: string;
-    frontmatter: Record<string, unknown> | null;
+    frontmatter: Record<string, unknown>;
     backlink_count: number;
   }>;
 }
