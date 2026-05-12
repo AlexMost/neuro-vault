@@ -1,4 +1,6 @@
 import { createRequire } from 'node:module';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -18,6 +20,24 @@ const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json'
 };
 
 type ToolServer = Pick<McpServer, 'registerTool' | 'connect'>;
+
+const EXTERNAL_AGENT_INSTRUCTIONS_PATH = '.neuro-vault/for-external-agents.md';
+
+export async function readExternalAgentInstructions(vaultPath: string): Promise<string | null> {
+  const filePath = path.join(vaultPath, EXTERNAL_AGENT_INSTRUCTIONS_PATH);
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    return raw.trim();
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === 'ENOENT') return null;
+    const message = (err as Error).message;
+    process.stderr.write(
+      `[neuro-vault] could not read ${EXTERNAL_AGENT_INSTRUCTIONS_PATH}: ${message}\n`,
+    );
+    return null;
+  }
+}
 
 export interface NeuroVaultStartupDependencies {
   semantic?: SemanticModuleDeps;
