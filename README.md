@@ -126,11 +126,17 @@ User guide lives in [`docs/guide/`](./docs/guide/README.md):
 
 - [Installation](./docs/guide/installation.md)
 - [Semantic Search](./docs/guide/semantic-search.md) — `search_notes`, `get_similar_notes`, `find_duplicates`, `get_stats`
-- [Vault Operations](./docs/guide/vault-operations.md) — note CRUD, daily notes, properties, tags, structured queries (`query_notes`)
+- [Vault Operations](./docs/guide/vault-operations.md) — note CRUD, daily notes, properties, tags, structured queries (`query_notes`), vault snapshot (`get_vault_overview`)
 - [Routing Between Tools](./docs/guide/routing.md)
 - [Configuration](./docs/guide/configuration.md) — CLI args, troubleshooting, limitations, **migration to 2.0**, development
 
 Architecture / internals: [`docs/architecture/`](./docs/architecture/).
+
+---
+
+### Vault-specific conventions for external agents
+
+When the server starts, it looks for `<vault>/.neuro-vault/for-external-agents.md`. If the file exists, its content is appended to the MCP `instructions` that clients receive at `initialize`, under a `## Vault-specific conventions` section. Use this file to teach external agents vault-specific rules that cannot be derived from the snapshot — for example, closed sets of frontmatter `type` values, or folders that are off-limits for writes. The file is optional; without it the server still ships sane defaults plus a pointer to `get_vault_overview`.
 
 ---
 

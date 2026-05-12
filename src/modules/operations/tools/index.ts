@@ -7,6 +7,7 @@ import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js
 import { buildCreateNoteTool } from './create-note.js';
 import { buildEditNoteTool } from './edit-note.js';
 import { buildGetNoteLinksTool } from './get-note-links.js';
+import { buildGetVaultOverviewTool } from './get-vault-overview.js';
 import { buildListPropertiesTool } from './list-properties.js';
 import { buildListTagsTool } from './list-tags.js';
 import { buildQueryNotesTool } from './query-notes.js';
@@ -36,5 +37,6 @@ export function buildOperationsTools(deps: OperationsToolDeps): ToolRegistration
     registerTool(buildListPropertiesTool(deps)),
     registerTool(buildListTagsTool(deps)),
     registerTool(buildGetNoteLinksTool(deps)),
+    registerTool(buildGetVaultOverviewTool(deps)),
   ];
 }

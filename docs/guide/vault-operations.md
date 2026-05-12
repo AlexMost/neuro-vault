@@ -239,6 +239,12 @@ Returns `[{ name, count }, ...]`.
 
 To list the notes that carry a specific tag, use [`query_notes`](#query_notes) with `{ filter: { tags: '<name>' } }`.
 
+### `get_vault_overview`
+
+Get a snapshot of your vault's structure in one call. Returns top-level folder counts, top tags, frontmatter properties, the total note count, and the top 10 notes by inbound wikilinks. This is the recommended first call for an agent orienting itself in a vault it has not seen before — one call replaces the older `list_tags + list_properties + exploratory query_notes` ritual.
+
+The same payload is available as the MCP resource `vault://overview`; clients that auto-load resources will pull it without an explicit tool call.
+
 ## Wikilink graph
 
 ### `get_note_links`

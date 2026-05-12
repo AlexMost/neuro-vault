@@ -1,4 +1,6 @@
 import { createRequire } from 'node:module';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -9,6 +11,7 @@ import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
+import type { ResourceRegistration } from './lib/resource-registration.js';
 import type { ServerConfig } from './types.js';
 
 const require = createRequire(import.meta.url);
@@ -17,16 +20,28 @@ const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json'
   version: string;
 };
 
-type ToolServer = Pick<McpServer, 'registerTool' | 'connect'>;
+type ToolServer = Pick<McpServer, 'registerTool' | 'registerResource' | 'connect'>;
+
+const EXTERNAL_AGENT_INSTRUCTIONS_PATH = '.neuro-vault/for-external-agents.md';
+
+export async function readExternalAgentInstructions(vaultPath: string): Promise<string | null> {
+  const filePath = path.join(vaultPath, EXTERNAL_AGENT_INSTRUCTIONS_PATH);
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    return raw.trim();
+  } catch {
+    return null;
+  }
+}
 
 export interface NeuroVaultStartupDependencies {
   semantic?: SemanticModuleDeps;
   operations?: OperationsModuleDeps;
-  serverFactory?: () => ToolServer;
+  serverFactory?: (instructions: string) => ToolServer;
   transportFactory?: () => StdioServerTransport;
 }
 
-const SERVER_INSTRUCTIONS = `\
+const STATIC_SERVER_INSTRUCTIONS = `\
 This server provides two capability sets for an Obsidian vault: semantic search (when enabled) and direct vault operations (when enabled). Use the right one based on the user's intent.
 
 ## Role: a second brain alongside the project
@@ -111,11 +126,23 @@ If the user gives an exact anchor (note path, daily note, tag, frontmatter field
 For tag-driven questions ("which notes are tagged X?", "show me everything in #ai") use \`query_notes\` with \`{ filter: { tags: '<name>' } }\`, not \`search_notes\` — the answer is exact, not fuzzy.
 `;
 
-function defaultServerFactory(): ToolServer {
-  return new McpServer(
-    { name: SERVER_NAME, version: SERVER_VERSION },
-    { instructions: SERVER_INSTRUCTIONS },
-  );
+const GET_VAULT_OVERVIEW_HINT = `\
+## Orientation
+
+Before reaching for \`list_tags\`, \`list_properties\`, or exploratory \`query_notes\`, call \`get_vault_overview\` once at the start of a session. It returns the top-level folder layout with counts, the top tags, frontmatter properties with inferred types, the total note count, and the top 10 notes by inbound wikilinks — enough to orient yourself in a single call. The same payload is available as the MCP resource \`vault://overview\` for clients that auto-load resources.`;
+
+export async function buildServerInstructions(vaultPath: string): Promise<string> {
+  let result = STATIC_SERVER_INSTRUCTIONS;
+  result += '\n\n' + GET_VAULT_OVERVIEW_HINT;
+  const extra = await readExternalAgentInstructions(vaultPath);
+  if (extra !== null && extra !== '') {
+    result += '\n\n## Vault-specific conventions\n\n' + extra;
+  }
+  return result;
+}
+
+function defaultServerFactory(instructions: string): ToolServer {
+  return new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions });
 }
 
 function defaultTransportFactory(): StdioServerTransport {
@@ -130,9 +157,10 @@ export async function startNeuroVaultServer(
     throw new Error('No modules enabled — pass --semantic or --operations');
   }
 
+  const instructions = await buildServerInstructions(config.vaultPath);
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;
-  const server = serverFactory();
+  const server = serverFactory(instructions);
 
   // The wikilink graph is a vault-level primitive consumed by both modules
   // (operations: get_note_links + query_notes enrichment; semantic:
@@ -145,7 +173,8 @@ export async function startNeuroVaultServer(
     graph: sharedGraph,
   });
 
-  const registrations: ToolRegistration[] = [];
+  const toolRegistrations: ToolRegistration[] = [];
+  const resourceRegistrations: ResourceRegistration[] = [];
   let warmup: () => Promise<void> = async () => {};
 
   if (config.semantic.enabled) {
@@ -162,7 +191,7 @@ export async function startNeuroVaultServer(
         ...deps.semantic,
       },
     );
-    registrations.push(...semantic.tools);
+    toolRegistrations.push(...semantic.tools);
     warmup = semantic.warmup;
   }
 
@@ -174,11 +203,16 @@ export async function startNeuroVaultServer(
       },
       { graph: sharedGraph, ...deps.operations },
     );
-    registrations.push(...operations.tools);
+    toolRegistrations.push(...operations.tools);
+    resourceRegistrations.push(...operations.resources);
   }
 
-  for (const tool of registrations) {
+  for (const tool of toolRegistrations) {
     server.registerTool(tool.name, tool.spec, tool.handler);
+  }
+
+  for (const resource of resourceRegistrations) {
+    server.registerResource(resource.name, resource.uri, resource.metadata, resource.handler);
   }
 
   await server.connect(transportFactory());

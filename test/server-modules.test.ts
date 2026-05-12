@@ -15,12 +15,18 @@ function createTempVaultPath() {
 
 function createFakeServer() {
   const registeredToolNames: string[] = [];
+  const registeredResourceUris: string[] = [];
   return {
     registeredToolNames,
+    registeredResourceUris,
     registerTool: vi.fn((name: string) => {
       registeredToolNames.push(name);
       return {} as never;
     }),
+    registerResource: vi.fn((_name: string, uri: string) => {
+      registeredResourceUris.push(uri);
+      return {} as never;
+    }) as never,
     connect: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -68,7 +74,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
           corpusFactory,
           embeddingServiceFactory: () => ({ initialize, embed: vi.fn() }),
         },
-        serverFactory: () => server,
+        serverFactory: (_instructions: string) => server,
         transportFactory: () => ({}) as never,
       });
 
@@ -78,6 +84,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'find_duplicates',
         'get_stats',
       ]);
+      expect(server.registeredResourceUris).toEqual([]);
       expect(server.connect).toHaveBeenCalledTimes(1);
       await vi.waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
     } finally {
@@ -122,7 +129,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
               corpusFactory: vi.fn().mockResolvedValue(makeFakeCorpusIndex(new Map())),
               embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
             },
-            serverFactory: () => createFakeServer(),
+            serverFactory: (_instructions: string) => createFakeServer(),
             transportFactory: () => ({}) as never,
           },
         ),
@@ -132,7 +139,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('registers eleven operations tools when only --operations is enabled', async () => {
+  it('registers twelve operations tools when only --operations is enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
@@ -157,7 +164,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
             scan: vi.fn().mockResolvedValue([]),
           }),
         },
-        serverFactory: () => server,
+        serverFactory: (_instructions: string) => server,
         transportFactory: () => ({}) as never,
       });
 
@@ -173,13 +180,15 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'list_properties',
         'list_tags',
         'get_note_links',
+        'get_vault_overview',
       ]);
+      expect(server.registeredResourceUris).toEqual(['vault://overview']);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('registers fifteen tools (4 semantic + 11 operations) when both modules are enabled', async () => {
+  it('registers sixteen tools (4 semantic + 12 operations) when both modules are enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
@@ -211,7 +220,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
             scan: vi.fn().mockResolvedValue([]),
           }),
         },
-        serverFactory: () => server,
+        serverFactory: (_instructions: string) => server,
         transportFactory: () => ({}) as never,
       });
 
@@ -231,7 +240,9 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'list_properties',
         'list_tags',
         'get_note_links',
+        'get_vault_overview',
       ]);
+      expect(server.registeredResourceUris).toEqual(['vault://overview']);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }

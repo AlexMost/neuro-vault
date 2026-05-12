@@ -1,0 +1,114 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import { buildServerInstructions, readExternalAgentInstructions } from '../src/server.js';
+
+async function makeTempVault(): Promise<string> {
+  return fs.mkdtemp(path.join(os.tmpdir(), 'neuro-vault-instructions-'));
+}
+
+describe('readExternalAgentInstructions', () => {
+  it('returns null when the file is missing', async () => {
+    const vault = await makeTempVault();
+    try {
+      const result = await readExternalAgentInstructions(vault);
+      expect(result).toBeNull();
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+
+  it('returns the trimmed file content when the file is present', async () => {
+    const vault = await makeTempVault();
+    try {
+      const dir = path.join(vault, '.neuro-vault');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        path.join(dir, 'for-external-agents.md'),
+        '\n\n# Conventions\n- Do not write into Resources/\n\n',
+        'utf8',
+      );
+
+      const result = await readExternalAgentInstructions(vault);
+      expect(result).toBe('# Conventions\n- Do not write into Resources/');
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+
+  it('returns null when the path is unreadable (e.g. a directory)', async () => {
+    const vault = await makeTempVault();
+    try {
+      const dir = path.join(vault, '.neuro-vault');
+      await fs.mkdir(dir, { recursive: true });
+      // Make the path a directory so readFile fails with EISDIR.
+      await fs.mkdir(path.join(dir, 'for-external-agents.md'));
+
+      const result = await readExternalAgentInstructions(vault);
+      expect(result).toBeNull();
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('buildServerInstructions', () => {
+  it('appends the get_vault_overview hint regardless of whether the file exists', async () => {
+    const vault = await makeTempVault();
+    try {
+      const result = await buildServerInstructions(vault);
+      expect(result).toMatch(/get_vault_overview/);
+      expect(result).toMatch(/vault:\/\/overview/);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+
+  it('appends the vault-specific conventions section when the file exists', async () => {
+    const vault = await makeTempVault();
+    try {
+      const dir = path.join(vault, '.neuro-vault');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        path.join(dir, 'for-external-agents.md'),
+        '## Vault rules\n\n- Do not write into Resources/\n',
+        'utf8',
+      );
+
+      const result = await buildServerInstructions(vault);
+      expect(result).toMatch(/## Vault-specific conventions/);
+      expect(result).toMatch(/Do not write into Resources\//);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the vault-specific section when the file is missing', async () => {
+    const vault = await makeTempVault();
+    try {
+      const result = await buildServerInstructions(vault);
+      expect(result).not.toMatch(/## Vault-specific conventions/);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the vault-specific section when the file exists but is empty', async () => {
+    const vault = await makeTempVault();
+    try {
+      const dir = path.join(vault, '.neuro-vault');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'for-external-agents.md'), '   \n\n   ', 'utf8');
+
+      const result = await buildServerInstructions(vault);
+      expect(result).not.toMatch(/## Vault-specific conventions/);
+      // The always-on hint still appears.
+      expect(result).toMatch(/get_vault_overview/);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+});

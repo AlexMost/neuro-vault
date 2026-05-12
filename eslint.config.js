@@ -15,6 +15,7 @@ export default [
       globals: {
         console: 'readonly',
         process: 'readonly',
+        URL: 'readonly',
       },
       parser: tsParser,
       parserOptions: {

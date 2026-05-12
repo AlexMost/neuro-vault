@@ -12,7 +12,7 @@ export function toNoteRecord(item: ReadNotesItemSuccess, backlinkCount = 0): Not
   };
 }
 
-function extractTags(frontmatter: Record<string, unknown>): string[] {
+export function extractTags(frontmatter: Record<string, unknown>): string[] {
   const raw = frontmatter['tags'];
   if (raw === undefined || raw === null) return [];
   const list = Array.isArray(raw) ? raw : [raw];
