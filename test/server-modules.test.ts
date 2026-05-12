@@ -26,7 +26,7 @@ function createFakeServer() {
     registerResource: vi.fn((_name: string, uri: string) => {
       registeredResourceUris.push(uri);
       return {} as never;
-    }),
+    }) as never,
     connect: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -74,7 +74,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
           corpusFactory,
           embeddingServiceFactory: () => ({ initialize, embed: vi.fn() }),
         },
-        serverFactory: () => server,
+        serverFactory: (_instructions: string) => server,
         transportFactory: () => ({}) as never,
       });
 
@@ -128,7 +128,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
               corpusFactory: vi.fn().mockResolvedValue(makeFakeCorpusIndex(new Map())),
               embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
             },
-            serverFactory: () => createFakeServer(),
+            serverFactory: (_instructions: string) => createFakeServer(),
             transportFactory: () => ({}) as never,
           },
         ),
@@ -163,7 +163,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
             scan: vi.fn().mockResolvedValue([]),
           }),
         },
-        serverFactory: () => server,
+        serverFactory: (_instructions: string) => server,
         transportFactory: () => ({}) as never,
       });
 
@@ -218,7 +218,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
             scan: vi.fn().mockResolvedValue([]),
           }),
         },
-        serverFactory: () => server,
+        serverFactory: (_instructions: string) => server,
         transportFactory: () => ({}) as never,
       });
 

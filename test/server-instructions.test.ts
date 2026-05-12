@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { readExternalAgentInstructions } from '../src/server.js';
+import { buildServerInstructions, readExternalAgentInstructions } from '../src/server.js';
 
 async function makeTempVault(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'neuro-vault-instructions-'));
@@ -65,6 +65,48 @@ describe('readExternalAgentInstructions', () => {
       expect(stderrSpy).toHaveBeenCalledTimes(1);
       const message = String(stderrSpy.mock.calls[0]![0]);
       expect(message).toMatch(/for-external-agents\.md/);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('buildServerInstructions', () => {
+  it('appends the get_vault_overview hint regardless of whether the file exists', async () => {
+    const vault = await makeTempVault();
+    try {
+      const result = await buildServerInstructions(vault);
+      expect(result).toMatch(/get_vault_overview/);
+      expect(result).toMatch(/vault:\/\/overview/);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+
+  it('appends the vault-specific conventions section when the file exists', async () => {
+    const vault = await makeTempVault();
+    try {
+      const dir = path.join(vault, '.neuro-vault');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        path.join(dir, 'for-external-agents.md'),
+        '## Vault rules\n\n- Do not write into Resources/\n',
+        'utf8',
+      );
+
+      const result = await buildServerInstructions(vault);
+      expect(result).toMatch(/## Vault-specific conventions/);
+      expect(result).toMatch(/Do not write into Resources\//);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the vault-specific section when the file is missing', async () => {
+    const vault = await makeTempVault();
+    try {
+      const result = await buildServerInstructions(vault);
+      expect(result).not.toMatch(/## Vault-specific conventions/);
     } finally {
       await fs.rm(vault, { recursive: true, force: true });
     }
