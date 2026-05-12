@@ -3,6 +3,7 @@ import { vi } from 'vitest';
 import type { VaultProvider } from '../../../src/lib/obsidian/vault-provider.js';
 import type { VaultReader, ReadNotesItem } from '../../../src/lib/obsidian/vault-reader.js';
 import type { VaultWriter } from '../../../src/lib/obsidian/vault-writer.js';
+import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 
 export function makeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
   return {
@@ -31,4 +32,13 @@ export function makeWriter(overrides: Partial<VaultWriter> = {}): VaultWriter {
     replaceFullBody: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
+}
+
+export function makeGraph(overrides: Partial<WikilinkGraphIndex> = {}): WikilinkGraphIndex {
+  return {
+    ensureFresh: vi.fn().mockResolvedValue(undefined),
+    getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
+    getBacklinkCount: vi.fn(() => 0),
+    ...overrides,
+  } as unknown as WikilinkGraphIndex;
 }

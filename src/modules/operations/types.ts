@@ -102,6 +102,11 @@ export interface OperationsToolHandlers {
     path: string;
     frontmatter: Record<string, unknown> | null;
     content: string;
+    notes_today: Array<{
+      path: string;
+      frontmatter: Record<string, unknown>;
+      backlink_count: number;
+    }>;
   }>;
   setProperty(input: SetPropertyToolInput): Promise<{ ok: true }>;
   readProperty(

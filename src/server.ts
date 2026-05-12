@@ -49,7 +49,7 @@ Use \`read_notes\`, \`create_note\`, \`edit_note\`, \`read_daily\` when the user
 - Read one or more notes by path (\`read_notes\` — accepts a single vault-relative POSIX path string or an array of 1–50 such paths; prefer this over multiple sequential reads)
 - Create a new note, task, or idea (\`create_note\`)
 - Edit an existing note's body (\`edit_note\` — pass \`replace\` for exact-string find/replace, or omit it to overwrite the whole body. Frontmatter is never touched. If \`replace\` matches more than once, the call fails with \`AMBIGUOUS_MATCH\` listing the lines — make \`replace\` more specific or omit it to do a full rewrite). For "add at the end / start" use \`read_notes\` to fetch the body, modify it locally, and call \`edit_note\` without \`replace\`.
-- Read today's daily note (\`read_daily\` returns path + body). To add content to it, follow up with \`edit_note\` (\`replace_full\`); if the daily note doesn't yet exist, use \`create_note\` with the path \`read_daily\` returns.
+- Read today's daily note (\`read_daily\` returns \`{ path, frontmatter, content, notes_today }\`; \`notes_today\` lists notes created today excluding daily notes themselves, metadata only). To add content to today's daily, follow up with \`edit_note\` (omit \`replace\` for a full-body rewrite); if the daily note doesn't yet exist, use \`create_note\` with the path \`read_daily\` returns.
 
 \`create_note\` with \`overwrite: true\` is destructive. Always ask the user before overwriting an existing note.
 
