@@ -259,8 +259,12 @@ export class ObsidianCLIProvider implements VaultProvider {
   }
 
   private buildArgs(command: string, ...kvPairs: string[]): string[] {
-    const args = [command, ...kvPairs];
-    if (this.vaultName) args.push(`vault=${this.vaultName}`);
-    return args;
+    // obsidian-cli requires `vault=<name>` to come BEFORE the subcommand;
+    // appending it after kvPairs is silently ignored and the active vault wins.
+    // See https://forum.obsidian.md/t/cli-vault-parameter-ignored-all-commands-resolve-to-the-focused-vault/112217
+    if (this.vaultName) {
+      return [`vault=${this.vaultName}`, command, ...kvPairs];
+    }
+    return [command, ...kvPairs];
   }
 }
