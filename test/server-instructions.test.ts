@@ -67,6 +67,18 @@ describe('buildServerInstructions', () => {
     }
   });
 
+  it('recommends get_vault_overview as the first probe step (not the old list_tags / list_properties chain)', async () => {
+    const vault = await makeTempVault();
+    try {
+      const result = await buildServerInstructions(vault);
+      const probeStep = result.match(/1\.\s+\*\*Probe the vault structure\*\*[^\n]*/);
+      expect(probeStep).not.toBeNull();
+      expect(probeStep![0]).toMatch(/get_vault_overview/);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+
   it('appends the vault-specific conventions section when the file exists', async () => {
     const vault = await makeTempVault();
     try {
