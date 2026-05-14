@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.5.2](https://github.com/AlexMost/neuro-vault/compare/v5.5.1...v5.5.2) (2026-05-14)
+
+### Bug Fixes
+
+- **server:** recommend get_vault_overview as the first probe step ([5db979e](https://github.com/AlexMost/neuro-vault/commit/5db979ecec433762f0ceabe4b76b724328317b3a))
+
 ## [5.5.1](https://github.com/AlexMost/neuro-vault/compare/v5.5.0...v5.5.1) (2026-05-14)
 
 ### Bug Fixes
