@@ -199,6 +199,7 @@ export async function startNeuroVaultServer(
     const operations = createOperationsModule(
       {
         vaultPath: config.vaultPath,
+        vaultName: config.operations.vaultName,
         binaryPath: config.operations.binaryPath,
       },
       { graph: sharedGraph, ...deps.operations },

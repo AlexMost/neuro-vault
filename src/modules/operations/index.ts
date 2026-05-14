@@ -10,6 +10,7 @@ import type { ResourceRegistration } from '../../lib/resource-registration.js';
 
 export interface OperationsModuleConfig {
   vaultPath: string;
+  vaultName: string;
   binaryPath?: string;
 }
 
@@ -37,7 +38,7 @@ export function createOperationsModule(
   const writerFactory =
     deps.vaultWriterFactory ?? ((opts) => new FsVaultWriter({ vaultRoot: opts.vaultRoot }));
 
-  const provider = providerFactory({ binaryPath: config.binaryPath });
+  const provider = providerFactory({ binaryPath: config.binaryPath, vaultName: config.vaultName });
   const reader = readerFactory({ vaultRoot: config.vaultPath });
   const writer = writerFactory({ vaultRoot: config.vaultPath });
   const graph = deps.graph ?? new WikilinkGraphIndex({ reader });
