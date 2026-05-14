@@ -250,7 +250,7 @@ describe('ObsidianCLIProvider.setProperty', () => {
     );
   });
 
-  it('appends vault token when vaultName is set', async () => {
+  it('prepends vault token before the command when vaultName is set', async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec, vaultName: 'Brain' });
 
@@ -262,7 +262,8 @@ describe('ObsidianCLIProvider.setProperty', () => {
     });
 
     const args = exec.mock.calls[0][1] as string[];
-    expect(args[args.length - 1]).toBe('vault=Brain');
+    expect(args[0]).toBe('vault=Brain');
+    expect(args[1]).toBe('property:set');
   });
 });
 
