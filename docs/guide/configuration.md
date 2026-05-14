@@ -2,13 +2,14 @@
 
 ## CLI arguments
 
-| Argument         | Required | Default    | Description                                             |
-| ---------------- | -------- | ---------- | ------------------------------------------------------- |
-| `--vault`        | yes      | —          | Absolute path to the Obsidian vault directory           |
-| `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip) |
-| `--operations`   | no       | `true`     | Enable vault operations module (`--no-operations`)      |
-| `--obsidian-cli` | no       | `obsidian` | Path to the `obsidian` CLI binary (override only)       |
-| `--help`         | no       | —          | Show help                                               |
+| Argument         | Required | Default               | Description                                                                                                                                                                                                                                                                     |
+| ---------------- | -------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--vault`        | yes      | —                     | Absolute path to the Obsidian vault directory                                                                                                                                                                                                                                   |
+| `--vault-name`   | no       | basename of `--vault` | Override the Obsidian vault name used when invoking the Obsidian CLI. Set this only if you renamed the vault in Obsidian's **Manage vaults** UI and the display name no longer matches the directory name. If write tools fail with `VAULT_NOT_FOUND`, this is the flag to set. |
+| `--semantic`     | no       | `true`                | Enable semantic search module (`--no-semantic` to skip)                                                                                                                                                                                                                         |
+| `--operations`   | no       | `true`                | Enable vault operations module (`--no-operations`)                                                                                                                                                                                                                              |
+| `--obsidian-cli` | no       | `obsidian`            | Path to the `obsidian` CLI binary (override only)                                                                                                                                                                                                                               |
+| `--help`         | no       | —                     | Show help                                                                                                                                                                                                                                                                       |
 
 ## AGENTS.md / CLAUDE.md snippet
 

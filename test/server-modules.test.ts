@@ -122,7 +122,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
               modelKey: 'bge-micro-v2',
               modelId: 'TaylorAI/bge-micro-v2',
             },
-            operations: { enabled: false },
+            operations: { enabled: false, vaultName: path.basename(vaultPath) },
           },
           {
             semantic: {

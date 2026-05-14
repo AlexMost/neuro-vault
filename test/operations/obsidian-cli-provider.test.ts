@@ -434,6 +434,41 @@ describe('ObsidianCLIProvider.removeProperty', () => {
   });
 });
 
+describe('ObsidianCLIProvider — VAULT_NOT_FOUND mapping', () => {
+  it('maps stderr "vault not found" to VAULT_NOT_FOUND, not NOT_FOUND', async () => {
+    const exec = vi.fn().mockRejectedValue({
+      code: 1,
+      stderr: 'vault not found: Brain',
+      message: 'exited with code 1',
+    });
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'Brain' });
+
+    await expect(provider.createNote({ path: 'a.md', content: 'x' })).rejects.toMatchObject({
+      code: 'VAULT_NOT_FOUND',
+    });
+  });
+
+  it('VAULT_NOT_FOUND message mentions --vault-name and the unrecognized name', async () => {
+    const exec = vi.fn().mockRejectedValue({
+      code: 1,
+      stderr: 'vault does not exist: Brain',
+      message: 'exited with code 1',
+    });
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'Brain' });
+
+    try {
+      await provider.createNote({ path: 'a.md', content: 'x' });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ToolHandlerError);
+      const e = err as ToolHandlerError;
+      expect(e.code).toBe('VAULT_NOT_FOUND');
+      expect(e.message).toMatch(/--vault-name/);
+      expect(e.message).toMatch(/Brain/);
+    }
+  });
+});
+
 describe('ObsidianCLIProvider.listTags', () => {
   it('builds args with counts, sort=count, format=json', async () => {
     const exec = vi.fn().mockResolvedValue({

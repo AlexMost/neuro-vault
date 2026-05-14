@@ -57,3 +57,7 @@ There are two deliberate exceptions:
 2. `readDaily` returns `{ path, frontmatter, content }`: the YAML frontmatter block is split out of the CLI's read output and parsed into an object (or `null` for missing/malformed YAML). Frontmatter is structured metadata, not free-form markdown, and every consumer wants it parsed; embedding raw YAML in `content` would just push the same parser into each caller. The CLI's `daily` subcommand does not echo the file path, so the provider derives `path` via `obsidian daily:path`. The split itself lives in `src/modules/operations/frontmatter.ts` so the provider does not own the YAML parser directly.
 
 Both exceptions are explicit precisely because they violate the "no parsing / no validation" rule.
+
+## Vault binding
+
+The CLI invocation is bound to a specific vault at startup. `parseConfig` resolves a `vaultName` — either the explicit `--vault-name` flag or `path.basename(--vault)` — and threads it through `OperationsModuleConfig` into the provider. `ObsidianCLIProvider.buildArgs` then appends `vault=<name>` to every CLI call, so writes go to the configured vault regardless of which vault Obsidian considers "active". If the name does not match any vault Obsidian knows about, the provider returns `VAULT_NOT_FOUND` with a hint to set `--vault-name` explicitly.

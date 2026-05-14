@@ -27,5 +27,6 @@ export interface ServerConfig {
   operations: {
     enabled: boolean;
     binaryPath?: string;
+    vaultName: string;
   };
 }

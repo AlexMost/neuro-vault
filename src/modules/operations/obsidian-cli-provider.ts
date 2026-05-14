@@ -233,6 +233,17 @@ export class ObsidianCLIProvider implements VaultProvider {
       );
     }
 
+    if (/vault (not found|does not exist)/i.test(stderr)) {
+      return new ToolHandlerError(
+        'VAULT_NOT_FOUND',
+        `Obsidian does not recognize a vault named '${this.vaultName}'. ` +
+          `This usually means the vault was renamed in Obsidian's "Manage vaults" UI ` +
+          `and the display name no longer matches the directory basename. ` +
+          `Re-launch the server with --vault-name <exact-name-in-obsidian>.`,
+        { details: { stderr, vaultName: this.vaultName }, cause: error },
+      );
+    }
+
     if (/not found/i.test(stderr)) {
       return new ToolHandlerError('NOT_FOUND', `Note not found: ${stderr.trim() || 'unknown'}`, {
         details: { stderr, command },
