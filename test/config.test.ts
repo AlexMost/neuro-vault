@@ -15,7 +15,7 @@ describe('parseConfig', () => {
   });
 
   it('returns both modules enabled by default', async () => {
-    const vaultPath = path.resolve('/tmp', 'vault');
+    const vaultPath = path.resolve('/tmp', 'MyVault');
     const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
 
     expect(config).toEqual({
@@ -29,8 +29,41 @@ describe('parseConfig', () => {
       operations: {
         enabled: true,
         binaryPath: undefined,
+        vaultName: 'MyVault',
       },
     });
+  });
+
+  it('defaults vaultName to basename of --vault', async () => {
+    const vaultPath = path.resolve('/tmp', 'Sandbox');
+    const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
+    expect(config.operations.vaultName).toBe('Sandbox');
+  });
+
+  it('accepts --vault-name override', async () => {
+    const vaultPath = path.resolve('/tmp', 'MyVault');
+    const config = await parseConfig([
+      'node',
+      'cli.js',
+      '--vault',
+      vaultPath,
+      '--vault-name',
+      'Custom Name',
+    ]);
+    expect(config.operations.vaultName).toBe('Custom Name');
+  });
+
+  it('rejects empty --vault-name', async () => {
+    const vaultPath = path.resolve('/tmp', 'MyVault');
+    await expect(
+      parseConfig(['node', 'cli.js', '--vault', vaultPath, '--vault-name', '   ']),
+    ).rejects.toThrow(/vault-name/i);
+  });
+
+  it('basename strips trailing slash on --vault', async () => {
+    const vaultPath = path.resolve('/tmp', 'MyVault') + '/';
+    const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
+    expect(config.operations.vaultName).toBe('MyVault');
   });
 
   it('disables operations when --no-operations is passed', async () => {

@@ -33,6 +33,11 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
       type: 'string',
       describe: 'Path to the obsidian CLI binary (default: "obsidian" from PATH)',
     })
+    .option('vault-name', {
+      type: 'string',
+      describe:
+        'Override the Obsidian vault name used in CLI invocations. Defaults to the basename of --vault. Set this only if you renamed the vault in Obsidian\'s "Manage vaults" UI and the display name differs from the directory name.',
+    })
     .strict()
     .help()
     .version(false)
@@ -44,6 +49,10 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
 
   if (!args.semantic && !args.operations) {
     throw new Error('At least one module must be enabled (--semantic or --operations)');
+  }
+
+  if (args['vault-name'] !== undefined && args['vault-name'].trim() === '') {
+    throw new Error('--vault-name must not be empty');
   }
 
   const normalizedVaultPath = path.resolve(args.vault);
@@ -59,6 +68,7 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
     operations: {
       enabled: args.operations,
       binaryPath: args['obsidian-cli'],
+      vaultName: args['vault-name']?.trim() ?? path.basename(normalizedVaultPath),
     },
   };
 }
