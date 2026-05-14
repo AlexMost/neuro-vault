@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [5.5.0](https://github.com/AlexMost/neuro-vault/compare/v5.4.0...v5.5.0) (2026-05-14)
+
+### Features
+
+- **config:** resolve vaultName from --vault-name or basename(--vault) ([723714e](https://github.com/AlexMost/neuro-vault/commit/723714edbd41bf53799bfa81bb543fb03d0bcf8f))
+- **operations:** map 'vault not found' stderr to VAULT_NOT_FOUND ([9e0ba3e](https://github.com/AlexMost/neuro-vault/commit/9e0ba3e9615258ac5e4a1d9af10baaa4f2f4528b))
+- **operations:** thread vaultName through createOperationsModule ([608ece6](https://github.com/AlexMost/neuro-vault/commit/608ece6872f0f06bfdcd9bc0cd8bbc5faabe1e5a))
+
 ## [5.4.0](https://github.com/AlexMost/neuro-vault/compare/v5.3.0...v5.4.0) (2026-05-12)
 
 ### Features
