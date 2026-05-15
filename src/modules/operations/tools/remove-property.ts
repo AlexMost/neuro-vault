@@ -1,10 +1,12 @@
 import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
+import { resolveVault } from '../../../lib/resolve-vault.js';
+import type { VaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument, resolveIdentifier } from '../tool-helpers.js';
-import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
 
 const inputSchema = z.object({
+  vault: z.string().optional(),
   name: z.string().optional(),
   path: z.string().optional(),
   key: z.string(),
@@ -13,24 +15,27 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface RemovePropertyDeps {
-  provider: VaultProvider;
+  registry: VaultRegistry;
 }
 
-export function buildRemovePropertyTool(deps: RemovePropertyDeps): ITool<Input, { ok: true }> {
-  const { provider } = deps;
+export function buildRemovePropertyTool(
+  deps: RemovePropertyDeps,
+): ITool<Input, { vault: string; ok: true }> {
+  const { registry } = deps;
   return {
     name: 'remove_property',
     title: 'Remove Property',
     description:
-      'Remove a frontmatter property from a note. Provide `name` or `path`, plus `key`. Idempotent — succeeds whether or not the property existed.',
+      'Remove a frontmatter property from a note. Provide `name` or `path`, plus `key`. Idempotent — succeeds whether or not the property existed. Returns `{ vault, ok: true }`. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
     inputSchema,
     handler: async (input) => {
+      const entry = resolveVault(input, registry, { tool: 'remove_property' });
       const identifier = resolveIdentifier(input.name, input.path);
       if (!input.key || input.key.trim() === '') {
         throw invalidArgument('key must not be empty', 'key');
       }
-      await provider.removeProperty({ identifier, name: input.key.trim() });
-      return { ok: true as const };
+      await entry.provider!.removeProperty({ identifier, name: input.key.trim() });
+      return { vault: entry.name, ok: true as const };
     },
   };
 }
