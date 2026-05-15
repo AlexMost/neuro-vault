@@ -27,17 +27,9 @@ export function createOperationsModule(
   _config: OperationsModuleConfig = {},
   _deps: OperationsModuleDeps = {},
 ): OperationsModule {
-  const entry = registry.list()[0];
-  if (!entry.provider || !entry.writer) {
-    throw new Error('createOperationsModule called without operations enabled');
-  }
   const toolDeps: OperationsToolDeps = { registry };
   return {
     tools: buildOperationsTools(toolDeps),
-    resources: buildOperationsResources({
-      reader: entry.reader, // resources still single-vault until Task 9
-      provider: entry.provider,
-      graph: entry.graph,
-    }),
+    resources: buildOperationsResources({ registry }),
   };
 }
