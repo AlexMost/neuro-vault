@@ -1,11 +1,13 @@
 import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
+import { resolveVault } from '../../../lib/resolve-vault.js';
+import type { VaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument, normalizePath } from '../tool-helpers.js';
 import type { CreateNoteToolInput } from '../types.js';
-import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
 
 const inputSchema = z.object({
+  vault: z.string().optional(),
   name: z.string().optional(),
   path: z.string().optional(),
   content: z.string().optional(),
@@ -16,18 +18,24 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface CreateNoteDeps {
-  provider: VaultProvider;
+  registry: VaultRegistry;
 }
 
-export function buildCreateNoteTool(deps: CreateNoteDeps): ITool<Input, { path: string }> {
-  const { provider } = deps;
+export function buildCreateNoteTool(
+  deps: CreateNoteDeps,
+): ITool<Input, { vault: string; path: string }> {
+  const { registry } = deps;
   return {
     name: 'create_note',
     title: 'Create Note',
     description:
-      'Create a new note. Provide `name` or `path` (exactly one). Optionally provide `content` (raw markdown for the note body and frontmatter) OR `template` (name of a vault template to apply) — these are mutually exclusive. If a note with this path/name might already exist and the user has not explicitly asked to replace it, ask the user before passing `overwrite: true` — overwrite is destructive. Default behavior fails when the note exists.',
+      'Create a new note. Provide `name` or `path` (exactly one). Optionally provide `content` (raw markdown for the note body and frontmatter) OR `template` (name of a vault template to apply) — these are mutually exclusive. Pass `vault: "<name>"` to target a specific vault when multiple are registered. If a note with this path/name might already exist and the user has not explicitly asked to replace it, ask the user before passing `overwrite: true` — overwrite is destructive. Default behavior fails when the note exists.',
     inputSchema,
     handler: async (input) => {
+      const entry = resolveVault(input, registry, { tool: 'create_note' });
+      if (!entry.provider) {
+        throw invalidArgument('operations module is disabled', 'vault');
+      }
       if (input.name === undefined && input.path === undefined) {
         throw invalidArgument('Provide name or path', 'name');
       }
@@ -46,14 +54,13 @@ export function buildCreateNoteTool(deps: CreateNoteDeps): ITool<Input, { path: 
         if (input.name.trim() === '') throw invalidArgument('name must not be empty', 'name');
         passthrough.name = input.name.trim();
       }
-      if (input.path !== undefined) {
-        passthrough.path = normalizePath(input.path);
-      }
+      if (input.path !== undefined) passthrough.path = normalizePath(input.path);
       if (input.content !== undefined) passthrough.content = input.content;
       if (input.template !== undefined) passthrough.template = input.template;
       if (input.overwrite !== undefined) passthrough.overwrite = input.overwrite;
 
-      return provider.createNote(passthrough);
+      const result = await entry.provider.createNote(passthrough);
+      return { vault: entry.name, ...result };
     },
   };
 }

@@ -2,13 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildCreateNoteTool } from '../../../src/modules/operations/tools/create-note.js';
 import { makeProvider } from './_helpers.js';
+import { makeTestRegistry } from './_test-registry.js';
 
 describe('operations.createNote handler', () => {
-  it('forwards normalized fields to provider.createNote', async () => {
+  it('forwards normalized fields to provider.createNote and includes vault', async () => {
     const provider = makeProvider({
       createNote: vi.fn().mockResolvedValue({ path: 'Inbox/idea.md' }),
     });
-    const tool = buildCreateNoteTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
 
     const result = await tool.handler({
       path: 'Inbox/idea.md',
@@ -21,11 +23,12 @@ describe('operations.createNote handler', () => {
       content: 'hello',
       overwrite: true,
     });
-    expect(result).toEqual({ path: 'Inbox/idea.md' });
+    expect(result).toEqual({ vault: 'v', path: 'Inbox/idea.md' });
   });
 
   it('rejects when neither name nor path is provided', async () => {
-    const tool = buildCreateNoteTool({ provider: makeProvider() });
+    const registry = makeTestRegistry([{ name: 'v', provider: makeProvider() }]);
+    const tool = buildCreateNoteTool({ registry });
     await expect(tool.handler({ content: 'hello' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -33,7 +36,8 @@ describe('operations.createNote handler', () => {
 
   it('rejects path traversal', async () => {
     const provider = makeProvider();
-    const tool = buildCreateNoteTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
     await expect(tool.handler({ path: '../../etc/passwd', content: 'x' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -42,7 +46,8 @@ describe('operations.createNote handler', () => {
 
   it('rejects Unix absolute path', async () => {
     const provider = makeProvider();
-    const tool = buildCreateNoteTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
     await expect(tool.handler({ path: '/tmp/escape.md' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -51,7 +56,8 @@ describe('operations.createNote handler', () => {
 
   it('rejects Windows absolute path', async () => {
     const provider = makeProvider();
-    const tool = buildCreateNoteTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
     await expect(tool.handler({ path: 'C:\\Users\\me\\note.md' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -60,7 +66,8 @@ describe('operations.createNote handler', () => {
 
   it('normalizes path before forwarding', async () => {
     const provider = makeProvider();
-    const tool = buildCreateNoteTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
 
     await tool.handler({ path: './Inbox/x.md' });
 
@@ -71,7 +78,8 @@ describe('operations.createNote handler', () => {
 
   it('rejects when both content and template are provided', async () => {
     const provider = makeProvider();
-    const tool = buildCreateNoteTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
 
     await expect(
       tool.handler({ path: 'Inbox/x.md', content: 'hello', template: 'idea' }),
@@ -86,7 +94,8 @@ describe('operations.createNote handler', () => {
     const provider = makeProvider({
       createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
     });
-    const tool = buildCreateNoteTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
 
     await tool.handler({ path: 'Inbox/x.md', content: 'hello' });
 
@@ -100,7 +109,8 @@ describe('operations.createNote handler', () => {
     const provider = makeProvider({
       createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
     });
-    const tool = buildCreateNoteTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
 
     await tool.handler({ path: 'Inbox/x.md', template: 'idea' });
 
