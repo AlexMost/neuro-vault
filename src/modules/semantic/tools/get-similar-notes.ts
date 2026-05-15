@@ -1,22 +1,24 @@
 import { z } from 'zod';
 
 import { getNoteLinks, type BasenameIndex } from '../../../lib/obsidian/index.js';
-import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { normalizeNotePath, readPositiveInteger, readThreshold } from '../tool-helpers.js';
-import type {
-  EmbeddingProvider,
-  PathExistsCheck,
-  SearchEngine,
-  SimilarNoteResult,
-  SmartSource,
-} from '../types.js';
+import { resolveVault } from '../../../lib/resolve-vault.js';
+import {
+  normalizeNotePath,
+  pathExistsForEntry,
+  readNoteContentForEntry,
+  readPositiveInteger,
+  readThreshold,
+} from '../tool-helpers.js';
+import type { EmbeddingProvider, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
+import type { VaultEntry, VaultRegistry } from '../../../lib/vault-registry.js';
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_THRESHOLD = 0.5;
 
 const inputSchema = z.object({
+  vault: z.string().optional(),
   path: z.string(),
   limit: z.number().int().positive().optional(),
   threshold: z.number().min(0).max(1).optional(),
@@ -26,12 +28,10 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface GetSimilarNotesDeps {
-  corpus: SmartConnectionsCorpusIndex;
+  registry: VaultRegistry;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
-  pathExists: PathExistsCheck;
-  readNoteContent: (vaultRelativePath: string) => Promise<string>;
 }
 
 interface Candidate {
@@ -89,11 +89,16 @@ function collectSemanticCandidates(args: {
 
 async function resolveForwardLinks(args: {
   notePath: string;
-  readNoteContent: (vaultRelativePath: string) => Promise<string>;
+  entry: VaultEntry;
   basenameIndex: BasenameIndex;
 }): Promise<Set<string>> {
   try {
-    return await getNoteLinks(args);
+    return await getNoteLinks({
+      notePath: args.notePath,
+      readNoteContent: (vaultRelativePath) =>
+        readNoteContentForEntry(args.entry, vaultRelativePath),
+      basenameIndex: args.basenameIndex,
+    });
   } catch (err) {
     if (isEnoent(err)) {
       throw new ToolHandlerError(
@@ -120,14 +125,14 @@ function mergeForwardLinks(candidates: Map<string, Candidate>, linkedPaths: Set<
 async function filterCandidates(args: {
   candidates: Iterable<Candidate>;
   excludePrefixes: readonly string[];
-  pathExists: PathExistsCheck;
+  entry: VaultEntry;
 }): Promise<Candidate[]> {
   const afterExclude = [...args.candidates].filter(
     (c) => !isExcluded(c.path, args.excludePrefixes),
   );
   const uniquePaths = new Set(afterExclude.map((c) => c.path));
   const checks = await Promise.all(
-    [...uniquePaths].map(async (p) => [p, await args.pathExists(p)] as const),
+    [...uniquePaths].map(async (p) => [p, await pathExistsForEntry(args.entry, p)] as const),
   );
   const existing = new Set(checks.filter(([, ok]) => ok).map(([p]) => p));
   return afterExclude.filter((c) => existing.has(c.path));
@@ -143,27 +148,35 @@ function compareCandidates(a: Candidate, b: Candidate): number {
   return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
 }
 
-function toSimilarNoteResult(c: Candidate): SimilarNoteResult {
+type StampedSimilarNoteResult = SimilarNoteResult & { vault: string };
+
+function toSimilarNoteResult(c: Candidate, vaultName: string): StampedSimilarNoteResult {
   const signals: SimilarNoteResult['signals'] = {};
   if (c.signals.semantic !== undefined) signals.semantic = c.signals.semantic;
   if (c.signals.forward_link === true) signals.forward_link = true;
-  const result: SimilarNoteResult = { path: c.path, signals };
+  const result: StampedSimilarNoteResult = { vault: vaultName, path: c.path, signals };
   if (c.signals.semantic !== undefined) result.similarity = c.signals.semantic;
   return result;
 }
 
 export function buildGetSimilarNotesTool(
   deps: GetSimilarNotesDeps,
-): ITool<Input, SimilarNoteResult[]> {
-  const { corpus, searchEngine, modelKey, pathExists, readNoteContent } = deps;
+): ITool<Input, StampedSimilarNoteResult[]> {
+  const { registry, searchEngine, modelKey } = deps;
 
   return {
     name: 'get_similar_notes',
     title: 'Get Similar Notes',
     description:
-      'Find related notes — both semantically similar and explicitly linked from this note via [[wikilinks]]. Pass a vault-relative POSIX path (e.g. "Folder/note.md") as `path`. Forward-linked results rank ahead of semantic-only ones.',
+      'Find related notes — both semantically similar and explicitly linked from this note via [[wikilinks]]. Pass a vault-relative POSIX path (e.g. "Folder/note.md") as `path`. Forward-linked results rank ahead of semantic-only ones. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
     inputSchema,
     handler: async (input) => {
+      const entry = resolveVault(input, registry, {
+        tool: 'get_similar_notes',
+        requireSemantic: true,
+      });
+      // resolveVault with requireSemantic: true guarantees entry.corpus is defined
+      const corpus = entry.corpus!;
       const notePath = normalizeNotePath(input.path);
       const limit = readPositiveInteger(input.limit, DEFAULT_LIMIT, 'limit');
       const threshold = readThreshold(input.threshold, DEFAULT_THRESHOLD, 'threshold');
@@ -188,17 +201,17 @@ export function buildGetSimilarNotesTool(
         });
         const linkedPaths = await resolveForwardLinks({
           notePath,
-          readNoteContent,
+          entry,
           basenameIndex,
         });
         mergeForwardLinks(candidates, linkedPaths);
         const filtered = await filterCandidates({
           candidates: candidates.values(),
           excludePrefixes,
-          pathExists,
+          entry,
         });
         filtered.sort(compareCandidates);
-        return filtered.slice(0, limit).map(toSimilarNoteResult);
+        return filtered.slice(0, limit).map((c) => toSimilarNoteResult(c, entry.name));
       } catch (error) {
         throw wrapDependencyError(error, 'Failed to find similar notes', {
           modelKey,
