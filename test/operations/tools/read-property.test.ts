@@ -2,13 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildReadPropertyTool } from '../../../src/modules/operations/tools/read-property.js';
 import { makeProvider } from './_helpers.js';
+import { makeTestRegistry } from './_test-registry.js';
 
 describe('operations.readProperty handler', () => {
-  it('forwards to provider with resolved path target', async () => {
+  it('forwards to provider with resolved path target and includes vault', async () => {
     const provider = makeProvider({
       readProperty: vi.fn().mockResolvedValue({ value: 'done' }),
     });
-    const tool = buildReadPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildReadPropertyTool({ registry });
 
     const result = await tool.handler({ path: 'a.md', key: 'status' });
 
@@ -16,14 +18,15 @@ describe('operations.readProperty handler', () => {
       identifier: { kind: 'path', value: 'a.md' },
       name: 'status',
     });
-    expect(result).toEqual({ value: 'done' });
+    expect(result).toEqual({ vault: 'v', value: 'done' });
   });
 
   it('forwards name target via wikilink kind', async () => {
     const provider = makeProvider({
       readProperty: vi.fn().mockResolvedValue({ value: 42 }),
     });
-    const tool = buildReadPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildReadPropertyTool({ registry });
 
     await tool.handler({ name: 'My Note', key: 'priority' });
 
@@ -34,7 +37,8 @@ describe('operations.readProperty handler', () => {
   });
 
   it('rejects when neither name nor path is provided', async () => {
-    const tool = buildReadPropertyTool({ provider: makeProvider() });
+    const registry = makeTestRegistry([{ name: 'v', provider: makeProvider() }]);
+    const tool = buildReadPropertyTool({ registry });
     await expect(tool.handler({ key: 'x' } as never)).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
