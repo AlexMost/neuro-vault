@@ -3,21 +3,59 @@ import path from 'node:path';
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 
-import type { ServerConfig } from './types.js';
+import type { ServerConfig, VaultConfig } from './types.js';
 
 const DEFAULT_MODEL_KEY = 'bge-micro-v2';
 const DEFAULT_MODEL_ID = 'TaylorAI/bge-micro-v2';
+const VAULT_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
+function parseVaultFlag(raw: string): { name?: string; path: string } {
+  if (raw.startsWith('/')) {
+    return { path: raw };
+  }
+  const idx = raw.indexOf(':');
+  if (idx === -1) {
+    throw new Error(`--vault: expected absolute path or name:path, got "${raw}"`);
+  }
+  const name = raw.slice(0, idx);
+  const rest = raw.slice(idx + 1);
+  return { name, path: rest };
+}
+
+function basenameNoTrailingSlash(p: string): string {
+  return path.basename(p.replace(/\/+$/, ''));
+}
+
+function buildVaultConfig(raw: string): VaultConfig {
+  const parsed = parseVaultFlag(raw);
+  if (!path.isAbsolute(parsed.path)) {
+    throw new Error(`--vault: path must be absolute, got "${parsed.path}"`);
+  }
+  const normalizedPath = path.resolve(parsed.path);
+  const name = parsed.name ?? basenameNoTrailingSlash(normalizedPath);
+  if (!VAULT_NAME_RE.test(name)) {
+    throw new Error(
+      `--vault: invalid vault name "${name}" (allowed: alphanumerics, "_", "-", 1-64 chars)`,
+    );
+  }
+  return {
+    name,
+    path: normalizedPath,
+    smartEnvPath: path.join(normalizedPath, '.smart-env', 'multi'),
+  };
+}
 
 export async function parseConfig(argv: string[]): Promise<ServerConfig> {
   const args = await yargs(hideBin(argv))
     .scriptName('neuro-vault-mcp')
     .usage(
-      '$0 --vault <path>\n\nMCP server for an Obsidian vault: semantic search and vault operations.',
+      '$0 --vault [name:]<path> [--vault [name:]<path> ...]\n\nMCP server for one or more Obsidian vaults.',
     )
     .option('vault', {
       type: 'string',
-      demandOption: true,
-      describe: 'Absolute path to the Obsidian vault directory',
+      array: true,
+      describe:
+        'Vault to register. Repeat for multi-vault. Syntax: "<name>:<absolute-path>" or "<absolute-path>" (basename used as name).',
     })
     .option('semantic', {
       type: 'boolean',
@@ -33,42 +71,40 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
       type: 'string',
       describe: 'Path to the obsidian CLI binary (default: "obsidian" from PATH)',
     })
-    .option('vault-name', {
-      type: 'string',
-      describe:
-        'Override the Obsidian vault name used in CLI invocations. Defaults to the basename of --vault. Set this only if you renamed the vault in Obsidian\'s "Manage vaults" UI and the display name differs from the directory name.',
-    })
     .strict()
     .help()
     .version(false)
+    .exitProcess(false)
     .parse();
 
-  if (!path.isAbsolute(args.vault)) {
-    throw new Error('--vault must be an absolute path');
+  const rawVaults = (args.vault ?? []) as string[];
+  if (rawVaults.length === 0) {
+    throw new Error('--vault is required: provide at least one vault with --vault [name:]<path>');
   }
 
   if (!args.semantic && !args.operations) {
     throw new Error('At least one module must be enabled (--semantic or --operations)');
   }
 
-  if (args['vault-name'] !== undefined && args['vault-name'].trim() === '') {
-    throw new Error('--vault-name must not be empty');
+  const vaults: VaultConfig[] = rawVaults.map(buildVaultConfig);
+  const seen = new Set<string>();
+  for (const v of vaults) {
+    if (seen.has(v.name)) {
+      throw new Error(`--vault: vault names must be unique, "${v.name}" seen twice`);
+    }
+    seen.add(v.name);
   }
 
-  const normalizedVaultPath = path.resolve(args.vault);
-
   return {
-    vaultPath: normalizedVaultPath,
+    vaults,
     semantic: {
       enabled: args.semantic,
-      smartEnvPath: path.join(normalizedVaultPath, '.smart-env', 'multi'),
       modelKey: DEFAULT_MODEL_KEY,
       modelId: DEFAULT_MODEL_ID,
     },
     operations: {
       enabled: args.operations,
       binaryPath: args['obsidian-cli'],
-      vaultName: args['vault-name']?.trim() ?? path.basename(normalizedVaultPath),
     },
   };
 }
