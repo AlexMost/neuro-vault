@@ -1,25 +1,28 @@
 import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
+import { resolveVault } from '../../../lib/resolve-vault.js';
+import type { VaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
-import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
-import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
-import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
 
 const NOTES_TODAY_CAP = 200;
 const DAILY_BASENAME_RE = /(\d{4}-\d{2}-\d{2})\.md$/;
 
-const inputSchema = z.object({});
+const inputSchema = z.object({
+  vault: z.string().optional(),
+});
 
 type Input = z.infer<typeof inputSchema>;
 
 export interface NotesTodayItem {
+  vault: string;
   path: string;
   frontmatter: Record<string, unknown>;
   backlink_count: number;
 }
 
 export interface ReadDailyHandlerResult {
+  vault: string;
   path: string;
   frontmatter: Record<string, unknown> | null;
   content: string;
@@ -27,22 +30,21 @@ export interface ReadDailyHandlerResult {
 }
 
 export interface ReadDailyDeps {
-  provider: VaultProvider;
-  reader: VaultReader;
-  graph: WikilinkGraphIndex;
+  registry: VaultRegistry;
 }
 
 export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyHandlerResult> {
-  const { provider, reader, graph } = deps;
+  const { registry } = deps;
 
   return {
     name: 'read_daily',
     title: 'Read Daily',
     description:
-      'Read today\'s daily note. Returns `{ path, frontmatter, content, notes_today }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed), `content` is the body without the YAML block, and `notes_today` lists vault notes created today (matched by `frontmatter.created`) excluding daily notes themselves — metadata only, sorted by path ascending, capped at 200 entries. Useful for "what\'s on my agenda?" / "what happened today?" questions without a separate `query_notes` call.',
+      'Read today\'s daily note. Returns `{ vault, path, frontmatter, content, notes_today }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed), `content` is the body without the YAML block, and `notes_today` lists vault notes created today (matched by `frontmatter.created`) excluding daily notes themselves — metadata only, sorted by path ascending, capped at 200 entries. Each `notes_today` item carries `vault`. Useful for "what\'s on my agenda?" / "what happened today?" questions without a separate `query_notes` call. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
     inputSchema,
-    handler: async (_input) => {
-      const daily = await provider.readDaily();
+    handler: async (input) => {
+      const entry = resolveVault(input, registry, { tool: 'read_daily' });
+      const daily = await entry.provider!.readDaily();
       const today = deriveToday(daily.path);
       const query = await runQueryNotes(
         {
@@ -53,17 +55,19 @@ export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyH
           sort: { field: 'path', order: 'asc' },
           limit: NOTES_TODAY_CAP,
         },
-        reader,
-        graph,
+        entry.reader,
+        entry.graph,
       );
 
       const notesToday: NotesTodayItem[] = query.results.map((item) => ({
+        vault: entry.name,
         path: item.path,
         frontmatter: item.frontmatter,
         backlink_count: item.backlink_count,
       }));
 
       return {
+        vault: entry.name,
         path: daily.path,
         frontmatter: daily.frontmatter,
         content: daily.content,

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildReadDailyTool } from '../../../src/modules/operations/tools/read-daily.js';
 import { type ReadNotesItem, type VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import { makeGraph, makeProvider } from './_helpers.js';
+import { makeTestRegistry } from './_test-registry.js';
 
 interface FakeNote {
   path: string;
@@ -32,30 +33,33 @@ function dailyProvider(dailyPath: string, content = '') {
 }
 
 describe('operations.readDaily handler', () => {
-  it('forwards to provider.readDaily and returns daily fields unchanged', async () => {
+  it('forwards to provider.readDaily and returns daily fields with vault', async () => {
     const provider = dailyProvider('Daily/2026-05-12.md', 'today');
-    const tool = buildReadDailyTool({
-      provider,
-      reader: buildReader([]),
-      graph: makeGraph(),
-    });
+    const graph = makeGraph();
+    const registry = makeTestRegistry([{ name: 'v', provider, reader: buildReader([]), graph }]);
+    const tool = buildReadDailyTool({ registry });
 
     const result = await tool.handler({});
 
     expect(provider.readDaily).toHaveBeenCalledTimes(1);
+    expect(result.vault).toBe('v');
     expect(result.path).toBe('Daily/2026-05-12.md');
     expect(result.frontmatter).toBeNull();
     expect(result.content).toBe('today');
   });
 
   it('returns notes_today: [] when no notes were created today', async () => {
-    const tool = buildReadDailyTool({
-      provider: dailyProvider('Daily/2026-05-12.md'),
-      reader: buildReader([
-        { path: 'Notes/old.md', frontmatter: { created: '2026-05-01', type: 'reflection' } },
-      ]),
-      graph: makeGraph(),
-    });
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        provider: dailyProvider('Daily/2026-05-12.md'),
+        reader: buildReader([
+          { path: 'Notes/old.md', frontmatter: { created: '2026-05-01', type: 'reflection' } },
+        ]),
+        graph: makeGraph(),
+      },
+    ]);
+    const tool = buildReadDailyTool({ registry });
 
     const result = await tool.handler({});
 
@@ -63,19 +67,23 @@ describe('operations.readDaily handler', () => {
   });
 
   it('returns notes created today and excludes type: daily', async () => {
-    const tool = buildReadDailyTool({
-      provider: dailyProvider('Daily/2026-05-12.md'),
-      reader: buildReader([
-        { path: 'Daily/2026-05-12.md', frontmatter: { created: '2026-05-12', type: 'daily' } },
-        {
-          path: 'Reflections/morning.md',
-          frontmatter: { created: '2026-05-12', type: 'reflection' },
-        },
-        { path: 'Tasks/buy-milk.md', frontmatter: { created: '2026-05-12', type: 'task' } },
-        { path: 'Notes/old.md', frontmatter: { created: '2026-05-11', type: 'reflection' } },
-      ]),
-      graph: makeGraph(),
-    });
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        provider: dailyProvider('Daily/2026-05-12.md'),
+        reader: buildReader([
+          { path: 'Daily/2026-05-12.md', frontmatter: { created: '2026-05-12', type: 'daily' } },
+          {
+            path: 'Reflections/morning.md',
+            frontmatter: { created: '2026-05-12', type: 'reflection' },
+          },
+          { path: 'Tasks/buy-milk.md', frontmatter: { created: '2026-05-12', type: 'task' } },
+          { path: 'Notes/old.md', frontmatter: { created: '2026-05-11', type: 'reflection' } },
+        ]),
+        graph: makeGraph(),
+      },
+    ]);
+    const tool = buildReadDailyTool({ registry });
 
     const result = await tool.handler({});
 
@@ -86,24 +94,28 @@ describe('operations.readDaily handler', () => {
   });
 
   it('matches frontmatter.created when it is an ISO datetime, not just a date', async () => {
-    const tool = buildReadDailyTool({
-      provider: dailyProvider('Daily/2026-05-12.md'),
-      reader: buildReader([
-        {
-          path: 'Notes/morning.md',
-          frontmatter: { created: '2026-05-12', type: 'reflection' },
-        },
-        {
-          path: 'Notes/afternoon.md',
-          frontmatter: { created: '2026-05-12T14:30:00', type: 'reflection' },
-        },
-        {
-          path: 'Notes/wrong-day.md',
-          frontmatter: { created: '2026-05-13T00:00:00', type: 'reflection' },
-        },
-      ]),
-      graph: makeGraph(),
-    });
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        provider: dailyProvider('Daily/2026-05-12.md'),
+        reader: buildReader([
+          {
+            path: 'Notes/morning.md',
+            frontmatter: { created: '2026-05-12', type: 'reflection' },
+          },
+          {
+            path: 'Notes/afternoon.md',
+            frontmatter: { created: '2026-05-12T14:30:00', type: 'reflection' },
+          },
+          {
+            path: 'Notes/wrong-day.md',
+            frontmatter: { created: '2026-05-13T00:00:00', type: 'reflection' },
+          },
+        ]),
+        graph: makeGraph(),
+      },
+    ]);
+    const tool = buildReadDailyTool({ registry });
 
     const result = await tool.handler({});
 
@@ -113,25 +125,30 @@ describe('operations.readDaily handler', () => {
     ]);
   });
 
-  it('projects each entry to { path, frontmatter, backlink_count } and drops content', async () => {
+  it('projects each entry to { vault, path, frontmatter, backlink_count } and drops content', async () => {
     const graph = makeGraph({
       getBacklinkCount: vi.fn((p: string) => (p === 'Reflections/morning.md' ? 2 : 0)),
     });
-    const tool = buildReadDailyTool({
-      provider: dailyProvider('Daily/2026-05-12.md'),
-      reader: buildReader([
-        {
-          path: 'Reflections/morning.md',
-          frontmatter: { created: '2026-05-12', type: 'reflection' },
-        },
-      ]),
-      graph,
-    });
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        provider: dailyProvider('Daily/2026-05-12.md'),
+        reader: buildReader([
+          {
+            path: 'Reflections/morning.md',
+            frontmatter: { created: '2026-05-12', type: 'reflection' },
+          },
+        ]),
+        graph,
+      },
+    ]);
+    const tool = buildReadDailyTool({ registry });
 
     const result = await tool.handler({});
 
     expect(result.notes_today).toEqual([
       {
+        vault: 'v',
         path: 'Reflections/morning.md',
         frontmatter: { created: '2026-05-12', type: 'reflection' },
         backlink_count: 2,
@@ -144,15 +161,19 @@ describe('operations.readDaily handler', () => {
   });
 
   it('sorts notes_today by path ascending', async () => {
-    const tool = buildReadDailyTool({
-      provider: dailyProvider('Daily/2026-05-12.md'),
-      reader: buildReader([
-        { path: 'C.md', frontmatter: { created: '2026-05-12' } },
-        { path: 'A.md', frontmatter: { created: '2026-05-12' } },
-        { path: 'B.md', frontmatter: { created: '2026-05-12' } },
-      ]),
-      graph: makeGraph(),
-    });
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        provider: dailyProvider('Daily/2026-05-12.md'),
+        reader: buildReader([
+          { path: 'C.md', frontmatter: { created: '2026-05-12' } },
+          { path: 'A.md', frontmatter: { created: '2026-05-12' } },
+          { path: 'B.md', frontmatter: { created: '2026-05-12' } },
+        ]),
+        graph: makeGraph(),
+      },
+    ]);
+    const tool = buildReadDailyTool({ registry });
 
     const result = await tool.handler({});
 
@@ -164,11 +185,15 @@ describe('operations.readDaily handler', () => {
       path: `Notes/${String(i).padStart(3, '0')}.md`,
       frontmatter: { created: '2026-05-12' },
     }));
-    const tool = buildReadDailyTool({
-      provider: dailyProvider('Daily/2026-05-12.md'),
-      reader: buildReader(oversized),
-      graph: makeGraph(),
-    });
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        provider: dailyProvider('Daily/2026-05-12.md'),
+        reader: buildReader(oversized),
+        graph: makeGraph(),
+      },
+    ]);
+    const tool = buildReadDailyTool({ registry });
 
     const result = await tool.handler({});
 
@@ -188,14 +213,18 @@ describe('operations.readDaily handler', () => {
     const d = String(today.getDate()).padStart(2, '0');
     const todayStr = `${y}-${m}-${d}`;
 
-    const tool = buildReadDailyTool({
-      provider: dailyProvider('Daily/unusual-name.md'),
-      reader: buildReader([
-        { path: 'Notes/match.md', frontmatter: { created: todayStr, type: 'reflection' } },
-        { path: 'Notes/old.md', frontmatter: { created: '2020-01-01', type: 'reflection' } },
-      ]),
-      graph: makeGraph(),
-    });
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        provider: dailyProvider('Daily/unusual-name.md'),
+        reader: buildReader([
+          { path: 'Notes/match.md', frontmatter: { created: todayStr, type: 'reflection' } },
+          { path: 'Notes/old.md', frontmatter: { created: '2020-01-01', type: 'reflection' } },
+        ]),
+        graph: makeGraph(),
+      },
+    ]);
+    const tool = buildReadDailyTool({ registry });
 
     const result = await tool.handler({});
 
