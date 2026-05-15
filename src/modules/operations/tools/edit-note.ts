@@ -1,14 +1,16 @@
 import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
+import { resolveVault } from '../../../lib/resolve-vault.js';
+import type { VaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument, normalizePath } from '../tool-helpers.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildBasenameIndex } from '../../../lib/obsidian/link-resolver.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
-import type { VaultWriter } from '../../../lib/obsidian/vault-writer.js';
 import type { OperationsErrorCode } from '../types.js';
 
 const inputSchema = z.object({
+  vault: z.string().optional(),
   name: z.string().optional(),
   path: z.string().optional(),
   content: z.string(),
@@ -18,12 +20,11 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface EditNoteDeps {
-  reader: VaultReader;
-  writer: VaultWriter;
+  registry: VaultRegistry;
 }
 
-export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, void> {
-  const { reader, writer } = deps;
+export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: string }> {
+  const { registry } = deps;
   return {
     name: 'edit_note',
     title: 'Edit Note',
@@ -32,9 +33,11 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, void> {
       '\n\n' +
       'With `replace`: the exact string in `replace` is located in the body (case- and whitespace-sensitive) and swapped for `content`. If the string is not found, the call fails with `NOT_FOUND`. If it appears more than once, the call fails with `AMBIGUOUS_MATCH` listing the line numbers — make `replace` more specific, or omit it to do a full rewrite.' +
       '\n\n' +
-      'Without `replace`: the entire body is overwritten with `content`. Use this for whole-body rewrites; pre-fetch the body with `read_notes` if you need to preserve parts of it. Use `\\n` for newlines in either mode.',
+      'Without `replace`: the entire body is overwritten with `content`. Use this for whole-body rewrites; pre-fetch the body with `read_notes` if you need to preserve parts of it. Use `\\n` for newlines in either mode. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
     inputSchema,
     handler: async (input) => {
+      const entry = resolveVault(input, registry, { tool: 'edit_note' });
+
       if (
         (input.name === undefined && input.path === undefined) ||
         (input.name !== undefined && input.path !== undefined)
@@ -45,20 +48,22 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, void> {
         );
       }
 
-      const path = await resolveToPath(input, reader);
+      const path = await resolveToPath(input, entry.reader);
 
       if (input.replace !== undefined) {
         if (input.replace === '') {
           throw invalidArgument('replace must not be empty', 'replace');
         }
-        return writer.replaceInNote({
+        await entry.writer!.replaceInNote({
           path,
           find: input.replace,
           content: input.content,
         });
+      } else {
+        await entry.writer!.replaceFullBody({ path, content: input.content });
       }
 
-      return writer.replaceFullBody({ path, content: input.content });
+      return { vault: entry.name };
     },
   };
 }
