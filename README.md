@@ -97,6 +97,8 @@ For module wiring and internal data flow, see [docs/architecture/module-structur
 npm install -g neuro-vault-mcp
 ```
 
+### Single vault
+
 Add to your MCP client config (here: Claude Code's `~/.claude/settings.json`):
 
 ```json
@@ -110,6 +112,41 @@ Add to your MCP client config (here: Claude Code's `~/.claude/settings.json`):
 }
 ```
 
+### 🗂 Multi-vault — two vaults, one server
+
+Point at multiple vaults using repeated `--vault name:path` flags. Each vault gets a short name you use when calling tools:
+
+```bash
+neuro-vault-mcp \
+  --vault personal:/Users/me/Vaults/Sandbox \
+  --vault dmarkoff:"/Users/me/Drive — DMARKOFF/wiki"
+```
+
+In your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "neuro-vault": {
+      "command": "neuro-vault-mcp",
+      "args": [
+        "--vault",
+        "personal:/Users/me/Vaults/Sandbox",
+        "--vault",
+        "dmarkoff:/Users/me/Drive — DMARKOFF/wiki"
+      ]
+    }
+  }
+}
+```
+
+With multiple vaults registered:
+
+- **Every tool** accepts an optional `vault: "<name>"` parameter to target a specific vault.
+- **`search_notes`, `query_notes`, and `get_vault_overview`** fan out across all registered vaults when `vault` is omitted. The response shape switches to `results_by_vault: [...]` (one entry per vault) plus `skipped_vaults: [...]` for any vault the tool could not reach.
+- **All other tools** (writes, reads of specific paths, single-vault diagnostics) require an explicit `vault` in multi-vault mode. Omitting it returns `VAULT_REQUIRED`.
+- **Semantic fan-out** silently skips vaults whose Smart Connections `.smart-env/multi/` index is unavailable. Targeting such a vault explicitly with `vault: "<name>"` returns `SEMANTIC_INDEX_NOT_FOUND`.
+
 Then ask your assistant:
 
 > "What did I write about building AI agents?"
@@ -122,13 +159,15 @@ For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./
 
 ## 📚 Documentation
 
+> **Every tool accepts an optional `vault` parameter.** In multi-vault mode, `search_notes`, `query_notes`, and `get_vault_overview` fan out across all registered vaults when `vault` is omitted.
+
 User guide lives in [`docs/guide/`](./docs/guide/README.md):
 
 - [Installation](./docs/guide/installation.md)
 - [Semantic Search](./docs/guide/semantic-search.md) — `search_notes`, `get_similar_notes`, `find_duplicates`, `get_stats`
 - [Vault Operations](./docs/guide/vault-operations.md) — note CRUD, daily notes, properties, tags, structured queries (`query_notes`), vault snapshot (`get_vault_overview`)
 - [Routing Between Tools](./docs/guide/routing.md)
-- [Configuration](./docs/guide/configuration.md) — CLI args, troubleshooting, limitations, **migration to 2.0**, development
+- [Configuration](./docs/guide/configuration.md) — CLI args, troubleshooting, limitations, development
 
 Architecture / internals: [`docs/architecture/`](./docs/architecture/).
 
@@ -137,6 +176,45 @@ Architecture / internals: [`docs/architecture/`](./docs/architecture/).
 ### Vault-specific conventions for external agents
 
 When the server starts, it looks for `<vault>/.neuro-vault/for-external-agents.md`. If the file exists, its content is appended to the MCP `instructions` that clients receive at `initialize`, under a `## Vault-specific conventions` section. Use this file to teach external agents vault-specific rules that cannot be derived from the snapshot — for example, closed sets of frontmatter `type` values, or folders that are off-limits for writes. The file is optional; without it the server still ships sane defaults plus a pointer to `get_vault_overview`.
+
+---
+
+## 🔄 Upgrading to v6.0
+
+v6 adds multi-vault support. Single-vault setups need no changes — the existing `--vault /path` form still works. If you were using two separate MCP registrations to serve two vaults, you can collapse them into one.
+
+### Breaking changes from v5
+
+| What changed         | v5                                            | v6                                                                      |
+| -------------------- | --------------------------------------------- | ----------------------------------------------------------------------- |
+| Vault name flag      | `--vault-name <obsidian-name>`                | Removed. Use `--vault <name>:<path>`                                    |
+| Bare `--vault /path` | Supported (name derived from `path.basename`) | Still supported (name still derived from `path.basename`)               |
+| Tool results         | No `vault` field                              | Every result item includes `vault: string` identifying the source vault |
+| Two-vault setup      | Two MCP server registrations                  | One registration with two `--vault name:path` flags                     |
+
+### Migration steps
+
+1. **Remove `--vault-name`** from your MCP config (the flag is gone). If you relied on an explicit name, prefix your path: `--vault <name>:<path>`.
+
+2. **Update client code that reads tool results** — every result object now carries a `vault: string` field. Existing code that does not read this field is unaffected.
+
+3. **Consolidate two-server configs** — if you ran two separate `neuro-vault-mcp` processes for two vaults, replace them with one:
+
+   ```json
+   {
+     "mcpServers": {
+       "neuro-vault": {
+         "command": "neuro-vault-mcp",
+         "args": [
+           "--vault",
+           "personal:/Users/me/Vaults/Personal",
+           "--vault",
+           "work:/Users/me/Vaults/Work"
+         ]
+       }
+     }
+   }
+   ```
 
 ---
 
