@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 import yargs from 'yargs/yargs';
@@ -37,6 +38,19 @@ function buildVaultConfig(raw: string): VaultConfig {
     throw new Error(
       `--vault: invalid vault name "${name}" (allowed: alphanumerics, "_", "-", 1-64 chars)`,
     );
+  }
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(normalizedPath);
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === 'ENOENT') {
+      throw new Error(`--vault: directory does not exist: "${normalizedPath}"`);
+    }
+    throw err;
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(`--vault: path is not a directory: "${normalizedPath}"`);
   }
   return {
     name,

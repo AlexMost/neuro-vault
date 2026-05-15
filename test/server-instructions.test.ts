@@ -180,4 +180,59 @@ describe('buildServerInstructions', () => {
       await fs.rm(vault, { recursive: true, force: true });
     }
   });
+
+  it('emits per-vault conventions sections labelled with the vault name when only one of multiple vaults has the file', async () => {
+    const a = await makeTempVault();
+    const b = await makeTempVault();
+    try {
+      // Only vault `b` has the conventions file.
+      const dir = path.join(b, '.neuro-vault');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        path.join(dir, 'for-external-agents.md'),
+        '## Wiki rules\n- Title-case folders\n',
+        'utf8',
+      );
+
+      // Build a registry with two entries pointing at the two temp dirs.
+      const entries = [
+        {
+          name: 'first',
+          path: a,
+          smartEnvPath: path.join(a, '.smart-env', 'multi'),
+          reader: {} as never,
+          graph: {} as never,
+          listMatchingPaths: vi.fn(),
+          semanticAvailable: false,
+        },
+        {
+          name: 'second',
+          path: b,
+          smartEnvPath: path.join(b, '.smart-env', 'multi'),
+          reader: {} as never,
+          graph: {} as never,
+          listMatchingPaths: vi.fn(),
+          semanticAvailable: false,
+        },
+      ];
+      const registry: VaultRegistry = {
+        get: vi.fn(),
+        require: vi.fn(),
+        list: vi.fn(() => entries),
+        isMulti: vi.fn(() => true),
+        names: vi.fn(() => entries.map((e) => e.name)),
+        semanticAvailableEntries: vi.fn(() => []),
+      };
+
+      const result = await buildServerInstructions(registry);
+      // Heading exists for "second" with its name in the label.
+      expect(result).toMatch(/## Vault-specific conventions — second/);
+      expect(result).toMatch(/Title-case folders/);
+      // No heading for "first" — it has no file.
+      expect(result).not.toMatch(/## Vault-specific conventions — first/);
+    } finally {
+      await fs.rm(a, { recursive: true, force: true });
+      await fs.rm(b, { recursive: true, force: true });
+    }
+  });
 });

@@ -119,4 +119,51 @@ describe('operations.createNote handler', () => {
       template: 'idea',
     });
   });
+
+  it('throws VAULT_REQUIRED in multi-vault mode when vault is omitted', async () => {
+    const registry = makeTestRegistry([
+      { name: 'a', provider: makeProvider() },
+      { name: 'b', provider: makeProvider() },
+    ]);
+    const tool = buildCreateNoteTool({ registry });
+
+    await expect(tool.handler({ path: 'Inbox/x.md', content: 'hello' })).rejects.toMatchObject({
+      code: 'VAULT_REQUIRED',
+      details: {
+        tool: 'create_note',
+        registered_vaults: ['a', 'b'],
+      },
+    });
+  });
+
+  it('routes to the named vault in multi-vault mode when vault is provided', async () => {
+    const providerA = makeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'A/x.md' }),
+    });
+    const providerB = makeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'B/x.md' }),
+    });
+    const registry = makeTestRegistry([
+      { name: 'a', provider: providerA },
+      { name: 'b', provider: providerB },
+    ]);
+    const tool = buildCreateNoteTool({ registry });
+
+    const result = await tool.handler({ vault: 'b', path: 'B/x.md', content: 'hi' });
+
+    expect(providerA.createNote).not.toHaveBeenCalled();
+    expect(providerB.createNote).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ vault: 'b', path: 'B/x.md' });
+  });
+
+  it('throws VAULT_NOT_FOUND when vault is provided but unknown', async () => {
+    const registry = makeTestRegistry([{ name: 'a', provider: makeProvider() }]);
+    const tool = buildCreateNoteTool({ registry });
+
+    await expect(
+      tool.handler({ vault: 'ghost', path: 'x.md', content: 'hi' }),
+    ).rejects.toMatchObject({
+      code: 'VAULT_NOT_FOUND',
+    });
+  });
 });
