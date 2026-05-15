@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
+import { runSemanticFanOut, type FanOutResult } from '../../../lib/fan-out.js';
 import {
   executeMultiRetrieval,
   executeRetrieval,
@@ -54,6 +55,8 @@ const SEARCH_NOTES_DESCRIPTION = [
   '- scoped recall: search_notes({query: "trading lessons", filter: {tags: ["trading"]}}) — semantic only inside notes tagged trading.',
   '- scoped multi-query: search_notes({query: ["embeddings","векторний пошук"], filter: {path_prefix: "Resources/"}, mode: "deep"}).',
   '',
+  'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `skipped_vaults: [...]` (vaults without a semantic index are listed in `skipped_vaults`).',
+  '',
   'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
 ].join('\n');
 
@@ -78,7 +81,9 @@ type EnrichResults<T extends { results: { path: string }[] }> = Omit<T, 'results
   results: Array<T['results'][number] & { backlink_count: number; vault: string }>;
 };
 
-type SearchNotesOutput = EnrichResults<RetrievalOutput> | EnrichResults<MultiRetrievalOutput>;
+export type SearchNotesOutput =
+  | EnrichResults<RetrievalOutput>
+  | EnrichResults<MultiRetrievalOutput>;
 
 export interface SearchNotesDeps {
   registry: VaultRegistry;
@@ -130,10 +135,166 @@ function narrowSources(
   return out;
 }
 
+async function runSearchForEntry(
+  entry: VaultEntry,
+  input: SearchNotesInput,
+  deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'searchEngine' | 'modelKey'>,
+): Promise<SearchNotesOutput> {
+  // entry.corpus is guaranteed defined when semanticAvailable === true (enforced by resolveVault
+  // or runSemanticFanOut)
+  const corpus = entry.corpus!;
+  const { graph, listMatchingPaths } = entry;
+  const { embeddingProvider, searchEngine, modelKey } = deps;
+
+  let sources: Map<string, SmartSource>;
+  try {
+    ({ sources } = await corpus.snapshot());
+  } catch (error) {
+    throw wrapDependencyError(error, 'Failed to search notes', {
+      modelKey,
+      operation: 'search_notes',
+    });
+  }
+
+  const mode = input.mode ?? 'quick';
+  const threshold =
+    input.threshold !== undefined
+      ? readThreshold(input.threshold, input.threshold, 'threshold')
+      : undefined;
+  const limit =
+    input.limit !== undefined ? readPositiveInteger(input.limit, input.limit, 'limit') : undefined;
+
+  let effectiveSources = sources;
+
+  if (input.filter !== undefined) {
+    if (isFilterEmpty(input.filter)) {
+      throw new ToolHandlerError(
+        'INVALID_ARGUMENT',
+        'filter must specify at least one of: path_prefix, tags, frontmatter',
+      );
+    }
+
+    let allowed: Set<string>;
+    try {
+      allowed = await listMatchingPaths(input.filter);
+    } catch (error) {
+      if (error instanceof ToolHandlerError && error.code === 'INVALID_FILTER') {
+        throw new ToolHandlerError('INVALID_ARGUMENT', error.message, {
+          details: error.details,
+        });
+      }
+      throw wrapDependencyError(error, 'Failed to compute filter set', {
+        modelKey,
+        operation: 'search_notes',
+      });
+    }
+
+    if (allowed.size === 0) {
+      const isMulti = Array.isArray(input.query);
+      const isDeep = mode === 'deep';
+      return {
+        results: [],
+        ...(isDeep ? { blockResults: [] } : {}),
+        ...(isMulti ? { truncated: false } : {}),
+      } as SearchNotesOutput;
+    }
+
+    effectiveSources = narrowSources(sources, allowed);
+  }
+
+  if (Array.isArray(input.query)) {
+    const queries = normalizeQueryArray(input.query);
+    try {
+      const output = await executeMultiRetrieval({
+        queries,
+        mode,
+        threshold,
+        limit,
+        sources: effectiveSources,
+        embeddingProvider,
+        searchEngine,
+      });
+      const candidatePaths: string[] = [
+        ...output.results.map((r) => r.path),
+        ...(output.blockResults?.map((b) => b.path) ?? []),
+      ];
+      const [existing] = await Promise.all([
+        buildExistingPathSet(entry, candidatePaths),
+        graph.ensureFresh(),
+      ]);
+      return {
+        results: output.results
+          .filter((r) => existing.has(r.path))
+          .map((r) => ({
+            ...r,
+            backlink_count: graph.getBacklinkCount(r.path),
+            vault: entry.name,
+          })),
+        ...(output.blockResults !== undefined
+          ? {
+              blockResults: output.blockResults
+                .filter((b) => existing.has(b.path))
+                .map((b) => ({ ...b, vault: entry.name })),
+            }
+          : {}),
+        truncated: output.truncated,
+      };
+    } catch (error) {
+      throw wrapDependencyError(error, 'Failed to search notes', {
+        modelKey,
+        operation: 'search_notes',
+      });
+    }
+  }
+
+  const query = normalizeQuery(input.query);
+  try {
+    const output = await executeRetrieval({
+      query,
+      mode,
+      limit,
+      threshold,
+      sources: effectiveSources,
+      embeddingProvider,
+      searchEngine,
+    });
+    const candidatePaths: string[] = [
+      ...output.results.map((r) => r.path),
+      ...(output.blockResults?.map((b) => b.path) ?? []),
+    ];
+    const [existing] = await Promise.all([
+      buildExistingPathSet(entry, candidatePaths),
+      graph.ensureFresh(),
+    ]);
+    return {
+      results: output.results
+        .filter((r) => existing.has(r.path))
+        .map((r) => ({
+          ...r,
+          backlink_count: graph.getBacklinkCount(r.path),
+          vault: entry.name,
+        })),
+      ...(output.blockResults !== undefined
+        ? {
+            blockResults: output.blockResults
+              .filter((b) => existing.has(b.path))
+              .map((b) => ({ ...b, vault: entry.name })),
+          }
+        : {}),
+    };
+  } catch (error) {
+    throw wrapDependencyError(error, 'Failed to search notes', {
+      modelKey,
+      operation: 'search_notes',
+    });
+  }
+}
+
 export function buildSearchNotesTool(
   deps: SearchNotesDeps,
-): ITool<SearchNotesInput, SearchNotesOutput> {
+): ITool<SearchNotesInput, SearchNotesOutput | FanOutResult<SearchNotesOutput>> {
   const { registry, embeddingProvider, searchEngine, modelKey } = deps;
+  const entryDeps = { embeddingProvider, searchEngine, modelKey };
 
   return {
     name: 'search_notes',
@@ -141,158 +302,16 @@ export function buildSearchNotesTool(
     description: SEARCH_NOTES_DESCRIPTION,
     inputSchema,
     handler: async (input) => {
+      if (input.vault === undefined && registry.isMulti()) {
+        return await runSemanticFanOut(registry, (entry) =>
+          runSearchForEntry(entry, input, entryDeps),
+        );
+      }
       const entry = resolveVault(input, registry, {
         tool: 'search_notes',
         requireSemantic: true,
       });
-      // resolveVault with requireSemantic: true guarantees entry.corpus is defined
-      const corpus = entry.corpus!;
-      const { graph, listMatchingPaths } = entry;
-
-      let sources: Map<string, SmartSource>;
-      try {
-        ({ sources } = await corpus.snapshot());
-      } catch (error) {
-        throw wrapDependencyError(error, 'Failed to search notes', {
-          modelKey,
-          operation: 'search_notes',
-        });
-      }
-
-      const mode = input.mode ?? 'quick';
-      const threshold =
-        input.threshold !== undefined
-          ? readThreshold(input.threshold, input.threshold, 'threshold')
-          : undefined;
-      const limit =
-        input.limit !== undefined
-          ? readPositiveInteger(input.limit, input.limit, 'limit')
-          : undefined;
-
-      let effectiveSources = sources;
-
-      if (input.filter !== undefined) {
-        if (isFilterEmpty(input.filter)) {
-          throw new ToolHandlerError(
-            'INVALID_ARGUMENT',
-            'filter must specify at least one of: path_prefix, tags, frontmatter',
-          );
-        }
-
-        let allowed: Set<string>;
-        try {
-          allowed = await listMatchingPaths(input.filter);
-        } catch (error) {
-          if (error instanceof ToolHandlerError && error.code === 'INVALID_FILTER') {
-            throw new ToolHandlerError('INVALID_ARGUMENT', error.message, {
-              details: error.details,
-            });
-          }
-          throw wrapDependencyError(error, 'Failed to compute filter set', {
-            modelKey,
-            operation: 'search_notes',
-          });
-        }
-
-        if (allowed.size === 0) {
-          const isMulti = Array.isArray(input.query);
-          const isDeep = mode === 'deep';
-          return {
-            results: [],
-            ...(isDeep ? { blockResults: [] } : {}),
-            ...(isMulti ? { truncated: false } : {}),
-          } as SearchNotesOutput;
-        }
-
-        effectiveSources = narrowSources(sources, allowed);
-      }
-
-      if (Array.isArray(input.query)) {
-        const queries = normalizeQueryArray(input.query);
-        try {
-          const output = await executeMultiRetrieval({
-            queries,
-            mode,
-            threshold,
-            limit,
-            sources: effectiveSources,
-            embeddingProvider,
-            searchEngine,
-          });
-          const candidatePaths: string[] = [
-            ...output.results.map((r) => r.path),
-            ...(output.blockResults?.map((b) => b.path) ?? []),
-          ];
-          const [existing] = await Promise.all([
-            buildExistingPathSet(entry, candidatePaths),
-            graph.ensureFresh(),
-          ]);
-          return {
-            results: output.results
-              .filter((r) => existing.has(r.path))
-              .map((r) => ({
-                ...r,
-                backlink_count: graph.getBacklinkCount(r.path),
-                vault: entry.name,
-              })),
-            ...(output.blockResults !== undefined
-              ? {
-                  blockResults: output.blockResults
-                    .filter((b) => existing.has(b.path))
-                    .map((b) => ({ ...b, vault: entry.name })),
-                }
-              : {}),
-            truncated: output.truncated,
-          };
-        } catch (error) {
-          throw wrapDependencyError(error, 'Failed to search notes', {
-            modelKey,
-            operation: 'search_notes',
-          });
-        }
-      }
-
-      const query = normalizeQuery(input.query);
-      try {
-        const output = await executeRetrieval({
-          query,
-          mode,
-          limit,
-          threshold,
-          sources: effectiveSources,
-          embeddingProvider,
-          searchEngine,
-        });
-        const candidatePaths: string[] = [
-          ...output.results.map((r) => r.path),
-          ...(output.blockResults?.map((b) => b.path) ?? []),
-        ];
-        const [existing] = await Promise.all([
-          buildExistingPathSet(entry, candidatePaths),
-          graph.ensureFresh(),
-        ]);
-        return {
-          results: output.results
-            .filter((r) => existing.has(r.path))
-            .map((r) => ({
-              ...r,
-              backlink_count: graph.getBacklinkCount(r.path),
-              vault: entry.name,
-            })),
-          ...(output.blockResults !== undefined
-            ? {
-                blockResults: output.blockResults
-                  .filter((b) => existing.has(b.path))
-                  .map((b) => ({ ...b, vault: entry.name })),
-              }
-            : {}),
-        };
-      } catch (error) {
-        throw wrapDependencyError(error, 'Failed to search notes', {
-          modelKey,
-          operation: 'search_notes',
-        });
-      }
+      return runSearchForEntry(entry, input, entryDeps);
     },
   };
 }

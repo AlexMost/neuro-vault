@@ -2,7 +2,10 @@ import fs from 'node:fs/promises';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildSearchNotesTool } from '../../../src/modules/semantic/tools/search-notes.js';
+import {
+  buildSearchNotesTool,
+  type SearchNotesOutput,
+} from '../../../src/modules/semantic/tools/search-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import {
@@ -68,7 +71,10 @@ describe('searchNotes', () => {
       const tool = buildSearchNotesTool(deps);
 
       try {
-        const result = await tool.handler({ query: 'semantic query', threshold: 0 });
+        const result = (await tool.handler({
+          query: 'semantic query',
+          threshold: 0,
+        })) as SearchNotesOutput;
         expect(result.results.map((r) => r.path)).toEqual(['Folder/note-a.md', 'Folder/note-c.md']);
         expect(result.blockResults?.map((b) => b.path) ?? []).not.toContain('Folder/note-b.md');
       } finally {
@@ -98,10 +104,10 @@ describe('searchNotes', () => {
       const tool = buildSearchNotesTool(deps);
 
       try {
-        const result = await tool.handler({
+        const result = (await tool.handler({
           query: '  semantic query  ',
           threshold: 0,
-        });
+        })) as SearchNotesOutput;
 
         expect(embed).toHaveBeenCalledTimes(1);
         expect(embed).toHaveBeenCalledWith('semantic query');
@@ -691,30 +697,157 @@ describe('searchNotes', () => {
     });
     const tool = buildSearchNotesTool(deps);
     try {
-      const output = await tool.handler({ query: 'topic', threshold: 0 });
+      const output = (await tool.handler({ query: 'topic', threshold: 0 })) as SearchNotesOutput;
       expect(output.results.every((r) => r.vault === 'v')).toBe(true);
     } finally {
       await cleanup();
     }
   });
 
-  it('throws VAULT_REQUIRED in multi-vault mode when vault: is omitted', async () => {
+  it('fans out across two semantically-available vaults when vault: is omitted in multi-vault mode', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
-      const registry = makeTestRegistry([
-        { name: 'v1', path: tempRoot, smartEnvPath, corpus: corpusIndex, semanticAvailable: true },
-        { name: 'v2', path: tempRoot, smartEnvPath, corpus: corpusIndex, semanticAvailable: true },
+      const sources1 = new Map([
+        ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
       ]);
-      const tool = buildSearchNotesTool({
-        registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-        modelKey: MODEL_KEY,
-      });
+      const sources2 = new Map([
+        ['note-b.md', { path: 'note-b.md', embedding: [0, 1], blocks: [] }],
+      ]);
+      const corpusIndex1 = makeFakeCorpusIndex(sources1);
+      const corpusIndex2 = makeFakeCorpusIndex(sources2);
 
-      await expect(tool.handler({ query: 'q' })).rejects.toMatchObject({ code: 'VAULT_REQUIRED' });
+      // Create temp vault roots so pathExistsForEntry works
+      const fs2 = await import('node:fs/promises');
+      const os2 = await import('node:os');
+      const path2 = await import('node:path');
+      const vaultRoot1 = await fs2.mkdtemp(path2.join(os2.tmpdir(), 'fanout-v1-'));
+      const vaultRoot2 = await fs2.mkdtemp(path2.join(os2.tmpdir(), 'fanout-v2-'));
+      await fs2.mkdir(path2.join(vaultRoot1), { recursive: true });
+      await fs2.mkdir(path2.join(vaultRoot2), { recursive: true });
+      // Write the note files so pathExistsForEntry returns true
+      await fs2.writeFile(path2.join(vaultRoot1, 'note-a.md'), '', 'utf8');
+      await fs2.writeFile(path2.join(vaultRoot2, 'note-b.md'), '', 'utf8');
+
+      try {
+        const searchEngine = {
+          findNeighbors: vi
+            .fn()
+            .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }])
+            .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]),
+          findBlockNeighbors: vi.fn().mockReturnValue([]),
+          findDuplicates: vi.fn().mockReturnValue([]),
+        };
+        const registry = makeTestRegistry([
+          {
+            name: 'v1',
+            path: vaultRoot1,
+            smartEnvPath,
+            corpus: corpusIndex1,
+            semanticAvailable: true,
+            graph: makeFakeGraph(),
+            listMatchingPaths: async () => new Set(),
+          },
+          {
+            name: 'v2',
+            path: vaultRoot2,
+            smartEnvPath,
+            corpus: corpusIndex2,
+            semanticAvailable: true,
+            graph: makeFakeGraph(),
+            listMatchingPaths: async () => new Set(),
+          },
+        ]);
+        const tool = buildSearchNotesTool({
+          registry,
+          embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+          searchEngine,
+          modelKey: MODEL_KEY,
+        });
+
+        const result = (await tool.handler({ query: 'q', threshold: 0 })) as {
+          results_by_vault: Array<{ vault: string; results: Array<{ path: string }> }>;
+          skipped_vaults: Array<{ vault: string; reason: string }>;
+        };
+
+        expect(result.results_by_vault).toHaveLength(2);
+        expect(result.skipped_vaults).toEqual([]);
+        const byVault = new Map(result.results_by_vault.map((g) => [g.vault, g]));
+        expect(byVault.has('v1')).toBe(true);
+        expect(byVault.has('v2')).toBe(true);
+        expect(byVault.get('v1')!.results[0]!.path).toBe('note-a.md');
+        expect(byVault.get('v2')!.results[0]!.path).toBe('note-b.md');
+      } finally {
+        await fs2.rm(vaultRoot1, { recursive: true, force: true });
+        await fs2.rm(vaultRoot2, { recursive: true, force: true });
+      }
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('fan-out skips vaults without semantic index and surfaces them in skipped_vaults', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    try {
+      const sources1 = new Map([
+        ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
+      ]);
+      const corpusIndex1 = makeFakeCorpusIndex(sources1);
+
+      const vaultRoot1 = await (
+        await import('node:fs/promises')
+      ).mkdtemp(
+        (await import('node:path')).join((await import('node:os')).tmpdir(), 'fanout-skip-v1-'),
+      );
+      await (
+        await import('node:fs/promises')
+      ).writeFile((await import('node:path')).join(vaultRoot1, 'note-a.md'), '', 'utf8');
+
+      try {
+        const registry = makeTestRegistry([
+          {
+            name: 'v1',
+            path: vaultRoot1,
+            smartEnvPath,
+            corpus: corpusIndex1,
+            semanticAvailable: true,
+            graph: makeFakeGraph(),
+            listMatchingPaths: async () => new Set(),
+          },
+          {
+            name: 'v2',
+            path: tempRoot,
+            smartEnvPath,
+            corpus: undefined,
+            semanticAvailable: false,
+            semanticUnavailableReason: 'no index',
+            graph: makeFakeGraph(),
+            listMatchingPaths: async () => new Set(),
+          },
+        ]);
+        const tool = buildSearchNotesTool({
+          registry,
+          embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+          searchEngine: {
+            findNeighbors: vi.fn().mockReturnValue([{ path: 'note-a.md', similarity: 0.9 }]),
+            findBlockNeighbors: vi.fn().mockReturnValue([]),
+            findDuplicates: vi.fn().mockReturnValue([]),
+          },
+          modelKey: MODEL_KEY,
+        });
+
+        const result = (await tool.handler({ query: 'q', threshold: 0 })) as {
+          results_by_vault: Array<{ vault: string; results: Array<{ path: string }> }>;
+          skipped_vaults: Array<{ vault: string; reason: string }>;
+        };
+
+        expect(result.results_by_vault).toHaveLength(1);
+        expect(result.results_by_vault[0]!.vault).toBe('v1');
+        expect(result.skipped_vaults).toEqual([
+          { vault: 'v2', reason: 'SEMANTIC_INDEX_NOT_FOUND' },
+        ]);
+      } finally {
+        await (await import('node:fs/promises')).rm(vaultRoot1, { recursive: true, force: true });
+      }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }

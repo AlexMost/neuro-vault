@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildSearchNotesTool } from '../../../src/modules/semantic/tools/search-notes.js';
+import {
+  buildSearchNotesTool,
+  type SearchNotesOutput,
+} from '../../../src/modules/semantic/tools/search-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import { makeSearchDeps } from './_helpers.js';
@@ -45,10 +48,10 @@ describe('search_notes — filter', () => {
     const tool = buildSearchNotesTool(deps);
 
     try {
-      const result = await tool.handler({
+      const result = (await tool.handler({
         query: 'q',
         filter: { path_prefix: 'Resources/' },
-      });
+      })) as SearchNotesOutput;
 
       expect(result.results.map((r) => r.path)).toEqual(['Resources/a.md', 'Resources/b.md']);
       const passedSources = [...findNeighbors.mock.calls[0]![0].sources];
@@ -71,10 +74,10 @@ describe('search_notes — filter', () => {
     const tool = buildSearchNotesTool(deps);
 
     try {
-      const result = await tool.handler({
+      const result = (await tool.handler({
         query: 'q',
         filter: { tags: ['nonexistent'] },
-      });
+      })) as SearchNotesOutput;
 
       expect(result.results).toEqual([]);
       expect(embed).not.toHaveBeenCalled();
@@ -95,11 +98,11 @@ describe('search_notes — filter', () => {
     const tool = buildSearchNotesTool(deps);
 
     try {
-      const result = await tool.handler({
+      const result = (await tool.handler({
         query: 'q',
         mode: 'deep',
         filter: { tags: ['x'] },
-      });
+      })) as SearchNotesOutput;
 
       expect(result.results).toEqual([]);
       expect((result as { blockResults?: unknown[] }).blockResults).toEqual([]);
@@ -119,10 +122,10 @@ describe('search_notes — filter', () => {
     const tool = buildSearchNotesTool(deps);
 
     try {
-      const result = await tool.handler({
+      const result = (await tool.handler({
         query: ['q1', 'q2'],
         filter: { tags: ['x'] },
-      });
+      })) as SearchNotesOutput;
 
       expect(result.results).toEqual([]);
       expect((result as { truncated?: boolean }).truncated).toBe(false);
@@ -262,10 +265,10 @@ describe('search_notes — filter', () => {
     const tool = buildSearchNotesTool(deps);
 
     try {
-      const result = await tool.handler({
+      const result = (await tool.handler({
         query: ['q1', 'q2'],
         filter: { path_prefix: 'Resources/' },
-      });
+      })) as SearchNotesOutput;
 
       expect(result.results.map((r) => r.path).sort()).toEqual([
         'Resources/a.md',
