@@ -60,4 +60,4 @@ Both exceptions are explicit precisely because they violate the "no parsing / no
 
 ## Vault binding
 
-The CLI invocation is bound to a specific vault at startup. `parseConfig` resolves a `vaultName` — either the explicit `--vault-name` flag or `path.basename(--vault)` — and threads it through `OperationsModuleConfig` into the provider. `ObsidianCLIProvider.buildArgs` then appends `vault=<name>` to every CLI call, so writes go to the configured vault regardless of which vault Obsidian considers "active". If the name does not match any vault Obsidian knows about, the provider returns `VAULT_NOT_FOUND` with a hint to set `--vault-name` explicitly.
+Each `VaultEntry` in the `VaultRegistry` carries its own `ObsidianCLIProvider`, bound to that vault's name (the value to the left of `:` in `--vault name:path`, or `path.basename` of the vault path when no prefix is given). `ObsidianCLIProvider.buildArgs` appends `vault=<name>` to every CLI invocation, so writes go to the configured vault regardless of which vault Obsidian considers "active". If the name does not match any vault Obsidian knows about, the provider returns `VAULT_NOT_FOUND`.
