@@ -27,24 +27,15 @@ export function createOperationsModule(
   _config: OperationsModuleConfig = {},
   _deps: OperationsModuleDeps = {},
 ): OperationsModule {
-  // Transitional shape: tool handlers in Task 7 still close over a single
-  // entry's primitives. Pull entry 0 here; Task 7 migrates handlers to
-  // resolveVault(input, registry, ...) directly.
   const entry = registry.list()[0];
   if (!entry.provider || !entry.writer) {
     throw new Error('createOperationsModule called without operations enabled');
   }
-  const toolDeps: OperationsToolDeps = {
-    registry,
-    provider: entry.provider,
-    reader: entry.reader,
-    writer: entry.writer,
-    graph: entry.graph,
-  };
+  const toolDeps: OperationsToolDeps = { registry };
   return {
     tools: buildOperationsTools(toolDeps),
     resources: buildOperationsResources({
-      reader: entry.reader,
+      reader: entry.reader, // resources still single-vault until Task 9
       provider: entry.provider,
       graph: entry.graph,
     }),

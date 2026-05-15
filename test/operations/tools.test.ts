@@ -33,21 +33,29 @@ const noopWriter = {
   replaceFullBody: vi.fn(),
 } as unknown as VaultWriter;
 
+const noopEntry = {
+  name: 'test',
+  path: '/tmp/vault',
+  smartEnvPath: '/tmp/smart',
+  reader: noopReader,
+  writer: noopWriter,
+  provider: noopProvider,
+  graph: noopGraph,
+  listMatchingPaths: vi.fn(),
+  semanticAvailable: false,
+};
+
 const noopRegistry = {
   get: vi.fn(),
   require: vi.fn(),
-  list: vi.fn(() => []),
+  list: vi.fn(() => [noopEntry]),
   isMulti: vi.fn(() => false),
-  names: vi.fn(() => []),
+  names: vi.fn(() => ['test']),
   semanticAvailableEntries: vi.fn(() => []),
 } as unknown as VaultRegistry;
 
 const noopDeps = {
   registry: noopRegistry,
-  provider: noopProvider,
-  reader: noopReader,
-  writer: noopWriter,
-  graph: noopGraph,
 };
 
 describe('buildOperationsTools', () => {
