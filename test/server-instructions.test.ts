@@ -155,4 +155,29 @@ describe('buildServerInstructions', () => {
       await fs.rm(vault, { recursive: true, force: true });
     }
   });
+
+  it('does not include the multi-vault block in single-vault mode', async () => {
+    const vault = await makeTempVault();
+    try {
+      const result = await buildServerInstructions(makeRegistry(vault));
+      expect(result).not.toMatch(/Multi-vault mode/);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+
+  it('includes the multi-vault block listing every registered vault name when more than one is registered', async () => {
+    const vault = await makeTempVault();
+    try {
+      const result = await buildServerInstructions(makeRegistry(vault, true));
+      expect(result).toMatch(/## Multi-vault mode/);
+      // The mock registry produces names from path.basename(vault) and "vault2".
+      expect(result).toMatch(/"vault2"/);
+      // Mentions the fan-out tools and the VAULT_REQUIRED contract.
+      expect(result).toMatch(/search_notes/);
+      expect(result).toMatch(/VAULT_REQUIRED/);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
 });
