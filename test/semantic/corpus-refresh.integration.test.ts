@@ -5,7 +5,12 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createSemanticModule } from '../../src/modules/semantic/index.js';
+import { createSmartConnectionsCorpusIndex } from '../../src/lib/obsidian/smart-connections-corpus-index.js';
+import { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
+import { FsVaultReader } from '../../src/lib/obsidian/vault-reader.js';
+import { createListMatchingPaths } from '../../src/lib/obsidian/query/index.js';
 import type { ToolRegistration } from '../../src/lib/tool-registration.js';
+import type { VaultRegistry, VaultEntry } from '../../src/lib/vault-registry.js';
 
 const MODEL_KEY = 'bge-micro-v2';
 
@@ -33,6 +38,17 @@ function findTool(tools: ToolRegistration[], name: string): ToolRegistration {
   return match;
 }
 
+function makeRegistryForEntry(entry: VaultEntry): VaultRegistry {
+  return {
+    get: vi.fn(),
+    require: vi.fn(),
+    list: vi.fn(() => [entry]),
+    isMulti: vi.fn(() => false),
+    names: vi.fn(() => [entry.name]),
+    semanticAvailableEntries: vi.fn(() => (entry.semanticAvailable ? [entry] : [])),
+  };
+}
+
 describe('corpus refresh through semantic tools', () => {
   const tempDirs: string[] = [];
 
@@ -58,8 +74,29 @@ describe('corpus refresh through semantic tools', () => {
       embed: vi.fn().mockResolvedValue([[1, 0, 0]]),
     };
 
-    const semantic = await createSemanticModule(
-      { vaultPath, smartEnvPath, modelKey: MODEL_KEY, modelId: MODEL_KEY },
+    // Build the corpus directly (the registry normally does this at startup).
+    const corpus = await createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey: MODEL_KEY });
+
+    const reader = new FsVaultReader({ vaultRoot: vaultPath });
+    const graph = new WikilinkGraphIndex({ reader });
+    const listMatchingPaths = createListMatchingPaths({ reader, graph });
+
+    const entry: VaultEntry = {
+      name: 'vault',
+      path: vaultPath,
+      smartEnvPath,
+      reader,
+      graph,
+      listMatchingPaths,
+      corpus,
+      semanticAvailable: true,
+    };
+
+    const registry = makeRegistryForEntry(entry);
+
+    const semantic = createSemanticModule(
+      registry,
+      { modelKey: MODEL_KEY, modelId: MODEL_KEY },
       { embeddingServiceFactory: () => fakeEmbed },
     );
 

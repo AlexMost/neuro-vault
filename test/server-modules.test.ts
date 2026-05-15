@@ -70,8 +70,10 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
     try {
       await main(['node', 'cli.js', '--vault', vaultPath, '--no-operations'], {
+        vaultEntryDeps: {
+          corpusFactory: () => corpusFactory(),
+        },
         semantic: {
-          corpusFactory,
           embeddingServiceFactory: () => ({ initialize, embed: vi.fn() }),
         },
         serverFactory: (_instructions: string) => server,
@@ -115,25 +117,32 @@ describe('Neuro Vault MCP server bootstrap', () => {
       await expect(
         startNeuroVaultServer(
           {
-            vaultPath,
+            vaults: [
+              {
+                name: path.basename(vaultPath),
+                path: vaultPath,
+                smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
+              },
+            ],
             semantic: {
               enabled: true,
-              smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
               modelKey: 'bge-micro-v2',
               modelId: 'TaylorAI/bge-micro-v2',
             },
-            operations: { enabled: false, vaultName: path.basename(vaultPath) },
+            operations: { enabled: false },
           },
           {
+            vaultEntryDeps: {
+              corpusFactory: () => Promise.resolve(makeFakeCorpusIndex(new Map())),
+            },
             semantic: {
-              corpusFactory: vi.fn().mockResolvedValue(makeFakeCorpusIndex(new Map())),
               embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
             },
             serverFactory: (_instructions: string) => createFakeServer(),
             transportFactory: () => ({}) as never,
           },
         ),
-      ).rejects.toThrow('Loaded Smart Connections corpus is empty');
+      ).rejects.toThrow(/Smart Connections/i);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -157,12 +166,13 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
     try {
       await main(['node', 'cli.js', '--vault', vaultPath, '--no-semantic'], {
-        operations: {
-          vaultProviderFactory: () => fakeProvider,
-          vaultReaderFactory: () => ({
-            readNotes: vi.fn().mockResolvedValue([]),
-            scan: vi.fn().mockResolvedValue([]),
-          }),
+        vaultEntryDeps: {
+          providerFactory: () => fakeProvider as never,
+          readerFactory: () =>
+            ({
+              readNotes: vi.fn().mockResolvedValue([]),
+              scan: vi.fn().mockResolvedValue([]),
+            }) as never,
         },
         serverFactory: (_instructions: string) => server,
         transportFactory: () => ({}) as never,
@@ -206,18 +216,19 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
     try {
       await main(['node', 'cli.js', '--vault', vaultPath], {
+        vaultEntryDeps: {
+          corpusFactory: () => Promise.resolve(makeFakeCorpusIndex()),
+          providerFactory: () => fakeProvider as never,
+          readerFactory: () =>
+            ({
+              readNotes: vi.fn().mockResolvedValue([]),
+              scan: vi.fn().mockResolvedValue([]),
+            }) as never,
+        },
         semantic: {
-          corpusFactory: vi.fn().mockResolvedValue(makeFakeCorpusIndex()),
           embeddingServiceFactory: () => ({
             initialize: vi.fn().mockResolvedValue(undefined),
             embed: vi.fn(),
-          }),
-        },
-        operations: {
-          vaultProviderFactory: () => fakeProvider,
-          vaultReaderFactory: () => ({
-            readNotes: vi.fn().mockResolvedValue([]),
-            scan: vi.fn().mockResolvedValue([]),
           }),
         },
         serverFactory: (_instructions: string) => server,

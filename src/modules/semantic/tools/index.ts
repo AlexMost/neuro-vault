@@ -8,12 +8,14 @@ import type {
   PathExistsCheck,
   SearchEngine,
 } from '../types.js';
+import type { VaultRegistry } from '../../../lib/vault-registry.js';
 import { buildFindDuplicatesTool } from './find-duplicates.js';
 import { buildGetSimilarNotesTool } from './get-similar-notes.js';
 import { buildGetStatsTool } from './get-stats.js';
 import { buildSearchNotesTool } from './search-notes.js';
 
 export interface SemanticToolDeps {
+  registry: VaultRegistry; // ← new, used in Task 8
   corpus: SmartConnectionsCorpusIndex;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;

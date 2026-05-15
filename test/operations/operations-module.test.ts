@@ -1,25 +1,64 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createOperationsModule } from '../../src/modules/operations/index.js';
-import type { ObsidianCLIProviderOptions } from '../../src/modules/operations/obsidian-cli-provider.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
+import type { VaultRegistry, VaultEntry } from '../../src/lib/vault-registry.js';
+import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
+import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
+import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 
 describe('createOperationsModule', () => {
-  it('forwards vaultName and binaryPath to the provider factory', () => {
-    const seen: ObsidianCLIProviderOptions[] = [];
-    const fakeProvider = {} as VaultProvider;
+  it('builds tools and resources from the first registry entry', () => {
+    const fakeProvider = {
+      createNote: vi.fn(),
+      readDaily: vi.fn(),
+      setProperty: vi.fn(),
+      readProperty: vi.fn(),
+      removeProperty: vi.fn(),
+      listProperties: vi.fn(),
+      listTags: vi.fn(),
+    } as unknown as VaultProvider;
 
-    createOperationsModule(
-      { vaultPath: '/tmp/MyVault', vaultName: 'MyVault', binaryPath: '/usr/bin/obsidian' },
-      {
-        vaultProviderFactory: (opts) => {
-          seen.push(opts);
-          return fakeProvider;
-        },
-      },
-    );
+    const fakeReader = {
+      readNotes: vi.fn().mockResolvedValue([]),
+      scan: vi.fn().mockResolvedValue([]),
+    } as unknown as VaultReader;
 
-    expect(seen).toHaveLength(1);
-    expect(seen[0]).toEqual({ binaryPath: '/usr/bin/obsidian', vaultName: 'MyVault' });
+    const fakeWriter = {
+      replaceInNote: vi.fn(),
+      replaceFullBody: vi.fn(),
+    } as unknown as VaultWriter;
+
+    const fakeGraph = {
+      ensureFresh: vi.fn().mockResolvedValue(undefined),
+      getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
+      getBacklinkCount: vi.fn(() => 0),
+    } as unknown as WikilinkGraphIndex;
+
+    const fakeEntry: VaultEntry = {
+      name: 'MyVault',
+      path: '/tmp/MyVault',
+      smartEnvPath: '/tmp/MyVault/.smart-env/multi',
+      reader: fakeReader,
+      writer: fakeWriter,
+      provider: fakeProvider,
+      graph: fakeGraph,
+      listMatchingPaths: vi.fn(),
+      semanticAvailable: false,
+    };
+
+    const fakeRegistry: VaultRegistry = {
+      get: vi.fn(),
+      require: vi.fn(),
+      list: vi.fn(() => [fakeEntry]),
+      isMulti: vi.fn(() => false),
+      names: vi.fn(() => ['MyVault']),
+      semanticAvailableEntries: vi.fn(() => []),
+    };
+
+    const result = createOperationsModule(fakeRegistry, { binaryPath: '/usr/bin/obsidian' });
+
+    expect(result.tools.length).toBe(12);
+    expect(result.resources.length).toBe(1);
   });
 });
