@@ -130,7 +130,7 @@ describe('createVaultRegistry', () => {
     expect(registry.require('a').semanticAvailable).toBe(false);
   });
 
-  it('semanticEnabledEntries returns only entries with available corpus', async () => {
+  it('semanticAvailableEntries returns only entries with available corpus', async () => {
     const deps = fakeDeps();
     let call = 0;
     deps.corpusFactory = async () => {
@@ -154,6 +154,6 @@ describe('createVaultRegistry', () => {
       },
       deps,
     );
-    expect(registry.semanticEnabledEntries().map((e) => e.name)).toEqual(['a']);
+    expect(registry.semanticAvailableEntries().map((e) => e.name)).toEqual(['a']);
   });
 });

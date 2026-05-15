@@ -50,7 +50,7 @@ export interface VaultRegistry {
   list(): VaultEntry[];
   isMulti(): boolean;
   names(): string[];
-  semanticEnabledEntries(): VaultEntry[];
+  semanticAvailableEntries(): VaultEntry[];
 }
 
 export async function createVaultRegistry(
@@ -118,6 +118,6 @@ export async function createVaultRegistry(
     list: () => [...entries],
     names: () => entries.map((e) => e.name),
     isMulti: () => entries.length > 1,
-    semanticEnabledEntries: () => entries.filter((e) => e.semanticAvailable),
+    semanticAvailableEntries: () => entries.filter((e) => e.semanticAvailable),
   };
 }
