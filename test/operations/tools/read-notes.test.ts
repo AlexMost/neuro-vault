@@ -2,17 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import { buildReadNotesTool } from '../../../src/modules/operations/tools/read-notes.js';
 import { makeReader } from './_helpers.js';
+import { makeTestRegistry } from './_test-registry.js';
 
 describe('operations.readNotes handler', () => {
-  it('reads a single path with default fields', async () => {
+  it('reads a single path with default fields and includes vault', async () => {
     const reader = makeReader({
       readNotes: async () => [{ path: 'Folder/n.md', frontmatter: { a: 1 }, content: 'body' }],
     });
-    const tool = buildReadNotesTool({ reader });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
+    const tool = buildReadNotesTool({ registry });
 
     const result = await tool.handler({ paths: ['Folder/n.md'] });
 
     expect(result).toEqual({
+      vault: 'v',
       results: [{ path: 'Folder/n.md', frontmatter: { a: 1 }, content: 'body' }],
       count: 1,
       errors: 0,
@@ -23,11 +26,13 @@ describe('operations.readNotes handler', () => {
     const reader = makeReader({
       readNotes: async () => [{ path: 'Folder/n.md', frontmatter: { a: 1 }, content: 'body' }],
     });
-    const tool = buildReadNotesTool({ reader });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
+    const tool = buildReadNotesTool({ registry });
 
     const result = await tool.handler({ paths: 'Folder/n.md' });
 
     expect(result).toEqual({
+      vault: 'v',
       results: [{ path: 'Folder/n.md', frontmatter: { a: 1 }, content: 'body' }],
       count: 1,
       errors: 0,
@@ -35,7 +40,8 @@ describe('operations.readNotes handler', () => {
   });
 
   it('rejects empty string for paths with INVALID_ARGUMENT (top-level)', async () => {
-    const tool = buildReadNotesTool({ reader: makeReader() });
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader() }]);
+    const tool = buildReadNotesTool({ registry });
     await expect(tool.handler({ paths: '' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -48,7 +54,8 @@ describe('operations.readNotes handler', () => {
         { path: 'b.md', frontmatter: null, content: '' },
       ],
     });
-    const tool = buildReadNotesTool({ reader });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
+    const tool = buildReadNotesTool({ registry });
 
     const result = await tool.handler({ paths: ['a.md', 'b.md', 'a.md'] });
 
@@ -60,7 +67,8 @@ describe('operations.readNotes handler', () => {
     const reader = makeReader({
       readNotes: async () => [{ path: 'a.md', frontmatter: { x: 1 }, content: 'body' }],
     });
-    const tool = buildReadNotesTool({ reader });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
+    const tool = buildReadNotesTool({ registry });
 
     const result = await tool.handler({ paths: ['a.md'], fields: ['frontmatter'] });
 
@@ -72,7 +80,8 @@ describe('operations.readNotes handler', () => {
     const reader = makeReader({
       readNotes: async () => [{ path: 'a.md', frontmatter: { x: 1 }, content: 'body' }],
     });
-    const tool = buildReadNotesTool({ reader });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
+    const tool = buildReadNotesTool({ registry });
 
     const result = await tool.handler({ paths: ['a.md'], fields: ['content'] });
 
@@ -81,18 +90,16 @@ describe('operations.readNotes handler', () => {
   });
 
   it('rejects 0 paths with INVALID_ARGUMENT (top-level)', async () => {
-    const tool = buildReadNotesTool({
-      reader: makeReader(),
-    });
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader() }]);
+    const tool = buildReadNotesTool({ registry });
     await expect(tool.handler({ paths: [] })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
   });
 
   it('rejects 51 paths with INVALID_ARGUMENT (top-level)', async () => {
-    const tool = buildReadNotesTool({
-      reader: makeReader(),
-    });
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader() }]);
+    const tool = buildReadNotesTool({ registry });
     const paths = Array.from({ length: 51 }, (_, i) => `n${i}.md`);
     await expect(tool.handler({ paths })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
@@ -100,18 +107,16 @@ describe('operations.readNotes handler', () => {
   });
 
   it('rejects empty fields with INVALID_ARGUMENT (top-level)', async () => {
-    const tool = buildReadNotesTool({
-      reader: makeReader(),
-    });
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader() }]);
+    const tool = buildReadNotesTool({ registry });
     await expect(tool.handler({ paths: ['a.md'], fields: [] })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
   });
 
   it('rejects unknown field with INVALID_ARGUMENT (top-level)', async () => {
-    const tool = buildReadNotesTool({
-      reader: makeReader(),
-    });
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader() }]);
+    const tool = buildReadNotesTool({ registry });
     await expect(
       tool.handler({ paths: ['a.md'], fields: ['mtime' as unknown as 'frontmatter'] }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -121,7 +126,8 @@ describe('operations.readNotes handler', () => {
     const reader = makeReader({
       readNotes: async () => [{ path: 'a.md', frontmatter: null, content: 'a' }],
     });
-    const tool = buildReadNotesTool({ reader });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
+    const tool = buildReadNotesTool({ registry });
 
     const result = await tool.handler({ paths: ['a.md', '../etc/passwd'] });
 
@@ -136,7 +142,8 @@ describe('operations.readNotes handler', () => {
 
   it('produces per-item INVALID_ARGUMENT for absolute paths', async () => {
     const reader = makeReader({ readNotes: async () => [] });
-    const tool = buildReadNotesTool({ reader });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
+    const tool = buildReadNotesTool({ registry });
 
     const result = await tool.handler({ paths: ['/absolute.md'] });
 
@@ -156,7 +163,8 @@ describe('operations.readNotes handler', () => {
         { path: 'missing.md', error: { code: 'NOT_FOUND', message: 'Note not found: missing.md' } },
       ],
     });
-    const tool = buildReadNotesTool({ reader });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
+    const tool = buildReadNotesTool({ registry });
 
     const result = await tool.handler({ paths: ['a.md', 'missing.md'] });
 
@@ -174,7 +182,8 @@ describe('operations.readNotes handler', () => {
       content: 'body',
     }));
     const reader = makeReader({ readNotes: async () => items });
-    const tool = buildReadNotesTool({ reader });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
+    const tool = buildReadNotesTool({ registry });
 
     const result = await tool.handler({
       paths: items.map((i) => i.path),
