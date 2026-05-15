@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
+import { resolveVault } from '../../../lib/resolve-vault.js';
 import {
   executeMultiRetrieval,
   executeRetrieval,
@@ -12,18 +12,12 @@ import {
 import {
   normalizeQuery,
   normalizeQueryArray,
+  pathExistsForEntry,
   readPositiveInteger,
   readThreshold,
 } from '../tool-helpers.js';
-import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
-import type {
-  EmbeddingProvider,
-  ListMatchingPaths,
-  NoteFilter,
-  PathExistsCheck,
-  SearchEngine,
-  SmartSource,
-} from '../types.js';
+import type { EmbeddingProvider, NoteFilter, SearchEngine, SmartSource } from '../types.js';
+import type { VaultEntry, VaultRegistry } from '../../../lib/vault-registry.js';
 
 const SEARCH_NOTES_DESCRIPTION = [
   'Search notes by semantic similarity. Best for fuzzy recall, topic exploration, or cross-language matches. Pass short keyword queries (1-4 words), not sentences.',
@@ -37,6 +31,7 @@ const SEARCH_NOTES_DESCRIPTION = [
   '- mode: "quick" | "deep" (default "quick").',
   '- limit: max notes in `results`. Default 3 (quick) / 8 (deep). Override to widen or narrow the result set. Does not affect `blockResults` (quick: capped at 5; deep: capped at mode limit).',
   '- threshold: min similarity, 0-1. Default 0.5 (quick) / 0.35 (deep). Raise to 0.6+ to cut weak matches; lower (e.g. 0.3) when nothing comes back.',
+  '- vault: target a specific vault by name when multiple are registered.',
   '',
   'OUTPUT FIELDS (multi-query):',
   '- matched_queries: which of your queries surfaced this result — tells you which synonym was load-bearing.',
@@ -58,6 +53,8 @@ const SEARCH_NOTES_DESCRIPTION = [
   '  Composition: filter AND threshold AND semantic. Use this instead of querying twice and intersecting on the client.',
   '- scoped recall: search_notes({query: "trading lessons", filter: {tags: ["trading"]}}) — semantic only inside notes tagged trading.',
   '- scoped multi-query: search_notes({query: ["embeddings","векторний пошук"], filter: {path_prefix: "Resources/"}, mode: "deep"}).',
+  '',
+  'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
 ].join('\n');
 
 const filterSchema = z.object({
@@ -67,6 +64,7 @@ const filterSchema = z.object({
 });
 
 const inputSchema = z.object({
+  vault: z.string().optional(),
   query: z.union([z.string(), z.array(z.string()).min(1).max(8)]),
   mode: z.enum(['quick', 'deep']).optional(),
   limit: z.number().int().positive().optional(),
@@ -77,28 +75,27 @@ const inputSchema = z.object({
 type SearchNotesInput = z.infer<typeof inputSchema>;
 
 type EnrichResults<T extends { results: { path: string }[] }> = Omit<T, 'results'> & {
-  results: Array<T['results'][number] & { backlink_count: number }>;
+  results: Array<T['results'][number] & { backlink_count: number; vault: string }>;
 };
 
 type SearchNotesOutput = EnrichResults<RetrievalOutput> | EnrichResults<MultiRetrievalOutput>;
 
 export interface SearchNotesDeps {
-  corpus: SmartConnectionsCorpusIndex;
+  registry: VaultRegistry;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
-  pathExists: PathExistsCheck;
-  graph: WikilinkGraphIndex;
-  listMatchingPaths: ListMatchingPaths;
 }
 
 async function buildExistingPathSet(
+  entry: VaultEntry,
   paths: Iterable<string>,
-  pathExists: PathExistsCheck,
 ): Promise<Set<string>> {
   const unique = new Set(paths);
   const checks = await Promise.all(
-    [...unique].map(async (notePath) => [notePath, await pathExists(notePath)] as const),
+    [...unique].map(
+      async (notePath) => [notePath, await pathExistsForEntry(entry, notePath)] as const,
+    ),
   );
   return new Set(checks.filter(([, exists]) => exists).map(([notePath]) => notePath));
 }
@@ -136,15 +133,7 @@ function narrowSources(
 export function buildSearchNotesTool(
   deps: SearchNotesDeps,
 ): ITool<SearchNotesInput, SearchNotesOutput> {
-  const {
-    corpus,
-    embeddingProvider,
-    searchEngine,
-    modelKey,
-    pathExists,
-    graph,
-    listMatchingPaths,
-  } = deps;
+  const { registry, embeddingProvider, searchEngine, modelKey } = deps;
 
   return {
     name: 'search_notes',
@@ -152,6 +141,14 @@ export function buildSearchNotesTool(
     description: SEARCH_NOTES_DESCRIPTION,
     inputSchema,
     handler: async (input) => {
+      const entry = resolveVault(input, registry, {
+        tool: 'search_notes',
+        requireSemantic: true,
+      });
+      // resolveVault with requireSemantic: true guarantees entry.corpus is defined
+      const corpus = entry.corpus!;
+      const { graph, listMatchingPaths } = entry;
+
       let sources: Map<string, SmartSource>;
       try {
         ({ sources } = await corpus.snapshot());
@@ -227,15 +224,23 @@ export function buildSearchNotesTool(
             ...(output.blockResults?.map((b) => b.path) ?? []),
           ];
           const [existing] = await Promise.all([
-            buildExistingPathSet(candidatePaths, pathExists),
+            buildExistingPathSet(entry, candidatePaths),
             graph.ensureFresh(),
           ]);
           return {
             results: output.results
               .filter((r) => existing.has(r.path))
-              .map((r) => ({ ...r, backlink_count: graph.getBacklinkCount(r.path) })),
+              .map((r) => ({
+                ...r,
+                backlink_count: graph.getBacklinkCount(r.path),
+                vault: entry.name,
+              })),
             ...(output.blockResults !== undefined
-              ? { blockResults: output.blockResults.filter((b) => existing.has(b.path)) }
+              ? {
+                  blockResults: output.blockResults
+                    .filter((b) => existing.has(b.path))
+                    .map((b) => ({ ...b, vault: entry.name })),
+                }
               : {}),
             truncated: output.truncated,
           };
@@ -263,15 +268,23 @@ export function buildSearchNotesTool(
           ...(output.blockResults?.map((b) => b.path) ?? []),
         ];
         const [existing] = await Promise.all([
-          buildExistingPathSet(candidatePaths, pathExists),
+          buildExistingPathSet(entry, candidatePaths),
           graph.ensureFresh(),
         ]);
         return {
           results: output.results
             .filter((r) => existing.has(r.path))
-            .map((r) => ({ ...r, backlink_count: graph.getBacklinkCount(r.path) })),
+            .map((r) => ({
+              ...r,
+              backlink_count: graph.getBacklinkCount(r.path),
+              vault: entry.name,
+            })),
           ...(output.blockResults !== undefined
-            ? { blockResults: output.blockResults.filter((b) => existing.has(b.path)) }
+            ? {
+                blockResults: output.blockResults
+                  .filter((b) => existing.has(b.path))
+                  .map((b) => ({ ...b, vault: entry.name })),
+              }
             : {}),
         };
       } catch (error) {

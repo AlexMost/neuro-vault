@@ -8,18 +8,20 @@ import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/ty
 import {
   MODEL_KEY,
   makeVaultFixture,
-  makeHandlerDeps,
   makeFakeGraph,
+  makeSearchDeps,
   findNeighbors,
   findDuplicates,
   findBlockNeighbors,
   loadSmartConnectionsCorpus,
+  makeTestRegistry,
+  makeFakeCorpusIndex,
 } from './_helpers.js';
 
 // Lightweight helpers for mock-only tests (no real corpus needed)
-function makeMockSource(path: string, embedding: number[] = [1, 0]): SmartSource {
+function makeMockSource(p: string, embedding: number[] = [1, 0]): SmartSource {
   return {
-    path,
+    path: p,
     embedding,
     blocks: [],
   };
@@ -55,22 +57,23 @@ describe('searchNotes', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
-      const pathExists = vi.fn(async (notePath: string) => notePath !== 'Folder/note-b.md');
-      const tool = buildSearchNotesTool(
-        makeHandlerDeps({
-          sources: corpus.sources,
-          embeddingProvider: { initialize: vi.fn(), embed },
-          searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-          modelKey: 'bge-micro-v2',
-          pathExists,
-        }),
-      );
+      // note-b is absent from disk
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: corpus.sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: 'bge-micro-v2',
+        absentPaths: new Set(['Folder/note-b.md']),
+      });
+      const tool = buildSearchNotesTool(deps);
 
-      const result = await tool.handler({ query: 'semantic query', threshold: 0 });
-
-      expect(result.results.map((r) => r.path)).toEqual(['Folder/note-a.md', 'Folder/note-c.md']);
-      expect(result.blockResults?.map((b) => b.path) ?? []).not.toContain('Folder/note-b.md');
-      expect(pathExists).toHaveBeenCalledWith('Folder/note-b.md');
+      try {
+        const result = await tool.handler({ query: 'semantic query', threshold: 0 });
+        expect(result.results.map((r) => r.path)).toEqual(['Folder/note-a.md', 'Folder/note-c.md']);
+        expect(result.blockResults?.map((b) => b.path) ?? []).not.toContain('Folder/note-b.md');
+      } finally {
+        await cleanup();
+      }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -86,32 +89,32 @@ describe('searchNotes', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
-      const tool = buildSearchNotesTool(
-        makeHandlerDeps({
-          sources: corpus.sources,
-          embeddingProvider: {
-            initialize: vi.fn(),
-            embed,
-          },
-          searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-          modelKey: 'bge-micro-v2',
-        }),
-      );
-
-      const result = await tool.handler({
-        query: '  semantic query  ',
-        threshold: 0,
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: corpus.sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: 'bge-micro-v2',
       });
+      const tool = buildSearchNotesTool(deps);
 
-      expect(embed).toHaveBeenCalledTimes(1);
-      expect(embed).toHaveBeenCalledWith('semantic query');
-      expect(result.results.map((r) => r.path)).toEqual([
-        'Folder/note-a.md',
-        'Folder/note-b.md',
-        'Folder/note-c.md',
-      ]);
-      expect(result.results[0]!.similarity).toBeGreaterThan(result.results[1]!.similarity);
-      expect(result.results[1]!.similarity).toBeGreaterThan(result.results[2]!.similarity);
+      try {
+        const result = await tool.handler({
+          query: '  semantic query  ',
+          threshold: 0,
+        });
+
+        expect(embed).toHaveBeenCalledTimes(1);
+        expect(embed).toHaveBeenCalledWith('semantic query');
+        expect(result.results.map((r) => r.path)).toEqual([
+          'Folder/note-a.md',
+          'Folder/note-b.md',
+          'Folder/note-c.md',
+        ]);
+        expect(result.results[0]!.similarity).toBeGreaterThan(result.results[1]!.similarity);
+        expect(result.results[1]!.similarity).toBeGreaterThan(result.results[2]!.similarity);
+      } finally {
+        await cleanup();
+      }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -127,22 +130,22 @@ describe('searchNotes', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn();
-      const tool = buildSearchNotesTool(
-        makeHandlerDeps({
-          sources: corpus.sources,
-          embeddingProvider: {
-            initialize: vi.fn(),
-            embed,
-          },
-          searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-          modelKey: 'bge-micro-v2',
-        }),
-      );
-
-      await expect(tool.handler({ query: '   ' })).rejects.toMatchObject({
-        code: 'INVALID_ARGUMENT',
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: corpus.sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: 'bge-micro-v2',
       });
-      expect(embed).not.toHaveBeenCalled();
+      const tool = buildSearchNotesTool(deps);
+
+      try {
+        await expect(tool.handler({ query: '   ' })).rejects.toMatchObject({
+          code: 'INVALID_ARGUMENT',
+        });
+        expect(embed).not.toHaveBeenCalled();
+      } finally {
+        await cleanup();
+      }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -158,24 +161,21 @@ describe('searchNotes', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockRejectedValue(new Error('model unavailable'));
-      const tool = buildSearchNotesTool(
-        makeHandlerDeps({
-          sources: corpus.sources,
-          embeddingProvider: {
-            initialize: vi.fn(),
-            embed,
-          },
-          searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-          modelKey: 'bge-micro-v2',
-        }),
-      );
-
-      const searchPromise = tool.handler({ query: 'semantic query' });
-
-      await expect(searchPromise).rejects.toMatchObject({
-        code: 'DEPENDENCY_ERROR',
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: corpus.sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: 'bge-micro-v2',
       });
-      await expect(searchPromise).rejects.toBeInstanceOf(ToolHandlerError);
+      const tool = buildSearchNotesTool(deps);
+
+      try {
+        const searchPromise = tool.handler({ query: 'semantic query' });
+        await expect(searchPromise).rejects.toMatchObject({ code: 'DEPENDENCY_ERROR' });
+        await expect(searchPromise).rejects.toBeInstanceOf(ToolHandlerError);
+      } finally {
+        await cleanup();
+      }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -190,29 +190,24 @@ describe('searchNotes', () => {
 
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const tool = buildSearchNotesTool(
-        makeHandlerDeps({
-          sources: corpus.sources,
-          embeddingProvider: {
-            initialize: vi.fn(),
-            embed: vi.fn(),
-          },
-          searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-          modelKey: 'bge-micro-v2',
-        }),
-      );
-
-      await expect(
-        tool.handler({ query: 'semantic query', threshold: -0.01 }),
-      ).rejects.toMatchObject({
-        code: 'INVALID_ARGUMENT',
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: corpus.sources,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: 'bge-micro-v2',
       });
+      const tool = buildSearchNotesTool(deps);
 
-      await expect(
-        tool.handler({ query: 'semantic query', threshold: 1.01 }),
-      ).rejects.toMatchObject({
-        code: 'INVALID_ARGUMENT',
-      });
+      try {
+        await expect(
+          tool.handler({ query: 'semantic query', threshold: -0.01 }),
+        ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+        await expect(
+          tool.handler({ query: 'semantic query', threshold: 1.01 }),
+        ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      } finally {
+        await cleanup();
+      }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -231,27 +226,30 @@ describe('searchNotes', () => {
         .fn()
         .mockResolvedValueOnce([0.7, 0.2, 0.1])
         .mockResolvedValueOnce([0.1, 0.2, 0.7]);
-      const tool = buildSearchNotesTool(
-        makeHandlerDeps({
-          sources: corpus.sources,
-          embeddingProvider: { initialize: vi.fn(), embed },
-          searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-          modelKey: MODEL_KEY,
-        }),
-      );
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: corpus.sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+      const tool = buildSearchNotesTool(deps);
 
-      const output = (await tool.handler({
-        query: ['alpha', 'beta'],
-        threshold: 0,
-      })) as { results: Array<{ path: string; matched_queries: string[] }>; truncated: boolean };
+      try {
+        const output = (await tool.handler({
+          query: ['alpha', 'beta'],
+          threshold: 0,
+        })) as { results: Array<{ path: string; matched_queries: string[] }>; truncated: boolean };
 
-      expect(embed).toHaveBeenCalledTimes(2);
-      expect(embed).toHaveBeenNthCalledWith(1, 'alpha');
-      expect(embed).toHaveBeenNthCalledWith(2, 'beta');
-      expect(output.truncated).toBe(false);
-      for (const result of output.results) {
-        expect(Array.isArray(result.matched_queries)).toBe(true);
-        expect(result.matched_queries.length).toBeGreaterThan(0);
+        expect(embed).toHaveBeenCalledTimes(2);
+        expect(embed).toHaveBeenNthCalledWith(1, 'alpha');
+        expect(embed).toHaveBeenNthCalledWith(2, 'beta');
+        expect(output.truncated).toBe(false);
+        for (const result of output.results) {
+          expect(Array.isArray(result.matched_queries)).toBe(true);
+          expect(result.matched_queries.length).toBeGreaterThan(0);
+        }
+      } finally {
+        await cleanup();
       }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
@@ -262,18 +260,20 @@ describe('searchNotes', () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const tool = buildSearchNotesTool(
-        makeHandlerDeps({
-          sources: corpus.sources,
-          embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
-          searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-          modelKey: MODEL_KEY,
-        }),
-      );
-
-      await expect(tool.handler({ query: [] })).rejects.toMatchObject({
-        code: 'INVALID_ARGUMENT',
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: corpus.sources,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
       });
+      const tool = buildSearchNotesTool(deps);
+      try {
+        await expect(tool.handler({ query: [] })).rejects.toMatchObject({
+          code: 'INVALID_ARGUMENT',
+        });
+      } finally {
+        await cleanup();
+      }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -283,20 +283,20 @@ describe('searchNotes', () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const tool = buildSearchNotesTool(
-        makeHandlerDeps({
-          sources: corpus.sources,
-          embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
-          searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-          modelKey: MODEL_KEY,
-        }),
-      );
-
-      await expect(
-        tool.handler({
-          query: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'],
-        }),
-      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: corpus.sources,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+      const tool = buildSearchNotesTool(deps);
+      try {
+        await expect(
+          tool.handler({ query: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'] }),
+        ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      } finally {
+        await cleanup();
+      }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -311,23 +311,21 @@ describe('searchNotes', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
-      const tool = buildSearchNotesTool(
-        makeHandlerDeps({
-          sources: corpus.sources,
-          embeddingProvider: { initialize: vi.fn(), embed },
-          searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-          modelKey: MODEL_KEY,
-        }),
-      );
-
-      await tool.handler({
-        query: ['  alpha  ', 'alpha', 'beta'],
-        threshold: 0,
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: corpus.sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
       });
-
-      expect(embed).toHaveBeenCalledTimes(2);
-      expect(embed).toHaveBeenNthCalledWith(1, 'alpha');
-      expect(embed).toHaveBeenNthCalledWith(2, 'beta');
+      const tool = buildSearchNotesTool(deps);
+      try {
+        await tool.handler({ query: ['  alpha  ', 'alpha', 'beta'], threshold: 0 });
+        expect(embed).toHaveBeenCalledTimes(2);
+        expect(embed).toHaveBeenNthCalledWith(1, 'alpha');
+        expect(embed).toHaveBeenNthCalledWith(2, 'beta');
+      } finally {
+        await cleanup();
+      }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -342,60 +340,66 @@ describe('searchNotes', () => {
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
-      const tool = buildSearchNotesTool(
-        makeHandlerDeps({
-          sources: corpus.sources,
-          embeddingProvider: { initialize: vi.fn(), embed },
-          searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-          modelKey: MODEL_KEY,
-        }),
-      );
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: corpus.sources,
+        embeddingProvider: { initialize: vi.fn(), embed },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+      const tool = buildSearchNotesTool(deps);
+      try {
+        const output = (await tool.handler({
+          query: 'semantic query',
+          threshold: 0,
+        })) as unknown as Record<string, unknown>;
 
-      const output = (await tool.handler({
-        query: 'semantic query',
-        threshold: 0,
-      })) as unknown as Record<string, unknown>;
-
-      expect(output).not.toHaveProperty('matched_queries');
-      expect(output).not.toHaveProperty('truncated');
-      for (const result of output.results as Array<Record<string, unknown>>) {
-        expect(result).not.toHaveProperty('matched_queries');
+        expect(output).not.toHaveProperty('matched_queries');
+        expect(output).not.toHaveProperty('truncated');
+        for (const result of output.results as Array<Record<string, unknown>>) {
+          expect(result).not.toHaveProperty('matched_queries');
+        }
+      } finally {
+        await cleanup();
       }
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('rejects a query array with an empty string element', () => {
+  it('rejects a query array with an empty string element', async () => {
     const sources = makeMockSources(['note-a.md']);
-    const tool = buildSearchNotesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
-        searchEngine: makeMockSearchEngine(),
-        modelKey: MODEL_KEY,
-      }),
-    );
-
-    return expect(tool.handler({ query: [''] })).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      searchEngine: makeMockSearchEngine(),
+      modelKey: MODEL_KEY,
     });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      await expect(tool.handler({ query: [''] })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+    } finally {
+      await cleanup();
+    }
   });
 
-  it('rejects a query array with a whitespace-only string element', () => {
+  it('rejects a query array with a whitespace-only string element', async () => {
     const sources = makeMockSources(['note-a.md']);
-    const tool = buildSearchNotesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
-        searchEngine: makeMockSearchEngine(),
-        modelKey: MODEL_KEY,
-      }),
-    );
-
-    return expect(tool.handler({ query: ['  '] })).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      searchEngine: makeMockSearchEngine(),
+      modelKey: MODEL_KEY,
     });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      await expect(tool.handler({ query: ['  '] })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+    } finally {
+      await cleanup();
+    }
   });
 
   it('query: array length 1 still carries matched_queries on results', async () => {
@@ -404,23 +408,25 @@ describe('searchNotes', () => {
     const searchEngine = makeMockSearchEngine({
       findNeighbors: vi.fn().mockReturnValue([{ path: 'note-a.md', similarity: 0.9 }]),
     });
-    const tool = buildSearchNotesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
-        searchEngine,
-        modelKey: MODEL_KEY,
-      }),
-    );
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed },
+      searchEngine,
+      modelKey: MODEL_KEY,
+    });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      const output = (await tool.handler({ query: ['single'], threshold: 0 })) as {
+        results: Array<{ path: string; matched_queries?: string[] }>;
+        truncated: boolean;
+      };
 
-    const output = (await tool.handler({ query: ['single'], threshold: 0 })) as {
-      results: Array<{ path: string; matched_queries?: string[] }>;
-      truncated: boolean;
-    };
-
-    expect(output.results).toHaveLength(1);
-    expect(output.results[0]!.matched_queries).toEqual(['single']);
-    expect(output.truncated).toBe(false);
+      expect(output.results).toHaveLength(1);
+      expect(output.results[0]!.matched_queries).toEqual(['single']);
+      expect(output.truncated).toBe(false);
+    } finally {
+      await cleanup();
+    }
   });
 
   it('multi-query: matched_queries lists only queries that returned the path (above-threshold)', async () => {
@@ -437,23 +443,25 @@ describe('searchNotes', () => {
         .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }]) // q1
         .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]), // q2 — note-a not returned
     });
-    const tool = buildSearchNotesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
-        searchEngine,
-        modelKey: MODEL_KEY,
-      }),
-    );
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed },
+      searchEngine,
+      modelKey: MODEL_KEY,
+    });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      const output = (await tool.handler({ query: ['q1', 'q2'], threshold: 0 })) as {
+        results: Array<{ path: string; matched_queries?: string[] }>;
+        truncated: boolean;
+      };
 
-    const output = (await tool.handler({ query: ['q1', 'q2'], threshold: 0 })) as {
-      results: Array<{ path: string; matched_queries?: string[] }>;
-      truncated: boolean;
-    };
-
-    const byPath = new Map(output.results.map((r) => [r.path, r]));
-    expect(byPath.get('note-a.md')!.matched_queries).toEqual(['q1']);
-    expect(byPath.get('note-b.md')!.matched_queries).toEqual(['q2']);
+      const byPath = new Map(output.results.map((r) => [r.path, r]));
+      expect(byPath.get('note-a.md')!.matched_queries).toEqual(['q1']);
+      expect(byPath.get('note-b.md')!.matched_queries).toEqual(['q2']);
+    } finally {
+      await cleanup();
+    }
   });
 
   it('multi-query expansion: expanded results have via_expansion: true and no matched_queries', async () => {
@@ -469,27 +477,29 @@ describe('searchNotes', () => {
         .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }]) // query
         .mockReturnValueOnce([{ path: 'exp.md', similarity: 0.7 }]), // expansion
     });
-    const tool = buildSearchNotesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
-        searchEngine,
-        modelKey: MODEL_KEY,
-      }),
-    );
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed },
+      searchEngine,
+      modelKey: MODEL_KEY,
+    });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      const output = (await tool.handler({ query: ['q1'], mode: 'deep', threshold: 0 })) as {
+        results: Array<{ path: string; matched_queries?: string[]; via_expansion?: true }>;
+        truncated: boolean;
+      };
 
-    const output = (await tool.handler({ query: ['q1'], mode: 'deep', threshold: 0 })) as {
-      results: Array<{ path: string; matched_queries?: string[]; via_expansion?: true }>;
-      truncated: boolean;
-    };
+      const expanded = output.results.filter((r) => r.via_expansion);
+      expect(expanded.length).toBeGreaterThan(0);
+      expect(expanded.every((r) => r.via_expansion === true)).toBe(true);
+      expect(expanded.every((r) => r.matched_queries === undefined)).toBe(true);
 
-    const expanded = output.results.filter((r) => r.via_expansion);
-    expect(expanded.length).toBeGreaterThan(0);
-    expect(expanded.every((r) => r.via_expansion === true)).toBe(true);
-    expect(expanded.every((r) => r.matched_queries === undefined)).toBe(true);
-
-    const seeds = output.results.filter((r) => !r.via_expansion);
-    expect(seeds.every((r) => Array.isArray(r.matched_queries))).toBe(true);
+      const seeds = output.results.filter((r) => !r.via_expansion);
+      expect(seeds.every((r) => Array.isArray(r.matched_queries))).toBe(true);
+    } finally {
+      await cleanup();
+    }
   });
 
   it('quick mode multi-query never has via_expansion results', async () => {
@@ -501,22 +511,28 @@ describe('searchNotes', () => {
         .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }])
         .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]),
     });
-    const tool = buildSearchNotesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
-        searchEngine,
-        modelKey: MODEL_KEY,
-      }),
-    );
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed },
+      searchEngine,
+      modelKey: MODEL_KEY,
+    });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      const output = (await tool.handler({
+        query: ['q1', 'q2'],
+        mode: 'quick',
+        threshold: 0,
+      })) as {
+        results: Array<{ path: string; via_expansion?: true }>;
+      };
 
-    const output = (await tool.handler({ query: ['q1', 'q2'], mode: 'quick', threshold: 0 })) as {
-      results: Array<{ path: string; via_expansion?: true }>;
-    };
-
-    expect(output.results.every((r) => !r.via_expansion)).toBe(true);
-    // findNeighbors called exactly twice (once per query), no expansion calls
-    expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(2);
+      expect(output.results.every((r) => !r.via_expansion)).toBe(true);
+      // findNeighbors called exactly twice (once per query), no expansion calls
+      expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(2);
+    } finally {
+      await cleanup();
+    }
   });
 
   it('query: string in deep mode emits via_expansion: true on expansion-derived results', async () => {
@@ -530,25 +546,27 @@ describe('searchNotes', () => {
         .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }]) // initial query
         .mockReturnValueOnce([{ path: 'exp.md', similarity: 0.7 }]), // expansion
     });
-    const tool = buildSearchNotesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
-        searchEngine,
-        modelKey: MODEL_KEY,
-      }),
-    );
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed },
+      searchEngine,
+      modelKey: MODEL_KEY,
+    });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      const output = (await tool.handler({ query: 'test query', mode: 'deep', threshold: 0 })) as {
+        results: Array<{ path: string; via_expansion?: true }>;
+      };
 
-    const output = (await tool.handler({ query: 'test query', mode: 'deep', threshold: 0 })) as {
-      results: Array<{ path: string; via_expansion?: true }>;
-    };
+      const expanded = output.results.filter((r) => r.via_expansion);
+      expect(expanded.length).toBeGreaterThan(0);
+      expect(expanded.every((r) => r.via_expansion === true)).toBe(true);
 
-    const expanded = output.results.filter((r) => r.via_expansion);
-    expect(expanded.length).toBeGreaterThan(0);
-    expect(expanded.every((r) => r.via_expansion === true)).toBe(true);
-
-    const nonExpanded = output.results.filter((r) => !r.via_expansion);
-    expect(nonExpanded.every((r) => r.via_expansion === undefined)).toBe(true);
+      const nonExpanded = output.results.filter((r) => !r.via_expansion);
+      expect(nonExpanded.every((r) => r.via_expansion === undefined)).toBe(true);
+    } finally {
+      await cleanup();
+    }
   });
 
   it('enriches single-query results with backlink_count from the graph', async () => {
@@ -561,24 +579,26 @@ describe('searchNotes', () => {
       ]),
     });
     const graph = makeFakeGraph({ 'note-a.md': 3, 'note-b.md': 0 });
-    const tool = buildSearchNotesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
-        searchEngine,
-        modelKey: MODEL_KEY,
-        graph,
-      }),
-    );
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed },
+      searchEngine,
+      modelKey: MODEL_KEY,
+      graph,
+    });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      const output = (await tool.handler({ query: 'topic', threshold: 0 })) as {
+        results: Array<{ path: string; backlink_count: number }>;
+      };
 
-    const output = (await tool.handler({ query: 'topic', threshold: 0 })) as {
-      results: Array<{ path: string; backlink_count: number }>;
-    };
-
-    expect(graph.ensureFresh).toHaveBeenCalled();
-    const byPath = new Map(output.results.map((r) => [r.path, r]));
-    expect(byPath.get('note-a.md')!.backlink_count).toBe(3);
-    expect(byPath.get('note-b.md')!.backlink_count).toBe(0);
+      expect(graph.ensureFresh).toHaveBeenCalled();
+      const byPath = new Map(output.results.map((r) => [r.path, r]));
+      expect(byPath.get('note-a.md')!.backlink_count).toBe(3);
+      expect(byPath.get('note-b.md')!.backlink_count).toBe(0);
+    } finally {
+      await cleanup();
+    }
   });
 
   it('enriches multi-query results with backlink_count from the graph', async () => {
@@ -591,24 +611,26 @@ describe('searchNotes', () => {
         .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]),
     });
     const graph = makeFakeGraph({ 'note-a.md': 5, 'note-b.md': 1 });
-    const tool = buildSearchNotesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
-        searchEngine,
-        modelKey: MODEL_KEY,
-        graph,
-      }),
-    );
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed },
+      searchEngine,
+      modelKey: MODEL_KEY,
+      graph,
+    });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      const output = (await tool.handler({ query: ['q1', 'q2'], threshold: 0 })) as {
+        results: Array<{ path: string; backlink_count: number }>;
+      };
 
-    const output = (await tool.handler({ query: ['q1', 'q2'], threshold: 0 })) as {
-      results: Array<{ path: string; backlink_count: number }>;
-    };
-
-    expect(graph.ensureFresh).toHaveBeenCalled();
-    const byPath = new Map(output.results.map((r) => [r.path, r]));
-    expect(byPath.get('note-a.md')!.backlink_count).toBe(5);
-    expect(byPath.get('note-b.md')!.backlink_count).toBe(1);
+      expect(graph.ensureFresh).toHaveBeenCalled();
+      const byPath = new Map(output.results.map((r) => [r.path, r]));
+      expect(byPath.get('note-a.md')!.backlink_count).toBe(5);
+      expect(byPath.get('note-b.md')!.backlink_count).toBe(1);
+    } finally {
+      await cleanup();
+    }
   });
 
   it('multi-query final cap: limit=2 with 3 queries each returning 2 unique results → length ≤ 2', async () => {
@@ -630,23 +652,99 @@ describe('searchNotes', () => {
           { path: 'c-1.md', similarity: 0.4 },
         ]),
     });
-    const tool = buildSearchNotesTool(
-      makeHandlerDeps({
-        sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
-        searchEngine,
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed },
+      searchEngine,
+      modelKey: MODEL_KEY,
+    });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      const output = (await tool.handler({
+        query: ['q1', 'q2', 'q3'],
+        mode: 'quick',
+        limit: 2,
+        threshold: 0,
+      })) as { results: unknown[]; truncated: boolean };
+
+      expect(output.results.length).toBeLessThanOrEqual(2);
+      expect(output.truncated).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('stamps vault name on every result item (single query)', async () => {
+    const sources = makeMockSources(['note-a.md', 'note-b.md']);
+    const embed = vi.fn().mockResolvedValue([1, 0]);
+    const searchEngine = makeMockSearchEngine({
+      findNeighbors: vi.fn().mockReturnValue([
+        { path: 'note-a.md', similarity: 0.9 },
+        { path: 'note-b.md', similarity: 0.8 },
+      ]),
+    });
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed },
+      searchEngine,
+      modelKey: MODEL_KEY,
+    });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      const output = await tool.handler({ query: 'topic', threshold: 0 });
+      expect(output.results.every((r) => r.vault === 'v')).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('throws VAULT_REQUIRED in multi-vault mode when vault: is omitted', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
+      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const registry = makeTestRegistry([
+        { name: 'v1', path: tempRoot, smartEnvPath, corpus: corpusIndex, semanticAvailable: true },
+        { name: 'v2', path: tempRoot, smartEnvPath, corpus: corpusIndex, semanticAvailable: true },
+      ]);
+      const tool = buildSearchNotesTool({
+        registry,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
-      }),
-    );
+      });
 
-    const output = (await tool.handler({
-      query: ['q1', 'q2', 'q3'],
-      mode: 'quick',
-      limit: 2,
-      threshold: 0,
-    })) as { results: unknown[]; truncated: boolean };
+      await expect(tool.handler({ query: 'q' })).rejects.toMatchObject({ code: 'VAULT_REQUIRED' });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
 
-    expect(output.results.length).toBeLessThanOrEqual(2);
-    expect(output.truncated).toBe(true);
+  it('throws SEMANTIC_INDEX_NOT_FOUND when vault has semanticAvailable: false', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    try {
+      const registry = makeTestRegistry([
+        {
+          name: 'v',
+          path: tempRoot,
+          smartEnvPath,
+          corpus: undefined,
+          semanticAvailable: false,
+          semanticUnavailableReason: 'no corpus',
+        },
+      ]);
+      const tool = buildSearchNotesTool({
+        registry,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+
+      await expect(tool.handler({ vault: 'v', query: 'q' })).rejects.toMatchObject({
+        code: 'SEMANTIC_INDEX_NOT_FOUND',
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
   });
 });

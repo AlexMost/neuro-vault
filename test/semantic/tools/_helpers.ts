@@ -21,6 +21,7 @@ import type {
   SearchEngine,
   SmartSource,
 } from '../../../src/modules/semantic/types.js';
+import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 
 const testDir = path.dirname(fileURLToPath(import.meta.url));
 const fixturesRoot = path.resolve(testDir, '../fixtures/vault/.smart-env/multi');
@@ -115,13 +116,79 @@ export function makeHandlerDeps(deps: {
   };
 }
 
-export function makeSyntheticSource(path: string, embedding: number[] = [1, 0, 0]): SmartSource {
+/**
+ * Build a registry-backed SearchNotesDeps for search_notes tests.
+ *
+ * Creates a temporary vault directory on disk and populates it with empty
+ * files for each path in `sources` (minus any listed in `absentPaths`), so
+ * that `pathExistsForEntry` returns true/false as the test expects.
+ *
+ * Returns the deps and a `cleanup` function that removes the temp directory.
+ */
+export async function makeSearchDeps(opts: {
+  sources: Map<string, SmartSource>;
+  embeddingProvider: EmbeddingProvider;
+  searchEngine: SearchEngine;
+  modelKey: string;
+  absentPaths?: Set<string>;
+  corpus?: SmartConnectionsCorpusIndex;
+  graph?: WikilinkGraphIndex;
+  listMatchingPaths?: ListMatchingPaths;
+}): Promise<{
+  deps: {
+    registry: ReturnType<typeof makeTestRegistry>;
+    embeddingProvider: EmbeddingProvider;
+    searchEngine: SearchEngine;
+    modelKey: string;
+  };
+  cleanup: () => Promise<void>;
+}> {
+  const vaultRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'search-deps-'));
+  const absent = opts.absentPaths ?? new Set<string>();
+
+  for (const notePath of opts.sources.keys()) {
+    if (absent.has(notePath)) continue;
+    const full = path.join(vaultRoot, notePath);
+    await fs.mkdir(path.dirname(full), { recursive: true });
+    await fs.writeFile(full, '', 'utf8');
+  }
+
+  const corpus = opts.corpus ?? makeFakeCorpusIndex(opts.sources);
+  const registry = makeTestRegistry([
+    {
+      name: 'v',
+      path: vaultRoot,
+      smartEnvPath: path.join(vaultRoot, '.smart-env'),
+      corpus,
+      graph: opts.graph ?? makeFakeGraph(),
+      listMatchingPaths: opts.listMatchingPaths ?? (async () => new Set()),
+      semanticAvailable: true,
+    },
+  ]);
+
   return {
-    path,
+    deps: {
+      registry,
+      embeddingProvider: opts.embeddingProvider,
+      searchEngine: opts.searchEngine,
+      modelKey: opts.modelKey,
+    },
+    cleanup: () => fs.rm(vaultRoot, { recursive: true, force: true }),
+  };
+}
+
+export function makeSyntheticSource(
+  notePath: string,
+  embedding: number[] = [1, 0, 0],
+): SmartSource {
+  return {
+    path: notePath,
     embedding,
     blocks: [],
   };
 }
+
+export { makeTestRegistry };
 
 export {
   loadSmartConnectionsCorpus,
