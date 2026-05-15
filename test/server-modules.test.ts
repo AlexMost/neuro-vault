@@ -16,13 +16,18 @@ function createTempVaultPath() {
 function createFakeServer() {
   const registeredToolNames: string[] = [];
   const registeredResourceUris: string[] = [];
+  const toolHandlers = new Map<string, (args: unknown) => Promise<unknown>>();
   return {
     registeredToolNames,
     registeredResourceUris,
-    registerTool: vi.fn((name: string) => {
+    toolHandlers,
+    registerTool: vi.fn((...args: unknown[]) => {
+      const name = args[0] as string;
+      const handler = args[args.length - 1] as (a: unknown) => Promise<unknown>;
       registeredToolNames.push(name);
+      toolHandlers.set(name, handler);
       return {} as never;
-    }),
+    }) as never,
     registerResource: vi.fn((_name: string, uri: string) => {
       registeredResourceUris.push(uri);
       return {} as never;
@@ -94,55 +99,99 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('fails fast when the Smart Connections directory is missing', async () => {
+  it('returns SEMANTIC_INDEX_NOT_FOUND when Smart Connections directory is missing (startup tolerant)', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
+    const server = createFakeServer();
 
     try {
-      await expect(
-        main(['node', 'cli.js', '--vault', vaultPath, '--no-operations']),
-      ).rejects.toThrow(/Smart Connections/i);
+      // Startup should NOT throw — missing corpus is tolerated at module init time.
+      await startNeuroVaultServer(
+        {
+          vaults: [
+            {
+              name: path.basename(vaultPath),
+              path: vaultPath,
+              smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
+            },
+          ],
+          semantic: {
+            enabled: true,
+            modelKey: 'bge-micro-v2',
+            modelId: 'TaylorAI/bge-micro-v2',
+          },
+          operations: { enabled: false },
+        },
+        {
+          semantic: {
+            embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
+          },
+          serverFactory: (_instructions: string) => server,
+          transportFactory: () => ({}) as never,
+        },
+      );
+
+      // The tool is registered, but calling it on the missing-corpus vault
+      // returns a structured error (not a thrown exception — MCP wraps ToolHandlerError).
+      const getStats = server.toolHandlers.get('get_stats');
+      expect(getStats).toBeDefined();
+      const result = await getStats!({});
+      expect(result).toMatchObject({
+        isError: true,
+        structuredContent: { code: 'SEMANTIC_INDEX_NOT_FOUND' },
+      });
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('fails fast when startup receives an empty corpus', async () => {
+  it('returns SEMANTIC_INDEX_NOT_FOUND when corpus is empty (startup tolerant)', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
 
+    const server = createFakeServer();
+
     try {
-      await expect(
-        startNeuroVaultServer(
-          {
-            vaults: [
-              {
-                name: path.basename(vaultPath),
-                path: vaultPath,
-                smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
-              },
-            ],
-            semantic: {
-              enabled: true,
-              modelKey: 'bge-micro-v2',
-              modelId: 'TaylorAI/bge-micro-v2',
+      // Startup should NOT throw — empty corpus is tolerated at module init time.
+      await startNeuroVaultServer(
+        {
+          vaults: [
+            {
+              name: path.basename(vaultPath),
+              path: vaultPath,
+              smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
             },
-            operations: { enabled: false },
+          ],
+          semantic: {
+            enabled: true,
+            modelKey: 'bge-micro-v2',
+            modelId: 'TaylorAI/bge-micro-v2',
           },
-          {
-            vaultEntryDeps: {
-              corpusFactory: () => Promise.resolve(makeFakeCorpusIndex(new Map())),
-            },
-            semantic: {
-              embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
-            },
-            serverFactory: (_instructions: string) => createFakeServer(),
-            transportFactory: () => ({}) as never,
+          operations: { enabled: false },
+        },
+        {
+          vaultEntryDeps: {
+            corpusFactory: () => Promise.resolve(makeFakeCorpusIndex(new Map())),
           },
-        ),
-      ).rejects.toThrow(/Smart Connections/i);
+          semantic: {
+            embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
+          },
+          serverFactory: (_instructions: string) => server,
+          transportFactory: () => ({}) as never,
+        },
+      );
+
+      // The tool is registered, but calling it on the empty-corpus vault
+      // returns a structured error (not a thrown exception — MCP wraps ToolHandlerError).
+      const getStats = server.toolHandlers.get('get_stats');
+      expect(getStats).toBeDefined();
+      const result = await getStats!({});
+      expect(result).toMatchObject({
+        isError: true,
+        structuredContent: { code: 'SEMANTIC_INDEX_NOT_FOUND' },
+      });
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }

@@ -17,7 +17,6 @@ import {
 import type {
   EmbeddingProvider,
   ListMatchingPaths,
-  PathExistsCheck,
   SearchEngine,
   SmartSource,
 } from '../../../src/modules/semantic/types.js';
@@ -90,29 +89,6 @@ export function makeFakeCorpusIndex(
   const basenameIndex = buildBasenameIndex(sources.keys());
   return {
     snapshot: vi.fn().mockResolvedValue({ sources, basenameIndex }),
-  };
-}
-
-export function makeHandlerDeps(deps: {
-  sources: Map<string, SmartSource>;
-  embeddingProvider: EmbeddingProvider;
-  searchEngine: SearchEngine;
-  modelKey: string;
-  pathExists?: PathExistsCheck;
-  corpus?: SmartConnectionsCorpusIndex;
-  readNoteContent?: (vaultRelativePath: string) => Promise<string>;
-  graph?: WikilinkGraphIndex;
-  listMatchingPaths?: ListMatchingPaths;
-}) {
-  return {
-    embeddingProvider: deps.embeddingProvider,
-    searchEngine: deps.searchEngine,
-    modelKey: deps.modelKey,
-    pathExists: deps.pathExists ?? (async () => true),
-    corpus: deps.corpus ?? makeFakeCorpusIndex(deps.sources),
-    readNoteContent: deps.readNoteContent ?? (async () => ''),
-    graph: deps.graph ?? makeFakeGraph(),
-    listMatchingPaths: deps.listMatchingPaths ?? (async () => new Set()),
   };
 }
 
@@ -200,7 +176,6 @@ export {
 export type {
   EmbeddingProvider,
   ListMatchingPaths,
-  PathExistsCheck,
   SearchEngine,
   SmartSource,
   BasenameIndex,
