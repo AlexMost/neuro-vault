@@ -22,7 +22,10 @@ export type OperationsErrorCode =
   | 'CLI_TIMEOUT'
   | 'CLI_ERROR'
   | 'READ_FAILED'
-  | 'AMBIGUOUS_MATCH';
+  | 'AMBIGUOUS_MATCH'
+  | 'VAULT_REQUIRED'
+  | 'VAULT_NOT_FOUND'
+  | 'SEMANTIC_INDEX_NOT_FOUND';
 
 export type ReadNotesField = 'frontmatter' | 'content';
 
