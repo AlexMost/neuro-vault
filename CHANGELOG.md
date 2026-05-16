@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [7.0.0](https://github.com/AlexMost/neuro-vault/compare/v6.0.0...v7.0.0) (2026-05-16)
+
+### ⚠ BREAKING CHANGES
+
+- **config:** --operations and --no-operations are removed. Users
+  who ran with --no-operations should drop the flag; agents route around
+  unavailable tools via the existing CLI_NOT_FOUND / CLI_UNAVAILABLE
+  errors at call time. --semantic / --no-semantic is unchanged.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- **config:** remove --operations / --no-operations CLI flag ([17cd9a6](https://github.com/AlexMost/neuro-vault/commit/17cd9a6cdebfa5e39b5e60bf7fda31fb0a2422eb))
+
+### Bug Fixes
+
+- clean up post-multi-vault stale references ([9712879](https://github.com/AlexMost/neuro-vault/commit/97128798491966232a22bab22affacd3f8078e45))
+
 ## [6.0.0](https://github.com/AlexMost/neuro-vault/compare/v5.5.3...v6.0.0) (2026-05-16)
 
 ### ⚠ BREAKING CHANGES
