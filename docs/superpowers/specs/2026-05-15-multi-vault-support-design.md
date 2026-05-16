@@ -18,7 +18,7 @@ Concrete case: personal sandbox + DMARKOFF wiki on a separate Drive account. Tod
 
 ## Goal
 
-One `neuro-vault-mcp` process serves N registered vaults. Tool inputs grow an optional `vault: string` parameter. `search_notes`, `query_notes`, and `get_vault_overview` fan out across all registered vaults when `vault:` is omitted. Other tools require an explicit `vault:` in multi-mode. Result shape always carries `vault:`, in single-mode and multi-mode alike — one shape, one code path.
+One `neuro-vault-mcp` process serves N registered vaults. Tool inputs grow an optional `vault: string` parameter. Discovery-oriented tools (`search_notes`, `query_notes`, `get_vault_overview`, `list_tags`, `list_properties`) fan out across all registered vaults when `vault:` is omitted. Other tools require an explicit `vault:` in multi-mode. Result shape always carries `vault:`, in single-mode and multi-mode alike — one shape, one code path.
 
 ## Non-goals
 
@@ -118,11 +118,11 @@ The embedding service is a single instance shared across all vaults — the mode
 
 Every tool gains an optional `vault: string` parameter in its input schema. Behavior:
 
-| Tool                                                                                                                              | `vault:` omitted (multi-mode)   | `vault:` present |
-| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------- |
-| `search_notes`, `query_notes`, `get_vault_overview`                                                                               | **Fan-out** across all vaults   | Single-vault op  |
-| `get_similar_notes`, `find_duplicates`, `get_stats`, `read_notes`, `read_daily`, `get_note_links`, `list_tags`, `list_properties` | `VAULT_REQUIRED` error          | Single-vault op  |
-| `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`                                                    | `VAULT_REQUIRED` error (writes) | Single-vault op  |
+| Tool                                                                                              | `vault:` omitted (multi-mode)   | `vault:` present |
+| ------------------------------------------------------------------------------------------------- | ------------------------------- | ---------------- |
+| `search_notes`, `query_notes`, `get_vault_overview`, `list_tags`, `list_properties`               | **Fan-out** across all vaults   | Single-vault op  |
+| `get_similar_notes`, `find_duplicates`, `get_stats`, `read_notes`, `read_daily`, `get_note_links` | `VAULT_REQUIRED` error          | Single-vault op  |
+| `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`                    | `VAULT_REQUIRED` error (writes) | Single-vault op  |
 
 In single-vault mode (`vaults.length === 1`), `vault:` is optional everywhere and defaults to the sole registered vault. Passing a `vault:` that does not match registry name → `VAULT_NOT_FOUND` (in both single- and multi-mode).
 
@@ -187,6 +187,7 @@ The per-result `vault:` is redundant inside `results_by_vault[i].results` but ke
 - **`search_notes` / `get_similar_notes`** — `search_notes` fans out; `get_similar_notes` requires `vault:` (see Non-goals). Vaults without `.smart-env/` are skipped silently with `skipped_vaults`.
 - **`query_notes`** — fans out. No `.smart-env/` dependency (reads from disk), so `skipped_vaults` is always empty for this tool. Each per-vault group keeps the existing `{ results, count, truncated }` shape, plus the outer `vault:` group key.
 - **`get_vault_overview`** — fans out. The returned overview is per-vault (top folders, tags, properties, total count, top-linked notes for that vault). No cross-vault aggregation; the per-vault data is what callers need for orientation.
+- **`list_tags` / `list_properties`** — fan out. Each per-vault group keeps the existing `{ results: [{name, count}] }` shape; no cross-vault count summing (counts are per-vault and not directly comparable). Disk-only, so `skipped_vaults` is always empty.
 - **`find_duplicates` / `get_stats`** — require `vault:`. Both are per-vault diagnostics; fan-out has unclear semantics (duplicates across vaults? sum of stats?) and no requested use-case.
 
 ## Error codes
