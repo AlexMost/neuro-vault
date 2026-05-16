@@ -48,7 +48,7 @@ Obsidian distinguishes `file=` (resolves like a wikilink) from `path=` (exact). 
 ## What it deliberately does not do
 
 - It does not parse markdown body or block structure. Clients receive raw content.
-- It does not normalize paths. Path normalization happens one layer above (in `tool-handlers.ts`) so the provider can stay a thin shell.
+- It does not normalize paths. Path normalization happens one layer above (in the per-tool handler files under `src/modules/operations/tools/`) so the provider can stay a thin shell.
 - It does not validate business rules (empty content, etc.). Handlers do that before calling.
 
 There are two deliberate exceptions:
@@ -60,4 +60,4 @@ Both exceptions are explicit precisely because they violate the "no parsing / no
 
 ## Vault binding
 
-Each `VaultEntry` in the `VaultRegistry` carries its own `ObsidianCLIProvider`, bound to that vault's name (the value to the left of `:` in `--vault name:path`, or `path.basename` of the vault path when no prefix is given). `ObsidianCLIProvider.buildArgs` appends `vault=<name>` to every CLI invocation, so writes go to the configured vault regardless of which vault Obsidian considers "active". If the name does not match any vault Obsidian knows about, the provider returns `VAULT_NOT_FOUND`.
+Each `VaultEntry` in the `VaultRegistry` carries its own `ObsidianCLIProvider`, bound to that vault's name — always `path.basename` of the `--vault` directory; there is no prefix syntax or override flag. `ObsidianCLIProvider.buildArgs` appends `vault=<name>` to every CLI invocation, so writes go to the configured vault regardless of which vault Obsidian considers "active". If the basename does not match any vault Obsidian knows about (i.e. the user renamed one side in Obsidian's "Manage vaults" UI), the provider returns `VAULT_NOT_FOUND` and the remediation is to rename one side so the two agree.

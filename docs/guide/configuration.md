@@ -2,13 +2,14 @@
 
 ## CLI arguments
 
-| Argument         | Required | Default               | Description                                                                                                                                                                                                                                                                     |
-| ---------------- | -------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--vault`        | yes      | —                     | Absolute path to the Obsidian vault directory                                                                                                                                                                                                                                   |
-| `--vault-name`   | no       | basename of `--vault` | Override the Obsidian vault name used when invoking the Obsidian CLI. Set this only if you renamed the vault in Obsidian's **Manage vaults** UI and the display name no longer matches the directory name. If write tools fail with `VAULT_NOT_FOUND`, this is the flag to set. |
-| `--semantic`     | no       | `true`                | Enable semantic search module (`--no-semantic` to skip)                                                                                                                                                                                                                         |
-| `--obsidian-cli` | no       | `obsidian`            | Path to the `obsidian` CLI binary (override only)                                                                                                                                                                                                                               |
-| `--help`         | no       | —                     | Show help                                                                                                                                                                                                                                                                       |
+| Argument         | Required | Default    | Description                                                                                                                                                             |
+| ---------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--vault`        | yes      | —          | Absolute path to an Obsidian vault directory. Repeat the flag to register additional vaults. The MCP-side alias is always the directory basename; there is no override. |
+| `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip)                                                                                                                 |
+| `--obsidian-cli` | no       | `obsidian` | Path to the `obsidian` CLI binary (override only)                                                                                                                       |
+| `--help`         | no       | —          | Show help                                                                                                                                                               |
+
+The vault's directory basename doubles as the MCP-side alias **and** as the vault name passed to the Obsidian CLI. If write tools fail with `VAULT_NOT_FOUND`, the display name shown in Obsidian's **Manage vaults** UI does not match the directory basename — rename one side so the two agree.
 
 ## AGENTS.md / CLAUDE.md snippet
 
@@ -19,7 +20,7 @@ Add this to your `AGENTS.md` or `CLAUDE.md` to help the AI assistant use the vau
 
 Use vault-aware tools when vault context matters.
 Do not guess about note contents when the vault can be searched.
-Follow the Neuro Vault MCP server instructions for routing between semantic search (`search_notes`, `get_similar_notes`) and operations (`read_notes`, `create_note`, `edit_note`, `read_daily`, `append_daily`).
+Follow the Neuro Vault MCP server instructions for routing between semantic search (`search_notes`, `get_similar_notes`) and operations (`read_notes`, `create_note`, `edit_note`, `read_daily`).
 ```
 
 ## Troubleshooting

@@ -21,7 +21,7 @@ Tool routing and retrieval policy are related, but not the same thing. Routing i
 | "Tell me everything I know about embeddings" | `search_notes({ query: "embeddings", mode: "deep" })`                                           |
 | "Show me notes related to neuro-vault.md"    | `get_similar_notes({ path: "Projects/neuro-vault.md" })`                                        |
 | "Read today's daily note"                    | `read_daily()`                                                                                  |
-| "Append a TODO to today"                     | `append_daily({ content: "- [ ] new todo" })`                                                   |
+| "Append a TODO to today"                     | `read_daily()` → `edit_note({ path, content: body + "- [ ] new todo" })` (see vault-operations) |
 
 ## Tag-driven questions are exact, not fuzzy
 

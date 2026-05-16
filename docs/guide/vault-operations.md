@@ -23,7 +23,7 @@ read_notes({
 
 `paths` accepts either a single path string (single-note read) or an array of 1–50 paths (batch read). The result shape is identical in both cases.
 
-Returns `{ results, count, errors }` where each item in `results` is either `{ path, frontmatter?, content? }` (success) or `{ path, error: { code, message } }` (failure). `count` is the number of successfully read notes; `errors` is the count of failed items.
+Returns `{ results, count, errors }` where each item in `results` is either `{ path, frontmatter?, content? }` (success) or `{ path, error: { code, message } }` (failure). `count === results.length` (total items, including failures); `errors` is the subset of those that failed. To get the successful-read count, subtract: `count - errors`.
 
 **Example — read multiple notes, all fields (default):**
 
