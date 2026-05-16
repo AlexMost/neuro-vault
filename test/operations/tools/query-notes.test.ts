@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildQueryNotesTool } from '../../../src/modules/operations/tools/query-notes.js';
 import type { QueryNotesResultWithVault } from '../../../src/modules/operations/tools/query-notes.js';
+import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { makeGraph, makeReader } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
@@ -93,6 +94,33 @@ describe('operations.queryNotes handler', () => {
     expect(byVault.get('vault-b')!.count).toBe(1);
     expect(byVault.get('vault-a')!.truncated).toBe(false);
     expect(byVault.get('vault-b')!.truncated).toBe(false);
+  });
+
+  it('returns failed_vaults when one vault reader rejects', async () => {
+    const readerA = makeReader({
+      scan: vi.fn().mockResolvedValue([]),
+    });
+    const readerB = makeReader({
+      scan: vi.fn().mockRejectedValue(new ToolHandlerError('DEPENDENCY_ERROR', 'fs read failed')),
+    });
+    const registry = makeTestRegistry([
+      { name: 'vault-a', reader: readerA, graph: makeGraph() },
+      { name: 'vault-b', reader: readerB, graph: makeGraph() },
+    ]);
+    const tool = buildQueryNotesTool({ registry });
+
+    const result = (await tool.handler({ filter: {} })) as {
+      results_by_vault: Array<{ vault: string }>;
+      failed_vaults: Array<{ vault: string; error: { code: string; message: string } }>;
+    };
+
+    expect(result.results_by_vault.map((r) => r.vault)).toEqual(['vault-a']);
+    expect(result.failed_vaults).toEqual([
+      {
+        vault: 'vault-b',
+        error: { code: 'DEPENDENCY_ERROR', message: 'fs read failed' },
+      },
+    ]);
   });
 
   it('explicit vault: returns flat { results, count, truncated } shape (regression)', async () => {

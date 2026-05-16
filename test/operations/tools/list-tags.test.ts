@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildListTagsTool } from '../../../src/modules/operations/tools/list-tags.js';
+import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { makeProvider } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
@@ -63,5 +64,36 @@ describe('operations.listTags handler', () => {
     });
     expect(providerA.listTags).toHaveBeenCalledTimes(1);
     expect(providerB.listTags).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns failed_vaults when one vault provider rejects', async () => {
+    const providerA = makeProvider({
+      listTags: vi.fn().mockResolvedValue([{ name: 'mcp', count: 5 }]),
+    });
+    const providerB = makeProvider({
+      listTags: vi
+        .fn()
+        .mockRejectedValue(new ToolHandlerError('CLI_NOT_FOUND', 'obsidian not on PATH')),
+    });
+    const registry = makeTestRegistry([
+      { name: 'a', provider: providerA },
+      { name: 'b', provider: providerB },
+    ]);
+    const tool = buildListTagsTool({ registry });
+
+    const result = (await tool.handler({})) as {
+      results_by_vault: Array<{ vault: string; results: Array<{ name: string; count: number }> }>;
+      failed_vaults: Array<{ vault: string; error: { code: string; message: string } }>;
+      skipped_vaults: Array<{ vault: string; reason: string }>;
+    };
+
+    expect(result.results_by_vault).toEqual([{ vault: 'a', results: [{ name: 'mcp', count: 5 }] }]);
+    expect(result.failed_vaults).toEqual([
+      {
+        vault: 'b',
+        error: { code: 'CLI_NOT_FOUND', message: 'obsidian not on PATH' },
+      },
+    ]);
+    expect(result.skipped_vaults).toEqual([]);
   });
 });
