@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [8.0.0](https://github.com/AlexMost/neuro-vault/compare/v7.0.0...v8.0.0) (2026-05-16)
+
+### ⚠ BREAKING CHANGES
+
+- **fan-out:** IFanOutResult gains a required failed_vaults field.
+  Tool responses now always include the array (empty when nothing failed).
+  Strict schema-validating clients should update; lenient clients are
+  unaffected and gain partial-failure visibility for free.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- **spec:** set alongside #36.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- **spec:** fan-out partial failure ([a0c5c1e](https://github.com/AlexMost/neuro-vault/commit/a0c5c1eb9e9965128beeb1a9834b5fde4d09cd52))
+
+### Features
+
+- **fan-out:** partial failure via Promise.allSettled + failed_vaults ([1461cae](https://github.com/AlexMost/neuro-vault/commit/1461cae634ea4e4236133c411f5ff6a24a857a77))
+
+### Bug Fixes
+
+- **fan-out:** re-throw input-validation errors instead of capturing per-vault ([00782b1](https://github.com/AlexMost/neuro-vault/commit/00782b1813a45d60fd9ce4f4d2d8622edd533e33))
+
 ## [7.0.0](https://github.com/AlexMost/neuro-vault/compare/v6.0.0...v7.0.0) (2026-05-16)
 
 ### ⚠ BREAKING CHANGES
