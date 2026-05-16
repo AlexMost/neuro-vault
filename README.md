@@ -119,7 +119,7 @@ Point at multiple vaults using repeated `--vault name:path` flags. Each vault ge
 ```bash
 neuro-vault-mcp \
   --vault personal:/Users/me/Vaults/Sandbox \
-  --vault dmarkoff:"/Users/me/Drive — DMARKOFF/wiki"
+  --vault wiki:/Users/me/Vaults/TeamWiki
 ```
 
 In your MCP config:
@@ -133,7 +133,7 @@ In your MCP config:
         "--vault",
         "personal:/Users/me/Vaults/Sandbox",
         "--vault",
-        "dmarkoff:/Users/me/Drive — DMARKOFF/wiki"
+        "wiki:/Users/me/Vaults/TeamWiki"
       ]
     }
   }
@@ -179,42 +179,31 @@ When the server starts, it looks for `<vault>/.neuro-vault/for-external-agents.m
 
 ---
 
-## 🔄 Upgrading to v6.0
+## 🗂 Multi-vault notes
 
-v6 adds multi-vault support. Single-vault setups need no changes — the existing `--vault /path` form still works. If you were using two separate MCP registrations to serve two vaults, you can collapse them into one.
+Single-vault setups need no changes — the existing `--vault /path` form still works exactly as before.
 
-### Breaking changes from v5
+If you serve multiple vaults from one MCP process, here are the details worth knowing:
 
-| What changed         | v5                                            | v6                                                                      |
-| -------------------- | --------------------------------------------- | ----------------------------------------------------------------------- |
-| Vault name flag      | `--vault-name <obsidian-name>`                | Removed. Use `--vault <name>:<path>`                                    |
-| Bare `--vault /path` | Supported (name derived from `path.basename`) | Still supported (name still derived from `path.basename`)               |
-| Tool results         | No `vault` field                              | Every result item includes `vault: string` identifying the source vault |
-| Two-vault setup      | Two MCP server registrations                  | One registration with two `--vault name:path` flags                     |
+- **Vault name flag** — pass `--vault <name>:<path>` to give a vault an explicit short name. Bare `--vault /path` keeps the basename-as-name behaviour. The standalone `--vault-name` flag is gone; embed the name in `--vault` instead.
+- **Tool results carry a `vault` field** — every result object now includes `vault: string` identifying the source vault. Clients that ignore the field are unaffected; clients that parse results structurally should expect it.
+- **One process per registration** — if you previously ran two `neuro-vault-mcp` processes for two vaults, you can collapse them into one:
 
-### Migration steps
-
-1. **Remove `--vault-name`** from your MCP config (the flag is gone). If you relied on an explicit name, prefix your path: `--vault <name>:<path>`.
-
-2. **Update client code that reads tool results** — every result object now carries a `vault: string` field. Existing code that does not read this field is unaffected.
-
-3. **Consolidate two-server configs** — if you ran two separate `neuro-vault-mcp` processes for two vaults, replace them with one:
-
-   ```json
-   {
-     "mcpServers": {
-       "neuro-vault": {
-         "command": "neuro-vault-mcp",
-         "args": [
-           "--vault",
-           "personal:/Users/me/Vaults/Personal",
-           "--vault",
-           "work:/Users/me/Vaults/Work"
-         ]
-       }
-     }
-   }
-   ```
+  ```json
+  {
+    "mcpServers": {
+      "neuro-vault": {
+        "command": "neuro-vault-mcp",
+        "args": [
+          "--vault",
+          "personal:/Users/me/Vaults/Personal",
+          "--vault",
+          "work:/Users/me/Vaults/Work"
+        ]
+      }
+    }
+  }
+  ```
 
 ---
 
