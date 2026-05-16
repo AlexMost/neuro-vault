@@ -38,12 +38,10 @@ VaultRegistry.create(config, deps) → VaultRegistry
 startNeuroVaultServer(config, deps)
    │
    ├─ if config.semantic.enabled  → createSemanticModule(registry, ...)  → registrations[]
-   ├─ if config.operations.enabled → createOperationsModule(registry, ...) → registrations[]
+   ├─ createOperationsModule(registry, ...) → registrations[]   (always)
    │
    └─ register all → server.connect(transport) → warmup
 ```
-
-If both modules are disabled, startup fails fast with a clear error.
 
 Both module factories receive the whole `VaultRegistry` rather than individual vault configs. Tool handlers reach into the registry at call time — either targeting a named vault (`registry.require(name)`) or fanning out across all vaults (`registry.list()` / `registry.semanticAvailableEntries()`). See [`vault-registry.md`](./vault-registry.md) for details.
 
@@ -85,6 +83,6 @@ flowchart LR
     CLIProv -. execFile .-> Obs
 ```
 
-The `VaultRegistry` is built once at startup from the list of vaults declared via `--vault name:path` flags (repeatable). Each entry bundles a reader, optional writer and provider, wikilink graph, and — when the vault's `.smart-env/multi/` is loadable — a corpus index. When a vault's corpus cannot be loaded (missing directory, empty index, parse error), the entry's `semanticAvailable` field is `false` and the reason is recorded as a string; startup does not fail. The failure surfaces at semantic-tool-call time.
+The `VaultRegistry` is built once at startup from the list of vaults declared via `--vault` flags (repeatable). Each entry bundles a reader, writer, provider, wikilink graph, and — when the vault's `.smart-env/multi/` is loadable — a corpus index. When a vault's corpus cannot be loaded (missing directory, empty index, parse error), the entry's `semanticAvailable` field is `false` and the reason is recorded as a string; startup does not fail. The failure surfaces at semantic-tool-call time.
 
 The semantic module loads `.smart-env/multi/*.ajson` into memory once at startup and keeps it there. The operations module is a thin wrapper around the `obsidian` CLI invoked via `execFile`. Reads (`read_notes`, `query_notes`) go directly to the file system via `FsVaultReader`; the Obsidian CLI is used only for everything else (creates, edits, daily notes, properties, listing tags). The semantic module can be disabled via `--no-semantic`; operations tools are always registered.
