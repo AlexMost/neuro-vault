@@ -32,7 +32,7 @@ The line is sharp:
 
 - **Before** fan-out begins (input parsing, validation, registry lookup for an explicit `vault:`): errors throw and become a single fatal `isError: true` response. These errors apply uniformly across vaults; surfacing one per vault would be misleading.
 - **Inside** the per-vault `fn(entry)` callback: most throws — `ToolHandlerError` with a runtime code, plain `Error`, anything — get caught by the fan-out helper and mapped into a `failed_vaults` entry. The other vaults are unaffected.
-- **Exception — input-validation codes inside `fn(entry)`:** if a `ToolHandlerError` thrown from inside the callback carries a code in `VALIDATION_ERROR_CODES` (`INVALID_ARGUMENT`, `INVALID_PARAMS`, `INVALID_FILTER`), the helper re-throws it as a single fatal error rather than capturing it. Some validation runs per-vault for historical reasons (e.g. `runQueryNotes` validates the filter inside the per-vault path); the whitelist makes sure those errors still reach the caller as one actionable fatal, not as N identical `failed_vaults` entries.
+- **Exception — fatal-class codes inside `fn(entry)`:** if a `ToolHandlerError` thrown from inside the callback carries a code in `FATAL_TOOL_ERROR_CODES` (owned by `src/lib/tool-response.ts`), the helper re-throws it as a single fatal error rather than capturing it. The classification answers the question "does this error belong to one vault, or to the whole tool call?" — input validation, vault-required, and vault-not-found all belong to the call. Some of these errors are thrown upstream of fan-out today (so the check acts mostly as defense in depth), but `runQueryNotes` and `runSearchForEntry` validate input per-vault for historical reasons, and the whitelist makes sure those errors still reach the caller as one actionable fatal, not as N identical `failed_vaults` entries.
 
 ## Response shape
 
@@ -75,10 +75,12 @@ The two are intentionally separate. Skipped is "expected, deterministic, startup
 
 After `Promise.allSettled` completes, the helper:
 
-1. **Scans for validation rejections.** If any rejection is a `ToolHandlerError` whose `code` is in `VALIDATION_ERROR_CODES` (`INVALID_ARGUMENT`, `INVALID_PARAMS`, `INVALID_FILTER`), re-throw the first such error. Validation outcomes are deterministic across vaults, so even though every vault runs the same per-vault function and may all throw the same code, the agent only needs to see it once as a fatal.
+1. **Scans for fatal rejections** via `isFatalToolError` (exported from `src/lib/tool-response.ts`). If any rejection is a `ToolHandlerError` whose `code` is in `FATAL_TOOL_ERROR_CODES`, re-throw the first such error. Fatal outcomes are deterministic across vaults, so even though every vault runs the same per-vault function and may all throw the same code, the agent only needs to see it once.
 2. **Otherwise maps each rejection** via `mapRejectionToFailedVault` (private to `fan-out.ts`):
    - `ToolHandlerError` → preserves `code`, `message`, and `details` verbatim into `failed_vaults`.
    - Anything else (plain `Error`, primitive, etc.) → `{ code: 'INTERNAL_ERROR', message }`. Seeing `INTERNAL_ERROR` in `failed_vaults` is a smell — it means a per-vault code path threw something that wasn't a structured tool error. Fix the upstream throw site.
+
+The classification (`FATAL_TOOL_ERROR_CODES` + `isFatalToolError`) lives next to `ToolHandlerError` rather than inside `fan-out.ts` because it's a property of the error taxonomy — "which errors belong to the call vs. one vault" is a question about the error, not about the helper that's currently asking it.
 
 ## Zero-success case
 

@@ -1,5 +1,5 @@
 import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
-import { ToolHandlerError } from './tool-response.js';
+import { ToolHandlerError, isFatalToolError } from './tool-response.js';
 
 export interface ISkippedVault {
   vault: string;
@@ -21,26 +21,17 @@ export interface IFanOutResult<T extends Record<string, unknown>> {
   failed_vaults: IFailedVault[];
 }
 
-// Codes that indicate the caller's input is wrong — i.e. validation failures
-// that apply uniformly across every vault. If fn(entry) throws with one of
-// these, fan-out re-throws it as a single fatal error rather than reporting
-// N identical failed_vaults entries (one per vault). Anything outside this
-// set is treated as a runtime per-vault failure and captured.
-const VALIDATION_ERROR_CODES: ReadonlySet<string> = new Set([
-  'INVALID_ARGUMENT',
-  'INVALID_PARAMS',
-  'INVALID_FILTER',
-]);
-
-function isValidationError(reason: unknown): reason is ToolHandlerError {
-  return reason instanceof ToolHandlerError && VALIDATION_ERROR_CODES.has(reason.code);
-}
-
-function findValidationRejection(
+// If any per-vault rejection carries a fatal-class code (see
+// FATAL_TOOL_ERROR_CODES in tool-response.ts), re-throw it instead of
+// capturing into failed_vaults. The whole tool call should fail — these
+// errors apply uniformly across vaults and surfacing one per vault would be
+// misleading. The classification lives next to ToolHandlerError so it's not
+// fan-out-specific implementation knowledge.
+function findFatalRejection(
   settled: ReadonlyArray<PromiseSettledResult<unknown>>,
 ): ToolHandlerError | undefined {
   for (const outcome of settled) {
-    if (outcome.status === 'rejected' && isValidationError(outcome.reason)) {
+    if (outcome.status === 'rejected' && isFatalToolError(outcome.reason)) {
       return outcome.reason;
     }
   }
@@ -74,9 +65,9 @@ function mapRejectionToFailedVault(vault: string, reason: unknown): IFailedVault
  * queries that read the disk directly). No vault is skipped; `skipped_vaults`
  * is always an empty array. Per-vault rejections are captured into
  * `failed_vaults` rather than propagated, so one failing vault does not abort
- * the whole multi-vault response. The one exception is input-validation
- * errors (codes in {@link VALIDATION_ERROR_CODES}): those apply uniformly
- * across vaults and are re-thrown as a single fatal error.
+ * the whole multi-vault response. The one exception is errors carrying a
+ * fatal-class code (see `FATAL_TOOL_ERROR_CODES` in tool-response.ts): those
+ * apply uniformly across vaults and are re-thrown as a single fatal error.
  */
 export async function runFanOut<T extends Record<string, unknown>>(
   registry: IVaultRegistry,
@@ -85,9 +76,9 @@ export async function runFanOut<T extends Record<string, unknown>>(
   const entries = registry.list();
   const settled = await Promise.allSettled(entries.map((entry) => fn(entry)));
 
-  const validationError = findValidationRejection(settled);
-  if (validationError) {
-    throw validationError;
+  const fatalError = findFatalRejection(settled);
+  if (fatalError) {
+    throw fatalError;
   }
 
   const results: Array<{ vault: string } & T> = [];
@@ -110,8 +101,9 @@ export async function runFanOut<T extends Record<string, unknown>>(
  * Vaults without a usable `.smart-env/multi/` are skipped silently and
  * surfaced in `skipped_vaults` with `reason: 'SEMANTIC_INDEX_NOT_FOUND'`.
  * Per-vault rejections from eligible entries are captured into `failed_vaults`
- * rather than propagated, except for input-validation errors (codes in
- * {@link VALIDATION_ERROR_CODES}), which are re-thrown as a single fatal error.
+ * rather than propagated, except for fatal-class codes (see
+ * `FATAL_TOOL_ERROR_CODES` in tool-response.ts), which are re-thrown as a
+ * single fatal error.
  * The caller is responsible for the per-entry semantic invariant
  * (`entry.corpus` is defined when `entry.semanticAvailable === true`).
  */
@@ -127,9 +119,9 @@ export async function runSemanticFanOut<T extends Record<string, unknown>>(
 
   const settled = await Promise.allSettled(eligible.map((entry) => fn(entry)));
 
-  const validationError = findValidationRejection(settled);
-  if (validationError) {
-    throw validationError;
+  const fatalError = findFatalRejection(settled);
+  if (fatalError) {
+    throw fatalError;
   }
 
   const results: Array<{ vault: string } & T> = [];
