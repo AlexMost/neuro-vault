@@ -114,7 +114,7 @@ Add to your MCP client config (here: Claude Code's `~/.claude/settings.json`):
 
 ### 🗂 Multi-vault — two vaults, one server
 
-Pass `--vault` once per vault. The vault's **alias** (the short name you'll use in tool calls) is taken from the directory basename — no extra flags needed:
+Pass `--vault` once per vault:
 
 ```bash
 neuro-vault-mcp \
@@ -122,7 +122,7 @@ neuro-vault-mcp \
   --vault /Users/me/Vaults/TeamWiki
 ```
 
-Two vaults registered, with aliases `Sandbox` and `TeamWiki`. In your MCP config:
+Two vaults registered, with names `Sandbox` and `TeamWiki`. In your MCP config:
 
 ```json
 {
@@ -139,10 +139,10 @@ Two vaults cannot share the same directory basename — the basename doubles as 
 
 With multiple vaults registered:
 
-- **Every tool** accepts an optional `vault: "<alias>"` parameter to target a specific vault.
+- **Every tool** accepts an optional `vault: "<name>"` parameter to target a specific vault.
 - **`search_notes`, `query_notes`, and `get_vault_overview`** fan out across all registered vaults when `vault` is omitted. The response shape switches to `results_by_vault: [...]` (one entry per vault) plus `skipped_vaults: [...]` for any vault the tool could not reach.
 - **All other tools** (writes, reads of specific paths, single-vault diagnostics) require an explicit `vault` in multi-vault mode. Omitting it returns `VAULT_REQUIRED`.
-- **Semantic fan-out** silently skips vaults whose Smart Connections `.smart-env/multi/` index is unavailable. Targeting such a vault explicitly with `vault: "<alias>"` returns `SEMANTIC_INDEX_NOT_FOUND`.
+- **Semantic fan-out** silently skips vaults whose Smart Connections `.smart-env/multi/` index is unavailable. Targeting such a vault explicitly with `vault: "<name>"` returns `SEMANTIC_INDEX_NOT_FOUND`.
 
 Then ask your assistant:
 
@@ -173,34 +173,6 @@ Architecture / internals: [`docs/architecture/`](./docs/architecture/).
 ### Vault-specific conventions for external agents
 
 When the server starts, it looks for `<vault>/.neuro-vault/for-external-agents.md`. If the file exists, its content is appended to the MCP `instructions` that clients receive at `initialize`, under a `## Vault-specific conventions` section. Use this file to teach external agents vault-specific rules that cannot be derived from the snapshot — for example, closed sets of frontmatter `type` values, or folders that are off-limits for writes. The file is optional; without it the server still ships sane defaults plus a pointer to `get_vault_overview`.
-
----
-
-## 🗂 Multi-vault notes
-
-Single-vault setups need no changes — the existing `--vault /path` form still works exactly as before.
-
-If you serve multiple vaults from one MCP process, here are the details worth knowing:
-
-- **`--vault` is the path; the alias is the directory basename.** Repeat the flag once per vault. Two vaults cannot share the same basename — rename one of the directories if they collide. The standalone `--vault-name` flag is gone.
-- **Tool results carry a `vault` field** — every result object now includes `vault: string` identifying the source vault. Clients that ignore the field are unaffected; clients that parse results structurally should expect it.
-- **One process per registration** — if you previously ran two `neuro-vault-mcp` processes for two vaults, you can collapse them into one:
-
-  ```json
-  {
-    "mcpServers": {
-      "neuro-vault": {
-        "command": "neuro-vault-mcp",
-        "args": [
-          "--vault",
-          "personal:/Users/me/Vaults/Personal",
-          "--vault",
-          "work:/Users/me/Vaults/Work"
-        ]
-      }
-    }
-  }
-  ```
 
 ---
 
