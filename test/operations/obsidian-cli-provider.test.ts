@@ -449,7 +449,7 @@ describe('ObsidianCLIProvider — VAULT_NOT_FOUND mapping', () => {
     });
   });
 
-  it('VAULT_NOT_FOUND message mentions --vault-name and the unrecognized name', async () => {
+  it('VAULT_NOT_FOUND message names the unrecognized vault and points at the alias/basename mismatch', async () => {
     const exec = vi.fn().mockRejectedValue({
       code: 1,
       stderr: 'vault does not exist: Brain',
@@ -464,8 +464,9 @@ describe('ObsidianCLIProvider — VAULT_NOT_FOUND mapping', () => {
       expect(err).toBeInstanceOf(ToolHandlerError);
       const e = err as ToolHandlerError;
       expect(e.code).toBe('VAULT_NOT_FOUND');
-      expect(e.message).toMatch(/--vault-name/);
       expect(e.message).toMatch(/Brain/);
+      expect(e.message).toMatch(/basename|Manage vaults/);
+      expect(e.message).not.toMatch(/--vault-name/);
     }
   });
 });
