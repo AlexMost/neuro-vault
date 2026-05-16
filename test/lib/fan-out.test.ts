@@ -193,3 +193,69 @@ describe('partial failure', () => {
     });
   });
 });
+
+describe('input-validation re-throw', () => {
+  // These codes mean "the caller's input is wrong" — same outcome on every
+  // vault. Fan-out re-throws them as a single fatal error rather than reporting
+  // N identical failed_vaults entries.
+  const VALIDATION_CODES = ['INVALID_ARGUMENT', 'INVALID_PARAMS', 'INVALID_FILTER'] as const;
+
+  for (const code of VALIDATION_CODES) {
+    it(`runFanOut: re-throws ToolHandlerError when code is "${code}" instead of capturing`, async () => {
+      const reg = makeRegistry([{ name: 'a' }, { name: 'b' }, { name: 'c' }]);
+      await expect(
+        runFanOut(reg, async () => {
+          throw new ToolHandlerError(code, `bad ${code} payload`);
+        }),
+      ).rejects.toMatchObject({
+        code,
+        message: `bad ${code} payload`,
+      });
+    });
+
+    it(`runSemanticFanOut: re-throws ToolHandlerError when code is "${code}"`, async () => {
+      const reg = makeRegistry([
+        { name: 'a', semanticAvailable: true },
+        { name: 'b', semanticAvailable: true },
+      ]);
+      await expect(
+        runSemanticFanOut(reg, async () => {
+          throw new ToolHandlerError(code, `bad ${code} payload`);
+        }),
+      ).rejects.toMatchObject({
+        code,
+        message: `bad ${code} payload`,
+      });
+    });
+  }
+
+  it('runFanOut: validation re-throw wins even when other vaults have runtime failures', async () => {
+    // vault a throws CLI_NOT_FOUND (runtime — would be captured)
+    // vault b throws INVALID_FILTER (validation — must be re-thrown)
+    // Result: fatal INVALID_FILTER, not a partial response.
+    const reg = makeRegistry([{ name: 'a' }, { name: 'b' }]);
+    await expect(
+      runFanOut(reg, async (entry) => {
+        if (entry.name === 'a') {
+          throw new ToolHandlerError('CLI_NOT_FOUND', 'no obsidian');
+        }
+        throw new ToolHandlerError('INVALID_FILTER', 'bad operator $foo');
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_FILTER' });
+  });
+
+  it('runFanOut: validation re-throw preserves details', async () => {
+    const reg = makeRegistry([{ name: 'a' }]);
+    await expect(
+      runFanOut(reg, async () => {
+        throw new ToolHandlerError('INVALID_FILTER', 'forbidden operator', {
+          details: { operator: '$where' },
+        });
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_FILTER',
+      message: 'forbidden operator',
+      details: { operator: '$where' },
+    });
+  });
+});
