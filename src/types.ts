@@ -29,8 +29,5 @@ export interface ServerConfig {
     modelKey: string;
     modelId: string;
   };
-  operations: {
-    enabled: boolean;
-    binaryPath?: string;
-  };
+  obsidianCli?: string;
 }

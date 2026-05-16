@@ -25,7 +25,6 @@ describe('createVaultRegistry', () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a'), vault('b', '/v/b')],
-        operationsEnabled: true,
         semanticEnabled: true,
         modelKey: 'm',
       },
@@ -38,7 +37,6 @@ describe('createVaultRegistry', () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a')],
-        operationsEnabled: true,
         semanticEnabled: false,
         modelKey: 'm',
       },
@@ -51,7 +49,6 @@ describe('createVaultRegistry', () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [vault('Obsidian', '/v/Obsidian')],
-        operationsEnabled: true,
         semanticEnabled: false,
         modelKey: 'm',
       },
@@ -67,7 +64,6 @@ describe('createVaultRegistry', () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [vault('Obsidian', '/v/Obsidian')],
-        operationsEnabled: true,
         semanticEnabled: false,
         modelKey: 'm',
       },
@@ -89,7 +85,6 @@ describe('createVaultRegistry', () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a')],
-        operationsEnabled: true,
         semanticEnabled: false,
         modelKey: 'm',
       },
@@ -112,7 +107,6 @@ describe('createVaultRegistry', () => {
     const one = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a')],
-        operationsEnabled: true,
         semanticEnabled: false,
         modelKey: 'm',
       },
@@ -123,7 +117,6 @@ describe('createVaultRegistry', () => {
     const two = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a'), vault('b', '/v/b')],
-        operationsEnabled: true,
         semanticEnabled: false,
         modelKey: 'm',
       },
@@ -140,7 +133,6 @@ describe('createVaultRegistry', () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a')],
-        operationsEnabled: false,
         semanticEnabled: true,
         modelKey: 'm',
       },
@@ -159,7 +151,6 @@ describe('createVaultRegistry', () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a')],
-        operationsEnabled: false,
         semanticEnabled: true,
         modelKey: 'm',
       },
@@ -186,12 +177,25 @@ describe('createVaultRegistry', () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a'), vault('b', '/v/b')],
-        operationsEnabled: false,
         semanticEnabled: true,
         modelKey: 'm',
       },
       deps,
     );
     expect(registry.semanticAvailableEntries().map((e) => e.name)).toEqual(['a']);
+  });
+
+  it('always populates writer and provider on every entry', async () => {
+    const registry = await VaultRegistry.create(
+      {
+        vaults: [vault('v', '/tmp/v')],
+        semanticEnabled: false,
+        modelKey: 'bge-micro-v2',
+      },
+      fakeDeps(),
+    );
+    const [entry] = registry.list();
+    expect(entry.writer).toBeDefined();
+    expect(entry.provider).toBeDefined();
   });
 });

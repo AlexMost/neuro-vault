@@ -6,9 +6,8 @@ import type { IVaultRegistry } from '../../lib/vault-registry.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 import type { ResourceRegistration } from '../../lib/resource-registration.js';
 
-export interface IOperationsModuleConfig {
-  binaryPath?: string;
-}
+// empty body — reserved for future module-level options
+export interface IOperationsModuleConfig {}
 
 export interface IOperationsModuleDeps {
   // Legacy override hook. Reserved for callers that want to inject a custom
