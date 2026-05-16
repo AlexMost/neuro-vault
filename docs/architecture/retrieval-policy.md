@@ -100,7 +100,7 @@ Block results merge by `(path, heading, lines)` with the same max-similarity rul
 
 After merging, results are sorted by similarity descending (with path tiebreak) and capped to `min(cap × N, 50)`, where `cap` is the user-supplied `limit` (or `mode.limit` if omitted) and `N` is the number of unique queries after dedupe. Per-query retrieval always uses `mode.limit` for its own top-K — the user-supplied `limit` only governs the merged-output cap, never the per-query depth. The hard ceiling of 50 bounds response size, not retrieval depth — `truncated: true` signals that more candidates existed than fit in the cap.
 
-The handler in `tool-handlers.ts` decides which path to run based on the runtime type of `input.query`: `string` keeps the legacy single-query shape (no `matched_queries`, no `truncated`); `string[]` (length 1–8 after dedupe) takes the multi-query path.
+The `search_notes` handler in `src/modules/semantic/tools/search-notes.ts` decides which path to run based on the runtime type of `input.query`: `string` keeps the legacy single-query shape (no `matched_queries`, no `truncated`); `string[]` (length 1–8 after dedupe) takes the multi-query path.
 
 ## Invariants
 

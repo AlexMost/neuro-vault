@@ -253,9 +253,10 @@ export class ObsidianCLIProvider implements VaultProvider {
       return new ToolHandlerError(
         'VAULT_NOT_FOUND',
         `Obsidian does not recognize a vault named '${this.vaultName}'. ` +
-          `This usually means the vault was renamed in Obsidian's "Manage vaults" UI ` +
-          `and the display name no longer matches the directory basename. ` +
-          `Re-launch the server with --vault-name <exact-name-in-obsidian>.`,
+          `The MCP-side alias is derived from the vault directory's basename and must ` +
+          `match the display name Obsidian shows in "Manage vaults". Rename either the ` +
+          `directory (and re-launch with the matching --vault path) or the vault in ` +
+          `Obsidian so the two agree.`,
         { details: { stderr, vaultName: this.vaultName }, cause: error },
       );
     }
