@@ -1,8 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
-import { VaultRegistry, type IVaultEntryDeps } from '../../src/lib/vault-registry.js';
+import {
+  VaultRegistry,
+  type IVaultEntry,
+  type IVaultEntryDeps,
+} from '../../src/lib/vault-registry.js';
 import type { IVaultConfig } from '../../src/types.js';
+
+// Type-level guard: writer and provider must be required on IVaultEntry.
+// If anyone reintroduces optionality (e.g. by adding `?`), this assertion
+// breaks at compile time — a much cleaner signal than the 14 runtime `!`
+// asserts the codebase used to carry.
+type AssertRequired<T, K extends keyof T> = undefined extends T[K] ? never : true;
+const _writerIsRequired: AssertRequired<IVaultEntry, 'writer'> = true;
+const _providerIsRequired: AssertRequired<IVaultEntry, 'provider'> = true;
+// Reference to silence the unused-variable lint.
+void _writerIsRequired;
+void _providerIsRequired;
 
 function fakeDeps(): IVaultEntryDeps {
   return {
