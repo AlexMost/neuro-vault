@@ -2,7 +2,7 @@
 
 > 🧠💾 **Make your personal vault usable by agents.** Low-token retrieval, explicit provenance, and safe writes for your Obsidian notes — in Claude Code, Cursor, Windsurf, and any MCP client.
 
-https://github.com/user-attachments/assets/25c1bafb-7b90-43ac-aa50-50e85705fb5b
+[https://github.com/user-attachments/assets/25c1bafb-7b90-43ac-aa50-50e85705fb5b](https://github.com/user-attachments/assets/5ac86cd7-2d67-420d-b940-dba4ae1a2ccb)
 
 [![npm version](https://img.shields.io/npm/v/neuro-vault-mcp)](https://www.npmjs.com/package/neuro-vault-mcp)
 [![Node.js](https://img.shields.io/node/v/neuro-vault-mcp)](https://nodejs.org)
