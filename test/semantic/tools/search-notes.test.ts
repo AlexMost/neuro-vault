@@ -846,14 +846,17 @@ describe('searchNotes', () => {
           failed_vaults: Array<{ vault: string; error: { code: string; message: string } }>;
         };
 
-        expect(result.results_by_vault.map((r) => r.vault)).toEqual(['v1']);
+        expect(result.skipped_vaults).toEqual([]);
         expect(result.failed_vaults).toEqual([
           {
             vault: 'v2',
             error: { code: 'DEPENDENCY_ERROR', message: 'embedding lookup failed' },
           },
         ]);
-        expect(result.skipped_vaults).toEqual([]);
+        expect(result.results_by_vault).toHaveLength(1);
+        const v1Entry = result.results_by_vault[0]!;
+        expect(v1Entry.vault).toBe('v1');
+        expect(v1Entry.results[0]!.path).toBe('note-a.md');
       } finally {
         await fs2.rm(vaultRoot1, { recursive: true, force: true });
         await fs2.rm(vaultRoot2, { recursive: true, force: true });

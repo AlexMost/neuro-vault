@@ -92,16 +92,22 @@ describe('operations.getVaultOverview tool', () => {
 
     const result = (await tool.handler({})) as {
       results_by_vault: Array<SingleOverview>;
+      skipped_vaults: Array<{ vault: string; reason: string }>;
       failed_vaults: Array<{ vault: string; error: { code: string; message: string } }>;
     };
 
-    expect(result.results_by_vault.map((r) => r.vault)).toEqual(['vault-a']);
+    expect(result.skipped_vaults).toEqual([]);
     expect(result.failed_vaults).toEqual([
       {
         vault: 'vault-b',
         error: { code: 'CLI_UNAVAILABLE', message: 'obsidian not running' },
       },
     ]);
+    expect(result.results_by_vault).toHaveLength(1);
+    const vaultA = result.results_by_vault[0]!;
+    expect(vaultA.vault).toBe('vault-a');
+    expect(vaultA.total_notes).toBe(1);
+    expect(vaultA.top_tags).toEqual([{ name: 'alpha', count: 1 }]);
   });
 
   it('single-vault path still returns { vault, ...overview } flat shape (regression)', async () => {
