@@ -55,18 +55,17 @@ export async function runFanOut<T extends Record<string, unknown>>(
   fn: (entry: IVaultEntry) => Promise<T>,
 ): Promise<IFanOutResult<T>> {
   const entries = registry.list();
-  const settled = await Promise.allSettled(
-    entries.map((entry) => fn(entry).then((value) => ({ vault: entry.name, ...value }))),
-  );
+  const settled = await Promise.allSettled(entries.map((entry) => fn(entry)));
 
   const results: Array<{ vault: string } & T> = [];
   const failed: IFailedVault[] = [];
   for (let i = 0; i < settled.length; i++) {
     const outcome = settled[i];
+    const vault = entries[i].name;
     if (outcome.status === 'fulfilled') {
-      results.push(outcome.value);
+      results.push({ vault, ...outcome.value });
     } else {
-      failed.push(mapRejectionToFailedVault(entries[i].name, outcome.reason));
+      failed.push(mapRejectionToFailedVault(vault, outcome.reason));
     }
   }
   return { results_by_vault: results, skipped_vaults: [], failed_vaults: failed };
@@ -92,18 +91,17 @@ export async function runSemanticFanOut<T extends Record<string, unknown>>(
     .filter((e) => !e.semanticAvailable)
     .map((e) => ({ vault: e.name, reason: 'SEMANTIC_INDEX_NOT_FOUND' }));
 
-  const settled = await Promise.allSettled(
-    eligible.map((entry) => fn(entry).then((value) => ({ vault: entry.name, ...value }))),
-  );
+  const settled = await Promise.allSettled(eligible.map((entry) => fn(entry)));
 
   const results: Array<{ vault: string } & T> = [];
   const failed: IFailedVault[] = [];
   for (let i = 0; i < settled.length; i++) {
     const outcome = settled[i];
+    const vault = eligible[i].name;
     if (outcome.status === 'fulfilled') {
-      results.push(outcome.value);
+      results.push({ vault, ...outcome.value });
     } else {
-      failed.push(mapRejectionToFailedVault(eligible[i].name, outcome.reason));
+      failed.push(mapRejectionToFailedVault(vault, outcome.reason));
     }
   }
   return { results_by_vault: results, skipped_vaults: skipped, failed_vaults: failed };
