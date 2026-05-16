@@ -1,5 +1,28 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
 import { ToolHandlerError } from '../../lib/tool-response.js';
 import { normalizeVaultPath } from '../../lib/obsidian/paths.js';
+import type { IVaultEntry } from '../../lib/vault-registry.js';
+
+export async function pathExistsForEntry(
+  entry: IVaultEntry,
+  vaultRelativePath: string,
+): Promise<boolean> {
+  try {
+    await fs.access(path.join(entry.path, vaultRelativePath));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function readNoteContentForEntry(
+  entry: IVaultEntry,
+  vaultRelativePath: string,
+): Promise<string> {
+  return fs.readFile(path.join(entry.path, vaultRelativePath), 'utf8');
+}
 
 export const MAX_MULTI_QUERIES = 8;
 

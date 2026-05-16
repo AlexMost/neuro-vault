@@ -2,8 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildGetNoteLinksTool } from '../../../src/modules/operations/tools/get-note-links.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
+import { makeGraph } from './_helpers.js';
+import { makeTestRegistry } from './_test-registry.js';
 
-function makeGraph(linksFor: Record<string, ReturnType<WikilinkGraphIndex['getNoteLinks']>>) {
+function makeLinksGraph(
+  linksFor: Record<string, ReturnType<WikilinkGraphIndex['getNoteLinks']>>,
+): WikilinkGraphIndex {
   return {
     ensureFresh: vi.fn().mockResolvedValue(undefined),
     getNoteLinks: vi.fn((path: string) => linksFor[path] ?? { incoming: [], outgoing: [] }),
@@ -12,8 +16,8 @@ function makeGraph(linksFor: Record<string, ReturnType<WikilinkGraphIndex['getNo
 }
 
 describe('get_note_links tool', () => {
-  it('returns the adjacency for the requested path', async () => {
-    const graph = makeGraph({
+  it('returns the adjacency for the requested path (with vault field)', async () => {
+    const graph = makeLinksGraph({
       'Folder/A.md': {
         incoming: [{ source: 'Folder/B.md' }],
         outgoing: [
@@ -22,11 +26,13 @@ describe('get_note_links tool', () => {
         ],
       },
     });
-    const tool = buildGetNoteLinksTool({ graph });
+    const registry = makeTestRegistry([{ name: 'v', graph }]);
+    const tool = buildGetNoteLinksTool({ registry });
 
     const out = await tool.handler({ path: 'Folder/A.md' });
 
     expect(out).toEqual({
+      vault: 'v',
       incoming: [{ source: 'Folder/B.md' }],
       outgoing: [
         { target: 'C', resolved: true, path: 'Folder/C.md' },
@@ -48,7 +54,8 @@ describe('get_note_links tool', () => {
       }),
       getBacklinkCount: vi.fn(),
     } as unknown as WikilinkGraphIndex;
-    const tool = buildGetNoteLinksTool({ graph });
+    const registry = makeTestRegistry([{ name: 'v', graph }]);
+    const tool = buildGetNoteLinksTool({ registry });
 
     await tool.handler({ path: 'X.md' });
 
@@ -56,8 +63,9 @@ describe('get_note_links tool', () => {
   });
 
   it('normalizes the input path before querying the graph', async () => {
-    const graph = makeGraph({});
-    const tool = buildGetNoteLinksTool({ graph });
+    const graph = makeLinksGraph({});
+    const registry = makeTestRegistry([{ name: 'v', graph }]);
+    const tool = buildGetNoteLinksTool({ registry });
 
     await tool.handler({ path: '  Folder/A.md  ' });
 
@@ -65,18 +73,20 @@ describe('get_note_links tool', () => {
   });
 
   it('returns an empty adjacency for an unknown path', async () => {
-    const graph = makeGraph({});
-    const tool = buildGetNoteLinksTool({ graph });
+    const graph = makeLinksGraph({});
+    const registry = makeTestRegistry([{ name: 'v', graph }]);
+    const tool = buildGetNoteLinksTool({ registry });
 
     expect(await tool.handler({ path: 'Missing.md' })).toEqual({
+      vault: 'v',
       incoming: [],
       outgoing: [],
     });
   });
 
   it('exposes its name and description', () => {
-    const graph = makeGraph({});
-    const tool = buildGetNoteLinksTool({ graph });
+    const registry = makeTestRegistry([{ name: 'v', graph: makeGraph() }]);
+    const tool = buildGetNoteLinksTool({ registry });
 
     expect(tool.name).toBe('get_note_links');
     expect(tool.description).toMatch(/incoming/i);

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildEditNoteTool } from '../../../src/modules/operations/tools/edit-note.js';
 import { makeReader, makeWriter } from './_helpers.js';
+import { makeTestRegistry } from './_test-registry.js';
 
 function buildTool(
   overrides: {
@@ -11,14 +12,15 @@ function buildTool(
 ) {
   const reader = overrides.reader ?? makeReader();
   const writer = overrides.writer ?? makeWriter();
-  const tool = buildEditNoteTool({ reader, writer });
+  const registry = makeTestRegistry([{ name: 'v', reader, writer }]);
+  const tool = buildEditNoteTool({ registry });
   return { tool, reader, writer };
 }
 
 describe('edit_note: targeted replace (replace field present)', () => {
-  it('routes to writer.replaceInNote with normalised path', async () => {
+  it('routes to writer.replaceInNote with normalised path and returns { vault }', async () => {
     const { tool, writer } = buildTool();
-    await tool.handler({
+    const result = await tool.handler({
       path: 'Notes/x.md',
       content: 'new',
       replace: 'old',
@@ -29,6 +31,7 @@ describe('edit_note: targeted replace (replace field present)', () => {
       content: 'new',
     });
     expect(writer.replaceFullBody).not.toHaveBeenCalled();
+    expect(result).toEqual({ vault: 'v' });
   });
 
   it('rejects empty replace with INVALID_ARGUMENT', async () => {
@@ -97,9 +100,9 @@ describe('edit_note: targeted replace (replace field present)', () => {
 });
 
 describe('edit_note: full-body replace (replace field absent)', () => {
-  it('routes to writer.replaceFullBody', async () => {
+  it('routes to writer.replaceFullBody and returns { vault }', async () => {
     const { tool, writer } = buildTool();
-    await tool.handler({
+    const result = await tool.handler({
       path: 'Notes/x.md',
       content: 'whole new body',
     });
@@ -108,6 +111,7 @@ describe('edit_note: full-body replace (replace field absent)', () => {
       content: 'whole new body',
     });
     expect(writer.replaceInNote).not.toHaveBeenCalled();
+    expect(result).toEqual({ vault: 'v' });
   });
 
   it('allows empty content', async () => {

@@ -1,16 +1,18 @@
 import { z } from 'zod';
 
-import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
+import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { SmartSource, ToolStats } from '../types.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
+import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
-const inputSchema = z.object({});
-
-type Input = z.infer<typeof inputSchema>;
+interface Input {
+  vault?: string;
+}
 
 export interface GetStatsDeps {
-  corpus: SmartConnectionsCorpusIndex;
+  registry: IVaultRegistry;
   modelKey: string;
 }
 
@@ -38,14 +40,26 @@ function readEmbeddingDimension(sources: Iterable<SmartSource>): number {
   return dimension ?? 0;
 }
 
-export function buildGetStatsTool(deps: GetStatsDeps): ITool<Input, ToolStats> {
-  const { corpus, modelKey } = deps;
+export function buildGetStatsTool(deps: GetStatsDeps): ITool<Input, { vault: string } & ToolStats> {
+  const { registry, modelKey } = deps;
+  const inputSchema = z.object({ ...vaultParamShape(registry) });
   return {
     name: 'get_stats',
     title: 'Get Stats',
-    description: 'Report corpus and embedding statistics.',
+    description:
+      'Report corpus and embedding statistics.' +
+      describeMultiVault(
+        registry,
+        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      ),
     inputSchema,
-    handler: async () => {
+    handler: async (input) => {
+      const entry = resolveVault(input, registry, {
+        tool: 'get_stats',
+        requireSemantic: true,
+      });
+      // resolveVault with requireSemantic: true guarantees entry.corpus is defined
+      const corpus = entry.corpus!;
       try {
         const { sources } = await corpus.snapshot();
         let totalBlocks = 0;
@@ -53,6 +67,7 @@ export function buildGetStatsTool(deps: GetStatsDeps): ITool<Input, ToolStats> {
           totalBlocks += source.blocks.length;
         }
         return {
+          vault: entry.name,
           totalNotes: sources.size,
           totalBlocks,
           embeddingDimension: readEmbeddingDimension(sources.values()),

@@ -53,6 +53,7 @@ Trivial work (typo fix, dependency bump, doc tweak) does not need a spec.
 - Error responses go through `ToolHandlerError` so MCP clients receive structured `{ code, message, details }`.
 - New external command invocations use `execFile` with an args array — never `exec` with an interpolated string.
 - Format with prettier; lint with eslint. Both run in `prepublishOnly`.
+- Naming and file-layout conventions (I-prefix for interfaces, classes without prefix, one file per concept) — see [`docs/architecture/naming-conventions.md`](docs/architecture/naming-conventions.md).
 
 ## MCP parameter dictionary
 

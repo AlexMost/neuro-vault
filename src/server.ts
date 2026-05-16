@@ -5,11 +5,15 @@ import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import { createSemanticModule, type SemanticModuleDeps } from './modules/semantic/index.js';
-import { createOperationsModule, type OperationsModuleDeps } from './modules/operations/index.js';
+import { createSemanticModule, type ISemanticModuleDeps } from './modules/semantic/index.js';
+import { createOperationsModule, type IOperationsModuleDeps } from './modules/operations/index.js';
+import { VaultRegistry, type IVaultEntryDeps, type IVaultRegistry } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
+import { FsVaultWriter } from './lib/obsidian/vault-writer.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
+import { ObsidianCLIProvider } from './modules/operations/obsidian-cli-provider.js';
+import { createSmartConnectionsCorpusIndex } from './lib/obsidian/smart-connections-corpus-index.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ResourceRegistration } from './lib/resource-registration.js';
 import type { ServerConfig } from './types.js';
@@ -35,8 +39,9 @@ export async function readExternalAgentInstructions(vaultPath: string): Promise<
 }
 
 export interface NeuroVaultStartupDependencies {
-  semantic?: SemanticModuleDeps;
-  operations?: OperationsModuleDeps;
+  semantic?: ISemanticModuleDeps;
+  operations?: IOperationsModuleDeps;
+  vaultEntryDeps?: Partial<IVaultEntryDeps>;
   serverFactory?: (instructions: string) => ToolServer;
   transportFactory?: () => StdioServerTransport;
 }
@@ -131,12 +136,26 @@ const GET_VAULT_OVERVIEW_HINT = `\
 
 Before reaching for \`list_tags\`, \`list_properties\`, or exploratory \`query_notes\`, call \`get_vault_overview\` once at the start of a session. It returns the top-level folder layout with counts, the top tags, frontmatter properties with inferred types, the total note count, and the top 10 notes by inbound wikilinks — enough to orient yourself in a single call. The same payload is available as the MCP resource \`vault://overview\` for clients that auto-load resources.`;
 
-export async function buildServerInstructions(vaultPath: string): Promise<string> {
+export async function buildServerInstructions(registry: IVaultRegistry): Promise<string> {
   let result = STATIC_SERVER_INSTRUCTIONS;
   result += '\n\n' + GET_VAULT_OVERVIEW_HINT;
-  const extra = await readExternalAgentInstructions(vaultPath);
-  if (extra !== null && extra !== '') {
-    result += '\n\n## Vault-specific conventions\n\n' + extra;
+
+  if (registry.isMulti()) {
+    const names = registry
+      .names()
+      .map((n) => `"${n}"`)
+      .join(', ');
+    result += `\n\n## Multi-vault mode\n\nThis server is registered with multiple vaults: ${names}. Every tool accepts an optional \`vault\` parameter. For broad recall, \`search_notes\`, \`query_notes\`, and \`get_vault_overview\` fan out across all vaults when \`vault\` is omitted; other tools (reads of specific paths, writes, single-vault diagnostics) require an explicit \`vault\` — omitting it returns \`VAULT_REQUIRED\`. Path-shaped parameters (\`path\`, \`paths\`, \`path_prefix\`) remain vault-relative; vault identity is always carried by \`vault\`.`;
+  }
+
+  for (const entry of registry.list()) {
+    const extra = await readExternalAgentInstructions(entry.path);
+    if (extra !== null && extra !== '') {
+      const heading = registry.isMulti()
+        ? `## Vault-specific conventions — ${entry.name}`
+        : '## Vault-specific conventions';
+      result += `\n\n${heading}\n\n${extra}`;
+    }
   }
   return result;
 }
@@ -149,6 +168,20 @@ function defaultTransportFactory(): StdioServerTransport {
   return new StdioServerTransport();
 }
 
+function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): IVaultEntryDeps {
+  return {
+    readerFactory: ({ vaultRoot }) => new FsVaultReader({ vaultRoot }),
+    writerFactory: ({ vaultRoot }) => new FsVaultWriter({ vaultRoot }),
+    graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
+    listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
+    providerFactory: ({ vaultName, binaryPath }) =>
+      new ObsidianCLIProvider({ vaultName, binaryPath }),
+    corpusFactory: ({ smartEnvPath, modelKey }) =>
+      createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey }),
+    ...overrides,
+  };
+}
+
 export async function startNeuroVaultServer(
   config: ServerConfig,
   deps: NeuroVaultStartupDependencies = {},
@@ -157,39 +190,31 @@ export async function startNeuroVaultServer(
     throw new Error('No modules enabled — pass --semantic or --operations');
   }
 
-  const instructions = await buildServerInstructions(config.vaultPath);
+  const registry = await VaultRegistry.create(
+    {
+      vaults: config.vaults,
+      operationsEnabled: config.operations.enabled,
+      semanticEnabled: config.semantic.enabled,
+      modelKey: config.semantic.modelKey,
+      binaryPath: config.operations.binaryPath,
+    },
+    buildDefaultVaultEntryDeps(deps.vaultEntryDeps),
+  );
+
+  const instructions = await buildServerInstructions(registry);
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;
   const server = serverFactory(instructions);
-
-  // The wikilink graph is a vault-level primitive consumed by both modules
-  // (operations: get_note_links + query_notes enrichment; semantic:
-  // search_notes enrichment). Build it once here so both modules share a
-  // single in-memory index.
-  const sharedReader = new FsVaultReader({ vaultRoot: config.vaultPath });
-  const sharedGraph = new WikilinkGraphIndex({ reader: sharedReader });
-  const sharedListMatchingPaths = createListMatchingPaths({
-    reader: sharedReader,
-    graph: sharedGraph,
-  });
 
   const toolRegistrations: ToolRegistration[] = [];
   const resourceRegistrations: ResourceRegistration[] = [];
   let warmup: () => Promise<void> = async () => {};
 
   if (config.semantic.enabled) {
-    const semantic = await createSemanticModule(
-      {
-        vaultPath: config.vaultPath,
-        smartEnvPath: config.semantic.smartEnvPath,
-        modelKey: config.semantic.modelKey,
-        modelId: config.semantic.modelId,
-      },
-      {
-        graph: sharedGraph,
-        listMatchingPaths: sharedListMatchingPaths,
-        ...deps.semantic,
-      },
+    const semantic = createSemanticModule(
+      registry,
+      { modelKey: config.semantic.modelKey, modelId: config.semantic.modelId },
+      deps.semantic,
     );
     toolRegistrations.push(...semantic.tools);
     warmup = semantic.warmup;
@@ -197,12 +222,9 @@ export async function startNeuroVaultServer(
 
   if (config.operations.enabled) {
     const operations = createOperationsModule(
-      {
-        vaultPath: config.vaultPath,
-        vaultName: config.operations.vaultName,
-        binaryPath: config.operations.binaryPath,
-      },
-      { graph: sharedGraph, ...deps.operations },
+      registry,
+      { binaryPath: config.operations.binaryPath },
+      deps.operations,
     );
     toolRegistrations.push(...operations.tools);
     resourceRegistrations.push(...operations.resources);
@@ -211,7 +233,6 @@ export async function startNeuroVaultServer(
   for (const tool of toolRegistrations) {
     server.registerTool(tool.name, tool.spec, tool.handler);
   }
-
   for (const resource of resourceRegistrations) {
     server.registerResource(resource.name, resource.uri, resource.metadata, resource.handler);
   }

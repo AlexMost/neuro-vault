@@ -26,9 +26,25 @@ async (args) => invokeTool(() => handlers.foo(args))
 
 `server.ts` is also where the server's `instructions` text lives — the long string that documents tool routing for the LLM. The description on each individual tool covers what that one tool does; the server-level instructions cover when to reach for vault tooling at all.
 
-The instructions are no longer static. `buildServerInstructions(vaultPath)` composes them at startup from three layers: a fixed base (routing, role, tool guidance), an always-on orientation hint pointing at `get_vault_overview` / `vault://overview`, and — when present — the content of `<vaultPath>/.neuro-vault/for-external-agents.md` under a `## Vault-specific conventions` heading. Missing or unreadable files fall back gracefully; the always-on hint is unconditional.
+The instructions are no longer static. `buildServerInstructions(registry)` composes them at startup from several layers:
+
+1. A fixed base — routing rules, role description, tool guidance.
+2. An always-on orientation hint pointing at `get_vault_overview` / `vault://overview`.
+3. When `registry.isMulti()` returns `true`, an additional `## Multi-vault mode` section listing every registered vault name and explaining the fan-out vs. `VAULT_REQUIRED` contract.
+4. Per-vault vault-specific conventions — the content of `<vaultPath>/.neuro-vault/for-external-agents.md` when present. In single-vault mode the heading is `## Vault-specific conventions`; in multi-vault mode each vault gets its own heading, `## Vault-specific conventions — <vault-name>`. Missing or unreadable files fall back gracefully; the block is simply omitted.
 
 Resources are registered through the same module aggregation as tools. Each module returns `{ tools, resources }`; the server iterates both lists and calls `server.registerTool` / `server.registerResource` respectively. The resource scaffolding lives in `src/lib/resource-registration.ts` and `src/lib/resource-registry.ts`, mirroring the tool primitives.
+
+## Resource URIs in single-vault vs. multi-vault mode
+
+The operations module's vault-overview resource changes URI shape based on vault count:
+
+- **Single-vault**: `vault://overview` — one resource, no vault name in the URI. Preserves existing client wiring for users upgrading from v5.
+- **Multi-vault**: one resource per vault, at `vault://<vault-name>/overview`. Clients that auto-load resources by URI get one snapshot per vault.
+
+The asymmetry is deliberate. Single-vault users who have already wired `vault://overview` into their client config do not need to change anything. Multi-vault users get URIs that are unambiguous about which vault they describe.
+
+The selection logic lives in `src/modules/operations/resources/index.ts`; the per-vault resource builder is `src/modules/operations/resources/vault-overview.ts`.
 
 ## Tool handler contract
 

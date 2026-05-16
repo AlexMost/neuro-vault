@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { buildSetPropertyTool } from '../../../src/modules/operations/tools/set-property.js';
 import { makeProvider } from './_helpers.js';
+import { makeTestRegistry } from './_test-registry.js';
 
 describe('operations.setProperty handler', () => {
   it('infers type=text for string value', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await tool.handler({ path: 'a.md', key: 'status', value: 'done' });
 
@@ -20,7 +22,8 @@ describe('operations.setProperty handler', () => {
 
   it('infers type=number for number value', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await tool.handler({ path: 'a.md', key: 'priority', value: 3 });
 
@@ -31,7 +34,8 @@ describe('operations.setProperty handler', () => {
 
   it('infers type=checkbox for boolean value', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await tool.handler({ path: 'a.md', key: 'done', value: true });
 
@@ -42,7 +46,8 @@ describe('operations.setProperty handler', () => {
 
   it('infers type=list for array value', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await tool.handler({ path: 'a.md', key: 'tags', value: ['mcp', 'todo'] });
 
@@ -53,7 +58,8 @@ describe('operations.setProperty handler', () => {
 
   it('explicit type overrides inference', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await tool.handler({ path: 'a.md', key: 'due', value: '2026-05-01', type: 'date' });
 
@@ -64,7 +70,8 @@ describe('operations.setProperty handler', () => {
 
   it('rejects non-ISO date format with INVALID_ARGUMENT', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await expect(
       tool.handler({ path: 'a.md', key: 'due', value: '03.05.2026', type: 'date' }),
@@ -74,7 +81,8 @@ describe('operations.setProperty handler', () => {
 
   it('rejects logically invalid date with INVALID_ARGUMENT', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await expect(
       tool.handler({ path: 'a.md', key: 'due', value: '2026-13-45', type: 'date' }),
@@ -84,7 +92,8 @@ describe('operations.setProperty handler', () => {
 
   it('rejects non-string value when type=date', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await expect(
       tool.handler({
@@ -99,7 +108,8 @@ describe('operations.setProperty handler', () => {
 
   it('accepts ISO datetime with explicit type=datetime', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await tool.handler({
       path: 'a.md',
@@ -115,7 +125,8 @@ describe('operations.setProperty handler', () => {
 
   it('rejects space-separated datetime as non-ISO', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await expect(
       tool.handler({
@@ -130,7 +141,8 @@ describe('operations.setProperty handler', () => {
 
   it('rejects array element containing comma', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await expect(
       tool.handler({ path: 'a.md', key: 'tags', value: ['hello, world', 'ok'] }),
@@ -140,7 +152,8 @@ describe('operations.setProperty handler', () => {
 
   it('rejects null/undefined value with UNSUPPORTED_VALUE_TYPE', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
 
     await expect(
       tool.handler({ path: 'a.md', key: 'x', value: null as unknown as string }),
@@ -149,7 +162,8 @@ describe('operations.setProperty handler', () => {
 
   it('rejects when neither name nor path is provided', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
     await expect(tool.handler({ key: 'x', value: 'y' } as never)).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
@@ -157,7 +171,8 @@ describe('operations.setProperty handler', () => {
 
   it('rejects when both name and path are provided', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
     await expect(
       tool.handler({ name: 'a', path: 'b.md', key: 'x', value: 'y' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -165,7 +180,8 @@ describe('operations.setProperty handler', () => {
 
   it('rejects path traversal', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
     await expect(
       tool.handler({ path: '../../etc/passwd', key: 'x', value: 'y' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -174,7 +190,8 @@ describe('operations.setProperty handler', () => {
 
   it('rejects absolute path', async () => {
     const provider = makeProvider();
-    const tool = buildSetPropertyTool({ provider });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildSetPropertyTool({ registry });
     await expect(tool.handler({ path: '/tmp/x.md', key: 'x', value: 'y' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });

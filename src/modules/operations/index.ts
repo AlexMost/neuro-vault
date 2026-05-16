@@ -1,51 +1,35 @@
-import { ObsidianCLIProvider, type ObsidianCLIProviderOptions } from './obsidian-cli-provider.js';
-import { buildOperationsTools, type OperationsToolDeps } from './tools/index.js';
+import { buildOperationsTools, type IOperationsToolDeps } from './tools/index.js';
 import { buildOperationsResources } from './resources/index.js';
+import type { ObsidianCLIProviderOptions } from './obsidian-cli-provider.js';
 import type { VaultProvider } from '../../lib/obsidian/vault-provider.js';
-import { FsVaultReader, type VaultReader } from '../../lib/obsidian/vault-reader.js';
-import { FsVaultWriter, type VaultWriter } from '../../lib/obsidian/vault-writer.js';
-import { WikilinkGraphIndex } from '../../lib/obsidian/wikilink-graph.js';
+import type { IVaultRegistry } from '../../lib/vault-registry.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 import type { ResourceRegistration } from '../../lib/resource-registration.js';
 
-export interface OperationsModuleConfig {
-  vaultPath: string;
-  vaultName: string;
+export interface IOperationsModuleConfig {
   binaryPath?: string;
 }
 
-export interface OperationsModuleDeps {
+export interface IOperationsModuleDeps {
+  // Legacy override hook. Reserved for callers that want to inject a custom
+  // VaultProvider; today it's unused inside the module (the registry holds
+  // the provider). Kept for back-compat with NeuroVaultStartupDependencies.
   vaultProviderFactory?: (opts: ObsidianCLIProviderOptions) => VaultProvider;
-  vaultReaderFactory?: (opts: { vaultRoot: string }) => VaultReader;
-  vaultWriterFactory?: (opts: { vaultRoot: string }) => VaultWriter;
-  graph?: WikilinkGraphIndex;
 }
 
-export interface OperationsModule {
+export interface IOperationsModule {
   tools: ToolRegistration[];
   resources: ResourceRegistration[];
 }
 
 export function createOperationsModule(
-  config: OperationsModuleConfig,
-  deps: OperationsModuleDeps = {},
-): OperationsModule {
-  const providerFactory =
-    deps.vaultProviderFactory ??
-    ((opts: ObsidianCLIProviderOptions) => new ObsidianCLIProvider(opts));
-  const readerFactory =
-    deps.vaultReaderFactory ?? ((opts) => new FsVaultReader({ vaultRoot: opts.vaultRoot }));
-  const writerFactory =
-    deps.vaultWriterFactory ?? ((opts) => new FsVaultWriter({ vaultRoot: opts.vaultRoot }));
-
-  const provider = providerFactory({ binaryPath: config.binaryPath, vaultName: config.vaultName });
-  const reader = readerFactory({ vaultRoot: config.vaultPath });
-  const writer = writerFactory({ vaultRoot: config.vaultPath });
-  const graph = deps.graph ?? new WikilinkGraphIndex({ reader });
-
-  const toolDeps: OperationsToolDeps = { provider, reader, writer, graph };
+  registry: IVaultRegistry,
+  _config: IOperationsModuleConfig = {},
+  _deps: IOperationsModuleDeps = {},
+): IOperationsModule {
+  const toolDeps: IOperationsToolDeps = { registry };
   return {
     tools: buildOperationsTools(toolDeps),
-    resources: buildOperationsResources({ reader, provider, graph }),
+    resources: buildOperationsResources({ registry }),
   };
 }

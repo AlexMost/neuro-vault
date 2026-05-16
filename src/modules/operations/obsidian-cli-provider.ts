@@ -154,6 +154,22 @@ export class ObsidianCLIProvider implements VaultProvider {
   }
 
   private parseJsonList<T>(stdout: string, command: string): T[] {
+    const trimmed = stdout.trim();
+    // obsidian-cli ignores `format=json` for several list commands when the
+    // result set is empty or the vault is unknown, writing a plain-text
+    // sentinel to STDOUT and exiting 0. Map those sentinels here rather than
+    // letting JSON.parse explode with a cryptic error.
+    if (trimmed === '') return [];
+    if (/^Vault not found\.?$/i.test(trimmed)) {
+      throw new ToolHandlerError(
+        'VAULT_NOT_FOUND',
+        `Obsidian does not recognize the configured vault. ` +
+          `Open the vault in Obsidian (Manage vaults) so it appears in obsidian.json.`,
+        { details: { vaultName: this.vaultName, command, stdout: trimmed } },
+      );
+    }
+    // "No tags found.", "No properties found.", "No aliases found.", etc.
+    if (/^No\s+\w+\s+found\.?$/i.test(trimmed)) return [];
     try {
       const parsed = JSON.parse(stdout) as unknown;
       if (!Array.isArray(parsed)) {

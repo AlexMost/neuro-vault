@@ -500,4 +500,34 @@ describe('ObsidianCLIProvider.listTags', () => {
     const provider = new ObsidianCLIProvider({ exec });
     await expect(provider.listTags()).rejects.toMatchObject({ code: 'CLI_ERROR' });
   });
+
+  it('treats "No tags found." plain-text sentinel as an empty list', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'No tags found.\n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    expect(await provider.listTags()).toEqual([]);
+  });
+});
+
+describe('ObsidianCLIProvider stdout sentinel handling', () => {
+  it('listProperties: treats "No properties found." sentinel as empty', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'No properties found.', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    expect(await provider.listProperties()).toEqual([]);
+  });
+
+  it('translates stdout "Vault not found." to VAULT_NOT_FOUND with actionable hint', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: 'Vault not found.', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'wrong-name' });
+    await expect(provider.listTags()).rejects.toMatchObject({
+      code: 'VAULT_NOT_FOUND',
+      message: expect.stringContaining('Open the vault in Obsidian'),
+      details: { vaultName: 'wrong-name' },
+    });
+  });
+
+  it('returns empty array when stdout is empty (no JSON, no sentinel)', async () => {
+    const exec = vi.fn().mockResolvedValue({ stdout: '   \n', stderr: '' });
+    const provider = new ObsidianCLIProvider({ exec });
+    expect(await provider.listTags()).toEqual([]);
+  });
 });

@@ -99,7 +99,13 @@ export interface ToolHandlerDependencies {
   listMatchingPaths: ListMatchingPaths;
 }
 
-export type ToolHandlerErrorCode = 'INVALID_ARGUMENT' | 'NOT_FOUND' | 'DEPENDENCY_ERROR';
+export type ToolHandlerErrorCode =
+  | 'INVALID_ARGUMENT'
+  | 'NOT_FOUND'
+  | 'DEPENDENCY_ERROR'
+  | 'VAULT_REQUIRED'
+  | 'VAULT_NOT_FOUND'
+  | 'SEMANTIC_INDEX_NOT_FOUND';
 
 export interface ToolHandlers {
   searchNotes(input: SearchNotesInput): Promise<RetrievalOutput | MultiRetrievalOutput>;

@@ -1,16 +1,23 @@
 import { registerResource } from '../../../lib/resource-registry.js';
 import type { ResourceRegistration } from '../../../lib/resource-registration.js';
-import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
-import type { VaultProvider } from '../../../lib/obsidian/vault-provider.js';
-import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { buildVaultOverviewResource } from './vault-overview.js';
 
-export interface OperationsResourceDeps {
-  reader: VaultReader;
-  provider: VaultProvider;
-  graph: WikilinkGraphIndex;
+export interface IOperationsResourceDeps {
+  registry: IVaultRegistry;
 }
 
-export function buildOperationsResources(deps: OperationsResourceDeps): ResourceRegistration[] {
-  return [registerResource(buildVaultOverviewResource(deps))];
+export function buildOperationsResources(deps: IOperationsResourceDeps): ResourceRegistration[] {
+  const { registry } = deps;
+  if (!registry.isMulti()) {
+    const entry = registry.list()[0];
+    return [registerResource(buildVaultOverviewResource({ uri: 'vault://overview', entry }))];
+  }
+  return registry
+    .list()
+    .map((entry) =>
+      registerResource(
+        buildVaultOverviewResource({ uri: `vault://${entry.name}/overview`, entry }),
+      ),
+    );
 }
