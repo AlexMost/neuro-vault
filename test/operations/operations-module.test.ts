@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createOperationsModule } from '../../src/modules/operations/index.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
-import type { VaultRegistry, VaultEntry } from '../../src/lib/vault-registry.js';
+import type { IVaultRegistry, IVaultEntry } from '../../src/lib/vault-registry.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
@@ -35,7 +35,7 @@ describe('createOperationsModule', () => {
       getBacklinkCount: vi.fn(() => 0),
     } as unknown as WikilinkGraphIndex;
 
-    const fakeEntry: VaultEntry = {
+    const fakeEntry: IVaultEntry = {
       name: 'MyVault',
       path: '/tmp/MyVault',
       smartEnvPath: '/tmp/MyVault/.smart-env/multi',
@@ -47,7 +47,7 @@ describe('createOperationsModule', () => {
       semanticAvailable: false,
     };
 
-    const fakeRegistry: VaultRegistry = {
+    const fakeRegistry: IVaultRegistry = {
       get: vi.fn(),
       require: vi.fn(),
       list: vi.fn(() => [fakeEntry]),

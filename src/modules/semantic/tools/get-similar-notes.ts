@@ -12,7 +12,7 @@ import {
   readThreshold,
 } from '../tool-helpers.js';
 import type { EmbeddingProvider, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
-import type { VaultEntry, VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_THRESHOLD = 0.5;
@@ -28,7 +28,7 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface GetSimilarNotesDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
@@ -89,7 +89,7 @@ function collectSemanticCandidates(args: {
 
 async function resolveForwardLinks(args: {
   notePath: string;
-  entry: VaultEntry;
+  entry: IVaultEntry;
   basenameIndex: BasenameIndex;
 }): Promise<Set<string>> {
   try {
@@ -125,7 +125,7 @@ function mergeForwardLinks(candidates: Map<string, Candidate>, linkedPaths: Set<
 async function filterCandidates(args: {
   candidates: Iterable<Candidate>;
   excludePrefixes: readonly string[];
-  entry: VaultEntry;
+  entry: IVaultEntry;
 }): Promise<Candidate[]> {
   const afterExclude = [...args.candidates].filter(
     (c) => !isExcluded(c.path, args.excludePrefixes),

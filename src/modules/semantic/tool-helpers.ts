@@ -3,10 +3,10 @@ import path from 'node:path';
 
 import { ToolHandlerError } from '../../lib/tool-response.js';
 import { normalizeVaultPath } from '../../lib/obsidian/paths.js';
-import type { VaultEntry } from '../../lib/vault-registry.js';
+import type { IVaultEntry } from '../../lib/vault-registry.js';
 
 export async function pathExistsForEntry(
-  entry: VaultEntry,
+  entry: IVaultEntry,
   vaultRelativePath: string,
 ): Promise<boolean> {
   try {
@@ -18,7 +18,7 @@ export async function pathExistsForEntry(
 }
 
 export function readNoteContentForEntry(
-  entry: VaultEntry,
+  entry: IVaultEntry,
   vaultRelativePath: string,
 ): Promise<string> {
   return fs.readFile(path.join(entry.path, vaultRelativePath), 'utf8');

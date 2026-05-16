@@ -39,7 +39,7 @@ Once built, the map is read-only: no one mutates it. The map is passed by refere
 
 - All sources in the resulting map have non-empty embeddings of the same dimension. Mixed dimensions throw at load time — better to fail loudly than silently produce nonsense similarities.
 - Paths are normalized to vault-relative POSIX form (`Folder/note.md`). Absolute paths, Windows paths, and `..` segments are rejected.
-- An empty corpus throws inside the loader. Its caller — `createVaultRegistry` — catches that throw and records `semanticAvailable: false` on the affected `VaultEntry`. Startup no longer fails on a single empty corpus; the failure surfaces at semantic-tool-call time as `SEMANTIC_INDEX_NOT_FOUND` (when an explicit `vault:` targets that vault) or as a `skipped_vaults` entry in fan-out responses. The invariant _inside_ the loader is unchanged — it still throws on an empty result; only the caller semantics changed.
+- An empty corpus throws inside the loader. Its caller — `VaultRegistry.create` — catches that throw and records `semanticAvailable: false` on the affected `VaultEntry`. Startup no longer fails on a single empty corpus; the failure surfaces at semantic-tool-call time as `SEMANTIC_INDEX_NOT_FOUND` (when an explicit `vault:` targets that vault) or as a `skipped_vaults` entry in fan-out responses. The invariant _inside_ the loader is unchanged — it still throws on an empty result; only the caller semantics changed.
 
 ## Boundaries
 

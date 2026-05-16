@@ -1,6 +1,6 @@
 import { registerTool } from '../../../lib/tool-registry.js';
 import type { ToolRegistration } from '../../../lib/tool-registration.js';
-import type { VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { buildCreateNoteTool } from './create-note.js';
 import { buildEditNoteTool } from './edit-note.js';
 import { buildGetNoteLinksTool } from './get-note-links.js';
@@ -14,11 +14,11 @@ import { buildReadPropertyTool } from './read-property.js';
 import { buildRemovePropertyTool } from './remove-property.js';
 import { buildSetPropertyTool } from './set-property.js';
 
-export interface OperationsToolDeps {
-  registry: VaultRegistry;
+export interface IOperationsToolDeps {
+  registry: IVaultRegistry;
 }
 
-export function buildOperationsTools(deps: OperationsToolDeps): ToolRegistration[] {
+export function buildOperationsTools(deps: IOperationsToolDeps): ToolRegistration[] {
   return [
     registerTool(buildReadNotesTool(deps)),
     registerTool(buildQueryNotesTool(deps)),

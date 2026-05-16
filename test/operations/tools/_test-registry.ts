@@ -1,8 +1,8 @@
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
-import type { VaultEntry, VaultRegistry } from '../../../src/lib/vault-registry.js';
+import type { IVaultEntry, IVaultRegistry } from '../../../src/lib/vault-registry.js';
 
-export function makeTestRegistry(entries: Partial<VaultEntry>[]): VaultRegistry {
-  const list = entries.map((e) => ({ semanticAvailable: true, ...e }) as VaultEntry);
+export function makeTestRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
+  const list = entries.map((e) => ({ semanticAvailable: true, ...e }) as IVaultEntry);
   const byName = new Map(list.map((e) => [e.name!, e]));
   return {
     get: (n) => byName.get(n),

@@ -1,13 +1,13 @@
 import { registerResource } from '../../../lib/resource-registry.js';
 import type { ResourceRegistration } from '../../../lib/resource-registration.js';
-import type { VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { buildVaultOverviewResource } from './vault-overview.js';
 
-export interface OperationsResourceDeps {
-  registry: VaultRegistry;
+export interface IOperationsResourceDeps {
+  registry: IVaultRegistry;
 }
 
-export function buildOperationsResources(deps: OperationsResourceDeps): ResourceRegistration[] {
+export function buildOperationsResources(deps: IOperationsResourceDeps): ResourceRegistration[] {
   const { registry } = deps;
   if (!registry.isMulti()) {
     const entry = registry.list()[0];

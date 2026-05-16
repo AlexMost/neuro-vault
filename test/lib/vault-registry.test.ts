@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
-import { createVaultRegistry, type VaultEntryDeps } from '../../src/lib/vault-registry.js';
-import type { VaultConfig } from '../../src/types.js';
+import { VaultRegistry, type IVaultEntryDeps } from '../../src/lib/vault-registry.js';
+import type { IVaultConfig } from '../../src/types.js';
 
-function fakeDeps(): VaultEntryDeps {
+function fakeDeps(): IVaultEntryDeps {
   return {
     readerFactory: ({ vaultRoot }) => ({ vaultRoot }) as never,
     writerFactory: ({ vaultRoot }) => ({ vaultRoot }) as never,
@@ -16,13 +16,13 @@ function fakeDeps(): VaultEntryDeps {
   };
 }
 
-function vault(name: string, path: string): VaultConfig {
+function vault(name: string, path: string): IVaultConfig {
   return { name, path, smartEnvPath: `${path}/.smart-env/multi` };
 }
 
 describe('createVaultRegistry', () => {
   it('builds one entry per vault config', async () => {
-    const registry = await createVaultRegistry(
+    const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a'), vault('b', '/v/b')],
         operationsEnabled: true,
@@ -35,7 +35,7 @@ describe('createVaultRegistry', () => {
   });
 
   it('get returns undefined for unknown name', async () => {
-    const registry = await createVaultRegistry(
+    const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a')],
         operationsEnabled: true,
@@ -48,7 +48,7 @@ describe('createVaultRegistry', () => {
   });
 
   it('require throws VAULT_NOT_FOUND for unknown name', async () => {
-    const registry = await createVaultRegistry(
+    const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a')],
         operationsEnabled: true,
@@ -71,7 +71,7 @@ describe('createVaultRegistry', () => {
   });
 
   it('isMulti reflects vault count', async () => {
-    const one = await createVaultRegistry(
+    const one = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a')],
         operationsEnabled: true,
@@ -82,7 +82,7 @@ describe('createVaultRegistry', () => {
     );
     expect(one.isMulti()).toBe(false);
 
-    const two = await createVaultRegistry(
+    const two = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a'), vault('b', '/v/b')],
         operationsEnabled: true,
@@ -99,7 +99,7 @@ describe('createVaultRegistry', () => {
     deps.corpusFactory = async () => {
       throw new Error('ENOENT: .smart-env/multi missing');
     };
-    const registry = await createVaultRegistry(
+    const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a')],
         operationsEnabled: false,
@@ -118,7 +118,7 @@ describe('createVaultRegistry', () => {
     const deps = fakeDeps();
     deps.corpusFactory = async () =>
       ({ snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) }) as never;
-    const registry = await createVaultRegistry(
+    const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a')],
         operationsEnabled: false,
@@ -145,7 +145,7 @@ describe('createVaultRegistry', () => {
       }
       return { snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) } as never;
     };
-    const registry = await createVaultRegistry(
+    const registry = await VaultRegistry.create(
       {
         vaults: [vault('a', '/v/a'), vault('b', '/v/b')],
         operationsEnabled: false,

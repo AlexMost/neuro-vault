@@ -5,13 +5,13 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildServerInstructions, readExternalAgentInstructions } from '../src/server.js';
-import type { VaultRegistry } from '../src/lib/vault-registry.js';
+import type { IVaultRegistry } from '../src/lib/vault-registry.js';
 
 async function makeTempVault(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'neuro-vault-instructions-'));
 }
 
-function makeRegistry(vaultPath: string, multi = false): VaultRegistry {
+function makeRegistry(vaultPath: string, multi = false): IVaultRegistry {
   const entry = {
     name: path.basename(vaultPath),
     path: vaultPath,
@@ -215,7 +215,7 @@ describe('buildServerInstructions', () => {
           semanticAvailable: false,
         },
       ];
-      const registry: VaultRegistry = {
+      const registry: IVaultRegistry = {
         get: vi.fn(),
         require: vi.fn(),
         list: vi.fn(() => entries),

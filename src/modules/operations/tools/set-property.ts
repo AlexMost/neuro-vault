@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
-import type { VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { inferTypeAndValidate, invalidArgument, resolveIdentifier } from '../tool-helpers.js';
 import type { SetPropertyToolInput } from '../types.js';
 
@@ -18,7 +18,7 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface SetPropertyDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
 }
 
 export function buildSetPropertyTool(

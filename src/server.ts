@@ -5,13 +5,9 @@ import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import { createSemanticModule, type SemanticModuleDeps } from './modules/semantic/index.js';
-import { createOperationsModule, type OperationsModuleDeps } from './modules/operations/index.js';
-import {
-  createVaultRegistry,
-  type VaultEntryDeps,
-  type VaultRegistry,
-} from './lib/vault-registry.js';
+import { createSemanticModule, type ISemanticModuleDeps } from './modules/semantic/index.js';
+import { createOperationsModule, type IOperationsModuleDeps } from './modules/operations/index.js';
+import { VaultRegistry, type IVaultEntryDeps, type IVaultRegistry } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { FsVaultWriter } from './lib/obsidian/vault-writer.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
@@ -43,9 +39,9 @@ export async function readExternalAgentInstructions(vaultPath: string): Promise<
 }
 
 export interface NeuroVaultStartupDependencies {
-  semantic?: SemanticModuleDeps;
-  operations?: OperationsModuleDeps;
-  vaultEntryDeps?: Partial<VaultEntryDeps>;
+  semantic?: ISemanticModuleDeps;
+  operations?: IOperationsModuleDeps;
+  vaultEntryDeps?: Partial<IVaultEntryDeps>;
   serverFactory?: (instructions: string) => ToolServer;
   transportFactory?: () => StdioServerTransport;
 }
@@ -140,7 +136,7 @@ const GET_VAULT_OVERVIEW_HINT = `\
 
 Before reaching for \`list_tags\`, \`list_properties\`, or exploratory \`query_notes\`, call \`get_vault_overview\` once at the start of a session. It returns the top-level folder layout with counts, the top tags, frontmatter properties with inferred types, the total note count, and the top 10 notes by inbound wikilinks — enough to orient yourself in a single call. The same payload is available as the MCP resource \`vault://overview\` for clients that auto-load resources.`;
 
-export async function buildServerInstructions(registry: VaultRegistry): Promise<string> {
+export async function buildServerInstructions(registry: IVaultRegistry): Promise<string> {
   let result = STATIC_SERVER_INSTRUCTIONS;
   result += '\n\n' + GET_VAULT_OVERVIEW_HINT;
 
@@ -172,7 +168,7 @@ function defaultTransportFactory(): StdioServerTransport {
   return new StdioServerTransport();
 }
 
-function buildDefaultVaultEntryDeps(overrides: Partial<VaultEntryDeps> = {}): VaultEntryDeps {
+function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): IVaultEntryDeps {
   return {
     readerFactory: ({ vaultRoot }) => new FsVaultReader({ vaultRoot }),
     writerFactory: ({ vaultRoot }) => new FsVaultWriter({ vaultRoot }),
@@ -194,7 +190,7 @@ export async function startNeuroVaultServer(
     throw new Error('No modules enabled — pass --semantic or --operations');
   }
 
-  const registry = await createVaultRegistry(
+  const registry = await VaultRegistry.create(
     {
       vaults: config.vaults,
       operationsEnabled: config.operations.enabled,

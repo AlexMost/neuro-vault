@@ -5,7 +5,7 @@ import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
-import type { VaultRegistry } from '../../src/lib/vault-registry.js';
+import type { IVaultRegistry } from '../../src/lib/vault-registry.js';
 
 const noopProvider = {
   createNote: vi.fn(),
@@ -52,7 +52,7 @@ const noopRegistry = {
   isMulti: vi.fn(() => false),
   names: vi.fn(() => ['test']),
   semanticAvailableEntries: vi.fn(() => []),
-} as unknown as VaultRegistry;
+} as unknown as IVaultRegistry;
 
 const noopDeps = {
   registry: noopRegistry,

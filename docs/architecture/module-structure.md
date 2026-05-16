@@ -31,8 +31,8 @@ Different users want different things. Some have Smart Connections set up and wa
 parseConfig(argv) → ServerConfig
    │
    ▼
-createVaultRegistry(config, deps) → VaultRegistry
-   │  (one VaultEntry per --vault name:path; per-vault corpus errors
+VaultRegistry.create(config, deps) → VaultRegistry
+   │  (one IVaultEntry per --vault name:path; per-vault corpus errors
    │   are caught and stored as semanticAvailable:false, not thrown)
    ▼
 startNeuroVaultServer(config, deps)
@@ -56,7 +56,7 @@ flowchart LR
         direction TB
         CLI[cli.ts<br/>config + flags]
         Core[server.ts<br/>tool registration]
-        Registry[VaultRegistry<br/>one VaultEntry per vault]
+        Registry[VaultRegistry<br/>one IVaultEntry per vault]
         subgraph Semantic[Semantic module]
             direction TB
             Retrieval[Retrieval policy<br/>quick / deep]

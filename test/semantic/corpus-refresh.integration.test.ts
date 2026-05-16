@@ -10,7 +10,7 @@ import { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import { FsVaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import { createListMatchingPaths } from '../../src/lib/obsidian/query/index.js';
 import type { ToolRegistration } from '../../src/lib/tool-registration.js';
-import type { VaultRegistry, VaultEntry } from '../../src/lib/vault-registry.js';
+import type { IVaultRegistry, IVaultEntry } from '../../src/lib/vault-registry.js';
 
 const MODEL_KEY = 'bge-micro-v2';
 
@@ -38,7 +38,7 @@ function findTool(tools: ToolRegistration[], name: string): ToolRegistration {
   return match;
 }
 
-function makeRegistryForEntry(entry: VaultEntry): VaultRegistry {
+function makeRegistryForEntry(entry: IVaultEntry): IVaultRegistry {
   return {
     get: vi.fn(),
     require: vi.fn(),
@@ -81,7 +81,7 @@ describe('corpus refresh through semantic tools', () => {
     const graph = new WikilinkGraphIndex({ reader });
     const listMatchingPaths = createListMatchingPaths({ reader, graph });
 
-    const entry: VaultEntry = {
+    const entry: IVaultEntry = {
       name: 'vault',
       path: vaultPath,
       smartEnvPath,

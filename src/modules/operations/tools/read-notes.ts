@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
-import type { VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { normalizePath, validateReadNotesInput } from '../tool-helpers.js';
 import type { ReadNotesResult, ReadNotesResultItem } from '../types.js';
@@ -17,7 +17,7 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface ReadNotesDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
 }
 
 export function buildReadNotesTool(

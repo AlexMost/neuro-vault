@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { runFanOut, runSemanticFanOut } from '../../src/lib/fan-out.js';
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
-import type { VaultEntry, VaultRegistry } from '../../src/lib/vault-registry.js';
+import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.js';
 
-function makeRegistry(entries: Partial<VaultEntry>[]): VaultRegistry {
-  const list = entries.map((e) => ({ semanticAvailable: true, ...e }) as VaultEntry);
+function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
+  const list = entries.map((e) => ({ semanticAvailable: true, ...e }) as IVaultEntry);
   return {
     get: (n) => list.find((e) => e.name === n),
     require: () => list[0],

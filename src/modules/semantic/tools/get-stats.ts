@@ -4,7 +4,7 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { SmartSource, ToolStats } from '../types.js';
-import type { VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 
 const inputSchema = z.object({
   vault: z.string().optional(),
@@ -13,7 +13,7 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface GetStatsDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
   modelKey: string;
 }
 

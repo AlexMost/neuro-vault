@@ -4,7 +4,7 @@ import path from 'node:path';
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 
-import type { ServerConfig, VaultConfig } from './types.js';
+import type { ServerConfig, IVaultConfig } from './types.js';
 
 const DEFAULT_MODEL_KEY = 'bge-micro-v2';
 const DEFAULT_MODEL_ID = 'TaylorAI/bge-micro-v2';
@@ -27,7 +27,7 @@ function basenameNoTrailingSlash(p: string): string {
   return path.basename(p.replace(/\/+$/, ''));
 }
 
-function buildVaultConfig(raw: string): VaultConfig {
+function buildVaultConfig(raw: string): IVaultConfig {
   const parsed = parseVaultFlag(raw);
   if (!path.isAbsolute(parsed.path)) {
     throw new Error(`--vault: path must be absolute, got "${parsed.path}"`);
@@ -100,7 +100,7 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
     throw new Error('At least one module must be enabled (--semantic or --operations)');
   }
 
-  const vaults: VaultConfig[] = rawVaults.map(buildVaultConfig);
+  const vaults: IVaultConfig[] = rawVaults.map(buildVaultConfig);
   const seen = new Set<string>();
   for (const v of vaults) {
     if (seen.has(v.name)) {

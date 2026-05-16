@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildVaultOverviewResource } from '../../../src/modules/operations/resources/vault-overview.js';
 import { buildOperationsResources } from '../../../src/modules/operations/resources/index.js';
-import type { VaultEntry } from '../../../src/lib/vault-registry.js';
+import type { IVaultEntry } from '../../../src/lib/vault-registry.js';
 import { makeGraph, makeProvider, makeReader } from '../tools/_helpers.js';
 import { makeTestRegistry } from '../tools/_test-registry.js';
 
-function makeEntry(overrides: Partial<VaultEntry> = {}): VaultEntry {
+function makeEntry(overrides: Partial<IVaultEntry> = {}): IVaultEntry {
   return {
     name: 'v',
     path: '/v',
@@ -17,7 +17,7 @@ function makeEntry(overrides: Partial<VaultEntry> = {}): VaultEntry {
     listMatchingPaths: async () => new Set<string>(),
     semanticAvailable: true,
     ...overrides,
-  } as VaultEntry;
+  } as IVaultEntry;
 }
 
 describe('operations.vaultOverview resource', () => {

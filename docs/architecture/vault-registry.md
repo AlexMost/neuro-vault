@@ -4,7 +4,7 @@ The index of per-vault primitives built once at server startup, consumed by both
 
 ## What it is
 
-`src/lib/vault-registry.ts` exports two things: the `VaultEntry` interface and `createVaultRegistry`, an async factory that builds a `VaultRegistry` from a list of `VaultConfig` objects.
+`src/lib/vault-registry.ts` exports two things: the `VaultEntry` interface and `VaultRegistry.create`, an async factory that builds a `VaultRegistry` from a list of `VaultConfig` objects.
 
 A `VaultEntry` bundles everything a module or tool handler needs to reach one vault:
 
@@ -25,12 +25,12 @@ The `VaultRegistry` interface exposes a small, stable API:
 
 ```typescript
 interface VaultRegistry {
-  get(name: string): VaultEntry | undefined;
-  require(name: string): VaultEntry; // throws VAULT_NOT_FOUND if missing
-  list(): VaultEntry[];
+  get(name: string): IVaultEntry | undefined;
+  require(name: string): IVaultEntry; // throws VAULT_NOT_FOUND if missing
+  list(): IVaultEntry[];
   isMulti(): boolean;
   names(): string[];
-  semanticAvailableEntries(): VaultEntry[];
+  semanticAvailableEntries(): IVaultEntry[];
 }
 ```
 
@@ -40,7 +40,7 @@ Before the registry, per-vault wiring lived inline in each module factory, which
 
 - **Modules become stateless consumers.** `createSemanticModule(registry, ...)` and `createOperationsModule(registry, ...)` pull the `VaultEntry` they need instead of receiving raw paths and constructing things themselves.
 - **Tool handlers are vault-agnostic.** A handler receives `(input, registry)`, calls `registry.require(name)` for a named vault, or fans out via `registry.list()` / `registry.semanticAvailableEntries()`. No handler owns startup wiring.
-- **Per-vault failures are data, not crashes.** If one vault's `.smart-env/multi/` is missing or empty, `createVaultRegistry` catches the throw, sets `semanticAvailable: false` and records the reason in `semanticUnavailableReason`. The server starts and the healthy vaults work normally. The failure surfaces at call time as `SEMANTIC_INDEX_NOT_FOUND`.
+- **Per-vault failures are data, not crashes.** If one vault's `.smart-env/multi/` is missing or empty, `VaultRegistry.create` catches the throw, sets `semanticAvailable: false` and records the reason in `semanticUnavailableReason`. The server starts and the healthy vaults work normally. The failure surfaces at call time as `SEMANTIC_INDEX_NOT_FOUND`.
 
 ## How it interacts
 
@@ -48,8 +48,8 @@ Before the registry, per-vault wiring lived inline in each module factory, which
 ServerConfig.vaults[]
       │
       ▼
-createVaultRegistry(config, deps)
-      │  (one VaultEntry per vault, per-vault corpus errors caught → semanticAvailable:false)
+VaultRegistry.create(config, deps)
+      │  (one IVaultEntry per vault, per-vault corpus errors caught → semanticAvailable:false)
       ▼
 VaultRegistry
       │
@@ -58,7 +58,7 @@ VaultRegistry
       └─── buildServerInstructions(registry)     ──► MCP instructions block (multi-vault section)
 ```
 
-`server.ts` is the only caller of `createVaultRegistry`. Both module factories receive the whole registry rather than individual entries so they can fan out without knowing vault count at compile time.
+`server.ts` is the only caller of `VaultRegistry.create`. Both module factories receive the whole registry rather than individual entries so they can fan out without knowing vault count at compile time.
 
 Tool handlers access the registry through three patterns:
 
@@ -68,8 +68,8 @@ Tool handlers access the registry through three patterns:
 
 ## Invariants
 
-- At least one `VaultEntry` is always present. Config-level validation rejects an empty `vaults` array before `createVaultRegistry` is called.
-- Vault names are unique. The registry builds a `Map<name, VaultEntry>` at construction time; duplicate names would shadow silently, but `parseConfig` rejects them first.
+- At least one `VaultEntry` is always present. Config-level validation rejects an empty `vaults` array before `VaultRegistry.create` is called.
+- Vault names are unique. The registry builds a `Map<name, IVaultEntry>` at construction time; duplicate names would shadow silently, but `parseConfig` rejects them first.
 - `semanticAvailable === true` if and only if `corpus` is defined and non-empty.
 - `semanticUnavailableReason` is always set when `semanticAvailable === false` and `--semantic` was passed.
 
@@ -77,5 +77,5 @@ Tool handlers access the registry through three patterns:
 
 - **No lazy vault discovery.** Every vault must be declared explicitly via `--vault name:path`. The registry never scans the filesystem for vaults.
 - **No on-the-fly re-registration.** The registry is built once and treated as immutable for the lifetime of the process. Adding a vault requires a server restart.
-- **No health checks beyond initial snapshot.** Each `corpus` is probed once during `createVaultRegistry` (a `corpus.snapshot()` call checks that the result is non-empty). After that, staleness detection is the corpus index's own responsibility.
+- **No health checks beyond initial snapshot.** Each `corpus` is probed once during `VaultRegistry.create` (a `corpus.snapshot()` call checks that the result is non-empty). After that, staleness detection is the corpus index's own responsibility.
 - **No vault routing logic.** The registry answers "give me vault X" or "list all vaults". Deciding which vault(s) a given tool call should target is the tool handler's concern.

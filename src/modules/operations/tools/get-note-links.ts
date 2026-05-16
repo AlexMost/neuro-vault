@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import type { NoteLinks, WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
-import type { VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { normalizePath } from '../tool-helpers.js';
 
 const inputSchema = z.object({
@@ -24,7 +24,7 @@ const DESCRIPTION = [
 ].join('\n');
 
 export interface GetNoteLinksDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
 }
 
 export function buildGetNoteLinksTool(

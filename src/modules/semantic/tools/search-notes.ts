@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
-import { runSemanticFanOut, type FanOutResult } from '../../../lib/fan-out.js';
+import { runSemanticFanOut, type IFanOutResult } from '../../../lib/fan-out.js';
 import {
   executeMultiRetrieval,
   executeRetrieval,
@@ -18,7 +18,7 @@ import {
   readThreshold,
 } from '../tool-helpers.js';
 import type { EmbeddingProvider, NoteFilter, SearchEngine, SmartSource } from '../types.js';
-import type { VaultEntry, VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
 
 const SEARCH_NOTES_DESCRIPTION = [
   'Search notes by semantic similarity. Best for fuzzy recall, topic exploration, or cross-language matches. Pass short keyword queries (1-4 words), not sentences.',
@@ -86,14 +86,14 @@ export type SearchNotesOutput =
   | EnrichResults<MultiRetrievalOutput>;
 
 export interface SearchNotesDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
 }
 
 async function buildExistingPathSet(
-  entry: VaultEntry,
+  entry: IVaultEntry,
   paths: Iterable<string>,
 ): Promise<Set<string>> {
   const unique = new Set(paths);
@@ -136,7 +136,7 @@ function narrowSources(
 }
 
 async function runSearchForEntry(
-  entry: VaultEntry,
+  entry: IVaultEntry,
   input: SearchNotesInput,
   deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'searchEngine' | 'modelKey'>,
 ): Promise<SearchNotesOutput> {
@@ -292,7 +292,7 @@ async function runSearchForEntry(
 
 export function buildSearchNotesTool(
   deps: SearchNotesDeps,
-): ITool<SearchNotesInput, SearchNotesOutput | FanOutResult<SearchNotesOutput>> {
+): ITool<SearchNotesInput, SearchNotesOutput | IFanOutResult<SearchNotesOutput>> {
   const { registry, embeddingProvider, searchEngine, modelKey } = deps;
   const entryDeps = { embeddingProvider, searchEngine, modelKey };
 

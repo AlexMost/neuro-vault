@@ -61,14 +61,14 @@ This is the single-vault invocation. The CLI surface is identical to v5.x for th
 ## ServerConfig
 
 ```ts
-export interface VaultConfig {
+export interface IVaultConfig {
   name: string;
   path: string; // absolute, normalized
   smartEnvPath: string; // <path>/.smart-env/multi
 }
 
 export interface ServerConfig {
-  vaults: VaultConfig[]; // length >= 1, names unique
+  vaults: IVaultConfig[]; // length >= 1, names unique
   semantic: {
     enabled: boolean;
     modelKey: string;
@@ -91,18 +91,18 @@ A new layer between `ServerConfig` and the modules.
 
 ```
 src/lib/vault-registry.ts
-  ├── VaultEntry { name, path, reader, writer?, provider?, graph,
+  ├── IVaultEntry { name, path, reader, writer?, provider?, graph,
   │                listMatchingPaths, corpus?, semanticAvailable: bool,
   │                semanticUnavailableReason?: string }
   └── VaultRegistry
-        ├── get(name): VaultEntry | undefined
-        ├── require(name): VaultEntry        // throws VAULT_NOT_FOUND
-        ├── list(): VaultEntry[]
+        ├── get(name): IVaultEntry | undefined
+        ├── require(name): IVaultEntry        // throws VAULT_NOT_FOUND
+        ├── list(): IVaultEntry[]
         ├── isMulti(): boolean
-        └── semanticEnabledEntries(): VaultEntry[]
+        └── semanticEnabledEntries(): IVaultEntry[]
 ```
 
-`createVaultRegistry(config, deps)` builds per-vault primitives once at startup:
+`VaultRegistry.create(config, deps)` builds per-vault primitives once at startup:
 
 - One `FsVaultReader` per vault (`vaultRoot = vault.path`).
 - One `WikilinkGraphIndex` + `ListMatchingPaths` per vault (lazy refresh via existing `ensureFresh`).
@@ -221,10 +221,10 @@ The per-vault `.neuro-vault/for-external-agents.md` file continues to work — i
 ## Architecture impact
 
 ```
-parseConfig(argv) → ServerConfig { vaults: VaultConfig[] }
+parseConfig(argv) → ServerConfig { vaults: IVaultConfig[] }
    │
    ▼
-createVaultRegistry(config, deps)
+VaultRegistry.create(config, deps)
    │  builds per-vault primitives, attempts semantic load per vault
    ▼
 VaultRegistry

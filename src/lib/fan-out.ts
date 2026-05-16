@@ -1,13 +1,13 @@
-import type { VaultEntry, VaultRegistry } from './vault-registry.js';
+import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
 
-export interface SkippedVault {
+export interface ISkippedVault {
   vault: string;
   reason: string;
 }
 
-export interface FanOutResult<T extends Record<string, unknown>> {
+export interface IFanOutResult<T extends Record<string, unknown>> {
   results_by_vault: Array<{ vault: string } & T>;
-  skipped_vaults: SkippedVault[];
+  skipped_vaults: ISkippedVault[];
 }
 
 /**
@@ -18,9 +18,9 @@ export interface FanOutResult<T extends Record<string, unknown>> {
  * is always an empty array.
  */
 export async function runFanOut<T extends Record<string, unknown>>(
-  registry: VaultRegistry,
-  fn: (entry: VaultEntry) => Promise<T>,
-): Promise<FanOutResult<T>> {
+  registry: IVaultRegistry,
+  fn: (entry: IVaultEntry) => Promise<T>,
+): Promise<IFanOutResult<T>> {
   const entries = registry.list();
   const results = await Promise.all(
     entries.map(async (entry) => ({ vault: entry.name, ...(await fn(entry)) })),
@@ -37,11 +37,11 @@ export async function runFanOut<T extends Record<string, unknown>>(
  * (`entry.corpus` is defined when `entry.semanticAvailable === true`).
  */
 export async function runSemanticFanOut<T extends Record<string, unknown>>(
-  registry: VaultRegistry,
-  fn: (entry: VaultEntry) => Promise<T>,
-): Promise<FanOutResult<T>> {
+  registry: IVaultRegistry,
+  fn: (entry: IVaultEntry) => Promise<T>,
+): Promise<IFanOutResult<T>> {
   const eligible = registry.semanticAvailableEntries();
-  const skipped: SkippedVault[] = registry
+  const skipped: ISkippedVault[] = registry
     .list()
     .filter((e) => !e.semanticAvailable)
     .map((e) => ({ vault: e.name, reason: 'SEMANTIC_INDEX_NOT_FOUND' }));

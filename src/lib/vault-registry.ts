@@ -5,9 +5,9 @@ import type { WikilinkGraphIndex } from './obsidian/wikilink-graph.js';
 import type { ListMatchingPaths } from './obsidian/query/index.js';
 import type { VaultProvider } from './obsidian/vault-provider.js';
 import type { SmartConnectionsCorpusIndex } from './obsidian/smart-connections-corpus-index.js';
-import type { VaultConfig } from '../types.js';
+import type { IVaultConfig } from '../types.js';
 
-export interface VaultEntry {
+export interface IVaultEntry {
   name: string;
   path: string;
   smartEnvPath: string;
@@ -21,7 +21,7 @@ export interface VaultEntry {
   semanticUnavailableReason?: string;
 }
 
-export interface VaultEntryDeps {
+export interface IVaultEntryDeps {
   readerFactory: (opts: { vaultRoot: string }) => VaultReader;
   writerFactory: (opts: { vaultRoot: string }) => VaultWriter;
   graphFactory: (opts: { reader: VaultReader }) => WikilinkGraphIndex;
@@ -36,88 +36,117 @@ export interface VaultEntryDeps {
   }) => Promise<SmartConnectionsCorpusIndex>;
 }
 
-export interface VaultRegistryConfig {
-  vaults: VaultConfig[];
+export interface IVaultRegistryConfig {
+  vaults: IVaultConfig[];
   operationsEnabled: boolean;
   semanticEnabled: boolean;
   modelKey: string;
   binaryPath?: string;
 }
 
-export interface VaultRegistry {
-  get(name: string): VaultEntry | undefined;
-  require(name: string): VaultEntry;
-  list(): VaultEntry[];
+/**
+ * Read-only contract every consumer (tool handlers, fan-out helpers, server
+ * wiring) sees. Tests stub this interface directly; production uses
+ * {@link VaultRegistry}.
+ */
+export interface IVaultRegistry {
+  get(name: string): IVaultEntry | undefined;
+  require(name: string): IVaultEntry;
+  list(): IVaultEntry[];
   isMulti(): boolean;
   names(): string[];
-  semanticAvailableEntries(): VaultEntry[];
+  semanticAvailableEntries(): IVaultEntry[];
 }
 
-export async function createVaultRegistry(
-  config: VaultRegistryConfig,
-  deps: VaultEntryDeps,
-): Promise<VaultRegistry> {
-  const entries: VaultEntry[] = [];
-  for (const v of config.vaults) {
-    const reader = deps.readerFactory({ vaultRoot: v.path });
-    const graph = deps.graphFactory({ reader });
-    const listMatchingPaths = deps.listMatchingPathsFactory({ reader, graph });
-    const writer = config.operationsEnabled ? deps.writerFactory({ vaultRoot: v.path }) : undefined;
-    const provider = config.operationsEnabled
-      ? deps.providerFactory({ vaultName: v.name, binaryPath: config.binaryPath })
-      : undefined;
+/**
+ * Default registry implementation. Construct via the static async {@link create}
+ * factory — building entries is async because per-vault Smart Connections
+ * corpus loading involves disk I/O.
+ */
+export class VaultRegistry implements IVaultRegistry {
+  private readonly byName: Map<string, IVaultEntry>;
 
-    let corpus: SmartConnectionsCorpusIndex | undefined;
-    let semanticAvailable = false;
-    let semanticUnavailableReason: string | undefined;
-    if (config.semanticEnabled) {
-      try {
-        corpus = await deps.corpusFactory({
-          smartEnvPath: v.smartEnvPath,
-          modelKey: config.modelKey,
-        });
-        const snap = await corpus.snapshot();
-        if (snap.sources.size === 0) {
-          semanticUnavailableReason = 'Smart Connections corpus is empty';
+  private constructor(private readonly entries: ReadonlyArray<IVaultEntry>) {
+    this.byName = new Map(entries.map((e) => [e.name, e]));
+  }
+
+  static async create(config: IVaultRegistryConfig, deps: IVaultEntryDeps): Promise<VaultRegistry> {
+    const entries: IVaultEntry[] = [];
+    for (const v of config.vaults) {
+      const reader = deps.readerFactory({ vaultRoot: v.path });
+      const graph = deps.graphFactory({ reader });
+      const listMatchingPaths = deps.listMatchingPathsFactory({ reader, graph });
+      const writer = config.operationsEnabled
+        ? deps.writerFactory({ vaultRoot: v.path })
+        : undefined;
+      const provider = config.operationsEnabled
+        ? deps.providerFactory({ vaultName: v.name, binaryPath: config.binaryPath })
+        : undefined;
+
+      let corpus: SmartConnectionsCorpusIndex | undefined;
+      let semanticAvailable = false;
+      let semanticUnavailableReason: string | undefined;
+      if (config.semanticEnabled) {
+        try {
+          corpus = await deps.corpusFactory({
+            smartEnvPath: v.smartEnvPath,
+            modelKey: config.modelKey,
+          });
+          const snap = await corpus.snapshot();
+          if (snap.sources.size === 0) {
+            semanticUnavailableReason = 'Smart Connections corpus is empty';
+            corpus = undefined;
+          } else {
+            semanticAvailable = true;
+          }
+        } catch (err) {
+          semanticUnavailableReason = err instanceof Error ? err.message : String(err);
           corpus = undefined;
-        } else {
-          semanticAvailable = true;
         }
-      } catch (err) {
-        semanticUnavailableReason = err instanceof Error ? err.message : String(err);
-        corpus = undefined;
       }
-    }
 
-    entries.push({
-      name: v.name,
-      path: v.path,
-      smartEnvPath: v.smartEnvPath,
-      reader,
-      writer,
-      provider,
-      graph,
-      listMatchingPaths,
-      corpus,
-      semanticAvailable,
-      semanticUnavailableReason,
+      entries.push({
+        name: v.name,
+        path: v.path,
+        smartEnvPath: v.smartEnvPath,
+        reader,
+        writer,
+        provider,
+        graph,
+        listMatchingPaths,
+        corpus,
+        semanticAvailable,
+        semanticUnavailableReason,
+      });
+    }
+    return new VaultRegistry(entries);
+  }
+
+  get(name: string): IVaultEntry | undefined {
+    return this.byName.get(name);
+  }
+
+  require(name: string): IVaultEntry {
+    const entry = this.byName.get(name);
+    if (entry) return entry;
+    throw new ToolHandlerError('VAULT_NOT_FOUND', `Vault "${name}" is not registered`, {
+      details: { requested: name, registered_vaults: this.names() },
     });
   }
 
-  const byName = new Map(entries.map((e) => [e.name, e]));
+  list(): IVaultEntry[] {
+    return [...this.entries];
+  }
 
-  return {
-    get: (name) => byName.get(name),
-    require: (name) => {
-      const e = byName.get(name);
-      if (e) return e;
-      throw new ToolHandlerError('VAULT_NOT_FOUND', `Vault "${name}" is not registered`, {
-        details: { requested: name, registered_vaults: entries.map((x) => x.name) },
-      });
-    },
-    list: () => [...entries],
-    names: () => entries.map((e) => e.name),
-    isMulti: () => entries.length > 1,
-    semanticAvailableEntries: () => entries.filter((e) => e.semanticAvailable),
-  };
+  names(): string[] {
+    return this.entries.map((e) => e.name);
+  }
+
+  isMulti(): boolean {
+    return this.entries.length > 1;
+  }
+
+  semanticAvailableEntries(): IVaultEntry[] {
+    return this.entries.filter((e) => e.semanticAvailable);
+  }
 }

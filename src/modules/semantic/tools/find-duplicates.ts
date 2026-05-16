@@ -6,7 +6,7 @@ import { resolveVault } from '../../../lib/resolve-vault.js';
 import { pathExistsForEntry } from '../tool-helpers.js';
 import { readThreshold } from '../tool-helpers.js';
 import type { DuplicatePair, SearchEngine } from '../types.js';
-import type { VaultEntry, VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
 
 const DEFAULT_DUPLICATE_THRESHOLD = 0.9;
 
@@ -20,13 +20,13 @@ type Input = z.infer<typeof inputSchema>;
 type StampedDuplicatePair = DuplicatePair & { vault: string };
 
 export interface FindDuplicatesDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
   searchEngine: SearchEngine;
   modelKey: string;
 }
 
 async function buildExistingPathSet(
-  entry: VaultEntry,
+  entry: IVaultEntry,
   paths: Iterable<string>,
 ): Promise<Set<string>> {
   const unique = new Set(paths);

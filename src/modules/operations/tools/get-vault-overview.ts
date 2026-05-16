@@ -2,9 +2,9 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
-import type { VaultRegistry, VaultEntry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry, IVaultEntry } from '../../../lib/vault-registry.js';
 import { computeVaultOverview, type VaultOverview } from '../../../lib/obsidian/vault-overview.js';
-import { runFanOut, type FanOutResult } from '../../../lib/fan-out.js';
+import { runFanOut, type IFanOutResult } from '../../../lib/fan-out.js';
 
 const inputSchema = z.object({
   vault: z.string().optional(),
@@ -13,13 +13,13 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface GetVaultOverviewDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
 }
 
 // VaultOverview & Record<string, unknown> satisfies the FanOut constraint
 type VaultOverviewRecord = VaultOverview & Record<string, unknown>;
 
-async function runOverviewForEntry(entry: VaultEntry): Promise<VaultOverviewRecord> {
+async function runOverviewForEntry(entry: IVaultEntry): Promise<VaultOverviewRecord> {
   const overview = await computeVaultOverview({
     reader: entry.reader,
     provider: entry.provider!,
@@ -30,7 +30,7 @@ async function runOverviewForEntry(entry: VaultEntry): Promise<VaultOverviewReco
 
 export function buildGetVaultOverviewTool(
   deps: GetVaultOverviewDeps,
-): ITool<Input, ({ vault: string } & VaultOverview) | FanOutResult<VaultOverviewRecord>> {
+): ITool<Input, ({ vault: string } & VaultOverview) | IFanOutResult<VaultOverviewRecord>> {
   const { registry } = deps;
   return {
     name: 'get_vault_overview',

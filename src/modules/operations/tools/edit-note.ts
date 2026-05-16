@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
-import type { VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument, normalizePath } from '../tool-helpers.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildBasenameIndex } from '../../../lib/obsidian/link-resolver.js';
@@ -20,7 +20,7 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface EditNoteDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
 }
 
 export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: string }> {

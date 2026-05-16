@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
-import type { VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
 
 const NOTES_TODAY_CAP = 200;
@@ -30,7 +30,7 @@ export interface ReadDailyHandlerResult {
 }
 
 export interface ReadDailyDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
 }
 
 export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyHandlerResult> {

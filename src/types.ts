@@ -16,14 +16,14 @@ export type {
   DuplicatePair,
 } from './modules/semantic/types.js';
 
-export interface VaultConfig {
+export interface IVaultConfig {
   name: string;
   path: string; // absolute, normalized
   smartEnvPath: string; // <path>/.smart-env/multi
 }
 
 export interface ServerConfig {
-  vaults: VaultConfig[]; // length >= 1, names unique
+  vaults: IVaultConfig[]; // length >= 1, names unique
   semantic: {
     enabled: boolean;
     modelKey: string;

@@ -2,11 +2,11 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
-import type { VaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
-import { runFanOut, type FanOutResult } from '../../../lib/fan-out.js';
+import { runFanOut, type IFanOutResult } from '../../../lib/fan-out.js';
 import type { QueryNotesToolInput } from '../types.js';
-import type { VaultEntry } from '../../../lib/vault-registry.js';
+import type { IVaultEntry } from '../../../lib/vault-registry.js';
 
 const queryNotesSortSchema = z.object({
   field: z.string().min(1),
@@ -25,7 +25,7 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export interface QueryNotesDeps {
-  registry: VaultRegistry;
+  registry: IVaultRegistry;
 }
 
 export interface QueryNotesResultItemWithVault {
@@ -46,7 +46,7 @@ export interface QueryNotesResultWithVault {
 type QueryNotesResultRecord = QueryNotesResultWithVault & Record<string, unknown>;
 
 async function runQueryForEntry(
-  entry: VaultEntry,
+  entry: IVaultEntry,
   input: QueryNotesToolInput & { vault?: string },
 ): Promise<QueryNotesResultRecord> {
   const raw = await runQueryNotes(input, entry.reader, entry.graph);
@@ -59,7 +59,7 @@ async function runQueryForEntry(
 
 export function buildQueryNotesTool(
   deps: QueryNotesDeps,
-): ITool<Input, QueryNotesResultWithVault | FanOutResult<QueryNotesResultRecord>> {
+): ITool<Input, QueryNotesResultWithVault | IFanOutResult<QueryNotesResultRecord>> {
   const { registry } = deps;
   return {
     name: 'query_notes',
