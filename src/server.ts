@@ -145,7 +145,7 @@ export async function buildServerInstructions(registry: IVaultRegistry): Promise
       .names()
       .map((n) => `"${n}"`)
       .join(', ');
-    result += `\n\n## Multi-vault mode\n\nThis server is registered with multiple vaults: ${names}. Every tool accepts an optional \`vault\` parameter. For broad recall, \`search_notes\`, \`query_notes\`, and \`get_vault_overview\` fan out across all vaults when \`vault\` is omitted; other tools (reads of specific paths, writes, single-vault diagnostics) require an explicit \`vault\` — omitting it returns \`VAULT_REQUIRED\`. Path-shaped parameters (\`path\`, \`paths\`, \`path_prefix\`) remain vault-relative; vault identity is always carried by \`vault\`.`;
+    result += `\n\n## Multi-vault mode\n\nThis server is registered with multiple vaults: ${names}. Every tool accepts an optional \`vault\` parameter. For broad recall, \`search_notes\`, \`query_notes\`, \`get_vault_overview\`, \`list_tags\`, and \`list_properties\` fan out across all vaults when \`vault\` is omitted; other tools (reads of specific paths, writes, single-vault diagnostics) require an explicit \`vault\` — omitting it returns \`VAULT_REQUIRED\`. Fan-out responses include \`results_by_vault\`, \`skipped_vaults\` (vaults pre-filtered out, e.g. missing semantic index), and \`failed_vaults\` (per-vault runtime errors with \`{ code, message, details? }\`) — a single failed vault does not abort the whole call. Path-shaped parameters (\`path\`, \`paths\`, \`path_prefix\`) remain vault-relative; vault identity is always carried by \`vault\`.`;
   }
 
   for (const entry of registry.list()) {
