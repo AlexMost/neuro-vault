@@ -53,12 +53,7 @@ Trivial work (typo fix, dependency bump, doc tweak) does not need a spec.
 - Error responses go through `ToolHandlerError` so MCP clients receive structured `{ code, message, details }`.
 - New external command invocations use `execFile` with an args array — never `exec` with an interpolated string.
 - Format with prettier; lint with eslint. Both run in `prepublishOnly`.
-
-### Interface and class naming
-
-- **`I` prefix for interfaces.** New interface declarations get the `I` prefix: `IVaultEntry`, `ITool`, `IResource`, `IFanOutResult`. This matches the existing `ITool`/`IResource` convention and makes it visually obvious in import lists which symbols are structural contracts vs concrete implementations. Pre-existing interfaces without the prefix are not renamed unless they are touched by an ongoing change for another reason.
-- **Classes do not get the `I` prefix.** `VaultRegistry` (class) implements `IVaultRegistry` (interface). Consumers depend on the interface; the class is the default runtime implementation. This makes substituting an alternative implementation cheap.
-- **One file per concept, not per type.** Co-locate small related types in the same file as the concept they describe (e.g. `IVaultEntry`, `IVaultEntryDeps`, `IVaultRegistryConfig`, `IVaultRegistry`, and `class VaultRegistry` all live in `src/lib/vault-registry.ts`). Split into separate files only when the same interface is reused across modules or when the file grows beyond what's easy to hold in context. "One interface per file" is the wrong default for a small TypeScript codebase — it inflates the import surface without improving cohesion.
+- Naming and file-layout conventions (I-prefix for interfaces, classes without prefix, one file per concept) — see [`docs/architecture/naming-conventions.md`](docs/architecture/naming-conventions.md).
 
 ## MCP parameter dictionary
 
