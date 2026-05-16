@@ -47,6 +47,44 @@ describe('createVaultRegistry', () => {
     expect(registry.get('missing')).toBeUndefined();
   });
 
+  it('get is case-insensitive but entry name preserves original casing', async () => {
+    const registry = await VaultRegistry.create(
+      {
+        vaults: [vault('Obsidian', '/v/Obsidian')],
+        operationsEnabled: true,
+        semanticEnabled: false,
+        modelKey: 'm',
+      },
+      fakeDeps(),
+    );
+    expect(registry.get('Obsidian')?.name).toBe('Obsidian');
+    expect(registry.get('obsidian')?.name).toBe('Obsidian');
+    expect(registry.get('OBSIDIAN')?.name).toBe('Obsidian');
+    expect(registry.get('OBsiDIAN')?.name).toBe('Obsidian');
+  });
+
+  it('require is case-insensitive but error preserves the requested casing', async () => {
+    const registry = await VaultRegistry.create(
+      {
+        vaults: [vault('Obsidian', '/v/Obsidian')],
+        operationsEnabled: true,
+        semanticEnabled: false,
+        modelKey: 'm',
+      },
+      fakeDeps(),
+    );
+    expect(registry.require('obsidian').name).toBe('Obsidian');
+    try {
+      registry.require('TestVault');
+      throw new Error('expected throw');
+    } catch (err) {
+      expect((err as ToolHandlerError).details).toEqual({
+        requested: 'TestVault',
+        registered_vaults: ['Obsidian'],
+      });
+    }
+  });
+
   it('require throws VAULT_NOT_FOUND for unknown name', async () => {
     const registry = await VaultRegistry.create(
       {

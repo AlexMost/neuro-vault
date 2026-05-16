@@ -68,6 +68,18 @@ describe('parseConfig', () => {
     );
   });
 
+  it('rejects basename collision case-insensitively (Sandbox vs sandbox)', async () => {
+    const a = path.join(tmpRoot, 'NestedA', 'Sandbox');
+    const b = path.join(tmpRoot, 'NestedB', 'sandbox');
+    await fs.mkdir(path.dirname(a), { recursive: true });
+    await fs.mkdir(path.dirname(b), { recursive: true });
+    await fs.mkdir(a);
+    await fs.mkdir(b);
+    await expect(parseConfig(['node', 'cli.js', '--vault', a, '--vault', b])).rejects.toThrow(
+      /case-insensitive/,
+    );
+  });
+
   it('rejects a relative path', async () => {
     await expect(parseConfig(['node', 'cli.js', '--vault', 'rel/path'])).rejects.toThrow(
       /absolute/,

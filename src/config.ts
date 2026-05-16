@@ -86,15 +86,20 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
   }
 
   const vaults: IVaultConfig[] = rawVaults.map(buildVaultConfig);
+  // Case-insensitive uniqueness: vault lookup is case-insensitive (so callers
+  // can type "obsidian" or "Obsidian"), which means two vaults with basenames
+  // that differ only in case (Sandbox vs sandbox) would alias the same lookup
+  // key — rejected.
   const seen = new Set<string>();
   for (const v of vaults) {
-    if (seen.has(v.name)) {
+    const key = v.name.toLowerCase();
+    if (seen.has(key)) {
       throw new Error(
-        `--vault: two vaults share the directory basename "${v.name}". ` +
+        `--vault: two vaults share the directory basename "${v.name}" (case-insensitive). ` +
           `Rename one of the directories — the basename doubles as the MCP-side alias and must be unique.`,
       );
     }
-    seen.add(v.name);
+    seen.add(key);
   }
 
   return {

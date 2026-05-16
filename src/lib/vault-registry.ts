@@ -64,10 +64,14 @@ export interface IVaultRegistry {
  * corpus loading involves disk I/O.
  */
 export class VaultRegistry implements IVaultRegistry {
+  // Lowercased-name lookup. Entry names preserve original casing for display
+  // (error details, fan-out group keys, instructions). Lookup itself is
+  // case-insensitive so a caller passing "obsidian" hits the entry registered
+  // as "Obsidian".
   private readonly byName: Map<string, IVaultEntry>;
 
   private constructor(private readonly entries: ReadonlyArray<IVaultEntry>) {
-    this.byName = new Map(entries.map((e) => [e.name, e]));
+    this.byName = new Map(entries.map((e) => [e.name.toLowerCase(), e]));
   }
 
   static async create(config: IVaultRegistryConfig, deps: IVaultEntryDeps): Promise<VaultRegistry> {
@@ -123,11 +127,11 @@ export class VaultRegistry implements IVaultRegistry {
   }
 
   get(name: string): IVaultEntry | undefined {
-    return this.byName.get(name);
+    return this.byName.get(name.toLowerCase());
   }
 
   require(name: string): IVaultEntry {
-    const entry = this.byName.get(name);
+    const entry = this.byName.get(name.toLowerCase());
     if (entry) return entry;
     throw new ToolHandlerError('VAULT_NOT_FOUND', `Vault "${name}" is not registered`, {
       details: { requested: name, registered_vaults: this.names() },
