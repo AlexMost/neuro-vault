@@ -49,7 +49,7 @@ export function buildSetPropertyTool(
         throw invalidArgument('key must not be empty', 'key');
       }
       const { value, type } = inferTypeAndValidate(input.value, input.type);
-      await entry.provider!.setProperty({ identifier, name: input.key.trim(), value, type });
+      await entry.provider.setProperty({ identifier, name: input.key.trim(), value, type });
       return { vault: entry.name, ok: true as const };
     },
   };

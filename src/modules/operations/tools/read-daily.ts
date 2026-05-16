@@ -48,7 +48,7 @@ export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyH
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'read_daily' });
-      const daily = await entry.provider!.readDaily();
+      const daily = await entry.provider.readDaily();
       const today = deriveToday(daily.path);
       const query = await runQueryNotes(
         {

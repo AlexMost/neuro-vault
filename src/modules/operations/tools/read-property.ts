@@ -43,7 +43,7 @@ export function buildReadPropertyTool(
       if (!input.key || input.key.trim() === '') {
         throw invalidArgument('key must not be empty', 'key');
       }
-      const result = await entry.provider!.readProperty({ identifier, name: input.key.trim() });
+      const result = await entry.provider.readProperty({ identifier, name: input.key.trim() });
       return { vault: entry.name, ...result };
     },
   };

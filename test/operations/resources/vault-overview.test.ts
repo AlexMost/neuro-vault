@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildVaultOverviewResource } from '../../../src/modules/operations/resources/vault-overview.js';
 import { buildOperationsResources } from '../../../src/modules/operations/resources/index.js';
 import type { IVaultEntry } from '../../../src/lib/vault-registry.js';
-import { makeGraph, makeProvider, makeReader } from '../tools/_helpers.js';
+import { makeGraph, makeProvider, makeReader, makeWriter } from '../tools/_helpers.js';
 import { makeTestRegistry } from '../tools/_test-registry.js';
 
 function makeEntry(overrides: Partial<IVaultEntry> = {}): IVaultEntry {
@@ -12,6 +12,7 @@ function makeEntry(overrides: Partial<IVaultEntry> = {}): IVaultEntry {
     path: '/v',
     smartEnvPath: '/v/.smart-env/multi',
     reader: makeReader(),
+    writer: makeWriter(),
     provider: makeProvider(),
     graph: makeGraph(),
     listMatchingPaths: async () => new Set<string>(),

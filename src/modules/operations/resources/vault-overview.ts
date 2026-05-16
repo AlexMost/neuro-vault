@@ -11,11 +11,6 @@ export function buildVaultOverviewResource(
   opts: IVaultOverviewResourceOpts,
 ): IResource<VaultOverview> {
   const { uri, entry } = opts;
-  if (!entry.provider) {
-    throw new Error(
-      `buildVaultOverviewResource: vault "${entry.name}" has no provider — operations module must be enabled`,
-    );
-  }
   return {
     name: uri === 'vault://overview' ? 'vault-overview' : `vault-overview-${entry.name}`,
     uri,
@@ -26,7 +21,7 @@ export function buildVaultOverviewResource(
     handler: async () =>
       computeVaultOverview({
         reader: entry.reader,
-        provider: entry.provider!,
+        provider: entry.provider,
         graph: entry.graph,
       }),
   };

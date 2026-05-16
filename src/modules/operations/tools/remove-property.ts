@@ -43,7 +43,7 @@ export function buildRemovePropertyTool(
       if (!input.key || input.key.trim() === '') {
         throw invalidArgument('key must not be empty', 'key');
       }
-      await entry.provider!.removeProperty({ identifier, name: input.key.trim() });
+      await entry.provider.removeProperty({ identifier, name: input.key.trim() });
       return { vault: entry.name, ok: true as const };
     },
   };

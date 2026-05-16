@@ -21,7 +21,7 @@ type VaultOverviewRecord = VaultOverview & Record<string, unknown>;
 async function runOverviewForEntry(entry: IVaultEntry): Promise<VaultOverviewRecord> {
   const overview = await computeVaultOverview({
     reader: entry.reader,
-    provider: entry.provider!,
+    provider: entry.provider,
     graph: entry.graph,
   });
   return overview as VaultOverviewRecord;

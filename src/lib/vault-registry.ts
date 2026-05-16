@@ -12,8 +12,8 @@ export interface IVaultEntry {
   path: string;
   smartEnvPath: string;
   reader: VaultReader;
-  writer?: VaultWriter;
-  provider?: VaultProvider;
+  writer: VaultWriter;
+  provider: VaultProvider;
   graph: WikilinkGraphIndex;
   listMatchingPaths: ListMatchingPaths;
   corpus?: SmartConnectionsCorpusIndex;

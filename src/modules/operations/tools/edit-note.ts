@@ -64,13 +64,13 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: str
         if (input.replace === '') {
           throw invalidArgument('replace must not be empty', 'replace');
         }
-        await entry.writer!.replaceInNote({
+        await entry.writer.replaceInNote({
           path,
           find: input.replace,
           content: input.content,
         });
       } else {
-        await entry.writer!.replaceFullBody({ path, content: input.content });
+        await entry.writer.replaceFullBody({ path, content: input.content });
       }
 
       return { vault: entry.name };
