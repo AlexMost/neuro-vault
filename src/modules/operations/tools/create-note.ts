@@ -45,9 +45,6 @@ export function buildCreateNoteTool(
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'create_note' });
-      if (!entry.provider) {
-        throw invalidArgument('operations module is disabled', 'vault');
-      }
       if (input.name === undefined && input.path === undefined) {
         throw invalidArgument('Provide name or path', 'name');
       }
