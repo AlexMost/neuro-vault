@@ -77,4 +77,46 @@ describe('buildOperationsResources', () => {
       'vault://b/overview',
     ]);
   });
+
+  it('each resource handler returns the overview of its own vault — not the last one registered', async () => {
+    const readerA = makeReader({ scan: vi.fn().mockResolvedValue(['A/note.md']) });
+    const readerB = makeReader({
+      scan: vi.fn().mockResolvedValue(['B/note1.md', 'B/note2.md']),
+    });
+    const providerA = makeProvider({
+      listTags: vi.fn().mockResolvedValue([{ name: 'fromA', count: 7 }]),
+    });
+    const providerB = makeProvider({
+      listTags: vi.fn().mockResolvedValue([{ name: 'fromB', count: 11 }]),
+    });
+    const registry = makeTestRegistry([
+      makeEntry({ name: 'a', path: '/a', reader: readerA, provider: providerA }),
+      makeEntry({ name: 'b', path: '/b', reader: readerB, provider: providerB }),
+    ]);
+
+    const resources = buildOperationsResources({ registry });
+    const byUri = new Map(resources.map((r) => [r.uri, r]));
+
+    const aResp = await byUri
+      .get('vault://a/overview')!
+      .handler(new URL('vault://a/overview'), {} as never);
+    const bResp = await byUri
+      .get('vault://b/overview')!
+      .handler(new URL('vault://b/overview'), {} as never);
+
+    expect(aResp.contents[0].uri).toBe('vault://a/overview');
+    expect(bResp.contents[0].uri).toBe('vault://b/overview');
+
+    const aPayload = JSON.parse((aResp.contents[0] as { text: string }).text);
+    const bPayload = JSON.parse((bResp.contents[0] as { text: string }).text);
+
+    expect(aPayload.total_notes).toBe(1);
+    expect(bPayload.total_notes).toBe(2);
+    expect(aPayload.top_tags).toEqual([{ name: 'fromA', count: 7 }]);
+    expect(bPayload.top_tags).toEqual([{ name: 'fromB', count: 11 }]);
+
+    // Also verify the providers were actually called per-vault — no shared deps.
+    expect(providerA.listTags).toHaveBeenCalledTimes(1);
+    expect(providerB.listTags).toHaveBeenCalledTimes(1);
+  });
 });
