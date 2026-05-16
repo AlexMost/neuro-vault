@@ -1,17 +1,18 @@
 import { ToolHandlerError } from './tool-response.js';
-import type { VaultEntry, VaultRegistry } from './vault-registry.js';
+import type { ToolName } from './tool-names.js';
+import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
 
-export interface ResolveVaultOpts {
-  tool: string;
+export interface IResolveVaultOpts {
+  tool: ToolName;
   requireSemantic?: boolean;
 }
 
 export function resolveVault(
   input: { vault?: string },
-  registry: VaultRegistry,
-  opts: ResolveVaultOpts,
-): VaultEntry {
-  let entry: VaultEntry;
+  registry: IVaultRegistry,
+  opts: IResolveVaultOpts,
+): IVaultEntry {
+  let entry: IVaultEntry;
   if (input.vault !== undefined && input.vault !== '') {
     entry = registry.require(input.vault);
   } else if (!registry.isMulti()) {
