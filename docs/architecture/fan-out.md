@@ -31,7 +31,8 @@ Without a shared helper, every multi-vault tool would repeat the same loop: iter
 The line is sharp:
 
 - **Before** fan-out begins (input parsing, validation, registry lookup for an explicit `vault:`): errors throw and become a single fatal `isError: true` response. These errors apply uniformly across vaults; surfacing one per vault would be misleading.
-- **Inside** the per-vault `fn(entry)` callback: every throw — `ToolHandlerError`, plain `Error`, anything — gets caught by the fan-out helper and mapped into a `failed_vaults` entry. The other vaults are unaffected.
+- **Inside** the per-vault `fn(entry)` callback: most throws — `ToolHandlerError` with a runtime code, plain `Error`, anything — get caught by the fan-out helper and mapped into a `failed_vaults` entry. The other vaults are unaffected.
+- **Exception — input-validation codes inside `fn(entry)`:** if a `ToolHandlerError` thrown from inside the callback carries a code in `VALIDATION_ERROR_CODES` (`INVALID_ARGUMENT`, `INVALID_PARAMS`, `INVALID_FILTER`), the helper re-throws it as a single fatal error rather than capturing it. Some validation runs per-vault for historical reasons (e.g. `runQueryNotes` validates the filter inside the per-vault path); the whitelist makes sure those errors still reach the caller as one actionable fatal, not as N identical `failed_vaults` entries.
 
 ## Response shape
 
@@ -72,10 +73,12 @@ The two are intentionally separate. Skipped is "expected, deterministic, startup
 
 ## Rejection mapping
 
-`mapRejectionToFailedVault` (private to `fan-out.ts`):
+After `Promise.allSettled` completes, the helper:
 
-- `ToolHandlerError` → preserves `code`, `message`, and `details` verbatim.
-- Anything else (plain `Error`, primitive, etc.) → `{ code: 'INTERNAL_ERROR', message }`. Seeing `INTERNAL_ERROR` in `failed_vaults` is a smell — it means a per-vault code path threw something that wasn't a structured tool error. Fix the upstream throw site.
+1. **Scans for validation rejections.** If any rejection is a `ToolHandlerError` whose `code` is in `VALIDATION_ERROR_CODES` (`INVALID_ARGUMENT`, `INVALID_PARAMS`, `INVALID_FILTER`), re-throw the first such error. Validation outcomes are deterministic across vaults, so even though every vault runs the same per-vault function and may all throw the same code, the agent only needs to see it once as a fatal.
+2. **Otherwise maps each rejection** via `mapRejectionToFailedVault` (private to `fan-out.ts`):
+   - `ToolHandlerError` → preserves `code`, `message`, and `details` verbatim into `failed_vaults`.
+   - Anything else (plain `Error`, primitive, etc.) → `{ code: 'INTERNAL_ERROR', message }`. Seeing `INTERNAL_ERROR` in `failed_vaults` is a smell — it means a per-vault code path threw something that wasn't a structured tool error. Fix the upstream throw site.
 
 ## Zero-success case
 
