@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
-import { resolveVault } from '../../src/lib/resolve-vault.js';
+import { resolveVault, resolveSemanticVault } from '../../src/lib/resolve-vault.js';
 import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.js';
+import type { SmartConnectionsCorpusIndex } from '../../src/lib/obsidian/smart-connections-corpus-index.js';
 
 function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
   const list = entries.map((e) => ({ ...e }) as IVaultEntry);
@@ -68,22 +69,43 @@ describe('resolveVault', () => {
       });
     }
   });
+});
 
-  it('requireSemantic throws SEMANTIC_INDEX_NOT_FOUND for unavailable entry', () => {
+describe('resolveSemanticVault', () => {
+  it('single-vault, semantic available → returns entry with corpus defined (no !)', () => {
+    const fakeCorpus = { snapshot: async () => ({}) } as unknown as SmartConnectionsCorpusIndex;
+    const reg = makeRegistry([{ name: 'only', semanticAvailable: true, corpus: fakeCorpus }]);
+    const entry = resolveSemanticVault({}, reg, { tool: 'search_notes' });
+    expect(entry.name).toBe('only');
+    expect(entry.corpus).toBe(fakeCorpus);
+  });
+
+  it('single-vault, no semantic index → throws SEMANTIC_INDEX_NOT_FOUND', () => {
     const reg = makeRegistry([
       {
-        name: 'a',
+        name: 'only',
         semanticAvailable: false,
         semanticUnavailableReason: 'no .smart-env/',
       },
     ]);
     try {
-      resolveVault({ vault: 'a' }, reg, { tool: 'search_notes', requireSemantic: true });
+      resolveSemanticVault({}, reg, { tool: 'search_notes' });
       throw new Error('expected throw');
     } catch (err) {
       expect(err).toBeInstanceOf(ToolHandlerError);
       expect((err as ToolHandlerError).code).toBe('SEMANTIC_INDEX_NOT_FOUND');
-      expect((err as ToolHandlerError).details).toMatchObject({ vault: 'a' });
+      expect((err as ToolHandlerError).details).toMatchObject({ vault: 'only' });
     }
+  });
+
+  it('multi-vault, vault: "b" selects vault b (semantic available) over vault a (no semantic)', () => {
+    const fakeCorpus = { snapshot: async () => ({}) } as unknown as SmartConnectionsCorpusIndex;
+    const reg = makeRegistry([
+      { name: 'a', semanticAvailable: false },
+      { name: 'b', semanticAvailable: true, corpus: fakeCorpus },
+    ]);
+    const entry = resolveSemanticVault({ vault: 'b' }, reg, { tool: 'search_notes' });
+    expect(entry.name).toBe('b');
+    expect(entry.corpus).toBe(fakeCorpus);
   });
 });

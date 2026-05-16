@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { getNoteLinks, type BasenameIndex } from '../../../lib/obsidian/index.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { resolveVault } from '../../../lib/resolve-vault.js';
+import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
 import {
   normalizeNotePath,
   pathExistsForEntry,
@@ -181,12 +181,10 @@ export function buildGetSimilarNotesTool(
       ),
     inputSchema,
     handler: async (input) => {
-      const entry = resolveVault(input, registry, {
+      const entry = resolveSemanticVault(input, registry, {
         tool: 'get_similar_notes',
-        requireSemantic: true,
       });
-      // resolveVault with requireSemantic: true guarantees entry.corpus is defined
-      const corpus = entry.corpus!;
+      const corpus = entry.corpus;
       const notePath = normalizeNotePath(input.path);
       const limit = readPositiveInteger(input.limit, DEFAULT_LIMIT, 'limit');
       const threshold = readThreshold(input.threshold, DEFAULT_THRESHOLD, 'threshold');

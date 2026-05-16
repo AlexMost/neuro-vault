@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { resolveVault } from '../../../lib/resolve-vault.js';
+import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
 import { pathExistsForEntry } from '../tool-helpers.js';
 import { readThreshold } from '../tool-helpers.js';
 import type { DuplicatePair, SearchEngine } from '../types.js';
@@ -56,12 +56,10 @@ export function buildFindDuplicatesTool(
       ),
     inputSchema,
     handler: async (input) => {
-      const entry = resolveVault(input, registry, {
+      const entry = resolveSemanticVault(input, registry, {
         tool: 'find_duplicates',
-        requireSemantic: true,
       });
-      // resolveVault with requireSemantic: true guarantees entry.corpus is defined
-      const corpus = entry.corpus!;
+      const corpus = entry.corpus;
       const threshold = readThreshold(input.threshold, DEFAULT_DUPLICATE_THRESHOLD, 'threshold');
       try {
         const { sources } = await corpus.snapshot();
