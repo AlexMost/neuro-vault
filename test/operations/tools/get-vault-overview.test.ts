@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildGetVaultOverviewTool } from '../../../src/modules/operations/tools/get-vault-overview.js';
 import type { VaultOverview } from '../../../src/lib/obsidian/vault-overview.js';
+import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { makeGraph, makeProvider, makeReader } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
@@ -70,6 +71,43 @@ describe('operations.getVaultOverview tool', () => {
     // vault field is present and unique — no double-vault duplication
     expect(byVault.get('vault-a')!.vault).toBe('vault-a');
     expect(byVault.get('vault-b')!.vault).toBe('vault-b');
+  });
+
+  it('returns failed_vaults when one vault overview computation rejects', async () => {
+    const readerA = makeReader({ scan: vi.fn().mockResolvedValue(['a.md']) });
+    const readerB = makeReader({ scan: vi.fn().mockResolvedValue(['b.md']) });
+    const providerA = makeProvider({
+      listTags: vi.fn().mockResolvedValue([{ name: 'alpha', count: 1 }]),
+    });
+    const providerB = makeProvider({
+      listTags: vi
+        .fn()
+        .mockRejectedValue(new ToolHandlerError('CLI_UNAVAILABLE', 'obsidian not running')),
+    });
+    const registry = makeTestRegistry([
+      { name: 'vault-a', reader: readerA, provider: providerA, graph: makeGraph() },
+      { name: 'vault-b', reader: readerB, provider: providerB, graph: makeGraph() },
+    ]);
+    const tool = buildGetVaultOverviewTool({ registry });
+
+    const result = (await tool.handler({})) as {
+      results_by_vault: Array<SingleOverview>;
+      skipped_vaults: Array<{ vault: string; reason: string }>;
+      failed_vaults: Array<{ vault: string; error: { code: string; message: string } }>;
+    };
+
+    expect(result.skipped_vaults).toEqual([]);
+    expect(result.failed_vaults).toEqual([
+      {
+        vault: 'vault-b',
+        error: { code: 'CLI_UNAVAILABLE', message: 'obsidian not running' },
+      },
+    ]);
+    expect(result.results_by_vault).toHaveLength(1);
+    const vaultA = result.results_by_vault[0]!;
+    expect(vaultA.vault).toBe('vault-a');
+    expect(vaultA.total_notes).toBe(1);
+    expect(vaultA.top_tags).toEqual([{ name: 'alpha', count: 1 }]);
   });
 
   it('single-vault path still returns { vault, ...overview } flat shape (regression)', async () => {

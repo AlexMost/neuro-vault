@@ -7,6 +7,7 @@ import {
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
+import type { SmartConnectionsCorpusIndex } from '../../../src/lib/obsidian/smart-connections-corpus-index.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import {
   MODEL_KEY,
@@ -776,6 +777,86 @@ describe('searchNotes', () => {
         expect(byVault.has('v2')).toBe(true);
         expect(byVault.get('v1')!.results[0]!.path).toBe('note-a.md');
         expect(byVault.get('v2')!.results[0]!.path).toBe('note-b.md');
+      } finally {
+        await fs2.rm(vaultRoot1, { recursive: true, force: true });
+        await fs2.rm(vaultRoot2, { recursive: true, force: true });
+      }
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('returns failed_vaults when one vault semantic search rejects', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    try {
+      const sources1 = new Map([
+        ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
+      ]);
+      const corpusIndex1 = makeFakeCorpusIndex(sources1);
+      // vault b's corpus throws on snapshot — runSearchForEntry wraps it as DEPENDENCY_ERROR
+      const corpusIndex2 = {
+        snapshot: vi
+          .fn()
+          .mockRejectedValue(new ToolHandlerError('DEPENDENCY_ERROR', 'embedding lookup failed')),
+      };
+
+      const fs2 = await import('node:fs/promises');
+      const os2 = await import('node:os');
+      const path2 = await import('node:path');
+      const vaultRoot1 = await fs2.mkdtemp(path2.join(os2.tmpdir(), 'partial-v1-'));
+      const vaultRoot2 = await fs2.mkdtemp(path2.join(os2.tmpdir(), 'partial-v2-'));
+      await fs2.writeFile(path2.join(vaultRoot1, 'note-a.md'), '', 'utf8');
+
+      try {
+        const searchEngine = {
+          findNeighbors: vi.fn().mockReturnValue([{ path: 'note-a.md', similarity: 0.9 }]),
+          findBlockNeighbors: vi.fn().mockReturnValue([]),
+          findDuplicates: vi.fn().mockReturnValue([]),
+        };
+        const registry = makeTestRegistry([
+          {
+            name: 'v1',
+            path: vaultRoot1,
+            smartEnvPath,
+            corpus: corpusIndex1,
+            semanticAvailable: true,
+            graph: makeFakeGraph(),
+            listMatchingPaths: async () => new Set(),
+          },
+          {
+            name: 'v2',
+            path: vaultRoot2,
+            smartEnvPath,
+            corpus: corpusIndex2 as SmartConnectionsCorpusIndex,
+            semanticAvailable: true,
+            graph: makeFakeGraph(),
+            listMatchingPaths: async () => new Set(),
+          },
+        ]);
+        const tool = buildSearchNotesTool({
+          registry,
+          embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+          searchEngine,
+          modelKey: MODEL_KEY,
+        });
+
+        const result = (await tool.handler({ query: 'q', threshold: 0 })) as {
+          results_by_vault: Array<{ vault: string; results: Array<{ path: string }> }>;
+          skipped_vaults: Array<{ vault: string; reason: string }>;
+          failed_vaults: Array<{ vault: string; error: { code: string; message: string } }>;
+        };
+
+        expect(result.skipped_vaults).toEqual([]);
+        expect(result.failed_vaults).toEqual([
+          {
+            vault: 'v2',
+            error: { code: 'DEPENDENCY_ERROR', message: 'embedding lookup failed' },
+          },
+        ]);
+        expect(result.results_by_vault).toHaveLength(1);
+        const v1Entry = result.results_by_vault[0]!;
+        expect(v1Entry.vault).toBe('v1');
+        expect(v1Entry.results[0]!.path).toBe('note-a.md');
       } finally {
         await fs2.rm(vaultRoot1, { recursive: true, force: true });
         await fs2.rm(vaultRoot2, { recursive: true, force: true });
