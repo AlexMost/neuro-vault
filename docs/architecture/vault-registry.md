@@ -13,8 +13,8 @@ A `VaultEntry` bundles everything a module or tool handler needs to reach one va
 | `name`                      | always                                   | Unique identifier (left side of `--vault name:path`, or `path.basename`)  |
 | `path`                      | always                                   | Absolute path to the vault root                                           |
 | `reader`                    | always                                   | `FsVaultReader` — direct disk reads                                       |
-| `writer`                    | `--operations` enabled                   | `FsVaultWriter` — direct disk writes for in-place edits                   |
-| `provider`                  | `--operations` enabled                   | `ObsidianCLIProvider` — Obsidian CLI bridge for creates, properties, tags |
+| `writer`                    | always                                   | `FsVaultWriter` — direct disk writes for in-place edits                   |
+| `provider`                  | always                                   | `ObsidianCLIProvider` — Obsidian CLI bridge for creates, properties, tags |
 | `graph`                     | always                                   | `WikilinkGraphIndex` — lazy wikilink adjacency                            |
 | `listMatchingPaths`         | always                                   | Factory-produced function for structured path queries                     |
 | `corpus`                    | `--semantic` enabled AND corpus loadable | `SmartConnectionsCorpusIndex` wrapping the `.smart-env/multi/` data       |

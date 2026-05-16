@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { resolveVault } from '../../../lib/resolve-vault.js';
+import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
 import { runSemanticFanOut, type IFanOutResult } from '../../../lib/fan-out.js';
 import {
   executeMultiRetrieval,
@@ -19,6 +19,7 @@ import {
 } from '../tool-helpers.js';
 import type { EmbeddingProvider, NoteFilter, SearchEngine, SmartSource } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
+import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import { vaultParamShape } from '../../../lib/vault-param.js';
 
 const filterSchema = z.object({
@@ -99,13 +100,11 @@ function narrowSources(
 }
 
 async function runSearchForEntry(
-  entry: IVaultEntry,
+  entry: IVaultEntry & { corpus: SmartConnectionsCorpusIndex },
   input: SearchNotesInput,
   deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'searchEngine' | 'modelKey'>,
 ): Promise<SearchNotesOutput> {
-  // entry.corpus is guaranteed defined when semanticAvailable === true (enforced by resolveVault
-  // or runSemanticFanOut)
-  const corpus = entry.corpus!;
+  const corpus = entry.corpus;
   const { graph, listMatchingPaths } = entry;
   const { embeddingProvider, searchEngine, modelKey } = deps;
 
@@ -319,13 +318,19 @@ export function buildSearchNotesTool(
     inputSchema,
     handler: async (input) => {
       if (input.vault === undefined && registry.isMulti()) {
+        // runSemanticFanOut filters via semanticAvailableEntries(), so every
+        // entry reaching the callback has corpus defined — the cast bridges
+        // what TS cannot prove from the flag alone.
         return await runSemanticFanOut(registry, (entry) =>
-          runSearchForEntry(entry, input, entryDeps),
+          runSearchForEntry(
+            entry as IVaultEntry & { corpus: SmartConnectionsCorpusIndex },
+            input,
+            entryDeps,
+          ),
         );
       }
-      const entry = resolveVault(input, registry, {
+      const entry = resolveSemanticVault(input, registry, {
         tool: 'search_notes',
-        requireSemantic: true,
       });
       return runSearchForEntry(entry, input, entryDeps);
     },

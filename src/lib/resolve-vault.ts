@@ -1,10 +1,10 @@
 import { ToolHandlerError } from './tool-response.js';
 import type { ToolName } from './tool-names.js';
+import type { SmartConnectionsCorpusIndex } from './obsidian/smart-connections-corpus-index.js';
 import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
 
 export interface IResolveVaultOpts {
   tool: ToolName;
-  requireSemantic?: boolean;
 }
 
 export function resolveVault(
@@ -12,24 +12,30 @@ export function resolveVault(
   registry: IVaultRegistry,
   opts: IResolveVaultOpts,
 ): IVaultEntry {
-  let entry: IVaultEntry;
   if (input.vault !== undefined && input.vault !== '') {
-    entry = registry.require(input.vault);
-  } else if (!registry.isMulti()) {
-    entry = registry.list()[0];
-  } else {
-    throw new ToolHandlerError(
-      'VAULT_REQUIRED',
-      `Tool "${opts.tool}" requires a vault: parameter in multi-vault mode`,
-      { details: { tool: opts.tool, registered_vaults: registry.names() } },
-    );
+    return registry.require(input.vault);
   }
-  if (opts.requireSemantic && !entry.semanticAvailable) {
+  if (!registry.isMulti()) {
+    return registry.list()[0];
+  }
+  throw new ToolHandlerError(
+    'VAULT_REQUIRED',
+    `Tool "${opts.tool}" requires a vault: parameter in multi-vault mode`,
+    { details: { tool: opts.tool, registered_vaults: registry.names() } },
+  );
+}
+
+export function resolveSemanticVault(
+  input: { vault?: string },
+  registry: IVaultRegistry,
+  opts: IResolveVaultOpts,
+): IVaultEntry & { corpus: SmartConnectionsCorpusIndex } {
+  const entry = resolveVault(input, registry, opts);
+  if (!entry.semanticAvailable) {
     throw new ToolHandlerError(
       'SEMANTIC_INDEX_NOT_FOUND',
-      `Semantic index for vault "${entry.name}" is unavailable: ${
-        entry.semanticUnavailableReason ?? 'unknown reason'
-      }`,
+      `Semantic index for vault "${entry.name}" is unavailable: ` +
+        `${entry.semanticUnavailableReason ?? 'unknown reason'}`,
       {
         details: {
           vault: entry.name,
@@ -38,5 +44,8 @@ export function resolveVault(
       },
     );
   }
-  return entry;
+  // `semanticAvailable === true` is set in VaultRegistry.create only after a
+  // successful corpus snapshot, so corpus is defined at this point. The cast
+  // bridges what TS cannot prove (the flag and field are independent decls).
+  return entry as IVaultEntry & { corpus: SmartConnectionsCorpusIndex };
 }

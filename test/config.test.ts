@@ -118,18 +118,18 @@ describe('parseConfig', () => {
       '--obsidian-cli',
       '/usr/local/bin/obsidian',
     ]);
-    expect(config.operations.binaryPath).toBe('/usr/local/bin/obsidian');
+    expect(config.obsidianCli).toBe('/usr/local/bin/obsidian');
   });
 
-  it('rejects when both modules are disabled', async () => {
+  it('rejects --no-operations with an unknown-option error', async () => {
     await expect(
-      parseConfig(['node', 'cli.js', '--vault', vaultPath, '--no-operations', '--no-semantic']),
-    ).rejects.toThrow(/at least one module/i);
+      parseConfig(['node', 'cli.js', '--vault', vaultPath, '--no-operations']),
+    ).rejects.toThrow(/unknown.*operations/i);
   });
 
-  it('returns both modules enabled by default', async () => {
+  it('returns semantic enabled by default with obsidianCli undefined', async () => {
     const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
     expect(config.semantic.enabled).toBe(true);
-    expect(config.operations.enabled).toBe(true);
+    expect(config.obsidianCli).toBeUndefined();
   });
 });

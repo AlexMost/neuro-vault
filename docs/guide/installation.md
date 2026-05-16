@@ -5,7 +5,7 @@
 - Node.js 20+
 - Obsidian vault with the [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) plugin (embeddings must be generated)
 - Smart Connections data at `<vault>/.smart-env/multi/*.ajson`
-- _For vault operations (optional):_ the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. Pass `--no-operations` to disable, or `--obsidian-cli /path` to point at a custom binary.
+- _For vault operations (optional):_ the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. Without these, operations tools that require the CLI return `CLI_NOT_FOUND` / `CLI_UNAVAILABLE` at call time; pass `--obsidian-cli /path` to point at a custom binary.
 
 ## Install
 

@@ -6,7 +6,6 @@
 | ---------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--vault`        | yes      | —          | Absolute path to an Obsidian vault directory. Repeat the flag to register additional vaults. The MCP-side alias is always the directory basename; there is no override. |
 | `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip)                                                                                                                 |
-| `--operations`   | no       | `true`     | Enable vault operations module (`--no-operations`)                                                                                                                      |
 | `--obsidian-cli` | no       | `obsidian` | Path to the `obsidian` CLI binary (override only)                                                                                                                       |
 | `--help`         | no       | —          | Show help                                                                                                                                                               |
 
@@ -32,7 +31,7 @@ Follow the Neuro Vault MCP server instructions for routing between semantic sear
 
 **Search returns nothing** — try lowering the threshold: `threshold: 0.3`. Also check that `get_stats` shows a non-zero `totalNotes`.
 
-**Vault operations fail with `CLI_NOT_FOUND` / `CLI_UNAVAILABLE`** — the `obsidian` CLI isn't on `PATH`, or Obsidian isn't running. Install the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli), or pass `--obsidian-cli /absolute/path/to/obsidian`. Disable the module with `--no-operations` if you only want semantic search.
+**Vault operations fail with `CLI_NOT_FOUND` / `CLI_UNAVAILABLE`** — the `obsidian` CLI isn't on `PATH`, or Obsidian isn't running. Install the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli), or pass `--obsidian-cli /absolute/path/to/obsidian`.
 
 ## Limitations
 

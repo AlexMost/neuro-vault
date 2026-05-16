@@ -19,7 +19,7 @@ export interface ListTagsDeps {
 }
 
 async function runForEntry(entry: IVaultEntry): Promise<FanOutPayload> {
-  const results = await entry.provider!.listTags();
+  const results = await entry.provider.listTags();
   return { results };
 }
 

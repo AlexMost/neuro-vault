@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { resolveVault } from '../../../lib/resolve-vault.js';
+import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
 import type { SmartSource, ToolStats } from '../types.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
@@ -54,12 +54,10 @@ export function buildGetStatsTool(deps: GetStatsDeps): ITool<Input, { vault: str
       ),
     inputSchema,
     handler: async (input) => {
-      const entry = resolveVault(input, registry, {
+      const entry = resolveSemanticVault(input, registry, {
         tool: 'get_stats',
-        requireSemantic: true,
       });
-      // resolveVault with requireSemantic: true guarantees entry.corpus is defined
-      const corpus = entry.corpus!;
+      const corpus = entry.corpus;
       try {
         const { sources } = await corpus.snapshot();
         let totalBlocks = 0;

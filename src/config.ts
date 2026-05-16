@@ -61,11 +61,6 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
       default: true,
       describe: 'Enable semantic search module (Smart Connections embeddings)',
     })
-    .option('operations', {
-      type: 'boolean',
-      default: true,
-      describe: 'Enable vault operations module (Obsidian CLI required at call time)',
-    })
     .option('obsidian-cli', {
       type: 'string',
       describe: 'Path to the obsidian CLI binary (default: "obsidian" from PATH)',
@@ -79,10 +74,6 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
   const rawVaults = (args.vault ?? []) as string[];
   if (rawVaults.length === 0) {
     throw new Error('--vault is required: provide at least one vault with --vault <path>');
-  }
-
-  if (!args.semantic && !args.operations) {
-    throw new Error('At least one module must be enabled (--semantic or --operations)');
   }
 
   const vaults: IVaultConfig[] = rawVaults.map(buildVaultConfig);
@@ -109,9 +100,6 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
       modelKey: DEFAULT_MODEL_KEY,
       modelId: DEFAULT_MODEL_ID,
     },
-    operations: {
-      enabled: args.operations,
-      binaryPath: args['obsidian-cli'],
-    },
+    obsidianCli: args['obsidian-cli'],
   };
 }

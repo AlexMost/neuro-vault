@@ -64,41 +64,6 @@ function makeFakeCorpusIndex(
 }
 
 describe('Neuro Vault MCP server bootstrap', () => {
-  it('registers four semantic tools when only --semantic is enabled', async () => {
-    const tempRoot = await createTempVaultPath();
-    const vaultPath = path.join(tempRoot, 'vault');
-    await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
-
-    const server = createFakeServer();
-    const initialize = vi.fn().mockResolvedValue(undefined);
-    const corpusFactory = vi.fn().mockResolvedValue(makeFakeCorpusIndex());
-
-    try {
-      await main(['node', 'cli.js', '--vault', vaultPath, '--no-operations'], {
-        vaultEntryDeps: {
-          corpusFactory: () => corpusFactory(),
-        },
-        semantic: {
-          embeddingServiceFactory: () => ({ initialize, embed: vi.fn() }),
-        },
-        serverFactory: (_instructions: string) => server,
-        transportFactory: () => ({}) as never,
-      });
-
-      expect(server.registeredToolNames).toEqual([
-        'search_notes',
-        'get_similar_notes',
-        'find_duplicates',
-        'get_stats',
-      ]);
-      expect(server.registeredResourceUris).toEqual([]);
-      expect(server.connect).toHaveBeenCalledTimes(1);
-      await vi.waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
-    } finally {
-      await fs.rm(tempRoot, { recursive: true, force: true });
-    }
-  });
-
   it('returns SEMANTIC_INDEX_NOT_FOUND when Smart Connections directory is missing (startup tolerant)', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
@@ -121,7 +86,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
             modelKey: 'bge-micro-v2',
             modelId: 'TaylorAI/bge-micro-v2',
           },
-          operations: { enabled: false },
         },
         {
           semantic: {
@@ -169,7 +133,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
             modelKey: 'bge-micro-v2',
             modelId: 'TaylorAI/bge-micro-v2',
           },
-          operations: { enabled: false },
         },
         {
           vaultEntryDeps: {
@@ -197,7 +160,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('registers twelve operations tools when only --operations is enabled', async () => {
+  it('registers twelve operations tools when --no-semantic is passed', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
@@ -303,20 +266,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'get_vault_overview',
       ]);
       expect(server.registeredResourceUris).toEqual(['vault://overview']);
-    } finally {
-      await fs.rm(tempRoot, { recursive: true, force: true });
-    }
-  });
-
-  it('rejects startup when both modules are disabled', async () => {
-    const tempRoot = await createTempVaultPath();
-    const vaultPath = path.join(tempRoot, 'vault');
-    await fs.mkdir(vaultPath, { recursive: true });
-
-    try {
-      await expect(
-        main(['node', 'cli.js', '--vault', vaultPath, '--no-semantic', '--no-operations']),
-      ).rejects.toThrow(/at least one module/i);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }

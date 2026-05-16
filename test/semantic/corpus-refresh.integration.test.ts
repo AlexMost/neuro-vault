@@ -11,6 +11,8 @@ import { FsVaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import { createListMatchingPaths } from '../../src/lib/obsidian/query/index.js';
 import type { ToolRegistration } from '../../src/lib/tool-registration.js';
 import type { IVaultRegistry, IVaultEntry } from '../../src/lib/vault-registry.js';
+import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
+import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
 
 const MODEL_KEY = 'bge-micro-v2';
 
@@ -86,6 +88,8 @@ describe('corpus refresh through semantic tools', () => {
       path: vaultPath,
       smartEnvPath,
       reader,
+      writer: {} as VaultWriter,
+      provider: {} as VaultProvider,
       graph,
       listMatchingPaths,
       corpus,

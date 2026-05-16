@@ -186,17 +186,12 @@ export async function startNeuroVaultServer(
   config: ServerConfig,
   deps: NeuroVaultStartupDependencies = {},
 ): Promise<void> {
-  if (!config.semantic.enabled && !config.operations.enabled) {
-    throw new Error('No modules enabled — pass --semantic or --operations');
-  }
-
   const registry = await VaultRegistry.create(
     {
       vaults: config.vaults,
-      operationsEnabled: config.operations.enabled,
       semanticEnabled: config.semantic.enabled,
       modelKey: config.semantic.modelKey,
-      binaryPath: config.operations.binaryPath,
+      binaryPath: config.obsidianCli,
     },
     buildDefaultVaultEntryDeps(deps.vaultEntryDeps),
   );
@@ -220,15 +215,9 @@ export async function startNeuroVaultServer(
     warmup = semantic.warmup;
   }
 
-  if (config.operations.enabled) {
-    const operations = createOperationsModule(
-      registry,
-      { binaryPath: config.operations.binaryPath },
-      deps.operations,
-    );
-    toolRegistrations.push(...operations.tools);
-    resourceRegistrations.push(...operations.resources);
-  }
+  const operations = createOperationsModule(registry, {}, deps.operations);
+  toolRegistrations.push(...operations.tools);
+  resourceRegistrations.push(...operations.resources);
 
   for (const tool of toolRegistrations) {
     server.registerTool(tool.name, tool.spec, tool.handler);

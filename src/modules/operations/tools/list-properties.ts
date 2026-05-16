@@ -19,7 +19,7 @@ export interface ListPropertiesDeps {
 }
 
 async function runForEntry(entry: IVaultEntry): Promise<FanOutPayload> {
-  const results = await entry.provider!.listProperties();
+  const results = await entry.provider.listProperties();
   return { results };
 }
 

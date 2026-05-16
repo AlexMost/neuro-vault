@@ -12,8 +12,8 @@ export interface IVaultEntry {
   path: string;
   smartEnvPath: string;
   reader: VaultReader;
-  writer?: VaultWriter;
-  provider?: VaultProvider;
+  writer: VaultWriter;
+  provider: VaultProvider;
   graph: WikilinkGraphIndex;
   listMatchingPaths: ListMatchingPaths;
   corpus?: SmartConnectionsCorpusIndex;
@@ -38,7 +38,6 @@ export interface IVaultEntryDeps {
 
 export interface IVaultRegistryConfig {
   vaults: IVaultConfig[];
-  operationsEnabled: boolean;
   semanticEnabled: boolean;
   modelKey: string;
   binaryPath?: string;
@@ -80,12 +79,8 @@ export class VaultRegistry implements IVaultRegistry {
       const reader = deps.readerFactory({ vaultRoot: v.path });
       const graph = deps.graphFactory({ reader });
       const listMatchingPaths = deps.listMatchingPathsFactory({ reader, graph });
-      const writer = config.operationsEnabled
-        ? deps.writerFactory({ vaultRoot: v.path })
-        : undefined;
-      const provider = config.operationsEnabled
-        ? deps.providerFactory({ vaultName: v.name, binaryPath: config.binaryPath })
-        : undefined;
+      const writer = deps.writerFactory({ vaultRoot: v.path });
+      const provider = deps.providerFactory({ vaultName: v.name, binaryPath: config.binaryPath });
 
       let corpus: SmartConnectionsCorpusIndex | undefined;
       let semanticAvailable = false;
