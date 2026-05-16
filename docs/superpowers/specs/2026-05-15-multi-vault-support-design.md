@@ -25,38 +25,40 @@ One `neuro-vault-mcp` process serves N registered vaults. Tool inputs grow an op
 - **Cross-vault `get_similar_notes`.** The seed note lives in one vault and embedding models are per-vault — "similar across vaults" is semantically suspect. `vault:` is required for the seed in multi-mode; results are flat from that vault only.
 - **Cross-vault score merging.** `results_by_vault` is a grouped list, never one ranked stream. Per-vault embedding models make cosine scores non-comparable.
 - **`--default-vault` flag.** Third branch with zero value over the chosen rules (fan-out where it makes sense, `VAULT_REQUIRED` otherwise).
-- **Reading Obsidian's vault registry** (`obsidian.json`) to resolve vault names. The `name` token in `--vault name:path` doubles as both the MCP identifier and the obsidian-cli `vault=` token; that covers the typical case with zero I/O.
-- **Per-vault Obsidian display-name overrides.** If a user's Obsidian display name diverges from the chosen MCP identifier they can either rename in Obsidian's "Manage vaults" UI or pick a name that matches. If this bites in the wild we can add a triplet syntax (`--vault mcp-name:path:obsidian-name`) later without breaking the v6 contract.
+- **Reading Obsidian's vault registry** (`obsidian.json`) to resolve vault names. The MCP-side alias equals the directory basename, which also equals the Obsidian display name in the typical case; that covers the common path with zero I/O. If a user has renamed a vault in Obsidian's "Manage vaults" UI such that the display name diverges from the basename, operations on that vault will fail at call time with a `VAULT_NOT_FOUND` error pointing them at the mismatch — they rename one side or the other.
+- **`name:path` alias syntax and Obsidian display-name overrides.** The first iteration accepts only `--vault <absolute-path>`; the alias is always `basename(path)`. Two vaults with the same basename are rejected at startup with an actionable error ("rename one of the directories"). If users need custom aliases or have to coexist two directories with the same basename, a future iteration can add either a `name:path` syntax (early-rejected here as confusing — see "alternative considered" below) or a separate `--vault-obsidian-name` override flag. Defer until a real user case demands it.
 - **Migration shims / dual code paths.** Clean break to v6.0.0; the existing `--vault-name` flag is removed.
+
+### Alternative considered: `name:path` syntax (rejected)
+
+Initial design accepted `--vault name:path` where the `name` portion served as **both** the MCP-side alias **and** the obsidian-cli `vault=` token. This conflated two distinct concepts (alias users pick + Obsidian-side display name) into a single field, which broke as soon as a user picked an alias like `wiki` that didn't exist as an Obsidian display name. Removing the syntax forces the simple case (basename = alias = Obsidian name) to be the only case, and surfaces edge cases (custom aliases, basename collisions, Obsidian renames) as explicit decisions for a follow-up iteration rather than silent failure modes today.
 
 ## CLI
 
-`--vault` becomes repeatable with an optional `name:` prefix:
+`--vault` becomes repeatable. Each occurrence is an absolute path to a vault directory:
 
 ```
 neuro-vault-mcp \
-  --vault personal:/path/to/sandbox \
-  --vault dmarkoff:/path/to/wiki
+  --vault /path/to/sandbox \
+  --vault /path/to/teamwiki
 ```
 
-Without a prefix, `name = path.basename(value)`:
+Each vault gets an MCP-side alias derived from `basename(path)` — `sandbox` and `teamwiki` in the example above. Single-vault invocation is unchanged from v5.x:
 
 ```
 neuro-vault-mcp --vault /path/to/sandbox
-# → registers a single vault with name "sandbox"
+# → registers a single vault with alias "sandbox"
 ```
-
-This is the single-vault invocation. The CLI surface is identical to v5.x for the one-vault case; only the result shape changes (see below).
 
 **Parser rules:**
 
-- Syntax: `<name>:<absolute-path>` or `<absolute-path>`. Discrimination by leading `/` (POSIX absolute paths are unambiguous; the colon is unreserved in absolute paths and the parser cuts at the first one when the value does not start with `/`).
-- `name` must match `^[a-zA-Z0-9_-]{1,64}$`. Anything else → fail-fast at startup with `INVALID_ARGUMENT`-style error.
+- Syntax: `--vault <absolute-path>`. No prefix syntax in this iteration — alias = `basename(path)` always.
+- `basename(path)` must match `^[a-zA-Z0-9_-]{1,64}$`. Otherwise → fail-fast with an actionable error suggesting a rename.
 - `path` must be absolute and resolve to an existing directory; otherwise fail-fast.
-- Vault names must be unique across all `--vault` flags; duplicates fail-fast.
+- Vault aliases (= basenames) must be unique across all `--vault` flags; duplicates fail-fast with an actionable error suggesting a directory rename.
 - At least one `--vault` flag is required; zero vaults fails-fast.
 
-**Removed flag:** `--vault-name`. The bind-operations escape hatch is now folded into the `name:` prefix. Migration is a single-line CLI rewrite covered in the v6.0.0 CHANGELOG.
+**Removed flag:** `--vault-name`. There is no replacement in this iteration — if Obsidian's display name for a vault differs from the directory basename, the user renames one side or the other.
 
 ## ServerConfig
 
@@ -245,7 +247,7 @@ New architecture doc: `docs/architecture/vault-registry.md`. Updated docs: `docs
 
 ## Testing strategy
 
-- **Parser unit tests** — `--vault name:path`, `--vault /path`, mixed flags, duplicate names, invalid names, missing path, no vaults at all.
+- **Parser unit tests** — `--vault /path`, multiple paths, duplicate basenames (rejected), invalid basenames, missing path, file-not-directory, no vaults at all.
 - **Registry unit tests** — entry construction, `require` throws `VAULT_NOT_FOUND`, semantic unavailability is recorded (not thrown) when `.smart-env/` is missing, single-vault detection.
 - **Per-tool tests** — for each tool: (a) single-vault registry resolves implicit `vault:`; (b) multi-vault registry with explicit `vault:` routes to the correct entry; (c) multi-vault registry without `vault:` either fans out (the four tools above) or throws `VAULT_REQUIRED`.
 - **Fan-out integration tests** — `search_notes` across two vaults: both have `.smart-env/`, one is missing, both are missing, one yields zero results.
@@ -257,7 +259,7 @@ Existing tests are migrated, not deleted. Most single-vault tests stay valid aft
 ## Migration (CHANGELOG entry, v6.0.0)
 
 - Single-vault users: `--vault /path` continues to work. Tool outputs now always include a `vault: string` field on every flat result item; clients that parse output structurally must accept it.
-- Two-server users (the current workaround): replace two MCP registrations with one. Use `--vault name:path` per vault. Tool names change from `mcp__neuro-vault-foo__*` / `mcp__neuro-vault-bar__*` to `mcp__neuro-vault__*` with a `vault:` parameter on each call.
+- Two-server users (the current workaround): replace two MCP registrations with one. Pass `--vault <path>` once per vault. The MCP-side alias of each vault is the directory basename; clients call tools with `vault: "<basename>"`. Tool names change from `mcp__neuro-vault-foo__*` / `mcp__neuro-vault-bar__*` to `mcp__neuro-vault__*` with a `vault:` parameter on each call.
 - The `--vault-name` flag is removed. Users who relied on it (Obsidian display name ≠ directory basename) should switch to `--vault <obsidian-name>:<path>`, which now carries both the MCP identifier and the obsidian-cli vault token.
 
 ## Implementation phases
@@ -266,7 +268,7 @@ Both phases ship under v6.0.0. The split is purely for ordering within the imple
 
 **Phase 1 — single-vault op with required `vault:`:**
 
-- `--vault name:path` parser, ServerConfig.vaults, registry.
+- `--vault <path>` parser (alias = basename), ServerConfig.vaults, registry.
 - `vault:` parameter on every tool input schema.
 - `resolveVault(input)` helper; per-tool routing.
 - `vault:` field on every flat result item.
@@ -285,7 +287,7 @@ If Phase 2 slips, Phase 1 can ship as v6.0.0 and Phase 2 as v6.1.0 (additive). D
 
 ## Definition of Done
 
-- `--vault` accepts repeated `name:path` flags; bare `--vault /path` works as a single-vault sensible default.
+- `--vault` accepts repeated `<absolute-path>` flags; alias = `basename(path)` for each.
 - Name uniqueness, name charset, and absolute-path checks validated at startup.
 - `VaultRegistry` constructs per-vault primitives once; semantic unavailability is recorded, not thrown.
 - Every tool input schema includes optional `vault: string`.

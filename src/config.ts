@@ -10,33 +10,20 @@ const DEFAULT_MODEL_KEY = 'bge-micro-v2';
 const DEFAULT_MODEL_ID = 'TaylorAI/bge-micro-v2';
 const VAULT_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
-function parseVaultFlag(raw: string): { name?: string; path: string } {
-  if (raw.startsWith('/')) {
-    return { path: raw };
-  }
-  const idx = raw.indexOf(':');
-  if (idx === -1) {
-    throw new Error(`--vault: expected absolute path or name:path, got "${raw}"`);
-  }
-  const name = raw.slice(0, idx);
-  const rest = raw.slice(idx + 1);
-  return { name, path: rest };
-}
-
 function basenameNoTrailingSlash(p: string): string {
   return path.basename(p.replace(/\/+$/, ''));
 }
 
-function buildVaultConfig(raw: string): IVaultConfig {
-  const parsed = parseVaultFlag(raw);
-  if (!path.isAbsolute(parsed.path)) {
-    throw new Error(`--vault: path must be absolute, got "${parsed.path}"`);
+function buildVaultConfig(rawPath: string): IVaultConfig {
+  if (!path.isAbsolute(rawPath)) {
+    throw new Error(`--vault: path must be absolute, got "${rawPath}"`);
   }
-  const normalizedPath = path.resolve(parsed.path);
-  const name = parsed.name ?? basenameNoTrailingSlash(normalizedPath);
+  const normalizedPath = path.resolve(rawPath);
+  const name = basenameNoTrailingSlash(normalizedPath);
   if (!VAULT_NAME_RE.test(name)) {
     throw new Error(
-      `--vault: invalid vault name "${name}" (allowed: alphanumerics, "_", "-", 1-64 chars)`,
+      `--vault: directory basename "${name}" is not a valid vault identifier ` +
+        `(allowed: alphanumerics, "_", "-", 1-64 chars). Rename the directory.`,
     );
   }
   let stat: fs.Stats;
@@ -62,14 +49,12 @@ function buildVaultConfig(raw: string): IVaultConfig {
 export async function parseConfig(argv: string[]): Promise<ServerConfig> {
   const args = await yargs(hideBin(argv))
     .scriptName('neuro-vault-mcp')
-    .usage(
-      '$0 --vault [name:]<path> [--vault [name:]<path> ...]\n\nMCP server for one or more Obsidian vaults.',
-    )
+    .usage('$0 --vault <path> [--vault <path> ...]\n\nMCP server for one or more Obsidian vaults.')
     .option('vault', {
       type: 'string',
       array: true,
       describe:
-        'Vault to register. Repeat for multi-vault. Syntax: "<name>:<absolute-path>" or "<absolute-path>" (basename used as name).',
+        'Absolute path to a vault directory. Repeat for multi-vault. The MCP-side alias is derived from the directory basename.',
     })
     .option('semantic', {
       type: 'boolean',
@@ -93,7 +78,7 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
 
   const rawVaults = (args.vault ?? []) as string[];
   if (rawVaults.length === 0) {
-    throw new Error('--vault is required: provide at least one vault with --vault [name:]<path>');
+    throw new Error('--vault is required: provide at least one vault with --vault <path>');
   }
 
   if (!args.semantic && !args.operations) {
@@ -104,7 +89,10 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
   const seen = new Set<string>();
   for (const v of vaults) {
     if (seen.has(v.name)) {
-      throw new Error(`--vault: vault names must be unique, "${v.name}" seen twice`);
+      throw new Error(
+        `--vault: two vaults share the directory basename "${v.name}". ` +
+          `Rename one of the directories — the basename doubles as the MCP-side alias and must be unique.`,
+      );
     }
     seen.add(v.name);
   }

@@ -27,7 +27,7 @@ describe('parseConfig', () => {
     await expect(parseConfig(['node', 'cli.js'])).rejects.toThrow(/--vault/);
   });
 
-  it('accepts a single bare --vault <path> (basename becomes name)', async () => {
+  it('registers a single vault with name = basename(path)', async () => {
     const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
     expect(config.vaults).toEqual([
       {
@@ -38,72 +38,58 @@ describe('parseConfig', () => {
     ]);
   });
 
-  it('basename strips trailing slash', async () => {
+  it('strips trailing slash before deriving basename', async () => {
     const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath + '/']);
     expect(config.vaults[0].name).toBe('Sandbox');
   });
 
-  it('accepts --vault name:path', async () => {
-    const config = await parseConfig(['node', 'cli.js', '--vault', `dmarkoff:${vaultPath}`]);
-    expect(config.vaults[0]).toEqual({
-      name: 'dmarkoff',
-      path: vaultPath,
-      smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
-    });
-  });
-
-  it('accepts multiple --vault flags', async () => {
+  it('registers multiple vaults — basenames become aliases', async () => {
     const config = await parseConfig([
       'node',
       'cli.js',
       '--vault',
-      `personal:${vaultPath}`,
+      vaultPath,
       '--vault',
-      `wiki:${secondVaultPath}`,
+      secondVaultPath,
     ]);
-    expect(config.vaults.map((v) => v.name)).toEqual(['personal', 'wiki']);
+    expect(config.vaults.map((v) => v.name)).toEqual(['Sandbox', 'Other']);
     expect(config.vaults.map((v) => v.path)).toEqual([vaultPath, secondVaultPath]);
   });
 
-  it('rejects duplicate vault names', async () => {
-    await expect(
-      parseConfig([
-        'node',
-        'cli.js',
-        '--vault',
-        `same:${vaultPath}`,
-        '--vault',
-        `same:${secondVaultPath}`,
-      ]),
-    ).rejects.toThrow(/unique/i);
+  it('rejects two vaults sharing the same basename with an actionable error', async () => {
+    const a = path.join(tmpRoot, 'NestedA', 'Sandbox');
+    const b = path.join(tmpRoot, 'NestedB', 'Sandbox');
+    await fs.mkdir(path.dirname(a), { recursive: true });
+    await fs.mkdir(path.dirname(b), { recursive: true });
+    await fs.mkdir(a);
+    await fs.mkdir(b);
+    await expect(parseConfig(['node', 'cli.js', '--vault', a, '--vault', b])).rejects.toThrow(
+      /Rename one of the directories/,
+    );
   });
 
-  it('rejects relative paths', async () => {
+  it('rejects a relative path', async () => {
     await expect(parseConfig(['node', 'cli.js', '--vault', 'rel/path'])).rejects.toThrow(
       /absolute/,
     );
   });
 
-  it('rejects relative paths with name prefix', async () => {
-    await expect(parseConfig(['node', 'cli.js', '--vault', 'foo:rel/path'])).rejects.toThrow(
-      /absolute/,
+  it('rejects a basename that is not a valid identifier', async () => {
+    const weird = path.join(tmpRoot, 'has space');
+    await fs.mkdir(weird);
+    await expect(parseConfig(['node', 'cli.js', '--vault', weird])).rejects.toThrow(
+      /not a valid vault identifier/,
     );
   });
 
-  it('rejects invalid vault names', async () => {
-    await expect(
-      parseConfig(['node', 'cli.js', '--vault', `bad name:${vaultPath}`]),
-    ).rejects.toThrow(/name/i);
-  });
-
-  it('rejects vault path that does not exist', async () => {
+  it('rejects a vault path that does not exist', async () => {
     const missing = path.join(tmpRoot, 'does-not-exist');
     await expect(parseConfig(['node', 'cli.js', '--vault', missing])).rejects.toThrow(
       /does not exist/,
     );
   });
 
-  it('rejects vault path that is a file rather than a directory', async () => {
+  it('rejects a vault path that is a file rather than a directory', async () => {
     const file = path.join(tmpRoot, 'a-file');
     await fs.writeFile(file, 'not a vault');
     await expect(parseConfig(['node', 'cli.js', '--vault', file])).rejects.toThrow(

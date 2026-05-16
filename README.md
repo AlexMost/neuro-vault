@@ -135,13 +135,7 @@ Two vaults registered, with aliases `Sandbox` and `TeamWiki`. In your MCP config
 }
 ```
 
-If two basenames collide, or you want a custom alias, use the `name:path` form for those entries — the alias on the left of the `:` is purely an MCP identifier and does not have to match anything in Obsidian:
-
-```bash
-neuro-vault-mcp \
-  --vault /Users/me/Vaults/Sandbox \
-  --vault wiki:/Users/me/Drive/Sandbox
-```
+Two vaults cannot share the same directory basename — the basename doubles as the alias and must be unique. If you have a basename collision, rename one of the directories.
 
 With multiple vaults registered:
 
@@ -188,7 +182,7 @@ Single-vault setups need no changes — the existing `--vault /path` form still 
 
 If you serve multiple vaults from one MCP process, here are the details worth knowing:
 
-- **`--vault` is the path; the alias is inferred.** Repeat the flag once per vault. The MCP-side alias defaults to `basename(path)`. Use the `name:path` form only when basenames collide or you want a custom alias. The standalone `--vault-name` flag is gone.
+- **`--vault` is the path; the alias is the directory basename.** Repeat the flag once per vault. Two vaults cannot share the same basename — rename one of the directories if they collide. The standalone `--vault-name` flag is gone.
 - **Tool results carry a `vault` field** — every result object now includes `vault: string` identifying the source vault. Clients that ignore the field are unaffected; clients that parse results structurally should expect it.
 - **One process per registration** — if you previously ran two `neuro-vault-mcp` processes for two vaults, you can collapse them into one:
 
