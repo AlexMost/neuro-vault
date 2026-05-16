@@ -114,38 +114,41 @@ Add to your MCP client config (here: Claude Code's `~/.claude/settings.json`):
 
 ### 🗂 Multi-vault — two vaults, one server
 
-Point at multiple vaults using repeated `--vault name:path` flags. Each vault gets a short name you use when calling tools:
+Pass `--vault` once per vault. The vault's **alias** (the short name you'll use in tool calls) is taken from the directory basename — no extra flags needed:
 
 ```bash
 neuro-vault-mcp \
-  --vault personal:/Users/me/Vaults/Sandbox \
-  --vault wiki:/Users/me/Vaults/TeamWiki
+  --vault /Users/me/Vaults/Sandbox \
+  --vault /Users/me/Vaults/TeamWiki
 ```
 
-In your MCP config:
+Two vaults registered, with aliases `Sandbox` and `TeamWiki`. In your MCP config:
 
 ```json
 {
   "mcpServers": {
     "neuro-vault": {
       "command": "neuro-vault-mcp",
-      "args": [
-        "--vault",
-        "personal:/Users/me/Vaults/Sandbox",
-        "--vault",
-        "wiki:/Users/me/Vaults/TeamWiki"
-      ]
+      "args": ["--vault", "/Users/me/Vaults/Sandbox", "--vault", "/Users/me/Vaults/TeamWiki"]
     }
   }
 }
 ```
 
+If two basenames collide, or you want a custom alias, use the `name:path` form for those entries — the alias on the left of the `:` is purely an MCP identifier and does not have to match anything in Obsidian:
+
+```bash
+neuro-vault-mcp \
+  --vault /Users/me/Vaults/Sandbox \
+  --vault wiki:/Users/me/Drive/Sandbox
+```
+
 With multiple vaults registered:
 
-- **Every tool** accepts an optional `vault: "<name>"` parameter to target a specific vault.
+- **Every tool** accepts an optional `vault: "<alias>"` parameter to target a specific vault.
 - **`search_notes`, `query_notes`, and `get_vault_overview`** fan out across all registered vaults when `vault` is omitted. The response shape switches to `results_by_vault: [...]` (one entry per vault) plus `skipped_vaults: [...]` for any vault the tool could not reach.
 - **All other tools** (writes, reads of specific paths, single-vault diagnostics) require an explicit `vault` in multi-vault mode. Omitting it returns `VAULT_REQUIRED`.
-- **Semantic fan-out** silently skips vaults whose Smart Connections `.smart-env/multi/` index is unavailable. Targeting such a vault explicitly with `vault: "<name>"` returns `SEMANTIC_INDEX_NOT_FOUND`.
+- **Semantic fan-out** silently skips vaults whose Smart Connections `.smart-env/multi/` index is unavailable. Targeting such a vault explicitly with `vault: "<alias>"` returns `SEMANTIC_INDEX_NOT_FOUND`.
 
 Then ask your assistant:
 
@@ -185,7 +188,7 @@ Single-vault setups need no changes — the existing `--vault /path` form still 
 
 If you serve multiple vaults from one MCP process, here are the details worth knowing:
 
-- **Vault name flag** — pass `--vault <name>:<path>` to give a vault an explicit short name. Bare `--vault /path` keeps the basename-as-name behaviour. The standalone `--vault-name` flag is gone; embed the name in `--vault` instead.
+- **`--vault` is the path; the alias is inferred.** Repeat the flag once per vault. The MCP-side alias defaults to `basename(path)`. Use the `name:path` form only when basenames collide or you want a custom alias. The standalone `--vault-name` flag is gone.
 - **Tool results carry a `vault` field** — every result object now includes `vault: string` identifying the source vault. Clients that ignore the field are unaffected; clients that parse results structurally should expect it.
 - **One process per registration** — if you previously ran two `neuro-vault-mcp` processes for two vaults, you can collapse them into one:
 
