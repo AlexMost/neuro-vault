@@ -7,15 +7,14 @@ import { pathExistsForEntry } from '../tool-helpers.js';
 import { readThreshold } from '../tool-helpers.js';
 import type { DuplicatePair, SearchEngine } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
+import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
 const DEFAULT_DUPLICATE_THRESHOLD = 0.9;
 
-const inputSchema = z.object({
-  vault: z.string().optional(),
-  threshold: z.number().min(0).max(1).optional(),
-});
-
-type Input = z.infer<typeof inputSchema>;
+interface Input {
+  vault?: string;
+  threshold?: number;
+}
 
 type StampedDuplicatePair = DuplicatePair & { vault: string };
 
@@ -42,11 +41,19 @@ export function buildFindDuplicatesTool(
   deps: FindDuplicatesDeps,
 ): ITool<Input, StampedDuplicatePair[]> {
   const { registry, searchEngine, modelKey } = deps;
+  const inputSchema = z.object({
+    ...vaultParamShape(registry),
+    threshold: z.number().min(0).max(1).optional(),
+  });
   return {
     name: 'find_duplicates',
     title: 'Find Duplicates',
     description:
-      'Identify note pairs with high embedding similarity. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      'Identify note pairs with high embedding similarity.' +
+      describeMultiVault(
+        registry,
+        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      ),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, {

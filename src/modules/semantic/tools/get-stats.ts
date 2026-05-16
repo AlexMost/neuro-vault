@@ -5,12 +5,11 @@ import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { SmartSource, ToolStats } from '../types.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
+import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
-const inputSchema = z.object({
-  vault: z.string().optional(),
-});
-
-type Input = z.infer<typeof inputSchema>;
+interface Input {
+  vault?: string;
+}
 
 export interface GetStatsDeps {
   registry: IVaultRegistry;
@@ -43,11 +42,16 @@ function readEmbeddingDimension(sources: Iterable<SmartSource>): number {
 
 export function buildGetStatsTool(deps: GetStatsDeps): ITool<Input, { vault: string } & ToolStats> {
   const { registry, modelKey } = deps;
+  const inputSchema = z.object({ ...vaultParamShape(registry) });
   return {
     name: 'get_stats',
     title: 'Get Stats',
     description:
-      'Report corpus and embedding statistics. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      'Report corpus and embedding statistics.' +
+      describeMultiVault(
+        registry,
+        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      ),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, {

@@ -4,15 +4,14 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
+import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
 const NOTES_TODAY_CAP = 200;
 const DAILY_BASENAME_RE = /(\d{4}-\d{2}-\d{2})\.md$/;
 
-const inputSchema = z.object({
-  vault: z.string().optional(),
-});
-
-type Input = z.infer<typeof inputSchema>;
+interface Input {
+  vault?: string;
+}
 
 export interface NotesTodayItem {
   vault: string;
@@ -35,12 +34,17 @@ export interface ReadDailyDeps {
 
 export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyHandlerResult> {
   const { registry } = deps;
+  const inputSchema = z.object({ ...vaultParamShape(registry) });
 
   return {
     name: 'read_daily',
     title: 'Read Daily',
     description:
-      'Read today\'s daily note. Returns `{ vault, path, frontmatter, content, notes_today }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed), `content` is the body without the YAML block, and `notes_today` lists vault notes created today (matched by `frontmatter.created`) excluding daily notes themselves — metadata only, sorted by path ascending, capped at 200 entries. Each `notes_today` item carries `vault`. Useful for "what\'s on my agenda?" / "what happened today?" questions without a separate `query_notes` call. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      'Read today\'s daily note. Returns `{ vault, path, frontmatter, content, notes_today }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed), `content` is the body without the YAML block, and `notes_today` lists vault notes created today (matched by `frontmatter.created`) excluding daily notes themselves — metadata only, sorted by path ascending, capped at 200 entries. Each `notes_today` item carries `vault`. Useful for "what\'s on my agenda?" / "what happened today?" questions without a separate `query_notes` call.' +
+      describeMultiVault(
+        registry,
+        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      ),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'read_daily' });

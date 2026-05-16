@@ -4,15 +4,14 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument, resolveIdentifier } from '../tool-helpers.js';
+import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
-const inputSchema = z.object({
-  vault: z.string().optional(),
-  name: z.string().optional(),
-  path: z.string().optional(),
-  key: z.string(),
-});
-
-type Input = z.infer<typeof inputSchema>;
+interface Input {
+  vault?: string;
+  name?: string;
+  path?: string;
+  key: string;
+}
 
 export interface ReadPropertyDeps {
   registry: IVaultRegistry;
@@ -22,11 +21,21 @@ export function buildReadPropertyTool(
   deps: ReadPropertyDeps,
 ): ITool<Input, { vault: string; value: string | number | boolean | string[] | number[] }> {
   const { registry } = deps;
+  const inputSchema = z.object({
+    ...vaultParamShape(registry),
+    name: z.string().optional(),
+    path: z.string().optional(),
+    key: z.string(),
+  });
   return {
     name: 'read_property',
     title: 'Read Property',
     description:
-      'Read a frontmatter property value from a note. Provide `name` or `path`, plus `key`. Returns `{ vault, value }`. Use `read_notes` if you need the full frontmatter or accurate type information. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      'Read a frontmatter property value from a note. Provide `name` or `path`, plus `key`. Returns `{ vault, value }`. Use `read_notes` if you need the full frontmatter or accurate type information.' +
+      describeMultiVault(
+        registry,
+        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      ),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'read_property' });

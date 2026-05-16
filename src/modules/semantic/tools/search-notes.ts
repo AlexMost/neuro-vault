@@ -19,46 +19,7 @@ import {
 } from '../tool-helpers.js';
 import type { EmbeddingProvider, NoteFilter, SearchEngine, SmartSource } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
-
-const SEARCH_NOTES_DESCRIPTION = [
-  'Search notes by semantic similarity. Best for fuzzy recall, topic exploration, or cross-language matches. Pass short keyword queries (1-4 words), not sentences.',
-  '',
-  'MODES (pick based on intent):',
-  '- "quick" (default) — specific lookup. Returns up to 3 top notes plus block-level matches scoped to those notes. Use when you want one or two specific notes.',
-  '- "deep" — topic exploration. Returns up to 8 notes plus block-level matches across the whole vault. After the merged top-`limit` results are selected, expansion runs once to pull in semantically related notes; expansion-derived results carry `via_expansion: true`. Use for "tell me about X" or building an overview.',
-  '',
-  'PARAMETERS:',
-  '- query (required): string, or array of 1-8 strings. Pass an array for synonyms / reformulations / translations — embedded in batch, merged into one ranked list. Each result carries `matched_queries` (which of your queries hit it). `limit` is the FINAL result count regardless of how many queries are passed — passing more queries widens coverage but does not increase the result count.',
-  '- mode: "quick" | "deep" (default "quick").',
-  '- limit: max notes in `results`. Default 3 (quick) / 8 (deep). Override to widen or narrow the result set. Does not affect `blockResults` (quick: capped at 5; deep: capped at mode limit).',
-  '- threshold: min similarity, 0-1. Default 0.5 (quick) / 0.35 (deep). Raise to 0.6+ to cut weak matches; lower (e.g. 0.3) when nothing comes back.',
-  '- vault: target a specific vault by name when multiple are registered.',
-  '',
-  'OUTPUT FIELDS (multi-query):',
-  '- matched_queries: which of your queries surfaced this result — tells you which synonym was load-bearing.',
-  '- truncated: true when more unique candidates were merged than fit in `limit`.',
-  '- via_expansion: true on results pulled in by post-merge expansion in deep mode (mutually exclusive with matched_queries).',
-  '',
-  'EXAMPLES:',
-  '- "where did I write about X?" → search_notes({query: "X"}) — quick.',
-  '- "what do I know about Y?" → search_notes({query: "Y", mode: "deep"}).',
-  '- multilingual pair: search_notes({query: ["embeddings", "векторний пошук"]}) — returns one merged list; notes matched by both queries appear with both in matched_queries.',
-  '- multilingual deep: search_notes({query: ["optimization", "оптимізація"], mode: "deep"}) — merged top-`limit` seeds, then expansion once on the merged set.',
-  '',
-  'PRE-FILTER (filter parameter):',
-  '- filter: optional structural narrowing applied BEFORE semantic ranking. Best when vault has many narrative notes that crowd top-K on a niche query.',
-  '  Shape: { path_prefix?, tags?, frontmatter? }. At least one field required.',
-  '  - path_prefix: scope to a folder (e.g. "Resources/").',
-  '  - tags: notes that have ANY of these tags (OR within the array; no leading "#").',
-  '  - frontmatter: sift filter on frontmatter keys (e.g. { type: "reflection", status: "active" }). Same operator allow-list as query_notes.',
-  '  Composition: filter AND threshold AND semantic. Use this instead of querying twice and intersecting on the client.',
-  '- scoped recall: search_notes({query: "trading lessons", filter: {tags: ["trading"]}}) — semantic only inside notes tagged trading.',
-  '- scoped multi-query: search_notes({query: ["embeddings","векторний пошук"], filter: {path_prefix: "Resources/"}, mode: "deep"}).',
-  '',
-  'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `skipped_vaults: [...]` (vaults without a semantic index are listed in `skipped_vaults`).',
-  '',
-  'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
-].join('\n');
+import { vaultParamShape } from '../../../lib/vault-param.js';
 
 const filterSchema = z.object({
   path_prefix: z.string().optional(),
@@ -66,16 +27,18 @@ const filterSchema = z.object({
   frontmatter: z.record(z.string(), z.unknown()).optional(),
 });
 
-const inputSchema = z.object({
-  vault: z.string().optional(),
-  query: z.union([z.string(), z.array(z.string()).min(1).max(8)]),
-  mode: z.enum(['quick', 'deep']).optional(),
-  limit: z.number().int().positive().optional(),
-  threshold: z.number().min(0).max(1).optional(),
-  filter: filterSchema.optional(),
-});
-
-type SearchNotesInput = z.infer<typeof inputSchema>;
+interface SearchNotesInput {
+  vault?: string;
+  query: string | string[];
+  mode?: 'quick' | 'deep';
+  limit?: number;
+  threshold?: number;
+  filter?: {
+    path_prefix?: string;
+    tags?: string[];
+    frontmatter?: Record<string, unknown>;
+  };
+}
 
 type EnrichResults<T extends { results: { path: string }[] }> = Omit<T, 'results'> & {
   results: Array<T['results'][number] & { backlink_count: number; vault: string }>;
@@ -295,6 +258,59 @@ export function buildSearchNotesTool(
 ): ITool<SearchNotesInput, SearchNotesOutput | IFanOutResult<SearchNotesOutput>> {
   const { registry, embeddingProvider, searchEngine, modelKey } = deps;
   const entryDeps = { embeddingProvider, searchEngine, modelKey };
+  const inputSchema = z.object({
+    ...vaultParamShape(registry),
+    query: z.union([z.string(), z.array(z.string()).min(1).max(8)]),
+    mode: z.enum(['quick', 'deep']).optional(),
+    limit: z.number().int().positive().optional(),
+    threshold: z.number().min(0).max(1).optional(),
+    filter: filterSchema.optional(),
+  });
+  const SEARCH_NOTES_DESCRIPTION = [
+    'Search notes by semantic similarity. Best for fuzzy recall, topic exploration, or cross-language matches. Pass short keyword queries (1-4 words), not sentences.',
+    '',
+    'MODES (pick based on intent):',
+    '- "quick" (default) — specific lookup. Returns up to 3 top notes plus block-level matches scoped to those notes. Use when you want one or two specific notes.',
+    '- "deep" — topic exploration. Returns up to 8 notes plus block-level matches across the whole vault. After the merged top-`limit` results are selected, expansion runs once to pull in semantically related notes; expansion-derived results carry `via_expansion: true`. Use for "tell me about X" or building an overview.',
+    '',
+    'PARAMETERS:',
+    '- query (required): string, or array of 1-8 strings. Pass an array for synonyms / reformulations / translations — embedded in batch, merged into one ranked list. Each result carries `matched_queries` (which of your queries hit it). `limit` is the FINAL result count regardless of how many queries are passed — passing more queries widens coverage but does not increase the result count.',
+    '- mode: "quick" | "deep" (default "quick").',
+    '- limit: max notes in `results`. Default 3 (quick) / 8 (deep). Override to widen or narrow the result set. Does not affect `blockResults` (quick: capped at 5; deep: capped at mode limit).',
+    '- threshold: min similarity, 0-1. Default 0.5 (quick) / 0.35 (deep). Raise to 0.6+ to cut weak matches; lower (e.g. 0.3) when nothing comes back.',
+    ...(registry.isMulti()
+      ? ['- vault: target a specific vault by name when multiple are registered.']
+      : []),
+    '',
+    'OUTPUT FIELDS (multi-query):',
+    '- matched_queries: which of your queries surfaced this result — tells you which synonym was load-bearing.',
+    '- truncated: true when more unique candidates were merged than fit in `limit`.',
+    '- via_expansion: true on results pulled in by post-merge expansion in deep mode (mutually exclusive with matched_queries).',
+    '',
+    'EXAMPLES:',
+    '- "where did I write about X?" → search_notes({query: "X"}) — quick.',
+    '- "what do I know about Y?" → search_notes({query: "Y", mode: "deep"}).',
+    '- multilingual pair: search_notes({query: ["embeddings", "векторний пошук"]}) — returns one merged list; notes matched by both queries appear with both in matched_queries.',
+    '- multilingual deep: search_notes({query: ["optimization", "оптимізація"], mode: "deep"}) — merged top-`limit` seeds, then expansion once on the merged set.',
+    '',
+    'PRE-FILTER (filter parameter):',
+    '- filter: optional structural narrowing applied BEFORE semantic ranking. Best when vault has many narrative notes that crowd top-K on a niche query.',
+    '  Shape: { path_prefix?, tags?, frontmatter? }. At least one field required.',
+    '  - path_prefix: scope to a folder (e.g. "Resources/").',
+    '  - tags: notes that have ANY of these tags (OR within the array; no leading "#").',
+    '  - frontmatter: sift filter on frontmatter keys (e.g. { type: "reflection", status: "active" }). Same operator allow-list as query_notes.',
+    '  Composition: filter AND threshold AND semantic. Use this instead of querying twice and intersecting on the client.',
+    '- scoped recall: search_notes({query: "trading lessons", filter: {tags: ["trading"]}}) — semantic only inside notes tagged trading.',
+    '- scoped multi-query: search_notes({query: ["embeddings","векторний пошук"], filter: {path_prefix: "Resources/"}, mode: "deep"}).',
+    ...(registry.isMulti()
+      ? [
+          '',
+          'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `skipped_vaults: [...]` (vaults without a semantic index are listed in `skipped_vaults`).',
+          '',
+          'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+        ]
+      : []),
+  ].join('\n');
 
   return {
     name: 'search_notes',

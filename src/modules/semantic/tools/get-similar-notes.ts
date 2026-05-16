@@ -13,19 +13,18 @@ import {
 } from '../tool-helpers.js';
 import type { EmbeddingProvider, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
+import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_THRESHOLD = 0.5;
 
-const inputSchema = z.object({
-  vault: z.string().optional(),
-  path: z.string(),
-  limit: z.number().int().positive().optional(),
-  threshold: z.number().min(0).max(1).optional(),
-  exclude_folders: z.array(z.string()).optional(),
-});
-
-type Input = z.infer<typeof inputSchema>;
+interface Input {
+  vault?: string;
+  path: string;
+  limit?: number;
+  threshold?: number;
+  exclude_folders?: string[];
+}
 
 export interface GetSimilarNotesDeps {
   registry: IVaultRegistry;
@@ -163,12 +162,23 @@ export function buildGetSimilarNotesTool(
   deps: GetSimilarNotesDeps,
 ): ITool<Input, StampedSimilarNoteResult[]> {
   const { registry, searchEngine, modelKey } = deps;
+  const inputSchema = z.object({
+    ...vaultParamShape(registry),
+    path: z.string(),
+    limit: z.number().int().positive().optional(),
+    threshold: z.number().min(0).max(1).optional(),
+    exclude_folders: z.array(z.string()).optional(),
+  });
 
   return {
     name: 'get_similar_notes',
     title: 'Get Similar Notes',
     description:
-      'Find related notes — both semantically similar and explicitly linked from this note via [[wikilinks]]. Pass a vault-relative POSIX path (e.g. "Folder/note.md") as `path`. Forward-linked results rank ahead of semantic-only ones. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      'Find related notes — both semantically similar and explicitly linked from this note via [[wikilinks]]. Pass a vault-relative POSIX path (e.g. "Folder/note.md") as `path`. Forward-linked results rank ahead of semantic-only ones.' +
+      describeMultiVault(
+        registry,
+        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      ),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, {

@@ -8,16 +8,15 @@ import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildBasenameIndex } from '../../../lib/obsidian/link-resolver.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
 import type { OperationsErrorCode } from '../types.js';
+import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
-const inputSchema = z.object({
-  vault: z.string().optional(),
-  name: z.string().optional(),
-  path: z.string().optional(),
-  content: z.string(),
-  replace: z.string().optional(),
-});
-
-type Input = z.infer<typeof inputSchema>;
+interface Input {
+  vault?: string;
+  name?: string;
+  path?: string;
+  content: string;
+  replace?: string;
+}
 
 export interface EditNoteDeps {
   registry: IVaultRegistry;
@@ -25,6 +24,13 @@ export interface EditNoteDeps {
 
 export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: string }> {
   const { registry } = deps;
+  const inputSchema = z.object({
+    ...vaultParamShape(registry),
+    name: z.string().optional(),
+    path: z.string().optional(),
+    content: z.string(),
+    replace: z.string().optional(),
+  });
   return {
     name: 'edit_note',
     title: 'Edit Note',
@@ -33,7 +39,11 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: str
       '\n\n' +
       'With `replace`: the exact string in `replace` is located in the body (case- and whitespace-sensitive) and swapped for `content`. If the string is not found, the call fails with `NOT_FOUND`. If it appears more than once, the call fails with `AMBIGUOUS_MATCH` listing the line numbers — make `replace` more specific, or omit it to do a full rewrite.' +
       '\n\n' +
-      'Without `replace`: the entire body is overwritten with `content`. Use this for whole-body rewrites; pre-fetch the body with `read_notes` if you need to preserve parts of it. Use `\\n` for newlines in either mode. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      'Without `replace`: the entire body is overwritten with `content`. Use this for whole-body rewrites; pre-fetch the body with `read_notes` if you need to preserve parts of it. Use `\\n` for newlines in either mode.' +
+      describeMultiVault(
+        registry,
+        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      ),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'edit_note' });

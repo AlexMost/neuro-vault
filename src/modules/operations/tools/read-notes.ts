@@ -6,15 +6,15 @@ import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { normalizePath, validateReadNotesInput } from '../tool-helpers.js';
 import type { ReadNotesResult, ReadNotesResultItem } from '../types.js';
+import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
 const readNotesFieldSchema = z.enum(['frontmatter', 'content']);
-const inputSchema = z.object({
-  vault: z.string().optional(),
-  paths: z.union([z.string().min(1), z.array(z.string()).min(1).max(50)]),
-  fields: z.array(readNotesFieldSchema).min(1).optional(),
-});
 
-type Input = z.infer<typeof inputSchema>;
+interface Input {
+  vault?: string;
+  paths: string | string[];
+  fields?: Array<'frontmatter' | 'content'>;
+}
 
 export interface ReadNotesDeps {
   registry: IVaultRegistry;
@@ -24,11 +24,20 @@ export function buildReadNotesTool(
   deps: ReadNotesDeps,
 ): ITool<Input, { vault: string } & ReadNotesResult> {
   const { registry } = deps;
+  const inputSchema = z.object({
+    ...vaultParamShape(registry),
+    paths: z.union([z.string().min(1), z.array(z.string()).min(1).max(50)]),
+    fields: z.array(readNotesFieldSchema).min(1).optional(),
+  });
   return {
     name: 'read_notes',
     title: 'Read Notes',
     description:
-      "Read one or more notes in one call. `paths` is a vault-relative POSIX path string or an array of 1–50 such paths; duplicates are de-duplicated and results returned in input order. `fields` projects which parts of each note to return — choose from `frontmatter` and `content`; default `['frontmatter','content']`. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running. Pass `vault: \"<name>\"` to target a specific vault when multiple are registered.",
+      "Read one or more notes in one call. `paths` is a vault-relative POSIX path string or an array of 1–50 such paths; duplicates are de-duplicated and results returned in input order. `fields` projects which parts of each note to return — choose from `frontmatter` and `content`; default `['frontmatter','content']`. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running." +
+      describeMultiVault(
+        registry,
+        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+      ),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'read_notes' });
