@@ -2,6 +2,89 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [6.0.0](https://github.com/AlexMost/neuro-vault/compare/v5.5.3...v6.0.0) (2026-05-16)
+
+### ⚠ BREAKING CHANGES
+
+- **config:** --vault no longer accepts a name: prefix; pass only the
+  absolute path. Tool calls use basename(path) as the vault: alias.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- **release:** Multi-vault support arrives in one breaking release.
+
+Single-vault users — pass --vault /path as before; tool outputs now always
+include a vault field on every flat result item, and the response shape of
+search_notes/query_notes/get_vault_overview switches to results_by_vault
+when vault: is omitted in multi-vault mode.
+
+Two-server users (the prior workaround of running N parallel MCP instances)
+— replace N MCP registrations with one, using --vault name:path per vault.
+Tool names change from mcp**neuro-vault-foo**_ to mcp**neuro-vault**_ with
+a vault parameter on each call.
+
+The --vault-name flag is removed; switch to --vault <obsidian-name>:<path>,
+which carries both the MCP identifier and the obsidian-cli vault token.
+
+Vaults without a Smart Connections .smart-env/multi/ are silently skipped in
+semantic fan-out (surfaced via skipped_vaults); explicit vault: against such
+a vault returns SEMANTIC_INDEX_NOT_FOUND. Writes against an unspecified
+vault in multi-mode return VAULT_REQUIRED.
+
+See README.md and docs/superpowers/specs/2026-05-15-multi-vault-support-design.md
+for the full design.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- **config:** --vault is now repeatable with optional name: prefix;
+  --vault-name flag is removed. See docs/superpowers/specs/2026-05-15-multi-vault-support-design.md.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- **types:** ServerConfig.vaultPath / operations.vaultName /
+  semantic.smartEnvPath move into ServerConfig.vaults[]
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- **config:** drop --vault name:path syntax, alias = basename only ([5bf3d41](https://github.com/AlexMost/neuro-vault/commit/5bf3d41dcad2720bae8b6b5be361d6d18b1fef3d))
+- **release:** migration notes for v6.0.0 ([b18df41](https://github.com/AlexMost/neuro-vault/commit/b18df41db024373372ab71bc069384164c6159b1))
+- **types:** introduce VaultConfig and multi-vault ServerConfig ([09a8bef](https://github.com/AlexMost/neuro-vault/commit/09a8bef002bbafc1ff8526161fe381d41068e6f8))
+
+### Features
+
+- **config:** parse repeated --vault name:path ([c321c15](https://github.com/AlexMost/neuro-vault/commit/c321c1514aacf054ca65f7fa8aafcf059e76561b))
+- **config:** validate vault path exists and is a directory ([7c42ec4](https://github.com/AlexMost/neuro-vault/commit/7c42ec422a7d74ddb2e4d6c743554bc1c57f502e))
+- **errors:** add VAULT_REQUIRED and SEMANTIC_INDEX_NOT_FOUND codes ([fcb13f3](https://github.com/AlexMost/neuro-vault/commit/fcb13f3432beed3fd0080bdb28efcfb10cd40446))
+- **lib:** add resolveVault helper with structured errors ([1e2521a](https://github.com/AlexMost/neuro-vault/commit/1e2521a6072b4a554ce94d0fe437bf655281b92a))
+- **lib:** add runFanOut and runSemanticFanOut helpers ([a8e8b7b](https://github.com/AlexMost/neuro-vault/commit/a8e8b7bdaceaa7c1d58908f2528d4eb62351b486))
+- **lib:** add VaultRegistry primitive ([913d7a3](https://github.com/AlexMost/neuro-vault/commit/913d7a32ff45085699f2e2cc1b2dc74bbe7055f7))
+- **operations:** add vault: param to create_note ([03758be](https://github.com/AlexMost/neuro-vault/commit/03758bea0458044c3cbdc7f7d4e83300a5ee9731))
+- **operations:** add vault: param to edit_note ([de3850b](https://github.com/AlexMost/neuro-vault/commit/de3850bd4c73ad4346506912cd9df52f1600b60c))
+- **operations:** add vault: param to get_note_links ([0a2cb3b](https://github.com/AlexMost/neuro-vault/commit/0a2cb3bba260ea0d427640b42b145422ec7e6da2))
+- **operations:** add vault: param to get_vault_overview ([f2e21e4](https://github.com/AlexMost/neuro-vault/commit/f2e21e4eb8283e30e69ba90322b9951b778751d3))
+- **operations:** add vault: param to list_properties ([91eea70](https://github.com/AlexMost/neuro-vault/commit/91eea709819f9162e1bac91c280cfe9fd1f2e10b))
+- **operations:** add vault: param to list_tags ([e53b4fb](https://github.com/AlexMost/neuro-vault/commit/e53b4fbad624b213117e2ff32d7e2a6c23ad38fa))
+- **operations:** add vault: param to query_notes ([0abd623](https://github.com/AlexMost/neuro-vault/commit/0abd6238e71227fa9ed4acee9f1ba5e9b7cfc1b8))
+- **operations:** add vault: param to read_daily ([6ffbef8](https://github.com/AlexMost/neuro-vault/commit/6ffbef8e1c63d610886f7e1f410415577e20e66c))
+- **operations:** add vault: param to read_notes ([d202588](https://github.com/AlexMost/neuro-vault/commit/d2025888ab44159ed62b5f0a03344555acbfbc19))
+- **operations:** add vault: param to read_property ([396a3ff](https://github.com/AlexMost/neuro-vault/commit/396a3fff0c4d3b8e72f5a114bee653f0f66dc908))
+- **operations:** add vault: param to remove_property ([9405e92](https://github.com/AlexMost/neuro-vault/commit/9405e925c2dd5ed7b190c3d04045d9899e9ff10c))
+- **operations:** add vault: param to set_property ([d620ae5](https://github.com/AlexMost/neuro-vault/commit/d620ae5b8e552a70d337f86832dbcd6cb6adb7d1))
+- **operations:** get_vault_overview fan-out for multi-vault ([36a9f15](https://github.com/AlexMost/neuro-vault/commit/36a9f15a60cb84edd4b536529bc5678ac4e65518))
+- **operations:** list_tags and list_properties fan out across vaults ([f9f5acc](https://github.com/AlexMost/neuro-vault/commit/f9f5acca4df74ffdee407fd096a6edfd1b6f33db))
+- **operations:** query_notes fan-out for multi-vault ([424da0e](https://github.com/AlexMost/neuro-vault/commit/424da0ec76e73d2053787910d8dec873dbe35575))
+- **registry:** case-insensitive vault lookup ([8317f8f](https://github.com/AlexMost/neuro-vault/commit/8317f8f0515ad42ec268ddc4483645d4a2a281d8))
+- **resources:** namespace vault://overview per registered vault ([d25c201](https://github.com/AlexMost/neuro-vault/commit/d25c201ee100cd00d301c693a5e2bced8d5d64c5))
+- **semantic:** add vault: param to find_duplicates ([18eb1ca](https://github.com/AlexMost/neuro-vault/commit/18eb1ca47aa5d6bea0d163b790489a954d0d5260))
+- **semantic:** add vault: param to get_similar_notes ([44efc6e](https://github.com/AlexMost/neuro-vault/commit/44efc6e31522d142367f8aef661c85f739aab7c4))
+- **semantic:** add vault: param to get_stats ([64196c2](https://github.com/AlexMost/neuro-vault/commit/64196c22a26faab4fcb20b1e3b9b389b0ed512cd))
+- **semantic:** add vault: param to search_notes ([08d4986](https://github.com/AlexMost/neuro-vault/commit/08d4986d5d74d6d156896fb285941d5615348f79))
+- **semantic:** search_notes fan-out for multi-vault ([79ca360](https://github.com/AlexMost/neuro-vault/commit/79ca360b9b893f50ea4b4bb619766041a38117e8))
+
+### Bug Fixes
+
+- **operations:** handle obsidian-cli plain-text stdout sentinels ([138c0de](https://github.com/AlexMost/neuro-vault/commit/138c0deb7661a25b874545c8d777c81d8df07839))
+
 ## [5.5.3](https://github.com/AlexMost/neuro-vault/compare/v5.5.1...v5.5.3) (2026-05-14)
 
 ### Bug Fixes
