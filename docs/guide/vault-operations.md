@@ -1,6 +1,6 @@
 # Vault Operations
 
-> CLI-routed operations (`create_note`, `read_daily`, properties, tags) require the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. `edit_note`, `read_notes`, and `query_notes` work directly against the filesystem and do **not** require Obsidian to be running. Pass `--no-operations` to disable all operations tools.
+> CLI-routed operations (`create_note`, `read_daily`, properties, tags) require the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. `edit_note`, `read_notes`, and `query_notes` work directly against the filesystem and do **not** require Obsidian to be running.
 
 Most write paths shell out to the `obsidian` CLI, so changes are picked up immediately by Smart Connections, sync, and any other plugin you have installed. The exception is `edit_note` (in-place replace and full-body rewrite), which writes directly to disk — Obsidian's file watcher then notifies plugins on its own cadence.
 
