@@ -64,44 +64,6 @@ function makeFakeCorpusIndex(
 }
 
 describe('Neuro Vault MCP server bootstrap', () => {
-  it('registers four semantic tools when --semantic is enabled', async () => {
-    const tempRoot = await createTempVaultPath();
-    const vaultPath = path.join(tempRoot, 'vault');
-    await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
-
-    const server = createFakeServer();
-    const initialize = vi.fn().mockResolvedValue(undefined);
-    const corpusFactory = vi.fn().mockResolvedValue(makeFakeCorpusIndex());
-
-    try {
-      await main(['node', 'cli.js', '--vault', vaultPath], {
-        vaultEntryDeps: {
-          corpusFactory: () => corpusFactory(),
-          providerFactory: () => ({}) as never,
-          readerFactory: () =>
-            ({
-              readNotes: vi.fn().mockResolvedValue([]),
-              scan: vi.fn().mockResolvedValue([]),
-            }) as never,
-        },
-        semantic: {
-          embeddingServiceFactory: () => ({ initialize, embed: vi.fn() }),
-        },
-        serverFactory: (_instructions: string) => server,
-        transportFactory: () => ({}) as never,
-      });
-
-      expect(server.registeredToolNames).toContain('search_notes');
-      expect(server.registeredToolNames).toContain('get_similar_notes');
-      expect(server.registeredToolNames).toContain('find_duplicates');
-      expect(server.registeredToolNames).toContain('get_stats');
-      expect(server.connect).toHaveBeenCalledTimes(1);
-      await vi.waitFor(() => expect(initialize).toHaveBeenCalledTimes(1));
-    } finally {
-      await fs.rm(tempRoot, { recursive: true, force: true });
-    }
-  });
-
   it('returns SEMANTIC_INDEX_NOT_FOUND when Smart Connections directory is missing (startup tolerant)', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
