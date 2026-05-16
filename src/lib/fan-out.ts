@@ -1,13 +1,44 @@
 import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
+import { ToolHandlerError } from './tool-response.js';
 
 export interface ISkippedVault {
   vault: string;
   reason: string;
 }
 
+export interface IFailedVault {
+  vault: string;
+  error: {
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  };
+}
+
 export interface IFanOutResult<T extends Record<string, unknown>> {
   results_by_vault: Array<{ vault: string } & T>;
   skipped_vaults: ISkippedVault[];
+  failed_vaults: IFailedVault[];
+}
+
+function mapRejectionToFailedVault(vault: string, reason: unknown): IFailedVault {
+  if (reason instanceof ToolHandlerError) {
+    return {
+      vault,
+      error: {
+        code: reason.code,
+        message: reason.message,
+        ...(reason.details ? { details: reason.details } : {}),
+      },
+    };
+  }
+  return {
+    vault,
+    error: {
+      code: 'INTERNAL_ERROR',
+      message: reason instanceof Error ? reason.message : String(reason),
+    },
+  };
 }
 
 /**
@@ -15,17 +46,30 @@ export interface IFanOutResult<T extends Record<string, unknown>> {
  *
  * Use when the operation does not depend on a semantic index (e.g. structural
  * queries that read the disk directly). No vault is skipped; `skipped_vaults`
- * is always an empty array.
+ * is always an empty array. Per-vault rejections are captured into
+ * `failed_vaults` rather than propagated, so one failing vault does not abort
+ * the whole multi-vault response.
  */
 export async function runFanOut<T extends Record<string, unknown>>(
   registry: IVaultRegistry,
   fn: (entry: IVaultEntry) => Promise<T>,
 ): Promise<IFanOutResult<T>> {
   const entries = registry.list();
-  const results = await Promise.all(
-    entries.map(async (entry) => ({ vault: entry.name, ...(await fn(entry)) })),
+  const settled = await Promise.allSettled(
+    entries.map((entry) => fn(entry).then((value) => ({ vault: entry.name, ...value }))),
   );
-  return { results_by_vault: results, skipped_vaults: [] };
+
+  const results: Array<{ vault: string } & T> = [];
+  const failed: IFailedVault[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    if (outcome.status === 'fulfilled') {
+      results.push(outcome.value);
+    } else {
+      failed.push(mapRejectionToFailedVault(entries[i].name, outcome.reason));
+    }
+  }
+  return { results_by_vault: results, skipped_vaults: [], failed_vaults: failed };
 }
 
 /**
@@ -33,6 +77,8 @@ export async function runFanOut<T extends Record<string, unknown>>(
  *
  * Vaults without a usable `.smart-env/multi/` are skipped silently and
  * surfaced in `skipped_vaults` with `reason: 'SEMANTIC_INDEX_NOT_FOUND'`.
+ * Per-vault rejections from eligible entries are captured into `failed_vaults`
+ * rather than propagated.
  * The caller is responsible for the per-entry semantic invariant
  * (`entry.corpus` is defined when `entry.semanticAvailable === true`).
  */
@@ -45,8 +91,20 @@ export async function runSemanticFanOut<T extends Record<string, unknown>>(
     .list()
     .filter((e) => !e.semanticAvailable)
     .map((e) => ({ vault: e.name, reason: 'SEMANTIC_INDEX_NOT_FOUND' }));
-  const results = await Promise.all(
-    eligible.map(async (entry) => ({ vault: entry.name, ...(await fn(entry)) })),
+
+  const settled = await Promise.allSettled(
+    eligible.map((entry) => fn(entry).then((value) => ({ vault: entry.name, ...value }))),
   );
-  return { results_by_vault: results, skipped_vaults: skipped };
+
+  const results: Array<{ vault: string } & T> = [];
+  const failed: IFailedVault[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const outcome = settled[i];
+    if (outcome.status === 'fulfilled') {
+      results.push(outcome.value);
+    } else {
+      failed.push(mapRejectionToFailedVault(eligible[i].name, outcome.reason));
+    }
+  }
+  return { results_by_vault: results, skipped_vaults: skipped, failed_vaults: failed };
 }

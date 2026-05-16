@@ -59,6 +59,7 @@ describe('operations.listProperties handler', () => {
         { vault: 'b', results: [{ name: 'pB', count: 2 }] },
       ],
       skipped_vaults: [],
+      failed_vaults: [],
     });
     expect(providerA.listProperties).toHaveBeenCalledTimes(1);
     expect(providerB.listProperties).toHaveBeenCalledTimes(1);

@@ -59,6 +59,7 @@ describe('operations.listTags handler', () => {
         { vault: 'b', results: [{ name: 'fromB', count: 2 }] },
       ],
       skipped_vaults: [],
+      failed_vaults: [],
     });
     expect(providerA.listTags).toHaveBeenCalledTimes(1);
     expect(providerB.listTags).toHaveBeenCalledTimes(1);
