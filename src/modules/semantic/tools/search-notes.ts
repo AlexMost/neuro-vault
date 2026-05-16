@@ -318,6 +318,9 @@ export function buildSearchNotesTool(
     inputSchema,
     handler: async (input) => {
       if (input.vault === undefined && registry.isMulti()) {
+        // runSemanticFanOut filters via semanticAvailableEntries(), so every
+        // entry reaching the callback has corpus defined — the cast bridges
+        // what TS cannot prove from the flag alone.
         return await runSemanticFanOut(registry, (entry) =>
           runSearchForEntry(
             entry as IVaultEntry & { corpus: SmartConnectionsCorpusIndex },
