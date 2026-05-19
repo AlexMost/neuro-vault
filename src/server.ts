@@ -117,12 +117,12 @@ If the query is about a known folder, tag, or frontmatter dimension, pass \`filt
 - Use \`limit\` to override the default note count in either mode. Widening \`limit\` widens recall.
 
 ### 3. Use the results
-- \`results\` — notes ranked by similarity; read the file by path. Each result also carries \`backlink_count\` (vault-wide inbound wikilinks + embeds) — useful as a tiebreaker when several results share a similar similarity score.
-- \`matched_queries\` (only when \`query\` is an array) — which of your queries hit this note; lets you spot which synonym was load-bearing
-- \`truncated\` (only when \`query\` is an array) — true when unique merged candidates exceeded \`limit\`; widen \`limit\` to see more
-- \`via_expansion: true\` (deep mode only) — marks results pulled in by post-merge expansion; these have no \`matched_queries\`
-- \`blockResults\` — sections ranked by relevance; use heading + line range to jump to the relevant part
-- After finding a relevant note, call get_similar_notes to discover related content
+- \`results\` — top-level notes ranked by similarity. Each result carries \`backlink_count\` (vault-wide inbound wikilinks + embeds) — useful as a tiebreaker when scores are close.
+- \`results[].blocks\` — section-level matches inside this note; use heading + line range to jump to the relevant part. Always present (possibly empty).
+- \`results[].related\` — expansion neighbours of this note (deep mode only). Each item has \`path\` and \`expansion_similarity\` — a DIFFERENT scale from \`similarity\`; do not compare them numerically. Always present (possibly empty). The same neighbour may appear under multiple parents.
+- \`matched_queries\` (only when \`query\` is an array) — which of your queries hit this note; lets you spot which synonym was load-bearing.
+- \`truncated\` (only when \`query\` is an array) — true when unique merged candidates exceeded \`limit\`; widen \`limit\` to see more.
+- After finding a relevant note, call \`get_similar_notes\` for a deeper neighbour profile.
 
 ## Routing between operations and semantic
 
