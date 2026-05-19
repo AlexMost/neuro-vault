@@ -13,7 +13,8 @@ search_notes({
   limit?: number,               // default: 3 (quick) / 8 (deep)
   threshold?: number,           // default: 0.5 (quick) / 0.35 (deep), 0–1
   filter?: {                    // optional: narrow candidate set before ranking
-    path_prefix?: string,
+    path_prefix?: string | string[],
+    exclude_path_prefix?: string | string[],
     tags?: string[],
     frontmatter?: object,
   },
@@ -41,13 +42,24 @@ Pass `filter` to narrow the candidate set **before** semantic ranking. Useful wh
 }
 ```
 
-`filter` accepts three optional fields (at least one required):
+`filter` accepts four optional fields (at least one required):
 
-- `path_prefix` — scope to a vault subtree (e.g. `"Resources/"`).
+- `path_prefix` — scope to a vault subtree (e.g. `"Resources/"`) or array of subtrees for OR-semantics (e.g. `["Tasks/", "Reflections/"]`).
+- `exclude_path_prefix` — drop notes whose path starts with any of the listed prefixes (e.g. `["Resources/", "Archive/"]`). Valid as the sole filter field — "search the whole vault except those subtrees".
 - `tags` — string array; matches any note carrying ANY of these tags (no leading `#`).
 - `frontmatter` — sift filter against frontmatter keys; same operator allow-list as `query_notes` (`$eq`, `$ne`, `$in`, `$nin`, `$gt`, `$gte`, `$lt`, `$lte`, `$exists`, `$regex`, `$and`, `$or`, `$nor`, `$not`).
 
-Composition: `filter` AND `threshold` AND semantic similarity. The output shape is unchanged — just smaller and more relevant.
+Composition: include → exclude → tags → frontmatter → threshold → semantic similarity. The output shape is unchanged — just smaller and more relevant.
+
+Example — carve out absorbed atoms and dead notes from a broad query:
+
+```json
+{
+  "query": "active thinking",
+  "mode": "deep",
+  "filter": { "exclude_path_prefix": ["Resources/", "Archive/"] }
+}
+```
 
 ### Output shape — `quick`
 

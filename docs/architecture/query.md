@@ -24,7 +24,7 @@ leading `#` stripped and blanks dropped.
 
 `runQueryNotes` is the handler. It:
 
-1. Validates input shape (`limit` cap, `path_prefix` shape, `sort` field/order).
+1. Validates input shape (`limit` cap, `path_prefix` / `exclude_path_prefix` normalization via `path-prefix-set.ts`, `sort` field/order). Multi-prefix include disables the scan-order early-exit because each prefix scan is independently ordered; single-prefix (with or without exclude) keeps it, because exclude is applied inside the per-item loop and `matched.length` therefore tracks post-exclude matches.
 2. Validates the filter against the operator allow-list.
 3. Calls `VaultReader.scan({ pathPrefix })` to get paths (lexicographic order).
 4. Iterates paths in **bounded batches of 32** through `VaultReader.readNotes`.

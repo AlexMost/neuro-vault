@@ -22,7 +22,7 @@ import type {
   QueryNotesToolInput,
 } from './types.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
-import { normalizeVaultPathPrefix } from './path-prefix.js';
+import { matchesAnyPrefix, normalizePrefixList } from './path-prefix-set.js';
 import { validateFilter } from './whitelist.js';
 
 const DEFAULT_LIMIT = 100;
@@ -33,7 +33,8 @@ const READ_BATCH_SIZE = 32;
 
 interface ValidatedInput {
   filter: Record<string, unknown>;
-  pathPrefix: string | undefined;
+  includePrefixes: string[] | undefined;
+  excludePrefixes: string[] | undefined;
   sort: QueryNotesSort | undefined;
   limit: number;
   includeContent: boolean;
@@ -44,6 +45,7 @@ interface CollectMatchingPathsInput {
   pathPrefix: string | undefined;
   includeContent: boolean;
   earlyExitAfter?: number; // break after collecting > N matches (i.e. at most N+1); omit for full scan. The +1 lets the caller distinguish "exactly N" from "more than N" for truncation.
+  excludePathPrefixes?: string[]; // drop items whose path matches any of these prefixes (boundary-safe, via matchesAnyPrefix)
 }
 
 export interface CollectedRow {
@@ -105,6 +107,14 @@ export async function collectMatchingPaths(
         }
         continue;
       }
+      // Exclude before sift: cheap path check, and keeps matched.length === post-exclude
+      // count so earlyExitAfter / truncated logic in runQueryNotes remains correct.
+      if (
+        input.excludePathPrefixes !== undefined &&
+        matchesAnyPrefix(item.path, input.excludePathPrefixes)
+      ) {
+        continue;
+      }
       const backlinkCount = graph?.getBacklinkCount(item.path) ?? 0;
       const record = toNoteRecord(item, backlinkCount);
       let isMatch: boolean;
@@ -141,18 +151,38 @@ export async function runQueryNotes(
   // sorted output: scan returns paths in lexicographic ascending order, so
   // "no sort" and "sort by path asc" win for free. Any other sort needs the
   // full match set before we can know which entries land in the top `limit`.
-  const earlyExitAllowed =
+  // Multi-prefix include also defeats early-exit because each prefix scan is
+  // independently ordered; the merged set has no global order to truncate by.
+  const sortOrderMatchesScan =
     !validated.sort || (validated.sort.field === 'path' && validated.sort.order === 'asc');
+  const includes: Array<string | undefined> = validated.includePrefixes ?? [undefined];
+  const multiPrefix = includes.length > 1;
+  const earlyExitAfter = sortOrderMatchesScan && !multiPrefix ? validated.limit : undefined;
 
-  const matched = await collectMatchingPaths(
-    {
-      filter: effectiveFilter,
-      pathPrefix: validated.pathPrefix,
-      includeContent: validated.includeContent,
-      earlyExitAfter: earlyExitAllowed ? validated.limit : undefined,
-    },
-    { reader, graph },
+  const batches = await Promise.all(
+    includes.map((prefix) =>
+      collectMatchingPaths(
+        {
+          filter: effectiveFilter,
+          pathPrefix: prefix,
+          includeContent: validated.includeContent,
+          earlyExitAfter,
+          excludePathPrefixes: validated.excludePrefixes,
+        },
+        { reader, graph },
+      ),
+    ),
   );
+
+  const seen = new Set<string>();
+  const matched: CollectedRow[] = [];
+  for (const rows of batches) {
+    for (const row of rows) {
+      if (seen.has(row.record.path)) continue;
+      seen.add(row.record.path);
+      matched.push(row);
+    }
+  }
 
   if (validated.sort) {
     sortInPlace(matched, validated.sort);
@@ -189,13 +219,12 @@ function validateInput(input: QueryNotesToolInput): ValidatedInput {
     throw invalidParams('filter must be a JSON object', 'filter');
   }
 
-  let pathPrefix: string | undefined;
-  if (input.path_prefix !== undefined) {
-    if (typeof input.path_prefix !== 'string') {
-      throw invalidParams('path_prefix must be a string', 'path_prefix');
-    }
-    pathPrefix = normalizeScanPrefixInput(input.path_prefix);
-  }
+  const includePrefixes = normalizePrefixList(input.path_prefix, 'path_prefix', 'INVALID_PARAMS');
+  const excludePrefixes = normalizePrefixList(
+    input.exclude_path_prefix,
+    'exclude_path_prefix',
+    'INVALID_PARAMS',
+  );
 
   let sort: QueryNotesSort | undefined;
   if (input.sort !== undefined) {
@@ -225,15 +254,12 @@ function validateInput(input: QueryNotesToolInput): ValidatedInput {
 
   return {
     filter: input.filter as Record<string, unknown>,
-    pathPrefix,
+    includePrefixes,
+    excludePrefixes,
     sort,
     limit,
     includeContent,
   };
-}
-
-function normalizeScanPrefixInput(raw: string): string | undefined {
-  return normalizeVaultPathPrefix(raw, (message) => invalidParams(message, 'path_prefix'));
 }
 
 function validateSort(raw: unknown): QueryNotesSort {

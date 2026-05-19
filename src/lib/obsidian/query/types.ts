@@ -12,7 +12,8 @@ export interface QueryNotesSort {
 
 export interface QueryNotesToolInput {
   filter: Record<string, unknown>;
-  path_prefix?: string;
+  path_prefix?: string | string[];
+  exclude_path_prefix?: string | string[];
   sort?: QueryNotesSort;
   limit?: number;
   include_content?: boolean;

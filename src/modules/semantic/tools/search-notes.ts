@@ -22,8 +22,11 @@ import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js
 import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import { vaultParamShape } from '../../../lib/vault-param.js';
 
+const prefixSchema = z.union([z.string(), z.array(z.string()).min(1)]);
+
 const filterSchema = z.object({
-  path_prefix: z.string().optional(),
+  path_prefix: prefixSchema.optional(),
+  exclude_path_prefix: prefixSchema.optional(),
   tags: z.array(z.string()).optional(),
   frontmatter: z.record(z.string(), z.unknown()).optional(),
 });
@@ -35,7 +38,8 @@ interface SearchNotesInput {
   limit?: number;
   threshold?: number;
   filter?: {
-    path_prefix?: string;
+    path_prefix?: string | string[];
+    exclude_path_prefix?: string | string[];
     tags?: string[];
     frontmatter?: Record<string, unknown>;
   };
@@ -81,10 +85,17 @@ function wrapDependencyError(
 }
 
 function isFilterEmpty(filter: NoteFilter): boolean {
-  const hasPath = filter.path_prefix !== undefined && filter.path_prefix !== '';
+  const hasInclude =
+    filter.path_prefix !== undefined &&
+    (Array.isArray(filter.path_prefix) ? filter.path_prefix.length > 0 : filter.path_prefix !== '');
+  const hasExclude =
+    filter.exclude_path_prefix !== undefined &&
+    (Array.isArray(filter.exclude_path_prefix)
+      ? filter.exclude_path_prefix.length > 0
+      : filter.exclude_path_prefix !== '');
   const hasTags = Array.isArray(filter.tags) && filter.tags.length > 0;
   const hasFm = filter.frontmatter !== undefined && Object.keys(filter.frontmatter).length > 0;
-  return !hasPath && !hasTags && !hasFm;
+  return !hasInclude && !hasExclude && !hasTags && !hasFm;
 }
 
 function narrowSources(
@@ -132,7 +143,7 @@ async function runSearchForEntry(
     if (isFilterEmpty(input.filter)) {
       throw new ToolHandlerError(
         'INVALID_ARGUMENT',
-        'filter must specify at least one of: path_prefix, tags, frontmatter',
+        'filter must specify at least one of: path_prefix, exclude_path_prefix, tags, frontmatter',
       );
     }
 
@@ -294,13 +305,15 @@ export function buildSearchNotesTool(
     '',
     'PRE-FILTER (filter parameter):',
     '- filter: optional structural narrowing applied BEFORE semantic ranking. Best when vault has many narrative notes that crowd top-K on a niche query.',
-    '  Shape: { path_prefix?, tags?, frontmatter? }. At least one field required.',
-    '  - path_prefix: scope to a folder (e.g. "Resources/").',
+    '  Shape: { path_prefix?, exclude_path_prefix?, tags?, frontmatter? }. At least one field required.',
+    '  - path_prefix: scope to a folder, or array of folders for OR-semantics (e.g. ["Tasks/", "Reflections/"]).',
+    '  - exclude_path_prefix: drop notes whose path starts with any of the listed prefixes (e.g. ["Resources/", "Archive/"]). Valid as the sole filter field — "search the whole vault except these subtrees".',
     '  - tags: notes that have ANY of these tags (OR within the array; no leading "#").',
     '  - frontmatter: sift filter on frontmatter keys (e.g. { type: "reflection", status: "active" }). Same operator allow-list as query_notes.',
-    '  Composition: filter AND threshold AND semantic. Use this instead of querying twice and intersecting on the client.',
+    '  Composition: include → exclude → tags → frontmatter → threshold → semantic. Use this instead of querying twice and intersecting on the client.',
     '- scoped recall: search_notes({query: "trading lessons", filter: {tags: ["trading"]}}) — semantic only inside notes tagged trading.',
-    '- scoped multi-query: search_notes({query: ["embeddings","векторний пошук"], filter: {path_prefix: "Resources/"}, mode: "deep"}).',
+    '- carve out noise: search_notes({query: "active thinking", filter: {exclude_path_prefix: ["Resources/", "Archive/"]}, mode: "deep"}).',
+    '- scoped multi-query: search_notes({query: ["embeddings","векторний пошук"], filter: {path_prefix: ["Resources/", "Inbox/"]}, mode: "deep"}).',
     ...(registry.isMulti()
       ? [
           '',
