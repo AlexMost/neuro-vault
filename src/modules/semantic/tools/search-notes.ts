@@ -4,12 +4,7 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
 import { runSemanticFanOut, type IFanOutResult } from '../../../lib/fan-out.js';
-import {
-  executeMultiRetrieval,
-  executeRetrieval,
-  type MultiRetrievalOutput,
-  type RetrievalOutput,
-} from '../retrieval-policy.js';
+import { executeMultiRetrieval, executeRetrieval } from '../retrieval-policy.js';
 import {
   normalizeQuery,
   normalizeQueryArray,
@@ -17,7 +12,14 @@ import {
   readPositiveInteger,
   readThreshold,
 } from '../tool-helpers.js';
-import type { EmbeddingProvider, NoteFilter, SearchEngine, SmartSource } from '../types.js';
+import type {
+  EmbeddingProvider,
+  NoteFilter,
+  NoteResultNode,
+  MultiNoteResultNode,
+  SearchEngine,
+  SmartSource,
+} from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
 import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import { vaultParamShape } from '../../../lib/vault-param.js';
@@ -45,13 +47,16 @@ interface SearchNotesInput {
   };
 }
 
-type EnrichResults<T extends { results: { path: string }[] }> = Omit<T, 'results'> & {
-  results: Array<T['results'][number] & { backlink_count: number; vault: string }>;
+// Direct nodes carry backlink_count + vault. Related nodes are lightweight (no
+// enrichment) — consumers can call get_similar_notes for a full neighbour profile.
+type EnrichedNoteNode<T extends NoteResultNode> = T & {
+  backlink_count: number;
+  vault: string;
 };
 
 export type SearchNotesOutput =
-  | EnrichResults<RetrievalOutput>
-  | EnrichResults<MultiRetrievalOutput>;
+  | { results: EnrichedNoteNode<NoteResultNode>[] }
+  | { results: EnrichedNoteNode<MultiNoteResultNode>[]; truncated: boolean };
 
 export interface SearchNotesDeps {
   registry: IVaultRegistry;
@@ -164,12 +169,9 @@ async function runSearchForEntry(
 
     if (allowed.size === 0) {
       const isMulti = Array.isArray(input.query);
-      const isDeep = mode === 'deep';
-      return {
-        results: [],
-        ...(isDeep ? { blockResults: [] } : {}),
-        ...(isMulti ? { truncated: false } : {}),
-      } as SearchNotesOutput;
+      return isMulti
+        ? ({ results: [], truncated: false } as SearchNotesOutput)
+        : ({ results: [] } as SearchNotesOutput);
     }
 
     effectiveSources = narrowSources(sources, allowed);
@@ -187,31 +189,25 @@ async function runSearchForEntry(
         embeddingProvider,
         searchEngine,
       });
+      // Candidate paths to check on disk: direct results plus everything in their
+      // related[] (related nodes are filtered, not enriched, if missing).
       const candidatePaths: string[] = [
         ...output.results.map((r) => r.path),
-        ...(output.blockResults?.map((b) => b.path) ?? []),
+        ...output.results.flatMap((r) => r.related.map((rel) => rel.path)),
       ];
       const [existing] = await Promise.all([
         buildExistingPathSet(entry, candidatePaths),
         graph.ensureFresh(),
       ]);
-      return {
-        results: output.results
-          .filter((r) => existing.has(r.path))
-          .map((r) => ({
-            ...r,
-            backlink_count: graph.getBacklinkCount(r.path),
-            vault: entry.name,
-          })),
-        ...(output.blockResults !== undefined
-          ? {
-              blockResults: output.blockResults
-                .filter((b) => existing.has(b.path))
-                .map((b) => ({ ...b, vault: entry.name })),
-            }
-          : {}),
-        truncated: output.truncated,
-      };
+      const enriched = output.results
+        .filter((r) => existing.has(r.path))
+        .map((r) => ({
+          ...r,
+          related: r.related.filter((rel) => existing.has(rel.path)),
+          backlink_count: graph.getBacklinkCount(r.path),
+          vault: entry.name,
+        }));
+      return { results: enriched, truncated: output.truncated };
     } catch (error) {
       throw wrapDependencyError(error, 'Failed to search notes', {
         modelKey,
@@ -233,28 +229,21 @@ async function runSearchForEntry(
     });
     const candidatePaths: string[] = [
       ...output.results.map((r) => r.path),
-      ...(output.blockResults?.map((b) => b.path) ?? []),
+      ...output.results.flatMap((r) => r.related.map((rel) => rel.path)),
     ];
     const [existing] = await Promise.all([
       buildExistingPathSet(entry, candidatePaths),
       graph.ensureFresh(),
     ]);
-    return {
-      results: output.results
-        .filter((r) => existing.has(r.path))
-        .map((r) => ({
-          ...r,
-          backlink_count: graph.getBacklinkCount(r.path),
-          vault: entry.name,
-        })),
-      ...(output.blockResults !== undefined
-        ? {
-            blockResults: output.blockResults
-              .filter((b) => existing.has(b.path))
-              .map((b) => ({ ...b, vault: entry.name })),
-          }
-        : {}),
-    };
+    const enriched = output.results
+      .filter((r) => existing.has(r.path))
+      .map((r) => ({
+        ...r,
+        related: r.related.filter((rel) => existing.has(rel.path)),
+        backlink_count: graph.getBacklinkCount(r.path),
+        vault: entry.name,
+      }));
+    return { results: enriched };
   } catch (error) {
     throw wrapDependencyError(error, 'Failed to search notes', {
       modelKey,
@@ -280,38 +269,47 @@ export function buildSearchNotesTool(
     'Search notes by semantic similarity. Best for fuzzy recall, topic exploration, or cross-language matches. Pass short keyword queries (1-4 words), not sentences.',
     '',
     'MODES (pick based on intent):',
-    '- "quick" (default) — specific lookup. Returns up to 3 top notes plus block-level matches scoped to those notes. Use when you want one or two specific notes.',
-    '- "deep" — topic exploration. Returns up to 8 notes plus block-level matches across the whole vault. After the merged top-`limit` results are selected, expansion runs once to pull in semantically related notes; expansion-derived results carry `via_expansion: true`. Use for "tell me about X" or building an overview.',
+    '- "quick" (default) — specific lookup. Returns up to 3 notes; each note carries `blocks[]` scoped to itself and `related: []`. Use when you want one or two specific notes.',
+    '- "deep" — topic exploration. Returns up to 8 notes; each note carries `blocks[]` (scoped to itself) and `related[]` (semantically neighbouring notes). Use for "tell me about X" or building an overview.',
     '',
     'PARAMETERS:',
-    '- query (required): string, or array of 1-8 strings. Pass an array for synonyms / reformulations / translations — embedded in batch, merged into one ranked list. Each result carries `matched_queries` (which of your queries hit it). `limit` is the FINAL result count regardless of how many queries are passed — passing more queries widens coverage but does not increase the result count.',
+    '- query (required): string, or array of 1-8 strings. Pass an array for synonyms / reformulations / translations — embedded in batch, merged into one ranked list. Each result carries `matched_queries` (which of your queries hit it). `limit` is the FINAL result count regardless of how many queries are passed.',
     '- mode: "quick" | "deep" (default "quick").',
-    '- limit: max notes in `results`. Default 3 (quick) / 8 (deep). Override to widen or narrow the result set. Does not affect `blockResults` (quick: capped at 5; deep: capped at mode limit).',
+    '- limit: max notes in `results`. Default 3 (quick) / 8 (deep). Does not affect leaves (`blocks` / `related`).',
     '- threshold: min similarity, 0-1. Default 0.5 (quick) / 0.35 (deep). Raise to 0.6+ to cut weak matches; lower (e.g. 0.3) when nothing comes back.',
     ...(registry.isMulti()
       ? ['- vault: target a specific vault by name when multiple are registered.']
       : []),
     '',
-    'OUTPUT FIELDS (multi-query):',
-    '- matched_queries: which of your queries surfaced this result — tells you which synonym was load-bearing.',
-    '- truncated: true when more unique candidates were merged than fit in `limit`.',
-    '- via_expansion: true on results pulled in by post-merge expansion in deep mode (mutually exclusive with matched_queries).',
+    'RESPONSE SHAPE (tree, depth = 2):',
+    '- `results[]` — top-level direct note matches, ranked by query similarity.',
+    '  - `path`, `similarity` (query-similarity), `backlink_count`, `vault`',
+    '  - `matched_queries` (only when `query` is an array) — which of your queries hit this note',
+    '  - `blocks[]` — section-level matches WITHIN this note. Each block has `heading`, `lines: [start, end]`, `similarity` (query-similarity at block level).',
+    '  - `related[]` — expansion neighbours OF this note (deep mode only; empty otherwise). Each item has `path` and `expansion_similarity` (note-to-note, DIFFERENT SCALE from `similarity` — do not compare them numerically).',
+    '- `truncated` — top-level, only when `query` is an array; true when merged candidates exceeded `limit`.',
+    '',
+    'INVARIANTS:',
+    "- A `related` item NEVER has a `similarity` field — only `expansion_similarity`. A direct result NEVER has `expansion_similarity`. Don't conflate them.",
+    "- The same neighbour can appear in `related[]` of multiple direct results (with different `expansion_similarity` values per parent) — that's by design.",
+    '- `blocks[]` and `related[]` are always present on direct results (possibly empty).',
+    '- After finding a relevant note, call `get_similar_notes` on it for a deeper neighbour profile — do not infer relationships from `related[]` alone.',
     '',
     'EXAMPLES:',
     '- "where did I write about X?" → search_notes({query: "X"}) — quick.',
     '- "what do I know about Y?" → search_notes({query: "Y", mode: "deep"}).',
-    '- multilingual pair: search_notes({query: ["embeddings", "векторний пошук"]}) — returns one merged list; notes matched by both queries appear with both in matched_queries.',
-    '- multilingual deep: search_notes({query: ["optimization", "оптимізація"], mode: "deep"}) — merged top-`limit` seeds, then expansion once on the merged set.',
+    '- multilingual pair: search_notes({query: ["embeddings", "векторний пошук"]}).',
+    '- multilingual deep: search_notes({query: ["optimization", "оптимізація"], mode: "deep"}).',
     '',
     'PRE-FILTER (filter parameter):',
     '- filter: optional structural narrowing applied BEFORE semantic ranking. Best when vault has many narrative notes that crowd top-K on a niche query.',
     '  Shape: { path_prefix?, exclude_path_prefix?, tags?, frontmatter? }. At least one field required.',
     '  - path_prefix: scope to a folder, or array of folders for OR-semantics (e.g. ["Tasks/", "Reflections/"]).',
-    '  - exclude_path_prefix: drop notes whose path starts with any of the listed prefixes (e.g. ["Resources/", "Archive/"]). Valid as the sole filter field — "search the whole vault except these subtrees".',
+    '  - exclude_path_prefix: drop notes whose path starts with any of the listed prefixes (e.g. ["Resources/", "Archive/"]). Valid as the sole filter field.',
     '  - tags: notes that have ANY of these tags (OR within the array; no leading "#").',
     '  - frontmatter: sift filter on frontmatter keys (e.g. { type: "reflection", status: "active" }). Same operator allow-list as query_notes.',
-    '  Composition: include → exclude → tags → frontmatter → threshold → semantic. Use this instead of querying twice and intersecting on the client.',
-    '- scoped recall: search_notes({query: "trading lessons", filter: {tags: ["trading"]}}) — semantic only inside notes tagged trading.',
+    '  Composition: include → exclude → tags → frontmatter → threshold → semantic.',
+    '- scoped recall: search_notes({query: "trading lessons", filter: {tags: ["trading"]}}).',
     '- carve out noise: search_notes({query: "active thinking", filter: {exclude_path_prefix: ["Resources/", "Archive/"]}, mode: "deep"}).',
     '- scoped multi-query: search_notes({query: ["embeddings","векторний пошук"], filter: {path_prefix: ["Resources/", "Inbox/"]}, mode: "deep"}).',
     ...(registry.isMulti()

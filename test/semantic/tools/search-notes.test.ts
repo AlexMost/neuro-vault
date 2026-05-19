@@ -77,7 +77,13 @@ describe('searchNotes', () => {
           threshold: 0,
         })) as SearchNotesOutput;
         expect(result.results.map((r) => r.path)).toEqual(['Folder/note-a.md', 'Folder/note-c.md']);
-        expect(result.blockResults?.map((b) => b.path) ?? []).not.toContain('Folder/note-b.md');
+        // blocks now live under each result; assert none belong to the absent path
+        for (const r of result.results) {
+          expect(r.path).not.toBe('Folder/note-b.md');
+          for (const block of r.blocks) {
+            expect(block).not.toHaveProperty('path');
+          }
+        }
       } finally {
         await cleanup();
       }
@@ -364,6 +370,8 @@ describe('searchNotes', () => {
         expect(output).not.toHaveProperty('truncated');
         for (const result of output.results as Array<Record<string, unknown>>) {
           expect(result).not.toHaveProperty('matched_queries');
+          expect(result).toHaveProperty('blocks');
+          expect(result).toHaveProperty('related');
         }
       } finally {
         await cleanup();
@@ -471,10 +479,8 @@ describe('searchNotes', () => {
     }
   });
 
-  it('multi-query expansion: expanded results have via_expansion: true and no matched_queries', async () => {
-    // Seeds: note-a.md (from query). Expansion: exp.md.
+  it("multi-query expansion: expansion neighbours live under each result's related[]", async () => {
     const sources = makeMockSources(['note-a.md', 'exp.md']);
-    // Give note-a.md a non-empty embedding so expansion runs
     sources.get('note-a.md')!.embedding = [1, 0];
 
     const embed = vi.fn().mockResolvedValue([1, 0]);
@@ -482,7 +488,7 @@ describe('searchNotes', () => {
       findNeighbors: vi
         .fn()
         .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }]) // query
-        .mockReturnValueOnce([{ path: 'exp.md', similarity: 0.7 }]), // expansion
+        .mockReturnValueOnce([{ path: 'exp.md', similarity: 0.7 }]), // expansion for note-a
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
@@ -493,23 +499,24 @@ describe('searchNotes', () => {
     const tool = buildSearchNotesTool(deps);
     try {
       const output = (await tool.handler({ query: ['q1'], mode: 'deep', threshold: 0 })) as {
-        results: Array<{ path: string; matched_queries?: string[]; via_expansion?: true }>;
+        results: Array<{
+          path: string;
+          matched_queries: string[];
+          related: Array<{ path: string; expansion_similarity: number }>;
+        }>;
         truncated: boolean;
       };
 
-      const expanded = output.results.filter((r) => r.via_expansion);
-      expect(expanded.length).toBeGreaterThan(0);
-      expect(expanded.every((r) => r.via_expansion === true)).toBe(true);
-      expect(expanded.every((r) => r.matched_queries === undefined)).toBe(true);
-
-      const seeds = output.results.filter((r) => !r.via_expansion);
-      expect(seeds.every((r) => Array.isArray(r.matched_queries))).toBe(true);
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.matched_queries).toEqual(['q1']);
+      expect(noteA.related).toEqual([{ path: 'exp.md', expansion_similarity: 0.7 }]);
+      expect(output.results.find((r) => r.path === 'exp.md')).toBeUndefined();
     } finally {
       await cleanup();
     }
   });
 
-  it('quick mode multi-query never has via_expansion results', async () => {
+  it('quick mode multi-query never populates related[]', async () => {
     const sources = makeMockSources(['note-a.md', 'note-b.md']);
     const embed = vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]);
     const searchEngine = makeMockSearchEngine({
@@ -530,19 +537,16 @@ describe('searchNotes', () => {
         query: ['q1', 'q2'],
         mode: 'quick',
         threshold: 0,
-      })) as {
-        results: Array<{ path: string; via_expansion?: true }>;
-      };
+      })) as { results: Array<{ related: unknown[] }> };
 
-      expect(output.results.every((r) => !r.via_expansion)).toBe(true);
-      // findNeighbors called exactly twice (once per query), no expansion calls
+      expect(output.results.every((r) => r.related.length === 0)).toBe(true);
       expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(2);
     } finally {
       await cleanup();
     }
   });
 
-  it('query: string in deep mode emits via_expansion: true on expansion-derived results', async () => {
+  it('single-query deep mode populates related[] on the seed', async () => {
     const sources = makeMockSources(['note-a.md', 'exp.md']);
     sources.get('note-a.md')!.embedding = [1, 0];
 
@@ -550,8 +554,8 @@ describe('searchNotes', () => {
     const searchEngine = makeMockSearchEngine({
       findNeighbors: vi
         .fn()
-        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }]) // initial query
-        .mockReturnValueOnce([{ path: 'exp.md', similarity: 0.7 }]), // expansion
+        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }])
+        .mockReturnValueOnce([{ path: 'exp.md', similarity: 0.7 }]),
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
@@ -562,15 +566,59 @@ describe('searchNotes', () => {
     const tool = buildSearchNotesTool(deps);
     try {
       const output = (await tool.handler({ query: 'test query', mode: 'deep', threshold: 0 })) as {
-        results: Array<{ path: string; via_expansion?: true }>;
+        results: Array<{
+          path: string;
+          related: Array<{ path: string; expansion_similarity: number }>;
+        }>;
       };
 
-      const expanded = output.results.filter((r) => r.via_expansion);
-      expect(expanded.length).toBeGreaterThan(0);
-      expect(expanded.every((r) => r.via_expansion === true)).toBe(true);
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.related).toEqual([{ path: 'exp.md', expansion_similarity: 0.7 }]);
+    } finally {
+      await cleanup();
+    }
+  });
 
-      const nonExpanded = output.results.filter((r) => !r.via_expansion);
-      expect(nonExpanded.every((r) => r.via_expansion === undefined)).toBe(true);
+  it("multi-query deep: the same expansion neighbour appears under multiple seeds with each seed's own expansion_similarity", async () => {
+    const sources = makeMockSources(['seed-a.md', 'seed-b.md', 'shared.md']);
+    sources.get('seed-a.md')!.embedding = [1, 0];
+    sources.get('seed-b.md')!.embedding = [0.9, 0.1];
+
+    const embed = vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0.9, 0.1]);
+    const searchEngine = makeMockSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([{ path: 'seed-a.md', similarity: 0.95 }]) // q1 seed
+        .mockReturnValueOnce([{ path: 'seed-b.md', similarity: 0.92 }]) // q2 seed
+        .mockReturnValueOnce([{ path: 'shared.md', similarity: 0.85 }]) // related of seed-a
+        .mockReturnValueOnce([{ path: 'shared.md', similarity: 0.81 }]), // related of seed-b
+    });
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed },
+      searchEngine,
+      modelKey: MODEL_KEY,
+    });
+    const tool = buildSearchNotesTool(deps);
+    try {
+      const output = (await tool.handler({
+        query: ['q1', 'q2'],
+        mode: 'deep',
+        threshold: 0,
+      })) as {
+        results: Array<{
+          path: string;
+          related: Array<{ path: string; expansion_similarity: number; similarity?: number }>;
+        }>;
+      };
+
+      const noteA = output.results.find((r) => r.path === 'seed-a.md')!;
+      const noteB = output.results.find((r) => r.path === 'seed-b.md')!;
+      expect(noteA.related).toEqual([{ path: 'shared.md', expansion_similarity: 0.85 }]);
+      expect(noteB.related).toEqual([{ path: 'shared.md', expansion_similarity: 0.81 }]);
+      for (const rel of [...noteA.related, ...noteB.related]) {
+        expect(rel).not.toHaveProperty('similarity');
+      }
     } finally {
       await cleanup();
     }

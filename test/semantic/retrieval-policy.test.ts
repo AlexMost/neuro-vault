@@ -79,13 +79,14 @@ describe('executeRetrieval', () => {
       );
     });
 
-    it('calls findBlockNeighbors in quick mode when vector results exist', async () => {
+    it('attaches blocks scoped to matched notes when there are vector results', async () => {
       const searchEngine = makeSearchEngine({
         findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
+        findBlockNeighbors: vi.fn().mockReturnValue([makeBlockResult('note-a.md', 0.75)]),
       });
       const embeddingProvider = makeEmbeddingProvider();
 
-      await executeRetrieval({
+      const output = await executeRetrieval({
         query: 'test query',
         mode: 'quick',
         sources,
@@ -93,16 +94,20 @@ describe('executeRetrieval', () => {
         searchEngine,
       });
 
-      expect(searchEngine.findBlockNeighbors).toHaveBeenCalled();
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.blocks).toEqual([{ heading: '#block', lines: [1, 3], similarity: 0.75 }]);
+      expect(noteA.related).toEqual([]);
+      const blockCall = (searchEngine.findBlockNeighbors as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(blockCall[0]).toMatchObject({ threshold: 0, limit: 5 });
     });
 
-    it('does not call findBlockNeighbors in quick mode when no vector results', async () => {
+    it('emits blocks: [] and related: [] when there are no matches', async () => {
       const searchEngine = makeSearchEngine({
         findNeighbors: vi.fn().mockReturnValue([]),
       });
       const embeddingProvider = makeEmbeddingProvider();
 
-      await executeRetrieval({
+      const output = await executeRetrieval({
         query: 'test query',
         mode: 'quick',
         sources,
@@ -110,6 +115,7 @@ describe('executeRetrieval', () => {
         searchEngine,
       });
 
+      expect(output.results).toEqual([]);
       expect(searchEngine.findBlockNeighbors).not.toHaveBeenCalled();
     });
   });
@@ -132,11 +138,17 @@ describe('executeRetrieval', () => {
       );
     });
 
-    it('calls findBlockNeighbors in deep mode', async () => {
-      const searchEngine = makeSearchEngine();
+    it('drops orphan blocks (blocks whose note is not in results)', async () => {
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
+        findBlockNeighbors: vi.fn().mockReturnValue([
+          makeBlockResult('note-a.md', 0.7),
+          makeBlockResult('note-c.md', 0.85), // orphan — note-c not in results
+        ]),
+      });
       const embeddingProvider = makeEmbeddingProvider();
 
-      await executeRetrieval({
+      const output = await executeRetrieval({
         query: 'test query',
         mode: 'deep',
         sources,
@@ -144,7 +156,9 @@ describe('executeRetrieval', () => {
         searchEngine,
       });
 
-      expect(searchEngine.findBlockNeighbors).toHaveBeenCalled();
+      const allBlockPaths = output.results.flatMap((r) => r.blocks.map(() => r.path));
+      expect(allBlockPaths).not.toContain('note-c.md');
+      expect(output.results.find((r) => r.path === 'note-a.md')!.blocks).toHaveLength(1);
     });
   });
 
@@ -154,8 +168,8 @@ describe('executeRetrieval', () => {
       const searchEngine = makeSearchEngine({
         findNeighbors: vi
           .fn()
-          .mockReturnValueOnce([]) // first call returns nothing
-          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.35)]), // fallback returns something
+          .mockReturnValueOnce([])
+          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.35)]),
       });
 
       const output = await executeRetrieval({
@@ -187,101 +201,179 @@ describe('executeRetrieval', () => {
         searchEngine,
       });
 
-      // Only 1 call — no fallback retry since threshold is already at limit
       expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(1);
     });
   });
 
-  describe('expansion (post-cap, deep mode)', () => {
-    it('uses seed embeddings to find additional neighbors after cap', async () => {
+  describe('expansion (per-seed, deep mode)', () => {
+    it('attaches each seed its own related[] populated from its own neighbours', async () => {
       const embeddingProvider = makeEmbeddingProvider([1, 0]);
-      const initialResults = [
-        makeSearchResult('note-a.md', 0.9),
-        makeSearchResult('note-b.md', 0.7),
-      ];
-      const expansionResults = [makeSearchResult('note-c.md', 0.65)];
-
       const searchEngine = makeSearchEngine({
         findNeighbors: vi
           .fn()
-          .mockReturnValueOnce(initialResults) // initial query search
-          .mockReturnValueOnce(expansionResults) // expansion for note-a.md (top 1)
-          .mockReturnValueOnce([]), // expansion for note-b.md
+          .mockReturnValueOnce([
+            makeSearchResult('note-a.md', 0.9),
+            makeSearchResult('note-b.md', 0.7),
+          ])
+          .mockReturnValueOnce([makeSearchResult('note-c.md', 0.65)]) // for seed note-a.md
+          .mockReturnValueOnce([]), // for seed note-b.md
       });
 
       const output = await executeRetrieval({
         query: 'test query',
         mode: 'deep',
         expansion: true,
-        expansionLimit: 1,
+        expansionLimit: 3,
         sources,
         embeddingProvider,
         searchEngine,
       });
 
-      // note-c.md should be in results as expansion
-      expect(output.results.map((r) => r.path)).toContain('note-c.md');
-      const noteC = output.results.find((r) => r.path === 'note-c.md');
-      expect(noteC?.via_expansion).toBe(true);
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      const noteB = output.results.find((r) => r.path === 'note-b.md')!;
+      expect(noteA.related).toEqual([{ path: 'note-c.md', expansion_similarity: 0.65 }]);
+      expect(noteB.related).toEqual([]);
     });
 
-    it('expansion results carry via_expansion: true; seeds do not', async () => {
+    it('the same neighbour appears in related[] of every seed it neighbours (no global dedup)', async () => {
       const embeddingProvider = makeEmbeddingProvider([1, 0]);
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi
+          .fn()
+          .mockReturnValueOnce([
+            makeSearchResult('note-a.md', 0.9),
+            makeSearchResult('note-b.md', 0.7),
+          ])
+          .mockReturnValueOnce([makeSearchResult('note-c.md', 0.65)]) // for seed a
+          .mockReturnValueOnce([makeSearchResult('note-c.md', 0.55)]), // for seed b
+      });
+
+      const output = await executeRetrieval({
+        query: 'test query',
+        mode: 'deep',
+        expansion: true,
+        expansionLimit: 3,
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      const noteB = output.results.find((r) => r.path === 'note-b.md')!;
+      expect(noteA.related).toEqual([{ path: 'note-c.md', expansion_similarity: 0.65 }]);
+      expect(noteB.related).toEqual([{ path: 'note-c.md', expansion_similarity: 0.55 }]);
+    });
+
+    it('drops a neighbour from related[] if it is itself a seed', async () => {
+      const embeddingProvider = makeEmbeddingProvider([1, 0]);
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi
+          .fn()
+          .mockReturnValueOnce([
+            makeSearchResult('note-a.md', 0.9),
+            makeSearchResult('note-b.md', 0.7),
+          ])
+          .mockReturnValueOnce([
+            makeSearchResult('note-b.md', 0.6), // note-b is a seed → filtered
+            makeSearchResult('note-c.md', 0.55),
+          ])
+          .mockReturnValueOnce([]),
+      });
+
+      const output = await executeRetrieval({
+        query: 'test query',
+        mode: 'deep',
+        expansion: true,
+        expansionLimit: 3,
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.related.map((r) => r.path)).not.toContain('note-b.md');
+      expect(noteA.related).toEqual([{ path: 'note-c.md', expansion_similarity: 0.55 }]);
+    });
+
+    it('caps related[] per note at expansionLimit', async () => {
+      const embeddingProvider = makeEmbeddingProvider([1, 0]);
+      const fiveNeighbours = [
+        makeSearchResult('n1.md', 0.9),
+        makeSearchResult('n2.md', 0.8),
+        makeSearchResult('n3.md', 0.7),
+        makeSearchResult('n4.md', 0.6),
+        makeSearchResult('n5.md', 0.5),
+      ];
       const searchEngine = makeSearchEngine({
         findNeighbors: vi
           .fn()
           .mockReturnValueOnce([makeSearchResult('note-a.md', 0.9)]) // seed
-          .mockReturnValueOnce([makeSearchResult('note-b.md', 0.7)]), // expansion
+          .mockReturnValueOnce(fiveNeighbours), // expansion for the seed
       });
 
       const output = await executeRetrieval({
         query: 'test query',
         mode: 'deep',
         expansion: true,
-        expansionLimit: 1,
+        expansionLimit: 2,
         sources,
         embeddingProvider,
         searchEngine,
       });
 
-      const seed = output.results.find((r) => r.path === 'note-a.md');
-      const expanded = output.results.find((r) => r.path === 'note-b.md');
-      expect(seed?.via_expansion).toBeUndefined();
-      expect(expanded?.via_expansion).toBe(true);
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.related).toHaveLength(2);
+      expect(noteA.related.map((r) => r.path)).toEqual(['n1.md', 'n2.md']);
     });
 
-    it('deduplicates expansion results against seeds (keeps seed, no via_expansion duplicate)', async () => {
+    it('honours per-note cap even when some top neighbours are filtered out as seeds', async () => {
+      // 3 seeds, all densely connected. Engine returns 5 neighbours per seed,
+      // of which the top 2 are themselves seeds. After filter, only 3 remain;
+      // per-seed cap is 3, so all 3 survivors must appear.
       const embeddingProvider = makeEmbeddingProvider([1, 0]);
-      const initialResults = [makeSearchResult('note-a.md', 0.9)];
-      const expansionResults = [
-        makeSearchResult('note-a.md', 0.6), // already in seeds
-        makeSearchResult('note-b.md', 0.55),
-      ];
-
+      const seedSources = makeSources([
+        ['seed-a.md', [1, 0]],
+        ['seed-b.md', [0.9, 0.1]],
+        ['seed-c.md', [0.8, 0.2]],
+        ['n1.md', [0.7, 0.3]],
+        ['n2.md', [0.6, 0.4]],
+        ['n3.md', [0.5, 0.5]],
+      ]);
       const searchEngine = makeSearchEngine({
         findNeighbors: vi
           .fn()
-          .mockReturnValueOnce(initialResults)
-          .mockReturnValueOnce(expansionResults),
+          .mockReturnValueOnce([
+            makeSearchResult('seed-a.md', 0.95),
+            makeSearchResult('seed-b.md', 0.93),
+            makeSearchResult('seed-c.md', 0.91),
+          ])
+          .mockReturnValueOnce([
+            // expansion for seed-a: top 2 are seeds → filtered out
+            makeSearchResult('seed-b.md', 0.93),
+            makeSearchResult('seed-c.md', 0.91),
+            makeSearchResult('n1.md', 0.8),
+            makeSearchResult('n2.md', 0.7),
+            makeSearchResult('n3.md', 0.6),
+          ])
+          .mockReturnValueOnce([])
+          .mockReturnValueOnce([]),
       });
 
       const output = await executeRetrieval({
-        query: 'test query',
+        query: 'q',
         mode: 'deep',
         expansion: true,
-        expansionLimit: 1,
-        sources,
+        expansionLimit: 3,
+        sources: seedSources,
         embeddingProvider,
         searchEngine,
       });
 
-      // note-a.md appears only once (as seed), not again as expansion
-      const noteAPaths = output.results.filter((r) => r.path === 'note-a.md');
-      expect(noteAPaths).toHaveLength(1);
-      expect(noteAPaths[0]!.via_expansion).toBeUndefined(); // seed, not expansion
+      const seedA = output.results.find((r) => r.path === 'seed-a.md')!;
+      expect(seedA.related.map((r) => r.path)).toEqual(['n1.md', 'n2.md', 'n3.md']);
     });
 
-    it('does not expand when expansion is false', async () => {
+    it('does not run expansion when expansion is false (related is empty)', async () => {
       const embeddingProvider = makeEmbeddingProvider([1, 0]);
       const searchEngine = makeSearchEngine({
         findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
@@ -296,13 +388,11 @@ describe('executeRetrieval', () => {
         searchEngine,
       });
 
-      // Only 1 call — no expansion
       expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(1);
-      expect(output.results.every((r) => !r.via_expansion)).toBe(true);
+      expect(output.results.every((r) => r.related.length === 0)).toBe(true);
     });
 
-    it('deep single-query emits via_expansion-tagged results (mode default)', async () => {
-      // Default deep mode has expansion=true, expansionLimit=3
+    it('deep single-query default has non-empty related on seeds when neighbours exist', async () => {
       const extendedSources = makeSources([
         ['note-a.md', [1, 0]],
         ['note-b.md', [0.8, 0.2]],
@@ -311,8 +401,8 @@ describe('executeRetrieval', () => {
       const searchEngine = makeSearchEngine({
         findNeighbors: vi
           .fn()
-          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.9)]) // initial query
-          .mockReturnValueOnce([makeSearchResult('note-b.md', 0.7)]), // expansion for note-a.md
+          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.9)])
+          .mockReturnValueOnce([makeSearchResult('note-b.md', 0.7)]),
       });
 
       const output = await executeRetrieval({
@@ -323,9 +413,93 @@ describe('executeRetrieval', () => {
         searchEngine,
       });
 
-      const expanded = output.results.filter((r) => r.via_expansion);
-      expect(expanded.length).toBeGreaterThan(0);
-      expect(expanded[0]!.path).toBe('note-b.md');
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.related[0]).toEqual({
+        path: 'note-b.md',
+        expansion_similarity: 0.7,
+      });
+    });
+  });
+
+  describe('shape invariants', () => {
+    it('every result has blocks: [] and related: [] when no leaves apply', async () => {
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
+        findBlockNeighbors: vi.fn().mockReturnValue([]),
+      });
+      const output = await executeRetrieval({
+        query: 'q',
+        mode: 'quick',
+        expansion: false,
+        sources,
+        embeddingProvider: makeEmbeddingProvider(),
+        searchEngine,
+      });
+
+      expect(output.results[0]).toMatchObject({
+        path: 'note-a.md',
+        similarity: 0.9,
+        blocks: [],
+        related: [],
+      });
+    });
+
+    it('related items never carry a similarity field — only expansion_similarity', async () => {
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi
+          .fn()
+          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.9)])
+          .mockReturnValueOnce([makeSearchResult('note-b.md', 0.7)]),
+      });
+      const output = await executeRetrieval({
+        query: 'q',
+        mode: 'deep',
+        sources,
+        embeddingProvider: makeEmbeddingProvider(),
+        searchEngine,
+      });
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      for (const rel of noteA.related) {
+        expect(rel).not.toHaveProperty('similarity');
+        expect(rel).not.toHaveProperty('via_expansion');
+        expect(typeof rel.expansion_similarity).toBe('number');
+      }
+    });
+
+    it('sorts blocks[] within a note by similarity desc', async () => {
+      // Engine returns blocks in arbitrary order; the assembly must sort them.
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
+        findBlockNeighbors: vi.fn().mockReturnValue([
+          { path: 'note-a.md', heading: '#low', lines: [10, 12], similarity: 0.3 },
+          { path: 'note-a.md', heading: '#high', lines: [1, 3], similarity: 0.9 },
+          { path: 'note-a.md', heading: '#mid', lines: [5, 7], similarity: 0.6 },
+        ]),
+      });
+      const output = await executeRetrieval({
+        query: 'q',
+        mode: 'deep',
+        sources,
+        embeddingProvider: makeEmbeddingProvider(),
+        searchEngine,
+      });
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.blocks.map((b) => b.similarity)).toEqual([0.9, 0.6, 0.3]);
+    });
+
+    it('output never has a top-level blockResults field', async () => {
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
+        findBlockNeighbors: vi.fn().mockReturnValue([makeBlockResult('note-a.md', 0.8)]),
+      });
+      const output = await executeRetrieval({
+        query: 'q',
+        mode: 'deep',
+        sources,
+        embeddingProvider: makeEmbeddingProvider(),
+        searchEngine,
+      });
+      expect(output).not.toHaveProperty('blockResults');
     });
   });
 
@@ -347,84 +521,6 @@ describe('executeRetrieval', () => {
         expect.objectContaining({ threshold: 0.7 }),
       );
     });
-
-    it('uses deep mode defaults when no threshold override is given', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const searchEngine = makeSearchEngine();
-
-      await executeRetrieval({
-        query: 'test query',
-        mode: 'deep',
-        sources,
-        embeddingProvider,
-        searchEngine,
-      });
-
-      expect(searchEngine.findNeighbors).toHaveBeenCalledWith(
-        expect.objectContaining({ threshold: 0.35 }),
-      );
-    });
-  });
-
-  describe('block results', () => {
-    it('returns blockResults only in deep mode', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const blockResults = [makeBlockResult('note-a.md', 0.8)];
-      const searchEngine = makeSearchEngine({
-        findBlockNeighbors: vi.fn().mockReturnValue(blockResults),
-      });
-
-      const output = await executeRetrieval({
-        query: 'test query',
-        mode: 'deep',
-        sources,
-        embeddingProvider,
-        searchEngine,
-      });
-
-      expect(output.blockResults).toBeDefined();
-      expect(output.blockResults).toEqual(blockResults);
-    });
-
-    it('returns blockResults in quick mode scoped to matched notes', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const blockResults = [makeBlockResult('note-a.md', 0.75)];
-      const searchEngine = makeSearchEngine({
-        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
-        findBlockNeighbors: vi.fn().mockReturnValue(blockResults),
-      });
-
-      const output = await executeRetrieval({
-        query: 'test query',
-        mode: 'quick',
-        sources,
-        embeddingProvider,
-        searchEngine,
-      });
-
-      expect(output.blockResults).toBeDefined();
-      expect(output.blockResults).toEqual(blockResults);
-      // block search uses threshold 0 and limit 5 (scoping is via source filter)
-      const blockCall = (searchEngine.findBlockNeighbors as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(blockCall[0]).toMatchObject({ threshold: 0, limit: 5 });
-    });
-
-    it('does not return blockResults in quick mode when no vector results', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const searchEngine = makeSearchEngine({
-        findNeighbors: vi.fn().mockReturnValue([]),
-      });
-
-      const output = await executeRetrieval({
-        query: 'test query',
-        mode: 'quick',
-        sources,
-        embeddingProvider,
-        searchEngine,
-      });
-
-      expect(output.blockResults).toBeUndefined();
-    });
   });
 
   describe('final limit', () => {
@@ -439,7 +535,7 @@ describe('executeRetrieval', () => {
 
       const output = await executeRetrieval({
         query: 'test query',
-        mode: 'quick', // limit = 3
+        mode: 'quick',
         sources,
         embeddingProvider,
         searchEngine,
@@ -447,30 +543,10 @@ describe('executeRetrieval', () => {
 
       expect(output.results).toHaveLength(3);
     });
-
-    it('applies deep mode limit of 8', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const manyResults = Array.from({ length: 15 }, (_, i) =>
-        makeSearchResult(`note-${i}.md`, 0.9 - i * 0.03),
-      );
-      const searchEngine = makeSearchEngine({
-        findNeighbors: vi.fn().mockReturnValue(manyResults),
-      });
-
-      const output = await executeRetrieval({
-        query: 'test query',
-        mode: 'deep',
-        sources,
-        embeddingProvider,
-        searchEngine,
-      });
-
-      expect(output.results).toHaveLength(8);
-    });
   });
 
   describe('user-supplied limit', () => {
-    it('overrides the mode default in quick mode', async () => {
+    it('overrides the mode default', async () => {
       const embeddingProvider = makeEmbeddingProvider();
       const manyResults = Array.from({ length: 10 }, (_, i) =>
         makeSearchResult(`note-${i}.md`, 0.9 - i * 0.05),
@@ -490,43 +566,6 @@ describe('executeRetrieval', () => {
       expect(output.results).toHaveLength(7);
       expect(findNeighbors).toHaveBeenCalledWith(expect.objectContaining({ limit: 7 }));
     });
-
-    it('overrides the mode default in deep mode', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const manyResults = Array.from({ length: 15 }, (_, i) =>
-        makeSearchResult(`note-${i}.md`, 0.9 - i * 0.03),
-      );
-      const findNeighbors = vi.fn().mockReturnValue(manyResults);
-      const searchEngine = makeSearchEngine({ findNeighbors });
-
-      const output = await executeRetrieval({
-        query: 'test query',
-        mode: 'deep',
-        limit: 4,
-        sources,
-        embeddingProvider,
-        searchEngine,
-      });
-
-      expect(output.results).toHaveLength(4);
-      expect(findNeighbors).toHaveBeenCalledWith(expect.objectContaining({ limit: 4 }));
-    });
-
-    it('falls back to mode default when limit is omitted', async () => {
-      const embeddingProvider = makeEmbeddingProvider();
-      const findNeighbors = vi.fn().mockReturnValue([]);
-      const searchEngine = makeSearchEngine({ findNeighbors });
-
-      await executeRetrieval({
-        query: 'test query',
-        mode: 'quick',
-        sources,
-        embeddingProvider,
-        searchEngine,
-      });
-
-      expect(findNeighbors).toHaveBeenCalledWith(expect.objectContaining({ limit: 3 }));
-    });
   });
 });
 
@@ -540,10 +579,7 @@ describe('executeMultiRetrieval', () => {
   it('merges results by path and aggregates matched_queries', async () => {
     const embeddingProvider: EmbeddingProvider = {
       initialize: vi.fn(),
-      embed: vi
-        .fn()
-        .mockResolvedValueOnce([1, 0]) // for query "alpha"
-        .mockResolvedValueOnce([0, 1]), // for query "beta"
+      embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
     };
     const searchEngine = makeSearchEngine({
       findNeighbors: vi
@@ -569,17 +605,19 @@ describe('executeMultiRetrieval', () => {
     const byPath = new Map(output.results.map((r) => [r.path, r]));
     expect(byPath.get('note-a.md')!.matched_queries).toEqual(['alpha']);
     expect(byPath.get('note-b.md')!.matched_queries).toEqual(['alpha', 'beta']);
-    expect(byPath.get('note-b.md')!.similarity).toBe(0.7); // max wins
+    expect(byPath.get('note-b.md')!.similarity).toBe(0.7);
     expect(byPath.get('note-c.md')!.matched_queries).toEqual(['beta']);
+    for (const r of output.results) {
+      expect(r.blocks).toEqual([]);
+      expect(r.related).toEqual([]);
+    }
   });
 
-  it('caps multi-query results at limit (final), not limit × N', async () => {
+  it('caps results at limit (final) regardless of N queries', async () => {
     const embeddingProvider: EmbeddingProvider = {
       initialize: vi.fn(),
       embed: vi.fn().mockResolvedValue([1, 0]),
     };
-    // 3 queries × 5 unique results each = 15 merged.
-    // limit: 5 → cap = 5 (not 5*3=15). 15 > 5, so truncated=true, results=5.
     const searchEngine = makeSearchEngine({
       findNeighbors: vi
         .fn()
@@ -597,7 +635,7 @@ describe('executeMultiRetrieval', () => {
     const output = await executeMultiRetrieval({
       queries: ['a', 'b', 'c'],
       mode: 'quick',
-      limit: 5, // final cap = 5 regardless of N
+      limit: 5,
       sources,
       embeddingProvider,
       searchEngine,
@@ -627,122 +665,30 @@ describe('executeMultiRetrieval', () => {
     expect(output.truncated).toBe(false);
   });
 
-  it('limit=10 with 8 disjoint queries → final length ≤ 10', async () => {
-    const embeddingProvider: EmbeddingProvider = {
-      initialize: vi.fn(),
-      embed: vi.fn().mockResolvedValue([1, 0]),
-    };
-    // 8 queries × 5 unique results each = 40 merged → cap = limit=10. 40 > 10, truncated=true.
-    const mockResults = (offset: number) =>
-      Array.from({ length: 5 }, (_, i) => makeSearchResult(`q${offset}-${i}.md`, 0.9 - i * 0.01));
-    const findNeighbors = vi.fn();
-    for (let i = 0; i < 8; i++) findNeighbors.mockReturnValueOnce(mockResults(i));
-    const searchEngine = makeSearchEngine({ findNeighbors });
-
-    const output = await executeMultiRetrieval({
-      queries: ['q0', 'q1', 'q2', 'q3', 'q4', 'q5', 'q6', 'q7'],
-      mode: 'quick',
-      limit: 10,
-      sources,
-      embeddingProvider,
-      searchEngine,
-    });
-
-    expect(output.results.length).toBeLessThanOrEqual(10);
-    expect(output.truncated).toBe(true);
-  });
-
-  it('caps to limit when N=1 (single-element array path)', async () => {
-    const embeddingProvider: EmbeddingProvider = {
-      initialize: vi.fn(),
-      embed: vi.fn().mockResolvedValue([1, 0]),
-    };
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValue(
-          Array.from({ length: 12 }, (_, i) => makeSearchResult(`a-${i}.md`, 0.9 - i * 0.01)),
-        ),
-    });
-
-    const output = await executeMultiRetrieval({
-      queries: ['only'],
-      mode: 'quick',
-      limit: 10,
-      sources,
-      embeddingProvider,
-      searchEngine,
-    });
-
-    expect(output.results.length).toBeLessThanOrEqual(10);
-  });
-
-  describe('executeMultiRetrieval cap (final limit)', () => {
-    it('truncated is false when unique merged candidates ≤ limit', async () => {
-      const embeddingProvider: EmbeddingProvider = {
-        initialize: vi.fn(),
-        embed: vi.fn().mockResolvedValue([1, 0]),
-      };
-      // Both queries return the same single result → 1 unique path ≤ limit=5
-      const searchEngine = makeSearchEngine({
-        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
-      });
-
-      const output = await executeMultiRetrieval({
-        queries: ['x', 'y'],
-        mode: 'quick',
-        limit: 5,
-        sources,
-        embeddingProvider,
-        searchEngine,
-      });
-
-      expect(output.truncated).toBe(false);
-      expect(output.results).toHaveLength(1);
-    });
-  });
-
-  describe('executeMultiRetrieval expansion (post-merge, deep mode)', () => {
-    it('expansion runs after merge+cap on the final top-limit (multi-query, deep)', async () => {
-      // Sources: 8 notes. Seeds: note-a.md, note-b.md (limit=2). Expansion finds 5 new neighbors.
-      // Expected: 2 seeds (with matched_queries) + min(5, expansionLimit=3) expansion results.
+  describe('expansion (per-seed, deep mode)', () => {
+    it('the same neighbour appears in related[] of multiple seeds (deduplication is per-seed only)', async () => {
       const extendedSources = makeSources([
         ['note-a.md', [1, 0]],
         ['note-b.md', [0.9, 0.1]],
-        ['exp-1.md', [0.8, 0.2]],
-        ['exp-2.md', [0.7, 0.3]],
-        ['exp-3.md', [0.6, 0.4]],
-        ['exp-4.md', [0.5, 0.5]],
-        ['exp-5.md', [0.4, 0.6]],
+        ['shared.md', [0.85, 0.15]],
       ]);
 
       const embeddingProvider: EmbeddingProvider = {
         initialize: vi.fn(),
-        embed: vi
-          .fn()
-          .mockResolvedValueOnce([1, 0]) // query 'alpha'
-          .mockResolvedValueOnce([0, 1]), // query 'beta'
+        embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0.9, 0.1]),
       };
-
-      const expansionResults = [
-        makeSearchResult('exp-1.md', 0.75),
-        makeSearchResult('exp-2.md', 0.65),
-        makeSearchResult('exp-3.md', 0.55),
-        makeSearchResult('exp-4.md', 0.45),
-        makeSearchResult('exp-5.md', 0.35),
-      ];
 
       const searchEngine = makeSearchEngine({
         findNeighbors: vi
           .fn()
-          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.9)]) // query alpha
-          .mockReturnValueOnce([makeSearchResult('note-b.md', 0.8)]) // query beta
-          .mockReturnValueOnce(expansionResults) // expansion for note-a.md
-          .mockReturnValueOnce(expansionResults), // expansion for note-b.md
+          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.95)]) // q1 seed
+          .mockReturnValueOnce([makeSearchResult('note-b.md', 0.92)]) // q2 seed
+          .mockReturnValueOnce([makeSearchResult('shared.md', 0.85)]) // related for note-a
+          .mockReturnValueOnce([makeSearchResult('shared.md', 0.81)]), // related for note-b
       });
 
       const output = await executeMultiRetrieval({
-        queries: ['alpha', 'beta'],
+        queries: ['q1', 'q2'],
         mode: 'deep',
         limit: 2,
         sources: extendedSources,
@@ -750,74 +696,59 @@ describe('executeMultiRetrieval', () => {
         searchEngine,
       });
 
-      const seeds = output.results.filter((r) => !r.via_expansion);
-      const expanded = output.results.filter((r) => r.via_expansion);
-
-      expect(seeds).toHaveLength(2);
-      expect(expanded.length).toBeLessThanOrEqual(3); // expansionLimit=3
-      expect(expanded.every((r) => r.via_expansion === true)).toBe(true);
-      expect(expanded.every((r) => r.matched_queries === undefined)).toBe(true);
-      expect(seeds.every((r) => Array.isArray(r.matched_queries))).toBe(true);
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      const noteB = output.results.find((r) => r.path === 'note-b.md')!;
+      expect(noteA.related).toEqual([{ path: 'shared.md', expansion_similarity: 0.85 }]);
+      expect(noteB.related).toEqual([{ path: 'shared.md', expansion_similarity: 0.81 }]);
     });
 
-    it('expansion respects expansion_limit as total cap, not per-seed (deep)', async () => {
-      // 2 seeds, each finds 5 expansion neighbors. expansionLimit defaults to 3.
-      // Total unique expansion candidates: up to 10. Should be capped at 3.
+    it('expansionLimit caps related[] per seed (not globally)', async () => {
       const extendedSources = makeSources([
         ['seed-1.md', [1, 0]],
         ['seed-2.md', [0.9, 0.1]],
-        ['exp-1.md', [0.8, 0.2]],
-        ['exp-2.md', [0.7, 0.3]],
-        ['exp-3.md', [0.6, 0.4]],
-        ['exp-4.md', [0.5, 0.5]],
-        ['exp-5.md', [0.4, 0.6]],
-        ['exp-6.md', [0.3, 0.7]],
+        ['n1.md', [0.8, 0.2]],
+        ['n2.md', [0.7, 0.3]],
+        ['n3.md', [0.6, 0.4]],
+        ['n4.md', [0.5, 0.5]],
+        ['n5.md', [0.4, 0.6]],
       ]);
-
       const embeddingProvider: EmbeddingProvider = {
         initialize: vi.fn(),
-        embed: vi
-          .fn()
-          .mockResolvedValueOnce([1, 0]) // query 'a'
-          .mockResolvedValueOnce([0, 1]), // query 'b'
+        embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
       };
-
+      const fiveNeighbours = [
+        makeSearchResult('n1.md', 0.9),
+        makeSearchResult('n2.md', 0.8),
+        makeSearchResult('n3.md', 0.7),
+        makeSearchResult('n4.md', 0.6),
+        makeSearchResult('n5.md', 0.5),
+      ];
       const searchEngine = makeSearchEngine({
         findNeighbors: vi
           .fn()
-          .mockReturnValueOnce([makeSearchResult('seed-1.md', 0.9)]) // query a
-          .mockReturnValueOnce([makeSearchResult('seed-2.md', 0.85)]) // query b
-          .mockReturnValueOnce([
-            // expansion for seed-1.md
-            makeSearchResult('exp-1.md', 0.75),
-            makeSearchResult('exp-2.md', 0.65),
-            makeSearchResult('exp-3.md', 0.55),
-            makeSearchResult('exp-4.md', 0.45),
-            makeSearchResult('exp-5.md', 0.35),
-          ])
-          .mockReturnValueOnce([
-            // expansion for seed-2.md
-            makeSearchResult('exp-3.md', 0.58),
-            makeSearchResult('exp-4.md', 0.48),
-            makeSearchResult('exp-5.md', 0.38),
-            makeSearchResult('exp-6.md', 0.28),
-          ]),
+          .mockReturnValueOnce([makeSearchResult('seed-1.md', 0.95)])
+          .mockReturnValueOnce([makeSearchResult('seed-2.md', 0.92)])
+          .mockReturnValueOnce(fiveNeighbours)
+          .mockReturnValueOnce(fiveNeighbours),
       });
 
       const output = await executeMultiRetrieval({
         queries: ['a', 'b'],
         mode: 'deep',
         limit: 2,
+        expansionLimit: 2,
         sources: extendedSources,
         embeddingProvider,
         searchEngine,
       });
 
-      const expanded = output.results.filter((r) => r.via_expansion);
-      expect(expanded.length).toBe(3); // expansionLimit default = 3
+      for (const r of output.results) {
+        expect(r.related.length).toBeLessThanOrEqual(2);
+        expect(r.related.map((rel) => rel.path)).toEqual(['n1.md', 'n2.md']);
+      }
     });
 
-    it('quick mode never runs expansion (multi-query)', async () => {
+    it('quick mode never populates related (multi-query)', async () => {
       const embeddingProvider: EmbeddingProvider = {
         initialize: vi.fn(),
         embed: vi.fn().mockResolvedValue([1, 0]),
@@ -837,13 +768,11 @@ describe('executeMultiRetrieval', () => {
         searchEngine,
       });
 
-      expect(output.results.every((r) => !r.via_expansion)).toBe(true);
-      // findNeighbors called exactly once per query (2 calls), no expansion calls
+      expect(output.results.every((r) => r.related.length === 0)).toBe(true);
       expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(2);
     });
 
-    it('expansion does not include seeds in expansion output', async () => {
-      // If expansion's findNeighbors returns a seed path, it should be filtered out.
+    it("does not include seeds in any seed's related[]", async () => {
       const extendedSources = makeSources([
         ['seed.md', [1, 0]],
         ['exp.md', [0.8, 0.2]],
@@ -855,10 +784,9 @@ describe('executeMultiRetrieval', () => {
       const searchEngine = makeSearchEngine({
         findNeighbors: vi
           .fn()
-          .mockReturnValueOnce([makeSearchResult('seed.md', 0.9)]) // query
+          .mockReturnValueOnce([makeSearchResult('seed.md', 0.9)])
           .mockReturnValueOnce([
-            // expansion — returns seed itself + a new note
-            makeSearchResult('seed.md', 0.9),
+            makeSearchResult('seed.md', 0.9), // itself — must be filtered
             makeSearchResult('exp.md', 0.7),
           ]),
       });
@@ -872,38 +800,83 @@ describe('executeMultiRetrieval', () => {
         searchEngine,
       });
 
-      const expanded = output.results.filter((r) => r.via_expansion);
-      expect(expanded.map((r) => r.path)).not.toContain('seed.md');
+      const seed = output.results.find((r) => r.path === 'seed.md')!;
+      expect(seed.related.map((r) => r.path)).not.toContain('seed.md');
+      expect(seed.related.map((r) => r.path)).toContain('exp.md');
+    });
+  });
+
+  describe('blocks (multi-query)', () => {
+    it('dedupes blocks across queries, keeping max similarity', async () => {
+      // Two queries each surface the same block at different similarities.
+      // The merged block must carry the higher similarity (0.8), not the lower (0.5).
+      const embeddingProvider: EmbeddingProvider = {
+        initialize: vi.fn(),
+        embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+      };
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi
+          .fn()
+          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.9)]) // q1 seed
+          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.85)]), // q2 seed (same note)
+        findBlockNeighbors: vi
+          .fn()
+          .mockReturnValueOnce([
+            {
+              path: 'note-a.md',
+              heading: '#h',
+              lines: [1, 3] as [number, number],
+              similarity: 0.5,
+            },
+          ])
+          .mockReturnValueOnce([
+            {
+              path: 'note-a.md',
+              heading: '#h',
+              lines: [1, 3] as [number, number],
+              similarity: 0.8,
+            },
+          ]),
+      });
+
+      const output = await executeMultiRetrieval({
+        queries: ['q1', 'q2'],
+        mode: 'deep',
+        expansion: false,
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.blocks).toEqual([{ heading: '#h', lines: [1, 3], similarity: 0.8 }]);
     });
 
-    it('expansion-derived results never carry matched_queries', async () => {
-      const extendedSources = makeSources([
-        ['seed.md', [1, 0]],
-        ['exp.md', [0.8, 0.2]],
-      ]);
+    it('drops orphan blocks — only blocks belonging to result notes are attached', async () => {
       const embeddingProvider: EmbeddingProvider = {
         initialize: vi.fn(),
         embed: vi.fn().mockResolvedValue([1, 0]),
       };
       const searchEngine = makeSearchEngine({
-        findNeighbors: vi
-          .fn()
-          .mockReturnValueOnce([makeSearchResult('seed.md', 0.9)])
-          .mockReturnValueOnce([makeSearchResult('exp.md', 0.7)]),
+        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
+        findBlockNeighbors: vi.fn().mockReturnValue([
+          makeBlockResult('note-a.md', 0.7),
+          makeBlockResult('note-c.md', 0.85), // orphan
+        ]),
       });
 
       const output = await executeMultiRetrieval({
         queries: ['q'],
         mode: 'deep',
-        limit: 1,
-        sources: extendedSources,
+        sources,
         embeddingProvider,
         searchEngine,
       });
 
-      const expanded = output.results.filter((r) => r.via_expansion);
-      expect(expanded.length).toBeGreaterThan(0);
-      expect(expanded.every((r) => r.matched_queries === undefined)).toBe(true);
+      const allPaths = new Set(output.results.map((r) => r.path));
+      expect(allPaths.has('note-c.md')).toBe(false);
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.blocks).toEqual([{ heading: '#block', lines: [1, 3], similarity: 0.7 }]);
     });
   });
 });

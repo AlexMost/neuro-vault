@@ -87,7 +87,7 @@ describe('search_notes — filter', () => {
     }
   });
 
-  it('returns blockResults: [] for deep mode with empty allowed set', async () => {
+  it('returns an empty results[] for deep mode with empty allowed set (no top-level blockResults)', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
       embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
@@ -105,7 +105,7 @@ describe('search_notes — filter', () => {
       })) as SearchNotesOutput;
 
       expect(result.results).toEqual([]);
-      expect((result as { blockResults?: unknown[] }).blockResults).toEqual([]);
+      expect(result).not.toHaveProperty('blockResults');
     } finally {
       await cleanup();
     }
@@ -218,8 +218,11 @@ describe('search_notes — filter', () => {
     }
   });
 
-  it('deep mode: findBlockNeighbors receives only allowed sources', async () => {
+  it('deep mode: findBlockNeighbors receives only seed notes (within the allowed set)', async () => {
     const sources = makeSources(['Resources/a.md', 'Resources/b.md', 'Inbox/c.md']);
+    // findNeighbors returns only Resources/a.md, so only it is a seed.
+    // findBlockNeighbors should receive only that seed — not Resources/b.md, even
+    // though it's in the allowed set, because it didn't make it into the top-K.
     const findNeighbors = vi.fn().mockReturnValue([{ path: 'Resources/a.md', similarity: 0.9 }]);
     const findBlockNeighbors = vi.fn().mockReturnValue([]);
     const { deps, cleanup } = await makeSearchDeps({
@@ -240,7 +243,7 @@ describe('search_notes — filter', () => {
 
       expect(findBlockNeighbors).toHaveBeenCalled();
       const passedToBlock = [...findBlockNeighbors.mock.calls[0]![0].sources];
-      expect(passedToBlock.map((s) => s.path).sort()).toEqual(['Resources/a.md', 'Resources/b.md']);
+      expect(passedToBlock.map((s) => s.path).sort()).toEqual(['Resources/a.md']);
     } finally {
       await cleanup();
     }
