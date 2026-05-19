@@ -1,7 +1,7 @@
 import type {
   BlockMatch,
-  BlockSearchResult,
   EmbeddingProvider,
+  MultiNoteResultNode,
   NoteResultNode,
   RelatedNote,
   SearchEngine,
@@ -166,20 +166,21 @@ export interface MultiRetrievalInput extends Omit<RetrievalInput, 'query'> {
   limit?: number;
 }
 
-// Task 3 will rewrite this entire block (MultiRetrievalOutput through executeMultiRetrieval).
-// The types MultiSearchResult, MultiBlockSearchResult, and computeExpansion no longer exist
-// after Task 1; lint is disabled here to keep the diff small for review.
-/* eslint-disable no-undef */
 export interface MultiRetrievalOutput {
-  results: MultiSearchResult[];
-  blockResults?: MultiBlockSearchResult[];
+  results: MultiNoteResultNode[];
   truncated: boolean;
+}
+
+interface MergedSeed {
+  path: string;
+  similarity: number;
+  matched_queries: string[];
 }
 
 function mergeNoteResults(
   perQuery: Array<{ query: string; results: SearchResult[] }>,
-): MultiSearchResult[] {
-  const byPath = new Map<string, MultiSearchResult>();
+): MergedSeed[] {
+  const byPath = new Map<string, MergedSeed>();
   for (const { query, results } of perQuery) {
     for (const result of results) {
       const existing = byPath.get(result.path);
@@ -194,44 +195,12 @@ function mergeNoteResults(
       if (result.similarity > existing.similarity) {
         existing.similarity = result.similarity;
       }
-      existing.matched_queries ??= [];
       if (!existing.matched_queries.includes(query)) {
         existing.matched_queries.push(query);
       }
     }
   }
   return [...byPath.values()].sort(
-    (a, b) => b.similarity - a.similarity || a.path.localeCompare(b.path),
-  );
-}
-
-function mergeBlockResults(
-  perQuery: Array<{ query: string; blocks: BlockSearchResult[] }>,
-): MultiBlockSearchResult[] {
-  const byKey = new Map<string, MultiBlockSearchResult>();
-  for (const { query, blocks } of perQuery) {
-    for (const block of blocks) {
-      const key = `${block.path}\u0000${block.heading}\u0000${block.lines[0]}-${block.lines[1]}`;
-      const existing = byKey.get(key);
-      if (!existing) {
-        byKey.set(key, {
-          path: block.path,
-          heading: block.heading,
-          lines: block.lines,
-          similarity: block.similarity,
-          matched_queries: [query],
-        });
-        continue;
-      }
-      if (block.similarity > existing.similarity) {
-        existing.similarity = block.similarity;
-      }
-      if (!existing.matched_queries.includes(query)) {
-        existing.matched_queries.push(query);
-      }
-    }
-  }
-  return [...byKey.values()].sort(
     (a, b) => b.similarity - a.similarity || a.path.localeCompare(b.path),
   );
 }
@@ -247,7 +216,7 @@ export async function executeMultiRetrieval(
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
   const limit = input.limit ?? modeConfig.limit;
 
-  // Step 1: per-query embed + retrieval (no expansion here)
+  // Step 1: per-query embed + retrieve (no expansion here)
   const perQueryOutputs = await Promise.all(
     queries.map(async (query) => {
       const queryVector = await embeddingProvider.embed(query);
@@ -265,65 +234,89 @@ export async function executeMultiRetrieval(
           limit,
         });
       }
-      let blocks: BlockSearchResult[] = [];
-      if (mode === 'deep') {
-        blocks = searchEngine.findBlockNeighbors({
-          queryVector,
-          sources: sources.values(),
-          threshold,
-          limit,
-        });
-      } else if (neighbors.length > 0) {
-        const matched = new Set(neighbors.map((r) => r.path));
-        const matchedSources = [...sources.values()].filter((s) => matched.has(s.path));
-        blocks = searchEngine.findBlockNeighbors({
-          queryVector,
-          sources: matchedSources,
-          threshold: 0,
-          limit: QUICK_BLOCK_LIMIT,
-        });
-      }
-      return { query, neighbors, blocks };
+      return { query, queryVector, neighbors };
     }),
   );
 
-  // Step 2: merge
-  const mergedNotes = mergeNoteResults(
+  // Step 2: merge seeds across queries
+  const merged = mergeNoteResults(
     perQueryOutputs.map(({ query, neighbors }) => ({ query, results: neighbors })),
   );
-  const anyBlocks = perQueryOutputs.some(({ blocks }) => blocks.length > 0);
-  const mergedBlocks = anyBlocks
-    ? mergeBlockResults(perQueryOutputs.map(({ query, blocks }) => ({ query, blocks })))
-    : undefined;
 
-  // Step 3: cap to `limit` (final, independent of N)
-  const truncated = mergedNotes.length > limit || (mergedBlocks?.length ?? 0) > limit;
-  const cappedNotes = mergedNotes.slice(0, limit);
-  const cappedBlocks = mergedBlocks ? mergedBlocks.slice(0, limit) : undefined;
+  // Step 3: cap to `limit`
+  const truncated = merged.length > limit;
+  const seeds = merged.slice(0, limit);
+  const seedPaths = seeds.map((s) => s.path);
+  const seedPathSet = new Set(seedPaths);
 
-  // Step 4: post-cap expansion (deep only)
-  let expansionResults: MultiSearchResult[] = [];
-  if (expansion && expansionLimit > 0 && cappedNotes.length > 0) {
-    const seeds = cappedNotes.map((n) => ({ path: n.path, similarity: n.similarity }));
-    const raw = computeExpansion({
-      seeds,
+  // Step 4: block search per query, scoped to seed notes; merge by block-key keeping max similarity.
+  const blocksByPath = new Map<string, BlockMatch[]>();
+  if (seeds.length > 0) {
+    const seedSources = [...sources.values()].filter((s) => seedPathSet.has(s.path));
+    const rawByKey = new Map<string, BlockMatch & { path: string }>();
+    for (const { queryVector } of perQueryOutputs) {
+      const raw =
+        mode === 'deep'
+          ? searchEngine.findBlockNeighbors({
+              queryVector,
+              sources: seedSources,
+              threshold,
+              limit,
+            })
+          : searchEngine.findBlockNeighbors({
+              queryVector,
+              sources: seedSources,
+              threshold: 0,
+              limit: QUICK_BLOCK_LIMIT,
+            });
+      for (const block of raw) {
+        if (!seedPathSet.has(block.path)) continue;
+        const key = `${block.path} ${block.heading} ${block.lines[0]}-${block.lines[1]}`;
+        const existing = rawByKey.get(key);
+        if (!existing || block.similarity > existing.similarity) {
+          rawByKey.set(key, {
+            path: block.path,
+            heading: block.heading,
+            lines: block.lines,
+            similarity: block.similarity,
+          });
+        }
+      }
+    }
+    for (const block of rawByKey.values()) {
+      const bucket = blocksByPath.get(block.path) ?? [];
+      bucket.push({
+        heading: block.heading,
+        lines: block.lines,
+        similarity: block.similarity,
+      });
+      blocksByPath.set(block.path, bucket);
+    }
+    for (const bucket of blocksByPath.values()) {
+      bucket.sort((a, b) => b.similarity - a.similarity || a.lines[0] - b.lines[0]);
+    }
+  }
+
+  // Step 5: per-seed expansion (deep only) — reuses the same helper as executeRetrieval.
+  let relatedByPath = new Map<string, RelatedNote[]>();
+  if (expansion && expansionLimit > 0 && seeds.length > 0) {
+    relatedByPath = computeRelatedPerSeed({
+      seedPaths,
       sources,
       searchEngine,
       threshold,
-      perSeedLimit: limit,
-      totalLimit: expansionLimit,
+      perSeedLimit: expansionLimit,
     });
-    expansionResults = raw.map((r) => ({
-      path: r.path,
-      similarity: r.similarity,
-      via_expansion: true as const,
-    }));
   }
 
-  return {
-    results: [...cappedNotes, ...expansionResults],
-    ...(cappedBlocks !== undefined ? { blockResults: cappedBlocks } : {}),
-    truncated,
-  };
+  // Step 6: assemble tree
+  const results: MultiNoteResultNode[] = seeds.map((seed) => ({
+    path: seed.path,
+    similarity: seed.similarity,
+    matched_queries: seed.matched_queries,
+    blocks: blocksByPath.get(seed.path) ?? [],
+    related: relatedByPath.get(seed.path) ?? [],
+  }));
+
+  return { results, truncated };
 }
-/* eslint-enable no-undef */
