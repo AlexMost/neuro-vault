@@ -8,6 +8,8 @@ import type {
 export type { SmartBlock, SmartSource } from '../../lib/obsidian/smart-connections-types.js';
 export type { ListMatchingPaths, NoteFilter };
 
+// Engine-level result types — what SearchEngine.findNeighbors and friends return.
+// These describe a single hit; they have no notion of "which query" or "expansion".
 export interface BlockSearchResult {
   path: string;
   heading: string;
@@ -18,7 +20,30 @@ export interface BlockSearchResult {
 export interface SearchResult {
   path: string;
   similarity: number;
-  via_expansion?: true;
+}
+
+// Tree node types — what tools emit. Direct-result-per-note, with leaves for
+// blocks belonging to that note and expansion neighbours of that note.
+export interface BlockMatch {
+  heading: string;
+  lines: [number, number];
+  similarity: number;
+}
+
+export interface RelatedNote {
+  path: string;
+  expansion_similarity: number;
+}
+
+export interface NoteResultNode {
+  path: string;
+  similarity: number;
+  blocks: BlockMatch[];
+  related: RelatedNote[];
+}
+
+export interface MultiNoteResultNode extends NoteResultNode {
+  matched_queries: string[];
 }
 
 export interface SimilarNoteResult {
@@ -112,13 +137,4 @@ export interface ToolHandlers {
   getSimilarNotes(input: GetSimilarNotesInput): Promise<SimilarNoteResult[]>;
   findDuplicates(input?: FindDuplicatesInput): Promise<DuplicatePair[]>;
   getStats(): Promise<ToolStats>;
-}
-
-export interface MultiSearchResult extends SearchResult {
-  matched_queries?: string[];
-  via_expansion?: true;
-}
-
-export interface MultiBlockSearchResult extends BlockSearchResult {
-  matched_queries: string[];
 }
