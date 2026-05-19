@@ -807,6 +807,51 @@ describe('executeMultiRetrieval', () => {
   });
 
   describe('blocks (multi-query)', () => {
+    it('dedupes blocks across queries, keeping max similarity', async () => {
+      // Two queries each surface the same block at different similarities.
+      // The merged block must carry the higher similarity (0.8), not the lower (0.5).
+      const embeddingProvider: EmbeddingProvider = {
+        initialize: vi.fn(),
+        embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+      };
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi
+          .fn()
+          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.9)]) // q1 seed
+          .mockReturnValueOnce([makeSearchResult('note-a.md', 0.85)]), // q2 seed (same note)
+        findBlockNeighbors: vi
+          .fn()
+          .mockReturnValueOnce([
+            {
+              path: 'note-a.md',
+              heading: '#h',
+              lines: [1, 3] as [number, number],
+              similarity: 0.5,
+            },
+          ])
+          .mockReturnValueOnce([
+            {
+              path: 'note-a.md',
+              heading: '#h',
+              lines: [1, 3] as [number, number],
+              similarity: 0.8,
+            },
+          ]),
+      });
+
+      const output = await executeMultiRetrieval({
+        queries: ['q1', 'q2'],
+        mode: 'deep',
+        expansion: false,
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.blocks).toEqual([{ heading: '#h', lines: [1, 3], similarity: 0.8 }]);
+    });
+
     it('drops orphan blocks — only blocks belonging to result notes are attached', async () => {
       const embeddingProvider: EmbeddingProvider = {
         initialize: vi.fn(),

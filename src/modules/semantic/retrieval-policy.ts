@@ -271,7 +271,7 @@ export async function executeMultiRetrieval(
             });
       for (const block of raw) {
         if (!seedPathSet.has(block.path)) continue;
-        const key = `${block.path} ${block.heading} ${block.lines[0]}-${block.lines[1]}`;
+        const key = `${block.path}\0${block.heading}\0${block.lines[0]}-${block.lines[1]}`;
         const existing = rawByKey.get(key);
         if (!existing || block.similarity > existing.similarity) {
           rawByKey.set(key, {
