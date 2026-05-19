@@ -1,4 +1,5 @@
 import { ToolHandlerError } from '../../tool-response.js';
+import { ScanPathNotFoundError } from '../vault-reader.js';
 import { normalizeVaultPathPrefix } from './path-prefix.js';
 
 export type PrefixInput = string | string[] | undefined;
@@ -43,4 +44,38 @@ export function matchesAnyPrefix(p: string, prefixes: string[]): boolean {
     if (p.startsWith(`${q}/`)) return true;
   }
   return false;
+}
+
+/**
+ * Re-throws a path-not-found error with `path_prefix[i]` framing when the
+ * caller is in multi-prefix mode. Single-prefix callers see the unchanged
+ * `path_prefix not found: <prefix>` message that {@link ScanPathNotFoundError}
+ * has produced since before this feature shipped. The helper accepts either a
+ * raw `ScanPathNotFoundError` (fast path, before wrapping) or a wrapped
+ * `ToolHandlerError('PATH_NOT_FOUND')` (general path, after
+ * `collectMatchingPaths` has already wrapped) so both call sites use the same
+ * enrichment logic. Any other error is re-thrown untouched.
+ */
+export function rethrowPathNotFoundWithIndex(
+  err: unknown,
+  prefix: string,
+  index: number,
+  total: number,
+): never {
+  const isRaw = err instanceof ScanPathNotFoundError;
+  const isWrapped = err instanceof ToolHandlerError && err.code === 'PATH_NOT_FOUND';
+  if (!isRaw && !isWrapped) {
+    throw err;
+  }
+  if (total <= 1) {
+    if (isRaw) {
+      throw new ToolHandlerError('PATH_NOT_FOUND', err.message);
+    }
+    throw err;
+  }
+  throw new ToolHandlerError(
+    'PATH_NOT_FOUND',
+    `path_prefix[${index}] not found: ${JSON.stringify(prefix)}`,
+    { details: { path_prefix: prefix, index } },
+  );
 }

@@ -325,6 +325,25 @@ describe('query_notes integration (real FsVaultReader on disk)', () => {
     ).rejects.toMatchObject({ code: 'PATH_NOT_FOUND' });
   });
 
+  it('multi-prefix include with one missing names the failing prefix by index', async () => {
+    try {
+      await runQueryNotes(
+        {
+          filter: { 'frontmatter.type': 'project' },
+          path_prefix: ['Projects/', 'NoSuchFolder/'],
+        },
+        reader,
+      );
+    } catch (err) {
+      const e = err as { code?: string; message?: string; details?: Record<string, unknown> };
+      expect(e.code).toBe('PATH_NOT_FOUND');
+      expect(e.message).toBe('path_prefix[1] not found: "NoSuchFolder"');
+      expect(e.details).toEqual({ path_prefix: 'NoSuchFolder', index: 1 });
+      return;
+    }
+    throw new Error('expected runQueryNotes to reject');
+  });
+
   it('missing exclude prefix is silently a no-op', async () => {
     const out = await runQueryNotes(
       {

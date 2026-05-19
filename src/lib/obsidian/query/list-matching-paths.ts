@@ -1,9 +1,12 @@
 import { ToolHandlerError } from '../../tool-response.js';
-import { ScanPathNotFoundError } from '../vault-reader.js';
 import type { VaultReader } from '../vault-reader.js';
 import type { WikilinkGraphIndex } from '../wikilink-graph.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
-import { matchesAnyPrefix, normalizePrefixList } from './path-prefix-set.js';
+import {
+  matchesAnyPrefix,
+  normalizePrefixList,
+  rethrowPathNotFoundWithIndex,
+} from './path-prefix-set.js';
 import { collectMatchingPaths } from './query-notes.js';
 import { validateFilter } from './whitelist.js';
 
@@ -47,20 +50,18 @@ export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchi
     // Fast path: only path filters, no tags / frontmatter — never reads frontmatter.
     if (!hasTags && !hasFrontmatter) {
       const collected = new Set<string>();
-      try {
-        if (hasInclude) {
-          const scans = await Promise.all(
-            includePrefixes!.map((p) => deps.reader.scan({ pathPrefix: p })),
-          );
-          for (const list of scans) for (const p of list) collected.add(p);
-        } else {
-          for (const p of await deps.reader.scan({ pathPrefix: undefined })) collected.add(p);
-        }
-      } catch (err) {
-        if (err instanceof ScanPathNotFoundError) {
-          throw new ToolHandlerError('PATH_NOT_FOUND', err.message);
-        }
-        throw err;
+      if (hasInclude) {
+        const total = includePrefixes!.length;
+        const scans = await Promise.all(
+          includePrefixes!.map((p, i) =>
+            deps.reader
+              .scan({ pathPrefix: p })
+              .catch((err: unknown) => rethrowPathNotFoundWithIndex(err, p, i, total)),
+          ),
+        );
+        for (const list of scans) for (const p of list) collected.add(p);
+      } else {
+        for (const p of await deps.reader.scan({ pathPrefix: undefined })) collected.add(p);
       }
       if (hasExclude) {
         for (const p of [...collected]) {
@@ -80,9 +81,10 @@ export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchi
     const scanPrefixes: Array<string | undefined> = hasInclude
       ? [...includePrefixes!]
       : [undefined];
+    const totalIncludes = scanPrefixes.length;
     const batched = await Promise.all(
-      scanPrefixes.map((prefix) =>
-        collectMatchingPaths(
+      scanPrefixes.map((prefix, i) => {
+        const promise = collectMatchingPaths(
           {
             filter: effectiveFilter,
             pathPrefix: prefix,
@@ -90,8 +92,13 @@ export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchi
             excludePathPrefixes: hasExclude ? excludePrefixes : undefined,
           },
           deps,
-        ),
-      ),
+        );
+        return prefix === undefined
+          ? promise
+          : promise.catch((err: unknown) =>
+              rethrowPathNotFoundWithIndex(err, prefix, i, totalIncludes),
+            );
+      }),
     );
 
     const out = new Set<string>();

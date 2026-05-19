@@ -22,7 +22,11 @@ import type {
   QueryNotesToolInput,
 } from './types.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
-import { matchesAnyPrefix, normalizePrefixList } from './path-prefix-set.js';
+import {
+  matchesAnyPrefix,
+  normalizePrefixList,
+  rethrowPathNotFoundWithIndex,
+} from './path-prefix-set.js';
 import { validateFilter } from './whitelist.js';
 
 const DEFAULT_LIMIT = 100;
@@ -159,9 +163,10 @@ export async function runQueryNotes(
   const multiPrefix = includes.length > 1;
   const earlyExitAfter = sortOrderMatchesScan && !multiPrefix ? validated.limit : undefined;
 
+  const totalIncludes = includes.length;
   const batches = await Promise.all(
-    includes.map((prefix) =>
-      collectMatchingPaths(
+    includes.map((prefix, i) => {
+      const promise = collectMatchingPaths(
         {
           filter: effectiveFilter,
           pathPrefix: prefix,
@@ -170,8 +175,13 @@ export async function runQueryNotes(
           excludePathPrefixes: validated.excludePrefixes,
         },
         { reader, graph },
-      ),
-    ),
+      );
+      return prefix === undefined
+        ? promise
+        : promise.catch((err: unknown) =>
+            rethrowPathNotFoundWithIndex(err, prefix, i, totalIncludes),
+          );
+    }),
   );
 
   const seen = new Set<string>();
