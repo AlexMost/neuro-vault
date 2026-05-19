@@ -64,7 +64,7 @@ function computeRelatedPerSeed(args: {
       queryVector: source.embedding,
       sources: sources.values(),
       threshold,
-      limit: perSeedLimit,
+      limit: perSeedLimit + seedSet.size,
     });
     const related = neighbours
       .filter((n) => !seedSet.has(n.path))
@@ -132,6 +132,9 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
       const bucket = blocksByPath.get(block.path) ?? [];
       bucket.push({ heading: block.heading, lines: block.lines, similarity: block.similarity });
       blocksByPath.set(block.path, bucket);
+    }
+    for (const bucket of blocksByPath.values()) {
+      bucket.sort((a, b) => b.similarity - a.similarity || a.lines[0] - b.lines[0]);
     }
   }
 

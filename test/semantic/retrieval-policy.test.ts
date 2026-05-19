@@ -326,6 +326,53 @@ describe('executeRetrieval', () => {
       expect(noteA.related.map((r) => r.path)).toEqual(['n1.md', 'n2.md']);
     });
 
+    it('honours per-note cap even when some top neighbours are filtered out as seeds', async () => {
+      // 3 seeds, all densely connected. Engine returns 5 neighbours per seed,
+      // of which the top 2 are themselves seeds. After filter, only 3 remain;
+      // per-seed cap is 3, so all 3 survivors must appear.
+      const embeddingProvider = makeEmbeddingProvider([1, 0]);
+      const seedSources = makeSources([
+        ['seed-a.md', [1, 0]],
+        ['seed-b.md', [0.9, 0.1]],
+        ['seed-c.md', [0.8, 0.2]],
+        ['n1.md', [0.7, 0.3]],
+        ['n2.md', [0.6, 0.4]],
+        ['n3.md', [0.5, 0.5]],
+      ]);
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi
+          .fn()
+          .mockReturnValueOnce([
+            makeSearchResult('seed-a.md', 0.95),
+            makeSearchResult('seed-b.md', 0.93),
+            makeSearchResult('seed-c.md', 0.91),
+          ])
+          .mockReturnValueOnce([
+            // expansion for seed-a: top 2 are seeds → filtered out
+            makeSearchResult('seed-b.md', 0.93),
+            makeSearchResult('seed-c.md', 0.91),
+            makeSearchResult('n1.md', 0.8),
+            makeSearchResult('n2.md', 0.7),
+            makeSearchResult('n3.md', 0.6),
+          ])
+          .mockReturnValueOnce([])
+          .mockReturnValueOnce([]),
+      });
+
+      const output = await executeRetrieval({
+        query: 'q',
+        mode: 'deep',
+        expansion: true,
+        expansionLimit: 3,
+        sources: seedSources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      const seedA = output.results.find((r) => r.path === 'seed-a.md')!;
+      expect(seedA.related.map((r) => r.path)).toEqual(['n1.md', 'n2.md', 'n3.md']);
+    });
+
     it('does not run expansion when expansion is false (related is empty)', async () => {
       const embeddingProvider = makeEmbeddingProvider([1, 0]);
       const searchEngine = makeSearchEngine({
@@ -417,6 +464,27 @@ describe('executeRetrieval', () => {
         expect(rel).not.toHaveProperty('via_expansion');
         expect(typeof rel.expansion_similarity).toBe('number');
       }
+    });
+
+    it('sorts blocks[] within a note by similarity desc', async () => {
+      // Engine returns blocks in arbitrary order; the assembly must sort them.
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
+        findBlockNeighbors: vi.fn().mockReturnValue([
+          { path: 'note-a.md', heading: '#low', lines: [10, 12], similarity: 0.3 },
+          { path: 'note-a.md', heading: '#high', lines: [1, 3], similarity: 0.9 },
+          { path: 'note-a.md', heading: '#mid', lines: [5, 7], similarity: 0.6 },
+        ]),
+      });
+      const output = await executeRetrieval({
+        query: 'q',
+        mode: 'deep',
+        sources,
+        embeddingProvider: makeEmbeddingProvider(),
+        searchEngine,
+      });
+      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      expect(noteA.blocks.map((b) => b.similarity)).toEqual([0.9, 0.6, 0.3]);
     });
 
     it('output never has a top-level blockResults field', async () => {
