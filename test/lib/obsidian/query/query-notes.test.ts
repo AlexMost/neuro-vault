@@ -459,4 +459,30 @@ describe('runQueryNotes', () => {
     // 80 paths / 32 = 3 batches.
     expect(calls.length).toBe(3);
   });
+
+  it('exclude_path_prefix drops matches inside the inner loop (post-exclude truncation correct)', async () => {
+    // 5 notes match the sift filter, but 3 are inside Archive/. With limit=2
+    // and earlyExitAfter active, exclude must filter inside the loop so
+    // truncated only fires when there are >2 *visible* matches.
+    const notes: FakeNote[] = [
+      { path: 'Archive/a.md', frontmatter: { tags: ['x'] } },
+      { path: 'Archive/b.md', frontmatter: { tags: ['x'] } },
+      { path: 'Archive/c.md', frontmatter: { tags: ['x'] } },
+      { path: 'Live/d.md', frontmatter: { tags: ['x'] } },
+      { path: 'Live/e.md', frontmatter: { tags: ['x'] } },
+    ];
+    const reader = buildReader(notes);
+
+    const result = await runQueryNotes(
+      {
+        filter: { tags: { $in: ['x'] } },
+        exclude_path_prefix: 'Archive/',
+        limit: 2,
+      } as unknown as Parameters<typeof runQueryNotes>[0],
+      reader,
+    );
+
+    expect(result.results.map((r) => r.path).sort()).toEqual(['Live/d.md', 'Live/e.md']);
+    expect(result.truncated).toBe(false);
+  });
 });

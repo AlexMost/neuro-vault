@@ -23,6 +23,7 @@ import type {
 } from './types.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
 import { normalizeVaultPathPrefix } from './path-prefix.js';
+import { matchesAnyPrefix } from './path-prefix-set.js';
 import { validateFilter } from './whitelist.js';
 
 const DEFAULT_LIMIT = 100;
@@ -43,7 +44,8 @@ interface CollectMatchingPathsInput {
   filter: Record<string, unknown>; // already-validated, regex-defaults applied
   pathPrefix: string | undefined;
   includeContent: boolean;
-  earlyExitAfter?: number; // break after collecting > N matches (i.e. at most N+1); omit for full scan. The +1 lets the caller distinguish "exactly N" from "more than N" for truncation.
+  earlyExitAfter?: number; // break after collecting > N matches (i.e. at most N+1); omit for full scan.
+  excludePathPrefixes?: string[]; // drop items whose path matches any of these prefixes
 }
 
 export interface CollectedRow {
@@ -103,6 +105,12 @@ export async function collectMatchingPaths(
         if (item.error.code === 'READ_FAILED') {
           process.stderr.write(`[neuro-vault] query_notes: ${item.error.message}\n`);
         }
+        continue;
+      }
+      if (
+        input.excludePathPrefixes !== undefined &&
+        matchesAnyPrefix(item.path, input.excludePathPrefixes)
+      ) {
         continue;
       }
       const backlinkCount = graph?.getBacklinkCount(item.path) ?? 0;
