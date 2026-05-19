@@ -44,8 +44,8 @@ interface CollectMatchingPathsInput {
   filter: Record<string, unknown>; // already-validated, regex-defaults applied
   pathPrefix: string | undefined;
   includeContent: boolean;
-  earlyExitAfter?: number; // break after collecting > N matches (i.e. at most N+1); omit for full scan.
-  excludePathPrefixes?: string[]; // drop items whose path matches any of these prefixes
+  earlyExitAfter?: number; // break after collecting > N matches (i.e. at most N+1); omit for full scan. The +1 lets the caller distinguish "exactly N" from "more than N" for truncation.
+  excludePathPrefixes?: string[]; // drop items whose path matches any of these prefixes (boundary-safe, via matchesAnyPrefix)
 }
 
 export interface CollectedRow {
@@ -107,6 +107,8 @@ export async function collectMatchingPaths(
         }
         continue;
       }
+      // Exclude before sift: cheap path check, and keeps matched.length === post-exclude
+      // count so earlyExitAfter / truncated logic in runQueryNotes remains correct.
       if (
         input.excludePathPrefixes !== undefined &&
         matchesAnyPrefix(item.path, input.excludePathPrefixes)

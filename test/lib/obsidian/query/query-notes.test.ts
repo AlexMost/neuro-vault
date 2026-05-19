@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { ToolHandlerError } from '../../../../src/lib/tool-response.js';
-import { runQueryNotes } from '../../../../src/lib/obsidian/query/query-notes.js';
+import {
+  collectMatchingPaths,
+  runQueryNotes,
+} from '../../../../src/lib/obsidian/query/query-notes.js';
 import {
   ScanPathNotFoundError,
   type ReadNotesItem,
@@ -459,11 +462,10 @@ describe('runQueryNotes', () => {
     // 80 paths / 32 = 3 batches.
     expect(calls.length).toBe(3);
   });
+});
 
-  it('exclude_path_prefix drops matches inside the inner loop (post-exclude truncation correct)', async () => {
-    // 5 notes match the sift filter, but 3 are inside Archive/. With limit=2
-    // and earlyExitAfter active, exclude must filter inside the loop so
-    // truncated only fires when there are >2 *visible* matches.
+describe('collectMatchingPaths excludePathPrefixes', () => {
+  it('drops excluded items inside the inner loop so matched.length is post-exclude', async () => {
     const notes: FakeNote[] = [
       { path: 'Archive/a.md', frontmatter: { tags: ['x'] } },
       { path: 'Archive/b.md', frontmatter: { tags: ['x'] } },
@@ -473,16 +475,56 @@ describe('runQueryNotes', () => {
     ];
     const reader = buildReader(notes);
 
-    const result = await runQueryNotes(
+    const rows = await collectMatchingPaths(
       {
         filter: { tags: { $in: ['x'] } },
-        exclude_path_prefix: 'Archive/',
-        limit: 2,
-      } as unknown as Parameters<typeof runQueryNotes>[0],
-      reader,
+        pathPrefix: undefined,
+        includeContent: false,
+        excludePathPrefixes: ['Archive'],
+      },
+      { reader },
     );
 
-    expect(result.results.map((r) => r.path).sort()).toEqual(['Live/d.md', 'Live/e.md']);
-    expect(result.truncated).toBe(false);
+    expect(rows.map((r) => r.record.path).sort()).toEqual(['Live/d.md', 'Live/e.md']);
+  });
+
+  it('post-exclude count drives earlyExitAfter — only visible matches count toward the cap', async () => {
+    // 10 candidates total: 4 live, 6 archived. With earlyExitAfter=2 the loop
+    // must keep scanning past archived items until it has collected
+    // earlyExitAfter+1=3 *visible* matches. If exclude were applied as a
+    // post-filter (after earlyExit fires on raw matches), `rows.length` could
+    // be less than 3 — proving the guard placement matters.
+    const notes: FakeNote[] = [
+      { path: 'Archive/a.md', frontmatter: { tags: ['x'] } },
+      { path: 'Live/0.md', frontmatter: { tags: ['x'] } },
+      { path: 'Archive/b.md', frontmatter: { tags: ['x'] } },
+      { path: 'Live/1.md', frontmatter: { tags: ['x'] } },
+      { path: 'Archive/c.md', frontmatter: { tags: ['x'] } },
+      { path: 'Live/2.md', frontmatter: { tags: ['x'] } },
+      { path: 'Archive/d.md', frontmatter: { tags: ['x'] } },
+      { path: 'Live/3.md', frontmatter: { tags: ['x'] } },
+      { path: 'Archive/e.md', frontmatter: { tags: ['x'] } },
+      { path: 'Archive/f.md', frontmatter: { tags: ['x'] } },
+    ];
+    const reader = buildReader(notes);
+
+    const rows = await collectMatchingPaths(
+      {
+        filter: { tags: { $in: ['x'] } },
+        pathPrefix: undefined,
+        includeContent: false,
+        excludePathPrefixes: ['Archive'],
+        earlyExitAfter: 2,
+      },
+      { reader },
+    );
+
+    // earlyExit at cap+1 = 3 visible matches; never below 3, never above 4
+    // (the batch may finish out before the loop checks the cap).
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    expect(rows.length).toBeLessThanOrEqual(4);
+    for (const r of rows) {
+      expect(r.record.path.startsWith('Archive/')).toBe(false);
+    }
   });
 });
