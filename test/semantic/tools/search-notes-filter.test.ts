@@ -282,4 +282,69 @@ describe('search_notes — filter', () => {
       await cleanup();
     }
   });
+
+  it('exclude_path_prefix alone is a valid filter', async () => {
+    const sources = makeSources(['Live/a.md', 'Live/b.md', 'Archive/c.md']);
+    const findNeighbors = vi.fn().mockReturnValue([
+      { path: 'Live/a.md', similarity: 0.9 },
+      { path: 'Live/b.md', similarity: 0.8 },
+    ]);
+    const { deps, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+      searchEngine: makeEngine({ findNeighbors }),
+      modelKey: 'm',
+      listMatchingPaths: async () => new Set(['Live/a.md', 'Live/b.md']),
+    });
+    const tool = buildSearchNotesTool(deps);
+
+    try {
+      const result = (await tool.handler({
+        query: 'q',
+        filter: { exclude_path_prefix: 'Archive/' },
+      })) as SearchNotesOutput;
+
+      expect(result.results.map((r) => r.path).sort()).toEqual(['Live/a.md', 'Live/b.md']);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('rejects empty path_prefix array with INVALID_ARGUMENT', async () => {
+    const { deps, cleanup } = await makeSearchDeps({
+      sources: makeSources(['a.md']),
+      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      searchEngine: makeEngine(),
+      modelKey: 'm',
+      listMatchingPaths: async () => new Set(),
+    });
+    const tool = buildSearchNotesTool(deps);
+
+    try {
+      await expect(tool.handler({ query: 'q', filter: { path_prefix: [] } })).rejects.toMatchObject(
+        { code: 'INVALID_ARGUMENT' },
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('rejects empty exclude_path_prefix array with INVALID_ARGUMENT', async () => {
+    const { deps, cleanup } = await makeSearchDeps({
+      sources: makeSources(['a.md']),
+      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      searchEngine: makeEngine(),
+      modelKey: 'm',
+      listMatchingPaths: async () => new Set(),
+    });
+    const tool = buildSearchNotesTool(deps);
+
+    try {
+      await expect(
+        tool.handler({ query: 'q', filter: { exclude_path_prefix: [] } }),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    } finally {
+      await cleanup();
+    }
+  });
 });
