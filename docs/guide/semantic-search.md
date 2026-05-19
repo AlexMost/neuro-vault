@@ -23,12 +23,12 @@ search_notes({
 
 ### Modes
 
-| Mode    | Use when                          | `limit` default | `threshold` default | Block search                                       | Expansion |
-| ------- | --------------------------------- | --------------- | ------------------- | -------------------------------------------------- | --------- |
-| `quick` | Specific question, need 1–2 notes | 3               | 0.50                | scoped to matched notes, threshold = 0, cap = 5    | off       |
-| `deep`  | Broad topic, need an overview     | 8               | 0.35                | across whole vault, threshold = mode, limit = mode | on, top-3 |
+| Mode    | Use when                          | `limit` default | `threshold` default | Block search                                            | Expansion                      |
+| ------- | --------------------------------- | --------------- | ------------------- | ------------------------------------------------------- | ------------------------------ |
+| `quick` | Specific question, need 1–2 notes | 3               | 0.50                | scoped to result notes, threshold = 0, cap = 5 per note | off                            |
+| `deep`  | Broad topic, need an overview     | 8               | 0.35                | scoped to result notes, threshold = mode, limit = mode  | on, per-seed cap = 3 (default) |
 
-`limit` widens or narrows the `results` array but does not affect `blockResults` (which is always capped by mode-specific logic). `expansion` is no longer a tool parameter — it is fixed by mode.
+`limit` widens or narrows the `results[]` array but does not directly bound nested `blocks[]` or `related[]`, which are capped per result (see modes table). `expansion` is not a tool parameter — it is fixed by mode.
 
 ### Pre-filter (`filter` parameter)
 
@@ -66,25 +66,39 @@ Example — carve out absorbed atoms and dead notes from a broad query:
 ```json
 {
   "results": [
-    { "path": "Projects/neuro-vault.md", "similarity": 0.81, "backlink_count": 7 },
-    { "path": "Notes/embeddings.md", "similarity": 0.74, "backlink_count": 2 }
-  ],
-  "blockResults": [
     {
       "path": "Projects/neuro-vault.md",
-      "heading": "## Architecture",
-      "lines": [42, 58],
-      "similarity": 0.79
+      "similarity": 0.81,
+      "backlink_count": 7,
+      "vault": "Obsidian",
+      "blocks": [
+        { "heading": "Projects/neuro-vault.md#Architecture", "lines": [42, 58], "similarity": 0.79 }
+      ],
+      "related": []
+    },
+    {
+      "path": "Notes/embeddings.md",
+      "similarity": 0.74,
+      "backlink_count": 2,
+      "vault": "Obsidian",
+      "blocks": [],
+      "related": []
     }
   ]
 }
 ```
 
-Each note result carries `backlink_count` — the total number of inbound wikilinks and `![[embeds]]` from across the vault, derived from the same in-memory index used by `get_note_links` and `query_notes`. Useful as a relevance signal when several results have similar similarity scores. Block-level results (`blockResults`) do not carry `backlink_count`.
+Each direct result is a node with:
+
+- `path`, `similarity` (query-similarity), `backlink_count`, `vault` — basic identity.
+- `blocks[]` — section-level matches WITHIN this note (own-path scope). Always present; possibly empty.
+- `related[]` — expansion neighbours OF this note. Always present; populated only in `deep` mode.
+
+`backlink_count` is the total number of inbound wikilinks and `![[embeds]]` derived from the same in-memory index used by `get_note_links` and `query_notes`. Useful as a relevance signal when several results have similar similarity scores.
 
 ### Output shape — `deep`
 
-Same shape as quick, but `results` can have up to `limit` entries (default 8) and `blockResults` is searched across the whole vault rather than scoped to matched notes.
+Same shape as quick, but `results[]` can have up to `limit` entries (default 8) and `related[]` is populated on each result with up to `expansionLimit` (default 3) semantically neighbouring notes (see "Expansion" below).
 
 ### Output shape — multi-query (`query` is an array)
 
@@ -94,25 +108,32 @@ Same shape as quick, but `results` can have up to `limit` entries (default 8) an
     {
       "path": "Notes/embeddings.md",
       "similarity": 0.82,
-      "matched_queries": ["embeddings", "векторний пошук"]
+      "matched_queries": ["embeddings", "векторний пошук"],
+      "backlink_count": 4,
+      "vault": "Obsidian",
+      "blocks": [],
+      "related": []
     },
     {
       "path": "Projects/neuro-vault.md",
       "similarity": 0.76,
-      "matched_queries": ["embeddings"]
+      "matched_queries": ["embeddings"],
+      "backlink_count": 7,
+      "vault": "Obsidian",
+      "blocks": [],
+      "related": []
     }
   ],
-  "blockResults": [],
   "truncated": false
 }
 ```
 
-- `matched_queries` lists which of your queries surfaced this path. If only one of your synonyms hit, that's a useful signal.
-- `truncated: true` means unique merged candidates exceeded `limit`. Widen `limit` to see more. `limit` is the **final** result count — it is not multiplied by the number of queries; passing more queries widens coverage, not result count.
+- `matched_queries` (per result) lists which of your queries surfaced this note. If only one of your synonyms hit, that's a useful signal.
+- `truncated: true` (top-level) means unique merged candidates exceeded `limit`. Widen `limit` to see more. `limit` is the **final** result count — it is not multiplied by the number of queries; passing more queries widens coverage, not result count.
 
-### Output shape — deep mode with expansion
+### Expansion (`related[]`) in `deep` mode
 
-In `deep` mode, after the top-`limit` query results are merged and capped, expansion runs once on those seed results to pull in semantically related notes. Expansion-derived results carry `via_expansion: true` and have no `matched_queries`:
+In `deep` mode, after the top-`limit` result notes are merged and capped, expansion runs per-seed: for each direct result, the server pulls its semantically nearest neighbour notes into `related[]` on that result. The neighbour's score is `expansion_similarity` (note-to-note), a **different scale** from the top-level `similarity` (query-to-note); do not compare them numerically.
 
 ```json
 {
@@ -120,20 +141,34 @@ In `deep` mode, after the top-`limit` query results are merged and capped, expan
     {
       "path": "Notes/embeddings.md",
       "similarity": 0.82,
-      "matched_queries": ["embeddings", "векторний пошук"]
-    },
-    {
-      "path": "Notes/vector-search-internals.md",
-      "similarity": 0.71,
-      "via_expansion": true
+      "matched_queries": ["embeddings", "векторний пошук"],
+      "backlink_count": 4,
+      "vault": "Obsidian",
+      "blocks": [
+        {
+          "heading": "Notes/embeddings.md#What is an embedding",
+          "lines": [3, 20],
+          "similarity": 0.71
+        }
+      ],
+      "related": [
+        { "path": "Notes/vector-search-internals.md", "expansion_similarity": 0.94 },
+        { "path": "Resources/Information retrieval.md", "expansion_similarity": 0.88 }
+      ]
     }
   ],
-  "blockResults": [],
   "truncated": false
 }
 ```
 
-`matched_queries` and `via_expansion` are mutually exclusive: a result came from a query or from expansion, never both.
+Invariants:
+
+- A `related[]` item never has a `similarity` field — only `expansion_similarity`. A direct result never has `expansion_similarity`.
+- The same neighbour may appear in `related[]` of multiple direct results, with potentially different `expansion_similarity` values per parent. This is by design — neighbourhood is a pairwise property.
+- `blocks[]` and `related[]` are always present on direct results (possibly empty).
+- After finding a relevant note, call `get_similar_notes` on it for a deeper neighbour profile — don't infer relationships from `related[]` alone.
+
+For more on the retrieval pipeline (merge, cap, per-seed expansion, orphan-block scoping), see [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md).
 
 ### Tuning threshold
 
