@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [8.1.0](https://github.com/AlexMost/neuro-vault/compare/v8.0.0...v8.1.0) (2026-05-19)
+
+### Features
+
+- **query_notes:** top-level path_prefix accepts array, add exclude_path_prefix ([60b9d7d](https://github.com/AlexMost/neuro-vault/commit/60b9d7dfff3964e2073c9b966020bf7d67299299))
+- **query:** add path-prefix-set helper (normalize + boundary-safe match) ([00680fd](https://github.com/AlexMost/neuro-vault/commit/00680fd921b2fed3efa69568ee0c40fee5278195))
+- **query:** collectMatchingPaths applies excludePathPrefixes in inner loop ([6dbd1e7](https://github.com/AlexMost/neuro-vault/commit/6dbd1e76ae14f2595806dca52b46a9f7a268616e))
+- **query:** NoteFilter accepts multi-prefix include and exclude ([35353be](https://github.com/AlexMost/neuro-vault/commit/35353beb4d44079b057580276632f50dabfcb92d))
+- **query:** runQueryNotes accepts multi-prefix include and exclude_path_prefix ([60ec33b](https://github.com/AlexMost/neuro-vault/commit/60ec33ba52d67adc5a12ad2eb125444b092cd49f))
+- **search_notes:** filter accepts multi-prefix and exclude_path_prefix ([9b09a08](https://github.com/AlexMost/neuro-vault/commit/9b09a0825c7887797dfd476afe99756bd3d81309))
+
 ## [8.0.0](https://github.com/AlexMost/neuro-vault/compare/v7.0.0...v8.0.0) (2026-05-16)
 
 ### ⚠ BREAKING CHANGES
