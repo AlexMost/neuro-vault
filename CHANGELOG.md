@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [9.0.0](https://github.com/AlexMost/neuro-vault/compare/v8.2.0...v9.0.0) (2026-05-19)
+
+### ⚠ BREAKING CHANGES
+
+- **search-notes:** search_notes response no longer has top-level
+  blockResults; results entries no longer carry via_expansion. Blocks
+  and expansion neighbours are nested under each direct result.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- **retrieval:** top-level blockResults removed; via_expansion flag
+  removed; expansionLimit is now a per-seed cap rather than a global one.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+- **retrieval:** executeRetrieval response shape changed from
+  { results, blockResults } with via_expansion flag to a tree where
+  each result note carries its own blocks[] and related[].
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+### Features
+
+- **retrieval:** tree shape for executeMultiRetrieval ([81e1d51](https://github.com/AlexMost/neuro-vault/commit/81e1d516c5ec4323239cc1ef248a3a6ca2c776ea))
+- **retrieval:** tree shape for executeRetrieval (single-query) ([6f9d3d9](https://github.com/AlexMost/neuro-vault/commit/6f9d3d9fa1c25655eb73f83e16740d9865dda65e))
+- **search-notes:** emit tree-shaped response from tool handler ([bcca2f4](https://github.com/AlexMost/neuro-vault/commit/bcca2f4451ec055d1009ce358e89b06d236f7c2b))
+
+### Bug Fixes
+
+- **retrieval:** sort blocks[] per note; honour per-seed cap after filter ([9c4d701](https://github.com/AlexMost/neuro-vault/commit/9c4d7012199e3674d3c94fa97aa086c83eb0a4a8))
+- **retrieval:** use NUL separator for multi-query block dedup key ([aca4e70](https://github.com/AlexMost/neuro-vault/commit/aca4e7051787eecf2d98729202ad040b2d79e34b))
+
 ## [8.2.0](https://github.com/AlexMost/neuro-vault/compare/v8.1.0...v8.2.0) (2026-05-19)
 
 ### Features
