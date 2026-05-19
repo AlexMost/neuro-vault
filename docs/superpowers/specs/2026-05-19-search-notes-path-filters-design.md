@@ -101,11 +101,10 @@ Normalize via `normalizePrefixList` up front. Decision branches:
   - If include is absent (exclude-only): `reader.scan({ pathPrefix: undefined })` — full vault.
   - If exclude is set: drop entries where `matchesAnyPrefix(path, excludes)`.
 - **General path** (tags / frontmatter present):
-  - For each include prefix (or `[undefined]` if absent), run `collectMatchingPaths` in parallel with that prefix.
+  - For each include prefix (or `[undefined]` if absent), run `collectMatchingPaths` in parallel, passing `excludePathPrefixes` through.
   - Union results by path.
-  - Apply exclude filter on the union.
 
-`collectMatchingPaths` itself stays unchanged; the orchestration above runs it N times for N include prefixes. For an N=1 include (the common case) this is identical to current behavior. For exclude-only, N=1 with `undefined` prefix (full scan), then post-filter.
+The orchestration above runs `collectMatchingPaths` N times for N include prefixes. For an N=1 include (the common case) this is identical to current behavior; for exclude-only, N=1 with `undefined` prefix (full scan) and inner-loop exclude.
 
 ### `search_notes` handler (`src/modules/semantic/tools/search-notes.ts`)
 
@@ -125,17 +124,18 @@ exclude_path_prefix: z.union([z.string(), z.array(z.string()).min(1)]).optional(
 
 **`QueryNotesToolInput` type** (`src/lib/obsidian/query/types.ts`): widened accordingly.
 
+**`collectMatchingPaths`** gains a new optional input field `excludePathPrefixes?: string[]`. When set, the per-item inner loop drops items where `matchesAnyPrefix(item.path, excludePathPrefixes)` is true — _before_ counting against `earlyExitAfter`. Applying exclude inside the loop (rather than as a post-filter) keeps the `earlyExitAfter` invariant intact: `matched.length` always reflects what the user will actually see, so truncation stays correct.
+
 **`runQueryNotes` (`src/lib/obsidian/query/query-notes.ts`)**:
 
 - `validateInput` calls `normalizePrefixList` for both fields with `errorCode: 'INVALID_PARAMS'`. The resulting `ValidatedInput` carries `includePrefixes?: string[]` and `excludePrefixes?: string[]`.
 - Execution:
-  - If `includePrefixes` is `undefined` (no include): run `collectMatchingPaths` once with `pathPrefix: undefined` — identical to today.
-  - If `includePrefixes.length === 1`: run `collectMatchingPaths` once with that prefix — also identical to today, including the early-exit optimization.
-  - If `includePrefixes.length > 1`: run `collectMatchingPaths` per prefix in parallel, **with `earlyExitAfter` disabled**, union the row sets by `record.path`. (See "Early-exit trade-off" below.)
-  - After matching, if `excludePrefixes` is set: drop rows where `matchesAnyPrefix(record.path, excludePrefixes)`.
-- Sort, truncate, slice — all on the post-exclude set, unchanged.
+  - If `includePrefixes` is `undefined` (no include): run `collectMatchingPaths` once with `pathPrefix: undefined`, passing `excludePathPrefixes`.
+  - If `includePrefixes.length === 1`: run `collectMatchingPaths` once with that prefix, passing `excludePathPrefixes` — early-exit optimization preserved.
+  - If `includePrefixes.length > 1`: run `collectMatchingPaths` per prefix in parallel **with `earlyExitAfter` disabled**, each call receiving `excludePathPrefixes`. Union the row sets by `record.path`. (See "Early-exit trade-off" below.)
+- Sort, truncate, slice — unchanged.
 
-**Early-exit trade-off.** Currently `runQueryNotes` enables `earlyExitAfter` only when sort order matches the natural scan order (`undefined` sort or `sort: { field: "path", order: "asc" }`). With multi-prefix include, that invariant breaks — each prefix scan is independently ordered, and merging them defeats early termination unless we add a streaming union. The simpler choice: with multi-prefix, scan all matched rows. This regresses worst-case latency on huge subtrees only when the caller opts into multi-prefix; single-prefix is unchanged. Single-prefix + exclude keeps early-exit (the exclude post-filter cannot bring matches _back_, only remove them; the existing cap-plus-one logic still correctly distinguishes "exactly N" from "more than N"). Documented as an explicit caveat.
+**Early-exit trade-off.** Currently `runQueryNotes` enables `earlyExitAfter` only when sort order matches the natural scan order (`undefined` sort or `sort: { field: "path", order: "asc" }`). With multi-prefix include that invariant breaks: each prefix scan is independently ordered, and merging them defeats early termination unless we add a streaming union. The simpler choice — scan all matched rows when multi-prefix — only regresses worst-case latency when the caller opts in. Single-prefix (with or without exclude) keeps early-exit because exclude is now applied inside `collectMatchingPaths`'s inner loop, so the `earlyExitAfter` count tracks post-exclude matches and remains correct.
 
 ### Tool descriptions and docs
 
