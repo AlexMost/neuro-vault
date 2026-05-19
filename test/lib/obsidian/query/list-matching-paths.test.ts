@@ -113,4 +113,80 @@ describe('listMatchingPaths', () => {
 
     expect(result.size).toBe(1500);
   });
+
+  it('union of multiple include prefixes (fast-path)', async () => {
+    const reader = makeReader({
+      'Tasks/a.md': {},
+      'Reflections/b.md': {},
+      'Notes/c.md': {},
+    });
+    const list = createListMatchingPaths({ reader });
+
+    const result = await list({ path_prefix: ['Tasks/', 'Reflections/'] });
+
+    expect([...result].sort()).toEqual(['Reflections/b.md', 'Tasks/a.md']);
+  });
+
+  it('exclude_path_prefix alone is valid and removes the named subtree', async () => {
+    const reader = makeReader({
+      'Resources/a.md': {},
+      'Tasks/b.md': {},
+    });
+    const list = createListMatchingPaths({ reader });
+
+    const result = await list({ exclude_path_prefix: 'Resources/' });
+
+    expect([...result]).toEqual(['Tasks/b.md']);
+  });
+
+  it('include + exclude — exclude wins on overlap', async () => {
+    const reader = makeReader({
+      'Tasks/active.md': {},
+      'Tasks/done/old.md': {},
+      'Tasks/done/older.md': {},
+    });
+    const list = createListMatchingPaths({ reader });
+
+    const result = await list({
+      path_prefix: 'Tasks/',
+      exclude_path_prefix: 'Tasks/done/',
+    });
+
+    expect([...result]).toEqual(['Tasks/active.md']);
+  });
+
+  it('general path: multi-prefix include + tags + exclude', async () => {
+    const reader = makeReader({
+      'A/match.md': { frontmatter: { tags: ['x'] } },
+      'A/skip.md': { frontmatter: { tags: ['y'] } },
+      'B/match.md': { frontmatter: { tags: ['x'] } },
+      'B/excluded/match.md': { frontmatter: { tags: ['x'] } },
+      'C/match.md': { frontmatter: { tags: ['x'] } },
+    });
+    const list = createListMatchingPaths({ reader });
+
+    const result = await list({
+      path_prefix: ['A/', 'B/'],
+      exclude_path_prefix: ['B/excluded/'],
+      tags: ['x'],
+    });
+
+    expect([...result].sort()).toEqual(['A/match.md', 'B/match.md']);
+  });
+
+  it('rejects empty path_prefix array', async () => {
+    const reader = makeReader({});
+    const list = createListMatchingPaths({ reader });
+
+    await expect(list({ path_prefix: [] })).rejects.toMatchObject({ code: 'INVALID_FILTER' });
+  });
+
+  it('rejects empty exclude_path_prefix array', async () => {
+    const reader = makeReader({});
+    const list = createListMatchingPaths({ reader });
+
+    await expect(list({ exclude_path_prefix: [] })).rejects.toMatchObject({
+      code: 'INVALID_FILTER',
+    });
+  });
 });

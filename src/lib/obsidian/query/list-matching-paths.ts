@@ -3,12 +3,13 @@ import { ScanPathNotFoundError } from '../vault-reader.js';
 import type { VaultReader } from '../vault-reader.js';
 import type { WikilinkGraphIndex } from '../wikilink-graph.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
-import { normalizeVaultPathPrefix } from './path-prefix.js';
+import { matchesAnyPrefix, normalizePrefixList } from './path-prefix-set.js';
 import { collectMatchingPaths } from './query-notes.js';
 import { validateFilter } from './whitelist.js';
 
 export interface NoteFilter {
-  path_prefix?: string;
+  path_prefix?: string | string[];
+  exclude_path_prefix?: string | string[];
   tags?: string[];
   frontmatter?: Record<string, unknown>;
 }
@@ -22,62 +23,82 @@ export interface ListMatchingPathsDeps {
 
 export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchingPaths {
   return async (filter) => {
-    const { path_prefix, tags, frontmatter } = filter;
+    const { path_prefix, exclude_path_prefix, tags, frontmatter } = filter;
 
-    const hasPathPrefix = path_prefix !== undefined && path_prefix !== '';
+    const includePrefixes = normalizePrefixList(path_prefix, 'path_prefix', 'INVALID_FILTER');
+    const excludePrefixes = normalizePrefixList(
+      exclude_path_prefix,
+      'exclude_path_prefix',
+      'INVALID_FILTER',
+    );
+
+    const hasInclude = includePrefixes !== undefined;
+    const hasExclude = excludePrefixes !== undefined;
     const hasTags = Array.isArray(tags) && tags.length > 0;
     const hasFrontmatter = frontmatter !== undefined && Object.keys(frontmatter).length > 0;
 
-    if (!hasPathPrefix && !hasTags && !hasFrontmatter) {
+    if (!hasInclude && !hasExclude && !hasTags && !hasFrontmatter) {
       throw new ToolHandlerError(
         'INVALID_FILTER',
-        'filter must specify at least one of: path_prefix, tags, frontmatter',
+        'filter must specify at least one of: path_prefix, exclude_path_prefix, tags, frontmatter',
       );
     }
 
-    const normalizedPrefix = hasPathPrefix
-      ? normalizeVaultPathPrefix(
-          path_prefix!,
-          (message) => new ToolHandlerError('INVALID_FILTER', message),
-        )
-      : undefined;
-
-    // Fast-path: only path_prefix → scan-only, never read frontmatter.
-    if (hasPathPrefix && !hasTags && !hasFrontmatter) {
+    // Fast path: only path filters, no tags / frontmatter — never reads frontmatter.
+    if (!hasTags && !hasFrontmatter) {
+      const collected = new Set<string>();
       try {
-        const paths = await deps.reader.scan({ pathPrefix: normalizedPrefix });
-        return new Set(paths);
+        if (hasInclude) {
+          const scans = await Promise.all(
+            includePrefixes!.map((p) => deps.reader.scan({ pathPrefix: p })),
+          );
+          for (const list of scans) for (const p of list) collected.add(p);
+        } else {
+          for (const p of await deps.reader.scan({ pathPrefix: undefined })) collected.add(p);
+        }
       } catch (err) {
         if (err instanceof ScanPathNotFoundError) {
-          throw new ToolHandlerError('PATH_NOT_FOUND', err.message, {
-            details: { path_prefix: normalizedPrefix },
-          });
+          throw new ToolHandlerError('PATH_NOT_FOUND', err.message);
         }
         throw err;
       }
+      if (hasExclude) {
+        for (const p of [...collected]) {
+          if (matchesAnyPrefix(p, excludePrefixes!)) collected.delete(p);
+        }
+      }
+      return collected;
     }
 
-    // Validate the raw user-supplied frontmatter object before compileFilter
-    // rewrites top-level keys like `$where` into dotted paths (`frontmatter.$where`)
-    // that no longer trigger the operator allow-list check.
+    // General path — validate frontmatter operators before sift compiles.
     if (hasFrontmatter) {
       validateFilter(frontmatter!);
     }
-
-    // General path: compile NoteFilter → internal sift filter, delegate.
     const internalFilter = compileFilter({ tags, frontmatter });
     const effectiveFilter = applyDefaultRegexOptions(internalFilter);
 
-    const rows = await collectMatchingPaths(
-      {
-        filter: effectiveFilter,
-        pathPrefix: normalizedPrefix,
-        includeContent: false,
-      },
-      deps,
+    const scanPrefixes: Array<string | undefined> = hasInclude
+      ? [...includePrefixes!]
+      : [undefined];
+    const batched = await Promise.all(
+      scanPrefixes.map((prefix) =>
+        collectMatchingPaths(
+          {
+            filter: effectiveFilter,
+            pathPrefix: prefix,
+            includeContent: false,
+            excludePathPrefixes: hasExclude ? excludePrefixes : undefined,
+          },
+          deps,
+        ),
+      ),
     );
 
-    return new Set(rows.map((row) => row.record.path));
+    const out = new Set<string>();
+    for (const rows of batched) {
+      for (const row of rows) out.add(row.record.path);
+    }
+    return out;
   };
 }
 
