@@ -1,8 +1,9 @@
 import type {
+  BlockMatch,
   BlockSearchResult,
   EmbeddingProvider,
-  MultiBlockSearchResult,
-  MultiSearchResult,
+  NoteResultNode,
+  RelatedNote,
   SearchEngine,
   SearchMode,
   SearchResult,
@@ -37,60 +38,55 @@ export interface RetrievalInput {
 }
 
 export interface RetrievalOutput {
-  results: SearchResult[];
-  blockResults?: BlockSearchResult[];
+  results: NoteResultNode[];
 }
 
-// Helper: post-cap expansion. Used by both single- and multi-query.
-function computeExpansion(args: {
-  seeds: { path: string; similarity: number }[];
+// Per-seed expansion. Each seed gets its own sorted, capped list of neighbours.
+// No global dedup — the same path may appear in multiple seeds' related lists
+// (with potentially different expansion_similarity values), by design.
+function computeRelatedPerSeed(args: {
+  seedPaths: string[];
   sources: Map<string, SmartSource>;
   searchEngine: SearchEngine;
   threshold: number;
   perSeedLimit: number;
-  totalLimit: number;
-}): SearchResult[] {
-  const { seeds, sources, searchEngine, threshold, perSeedLimit, totalLimit } = args;
-  const seedPaths = new Set(seeds.map((s) => s.path));
-  const bestByPath = new Map<string, number>();
-
-  for (const seed of seeds) {
-    const source = sources.get(seed.path);
-    if (!source || source.embedding.length === 0) continue;
-    const neighbors = searchEngine.findNeighbors({
+}): Map<string, RelatedNote[]> {
+  const { seedPaths, sources, searchEngine, threshold, perSeedLimit } = args;
+  const seedSet = new Set(seedPaths);
+  const out = new Map<string, RelatedNote[]>();
+  for (const seedPath of seedPaths) {
+    const source = sources.get(seedPath);
+    if (!source || source.embedding.length === 0) {
+      out.set(seedPath, []);
+      continue;
+    }
+    const neighbours = searchEngine.findNeighbors({
       queryVector: source.embedding,
       sources: sources.values(),
       threshold,
       limit: perSeedLimit,
     });
-    for (const n of neighbors) {
-      if (seedPaths.has(n.path)) continue;
-      const cur = bestByPath.get(n.path);
-      if (cur === undefined || n.similarity > cur) {
-        bestByPath.set(n.path, n.similarity);
-      }
-    }
+    const related = neighbours
+      .filter((n) => !seedSet.has(n.path))
+      .sort((a, b) => b.similarity - a.similarity || a.path.localeCompare(b.path))
+      .slice(0, perSeedLimit)
+      .map((n) => ({ path: n.path, expansion_similarity: n.similarity }));
+    out.set(seedPath, related);
   }
-
-  return [...bestByPath.entries()]
-    .map(([path, similarity]) => ({ path, similarity, via_expansion: true as const }))
-    .sort((a, b) => b.similarity - a.similarity || a.path.localeCompare(b.path))
-    .slice(0, totalLimit);
+  return out;
 }
 
 export async function executeRetrieval(input: RetrievalInput): Promise<RetrievalOutput> {
   const { query, mode, sources, embeddingProvider, searchEngine } = input;
 
   const modeConfig = MODE_DEFAULTS[mode];
-
   const threshold = input.threshold ?? modeConfig.threshold;
   const expansion = input.expansion ?? modeConfig.expansion;
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
   const limit = input.limit ?? modeConfig.limit;
 
-  // Step 1: Vector search
+  // Step 1: embed + vector search
   const queryVector = await embeddingProvider.embed(query);
-
   let vectorResults: SearchResult[] = searchEngine.findNeighbors({
     queryVector,
     sources: sources.values(),
@@ -98,7 +94,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     limit,
   });
 
-  // Step 2: Fallback — lower threshold if no results
+  // Step 2: fallback threshold
   if (vectorResults.length === 0 && threshold > FALLBACK_THRESHOLD) {
     vectorResults = searchEngine.findNeighbors({
       queryVector,
@@ -108,46 +104,58 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     });
   }
 
-  // Step 3: Block-level search
-  let blockResults: BlockSearchResult[] | undefined;
-  if (mode === 'deep') {
-    blockResults = searchEngine.findBlockNeighbors({
-      queryVector,
-      sources: sources.values(),
-      threshold,
-      limit,
-    });
-  } else if (vectorResults.length > 0) {
-    const matchedPaths = new Set(vectorResults.map((r) => r.path));
-    const matchedSources = [...sources.values()].filter((s) => matchedPaths.has(s.path));
-    blockResults = searchEngine.findBlockNeighbors({
-      queryVector,
-      sources: matchedSources,
-      threshold: 0,
-      limit: QUICK_BLOCK_LIMIT,
-    });
+  // Step 3: cap seeds to `limit`
+  const seeds = vectorResults.slice(0, limit);
+  const seedPaths = seeds.map((s) => s.path);
+  const seedPathSet = new Set(seedPaths);
+
+  // Step 4: block search, always scoped to seed notes (orphan blocks dropped)
+  const blocksByPath = new Map<string, BlockMatch[]>();
+  if (seeds.length > 0) {
+    const seedSources = [...sources.values()].filter((s) => seedPathSet.has(s.path));
+    const rawBlocks =
+      mode === 'deep'
+        ? searchEngine.findBlockNeighbors({
+            queryVector,
+            sources: seedSources,
+            threshold,
+            limit,
+          })
+        : searchEngine.findBlockNeighbors({
+            queryVector,
+            sources: seedSources,
+            threshold: 0,
+            limit: QUICK_BLOCK_LIMIT,
+          });
+    for (const block of rawBlocks) {
+      if (!seedPathSet.has(block.path)) continue;
+      const bucket = blocksByPath.get(block.path) ?? [];
+      bucket.push({ heading: block.heading, lines: block.lines, similarity: block.similarity });
+      blocksByPath.set(block.path, bucket);
+    }
   }
 
-  // Step 4: Cap seeds to `limit`
-  const cappedSeeds = vectorResults.slice(0, limit);
-
-  // Step 5: Post-cap expansion (deep only)
-  let expansionResults: SearchResult[] = [];
-  if (expansion && expansionLimit > 0 && cappedSeeds.length > 0) {
-    expansionResults = computeExpansion({
-      seeds: cappedSeeds,
+  // Step 5: per-seed expansion (deep only)
+  let relatedByPath = new Map<string, RelatedNote[]>();
+  if (expansion && expansionLimit > 0 && seeds.length > 0) {
+    relatedByPath = computeRelatedPerSeed({
+      seedPaths,
       sources,
       searchEngine,
       threshold,
-      perSeedLimit: limit,
-      totalLimit: expansionLimit,
+      perSeedLimit: expansionLimit,
     });
   }
 
-  return {
-    results: [...cappedSeeds, ...expansionResults],
-    ...(blockResults !== undefined ? { blockResults } : {}),
-  };
+  // Step 6: assemble tree
+  const results: NoteResultNode[] = seeds.map((seed) => ({
+    path: seed.path,
+    similarity: seed.similarity,
+    blocks: blocksByPath.get(seed.path) ?? [],
+    related: relatedByPath.get(seed.path) ?? [],
+  }));
+
+  return { results };
 }
 
 export interface MultiRetrievalInput extends Omit<RetrievalInput, 'query'> {
@@ -155,6 +163,10 @@ export interface MultiRetrievalInput extends Omit<RetrievalInput, 'query'> {
   limit?: number;
 }
 
+// Task 3 will rewrite this entire block (MultiRetrievalOutput through executeMultiRetrieval).
+// The types MultiSearchResult, MultiBlockSearchResult, and computeExpansion no longer exist
+// after Task 1; lint is disabled here to keep the diff small for review.
+/* eslint-disable no-undef */
 export interface MultiRetrievalOutput {
   results: MultiSearchResult[];
   blockResults?: MultiBlockSearchResult[];
@@ -311,3 +323,4 @@ export async function executeMultiRetrieval(
     truncated,
   };
 }
+/* eslint-enable no-undef */
