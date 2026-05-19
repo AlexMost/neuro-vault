@@ -26,6 +26,27 @@ interface FakeNote {
   content?: string;
 }
 
+// makeReader: path-prefix-aware reader backed by a Record<path, note>.
+// scan respects pathPrefix so multi-prefix tests get the right subsets.
+function makeReader(
+  notes: Record<string, { frontmatter: Record<string, unknown>; content?: string }>,
+): VaultReader {
+  const allPaths = Object.keys(notes).sort();
+  return {
+    scan: vi.fn(async ({ pathPrefix }: { pathPrefix?: string }) => {
+      const prefix = pathPrefix ?? '';
+      return allPaths.filter((p) => p.startsWith(prefix));
+    }),
+    readNotes: vi.fn(async ({ paths }: { paths: string[] }) =>
+      paths.map((p) => ({
+        path: p,
+        frontmatter: notes[p]?.frontmatter ?? {},
+        content: notes[p]?.content ?? '',
+      })),
+    ),
+  } as unknown as VaultReader;
+}
+
 function buildReader(notes: FakeNote[]): VaultReader {
   return {
     scan: vi.fn(async () => notes.map((n) => n.path)),
@@ -461,6 +482,74 @@ describe('runQueryNotes', () => {
     }
     // 80 paths / 32 = 3 batches.
     expect(calls.length).toBe(3);
+  });
+
+  it('path_prefix as array unions across subtrees', async () => {
+    const reader = makeReader({
+      'A/a.md': { frontmatter: { tags: ['x'] } },
+      'B/b.md': { frontmatter: { tags: ['x'] } },
+      'C/c.md': { frontmatter: { tags: ['x'] } },
+    });
+
+    const result = await runQueryNotes(
+      { filter: { tags: { $in: ['x'] } }, path_prefix: ['A/', 'B/'] },
+      reader,
+    );
+
+    expect(result.results.map((r) => r.path).sort()).toEqual(['A/a.md', 'B/b.md']);
+  });
+
+  it('rejects empty path_prefix array with INVALID_PARAMS', async () => {
+    const reader = makeReader({});
+    await expect(runQueryNotes({ filter: {}, path_prefix: [] }, reader)).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+    });
+  });
+
+  it('rejects empty exclude_path_prefix array with INVALID_PARAMS', async () => {
+    const reader = makeReader({});
+    await expect(
+      runQueryNotes({ filter: {}, exclude_path_prefix: [] }, reader),
+    ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
+  });
+
+  it('exclude_path_prefix at runQueryNotes level (single prefix)', async () => {
+    const reader = makeReader({
+      'Archive/a.md': { frontmatter: { tags: ['x'] } },
+      'Archive/b.md': { frontmatter: { tags: ['x'] } },
+      'Live/c.md': { frontmatter: { tags: ['x'] } },
+      'Live/d.md': { frontmatter: { tags: ['x'] } },
+    });
+
+    const result = await runQueryNotes(
+      { filter: { tags: { $in: ['x'] } }, exclude_path_prefix: 'Archive/' },
+      reader,
+    );
+
+    expect(result.results.map((r) => r.path).sort()).toEqual(['Live/c.md', 'Live/d.md']);
+    expect(result.truncated).toBe(false);
+  });
+
+  it('scalar path_prefix with default sort retains early-exit behavior', async () => {
+    // 1200 matches under Notes/, limit=10. With early-exit at limit+1=11 we
+    // should never read all 1200. The readNotes batch size in
+    // collectMatchingPaths is 32, so we expect <=1 batch worth of reads.
+    const notes: Record<string, { frontmatter: Record<string, unknown> }> = {};
+    for (let i = 0; i < 1200; i++) {
+      const idx = String(i).padStart(4, '0');
+      notes[`Notes/${idx}.md`] = { frontmatter: { tags: ['x'] } };
+    }
+    const reader = makeReader(notes);
+
+    const result = await runQueryNotes(
+      { filter: { tags: { $in: ['x'] } }, path_prefix: 'Notes/', limit: 10 },
+      reader,
+    );
+
+    expect(result.results.length).toBe(10);
+    expect(result.truncated).toBe(true);
+    const readCalls = (reader.readNotes as ReturnType<typeof vi.fn>).mock.calls.length;
+    expect(readCalls).toBeLessThanOrEqual(2);
   });
 });
 
