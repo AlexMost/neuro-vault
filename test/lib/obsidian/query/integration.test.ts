@@ -267,4 +267,99 @@ describe('query_notes integration (real FsVaultReader on disk)', () => {
       content: expect.stringContaining('# Projects/beta.md'),
     });
   });
+
+  it('multi-prefix path_prefix unions across subtrees', async () => {
+    const out = await runQueryNotes(
+      {
+        filter: { 'frontmatter.type': { $in: ['project', 'task'] } },
+        path_prefix: ['Projects/', 'Tasks/'],
+      },
+      reader,
+    );
+    const paths = new Set(out.results.map((r) => r.path));
+    for (const p of paths) {
+      expect(p.startsWith('Projects/') || p.startsWith('Tasks/')).toBe(true);
+    }
+    for (const p of paths) {
+      expect(p.startsWith('Daily/')).toBe(false);
+      expect(p.startsWith('Areas/')).toBe(false);
+      expect(p.startsWith('Inbox/')).toBe(false);
+    }
+  });
+
+  it('exclude_path_prefix carves out a subtree from a multi-prefix scan', async () => {
+    const out = await runQueryNotes(
+      {
+        filter: { 'frontmatter.type': 'task' },
+        path_prefix: ['Tasks/'],
+        exclude_path_prefix: ['Tasks/sub/'],
+      },
+      reader,
+    );
+    const paths = out.results.map((r) => r.path);
+    expect(paths).not.toContain('Tasks/sub/t6.md');
+    expect(paths.some((p) => p.startsWith('Tasks/') && !p.startsWith('Tasks/sub/'))).toBe(true);
+  });
+
+  it('exclude_path_prefix alone (no include) returns everything except the named subtree', async () => {
+    const out = await runQueryNotes(
+      {
+        filter: { 'frontmatter.type': { $exists: true } },
+        exclude_path_prefix: 'Daily/',
+        limit: 1000,
+      },
+      reader,
+    );
+    expect(out.results.length).toBeGreaterThan(0);
+    for (const r of out.results) {
+      expect(r.path.startsWith('Daily/')).toBe(false);
+    }
+  });
+
+  it('missing include prefix throws PATH_NOT_FOUND', async () => {
+    await expect(
+      runQueryNotes(
+        { filter: { 'frontmatter.type': 'project' }, path_prefix: 'NoSuchFolder/' },
+        reader,
+      ),
+    ).rejects.toMatchObject({ code: 'PATH_NOT_FOUND' });
+  });
+
+  it('missing exclude prefix is silently a no-op', async () => {
+    const out = await runQueryNotes(
+      {
+        filter: { 'frontmatter.type': 'project' },
+        exclude_path_prefix: 'NoSuchFolder/',
+      },
+      reader,
+    );
+    expect(out.results.length).toBeGreaterThan(0);
+  });
+
+  it('exclude_path_prefix respects directory boundary (Resources vs Resources-archive)', async () => {
+    const scratchRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'neuro-vault-prefix-boundary-'));
+    try {
+      const writeFm = async (p: string, tags: string[]): Promise<void> => {
+        const abs = path.join(scratchRoot, p);
+        await fs.mkdir(path.dirname(abs), { recursive: true });
+        await fs.writeFile(
+          abs,
+          `---\ntags: [${tags.map((t) => JSON.stringify(t)).join(', ')}]\n---\n\nbody\n`,
+        );
+      };
+      await writeFm('Resources/inside.md', ['x']);
+      await writeFm('Resources-archive/keep.md', ['x']);
+
+      const scratchReader = new FsVaultReader({ vaultRoot: scratchRoot });
+
+      const out = await runQueryNotes(
+        { filter: { tags: { $in: ['x'] } }, exclude_path_prefix: 'Resources' },
+        scratchReader,
+      );
+
+      expect(out.results.map((r) => r.path)).toEqual(['Resources-archive/keep.md']);
+    } finally {
+      await fs.rm(scratchRoot, { recursive: true, force: true });
+    }
+  });
 });
