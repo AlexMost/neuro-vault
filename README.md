@@ -72,7 +72,7 @@ One question, one answer. Your assistant stops being a file browser and starts b
 { "query": "trading lessons", "filter": { "tags": ["trading"] } }
 ```
 
-`filter` accepts `path_prefix`, `tags` (ANY-of), and a `frontmatter` sift filter. Composition is `filter` AND `threshold` AND semantic. See the [Semantic Search guide](./docs/guide/semantic-search.md#pre-filter-filter-parameter) for full details.
+`filter` accepts `path_prefix` (string or array), `exclude_path_prefix` (string or array — drops matched subtrees), `tags` (ANY-of), and a `frontmatter` sift filter. Composition is include → exclude → tags → frontmatter → threshold → semantic. See the [Semantic Search guide](./docs/guide/semantic-search.md#pre-filter-filter-parameter) for full details.
 
 ---
 

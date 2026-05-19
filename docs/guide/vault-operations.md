@@ -93,7 +93,8 @@ Run a multi-criteria query against the vault using a MongoDB-style filter — re
 ```typescript
 query_notes({
   filter: object,              // MongoDB-style query (see below)
-  path_prefix?: string,        // restrict scan to a subtree, e.g. "Projects/"
+  path_prefix?: string | string[],   // restrict scan to a subtree (or several), e.g. "Projects/" or ["Tasks/", "Reflections/"]
+  exclude_path_prefix?: string | string[], // drop notes whose path starts with any listed prefix (e.g. ["Daily/", "Archive/"])
   sort?: { field: string, order: 'asc' | 'desc' },
   limit?: number,              // default 100, max 1000
   include_content?: boolean,   // default false
