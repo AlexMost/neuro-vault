@@ -310,7 +310,7 @@ describe('search_notes — filter', () => {
     }
   });
 
-  it('rejects empty path_prefix array with INVALID_ARGUMENT', async () => {
+  it('handler treats empty path_prefix array as empty filter (INVALID_ARGUMENT fallback)', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
       embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
@@ -329,7 +329,7 @@ describe('search_notes — filter', () => {
     }
   });
 
-  it('rejects empty exclude_path_prefix array with INVALID_ARGUMENT', async () => {
+  it('handler treats empty exclude_path_prefix array as empty filter (INVALID_ARGUMENT fallback)', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
       embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
@@ -343,6 +343,64 @@ describe('search_notes — filter', () => {
       await expect(
         tool.handler({ query: 'q', filter: { exclude_path_prefix: [] } }),
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('inputSchema (zod) rejects empty path_prefix array', async () => {
+    const { deps, cleanup } = await makeSearchDeps({
+      sources: makeSources(['a.md']),
+      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      searchEngine: makeEngine(),
+      modelKey: 'm',
+      listMatchingPaths: async () => new Set(),
+    });
+    const tool = buildSearchNotesTool(deps);
+
+    try {
+      const result = tool.inputSchema.safeParse({ query: 'q', filter: { path_prefix: [] } });
+      expect(result.success).toBe(false);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('inputSchema (zod) rejects empty exclude_path_prefix array', async () => {
+    const { deps, cleanup } = await makeSearchDeps({
+      sources: makeSources(['a.md']),
+      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      searchEngine: makeEngine(),
+      modelKey: 'm',
+      listMatchingPaths: async () => new Set(),
+    });
+    const tool = buildSearchNotesTool(deps);
+
+    try {
+      const result = tool.inputSchema.safeParse({
+        query: 'q',
+        filter: { exclude_path_prefix: [] },
+      });
+      expect(result.success).toBe(false);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('handler treats empty path_prefix string as empty filter (INVALID_ARGUMENT)', async () => {
+    const { deps, cleanup } = await makeSearchDeps({
+      sources: makeSources(['a.md']),
+      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      searchEngine: makeEngine(),
+      modelKey: 'm',
+      listMatchingPaths: async () => new Set(),
+    });
+    const tool = buildSearchNotesTool(deps);
+
+    try {
+      await expect(tool.handler({ query: 'q', filter: { path_prefix: '' } })).rejects.toMatchObject(
+        { code: 'INVALID_ARGUMENT' },
+      );
     } finally {
       await cleanup();
     }
