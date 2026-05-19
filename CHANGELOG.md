@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [8.2.0](https://github.com/AlexMost/neuro-vault/compare/v8.1.0...v8.2.0) (2026-05-19)
+
+### Features
+
+- **query:** name the failing prefix by index on multi-prefix PATH_NOT_FOUND ([c81266f](https://github.com/AlexMost/neuro-vault/commit/c81266f5816e1c22e424d61fc2591608d0c82af4))
+
 ## [8.1.0](https://github.com/AlexMost/neuro-vault/compare/v8.0.0...v8.1.0) (2026-05-19)
 
 ### Features
