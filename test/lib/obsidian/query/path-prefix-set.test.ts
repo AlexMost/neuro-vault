@@ -27,7 +27,7 @@ describe('normalizePrefixList', () => {
     ).toEqual(['Tasks']);
   });
 
-  it('throws INVALID_FILTER on empty array', async () => {
+  it('throws INVALID_FILTER on empty array', () => {
     expect(() => normalizePrefixList([], 'path_prefix', 'INVALID_FILTER')).toThrow(
       ToolHandlerError,
     );
@@ -40,6 +40,9 @@ describe('normalizePrefixList', () => {
   });
 
   it('throws INVALID_PARAMS on empty array when requested', () => {
+    expect(() => normalizePrefixList([], 'exclude_path_prefix', 'INVALID_PARAMS')).toThrow(
+      ToolHandlerError,
+    );
     try {
       normalizePrefixList([], 'exclude_path_prefix', 'INVALID_PARAMS');
     } catch (err) {
