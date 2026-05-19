@@ -4,12 +4,7 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
 import { runSemanticFanOut, type IFanOutResult } from '../../../lib/fan-out.js';
-import {
-  executeMultiRetrieval,
-  executeRetrieval,
-  type MultiRetrievalOutput,
-  type RetrievalOutput,
-} from '../retrieval-policy.js';
+import { executeMultiRetrieval, executeRetrieval } from '../retrieval-policy.js';
 import {
   normalizeQuery,
   normalizeQueryArray,
@@ -17,7 +12,14 @@ import {
   readPositiveInteger,
   readThreshold,
 } from '../tool-helpers.js';
-import type { EmbeddingProvider, NoteFilter, SearchEngine, SmartSource } from '../types.js';
+import type {
+  EmbeddingProvider,
+  NoteFilter,
+  NoteResultNode,
+  MultiNoteResultNode,
+  SearchEngine,
+  SmartSource,
+} from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
 import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import { vaultParamShape } from '../../../lib/vault-param.js';
@@ -45,13 +47,16 @@ interface SearchNotesInput {
   };
 }
 
-type EnrichResults<T extends { results: { path: string }[] }> = Omit<T, 'results'> & {
-  results: Array<T['results'][number] & { backlink_count: number; vault: string }>;
+// Direct nodes carry backlink_count + vault. Related nodes are lightweight (no
+// enrichment) — consumers can call get_similar_notes for a full neighbour profile.
+type EnrichedNoteNode<T extends NoteResultNode> = T & {
+  backlink_count: number;
+  vault: string;
 };
 
 export type SearchNotesOutput =
-  | EnrichResults<RetrievalOutput>
-  | EnrichResults<MultiRetrievalOutput>;
+  | { results: EnrichedNoteNode<NoteResultNode>[] }
+  | { results: EnrichedNoteNode<MultiNoteResultNode>[]; truncated: boolean };
 
 export interface SearchNotesDeps {
   registry: IVaultRegistry;
@@ -164,12 +169,9 @@ async function runSearchForEntry(
 
     if (allowed.size === 0) {
       const isMulti = Array.isArray(input.query);
-      const isDeep = mode === 'deep';
-      return {
-        results: [],
-        ...(isDeep ? { blockResults: [] } : {}),
-        ...(isMulti ? { truncated: false } : {}),
-      } as SearchNotesOutput;
+      return isMulti
+        ? ({ results: [], truncated: false } as SearchNotesOutput)
+        : ({ results: [] } as SearchNotesOutput);
     }
 
     effectiveSources = narrowSources(sources, allowed);
@@ -187,31 +189,25 @@ async function runSearchForEntry(
         embeddingProvider,
         searchEngine,
       });
+      // Candidate paths to check on disk: direct results plus everything in their
+      // related[] (related nodes are filtered, not enriched, if missing).
       const candidatePaths: string[] = [
         ...output.results.map((r) => r.path),
-        ...(output.blockResults?.map((b) => b.path) ?? []),
+        ...output.results.flatMap((r) => r.related.map((rel) => rel.path)),
       ];
       const [existing] = await Promise.all([
         buildExistingPathSet(entry, candidatePaths),
         graph.ensureFresh(),
       ]);
-      return {
-        results: output.results
-          .filter((r) => existing.has(r.path))
-          .map((r) => ({
-            ...r,
-            backlink_count: graph.getBacklinkCount(r.path),
-            vault: entry.name,
-          })),
-        ...(output.blockResults !== undefined
-          ? {
-              blockResults: output.blockResults
-                .filter((b) => existing.has(b.path))
-                .map((b) => ({ ...b, vault: entry.name })),
-            }
-          : {}),
-        truncated: output.truncated,
-      };
+      const enriched = output.results
+        .filter((r) => existing.has(r.path))
+        .map((r) => ({
+          ...r,
+          related: r.related.filter((rel) => existing.has(rel.path)),
+          backlink_count: graph.getBacklinkCount(r.path),
+          vault: entry.name,
+        }));
+      return { results: enriched, truncated: output.truncated };
     } catch (error) {
       throw wrapDependencyError(error, 'Failed to search notes', {
         modelKey,
@@ -233,28 +229,21 @@ async function runSearchForEntry(
     });
     const candidatePaths: string[] = [
       ...output.results.map((r) => r.path),
-      ...(output.blockResults?.map((b) => b.path) ?? []),
+      ...output.results.flatMap((r) => r.related.map((rel) => rel.path)),
     ];
     const [existing] = await Promise.all([
       buildExistingPathSet(entry, candidatePaths),
       graph.ensureFresh(),
     ]);
-    return {
-      results: output.results
-        .filter((r) => existing.has(r.path))
-        .map((r) => ({
-          ...r,
-          backlink_count: graph.getBacklinkCount(r.path),
-          vault: entry.name,
-        })),
-      ...(output.blockResults !== undefined
-        ? {
-            blockResults: output.blockResults
-              .filter((b) => existing.has(b.path))
-              .map((b) => ({ ...b, vault: entry.name })),
-          }
-        : {}),
-    };
+    const enriched = output.results
+      .filter((r) => existing.has(r.path))
+      .map((r) => ({
+        ...r,
+        related: r.related.filter((rel) => existing.has(rel.path)),
+        backlink_count: graph.getBacklinkCount(r.path),
+        vault: entry.name,
+      }));
+    return { results: enriched };
   } catch (error) {
     throw wrapDependencyError(error, 'Failed to search notes', {
       modelKey,
