@@ -8,10 +8,10 @@ How a search request becomes a ranked set of notes and blocks. This is the "poli
 
 1. Embed the query.
 2. Find note-level neighbors (with a fallback if nothing matches).
-3. Find block-level neighbors (scoping varies by mode).
-4. Optionally expand by treating top results as new query vectors.
+3. Find block-level neighbors (scoped to seed notes).
+4. Optionally expand per seed by treating each top result as a new query vector.
 
-The output is `{ results: SearchResult[], blockResults?: BlockSearchResult[] }`.
+The output is `{ results: NoteResultNode[] }` — a tree where each result note carries its own `blocks[]` (section-level matches within that note) and `related[]` (per-seed expansion neighbours in deep mode).
 
 ## Flow
 
@@ -25,14 +25,19 @@ query
 [findNeighbors threshold] ─► note results (top-K)
   │   (if empty AND threshold>0.3: retry at 0.3)
   ▼
-[block search] ──► block results
-  │   quick: scoped to matched notes, threshold=0, cap=5
-  │   deep:  whole corpus, threshold=mode, limit=mode
-  ▼
-[expansion] (deep only) ──► merge top-3 neighbors of top results
+slice(0, limit) ──► seed notes
   │
   ▼
-slice(0, limit) ──► final
+[block search per seed note] ──► block per note
+  │   quick: threshold=0, cap=5 (engine-side)
+  │   deep:  threshold=mode, limit=mode
+  │   (sources narrowed to seed notes — orphan blocks dropped)
+  ▼
+[per-seed expansion] (deep only) ──► related[] per seed
+  │   each seed asks for perSeedLimit + seedCount neighbours,
+  │   filters out other seeds, sorts, slices to perSeedLimit
+  ▼
+assemble tree: { path, similarity, blocks[], related[] }
 ```
 
 ## Why it exists
@@ -65,48 +70,49 @@ if results is empty AND threshold > 0.3:
 
 The fallback exists because users rarely tune the threshold, and the difference between "no results" and "weak results" is more useful than silence. The 0.3 floor stays high enough to keep results meaningful but low enough to surface weak matches the user can decide about.
 
-## Step 3 — Block-level results, scoped by mode
+## Step 3 — Block-level results, scoped to seed notes
 
-- `deep` mode: search blocks across the entire corpus. The user wants depth, so we surface the most relevant paragraphs anywhere.
-- `quick` mode: search blocks **only inside the matched note set**, with a high cap (`QUICK_BLOCK_LIMIT = 5`) and threshold 0. The intent is to point at the exact paragraph inside an already-narrowed note, not to broaden the search.
+Block search runs over the **seed notes** (the top-K from step 2), not the whole corpus. This is the source of the orphan-block guarantee: if a block's note did not make the note-level top-K, the block is not surfaced.
 
-When `quick` mode finds zero notes, no block search runs.
+- `deep` mode: block search uses the mode's `threshold` and `limit`.
+- `quick` mode: block search uses `threshold = 0` and `cap = QUICK_BLOCK_LIMIT = 5`.
 
-## Step 4 — Expansion
+When seed-note count is 0, block search is skipped entirely. Blocks per note are sorted by `similarity` desc with `lines[0]` as tiebreak.
 
-If `expansion` is on and there are results, the top `expansionLimit` notes are used as additional query vectors:
+## Step 4 — Per-seed expansion
 
-```
-for top in vectorResults.slice(0, expansionLimit):
-    extra = findNeighbors(queryVector = top.embedding, threshold)
-    vectorResults = dedupe(vectorResults + extra)
-```
+If `expansion` is on and there are seeds, each seed gets its own `related[]` list. `computeRelatedPerSeed` asks the search engine for `perSeedLimit + seedCount` neighbours per seed (the `+ seedCount` is headroom so that if some top neighbours are themselves seeds and get filtered out, the cap can still be reached), filters out any neighbour whose path is a seed, sorts by similarity desc, and slices to `perSeedLimit`.
 
-Deduplication keeps the highest similarity per path. The final `slice(0, limit)` enforces the mode's limit after merging.
+Crucially, there is **no global dedup across seeds**: the same neighbour path may appear in `related[]` of multiple seeds, each carrying its own `expansion_similarity` to that parent. Neighbourhood is a pairwise property.
 
-Expansion catches notes that are semantically adjacent to top results but did not match the original query directly — typical for broad topical questions.
+`related[]` items carry `{ path, expansion_similarity }` only — never the top-level `similarity` field. The two scales (query-similarity vs note-to-note similarity) are deliberately kept distinct.
 
 ## Multi-query
 
-`executeMultiRetrieval(input)` is a sibling of `executeRetrieval` for callers that want to search several reformulations at once (synonyms, translations into the languages present in the vault, related concepts). It runs the existing four-step pipeline once per query in parallel via `Promise.all`, then merges the per-query outputs.
+`executeMultiRetrieval(input)` runs the per-query embed + retrieval (with threshold fallback) in parallel via `Promise.all`, then merges and assembles a tree-shaped output.
 
-Merge rule for note results:
+Merge rule for note seeds (`mergeNoteResults` → `MergedSeed[]`):
 
 - key by `path`
 - similarity is `max` across the queries that matched it
 - `matched_queries: string[]` records which queries surfaced this path
 
-Block results merge by `(path, heading, lines)` with the same max-similarity rule.
+After merging, seeds are sorted by similarity descending (with path tiebreak). `truncated = merged.length > limit`. Then seeds are sliced to `limit`.
 
-After merging, results are sorted by similarity descending (with path tiebreak) and capped to `min(cap × N, 50)`, where `cap` is the user-supplied `limit` (or `mode.limit` if omitted) and `N` is the number of unique queries after dedupe. Per-query retrieval always uses `mode.limit` for its own top-K — the user-supplied `limit` only governs the merged-output cap, never the per-query depth. The hard ceiling of 50 bounds response size, not retrieval depth — `truncated: true` signals that more candidates existed than fit in the cap.
+Block search runs **per query** with each query's own vector, scoped to seed notes; the per-query block hits are deduped by `(path, heading, lineRange)` keeping max similarity, then bucketed under each seed and sorted by similarity desc. The NUL character is used as the in-key separator so headings containing spaces (`#Meeting Notes`) cannot collide.
 
-The `search_notes` handler in `src/modules/semantic/tools/search-notes.ts` decides which path to run based on the runtime type of `input.query`: `string` keeps the legacy single-query shape (no `matched_queries`, no `truncated`); `string[]` (length 1–8 after dedupe) takes the multi-query path.
+Per-seed expansion reuses the same `computeRelatedPerSeed` helper as single-query — no duplicated expansion logic.
+
+Output: `{ results: MultiNoteResultNode[], truncated: boolean }`. Each `MultiNoteResultNode` extends `NoteResultNode` with `matched_queries: string[]`.
 
 ## Invariants
 
-- Results are sorted by similarity descending (the search engine guarantees this; the policy does not re-sort after expansion, but `dedupe` preserves the highest-similarity entry per path).
-- The final note count is bounded by `input.limit ?? mode.limit`; block count by `QUICK_BLOCK_LIMIT` (quick) or `mode.limit` (deep).
-- User-supplied `threshold` and `limit` override the mode defaults; `expansion` and `expansionLimit` are fixed by mode (`quick`: off / 0; `deep`: on / 3) and not exposed to MCP callers.
+- Results are sorted by similarity descending; `blocks[]` per note sorted by similarity desc with `lines[0]` tiebreak; `related[]` per seed sorted by `expansion_similarity` desc with `path` tiebreak.
+- Final note count is bounded by `input.limit ?? mode.limit`.
+- `related[]` is bounded by `expansionLimit` (default `3`) **per seed** — total count is up to `seedCount × expansionLimit`, with duplicates allowed across seeds.
+- `blocks[]` belong strictly to their parent note; orphan blocks (blocks whose note is not in `results[]`) are dropped.
+- `similarity` lives only on direct results. `expansion_similarity` lives only on `related[]` items. They never co-occur on the same object.
+- User-supplied `threshold` and `limit` override the mode defaults; `expansion` and `expansionLimit` are fixed by mode and not exposed to MCP callers.
 
 ## Stale-path filtering
 
