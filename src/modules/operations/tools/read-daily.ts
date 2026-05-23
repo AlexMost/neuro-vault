@@ -5,6 +5,7 @@ import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
 import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
+import { readDailyNotesConfig } from '../../../lib/obsidian/daily-notes-config.js';
 
 const NOTES_TODAY_CAP = 200;
 const DAILY_BASENAME_RE = /(\d{4}-\d{2}-\d{2})\.md$/;
@@ -40,7 +41,7 @@ export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyH
     name: 'read_daily',
     title: 'Read Daily',
     description:
-      'Read today\'s daily note. Returns `{ vault, path, frontmatter, content, notes_today }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed), `content` is the body without the YAML block, and `notes_today` lists vault notes created today (matched by `frontmatter.created`) excluding daily notes themselves — metadata only, sorted by path ascending, capped at 200 entries. Each `notes_today` item carries `vault`. Useful for "what\'s on my agenda?" / "what happened today?" questions without a separate `query_notes` call.' +
+      'Read today\'s daily note. Returns `{ vault, path, frontmatter, content, notes_today }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed), `content` is the body without the YAML block, and `notes_today` lists vault notes created today (matched by `frontmatter.created`) excluding daily notes themselves — metadata only, sorted by path ascending, capped at 200 entries. Each `notes_today` item carries `vault`. Useful for "what\'s on my agenda?" / "what happened today?" questions without a separate `query_notes` call. Fails with DAILY_NOTES_NOT_CONFIGURED if the vault has no Daily Notes plugin configured (missing or empty `.obsidian/daily-notes.json`).' +
       describeMultiVault(
         registry,
         'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
@@ -48,6 +49,7 @@ export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyH
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'read_daily' });
+      await readDailyNotesConfig(entry.path);
       const daily = await entry.provider.readDaily();
       const today = deriveToday(daily.path);
       const query = await runQueryNotes(
