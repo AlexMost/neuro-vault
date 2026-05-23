@@ -124,6 +124,17 @@ describe('edit_note: full-body replace (replace field absent)', () => {
   });
 });
 
+describe('edit_note: path auto-promotion', () => {
+  it('auto-appends .md to a path without an extension', async () => {
+    const { tool, writer } = buildTool();
+    await tool.handler({ path: 'Foo', content: 'body' });
+    expect(writer.replaceFullBody).toHaveBeenCalledWith({
+      path: 'Foo.md',
+      content: 'body',
+    });
+  });
+});
+
 describe('edit_note: identifier validation', () => {
   it('rejects when both name and path are provided', async () => {
     const { tool } = buildTool();

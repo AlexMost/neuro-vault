@@ -3,7 +3,8 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
-import { invalidArgument, normalizePath } from '../tool-helpers.js';
+import { invalidArgument } from '../tool-helpers.js';
+import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildBasenameIndex } from '../../../lib/obsidian/link-resolver.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
@@ -80,7 +81,11 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: str
 
 async function resolveToPath(input: Input, reader: VaultReader): Promise<string> {
   if (input.path !== undefined) {
-    return normalizePath(input.path);
+    try {
+      return normalizeNotePath(input.path);
+    } catch (err) {
+      throw invalidArgument((err as Error).message, 'path');
+    }
   }
   const name = input.name!.trim();
   if (name === '') {
