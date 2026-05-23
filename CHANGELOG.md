@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [10.0.0](https://github.com/AlexMost/neuro-vault/compare/v9.0.0...v10.0.0) (2026-05-23)
+
+### ⚠ BREAKING CHANGES
+
+- **create_note:** create_note no longer accepts a `template` parameter.
+  Callers that previously passed `template: "..."` must render the template
+  themselves and pass the result via `content`.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+
+### Features
+
+- **create_note:** drop template parameter — caller renders templates ([36e9c63](https://github.com/AlexMost/neuro-vault/commit/36e9c63a9a3946985d80d669c92fcf06474ac21b))
+- **create_note:** render templates in-process, drop CLI passthrough ([e84da66](https://github.com/AlexMost/neuro-vault/commit/e84da66375e2ec2c5bfc428a8bf0bf6d32be835f))
+- **daily-notes:** add Daily Notes preflight helper ([7e27e55](https://github.com/AlexMost/neuro-vault/commit/7e27e5565209dc2e1d7a993ef6ac3b10a0d0c46b))
+- **path-resolver:** add normalizeNotePath helper ([8b2cdf9](https://github.com/AlexMost/neuro-vault/commit/8b2cdf912e5d904a605b474ed0cff54b6c17bb50))
+- **provider:** post-stat create_note + drop template= passthrough ([b47e2df](https://github.com/AlexMost/neuro-vault/commit/b47e2df84c48c7ffa75c4affb626e7d7b755399e))
+- **templates:** add in-process template renderer ([39d77e3](https://github.com/AlexMost/neuro-vault/commit/39d77e320ae8b9bfdee09298179cc277fe5b30d2))
+- **types:** extend OperationsErrorCode with path-resolver codes ([c2bc9bd](https://github.com/AlexMost/neuro-vault/commit/c2bc9bdd2915d69f039267bdffc052cc90903bb3))
+
+### Bug Fixes
+
+- **config:** name the vault-name regex in the error message and README ([4c19eda](https://github.com/AlexMost/neuro-vault/commit/4c19eda6905007e9e2ee64ca2dc02fce3da98d27))
+- **get_similar_notes:** consume canonical normalizeNotePath ([5543cb0](https://github.com/AlexMost/neuro-vault/commit/5543cb0d461004337407655ee09e8a59850c1bec))
+- **path-resolver:** auto-append .md in create_note path branch ([aef491f](https://github.com/AlexMost/neuro-vault/commit/aef491f6923682a05cd577a3cc41a84b468616dd))
+- **path-resolver:** auto-append .md in edit_note path branch ([f1a7525](https://github.com/AlexMost/neuro-vault/commit/f1a752525b29702b335738bcfb4e60bbe1f1c179))
+- **path-resolver:** auto-append .md in get_note_links ([701d987](https://github.com/AlexMost/neuro-vault/commit/701d987daa35c88058981a87a817696a26d76fdc))
+- **path-resolver:** auto-append .md in property tools ([a21a9d9](https://github.com/AlexMost/neuro-vault/commit/a21a9d9818c34cd39ec237454bac5b6a1e19304b))
+- **read_daily:** preflight Daily Notes plugin config ([113609f](https://github.com/AlexMost/neuro-vault/commit/113609f116a3cf2dfc06d1f0d1fda02d3731ab88))
+
 ## [9.0.0](https://github.com/AlexMost/neuro-vault/compare/v8.2.0...v9.0.0) (2026-05-19)
 
 ### ⚠ BREAKING CHANGES
