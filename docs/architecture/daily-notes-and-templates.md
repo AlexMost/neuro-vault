@@ -14,6 +14,8 @@ The CLI's `create` subcommand accepts a `template=` token but appears to silentl
 
 `src/lib/obsidian/template-renderer.ts` resolves the template (by name via `.obsidian/templates.json` or by explicit path), reads it via `fs`, applies Core Templates substitutions (`{{title}}`, `{{date}}`, `{{date:FORMAT}}`, `{{time}}`, `{{time:FORMAT}}`), and returns the rendered body. The `create_note` handler then passes the result as `content=` to the CLI. The CLI never sees `template=`.
 
+Date and time substitutions use **UTC** components rather than local time. Obsidian's own Core Templates uses local time, so a user whose `{{time}}` is near a UTC boundary will see a different value than they would in Obsidian directly. The trade-off keeps the renderer deterministic across CI and server timezones; callers who need local-time rendering can render the template themselves and pass the result via `content=`.
+
 ### Templater fail-fast
 
 Obsidian's [Templater](https://silentvoid13.github.io/Templater/) community plugin adds an entirely different template language (`<% tp.date.now() %>`, `<%* tp.user.foo() %>`) that requires a JavaScript-style evaluator. The renderer does not implement Templater — instead, a literal substring scan for `<%` rejects such templates with `TEMPLATE_UNSUPPORTED`, naming Templater explicitly and pointing to the `content=` workaround. Implementing a Templater evaluator is a research spike, not a bug fix; until that ships, the contract is "Core Templates only".
