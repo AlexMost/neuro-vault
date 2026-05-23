@@ -112,6 +112,8 @@ Add to your MCP client config (here: Claude Code's `~/.claude/settings.json`):
 }
 ```
 
+> **Vault directory names** must match `^[a-zA-Z0-9_-]{1,64}$` — ASCII letters, digits, `_`, or `-`; 1–64 chars. Spaces and Unicode are rejected. The MCP-side alias is the directory basename, so if Obsidian shows the vault as "My Vault", the directory itself must be `My_Vault` or similar.
+
 ### 🗂 Multi-vault — two vaults, one server
 
 Pass `--vault` once per vault:

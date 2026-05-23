@@ -1,3 +1,7 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { ObsidianCLIProvider } from '../../src/modules/operations/obsidian-cli-provider.js';
@@ -18,20 +22,6 @@ describe('ObsidianCLIProvider.createNote', () => {
       ['create', 'name=Idea 42', 'content=first thought'],
       { timeout: 10_000 },
     );
-  });
-
-  it('passes name and template tokens', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
-    const provider = new ObsidianCLIProvider({ exec });
-
-    await provider.createNote({
-      name: 'Idea 42',
-      template: 'idea',
-    });
-
-    expect(exec).toHaveBeenCalledWith('obsidian', ['create', 'name=Idea 42', 'template=idea'], {
-      timeout: 10_000,
-    });
   });
 
   it('appends overwrite token when overwrite is true', async () => {
@@ -530,5 +520,32 @@ describe('ObsidianCLIProvider stdout sentinel handling', () => {
     const exec = vi.fn().mockResolvedValue({ stdout: '   \n', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
     expect(await provider.listTags()).toEqual([]);
+  });
+});
+
+describe('ObsidianCLIProvider.createNote — post-stat verification', () => {
+  it('post-stats the written file when vaultRoot is provided and throws CREATE_FAILED if missing', async () => {
+    const tmp = await mkdtemp(path.join(tmpdir(), 'nv-prov-'));
+    const exec = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'v', vaultRoot: tmp });
+    await expect(
+      provider.createNote({ path: 'Missing.md', content: 'x' }),
+    ).rejects.toMatchObject({ code: 'CREATE_FAILED' });
+  });
+
+  it('post-stat passes when the file actually exists', async () => {
+    const tmp = await mkdtemp(path.join(tmpdir(), 'nv-prov-'));
+    await writeFile(path.join(tmp, 'Real.md'), 'x');
+    const exec = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'v', vaultRoot: tmp });
+    const result = await provider.createNote({ path: 'Real.md', content: 'x' });
+    expect(result.path).toBe('Real.md');
+  });
+
+  it('post-stat skipped when vaultRoot is undefined (legacy compat)', async () => {
+    const exec = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'v' });
+    const result = await provider.createNote({ path: 'Whatever.md', content: 'x' });
+    expect(result.path).toBe('Whatever.md');
   });
 });

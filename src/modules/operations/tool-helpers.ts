@@ -11,6 +11,7 @@ import type {
   PropertyValue,
 } from '../../lib/obsidian/vault-provider.js';
 import { normalizeVaultPath } from '../../lib/obsidian/paths.js';
+import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
 
 export function invalidArgument(message: string, field: string): ToolHandlerError {
   return new ToolHandlerError('INVALID_ARGUMENT' satisfies OperationsErrorCode, message, {
@@ -35,7 +36,11 @@ export function resolveIdentifier(
     if (name.trim() === '') throw invalidArgument('name must not be empty', 'name');
     return { kind: 'name', value: name.trim() };
   }
-  return { kind: 'path', value: normalizePath(pathArg!) };
+  try {
+    return { kind: 'path', value: normalizeNotePath(pathArg!) };
+  } catch (err) {
+    throw invalidArgument((err as Error).message, 'path');
+  }
 }
 
 export const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;

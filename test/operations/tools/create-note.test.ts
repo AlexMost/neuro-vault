@@ -76,18 +76,18 @@ describe('operations.createNote handler', () => {
     );
   });
 
-  it('rejects when both content and template are provided', async () => {
-    const provider = makeProvider();
+  it('auto-appends .md to a path without an extension', async () => {
+    const provider = makeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'Inbox/Foo.md' }),
+    });
     const registry = makeTestRegistry([{ name: 'v', provider }]);
     const tool = buildCreateNoteTool({ registry });
 
-    await expect(
-      tool.handler({ path: 'Inbox/x.md', content: 'hello', template: 'idea' }),
-    ).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-      details: { field: 'content' },
-    });
-    expect(provider.createNote).not.toHaveBeenCalled();
+    await tool.handler({ path: 'Inbox/Foo' });
+
+    expect(provider.createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'Inbox/Foo.md' }),
+    );
   });
 
   it('forwards content alone to provider', async () => {
@@ -102,21 +102,6 @@ describe('operations.createNote handler', () => {
     expect(provider.createNote).toHaveBeenCalledWith({
       path: 'Inbox/x.md',
       content: 'hello',
-    });
-  });
-
-  it('forwards template alone to provider', async () => {
-    const provider = makeProvider({
-      createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
-    });
-    const registry = makeTestRegistry([{ name: 'v', provider }]);
-    const tool = buildCreateNoteTool({ registry });
-
-    await tool.handler({ path: 'Inbox/x.md', template: 'idea' });
-
-    expect(provider.createNote).toHaveBeenCalledWith({
-      path: 'Inbox/x.md',
-      template: 'idea',
     });
   });
 
@@ -166,4 +151,5 @@ describe('operations.createNote handler', () => {
       code: 'VAULT_NOT_FOUND',
     });
   });
+
 });

@@ -72,6 +72,21 @@ describe('get_note_links tool', () => {
     expect(graph.getNoteLinks).toHaveBeenCalledWith('Folder/A.md');
   });
 
+  it('auto-appends .md to a path without an extension', async () => {
+    const graph = makeLinksGraph({
+      'Folder/A.md': {
+        incoming: [{ source: 'Folder/B.md' }],
+        outgoing: [],
+      },
+    });
+    const registry = makeTestRegistry([{ name: 'v', graph }]);
+    const tool = buildGetNoteLinksTool({ registry });
+
+    await tool.handler({ path: 'Folder/A' });
+
+    expect(graph.getNoteLinks).toHaveBeenCalledWith('Folder/A.md');
+  });
+
   it('returns an empty adjacency for an unknown path', async () => {
     const graph = makeLinksGraph({});
     const registry = makeTestRegistry([{ name: 'v', graph }]);

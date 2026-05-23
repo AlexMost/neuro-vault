@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 import { buildReadDailyTool } from '../../../src/modules/operations/tools/read-daily.js';
 import { type ReadNotesItem, type VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
@@ -33,10 +37,44 @@ function dailyProvider(dailyPath: string, content = '') {
 }
 
 describe('operations.readDaily handler', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'read-daily-test-'));
+    await mkdir(join(tmpDir, '.obsidian'), { recursive: true });
+    await writeFile(
+      join(tmpDir, '.obsidian', 'daily-notes.json'),
+      JSON.stringify({ folder: '01 Daily' }),
+    );
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws DAILY_NOTES_NOT_CONFIGURED before invoking the provider on an unconfigured vault', async () => {
+    // Use a fresh tmp dir with NO .obsidian/daily-notes.json
+    const emptyDir = await mkdtemp(join(tmpdir(), 'read-daily-unconfigured-'));
+    try {
+      const provider = makeProvider({
+        readDaily: vi.fn().mockRejectedValue(new Error('should not be called')),
+      });
+      const registry = makeTestRegistry([{ name: 'v', path: emptyDir, provider, reader: buildReader([]), graph: makeGraph() }]);
+      const tool = buildReadDailyTool({ registry });
+
+      await expect(tool.handler({})).rejects.toMatchObject({
+        code: 'DAILY_NOTES_NOT_CONFIGURED',
+      });
+      expect(provider.readDaily).not.toHaveBeenCalled();
+    } finally {
+      await rm(emptyDir, { recursive: true, force: true });
+    }
+  });
+
   it('forwards to provider.readDaily and returns daily fields with vault', async () => {
     const provider = dailyProvider('Daily/2026-05-12.md', 'today');
     const graph = makeGraph();
-    const registry = makeTestRegistry([{ name: 'v', provider, reader: buildReader([]), graph }]);
+    const registry = makeTestRegistry([{ name: 'v', path: tmpDir, provider, reader: buildReader([]), graph }]);
     const tool = buildReadDailyTool({ registry });
 
     const result = await tool.handler({});
@@ -52,6 +90,7 @@ describe('operations.readDaily handler', () => {
     const registry = makeTestRegistry([
       {
         name: 'v',
+        path: tmpDir,
         provider: dailyProvider('Daily/2026-05-12.md'),
         reader: buildReader([
           { path: 'Notes/old.md', frontmatter: { created: '2026-05-01', type: 'reflection' } },
@@ -70,6 +109,7 @@ describe('operations.readDaily handler', () => {
     const registry = makeTestRegistry([
       {
         name: 'v',
+        path: tmpDir,
         provider: dailyProvider('Daily/2026-05-12.md'),
         reader: buildReader([
           { path: 'Daily/2026-05-12.md', frontmatter: { created: '2026-05-12', type: 'daily' } },
@@ -97,6 +137,7 @@ describe('operations.readDaily handler', () => {
     const registry = makeTestRegistry([
       {
         name: 'v',
+        path: tmpDir,
         provider: dailyProvider('Daily/2026-05-12.md'),
         reader: buildReader([
           {
@@ -132,6 +173,7 @@ describe('operations.readDaily handler', () => {
     const registry = makeTestRegistry([
       {
         name: 'v',
+        path: tmpDir,
         provider: dailyProvider('Daily/2026-05-12.md'),
         reader: buildReader([
           {
@@ -164,6 +206,7 @@ describe('operations.readDaily handler', () => {
     const registry = makeTestRegistry([
       {
         name: 'v',
+        path: tmpDir,
         provider: dailyProvider('Daily/2026-05-12.md'),
         reader: buildReader([
           { path: 'C.md', frontmatter: { created: '2026-05-12' } },
@@ -188,6 +231,7 @@ describe('operations.readDaily handler', () => {
     const registry = makeTestRegistry([
       {
         name: 'v',
+        path: tmpDir,
         provider: dailyProvider('Daily/2026-05-12.md'),
         reader: buildReader(oversized),
         graph: makeGraph(),
@@ -216,6 +260,7 @@ describe('operations.readDaily handler', () => {
     const registry = makeTestRegistry([
       {
         name: 'v',
+        path: tmpDir,
         provider: dailyProvider('Daily/unusual-name.md'),
         reader: buildReader([
           { path: 'Notes/match.md', frontmatter: { created: todayStr, type: 'reflection' } },

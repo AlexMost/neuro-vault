@@ -29,7 +29,7 @@ export interface IVaultEntryDeps {
     reader: VaultReader;
     graph: WikilinkGraphIndex;
   }) => ListMatchingPaths;
-  providerFactory: (opts: { vaultName: string; binaryPath?: string }) => VaultProvider;
+  providerFactory: (opts: { vaultName: string; vaultRoot: string; binaryPath?: string }) => VaultProvider;
   corpusFactory: (opts: {
     smartEnvPath: string;
     modelKey: string;
@@ -80,7 +80,11 @@ export class VaultRegistry implements IVaultRegistry {
       const graph = deps.graphFactory({ reader });
       const listMatchingPaths = deps.listMatchingPathsFactory({ reader, graph });
       const writer = deps.writerFactory({ vaultRoot: v.path });
-      const provider = deps.providerFactory({ vaultName: v.name, binaryPath: config.binaryPath });
+      const provider = deps.providerFactory({
+        vaultName: v.name,
+        vaultRoot: v.path,
+        binaryPath: config.binaryPath,
+      });
 
       let corpus: SmartConnectionsCorpusIndex | undefined;
       let semanticAvailable = false;

@@ -4,7 +4,8 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import type { NoteLinks, WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
-import { normalizePath } from '../tool-helpers.js';
+import { invalidArgument } from '../tool-helpers.js';
+import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
 interface Input {
@@ -44,7 +45,12 @@ export function buildGetNoteLinksTool(
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'get_note_links' });
-      const path = normalizePath(input.path);
+      let path: string;
+      try {
+        path = normalizeNotePath(input.path);
+      } catch (err) {
+        throw invalidArgument((err as Error).message, 'path');
+      }
       await entry.graph.ensureFresh();
       const links = entry.graph.getNoteLinks(path);
       return { vault: entry.name, ...links };

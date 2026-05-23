@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { ToolHandlerError } from '../../lib/tool-response.js';
-import { normalizeVaultPath } from '../../lib/obsidian/paths.js';
 import type { IVaultEntry } from '../../lib/vault-registry.js';
 
 export async function pathExistsForEntry(
@@ -26,15 +25,11 @@ export function readNoteContentForEntry(
 
 export const MAX_MULTI_QUERIES = 8;
 
-export function normalizeNotePath(notePath: string): string {
-  try {
-    return normalizeVaultPath(notePath);
-  } catch (err) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', (err as Error).message, {
-      details: { field: 'path' },
-    });
-  }
-}
+// `normalizeNotePath` lives in `src/lib/obsidian/note-path.ts` and auto-appends
+// `.md` for note paths. Semantic tools that take a single-note path import it
+// from there directly — see `get-similar-notes.ts`. We do NOT re-export a
+// non-promoting variant from this module because the name would collide with
+// the canonical one and silently produce different behavior.
 
 export function normalizeQuery(query: string): string {
   const normalized = query.trim();

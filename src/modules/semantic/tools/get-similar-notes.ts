@@ -4,8 +4,8 @@ import { getNoteLinks, type BasenameIndex } from '../../../lib/obsidian/index.js
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
+import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import {
-  normalizeNotePath,
   pathExistsForEntry,
   readNoteContentForEntry,
   readPositiveInteger,
@@ -185,7 +185,14 @@ export function buildGetSimilarNotesTool(
         tool: 'get_similar_notes',
       });
       const corpus = entry.corpus;
-      const notePath = normalizeNotePath(input.path);
+      let notePath: string;
+      try {
+        notePath = normalizeNotePath(input.path);
+      } catch (err) {
+        throw new ToolHandlerError('INVALID_ARGUMENT', (err as Error).message, {
+          details: { field: 'path' },
+        });
+      }
       const limit = readPositiveInteger(input.limit, DEFAULT_LIMIT, 'limit');
       const threshold = readThreshold(input.threshold, DEFAULT_THRESHOLD, 'threshold');
       const excludePrefixes = (input.exclude_folders ?? []).map(normalizeExcludeEntry);

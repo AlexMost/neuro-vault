@@ -90,7 +90,7 @@ describe('parseConfig', () => {
     const weird = path.join(tmpRoot, 'has space');
     await fs.mkdir(weird);
     await expect(parseConfig(['node', 'cli.js', '--vault', weird])).rejects.toThrow(
-      /not a valid vault identifier/,
+      /\/\^\[a-zA-Z0-9_-]\{1,64\}\$\//,
     );
   });
 

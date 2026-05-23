@@ -77,6 +77,50 @@ describe('getSimilarNotes', () => {
     }
   });
 
+  it('auto-appends .md to a path without an extension', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+      'note-a.ajson',
+      'note-b.ajson',
+      'note-c.ajson',
+    ]);
+    const { vaultRoot, cleanup: cleanupVault } = await makeTempVault({
+      'Folder/note-a.md': '# A\n',
+      'Folder/note-c.md': '# C\n',
+    });
+
+    try {
+      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
+      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const registry = makeTestRegistry([
+        {
+          name: 'v',
+          path: vaultRoot,
+          smartEnvPath,
+          corpus: corpusIndex,
+          semanticAvailable: true,
+        },
+      ]);
+      const tool = buildGetSimilarNotesTool({
+        registry,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: 'bge-micro-v2',
+      });
+
+      // Note: path passed WITHOUT .md — must resolve to Folder/note-a.md and
+      // return Folder/note-c.md as the similar candidate.
+      const results = await tool.handler({
+        path: 'Folder/note-a',
+        threshold: 0,
+      });
+
+      expect(results.map((r) => r.path)).toEqual(['Folder/note-c.md']);
+    } finally {
+      await cleanupVault();
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects an unknown note path for similar-note lookup', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',

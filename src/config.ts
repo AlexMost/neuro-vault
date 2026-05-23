@@ -23,7 +23,8 @@ function buildVaultConfig(rawPath: string): IVaultConfig {
   if (!VAULT_NAME_RE.test(name)) {
     throw new Error(
       `--vault: directory basename "${name}" is not a valid vault identifier ` +
-        `(allowed: alphanumerics, "_", "-", 1-64 chars). Rename the directory.`,
+        `(allowed pattern: /^[a-zA-Z0-9_-]{1,64}$/ — ASCII letters, digits, "_", or "-"; ` +
+        `1-64 chars; no spaces or Unicode). Rename the directory.`,
     );
   }
   let stat: fs.Stats;
