@@ -3,7 +3,8 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
-import { invalidArgument, normalizePath } from '../tool-helpers.js';
+import { invalidArgument } from '../tool-helpers.js';
+import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import type { CreateNoteToolInput } from '../types.js';
 import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
@@ -63,7 +64,13 @@ export function buildCreateNoteTool(
         if (input.name.trim() === '') throw invalidArgument('name must not be empty', 'name');
         passthrough.name = input.name.trim();
       }
-      if (input.path !== undefined) passthrough.path = normalizePath(input.path);
+      if (input.path !== undefined) {
+        try {
+          passthrough.path = normalizeNotePath(input.path);
+        } catch (err) {
+          throw invalidArgument((err as Error).message, 'path');
+        }
+      }
       if (input.content !== undefined) passthrough.content = input.content;
       if (input.template !== undefined) passthrough.template = input.template;
       if (input.overwrite !== undefined) passthrough.overwrite = input.overwrite;

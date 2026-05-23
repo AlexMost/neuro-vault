@@ -76,6 +76,20 @@ describe('operations.createNote handler', () => {
     );
   });
 
+  it('auto-appends .md to a path without an extension', async () => {
+    const provider = makeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'Inbox/Foo.md' }),
+    });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
+
+    await tool.handler({ path: 'Inbox/Foo' });
+
+    expect(provider.createNote).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'Inbox/Foo.md' }),
+    );
+  });
+
   it('rejects when both content and template are provided', async () => {
     const provider = makeProvider();
     const registry = makeTestRegistry([{ name: 'v', provider }]);
