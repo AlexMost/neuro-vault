@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import { stat as fsStat } from 'node:fs/promises';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import { ToolHandlerError } from '../../lib/tool-response.js';
 import { splitFrontmatter } from '../../lib/obsidian/frontmatter.js';
@@ -23,11 +25,15 @@ export type ExecFn = (
   options: { timeout: number },
 ) => Promise<{ stdout: string; stderr: string }>;
 
+export type FsStat = (absPath: string) => Promise<unknown>;
+
 export interface ObsidianCLIProviderOptions {
   binaryPath?: string;
   vaultName?: string;
+  vaultRoot?: string;
   timeoutMs?: number;
   exec?: ExecFn;
+  stat?: FsStat;
 }
 
 const DEFAULT_BINARY = 'obsidian';
@@ -57,13 +63,17 @@ export class ObsidianCLIProvider implements VaultProvider {
   private readonly binary: string;
   private readonly timeoutMs: number;
   private readonly vaultName: string | undefined;
+  private readonly vaultRoot: string | undefined;
   private readonly exec: ExecFn;
+  private readonly stat: FsStat;
 
   constructor(opts: ObsidianCLIProviderOptions = {}) {
     this.binary = opts.binaryPath ?? DEFAULT_BINARY;
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.vaultName = opts.vaultName;
+    this.vaultRoot = opts.vaultRoot;
     this.exec = opts.exec ?? defaultExec;
+    this.stat = opts.stat ?? ((p) => fsStat(p));
   }
 
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
@@ -75,12 +85,45 @@ export class ObsidianCLIProvider implements VaultProvider {
     if (input.name !== undefined) tokens.push(`name=${input.name}`);
     if (input.path !== undefined) tokens.push(`path=${input.path}`);
     if (input.content !== undefined) tokens.push(`content=${input.content}`);
-    if (input.template !== undefined) tokens.push(`template=${input.template}`);
     if (input.overwrite) tokens.push('overwrite');
+    // Note: input.template is intentionally NOT forwarded to obsidian-cli.
+    // The CLI silently drops it (no write, success-shaped return), so the
+    // handler renders templates in-process and passes the result as `content`.
 
     await this.runCommand('create', tokens);
 
-    return { path: input.path ?? input.name! };
+    const resultPath = input.path ?? input.name!;
+
+    // Post-write existence check. Skipped when vaultRoot is unknown (legacy
+    // tests that construct the provider without vaultRoot). In production
+    // vaultRoot is always threaded from VaultRegistry, so this catches the
+    // class of silent CLI failures that returned the original bug.
+    if (this.vaultRoot !== undefined && input.path !== undefined) {
+      const absPath = path.join(this.vaultRoot, resultPath);
+      try {
+        await this.stat(absPath);
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        if (code === 'ENOENT') {
+          throw new ToolHandlerError(
+            'CREATE_FAILED',
+            `Obsidian CLI returned success but ${resultPath} was not written to disk. ` +
+              `This usually means the CLI silently rejected the request (e.g. a bad template name, ` +
+              `a Templates folder that does not exist, or a vault-name mismatch). ` +
+              `If you passed a 'template' parameter, render the template yourself and pass the result ` +
+              `as 'content' instead.`,
+            { details: { name: input.name, path: input.path, resolvedPath: resultPath }, cause: err },
+          );
+        }
+        throw new ToolHandlerError(
+          'CLI_ERROR',
+          `Failed to verify ${resultPath} was created: ${(err as Error).message}`,
+          { details: { resolvedPath: resultPath }, cause: err },
+        );
+      }
+    }
+
+    return { path: resultPath };
   }
 
   async readDaily(): Promise<DailyNoteResult> {

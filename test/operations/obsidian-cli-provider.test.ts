@@ -1,3 +1,7 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { ObsidianCLIProvider } from '../../src/modules/operations/obsidian-cli-provider.js';
@@ -20,7 +24,7 @@ describe('ObsidianCLIProvider.createNote', () => {
     );
   });
 
-  it('passes name and template tokens', async () => {
+  it('does NOT forward template= token to the CLI (handler renders templates in-process)', async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
 
@@ -29,7 +33,7 @@ describe('ObsidianCLIProvider.createNote', () => {
       template: 'idea',
     });
 
-    expect(exec).toHaveBeenCalledWith('obsidian', ['create', 'name=Idea 42', 'template=idea'], {
+    expect(exec).toHaveBeenCalledWith('obsidian', ['create', 'name=Idea 42'], {
       timeout: 10_000,
     });
   });
@@ -530,5 +534,45 @@ describe('ObsidianCLIProvider stdout sentinel handling', () => {
     const exec = vi.fn().mockResolvedValue({ stdout: '   \n', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
     expect(await provider.listTags()).toEqual([]);
+  });
+});
+
+describe('ObsidianCLIProvider.createNote — template= drop and post-stat', () => {
+  it('drops template= token (handler is responsible for rendering)', async () => {
+    const calls: { args: string[] }[] = [];
+    const exec = vi.fn(async (_bin: string, args: string[], _opts: { timeout: number }) => {
+      calls.push({ args });
+      return { stdout: '', stderr: '' };
+    });
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'v' });
+    await provider.createNote({ path: 'Foo.md', template: 'daily', content: 'rendered' });
+    const tokens = calls[0]!.args;
+    expect(tokens.some((t) => t.startsWith('template='))).toBe(false);
+    expect(tokens.some((t) => t.startsWith('content='))).toBe(true);
+  });
+
+  it('post-stats the written file when vaultRoot is provided and throws CREATE_FAILED if missing', async () => {
+    const tmp = await mkdtemp(path.join(tmpdir(), 'nv-prov-'));
+    const exec = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'v', vaultRoot: tmp });
+    await expect(
+      provider.createNote({ path: 'Missing.md', content: 'x' }),
+    ).rejects.toMatchObject({ code: 'CREATE_FAILED' });
+  });
+
+  it('post-stat passes when the file actually exists', async () => {
+    const tmp = await mkdtemp(path.join(tmpdir(), 'nv-prov-'));
+    await writeFile(path.join(tmp, 'Real.md'), 'x');
+    const exec = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'v', vaultRoot: tmp });
+    const result = await provider.createNote({ path: 'Real.md', content: 'x' });
+    expect(result.path).toBe('Real.md');
+  });
+
+  it('post-stat skipped when vaultRoot is undefined (legacy compat)', async () => {
+    const exec = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const provider = new ObsidianCLIProvider({ exec, vaultName: 'v' });
+    const result = await provider.createNote({ path: 'Whatever.md', content: 'x' });
+    expect(result.path).toBe('Whatever.md');
   });
 });

@@ -25,7 +25,7 @@ function fakeDeps(): IVaultEntryDeps {
     writerFactory: ({ vaultRoot }) => ({ vaultRoot }) as never,
     graphFactory: ({ reader }) => ({ reader, ensureFresh: async () => {} }) as never,
     listMatchingPathsFactory: () => (async () => new Set<string>()) as never,
-    providerFactory: ({ vaultName, binaryPath }) => ({ vaultName, binaryPath }) as never,
+    providerFactory: ({ vaultName, vaultRoot, binaryPath }) => ({ vaultName, vaultRoot, binaryPath }) as never,
     corpusFactory: async () =>
       ({ snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) }) as never,
   };

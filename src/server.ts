@@ -174,8 +174,8 @@ function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): I
     writerFactory: ({ vaultRoot }) => new FsVaultWriter({ vaultRoot }),
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
-    providerFactory: ({ vaultName, binaryPath }) =>
-      new ObsidianCLIProvider({ vaultName, binaryPath }),
+    providerFactory: ({ vaultName, vaultRoot, binaryPath }) =>
+      new ObsidianCLIProvider({ vaultName, vaultRoot, binaryPath }),
     corpusFactory: ({ smartEnvPath, modelKey }) =>
       createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey }),
     ...overrides,
