@@ -4,7 +4,6 @@ export interface CreateNoteInput {
   name?: string;
   path?: string;
   content?: string;
-  template?: string;
   overwrite?: boolean;
 }
 

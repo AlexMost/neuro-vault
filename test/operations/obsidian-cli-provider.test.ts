@@ -24,20 +24,6 @@ describe('ObsidianCLIProvider.createNote', () => {
     );
   });
 
-  it('does NOT forward template= token to the CLI (handler renders templates in-process)', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
-    const provider = new ObsidianCLIProvider({ exec });
-
-    await provider.createNote({
-      name: 'Idea 42',
-      template: 'idea',
-    });
-
-    expect(exec).toHaveBeenCalledWith('obsidian', ['create', 'name=Idea 42'], {
-      timeout: 10_000,
-    });
-  });
-
   it('appends overwrite token when overwrite is true', async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
     const provider = new ObsidianCLIProvider({ exec });
@@ -537,20 +523,7 @@ describe('ObsidianCLIProvider stdout sentinel handling', () => {
   });
 });
 
-describe('ObsidianCLIProvider.createNote — template= drop and post-stat', () => {
-  it('drops template= token (handler is responsible for rendering)', async () => {
-    const calls: { args: string[] }[] = [];
-    const exec = vi.fn(async (_bin: string, args: string[], _opts: { timeout: number }) => {
-      calls.push({ args });
-      return { stdout: '', stderr: '' };
-    });
-    const provider = new ObsidianCLIProvider({ exec, vaultName: 'v' });
-    await provider.createNote({ path: 'Foo.md', template: 'daily', content: 'rendered' });
-    const tokens = calls[0]!.args;
-    expect(tokens.some((t) => t.startsWith('template='))).toBe(false);
-    expect(tokens.some((t) => t.startsWith('content='))).toBe(true);
-  });
-
+describe('ObsidianCLIProvider.createNote — post-stat verification', () => {
   it('post-stats the written file when vaultRoot is provided and throws CREATE_FAILED if missing', async () => {
     const tmp = await mkdtemp(path.join(tmpdir(), 'nv-prov-'));
     const exec = vi.fn(async () => ({ stdout: '', stderr: '' }));

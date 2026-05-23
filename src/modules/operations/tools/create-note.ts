@@ -1,5 +1,3 @@
-import path from 'node:path';
-
 import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
@@ -7,7 +5,6 @@ import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument } from '../tool-helpers.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
-import { resolveAndRenderTemplate } from '../../../lib/obsidian/template-renderer.js';
 import type { CreateNoteToolInput } from '../types.js';
 import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
@@ -16,7 +13,6 @@ interface Input {
   name?: string;
   path?: string;
   content?: string;
-  template?: string;
   overwrite?: boolean;
 }
 
@@ -33,7 +29,6 @@ export function buildCreateNoteTool(
     name: z.string().optional(),
     path: z.string().optional(),
     content: z.string().optional(),
-    template: z.string().optional(),
     overwrite: z.boolean().optional(),
   });
   return {
@@ -41,13 +36,10 @@ export function buildCreateNoteTool(
     title: 'Create Note',
     description:
       'Create a new note. Provide `name` or `path` (exactly one). ' +
-      'Optionally provide `content` (raw markdown) OR `template` — these are mutually exclusive. ' +
-      '`template` may be a bare name resolved against the `.obsidian/templates.json` `folder` ' +
-      '(e.g. `"daily"`) or a vault-relative path (e.g. `"Templates/daily.md"`); paths without an ' +
-      'extension are treated as `.md`. Core Templates substitutions are applied in-process: ' +
-      '`{{title}}`, `{{date}}`, `{{date:FORMAT}}`, `{{time}}`, `{{time:FORMAT}}`. ' +
-      'Templater syntax (`<% ... %>`) is rejected with `TEMPLATE_UNSUPPORTED` — render Templater ' +
-      'yourself and pass the result as `content` instead.' +
+      'Optionally provide `content` (raw markdown for the note body and frontmatter). ' +
+      'Paths without an extension are treated as `.md` notes. ' +
+      'Templates are not handled by this tool — render any template yourself (Obsidian Core Templates, ' +
+      'Templater, or anything else) and pass the result as `content`.' +
       describeMultiVault(
         registry,
         'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
@@ -61,12 +53,6 @@ export function buildCreateNoteTool(
       }
       if (input.name !== undefined && input.path !== undefined) {
         throw invalidArgument('Provide exactly one of name or path', 'name');
-      }
-      if (input.content !== undefined && input.template !== undefined) {
-        throw invalidArgument(
-          'content and template cannot be used together — call create_note with only one. If you want a note pre-filled from a template, omit content; if you want to write exact markdown, omit template.',
-          'content',
-        );
       }
 
       const passthrough: CreateNoteToolInput = {};
@@ -82,30 +68,10 @@ export function buildCreateNoteTool(
         }
       }
       if (input.overwrite !== undefined) passthrough.overwrite = input.overwrite;
-
-      if (input.template !== undefined) {
-        const title = deriveTitle(passthrough.path, passthrough.name);
-        const rendered = await resolveAndRenderTemplate({
-          vaultRoot: entry.path,
-          template: input.template,
-          title,
-        });
-        passthrough.content = rendered.rendered;
-      } else if (input.content !== undefined) {
-        passthrough.content = input.content;
-      }
+      if (input.content !== undefined) passthrough.content = input.content;
 
       const result = await entry.provider.createNote(passthrough);
       return { vault: entry.name, ...result };
     },
   };
-}
-
-function deriveTitle(p: string | undefined, name: string | undefined): string {
-  if (name !== undefined) return name;
-  if (p !== undefined) {
-    const base = path.posix.basename(p);
-    return base.replace(/\.md$/i, '');
-  }
-  return '';
 }

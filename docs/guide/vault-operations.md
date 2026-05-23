@@ -55,14 +55,13 @@ create_note({
   name?: string,
   path?: string,
   content?: string,
-  template?: string,
   overwrite?: boolean,
 })
 ```
 
 Paths without an extension are treated as `.md` notes.
 
-The `template` parameter accepts either a template name (resolved via `.obsidian/templates.json`) or a vault-relative path (`.md` auto-appended if no extension). The template body is rendered in-process before the note is created, applying Core Templates substitutions: `{{title}}`, `{{date}}`, `{{date:FORMAT}}`, `{{time}}`, `{{time:FORMAT}}`. Templates that use Obsidian's Templater community plugin syntax (`<% %>`) are rejected with `TEMPLATE_UNSUPPORTED` — pass rendered content via `content` instead.
+Templates are not handled by this tool. If you want a note pre-filled from an Obsidian template (Core Templates, Templater, or anything else), render it yourself and pass the result as `content`.
 
 ### `edit_note`
 

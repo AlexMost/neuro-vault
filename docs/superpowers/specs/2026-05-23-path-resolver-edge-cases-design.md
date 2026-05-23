@@ -1,8 +1,24 @@
 # Path-resolver edge cases & silent failures
 
 Date: 2026-05-23
-Status: Approved (awaits implementation)
+Status: Approved
 Source: `Tasks/Fix path-resolver edge cases and silent failures in neuro-vault.md` (vault)
+
+## Revision — 2026-05-23 (mid-implementation)
+
+The original spec proposed an in-process template renderer for `create_note(template:)`. That was dropped before merge: templating is the caller's responsibility, not the MCP server's. `create_note` accepts `content` only; if a caller wants a template applied, it renders the template itself (Obsidian Core Templates, Templater, or anything else) and passes the result as `content`.
+
+Practical consequences for what shipped:
+
+- `template` parameter removed from `create_note`'s schema and `CreateNoteInput` provider type.
+- No `src/lib/obsidian/template-renderer.ts` module; no `applyCoreTemplateSubstitutions`, no `resolveAndRenderTemplate`.
+- Error codes `TEMPLATE_NOT_CONFIGURED`, `TEMPLATE_NOT_FOUND`, `TEMPLATE_UNSUPPORTED` are not added.
+- `ObsidianCLIProvider.createNote` still drops any historical `template=` token by virtue of not having that field on its input — but no special handling of templates exists anywhere.
+- The architecture doc `docs/architecture/daily-notes-and-templates.md` was renamed to `cli-write-defenses.md`, scoped to the two remaining defenses (Daily Notes preflight, post-write existence check) plus a short "why we don't handle templates" rationale.
+
+Everything else from the original spec — `normalizeNotePath` and its wiring, Daily Notes preflight, post-write existence check, vault-name regex error message — ships as described.
+
+The original text below is preserved for history; treat it as superseded where it conflicts with this revision.
 
 ## Goal
 

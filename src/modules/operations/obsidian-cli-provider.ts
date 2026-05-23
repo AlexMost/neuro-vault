@@ -86,9 +86,6 @@ export class ObsidianCLIProvider implements VaultProvider {
     if (input.path !== undefined) tokens.push(`path=${input.path}`);
     if (input.content !== undefined) tokens.push(`content=${input.content}`);
     if (input.overwrite) tokens.push('overwrite');
-    // Note: input.template is intentionally NOT forwarded to obsidian-cli.
-    // The CLI silently drops it (no write, success-shaped return), so the
-    // handler renders templates in-process and passes the result as `content`.
 
     await this.runCommand('create', tokens);
 
@@ -108,10 +105,10 @@ export class ObsidianCLIProvider implements VaultProvider {
           throw new ToolHandlerError(
             'CREATE_FAILED',
             `Obsidian CLI returned success but ${resultPath} was not written to disk. ` +
-              `This usually means the CLI silently rejected the request (e.g. a bad template name, ` +
-              `a Templates folder that does not exist, or a vault-name mismatch). ` +
-              `If you passed a 'template' parameter, render the template yourself and pass the result ` +
-              `as 'content' instead.`,
+              `This usually means the CLI silently rejected the request — common causes ` +
+              `include a vault-name mismatch or a path under a folder the CLI cannot create. ` +
+              `Check the vault name passed to --vault matches the one Obsidian shows in ` +
+              `"Manage vaults".`,
             { details: { name: input.name, path: input.path, resolvedPath: resultPath }, cause: err },
           );
         }

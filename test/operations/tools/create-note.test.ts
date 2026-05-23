@@ -1,8 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { buildCreateNoteTool } from '../../../src/modules/operations/tools/create-note.js';
 import { makeProvider } from './_helpers.js';
@@ -94,20 +90,6 @@ describe('operations.createNote handler', () => {
     );
   });
 
-  it('rejects when both content and template are provided', async () => {
-    const provider = makeProvider();
-    const registry = makeTestRegistry([{ name: 'v', provider }]);
-    const tool = buildCreateNoteTool({ registry });
-
-    await expect(
-      tool.handler({ path: 'Inbox/x.md', content: 'hello', template: 'idea' }),
-    ).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-      details: { field: 'content' },
-    });
-    expect(provider.createNote).not.toHaveBeenCalled();
-  });
-
   it('forwards content alone to provider', async () => {
     const provider = makeProvider({
       createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
@@ -121,28 +103,6 @@ describe('operations.createNote handler', () => {
       path: 'Inbox/x.md',
       content: 'hello',
     });
-  });
-
-  it('resolves template in-process and passes content (not template) to provider', async () => {
-    const vaultRoot = await mkdtemp(join(tmpdir(), 'nv-create-note-tpl-'));
-    try {
-      await mkdir(join(vaultRoot, 'Templates'), { recursive: true });
-      await writeFile(join(vaultRoot, 'Templates', 'idea.md'), 'some content', 'utf8');
-
-      const provider = makeProvider({
-        createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
-      });
-      const registry = makeTestRegistry([{ name: 'v', path: vaultRoot, provider }]);
-      const tool = buildCreateNoteTool({ registry });
-
-      await tool.handler({ path: 'Inbox/x.md', template: 'Templates/idea.md' });
-
-      const call = (provider.createNote as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
-      expect(call['content']).toBe('some content');
-      expect(call['template']).toBeUndefined();
-    } finally {
-      await rm(vaultRoot, { recursive: true, force: true });
-    }
   });
 
   it('throws VAULT_REQUIRED in multi-vault mode when vault is omitted', async () => {
@@ -192,53 +152,4 @@ describe('operations.createNote handler', () => {
     });
   });
 
-  describe('template rendering (in-process)', () => {
-    let tmp: string;
-
-    afterEach(async () => {
-      if (tmp) await rm(tmp, { recursive: true, force: true });
-    });
-
-    it('Test A — renders template in-process: passes content (not template) to provider', async () => {
-      tmp = await mkdtemp(join(tmpdir(), 'nv-create-note-'));
-      await mkdir(join(tmp, 'Templates'), { recursive: true });
-      // Path-form template with {{title}} only — fully deterministic.
-      await writeFile(join(tmp, 'Templates', 'daily.md'), '# {{title}}\nsome body', 'utf8');
-
-      const provider = makeProvider({
-        createNote: vi.fn().mockResolvedValue({ path: 'Inbox/Today.md' }),
-      });
-      const registry = makeTestRegistry([{ name: 'v', path: tmp, provider }]);
-      const tool = buildCreateNoteTool({ registry });
-
-      await tool.handler({ path: 'Inbox/Today.md', template: 'Templates/daily.md' });
-
-      expect(provider.createNote).toHaveBeenCalledWith(
-        expect.objectContaining({
-          content: '# Today\nsome body',
-          // template must NOT be forwarded
-        }),
-      );
-      const call = (provider.createNote as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
-      expect(call['template']).toBeUndefined();
-    });
-
-    it('Test B — Templater syntax throws TEMPLATE_UNSUPPORTED, provider never called', async () => {
-      tmp = await mkdtemp(join(tmpdir(), 'nv-create-note-'));
-      await mkdir(join(tmp, 'Templates'), { recursive: true });
-      await writeFile(join(tmp, 'Templates', 'bad.md'), '<% tp.date.now() %>', 'utf8');
-
-      const provider = makeProvider({
-        createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
-      });
-      const registry = makeTestRegistry([{ name: 'v', path: tmp, provider }]);
-      const tool = buildCreateNoteTool({ registry });
-
-      await expect(
-        tool.handler({ path: 'Inbox/x.md', template: 'Templates/bad.md' }),
-      ).rejects.toMatchObject({ code: 'TEMPLATE_UNSUPPORTED' });
-
-      expect(provider.createNote).not.toHaveBeenCalled();
-    });
-  });
 });

@@ -27,9 +27,6 @@ export type OperationsErrorCode =
   | 'VAULT_NOT_FOUND'
   | 'SEMANTIC_INDEX_NOT_FOUND'
   | 'DAILY_NOTES_NOT_CONFIGURED'
-  | 'TEMPLATE_NOT_CONFIGURED'
-  | 'TEMPLATE_NOT_FOUND'
-  | 'TEMPLATE_UNSUPPORTED'
   | 'CREATE_FAILED';
 
 export type ReadNotesField = 'frontmatter' | 'content';
@@ -65,7 +62,6 @@ export interface CreateNoteToolInput {
   name?: string;
   path?: string;
   content?: string;
-  template?: string;
   overwrite?: boolean;
 }
 
