@@ -528,9 +528,9 @@ describe('ObsidianCLIProvider.createNote — post-stat verification', () => {
     const tmp = await mkdtemp(path.join(tmpdir(), 'nv-prov-'));
     const exec = vi.fn(async () => ({ stdout: '', stderr: '' }));
     const provider = new ObsidianCLIProvider({ exec, vaultName: 'v', vaultRoot: tmp });
-    await expect(
-      provider.createNote({ path: 'Missing.md', content: 'x' }),
-    ).rejects.toMatchObject({ code: 'CREATE_FAILED' });
+    await expect(provider.createNote({ path: 'Missing.md', content: 'x' })).rejects.toMatchObject({
+      code: 'CREATE_FAILED',
+    });
   });
 
   it('post-stat passes when the file actually exists', async () => {

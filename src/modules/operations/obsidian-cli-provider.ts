@@ -109,7 +109,10 @@ export class ObsidianCLIProvider implements VaultProvider {
               `include a vault-name mismatch or a path under a folder the CLI cannot create. ` +
               `Check the vault name passed to --vault matches the one Obsidian shows in ` +
               `"Manage vaults".`,
-            { details: { name: input.name, path: input.path, resolvedPath: resultPath }, cause: err },
+            {
+              details: { name: input.name, path: input.path, resolvedPath: resultPath },
+              cause: err,
+            },
           );
         }
         throw new ToolHandlerError(

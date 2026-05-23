@@ -82,12 +82,12 @@ Why this shape: `create_note`'s description already documents `path` as "vault-r
 
 Wiring (4 files, all in `src/modules/operations/`):
 
-| File                          | Change                                                                                                          |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `tools/create-note.ts:66`     | `passthrough.path = normalizeNotePath(input.path)`                                                              |
-| `tools/edit-note.ts:83`       | `return normalizeNotePath(input.path)` in the path branch of `resolveToPath`                                    |
-| `tool-helpers.ts:38`          | `return { kind: 'path', value: normalizeNotePath(pathArg!) }` in `resolveIdentifier` (covers the 3 property tools + any future identifier-based note tool) |
-| `tools/get-similar-notes.ts`* | `normalizePath` → `normalizeNotePath` if the tool resolves an individual note path (verify during implementation) |
+| File                           | Change                                                                                                                                                     |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools/create-note.ts:66`      | `passthrough.path = normalizeNotePath(input.path)`                                                                                                         |
+| `tools/edit-note.ts:83`        | `return normalizeNotePath(input.path)` in the path branch of `resolveToPath`                                                                               |
+| `tool-helpers.ts:38`           | `return { kind: 'path', value: normalizeNotePath(pathArg!) }` in `resolveIdentifier` (covers the 3 property tools + any future identifier-based note tool) |
+| `tools/get-similar-notes.ts`\* | `normalizePath` → `normalizeNotePath` if the tool resolves an individual note path (verify during implementation)                                          |
 
 \*verified during implementation; if not applicable, the line is dropped.
 
@@ -102,8 +102,8 @@ Wiring (4 files, all in `src/modules/operations/`):
 //
 // Pure I/O; the FsReadFile shape mirrors VaultWriter for the same DI story.
 export interface DailyNotesConfig {
-  folder: string;  // vault-relative POSIX path, no trailing slash
-  format: string;  // moment.js format string, default 'YYYY-MM-DD'
+  folder: string; // vault-relative POSIX path, no trailing slash
+  format: string; // moment.js format string, default 'YYYY-MM-DD'
 }
 
 export async function readDailyNotesConfig(
@@ -122,7 +122,7 @@ Two responsibilities — resolution and substitution — in one file because bot
 
 ```ts
 export interface ResolvedTemplate {
-  path: string;     // vault-relative POSIX path to the template .md file
+  path: string; // vault-relative POSIX path to the template .md file
   rendered: string; // template content with {{...}} substitutions applied
 }
 
@@ -148,7 +148,7 @@ export async function resolveAndRenderTemplate(input: {
   vaultRoot: string;
   template: string;
   title: string;
-  now?: Date;            // override for tests
+  now?: Date; // override for tests
   readFile?: FsReadFile;
 }): Promise<ResolvedTemplate>;
 ```
@@ -157,13 +157,13 @@ export async function resolveAndRenderTemplate(input: {
 
 Implemented as a function `applyCoreTemplateSubstitutions(body, { title, now })`:
 
-| Token              | Replacement                                                                                                                                  |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `{{title}}`        | The new note's title.                                                                                                                        |
-| `{{date}}`         | `YYYY-MM-DD` of `now`.                                                                                                                       |
-| `{{date:FORMAT}}`  | `now` formatted by a minimal moment-compatible formatter — supports `YYYY MM DD HH mm ss`, including separators. Unknown tokens pass through. |
-| `{{time}}`         | `HH:mm` of `now`.                                                                                                                            |
-| `{{time:FORMAT}}`  | Same formatter as `{{date:FORMAT}}`.                                                                                                         |
+| Token             | Replacement                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{{title}}`       | The new note's title.                                                                                                                         |
+| `{{date}}`        | `YYYY-MM-DD` of `now`.                                                                                                                        |
+| `{{date:FORMAT}}` | `now` formatted by a minimal moment-compatible formatter — supports `YYYY MM DD HH mm ss`, including separators. Unknown tokens pass through. |
+| `{{time}}`        | `HH:mm` of `now`.                                                                                                                             |
+| `{{time:FORMAT}}` | Same formatter as `{{date:FORMAT}}`.                                                                                                          |
 
 The formatter is intentionally small — only the tokens listed above. Anything outside that set passes through unchanged; the cost of supporting one more token is one regex, and the cost of getting it wrong (silently miscounting milliseconds, say) is worse than passing through.
 
@@ -211,7 +211,7 @@ handler: async (input) => {
   await readDailyNotesConfig(entry.config.path); // preflight; throws if unconfigured
   const daily = await entry.provider.readDaily();
   // ... unchanged from here
-}
+};
 ```
 
 The preflight's return value is intentionally unused at this layer — we just need it to throw on the bad case. Downstream consumers can extend later if folder/format are useful.
@@ -227,28 +227,28 @@ The same sentence is added to `create_note`, `edit_note`, `read_property`, and `
 Line 24, current:
 
 ```ts
-`(allowed: alphanumerics, "_", "-", 1-64 chars). Rename the directory.`
+`(allowed: alphanumerics, "_", "-", 1-64 chars). Rename the directory.`;
 ```
 
 Updated:
 
 ```ts
-`(allowed pattern: /^[a-zA-Z0-9_-]{1,64}$/ — ASCII letters, digits, "_", or "-"; 1-64 chars). Rename the directory.`
+`(allowed pattern: /^[a-zA-Z0-9_-]{1,64}$/ — ASCII letters, digits, "_", or "-"; 1-64 chars). Rename the directory.`;
 ```
 
 README addition: under "Installation" / "Vault setup", a one-liner: "Vault directory names must match `^[a-zA-Z0-9_-]{1,64}$` — letters, digits, `_`, `-`. Spaces, Unicode, and other punctuation are rejected." (Exact wording finalized during implementation.)
 
 ## Error model
 
-| Condition                                                                        | Code                          | Mapped MCP error                            |
-| -------------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------- |
-| `read_daily` with missing/empty `.obsidian/daily-notes.json` or empty `folder`   | `DAILY_NOTES_NOT_CONFIGURED`  | Same code; user-facing message names the file and required fields. |
-| `create_note(template: X)` where templates.json missing and X is a name (no `/`) | `TEMPLATE_NOT_CONFIGURED`     | Same code.                                  |
-| `create_note(template: X)` where the resolved file is missing                    | `TEMPLATE_NOT_FOUND`          | Same code.                                  |
-| `create_note(template: X)` where the file contains `<%`                          | `TEMPLATE_UNSUPPORTED`        | Same code. Message names Templater explicitly and points to the `content=` workaround. |
-| `create_note` succeeds at CLI level but file absent post-stat                    | `CREATE_FAILED`               | Same code.                                  |
-| Note path without `.md` extension is auto-promoted                               | _no error_ — silent success    | Behavior change, documented in the description sentence. |
-| Vault name fails regex                                                           | unchanged                     | Existing `Error` from `parseConfig`, with the new message. |
+| Condition                                                                        | Code                         | Mapped MCP error                                                                       |
+| -------------------------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------- |
+| `read_daily` with missing/empty `.obsidian/daily-notes.json` or empty `folder`   | `DAILY_NOTES_NOT_CONFIGURED` | Same code; user-facing message names the file and required fields.                     |
+| `create_note(template: X)` where templates.json missing and X is a name (no `/`) | `TEMPLATE_NOT_CONFIGURED`    | Same code.                                                                             |
+| `create_note(template: X)` where the resolved file is missing                    | `TEMPLATE_NOT_FOUND`         | Same code.                                                                             |
+| `create_note(template: X)` where the file contains `<%`                          | `TEMPLATE_UNSUPPORTED`       | Same code. Message names Templater explicitly and points to the `content=` workaround. |
+| `create_note` succeeds at CLI level but file absent post-stat                    | `CREATE_FAILED`              | Same code.                                                                             |
+| Note path without `.md` extension is auto-promoted                               | _no error_ — silent success  | Behavior change, documented in the description sentence.                               |
+| Vault name fails regex                                                           | unchanged                    | Existing `Error` from `parseConfig`, with the new message.                             |
 
 All new codes are added to `OperationsErrorCode` in `src/modules/operations/types.ts`.
 

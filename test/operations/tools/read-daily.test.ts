@@ -59,7 +59,9 @@ describe('operations.readDaily handler', () => {
       const provider = makeProvider({
         readDaily: vi.fn().mockRejectedValue(new Error('should not be called')),
       });
-      const registry = makeTestRegistry([{ name: 'v', path: emptyDir, provider, reader: buildReader([]), graph: makeGraph() }]);
+      const registry = makeTestRegistry([
+        { name: 'v', path: emptyDir, provider, reader: buildReader([]), graph: makeGraph() },
+      ]);
       const tool = buildReadDailyTool({ registry });
 
       await expect(tool.handler({})).rejects.toMatchObject({
@@ -74,7 +76,9 @@ describe('operations.readDaily handler', () => {
   it('forwards to provider.readDaily and returns daily fields with vault', async () => {
     const provider = dailyProvider('Daily/2026-05-12.md', 'today');
     const graph = makeGraph();
-    const registry = makeTestRegistry([{ name: 'v', path: tmpDir, provider, reader: buildReader([]), graph }]);
+    const registry = makeTestRegistry([
+      { name: 'v', path: tmpDir, provider, reader: buildReader([]), graph },
+    ]);
     const tool = buildReadDailyTool({ registry });
 
     const result = await tool.handler({});

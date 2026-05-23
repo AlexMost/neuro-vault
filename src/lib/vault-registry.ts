@@ -29,7 +29,11 @@ export interface IVaultEntryDeps {
     reader: VaultReader;
     graph: WikilinkGraphIndex;
   }) => ListMatchingPaths;
-  providerFactory: (opts: { vaultName: string; vaultRoot: string; binaryPath?: string }) => VaultProvider;
+  providerFactory: (opts: {
+    vaultName: string;
+    vaultRoot: string;
+    binaryPath?: string;
+  }) => VaultProvider;
   corpusFactory: (opts: {
     smartEnvPath: string;
     modelKey: string;

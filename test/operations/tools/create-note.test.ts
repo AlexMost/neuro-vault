@@ -151,5 +151,4 @@ describe('operations.createNote handler', () => {
       code: 'VAULT_NOT_FOUND',
     });
   });
-
 });

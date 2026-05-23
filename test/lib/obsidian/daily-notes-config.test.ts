@@ -21,30 +21,42 @@ describe('readDailyNotesConfig', () => {
   const CONFIG = '/v/.obsidian/daily-notes.json';
 
   it('returns folder and format on a valid config', async () => {
-    const cfg = await readDailyNotesConfig(VAULT, fakeReadFile({
-      [CONFIG]: JSON.stringify({ folder: '01 Daily', format: 'YYYY-MM-DD' }),
-    }));
+    const cfg = await readDailyNotesConfig(
+      VAULT,
+      fakeReadFile({
+        [CONFIG]: JSON.stringify({ folder: '01 Daily', format: 'YYYY-MM-DD' }),
+      }),
+    );
     expect(cfg).toEqual({ folder: '01 Daily', format: 'YYYY-MM-DD' });
   });
 
   it('defaults format to YYYY-MM-DD when absent', async () => {
-    const cfg = await readDailyNotesConfig(VAULT, fakeReadFile({
-      [CONFIG]: JSON.stringify({ folder: '01 Daily' }),
-    }));
+    const cfg = await readDailyNotesConfig(
+      VAULT,
+      fakeReadFile({
+        [CONFIG]: JSON.stringify({ folder: '01 Daily' }),
+      }),
+    );
     expect(cfg.format).toBe('YYYY-MM-DD');
   });
 
   it('defaults format to YYYY-MM-DD when present but empty', async () => {
-    const cfg = await readDailyNotesConfig(VAULT, fakeReadFile({
-      [CONFIG]: JSON.stringify({ folder: '01 Daily', format: '' }),
-    }));
+    const cfg = await readDailyNotesConfig(
+      VAULT,
+      fakeReadFile({
+        [CONFIG]: JSON.stringify({ folder: '01 Daily', format: '' }),
+      }),
+    );
     expect(cfg.format).toBe('YYYY-MM-DD');
   });
 
   it('strips trailing slash on folder', async () => {
-    const cfg = await readDailyNotesConfig(VAULT, fakeReadFile({
-      [CONFIG]: JSON.stringify({ folder: '01 Daily/' }),
-    }));
+    const cfg = await readDailyNotesConfig(
+      VAULT,
+      fakeReadFile({
+        [CONFIG]: JSON.stringify({ folder: '01 Daily/' }),
+      }),
+    );
     expect(cfg.folder).toBe('01 Daily');
   });
 
