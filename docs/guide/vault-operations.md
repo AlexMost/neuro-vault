@@ -61,6 +61,8 @@ create_note({
 
 Paths without an extension are treated as `.md` notes.
 
+Before composing `content`, sample 1–2 similar notes from the vault to mimic existing conventions — typically `search_notes` for the topic, then `read_notes` on the closest match to inspect its frontmatter shape, tag values, heading layout, and folder placement. Match those conventions instead of inventing new ones. Be especially careful with the `type` frontmatter field: vaults tend to use a small closed set; pick from what other notes use rather than coining a new value.
+
 Templates are not handled by this tool. If you want a note pre-filled from an Obsidian template (Core Templates, Templater, or anything else), render it yourself and pass the result as `content`.
 
 ### `edit_note`

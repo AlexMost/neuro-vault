@@ -37,9 +37,11 @@ export function buildCreateNoteTool(
     description:
       'Create a new note. Provide `name` or `path` (exactly one). ' +
       'Optionally provide `content` (raw markdown for the note body and frontmatter). ' +
-      'Paths without an extension are treated as `.md` notes. ' +
-      'Templates are not handled by this tool — render any template yourself (Obsidian Core Templates, ' +
-      'Templater, or anything else) and pass the result as `content`.' +
+      'Paths without an extension are treated as `.md` notes.' +
+      '\n\n' +
+      'Before composing `content`, sample 1–2 similar notes from the vault to mimic existing conventions instead of inventing your own. A reliable pattern: `search_notes` for the topic (or `query_notes` with a tag/folder filter that fits) to find candidates, then `read_notes` on the closest match to inspect its frontmatter shape, tag values, heading layout, and folder placement. Match those conventions — the user almost always prefers a new note that looks like its neighbours. Be especially careful with the `type` frontmatter field: vaults tend to use a small closed set (e.g. project / task / idea / reflection / daily / review / inbox / resource); pick from what other notes use rather than coining a new value.' +
+      '\n\n' +
+      'Templates are not handled by this tool — render any template yourself (Obsidian Core Templates, Templater, or anything else) and pass the result as `content`.' +
       describeMultiVault(
         registry,
         'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
