@@ -51,12 +51,14 @@ Obsidian distinguishes `file=` (resolves like a wikilink) from `path=` (exact). 
 - It does not normalize paths. Path normalization happens one layer above (in the per-tool handler files under `src/modules/operations/tools/`) so the provider can stay a thin shell.
 - It does not validate business rules (empty content, etc.). Handlers do that before calling.
 
-There are two deliberate exceptions:
+There are three deliberate exceptions:
 
 1. `set_property`'s ISO format check for `date` / `datetime` types. That validation lives in the handler (not the provider) but happens _before_ the CLI is invoked, because the CLI silently accepts non-ISO values and writes nothing — a pure pass-through would surface as a phantom success.
 2. `readDaily` returns `{ path, frontmatter, content }`: the YAML frontmatter block is split out of the CLI's read output and parsed into an object (or `null` for missing/malformed YAML). Frontmatter is structured metadata, not free-form markdown, and every consumer wants it parsed; embedding raw YAML in `content` would just push the same parser into each caller. The CLI's `daily` subcommand does not echo the file path, so the provider derives `path` via `obsidian daily:path`. The split itself lives in `src/modules/operations/frontmatter.ts` so the provider does not own the YAML parser directly.
 
-Both exceptions are explicit precisely because they violate the "no parsing / no validation" rule.
+3. `createNote`: when constructed with `vaultRoot`, the provider stats the target path after a successful CLI return and throws `CREATE_FAILED` on `ENOENT`. The check exists because obsidian-cli's `create` subcommand has been observed to return exit 0 without writing — most reproducibly when a `template=` token references a template the CLI cannot resolve. The provider no longer forwards `template=` at all; template rendering happens in the `create_note` tool handler (see [`./daily-notes-and-templates.md`](./daily-notes-and-templates.md)). The post-stat is defense-in-depth against any future regression in this code path.
+
+All three exceptions are explicit precisely because they violate the "no parsing / no validation" rule.
 
 ## Vault binding
 

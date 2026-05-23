@@ -60,6 +60,10 @@ create_note({
 })
 ```
 
+Paths without an extension are treated as `.md` notes.
+
+The `template` parameter accepts either a template name (resolved via `.obsidian/templates.json`) or a vault-relative path (`.md` auto-appended if no extension). The template body is rendered in-process before the note is created, applying Core Templates substitutions: `{{title}}`, `{{date}}`, `{{date:FORMAT}}`, `{{time}}`, `{{time:FORMAT}}`. Templates that use Obsidian's Templater community plugin syntax (`<% %>`) are rejected with `TEMPLATE_UNSUPPORTED` — pass rendered content via `content` instead.
+
 ### `edit_note`
 
 Edit an existing note. The presence of `replace` selects the mode:
@@ -75,6 +79,8 @@ edit_note({
   replace?: string,
 });
 ```
+
+Paths without an extension are treated as `.md` notes.
 
 Both modes write directly to disk and do not require Obsidian to be running.
 
@@ -170,6 +176,8 @@ Read today's daily note. Returns:
 
 The `path` is computed from the daily-notes plugin config; if the note does not yet exist, the result still carries the canonical path so callers can compose with `create_note`. "Today" is derived from the daily-note basename, so the date used to populate `notes_today` is always aligned with the daily-notes plugin's own notion of today.
 
+Fails with `DAILY_NOTES_NOT_CONFIGURED` if the vault has no Daily Notes plugin configured (missing or empty `.obsidian/daily-notes.json`).
+
 ### Adding to today's daily note
 
 There is no dedicated `append_daily` tool — compose:
@@ -198,7 +206,7 @@ set_property({
 })
 ```
 
-Returns `{ ok: true }`. Existing properties are overwritten.
+Returns `{ ok: true }`. Existing properties are overwritten. Paths without an extension are treated as `.md` notes.
 
 ### `read_property`
 
@@ -212,7 +220,7 @@ read_property({
 })
 ```
 
-Returns `{ value }`.
+Returns `{ value }`. Paths without an extension are treated as `.md` notes.
 
 ### `remove_property`
 
@@ -226,7 +234,7 @@ remove_property({
 })
 ```
 
-Returns `{ ok: true }`.
+Returns `{ ok: true }`. Paths without an extension are treated as `.md` notes.
 
 ### `list_properties`
 
@@ -259,6 +267,8 @@ get_note_links({
   path: string, // vault-relative POSIX path, e.g. "Projects/neuro-vault.md"
 });
 ```
+
+Paths without an extension are treated as `.md` notes.
 
 Returns:
 
