@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [10.0.1](https://github.com/AlexMost/neuro-vault/compare/v10.0.0...v10.0.1) (2026-05-28)
+
+### Bug Fixes
+
+- **wikilink:** parse targets containing square brackets ([1548308](https://github.com/AlexMost/neuro-vault/commit/15483084d3ff93a8d08563ff9b15005a19d43c81))
+
 ## [10.0.0](https://github.com/AlexMost/neuro-vault/compare/v9.0.0...v10.0.0) (2026-05-23)
 
 ### ⚠ BREAKING CHANGES
