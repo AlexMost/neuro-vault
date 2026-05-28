@@ -39,10 +39,22 @@ describe('parseWikilinks', () => {
     expect(parseWikilinks('[[Foo\nBar]]')).toEqual([]);
   });
 
-  it('handles nested-bracket malformed input without throwing', () => {
-    // The regex disallows `[` or `]` inside the link body, so nested
-    // brackets simply don't match — that is the correct behavior.
-    expect(parseWikilinks('[[a[[b]]c]]')).toEqual(['b']);
+  it('parses a target containing single square brackets', () => {
+    expect(parseWikilinks('[[Plan - [Shared] Board Quarter Report]]')).toEqual([
+      'Plan - [Shared] Board Quarter Report',
+    ]);
+  });
+
+  it('parses a bracketed target alongside ordinary links', () => {
+    expect(parseWikilinks('see [[Foo]] and [[Plan - [Exec] Q3]] now')).toEqual([
+      'Foo',
+      'Plan - [Exec] Q3',
+    ]);
+  });
+
+  it('terminates a link at the first ]] like Obsidian', () => {
+    // Matches up to the first `]]`; single brackets inside are allowed.
+    expect(parseWikilinks('[[a[[b]]c]]')).toEqual(['a[[b']);
   });
 
   it('handles paths with slashes', () => {

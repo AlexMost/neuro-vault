@@ -82,6 +82,28 @@ describe('WikilinkGraphIndex', () => {
     expect(c.incoming.map((e) => e.source).sort()).toEqual(['A.md', 'B.md']);
   });
 
+  it('resolves links to targets whose name contains square brackets', async () => {
+    const { reader } = createReader({
+      '_index.md': { content: 'See [[Plan - [Shared] Board Quarter Report]].\n' },
+      'Plan - [Shared] Board Quarter Report.md': { content: 'leaf\n' },
+    });
+    const graph = new WikilinkGraphIndex({ reader, now: clock });
+
+    await graph.ensureFresh();
+
+    expect(graph.getNoteLinks('_index.md').outgoing).toEqual([
+      {
+        target: 'Plan - [Shared] Board Quarter Report',
+        resolved: true,
+        path: 'Plan - [Shared] Board Quarter Report.md',
+      },
+    ]);
+    expect(graph.getBacklinkCount('Plan - [Shared] Board Quarter Report.md')).toBe(1);
+    expect(graph.getNoteLinks('Plan - [Shared] Board Quarter Report.md').incoming).toEqual([
+      { source: '_index.md' },
+    ]);
+  });
+
   it('counts embeds (![[X]]) the same as plain wikilinks', async () => {
     const { reader } = createReader({
       'A.md': { content: '![[B]]\n' },
