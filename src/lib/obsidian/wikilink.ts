@@ -1,4 +1,7 @@
-const WIKILINK_RE = /\[\[([^[\]\n]+)\]\]/g;
+// Matches `[[...]]` up to the first `]]`, like Obsidian. Single brackets
+// inside the target (e.g. `[[Plan - [Shared] Report]]`) are part of the name;
+// `.+?` is non-greedy and `.` excludes newlines, so a link never spans lines.
+const WIKILINK_RE = /\[\[(.+?)\]\]/g;
 
 export function parseWikilinks(text: string): string[] {
   if (!text) return [];
