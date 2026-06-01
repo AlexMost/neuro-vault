@@ -5,8 +5,7 @@ import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument } from '../tool-helpers.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
-import { serializeFrontmatter } from '../../../lib/obsidian/frontmatter.js';
-import { splitRawFrontmatter } from '../../../lib/obsidian/in-place-edit.js';
+import { serializeFrontmatter, splitFrontmatter } from '../../../lib/obsidian/frontmatter.js';
 import type { CreateNoteToolInput } from '../types.js';
 import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
@@ -44,7 +43,7 @@ export function buildCreateNoteTool(
       '(an object of frontmatter properties, serialized to a YAML block and prepended to the note — ' +
       'prefer this over hand-writing a `---` block inside `content`; it quotes `[[wikilinks]]`, ' +
       'formats dates, and renders tag lists correctly). If `content` also begins with its own `---` ' +
-      'block, the `frontmatter` parameter replaces it (the body is kept). ' +
+      'block, the two are merged key-by-key and the `frontmatter` parameter wins on any key collision (the body is kept). ' +
       'Paths without an extension are treated as `.md` notes.' +
       '\n\n' +
       'Before composing `content`, sample 1–2 similar notes from the vault to mimic existing conventions instead of inventing your own. A reliable pattern: `search_notes` for the topic (or `query_notes` with a tag/folder filter that fits) to find candidates, then `read_notes` on the closest match to inspect its frontmatter shape, tag values, heading layout, and folder placement. Match those conventions — the user almost always prefers a new note that looks like its neighbours. Be especially careful with the `type` frontmatter field: vaults tend to use a small closed set (e.g. project / task / idea / reflection / daily / review / inbox / resource); pick from what other notes use rather than coining a new value.' +
@@ -83,8 +82,14 @@ export function buildCreateNoteTool(
         input.frontmatter !== undefined && Object.keys(input.frontmatter).length > 0;
 
       if (hasFrontmatter) {
-        const { body } = splitRawFrontmatter(input.content ?? '');
-        passthrough.content = serializeFrontmatter(input.frontmatter!) + body;
+        // Merge any frontmatter the content carried with the param; the param
+        // wins on key collisions. `splitFrontmatter` parses the content block
+        // into an object (and returns the body); on malformed YAML it yields
+        // `frontmatter: null`, so nothing is merged and the raw text stays in
+        // the body.
+        const { frontmatter: contentFm, content: body } = splitFrontmatter(input.content ?? '');
+        const merged = { ...(contentFm ?? {}), ...input.frontmatter! };
+        passthrough.content = serializeFrontmatter(merged) + body;
       } else if (input.content !== undefined) {
         passthrough.content = input.content;
       }

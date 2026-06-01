@@ -191,7 +191,7 @@ describe('operations.createNote handler', () => {
     expect(content).toBe('Body only\n');
   });
 
-  it('frontmatter param replaces a frontmatter block already in content (param wins)', async () => {
+  it('merges content frontmatter with the param, param winning on key collision', async () => {
     const provider = makeProvider({
       createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
     });
@@ -204,9 +204,30 @@ describe('operations.createNote handler', () => {
       content: '---\ntype: idea\nstale: true\n---\n# Title\n',
     });
 
+    // `type` collides → param wins (task); `stale` is content-only → survives.
     expect(provider.createNote).toHaveBeenCalledWith({
       path: 'Inbox/x.md',
-      content: '---\ntype: task\n---\n# Title\n',
+      content: '---\ntype: task\nstale: true\n---\n# Title\n',
+    });
+  });
+
+  it('merge keeps content-only keys and adds param-only keys', async () => {
+    const provider = makeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
+    });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
+
+    await tool.handler({
+      path: 'Inbox/x.md',
+      frontmatter: { type: 'task', tags: ['mcp'] },
+      content: '---\ncreated: 2026-06-01\ntype: idea\n---\nBody\n',
+    });
+
+    // created survives (content-only); type collides → param wins; tags added (param-only).
+    expect(provider.createNote).toHaveBeenCalledWith({
+      path: 'Inbox/x.md',
+      content: '---\ncreated: 2026-06-01\ntype: task\ntags:\n  - mcp\n---\nBody\n',
     });
   });
 

@@ -62,7 +62,7 @@ create_note({
 
 Paths without an extension are treated as `.md` notes.
 
-Pass `frontmatter` as a structured object rather than hand-writing a `---` block inside `content`; it is serialized to YAML and prepended to the note, with `[[wikilinks]]` quoted, dates formatted, and tag lists rendered as blocks. When both are given, `content` is treated as the body only — if it begins with its own `---` block, the `frontmatter` parameter replaces it (the body is kept). An empty `frontmatter` object is treated as if it were omitted.
+Pass `frontmatter` as a structured object rather than hand-writing a `---` block inside `content`; it is serialized to YAML and prepended to the note, with `[[wikilinks]]` quoted, dates formatted, and tag lists rendered as blocks. If `content` also begins with its own `---` block, the two are merged key-by-key: keys from `content` are kept, the `frontmatter` parameter's keys are layered on top, and the parameter wins on any key collision (the body is kept). An empty `frontmatter` object is treated as if it were omitted.
 
 Before composing `content`, sample 1–2 similar notes from the vault to mimic existing conventions — typically `search_notes` for the topic, then `read_notes` on the closest match to inspect its frontmatter shape, tag values, heading layout, and folder placement. Match those conventions instead of inventing new ones. Be especially careful with the `type` frontmatter field: vaults tend to use a small closed set; pick from what other notes use rather than coining a new value.
 
