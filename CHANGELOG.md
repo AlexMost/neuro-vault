@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [10.1.0](https://github.com/AlexMost/neuro-vault/compare/v10.0.2...v10.1.0) (2026-06-01)
+
+### Features
+
+- **create_note:** accept structured frontmatter parameter ([cc4c787](https://github.com/AlexMost/neuro-vault/commit/cc4c787239f88b14f63a9f248dd66e26fc64d4c8))
+- **create_note:** merge content frontmatter with the param instead of replacing ([0e2bdcf](https://github.com/AlexMost/neuro-vault/commit/0e2bdcf531fc403b775da02452bd0024ccc9a58d))
+- **frontmatter:** add serializeFrontmatter (inverse of splitFrontmatter) ([b59b53b](https://github.com/AlexMost/neuro-vault/commit/b59b53b04c6bc7ff5f2b4af5ca0361aeddaae310))
+
 ## [10.0.2](https://github.com/AlexMost/neuro-vault/compare/v10.0.1...v10.0.2) (2026-06-01)
 
 ### Bug Fixes
