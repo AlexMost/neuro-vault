@@ -169,5 +169,5 @@ export function wrapSchemaWithCoercion(schema: ZodTypeAny): ZodTypeAny {
   for (const [key, field] of Object.entries(shape)) {
     newShape[key] = wrapField(field, key);
   }
-  return z.object(newShape);
+  return z.object(newShape).strict();
 }

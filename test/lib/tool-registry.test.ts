@@ -64,7 +64,7 @@ describe('registerTool', () => {
     };
 
     const reg = registerTool(tool);
-    const result = await reg.handler({ x: 7, extra: 'ignored' });
+    const result = await reg.handler({ x: 7 });
 
     expect(received).toEqual({ x: 7 });
     expect(result.structuredContent).toEqual({ y: 7 });
@@ -168,6 +168,25 @@ describe('registerTool', () => {
     expect(errPayload.message).not.toMatch(/include_content:\s+include_content:/);
     const paths = errPayload.details.issues.map((i) => i.path).sort();
     expect(paths).toEqual(['filter', 'include_content']);
+  });
+
+  it('rejects unknown top-level parameters with INVALID_PARAMS naming the key', async () => {
+    const schema = z.object({ content: z.string().optional() });
+    const tool: ITool<{ content?: string }, { ok: true }> = {
+      name: 'strict-check',
+      description: 'strict-check',
+      inputSchema: schema,
+      handler: async () => ({ ok: true }),
+    };
+
+    const reg = registerTool(tool);
+    // Darwin's scenario: a frontmatter param that does not exist in the schema.
+    const result = await reg.handler({ content: 'body', frontmatter: { type: 'note' } });
+
+    expect(result.isError).toBe(true);
+    const errPayload = result.structuredContent as { code: string; message: string };
+    expect(errPayload.code).toBe('INVALID_PARAMS');
+    expect(errPayload.message).toContain('frontmatter');
   });
 
   it('translates a thrown ToolHandlerError into the structured error response', async () => {
