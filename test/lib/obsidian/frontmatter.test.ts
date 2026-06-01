@@ -137,4 +137,11 @@ describe('serializeFrontmatter', () => {
     expect(frontmatter).toEqual(fm);
     expect(content).toBe('');
   });
+
+  // Documents the empty-object contract: serializeFrontmatter does NOT special-case
+  // `{}` — it emits the raw `yaml.stringify({})` output. Callers must treat an empty
+  // object as "no frontmatter" themselves (the create_note tool does exactly this).
+  it('emits raw yaml.stringify output for an empty object (callers must not pass {})', () => {
+    expect(serializeFrontmatter({})).toBe('---\n{}\n---\n');
+  });
 });
