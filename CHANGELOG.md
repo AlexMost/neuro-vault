@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [10.0.2](https://github.com/AlexMost/neuro-vault/compare/v10.0.1...v10.0.2) (2026-06-01)
+
+### Bug Fixes
+
+- **validation:** reject unknown tool parameters instead of silently dropping ([d501245](https://github.com/AlexMost/neuro-vault/commit/d501245e129c4fca3ab8d5640b0c09cab14a6975))
+
 ## [10.0.1](https://github.com/AlexMost/neuro-vault/compare/v10.0.0...v10.0.1) (2026-05-28)
 
 ### Bug Fixes
