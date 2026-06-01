@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { splitFrontmatter } from '../../../src/lib/obsidian/frontmatter.js';
+import { serializeFrontmatter, splitFrontmatter } from '../../../src/lib/obsidian/frontmatter.js';
 
 describe('splitFrontmatter', () => {
   it('returns null frontmatter and full content when no delimiters', () => {
@@ -93,5 +93,48 @@ describe('splitFrontmatter', () => {
       frontmatter: null,
       content: raw,
     });
+  });
+});
+
+describe('serializeFrontmatter', () => {
+  it('wraps a simple object in fences with a trailing newline', () => {
+    expect(serializeFrontmatter({ type: 'task', status: 'todo' })).toBe(
+      '---\ntype: task\nstatus: todo\n---\n',
+    );
+  });
+
+  it('quotes a wikilink value so the leading [ is not a flow sequence', () => {
+    expect(serializeFrontmatter({ project: '[[neuro-vault]]' })).toBe(
+      '---\nproject: "[[neuro-vault]]"\n---\n',
+    );
+  });
+
+  it('keeps an ISO date string as a plain scalar', () => {
+    expect(serializeFrontmatter({ created: '2026-06-01' })).toBe('---\ncreated: 2026-06-01\n---\n');
+  });
+
+  it('renders a tag array as a block list', () => {
+    expect(serializeFrontmatter({ tags: ['mcp', 'dx'] })).toBe(
+      '---\ntags:\n  - mcp\n  - dx\n---\n',
+    );
+  });
+
+  it('renders nested objects', () => {
+    expect(serializeFrontmatter({ meta: { a: 1, b: 2 } })).toBe(
+      '---\nmeta:\n  a: 1\n  b: 2\n---\n',
+    );
+  });
+
+  it('round-trips through splitFrontmatter (written == read)', () => {
+    const fm = {
+      type: 'task',
+      status: 'todo',
+      project: '[[neuro-vault]]',
+      tags: ['mcp', 'dx'],
+      priority: 3,
+    };
+    const { frontmatter, content } = splitFrontmatter(serializeFrontmatter(fm));
+    expect(frontmatter).toEqual(fm);
+    expect(content).toBe('');
   });
 });

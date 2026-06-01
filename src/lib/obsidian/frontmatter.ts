@@ -1,4 +1,4 @@
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
 import { splitRawFrontmatter } from './in-place-edit.js';
 
@@ -42,4 +42,16 @@ export function splitFrontmatter(raw: string): SplitResult {
   }
 
   return { frontmatter: parsed as Record<string, unknown>, content };
+}
+
+/**
+ * Serialize a frontmatter object to a fenced YAML block: `---\n…\n---\n`.
+ * Inverse of {@link splitFrontmatter}. `yaml.stringify` quotes flow-sequence-
+ * leading strings (e.g. `[[wikilink]]`), keeps `YYYY-MM-DD` dates as plain
+ * scalars, and renders arrays as block lists. Callers must not pass `{}` — the
+ * empty-object case is handled by the caller (the create_note tool treats an
+ * empty object as "no frontmatter").
+ */
+export function serializeFrontmatter(fm: Record<string, unknown>): string {
+  return `---\n${stringifyYaml(fm)}---\n`;
 }
