@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildCreateNoteTool } from '../../../src/modules/operations/tools/create-note.js';
+import { splitFrontmatter } from '../../../src/lib/obsidian/frontmatter.js';
 import { makeProvider } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
@@ -149,6 +150,118 @@ describe('operations.createNote handler', () => {
       tool.handler({ vault: 'ghost', path: 'x.md', content: 'hi' }),
     ).rejects.toMatchObject({
       code: 'VAULT_NOT_FOUND',
+    });
+  });
+
+  it('serializes frontmatter and prepends it to the content body', async () => {
+    const provider = makeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
+    });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
+
+    await tool.handler({
+      path: 'Inbox/x.md',
+      frontmatter: { type: 'task', tags: ['mcp'] },
+      content: '# Title\nBody\n',
+    });
+
+    expect(provider.createNote).toHaveBeenCalledWith({
+      path: 'Inbox/x.md',
+      content: '---\ntype: task\ntags:\n  - mcp\n---\n# Title\nBody\n',
+    });
+  });
+
+  it('round-trips: provider content splits back to the input frontmatter and body', async () => {
+    let captured = '';
+    const provider = makeProvider({
+      createNote: vi.fn().mockImplementation((arg: { content?: string }) => {
+        captured = arg.content ?? '';
+        return Promise.resolve({ path: 'Inbox/x.md' });
+      }),
+    });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
+
+    const fm = { type: 'task', project: '[[neuro-vault]]', tags: ['mcp', 'dx'] };
+    await tool.handler({ path: 'Inbox/x.md', frontmatter: fm, content: 'Body only\n' });
+
+    const { frontmatter, content } = splitFrontmatter(captured);
+    expect(frontmatter).toEqual(fm);
+    expect(content).toBe('Body only\n');
+  });
+
+  it('merges content frontmatter with the param, param winning on key collision', async () => {
+    const provider = makeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
+    });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
+
+    await tool.handler({
+      path: 'Inbox/x.md',
+      frontmatter: { type: 'task' },
+      content: '---\ntype: idea\nstale: true\n---\n# Title\n',
+    });
+
+    // `type` collides → param wins (task); `stale` is content-only → survives.
+    expect(provider.createNote).toHaveBeenCalledWith({
+      path: 'Inbox/x.md',
+      content: '---\ntype: task\nstale: true\n---\n# Title\n',
+    });
+  });
+
+  it('merge keeps content-only keys and adds param-only keys', async () => {
+    const provider = makeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
+    });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
+
+    await tool.handler({
+      path: 'Inbox/x.md',
+      frontmatter: { type: 'task', tags: ['mcp'] },
+      content: '---\ncreated: 2026-06-01\ntype: idea\n---\nBody\n',
+    });
+
+    // created survives (content-only); type collides → param wins; tags added (param-only).
+    expect(provider.createNote).toHaveBeenCalledWith({
+      path: 'Inbox/x.md',
+      content: '---\ncreated: 2026-06-01\ntype: task\ntags:\n  - mcp\n---\nBody\n',
+    });
+  });
+
+  it('treats an empty frontmatter object as absent (verbatim content passthrough)', async () => {
+    const provider = makeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
+    });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
+
+    await tool.handler({
+      path: 'Inbox/x.md',
+      frontmatter: {},
+      content: '---\ntype: idea\n---\nBody\n',
+    });
+
+    expect(provider.createNote).toHaveBeenCalledWith({
+      path: 'Inbox/x.md',
+      content: '---\ntype: idea\n---\nBody\n',
+    });
+  });
+
+  it('serializes frontmatter with no content into a block with an empty body', async () => {
+    const provider = makeProvider({
+      createNote: vi.fn().mockResolvedValue({ path: 'Inbox/x.md' }),
+    });
+    const registry = makeTestRegistry([{ name: 'v', provider }]);
+    const tool = buildCreateNoteTool({ registry });
+
+    await tool.handler({ path: 'Inbox/x.md', frontmatter: { type: 'task' } });
+
+    expect(provider.createNote).toHaveBeenCalledWith({
+      path: 'Inbox/x.md',
+      content: '---\ntype: task\n---\n',
     });
   });
 });
