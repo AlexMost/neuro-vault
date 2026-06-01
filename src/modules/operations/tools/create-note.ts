@@ -5,6 +5,8 @@ import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument } from '../tool-helpers.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
+import { serializeFrontmatter } from '../../../lib/obsidian/frontmatter.js';
+import { splitRawFrontmatter } from '../../../lib/obsidian/in-place-edit.js';
 import type { CreateNoteToolInput } from '../types.js';
 import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
@@ -13,6 +15,7 @@ interface Input {
   name?: string;
   path?: string;
   content?: string;
+  frontmatter?: Record<string, unknown>;
   overwrite?: boolean;
 }
 
@@ -29,6 +32,7 @@ export function buildCreateNoteTool(
     name: z.string().optional(),
     path: z.string().optional(),
     content: z.string().optional(),
+    frontmatter: z.record(z.string(), z.unknown()).optional(),
     overwrite: z.boolean().optional(),
   });
   return {
@@ -70,7 +74,16 @@ export function buildCreateNoteTool(
         }
       }
       if (input.overwrite !== undefined) passthrough.overwrite = input.overwrite;
-      if (input.content !== undefined) passthrough.content = input.content;
+
+      const hasFrontmatter =
+        input.frontmatter !== undefined && Object.keys(input.frontmatter).length > 0;
+
+      if (hasFrontmatter) {
+        const { body } = splitRawFrontmatter(input.content ?? '');
+        passthrough.content = serializeFrontmatter(input.frontmatter!) + body;
+      } else if (input.content !== undefined) {
+        passthrough.content = input.content;
+      }
 
       const result = await entry.provider.createNote(passthrough);
       return { vault: entry.name, ...result };
