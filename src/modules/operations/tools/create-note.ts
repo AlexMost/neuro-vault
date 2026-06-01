@@ -40,7 +40,11 @@ export function buildCreateNoteTool(
     title: 'Create Note',
     description:
       'Create a new note. Provide `name` or `path` (exactly one). ' +
-      'Optionally provide `content` (raw markdown for the note body and frontmatter). ' +
+      'Optionally provide `content` (raw markdown for the note body) and/or `frontmatter` ' +
+      '(an object of frontmatter properties, serialized to a YAML block and prepended to the note — ' +
+      'prefer this over hand-writing a `---` block inside `content`; it quotes `[[wikilinks]]`, ' +
+      'formats dates, and renders tag lists correctly). If `content` also begins with its own `---` ' +
+      'block, the `frontmatter` parameter replaces it (the body is kept). ' +
       'Paths without an extension are treated as `.md` notes.' +
       '\n\n' +
       'Before composing `content`, sample 1–2 similar notes from the vault to mimic existing conventions instead of inventing your own. A reliable pattern: `search_notes` for the topic (or `query_notes` with a tag/folder filter that fits) to find candidates, then `read_notes` on the closest match to inspect its frontmatter shape, tag values, heading layout, and folder placement. Match those conventions — the user almost always prefers a new note that looks like its neighbours. Be especially careful with the `type` frontmatter field: vaults tend to use a small closed set (e.g. project / task / idea / reflection / daily / review / inbox / resource); pick from what other notes use rather than coining a new value.' +
