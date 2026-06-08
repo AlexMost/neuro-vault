@@ -42,19 +42,24 @@ Tools that take both `name` and `path` for the same concept (note identifier) re
 
 ## Documentation layout
 
-- `docs/architecture/` — one file per architectural concept, describing the **current** state of the codebase (living documents, not historical record). A reader should be able to understand any one concept by reading exactly one file.
-- `docs/superpowers/specs/` — design specs, **committed**. The long-lived reviewed record of decisions. If a decision is revisited, write a new spec that supersedes the old one and link the two; the old spec stays so history is readable.
-- `docs/superpowers/plans/` — implementation plans, **gitignored**. Local working artifacts. If a plan reveals the spec was wrong, fix the spec and commit that fix; the plan itself stays local.
+Five locations, each answering one question (full map + routing: [`docs/workflow.md`](docs/workflow.md)):
+
+- `docs/adr/` — **WHY**: architecture decisions and their rationale. Immutable once Accepted; supersede via Status. Index: [`docs/adr/INDEX.md`](docs/adr/INDEX.md).
+- `docs/architecture/` — **HOW**: one file per concept, describing the **current** state (living, not historical). A reader should understand any one concept by reading exactly one file.
+- `openspec/specs/<capability>/` — **WHAT (current)**: the living, normative contract per capability (SHALL + scenarios). Updated on `openspec archive`.
+- `openspec/changes/<name>/` — **WHAT (proposed)**: a change in flight — spec delta + brainstorm/design/tasks/plan/verify/retrospective.
+- `docs/superpowers/specs/` (committed) + `docs/superpowers/plans/` (gitignored) — **FROZEN** pre-OpenSpec record. Readable, not migrated; nothing new is added (see [`docs/superpowers/specs/README.md`](docs/superpowers/specs/README.md)).
 
 ## Workflow
 
-Non-trivial work uses the superpowers skill chain: `brainstorming` → `writing-plans` → `subagent-driven-development` (or `executing-plans`) → `finishing-a-development-branch`. The chain enforces spec/plan semantics, TDD discipline, review checkpoints, and PR mechanics; AGENTS.md does not duplicate that.
+Non-trivial work runs the spec-driven flow in [`docs/workflow.md`](docs/workflow.md). A **capability change** (new/changed tool contract, new capability, breaking change, ADR-level decision) goes through an OpenSpec `superpowers-bridge` change via `/opsx:*` (brainstorm → proposal → design → specs → tasks → plan → apply → verify → retrospective → archive → PR); anything smaller (bug fix without a contract change, docs, config tweak, dep bump, tooling setup) is a direct PR. Routing: [`.claude/rules/opsx-routing.md`](.claude/rules/opsx-routing.md). The apply phase uses the superpowers chain (`using-git-worktrees` → `subagent-driven-development` → `finishing-a-development-branch`) with TDD + per-task code review; AGENTS.md does not duplicate that.
 
 Project-specific addenda to the chain:
 
+- When the change captures a load-bearing architectural decision, propose a numbered ADR in `docs/adr/` (ask before writing) — see [`docs/adr/INDEX.md`](docs/adr/INDEX.md).
 - When the change introduces or alters an architectural concept, update or add a file in `docs/architecture/` as part of the same change.
 - Open a PR to `main` via `gh pr create`. Never push directly to `main` — the release flow expects a merge commit.
-- Trivial work (typo fix, dependency bump, doc tweak) skips the spec.
+- Trivial work (typo fix, dependency bump, doc tweak) skips the spec. Brainstorm/plan output for opsx changes is redirected into `openspec/changes/<name>/`, never `docs/superpowers/` (frozen).
 
 ## Release
 

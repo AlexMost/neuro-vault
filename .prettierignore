@@ -1,0 +1,6 @@
+node_modules/
+dist/
+
+# Vendored OpenSpec schema bundle (superpowers-bridge) — upstream-maintained,
+# upgraded via rm -rf + cp -R; reformatting would diverge from upstream.
+openspec/schemas/

@@ -1,0 +1,55 @@
+schema: superpowers-bridge
+
+context: |
+  # neuro-vault — project context
+
+  ## What this is
+
+  An MCP server (`neuro-vault-mcp`, published to npm) that gives an AI assistant
+  two capability sets over an Obsidian vault: **semantic search** (in-memory
+  cosine search over a Smart Connections embedding corpus) and **direct vault
+  operations** (notes, frontmatter properties, tags, structured queries).
+  TypeScript, ESM, Node ≥ 20; consumed over stdio by MCP clients (Claude Code,
+  Cursor, Windsurf). Two modules: `semantic/` (4 tools) and `operations/`
+  (12 tools).
+
+  ## Architecture invariants (read before changing a contract)
+
+  - Strict TypeScript, ESM modules. `npx tsc --noEmit` is the source of truth for
+    type-correctness — a `tsup` build alone is NOT (isolatedModules). See ADR-0002.
+  - Every tool error goes through `ToolHandlerError` → `{ code, message, details }`
+    so MCP clients can branch on `code`. See ADR-0003.
+  - External processes run via `execFile` + an args array, never `exec` with an
+    interpolated string. See ADR-0004.
+  - One concept = one parameter name across every tool (the MCP parameter
+    dictionary in AGENTS.md). A rename costs a major version. See ADR-0005.
+  - Semantic search consumes a read-only Smart Connections corpus; the server
+    never writes embeddings (ADR-0006). Vault writes go through obsidian-cli;
+    batch note reads go straight to disk (ADR-0007).
+  - `docs/architecture/` is the living "how it works" record — one file per
+    concept, current state (ADR-0008).
+
+  ## Where things live (full map: docs/workflow.md)
+
+  - `docs/adr/` — WHY (decisions, immutable). `docs/architecture/` — HOW
+    (mechanism, living).
+  - `openspec/specs/` — WHAT now (capability contracts). `openspec/changes/` —
+    WHAT proposed. `docs/superpowers/specs/` + `plans/` — FROZEN pre-OpenSpec
+    record (do not add to it).
+
+  ## Release
+
+  Conventional Commits → `npm run release` (commit-and-tag-version) on `main`
+  only, after the PR merges. Never release from a feature branch.
+
+rules:
+  design:
+    - 'If the change captures a load-bearing architectural decision (new runtime/library dependency, change to a core invariant from a prior ADR, a close call between competing approaches), propose creating a numbered `docs/adr/NNNN-<slug>.md` entry alongside design.md. Number = next available in `docs/adr/`. Ask the user before writing.'
+    - 'If the change adds or alters an architectural concept, create/update the matching `docs/architecture/<concept>.md` in the same change — a reader must be able to understand any one concept by reading exactly one file.'
+    - 'If the change adds, renames, or repurposes a tool parameter, conform to the MCP parameter dictionary in AGENTS.md (one concept = one parameter name). A rename is a breaking change and costs a major version — surface it explicitly.'
+  tasks:
+    - 'Structure tasks as TDD-friendly units: each small enough that "failing test → implementation → refactor" is a reasonable per-task cadence (vitest; prefer DI over module-level mocks).'
+    - 'Explicitly mark which task groups are parallel-safe (no shared state, no sequential deps) vs sequential. The apply phase uses subagent-driven-development, which reads this to decide when to dispatch parallel subagents.'
+  verify:
+    - 'Repo-wide gates that MUST pass before verify is PASS: `npm test` (full vitest suite — count must not drop unintentionally), `npm run lint` (eslint clean), `npx tsc --noEmit` (typecheck clean). A `tsup` build alone is NOT sufficient — tsc --noEmit is the source of truth.'
+    - "If the change touches a tool's input schema, description, or output shape, confirm the user-facing reference (`README.md` and/or `docs/guide/`) is updated in the same change."
