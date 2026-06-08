@@ -29,17 +29,18 @@ export type OperationsErrorCode =
   | 'DAILY_NOTES_NOT_CONFIGURED'
   | 'CREATE_FAILED';
 
-export type ReadNotesField = 'frontmatter' | 'content';
+export type ContentMode = 'full' | 'preview' | 'frontmatter';
 
 export interface ReadNotesToolInput {
   paths: string | string[];
-  fields?: ReadNotesField[];
+  content?: ContentMode;
 }
 
 export interface ReadNotesResultItemSuccess {
   path: string;
   frontmatter?: Record<string, unknown> | null;
   content?: string;
+  truncated?: boolean;
 }
 
 export interface ReadNotesResultItemError {
