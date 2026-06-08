@@ -1,7 +1,7 @@
 import type { ZodError, ZodTypeAny } from 'zod';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 
-import { wrapSchemaForSdk, wrapSchemaWithCoercion } from './input-coercion.js';
+import { wrapSchemaWithCoercion } from './input-coercion.js';
 import type { ToolRegistration } from './tool-registration.js';
 import { invokeTool, ToolHandlerError } from './tool-response.js';
 
@@ -10,10 +10,6 @@ export interface ITool<I, O> {
   title?: string;
   description: string;
   inputSchema: ZodTypeAny;
-  /** Optional map of accepted alias keys → canonical parameter name. An alias is
-   *  renamed to its canonical key before strict validation; the canonical value
-   *  wins if both are present. Additive only — does not relax unknown-key rejection. */
-  inputAliases?: Record<string, string>;
   outputSchema?: ZodTypeAny;
   annotations?: ToolAnnotations;
   handler: (input: I) => Promise<O>;
@@ -41,14 +37,13 @@ function formatZodError(error: ZodError): {
 }
 
 export function registerTool<I, O>(tool: ITool<I, O>): ToolRegistration {
-  const coercingSchema = wrapSchemaWithCoercion(tool.inputSchema, tool.inputAliases);
-  const advertisedSchema = wrapSchemaForSdk(tool.inputSchema, tool.inputAliases);
+  const coercingSchema = wrapSchemaWithCoercion(tool.inputSchema);
   return {
     name: tool.name,
     spec: {
       ...(tool.title !== undefined ? { title: tool.title } : {}),
       description: tool.description,
-      inputSchema: advertisedSchema,
+      inputSchema: coercingSchema,
       ...(tool.outputSchema !== undefined ? { outputSchema: tool.outputSchema } : {}),
       ...(tool.annotations !== undefined ? { annotations: tool.annotations } : {}),
     },

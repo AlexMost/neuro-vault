@@ -1,3 +1,11 @@
+> **Scope reduced before merge.** This proposal originally covered two halves: the
+> `filters`→`filter` **alias** and **stringified-collection coercion**. The alias was
+> implemented, reviewed, then **descoped and reverted** (justified by a single data
+> point, disproportionate complexity, and it "legalized" a non-canonical name). Only
+> the stringified-array coercion shipped. Read the alias parts below as historical
+> context; the `tolerant-arguments` spec and `retrospective.md` §Update reflect the
+> final scope.
+
 ## Why
 
 MCP tools hard-fail when an agent guesses the argument contract, and the agent

@@ -1,8 +1,19 @@
 # Verification Report
 
 **Change**: `tolerant-tool-arguments`
-**Verified at**: `2026-06-08 22:22`
+**Verified at**: `2026-06-08 22:48` (re-verified after the alias descope)
 **Verifier**: Claude (opsx apply — subagent-driven-development)
+
+---
+
+> **Re-verified after descope.** The `filters`→`filter` alias was reverted before merge
+> (see `retrospective.md` §Update). Shipped scope is **stringified-array coercion only**:
+> net product diff vs `main` is **3 files / +89 lines** (`src/lib/input-coercion.ts`
+> plain-array branch + `test/lib/input-coercion.test.ts` + `test/semantic/tools/get-similar-notes.test.ts`).
+> `tool-registry.ts`, `query-notes.ts`, the parameter dictionary, and their tests are
+> back to zero-diff vs `main`. Gates: `npm test` → **706 passed (57 files)**,
+> `npm run lint` clean, `npx tsc --noEmit` clean, `openspec validate --all` → 4/4.
+> §2 below: Group-1 (alias) tasks are marked `[~]` descoped (reverted), not pending.
 
 ---
 

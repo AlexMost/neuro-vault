@@ -82,7 +82,6 @@ export function buildQueryNotesTool(
         'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `skipped_vaults: [...]`. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
       ),
     inputSchema,
-    inputAliases: { filters: 'filter' },
     handler: async (input: QueryNotesToolInput & { vault?: string }) => {
       if (input.vault === undefined && registry.isMulti()) {
         return await runFanOut(registry, (entry) => runQueryForEntry(entry, input));

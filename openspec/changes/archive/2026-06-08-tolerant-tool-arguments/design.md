@@ -1,3 +1,8 @@
+> **Decisions D1–D3 and D5 were descoped before merge.** The `filters`→`filter` alias
+> they design was built, reviewed, then reverted — the shipped change is the
+> stringified-array coercion (D4) only. The alias decisions are kept below as the
+> reasoning record; `retrospective.md` §Update explains why they were dropped.
+
 ## Context
 
 `neuro-vault-mcp` validates every tool call through one seam:

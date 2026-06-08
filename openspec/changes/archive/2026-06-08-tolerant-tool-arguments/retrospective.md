@@ -6,6 +6,23 @@
 
 ---
 
+> **Update 2026-06-08 (post-archive, pre-merge): the `filters`→`filter` alias was descoped and reverted.**
+> On review of cost/benefit, the alias was removed before PR #52 merged. Rationale: it was
+> justified by a **single** usage-report data point; it carried **disproportionate complexity**
+> (the dual-schema `wrapSchemaForSdk`, and all three Criticals in §0/§2 lived in it); and it
+> "legalized" a non-canonical name rather than the correct one (`filter` is the semantically
+> correct singular — one MongoDB-style filter object — and renaming is a breaking change under
+> ADR-0005). The existing `.strict()` already emits `Unrecognized key(s): 'filters'`, naming the
+> offending key as a pivot signal, so dropping the alias does not leave the agent hint-less.
+>
+> **Shipped scope is now stringified-array coercion only.** The Wins/Misses below about the alias
+> remain accurate as the record of what was built and why it was removed. Net product diff vs main:
+> 3 files / +89 lines (`input-coercion.ts` plain-array branch + its unit tests + the
+> `get_similar_notes` boundary tests). The §6 promote-candidates (test via the SDK gate; match the
+> fixture's real constraint) still stand — general lessons, independent of the alias.
+
+---
+
 ## 0. Evidence
 
 - **Commit range**: `1fc73f9..a0d87e8` — 4 feature commits + 2 merge commits + 1 artifacts commit

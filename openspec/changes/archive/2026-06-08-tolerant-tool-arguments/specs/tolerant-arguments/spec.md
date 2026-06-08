@@ -1,23 +1,5 @@
 ## ADDED Requirements
 
-### Requirement: Declared parameter aliases are accepted
-
-The input boundary SHALL accept a tool's declared parameter aliases: when an alias
-key is present in a call, it is renamed to its canonical parameter before strict
-validation, so the call succeeds as if the canonical key had been used. `query_notes`
-SHALL accept `filters` as an alias of `filter`. When both the alias and its canonical
-key are present, the canonical value SHALL be kept and the alias key dropped.
-
-#### Scenario: Alias key behaves as the canonical key
-
-- **WHEN** `query_notes` is called with `{ filters: { 'frontmatter.type': { $eq: 'idea' } } }`
-- **THEN** the call SHALL behave identically to `{ filter: { 'frontmatter.type': { $eq: 'idea' } } }` and succeed
-
-#### Scenario: Canonical key wins over a conflicting alias
-
-- **WHEN** `query_notes` is called with both `filter` and `filters` set to different values
-- **THEN** the `filter` value SHALL be used and the `filters` key SHALL be ignored
-
 ### Requirement: Stringified collections are parsed when unambiguous
 
 The boundary SHALL parse a JSON-string into the object or array a parameter expects
@@ -57,13 +39,13 @@ validation message.
 - **WHEN** an array parameter receives a JSON-string that parses to a non-array (e.g. `'{"a":1}'`)
 - **THEN** the call SHALL fail with `INVALID_PARAMS` and a message naming the expected array shape
 
-### Requirement: Unknown non-alias keys remain rejected
+### Requirement: Unknown keys remain rejected
 
-The input boundary SHALL keep rejecting keys that are neither a canonical parameter
-nor a declared alias. Tolerance applies only to declared aliases and to coercible
-value shapes; it MUST NOT silently ignore unrecognized parameters.
+The input boundary SHALL keep rejecting keys that are not a parameter of the tool.
+Tolerance applies only to coercible value shapes; it MUST NOT silently ignore
+unrecognized parameters.
 
 #### Scenario: A genuinely unknown key still errors
 
-- **WHEN** a tool is called with a key that is neither one of its parameters nor a declared alias
+- **WHEN** a tool is called with a key that is not one of its parameters
 - **THEN** the call SHALL fail as an unrecognized-key validation error

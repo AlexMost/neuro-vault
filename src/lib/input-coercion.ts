@@ -179,68 +179,12 @@ function wrapField(field: ZodTypeAny, fieldName: string): ZodTypeAny {
   return isOptional ? wrapped.optional() : wrapped;
 }
 
-function applyAliases(value: unknown, aliases: Record<string, string>): unknown {
-  if (!isPlainObject(value)) return value;
-  const out: Record<string, unknown> = { ...value };
-  for (const [alias, canonical] of Object.entries(aliases)) {
-    if (alias in out) {
-      if (!(canonical in out)) out[canonical] = out[alias];
-      delete out[alias];
-    }
-  }
-  return out;
-}
-
-function buildCoercedShape(schema: z.ZodObject): Record<string, ZodTypeAny> {
+export function wrapSchemaWithCoercion(schema: ZodTypeAny): ZodTypeAny {
+  if (!(schema instanceof z.ZodObject)) return schema;
   const shape = schema.shape as Record<string, ZodTypeAny>;
   const newShape: Record<string, ZodTypeAny> = {};
   for (const [key, field] of Object.entries(shape)) {
     newShape[key] = wrapField(field, key);
   }
-  return newShape;
-}
-
-export function wrapSchemaWithCoercion(
-  schema: ZodTypeAny,
-  aliases?: Record<string, string>,
-): ZodTypeAny {
-  if (!(schema instanceof z.ZodObject)) return schema;
-  const strict = z.object(buildCoercedShape(schema)).strict();
-  if (!aliases || Object.keys(aliases).length === 0) return strict;
-  return z.preprocess((v) => applyAliases(v, aliases), strict);
-}
-
-/**
- * The schema the MCP SDK receives for a tool: used BOTH to advertise the tool's
- * JSON input schema AND as the SDK's own pre-validation gate, which parses raw
- * args and throws BEFORE the handler runs. It must be a top-level `ZodObject`
- * (a `ZodPipe` from `z.preprocess` would advertise as an empty object).
- *
- * When the tool declares aliases the object is `.loose()` so the SDK passes the
- * alias key through to the handler (whose strict alias-renaming gate from
- * `wrapSchemaWithCoercion` is the real source of truth). In addition, every
- * alias-TARGET canonical field is made `.optional()` here: an alias-only call
- * (e.g. `{ filters }`) omits the required canonical key, and `.loose()` does not
- * relax required-field enforcement, so without this the SDK gate would reject the
- * call before the rename. Required-ness is still enforced by the handler gate
- * after the rename. (Consequence: for an alias tool the advertised schema is
- * looser than the real contract — `additionalProperties` is permissive and
- * alias-target fields show as not-required — an accepted minor inaccuracy; the
- * handler's strict gate is the real contract. Advertising the alias name itself
- * would violate the one-parameter-name rule, ADR-0005.) Without aliases it is
- * `.strict()`, identical to the handler schema (unchanged behavior).
- */
-export function wrapSchemaForSdk(schema: ZodTypeAny, aliases?: Record<string, string>): ZodTypeAny {
-  if (!(schema instanceof z.ZodObject)) return schema;
-  const shape = buildCoercedShape(schema);
-  if (!aliases || Object.keys(aliases).length === 0) {
-    return z.object(shape).strict();
-  }
-  const relaxed: Record<string, ZodTypeAny> = { ...shape };
-  for (const canonical of new Set(Object.values(aliases))) {
-    if (canonical in relaxed) {
-      relaxed[canonical] = relaxed[canonical].optional();
-    }
-  }
-  return z.object(relaxed).loose();
+  return z.object(newShape).strict();
 }

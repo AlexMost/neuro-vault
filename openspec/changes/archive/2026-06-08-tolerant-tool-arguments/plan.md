@@ -1,5 +1,9 @@
 # Tolerant Tool Arguments Implementation Plan
 
+> **Historical plan — alias tasks descoped.** Tasks 3–5 below (the `filters`→`filter`
+> alias) were built then reverted before merge; only the stringified-array coercion
+> (Tasks 1–2) shipped. See `retrospective.md` §Update.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the MCP tool-input boundary forgiving — accept the `filters`→`filter` alias on `query_notes`, parse stringified arrays for plain-array params, and name the expected shape on unrecoverable input instead of bare-failing.
