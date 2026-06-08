@@ -52,14 +52,11 @@ Five locations, each answering one question (full map + routing: [`docs/workflow
 
 ## Workflow
 
-Non-trivial work runs the spec-driven flow in [`docs/workflow.md`](docs/workflow.md). A **capability change** (new/changed tool contract, new capability, breaking change, ADR-level decision) goes through an OpenSpec `superpowers-bridge` change via `/opsx:*` (brainstorm → proposal → design → specs → tasks → plan → apply → verify → retrospective → archive → PR); anything smaller (bug fix without a contract change, docs, config tweak, dep bump, tooling setup) is a direct PR. Routing: [`.claude/rules/opsx-routing.md`](.claude/rules/opsx-routing.md). The apply phase uses the superpowers chain (`using-git-worktrees` → `subagent-driven-development` → `finishing-a-development-branch`) with TDD + per-task code review; AGENTS.md does not duplicate that.
+Non-trivial work runs the spec-driven flow mapped in [`docs/workflow.md`](docs/workflow.md); whether a change goes through an OpenSpec `superpowers-bridge` opsx change or a direct PR is decided by [`.claude/rules/opsx-routing.md`](.claude/rules/opsx-routing.md). The apply phase uses the superpowers chain (`using-git-worktrees` → `subagent-driven-development` → `finishing-a-development-branch`) with TDD + per-task code review. This file does not restate those — only the project conventions they assume:
 
-Project-specific addenda to the chain:
-
-- When the change captures a load-bearing architectural decision, propose a numbered ADR in `docs/adr/` (ask before writing) — see [`docs/adr/INDEX.md`](docs/adr/INDEX.md).
-- When the change introduces or alters an architectural concept, update or add a file in `docs/architecture/` as part of the same change.
-- Open a PR to `main` via `gh pr create`. Never push directly to `main` — the release flow expects a merge commit.
-- Trivial work (typo fix, dependency bump, doc tweak) skips the spec. Brainstorm/plan output for opsx changes is redirected into `openspec/changes/<name>/`, never `docs/superpowers/` (frozen).
+- A load-bearing architectural decision gets a numbered ADR in `docs/adr/` (ask before writing) — see [`docs/adr/INDEX.md`](docs/adr/INDEX.md).
+- A change that introduces or alters an architectural concept updates the matching `docs/architecture/` file in the same change.
+- PRs go to `main` via `gh pr create`; never push directly — the release flow expects a merge commit.
 
 ## Release
 
