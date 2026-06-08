@@ -83,7 +83,7 @@ Use \`set_property\`, \`remove_property\` when the user asks to set or remove a 
 
 \`set_property\` infers \`type\` from the JS value (string→text, number→number, boolean→checkbox, array→list). For \`date\`/\`datetime\` you MUST pass \`type\` explicitly AND use ISO format (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]\`) — non-ISO values are silently dropped by the CLI, so the tool rejects them up front. Existing values are overwritten without asking.
 
-To read a single frontmatter value, or the full frontmatter of one or more notes, call \`read_notes\` with \`fields: ['frontmatter']\` — a single batch call returns each note's frontmatter object with accurate types.
+To read a single frontmatter value, or the full frontmatter of one or more notes, call \`read_notes\` with \`content: 'frontmatter'\` — a single batch call returns each note's frontmatter object with accurate types.
 
 ### Tags
 

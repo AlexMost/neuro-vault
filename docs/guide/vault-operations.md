@@ -18,16 +18,36 @@ Read one or more notes directly from disk. Returns per-item results in input ord
 
 ```typescript
 read_notes({
-  paths: string | string[],                     // single path, or 1–50 vault-relative paths
-  fields?: ('frontmatter' | 'content')[],       // default: both
+  paths: string | string[],                        // single path, or 1–50 vault-relative paths
+  content?: 'full' | 'preview' | 'frontmatter',    // optional; default derived from path count
 })
 ```
 
-`paths` accepts either a single path string (single-note read) or an array of 1–50 paths (batch read). The result shape is identical in both cases.
+`paths` accepts either a single path string (single-note read) or an array of 1–50 paths (batch read). The result shape is identical in both cases. Duplicates are de-duplicated; results are returned in input order.
 
-Returns `{ results, count, errors }` where each item in `results` is either `{ path, frontmatter?, content? }` (success) or `{ path, error: { code, message } }` (failure). `count === results.length` (total items, including failures); `errors` is the subset of those that failed. To get the successful-read count, subtract: `count - errors`.
+**`content` modes — frontmatter is always returned regardless of mode:**
 
-**Example — read multiple notes, all fields (default):**
+| Mode          | Returns                                                                                                               |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `full`        | `{ path, frontmatter, content }` — complete body                                                                      |
+| `preview`     | `{ path, frontmatter, content, truncated }` — bounded (~500-char) body slice; `truncated: true` when the body was cut |
+| `frontmatter` | `{ path, frontmatter }` — no body                                                                                     |
+
+**Default when `content` is omitted** is derived from the number of distinct requested paths: exactly one path → `full`; two or more paths → `preview`. An explicit `content` always overrides the count-based default.
+
+Re-read a previewed note with `content: 'full'` before citing or editing it.
+
+Returns `{ results, count, errors }` where each item in `results` is either a success object (shape depends on `content` mode) or `{ path, error: { code, message } }` (failure). `count === results.length` (total items, including failures); `errors` is the subset of those that failed. To get the successful-read count, subtract: `count - errors`.
+
+**Example — read a single note (defaults to `full`):**
+
+```json
+{
+  "paths": "Projects/neuro-vault.md"
+}
+```
+
+**Example — batch-read multiple notes (defaults to `preview` to keep the response bounded):**
 
 ```json
 {
@@ -35,16 +55,18 @@ Returns `{ results, count, errors }` where each item in `results` is either `{ p
 }
 ```
 
-**Example — read frontmatter only across a list of paths (use `fields: ['frontmatter']` whenever you need metadata across several notes):**
+Each item comes back with frontmatter and a preview body. When `truncated: true`, re-read the individual note with `content: 'full'` before citing or editing it.
+
+**Example — read frontmatter only across a list of paths (`content: 'frontmatter'` whenever you need metadata across several notes):**
 
 ```json
 {
   "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md"],
-  "fields": ["frontmatter"]
+  "content": "frontmatter"
 }
 ```
 
-`fields: ['frontmatter']` returns the parsed YAML frontmatter for each note without loading the note body — useful when you need metadata (status, tags, due dates) across many notes at once.
+Returns the parsed YAML frontmatter for each note without loading the note body — useful when you need metadata (status, tags, due dates) across many notes at once.
 
 ### `create_note`
 

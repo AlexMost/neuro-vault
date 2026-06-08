@@ -5,15 +5,15 @@ import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { normalizePath, validateReadNotesInput } from '../tool-helpers.js';
-import type { ReadNotesResult, ReadNotesResultItem } from '../types.js';
+import type { ContentMode, ReadNotesResult, ReadNotesResultItem } from '../types.js';
+import { previewBody } from '../preview-body.js';
+import type { ReadNotesField } from '../../../lib/obsidian/vault-reader.js';
 import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
-
-const readNotesFieldSchema = z.enum(['frontmatter', 'content']);
 
 interface Input {
   vault?: string;
   paths: string | string[];
-  fields?: Array<'frontmatter' | 'content'>;
+  content?: ContentMode;
 }
 
 export interface ReadNotesDeps {
@@ -27,13 +27,13 @@ export function buildReadNotesTool(
   const inputSchema = z.object({
     ...vaultParamShape(registry),
     paths: z.union([z.string().min(1), z.array(z.string()).min(1).max(50)]),
-    fields: z.array(readNotesFieldSchema).min(1).optional(),
+    content: z.enum(['full', 'preview', 'frontmatter']).optional(),
   });
   return {
     name: 'read_notes',
     title: 'Read Notes',
     description:
-      "Read one or more notes in one call. `paths` is a vault-relative POSIX path string or an array of 1–50 such paths; duplicates are de-duplicated and results returned in input order. `fields` projects which parts of each note to return — choose from `frontmatter` and `content`; default `['frontmatter','content']`. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running." +
+      "Read one or more notes in one call. `paths` is a vault-relative POSIX path string or an array of 1–50 such paths; duplicates are de-duplicated and results returned in input order. `content` controls how much of each note's body comes back: `full` returns the complete body, `preview` returns a bounded slice plus a `truncated` flag, `frontmatter` returns no body at all. Frontmatter is always returned. The default is derived from the number of distinct paths: one path → `full`, two or more → `preview`; passing `content` explicitly overrides this. Re-read a previewed note with `content: 'full'` before citing or editing it. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running." +
       describeMultiVault(
         registry,
         'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
@@ -41,7 +41,7 @@ export function buildReadNotesTool(
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'read_notes' });
-      const { paths, fields } = validateReadNotesInput(input);
+      const { paths, content } = validateReadNotesInput(input);
 
       const seen = new Set<string>();
       const deduped: string[] = [];
@@ -51,6 +51,10 @@ export function buildReadNotesTool(
           deduped.push(p);
         }
       }
+
+      const effective = content ?? (deduped.length === 1 ? 'full' : 'preview');
+      const fields: ReadNotesField[] =
+        effective === 'frontmatter' ? ['frontmatter'] : ['frontmatter', 'content'];
 
       type Slot = { kind: 'invalid'; item: ReadNotesResultItem } | { kind: 'valid'; path: string };
       const slots: Slot[] = deduped.map((raw) => {
@@ -81,14 +85,17 @@ export function buildReadNotesTool(
           path: string;
           frontmatter?: Record<string, unknown> | null;
           content?: string;
+          truncated?: boolean;
         } = {
           path: item.path,
+          frontmatter: item.frontmatter,
         };
-        if (fields.includes('frontmatter')) {
-          out.frontmatter = item.frontmatter;
-        }
-        if (fields.includes('content')) {
+        if (effective === 'full') {
           out.content = item.content;
+        } else if (effective === 'preview') {
+          const { content: c, truncated } = previewBody(item.content);
+          out.content = c;
+          out.truncated = truncated;
         }
         return out;
       });

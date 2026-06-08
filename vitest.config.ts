@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
+
+// Worktrees hold full repo checkouts with their own test files. Without this,
+// `vitest run` from the root collects every worktree's tests too.
+const worktreeGlobs = ['**/.worktrees/**', '**/.claude/worktrees/**'];
 
 function hasTestFiles(rootDir: string): boolean {
   if (!fs.existsSync(rootDir)) {
@@ -29,6 +33,7 @@ const hasAnyTests = hasTestFiles('test') || hasTestFiles('src');
 
 export default defineConfig({
   test: {
+    exclude: [...configDefaults.exclude, ...worktreeGlobs],
     passWithNoTests: !hasAnyTests,
   },
 });
