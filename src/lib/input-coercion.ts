@@ -179,12 +179,51 @@ function wrapField(field: ZodTypeAny, fieldName: string): ZodTypeAny {
   return isOptional ? wrapped.optional() : wrapped;
 }
 
-export function wrapSchemaWithCoercion(schema: ZodTypeAny): ZodTypeAny {
-  if (!(schema instanceof z.ZodObject)) return schema;
+function applyAliases(value: unknown, aliases: Record<string, string>): unknown {
+  if (!isPlainObject(value)) return value;
+  const out: Record<string, unknown> = { ...value };
+  for (const [alias, canonical] of Object.entries(aliases)) {
+    if (alias in out) {
+      if (!(canonical in out)) out[canonical] = out[alias];
+      delete out[alias];
+    }
+  }
+  return out;
+}
+
+function buildCoercedShape(schema: z.ZodObject): Record<string, ZodTypeAny> {
   const shape = schema.shape as Record<string, ZodTypeAny>;
   const newShape: Record<string, ZodTypeAny> = {};
   for (const [key, field] of Object.entries(shape)) {
     newShape[key] = wrapField(field, key);
   }
-  return z.object(newShape).strict();
+  return newShape;
+}
+
+export function wrapSchemaWithCoercion(
+  schema: ZodTypeAny,
+  aliases?: Record<string, string>,
+): ZodTypeAny {
+  if (!(schema instanceof z.ZodObject)) return schema;
+  const strict = z.object(buildCoercedShape(schema)).strict();
+  if (!aliases || Object.keys(aliases).length === 0) return strict;
+  return z.preprocess((v) => applyAliases(v, aliases), strict);
+}
+
+/**
+ * The schema the MCP SDK receives for a tool: it is used BOTH to advertise the
+ * tool's JSON input schema AND as the SDK's own pre-validation gate before our
+ * handler runs. It must therefore be a top-level `ZodObject` (a `ZodPipe` from
+ * `z.preprocess` would advertise as an empty object and break tool discovery).
+ *
+ * When the tool declares aliases, the object is `.loose()` so the SDK does not
+ * reject the alias key — it passes through to the handler, whose strict
+ * alias-renaming gate (`wrapSchemaWithCoercion`) is the real source of truth and
+ * still rejects genuinely unknown keys. Without aliases it is `.strict()`,
+ * identical to the handler schema (unchanged behavior).
+ */
+export function wrapSchemaForSdk(schema: ZodTypeAny, hasAliases: boolean): ZodTypeAny {
+  if (!(schema instanceof z.ZodObject)) return schema;
+  const obj = z.object(buildCoercedShape(schema));
+  return hasAliases ? obj.loose() : obj.strict();
 }

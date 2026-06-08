@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildQueryNotesTool } from '../../../src/modules/operations/tools/query-notes.js';
 import type { QueryNotesResultWithVault } from '../../../src/modules/operations/tools/query-notes.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { makeGraph, makeReader } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
@@ -137,6 +138,44 @@ describe('operations.queryNotes handler', () => {
     expect(vaultA.results[0]!.vault).toBe('vault-a');
     expect(vaultA.count).toBe(1);
     expect(vaultA.truncated).toBe(false);
+  });
+
+  it('accepts `filters` as an alias of `filter`', async () => {
+    const reader = makeReader({
+      scan: vi.fn().mockResolvedValue(['Notes/a.md']),
+      readNotes: vi
+        .fn()
+        .mockResolvedValue([{ path: 'Notes/a.md', frontmatter: { type: 'idea' }, content: '' }]),
+    });
+    const registry = makeTestRegistry([{ name: 'v', reader, graph: makeGraph() }]);
+    const reg = registerTool(buildQueryNotesTool({ registry }));
+
+    const result = await reg.handler({ filters: { 'frontmatter.type': { $eq: 'idea' } } });
+
+    expect(result.isError).not.toBe(true);
+    expect((result.structuredContent as { count: number }).count).toBe(1);
+  });
+
+  it('prefers `filter` over a conflicting `filters`', async () => {
+    // The note is type `idea`. The canonical `filter` selects `idea` (1 match);
+    // the alias `filters` selects `task` (0 matches). count === 1 proves the
+    // canonical `filter` won and the alias was dropped.
+    const reader = makeReader({
+      scan: vi.fn().mockResolvedValue(['Notes/a.md']),
+      readNotes: vi
+        .fn()
+        .mockResolvedValue([{ path: 'Notes/a.md', frontmatter: { type: 'idea' }, content: '' }]),
+    });
+    const registry = makeTestRegistry([{ name: 'v', reader, graph: makeGraph() }]);
+    const reg = registerTool(buildQueryNotesTool({ registry }));
+
+    const result = await reg.handler({
+      filter: { 'frontmatter.type': { $eq: 'idea' } },
+      filters: { 'frontmatter.type': { $eq: 'task' } },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect((result.structuredContent as { count: number }).count).toBe(1);
   });
 
   it('explicit vault: returns flat { results, count, truncated } shape (regression)', async () => {
