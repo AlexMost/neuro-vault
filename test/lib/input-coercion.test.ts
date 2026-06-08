@@ -184,6 +184,40 @@ describe('wrapSchemaWithCoercion — string | array(string) union, end-to-end', 
   });
 });
 
+describe('coerceInput — plain array fields', () => {
+  const schema = z.object({
+    fields: z
+      .array(z.enum(['frontmatter', 'content']))
+      .min(1)
+      .optional(),
+  });
+
+  it('parses a stringified JSON array', () => {
+    expect(coerceInput(schema, { fields: '["frontmatter"]' })).toEqual({
+      fields: ['frontmatter'],
+    });
+  });
+
+  it('returns a parsed array verbatim so zod can validate its elements', () => {
+    // 'bogus' is not a valid enum value, but coercion only parses the outer
+    // string — element validation is left to zod downstream.
+    expect(coerceInput(schema, { fields: '["bogus"]' })).toEqual({ fields: ['bogus'] });
+  });
+
+  it('throws CoerceError naming the field and parse failure on a non-JSON string', () => {
+    expect(() => coerceInput(schema, { fields: 'frontmatter' })).toThrow(CoerceError);
+    expect(() => coerceInput(schema, { fields: 'frontmatter' })).toThrow(/fields.*parse/i);
+  });
+
+  it('throws CoerceError when the JSON resolves to a non-array', () => {
+    expect(() => coerceInput(schema, { fields: '{"a":1}' })).toThrow(CoerceError);
+  });
+
+  it('leaves a real array alone', () => {
+    expect(coerceInput(schema, { fields: ['content'] })).toEqual({ fields: ['content'] });
+  });
+});
+
 describe('coerceInput — top-level oddities', () => {
   it('returns non-object input unchanged when schema is z.object', () => {
     const schema = z.object({ x: z.number() });

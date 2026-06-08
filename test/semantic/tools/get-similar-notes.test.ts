@@ -3,8 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import { buildGetSimilarNotesTool } from '../../../src/modules/semantic/tools/get-similar-notes.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 import {
   MODEL_KEY,
@@ -559,6 +561,42 @@ describe('getSimilarNotes — graph signals', () => {
       const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
       expect(results.length).toBeGreaterThan(0);
       expect(results.every((r) => r.vault === 'v')).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  // `exclude_folders` is a plain (non-union) array param; these guard that the
+  // central coercion layer parses a stringified array for it at the registration
+  // boundary (the schema the MCP SDK validates raw args against before the
+  // handler runs). The array form's behaviour is covered by
+  // 'removes results matching exclude_folders prefixes' above.
+  it('coerces a stringified exclude_folders array at the registration boundary', async () => {
+    const { tool, cleanup } = await buildToolWithVault();
+    try {
+      const reg = registerTool(tool);
+      const parsed = (reg.spec.inputSchema as z.ZodType).parse({
+        path: 'Folder/A.md',
+        exclude_folders: '["Templates"]',
+      });
+      expect((parsed as { exclude_folders: string[] }).exclude_folders).toEqual(['Templates']);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('rejects a non-array exclude_folders string with a shape-naming message', async () => {
+    const { tool, cleanup } = await buildToolWithVault();
+    try {
+      const reg = registerTool(tool);
+      const result = (reg.spec.inputSchema as z.ZodType).safeParse({
+        path: 'Folder/A.md',
+        exclude_folders: 'Templates',
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.map((i) => i.message).join(' ')).toMatch(/array/i);
+      }
     } finally {
       await cleanup();
     }
