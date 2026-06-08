@@ -11,7 +11,7 @@ import { normalizeVaultPath } from './paths.js';
  * `.md` (or any other extension) are returned unchanged.
  *
  * Tools that take a path referring to an *individual note* (create_note,
- * edit_note, set_property, read_property, remove_property, get_note_links)
+ * edit_note, set_property, remove_property, get_note_links)
  * must funnel paths through this helper so behavior is consistent across the
  * surface. Tools that take subtree prefixes (`path_prefix`,
  * `exclude_path_prefix`) and `read_notes`'s batch path list use

@@ -55,7 +55,7 @@ This vault is the user's personal knowledge base — planning notes, brainstorm 
 
 You don't know on your own how the user scopes notes for the current project — the same vault is typically connected to many, and different users organise differently (a tag, a folder, a frontmatter property like \`project\`, or a combination). The user's project-level instructions should name that scope and tell you how to query for it. If they don't, you have three ways forward, in order of preference:
 
-1. **Probe the vault structure** via \`get_vault_overview\` — a single-call snapshot of top-level folders with counts, top tags, frontmatter properties with inferred types, and the top-linked notes. Common conventions (a \`project\` frontmatter field, a \`Projects/\` folder, a recurring tag) usually surface immediately. Fall back to \`list_tags\`, \`list_properties\`, or exploratory \`query_notes\` only when the overview misses what you need.
+1. **Probe the vault structure** via \`get_vault_overview\` — a single-call snapshot of top-level folders with counts, top tags, frontmatter properties with inferred types, and the top-linked notes. Common conventions (a \`project\` frontmatter field, a \`Projects/\` folder, a recurring tag) usually surface immediately. Fall back to \`list_tags\` or exploratory \`query_notes\` only when the overview misses what you need.
 2. **Use \`search_notes\`** with the project name and key concepts as a fuzzy entry point — relevant material may exist under unrelated names.
 3. **Ask the user**, and the first time they save project-specific notes propose a scoping scheme so future sessions have an explicit entry point.
 
@@ -79,11 +79,11 @@ Use \`query_notes\` for multi-criteria questions that combine tags, frontmatter 
 
 ### Frontmatter properties
 
-Use \`set_property\`, \`read_property\`, \`remove_property\` when the user asks to read or modify a single YAML frontmatter field (status, due date, priority, etc.). Use \`list_properties\` to see what property names are already in use across the vault — useful before introducing a new one.
+Use \`set_property\`, \`remove_property\` when the user asks to set or remove a single YAML frontmatter field (status, due date, priority, etc.).
 
 \`set_property\` infers \`type\` from the JS value (string→text, number→number, boolean→checkbox, array→list). For \`date\`/\`datetime\` you MUST pass \`type\` explicitly AND use ISO format (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]\`) — non-ISO values are silently dropped by the CLI, so the tool rejects them up front. Existing values are overwritten without asking.
 
-If you need frontmatter for one or more notes, call \`read_notes\` with \`fields: ['frontmatter']\` — that single batch call replaces N \`read_property\` calls when you have a list of paths.
+To read a single frontmatter value, or the full frontmatter of one or more notes, call \`read_notes\` with \`fields: ['frontmatter']\` — a single batch call returns each note's frontmatter object with accurate types.
 
 ### Tags
 
@@ -134,7 +134,7 @@ For tag-driven questions ("which notes are tagged X?", "show me everything in #a
 const GET_VAULT_OVERVIEW_HINT = `\
 ## Orientation
 
-Before reaching for \`list_tags\`, \`list_properties\`, or exploratory \`query_notes\`, call \`get_vault_overview\` once at the start of a session. It returns the top-level folder layout with counts, the top tags, frontmatter properties with inferred types, the total note count, and the top 10 notes by inbound wikilinks — enough to orient yourself in a single call. The same payload is available as the MCP resource \`vault://overview\` for clients that auto-load resources.`;
+Before reaching for \`list_tags\` or exploratory \`query_notes\`, call \`get_vault_overview\` once at the start of a session. It returns the top-level folder layout with counts, the top tags, frontmatter properties with inferred types, the total note count, and the top 10 notes by inbound wikilinks — enough to orient yourself in a single call. The same payload is available as the MCP resource \`vault://overview\` for clients that auto-load resources.`;
 
 export async function buildServerInstructions(registry: IVaultRegistry): Promise<string> {
   let result = STATIC_SERVER_INSTRUCTIONS;
@@ -145,7 +145,7 @@ export async function buildServerInstructions(registry: IVaultRegistry): Promise
       .names()
       .map((n) => `"${n}"`)
       .join(', ');
-    result += `\n\n## Multi-vault mode\n\nThis server is registered with multiple vaults: ${names}. Every tool accepts an optional \`vault\` parameter. For broad recall, \`search_notes\`, \`query_notes\`, \`get_vault_overview\`, \`list_tags\`, and \`list_properties\` fan out across all vaults when \`vault\` is omitted; other tools (reads of specific paths, writes, single-vault diagnostics) require an explicit \`vault\` — omitting it returns \`VAULT_REQUIRED\`. Fan-out responses include \`results_by_vault\`, \`skipped_vaults\` (vaults pre-filtered out, e.g. missing semantic index), and \`failed_vaults\` (per-vault runtime errors with \`{ code, message, details? }\`) — a single failed vault does not abort the whole call. Path-shaped parameters (\`path\`, \`paths\`, \`path_prefix\`) remain vault-relative; vault identity is always carried by \`vault\`.`;
+    result += `\n\n## Multi-vault mode\n\nThis server is registered with multiple vaults: ${names}. Every tool accepts an optional \`vault\` parameter. For broad recall, \`search_notes\`, \`query_notes\`, \`get_vault_overview\`, and \`list_tags\` fan out across all vaults when \`vault\` is omitted; other tools (reads of specific paths, writes, single-vault diagnostics) require an explicit \`vault\` — omitting it returns \`VAULT_REQUIRED\`. Fan-out responses include \`results_by_vault\`, \`skipped_vaults\` (vaults pre-filtered out, e.g. missing semantic index), and \`failed_vaults\` (per-vault runtime errors with \`{ code, message, details? }\`) — a single failed vault does not abort the whole call. Path-shaped parameters (\`path\`, \`paths\`, \`path_prefix\`) remain vault-relative; vault identity is always carried by \`vault\`.`;
   }
 
   for (const entry of registry.list()) {

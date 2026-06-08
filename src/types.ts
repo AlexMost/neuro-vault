@@ -5,7 +5,6 @@ export type {
   SearchNotesInput,
   GetSimilarNotesInput,
   FindDuplicatesInput,
-  ToolStats,
   ToolHandlerDependencies,
   ToolHandlerErrorCode,
   ToolHandlers,

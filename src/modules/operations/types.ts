@@ -82,19 +82,12 @@ export interface SetPropertyToolInput {
   type?: 'text' | 'list' | 'number' | 'checkbox' | 'date' | 'datetime';
 }
 
-export interface ReadPropertyToolInput {
-  name?: string;
-  path?: string;
-  key: string;
-}
-
 export interface RemovePropertyToolInput {
   name?: string;
   path?: string;
   key: string;
 }
 
-export type ListPropertiesToolInput = Record<string, never>;
 export type ListTagsToolInput = Record<string, never>;
 
 export interface OperationsToolHandlers {
@@ -113,10 +106,6 @@ export interface OperationsToolHandlers {
     }>;
   }>;
   setProperty(input: SetPropertyToolInput): Promise<{ ok: true }>;
-  readProperty(
-    input: ReadPropertyToolInput,
-  ): Promise<{ value: string | number | boolean | string[] | number[] }>;
   removeProperty(input: RemovePropertyToolInput): Promise<{ ok: true }>;
-  listProperties(input: ListPropertiesToolInput): Promise<Array<{ name: string; count: number }>>;
   listTags(input: ListTagsToolInput): Promise<Array<{ name: string; count: number }>>;
 }
