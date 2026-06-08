@@ -84,7 +84,7 @@ tasks where the project's own artifacts are the source of truth.
 
 The agent will use that filter as the entry point whenever project context beyond the working directory might matter.
 
-**No dedicated scope yet?** Skip the snippet for now. The agent will probe the vault structure (`list_tags`, `list_properties`, exploratory `query_notes`) and fall back to `search_notes` for fuzzy recall. Add the snippet above once you settle on a scoping scheme.
+**No dedicated scope yet?** Skip the snippet for now. The agent will probe the vault structure (`list_tags`, exploratory `query_notes`) and fall back to `search_notes` for fuzzy recall. Add the snippet above once you settle on a scoping scheme.
 
 **Working inside the vault itself?** The snippet is for _external_ projects connecting to the vault. When the agent operates directly inside the vault directory (vault dev, vault maintenance, plugin work), it has filesystem access plus the MCP tools and does not need a project scope — the whole vault is in scope by definition.
 

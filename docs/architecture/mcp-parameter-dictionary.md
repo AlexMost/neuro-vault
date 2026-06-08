@@ -6,22 +6,22 @@ The cross-tool naming contract for the server's MCP tools. The rationale — why
 
 One concept = one parameter name across every tool the server exposes. New tools must follow this dictionary for any concept listed here; renames cost a major version.
 
-| Concept                                     | Param                 | Used by                                                                                                     |
-| ------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Vault-relative POSIX path                   | `path`                | `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`, `get_similar_notes`         |
-| Vault-relative POSIX path list              | `paths`               | `read_notes`                                                                                                |
-| Vault-relative POSIX path subtree (or list) | `path_prefix`         | `query_notes`, `search_notes` (inside `filter`)                                                             |
-| Subtrees to exclude (string or list)        | `exclude_path_prefix` | `query_notes`, `search_notes` (inside `filter`)                                                             |
-| Wikilink-style note identifier              | `name`                | `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`                              |
-| Frontmatter property key                    | `key`                 | `set_property`, `read_property`, `remove_property`                                                          |
-| Semantic search query                       | `query`               | `search_notes`                                                                                              |
+| Concept                                     | Param                 | Used by                                                                            |
+| ------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------- |
+| Vault-relative POSIX path                   | `path`                | `create_note`, `edit_note`, `set_property`, `remove_property`, `get_similar_notes` |
+| Vault-relative POSIX path list              | `paths`               | `read_notes`                                                                       |
+| Vault-relative POSIX path subtree (or list) | `path_prefix`         | `query_notes`, `search_notes` (inside `filter`)                                    |
+| Subtrees to exclude (string or list)        | `exclude_path_prefix` | `query_notes`, `search_notes` (inside `filter`)                                    |
+| Wikilink-style note identifier              | `name`                | `create_note`, `edit_note`, `set_property`, `remove_property`                      |
+| Frontmatter property key                    | `key`                 | `set_property`, `remove_property`                                                  |
+| Semantic search query                       | `query`               | `search_notes`                                                                     |
 | Structured query filter (MongoDB)           | `filter`              | `query_notes` (also accepts `filters` as an alias — canonical name unchanged, no version bump per ADR-0005) |
 
 ## Rules
 
 `name` vs `path` (note identifier): tools that take both for the same concept require **exactly one** — both or neither produces `INVALID_ARGUMENT`. `read_notes` is paths-only (batch reads from disk); to read by wikilink, resolve to a path first via `search_notes` or another path-producing tool.
 
-`.md` auto-append: when the target is an _individual note_, `.md` is appended if the final path segment has no extension (`Tasks/Foo` → `Tasks/Foo.md`). This applies to `create_note`, `edit_note`, `set_property`, `read_property`, `remove_property`, `get_note_links`, and `get_similar_notes`. Subtree-prefix uses (`path_prefix`, `exclude_path_prefix`) and `read_notes` paths do not auto-append.
+`.md` auto-append: when the target is an _individual note_, `.md` is appended if the final path segment has no extension (`Tasks/Foo` → `Tasks/Foo.md`). This applies to `create_note`, `edit_note`, `set_property`, `remove_property`, `get_note_links`, and `get_similar_notes`. Subtree-prefix uses (`path_prefix`, `exclude_path_prefix`) and `read_notes` paths do not auto-append.
 
 ## Tool-local parameters not in the dictionary
 

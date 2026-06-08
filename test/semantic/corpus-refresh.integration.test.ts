@@ -104,16 +104,28 @@ describe('corpus refresh through semantic tools', () => {
       { embeddingServiceFactory: () => fakeEmbed },
     );
 
-    const statsTool = findTool(semantic.tools, 'get_stats');
-    // handler returns CallToolResult; the structured data lives in structuredContent.
-    const beforeResult = await statsTool.handler({});
-    expect(beforeResult.structuredContent).toMatchObject({ totalNotes: 1 });
+    // find_duplicates snapshots the corpus on each call. With a single seeded
+    // note there are no pairs; after a second identical-embedding note is added
+    // the refreshed snapshot yields exactly one near-duplicate pair.
+    const dupTool = findTool(semantic.tools, 'find_duplicates');
+    // handler returns CallToolResult; an array payload is carried as JSON text
+    // (structuredContent is only set for plain-object payloads).
+    const parsePairs = (
+      result: Awaited<ReturnType<typeof dupTool.handler>>,
+    ): Array<{ note_a: string; note_b: string }> => {
+      const block = result.content[0];
+      if (block.type !== 'text') throw new Error('expected text content block');
+      return JSON.parse(block.text) as Array<{ note_a: string; note_b: string }>;
+    };
 
-    // Add a second note + shard.
+    const beforeResult = await dupTool.handler({});
+    expect(parsePairs(beforeResult)).toEqual([]);
+
+    // Add a second note + shard with an identical embedding.
     await fs.writeFile(path.join(vaultPath, 'B.md'), '# B\n');
     await fs.writeFile(path.join(smartEnvPath, 'b.ajson'), ajsonSource('B.md', [1, 0, 0]));
 
-    const afterResult = await statsTool.handler({});
-    expect(afterResult.structuredContent).toMatchObject({ totalNotes: 2 });
+    const afterResult = await dupTool.handler({});
+    expect(parsePairs(afterResult)).toMatchObject([{ note_a: 'A.md', note_b: 'B.md' }]);
   });
 });

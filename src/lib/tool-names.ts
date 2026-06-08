@@ -13,9 +13,7 @@ export const TOOL_NAMES = [
   'edit_note',
   'read_daily',
   'set_property',
-  'read_property',
   'remove_property',
-  'list_properties',
   'list_tags',
   'get_note_links',
   'get_vault_overview',
@@ -23,7 +21,6 @@ export const TOOL_NAMES = [
   'search_notes',
   'get_similar_notes',
   'find_duplicates',
-  'get_stats',
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];

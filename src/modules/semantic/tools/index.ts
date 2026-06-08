@@ -4,7 +4,6 @@ import type { EmbeddingProvider, SearchEngine } from '../types.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { buildFindDuplicatesTool } from './find-duplicates.js';
 import { buildGetSimilarNotesTool } from './get-similar-notes.js';
-import { buildGetStatsTool } from './get-stats.js';
 import { buildSearchNotesTool } from './search-notes.js';
 
 export interface ISemanticToolDeps {
@@ -19,6 +18,5 @@ export function buildSemanticTools(deps: ISemanticToolDeps): ToolRegistration[] 
     registerTool(buildSearchNotesTool(deps)),
     registerTool(buildGetSimilarNotesTool(deps)),
     registerTool(buildFindDuplicatesTool(deps)),
-    registerTool(buildGetStatsTool(deps)),
   ];
 }

@@ -11,8 +11,6 @@ import type {
   NoteIdentifier,
   PropertyListEntry,
   PropertyValue,
-  ReadPropertyInput,
-  ReadPropertyResult,
   RemovePropertyInput,
   SetPropertyInput,
   TagListEntry,
@@ -141,14 +139,6 @@ export class ObsidianCLIProvider implements VaultProvider {
     await this.runCommand('property:set', tokens);
   }
 
-  async readProperty(input: ReadPropertyInput): Promise<ReadPropertyResult> {
-    const { stdout } = await this.runCommand('property:read', [
-      `name=${input.name}`,
-      identifierToArg(input.identifier),
-    ]);
-    return { value: this.parsePropertyValue(stdout) };
-  }
-
   async removeProperty(input: RemovePropertyInput): Promise<void> {
     try {
       await this.runCommand('property:remove', [
@@ -171,24 +161,6 @@ export class ObsidianCLIProvider implements VaultProvider {
   async listTags(): Promise<TagListEntry[]> {
     const { stdout } = await this.runCommand('tags', ['counts', 'sort=count', 'format=json']);
     return this.parseJsonList<TagListEntry>(stdout, 'tags');
-  }
-
-  // Best-effort: a `text` property whose value happens to be "true" or "42"
-  // will be coerced to boolean/number. Callers needing ground-truth types should
-  // use read_notes and parse frontmatter directly.
-  private parsePropertyValue(stdout: string): PropertyValue {
-    const trimmed = stdout.trim();
-    if (trimmed === '') return '';
-    if (trimmed === 'true') return true;
-    if (trimmed === 'false') return false;
-    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-    if (trimmed.includes('\n')) {
-      return trimmed
-        .split('\n')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-    }
-    return trimmed;
   }
 
   private serializeValue(value: PropertyValue): string {
@@ -281,10 +253,7 @@ export class ObsidianCLIProvider implements VaultProvider {
       );
     }
 
-    if (
-      (command === 'property:read' || command === 'property:remove') &&
-      /property not found|not set/i.test(stderr)
-    ) {
+    if (command === 'property:remove' && /property not found|not set/i.test(stderr)) {
       return new ToolHandlerError(
         'PROPERTY_NOT_FOUND',
         `Property not found: ${stderr.trim() || 'unknown'}`,

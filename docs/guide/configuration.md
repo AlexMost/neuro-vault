@@ -29,7 +29,7 @@ Follow the Neuro Vault MCP server instructions for routing between semantic sear
 
 **First startup is slow** — the embedding model (~40 MB) is downloading. Subsequent starts use the cached model.
 
-**Search returns nothing** — try lowering the threshold: `threshold: 0.3`. Also check that `get_stats` shows a non-zero `totalNotes`.
+**Search returns nothing** — try lowering the threshold: `threshold: 0.3`. Also confirm the Smart Connections corpus path is configured and that `search_notes` returns results for a broad query like `search_notes({ query: "note", threshold: 0.3 })`.
 
 **Vault operations fail with `CLI_NOT_FOUND` / `CLI_UNAVAILABLE`** — the `obsidian` CLI isn't on `PATH`, or Obsidian isn't running. Install the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli), or pass `--obsidian-cli /absolute/path/to/obsidian`.
 
