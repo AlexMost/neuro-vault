@@ -27,8 +27,8 @@ is rejected rather than silently accepted.
 
 #### Scenario: Stringified array for a plain-array parameter is parsed
 
-- **WHEN** `read_notes` is called with `{ paths: 'Note.md', fields: '["frontmatter"]' }`
-- **THEN** `fields` SHALL be parsed to `['frontmatter']` and the call SHALL succeed
+- **WHEN** `get_similar_notes` is called with `{ path: 'Note.md', exclude_folders: '["Templates"]' }`
+- **THEN** `exclude_folders` SHALL be parsed to `['Templates']` and the call SHALL proceed
 
 #### Scenario: Stringified object for an object parameter is parsed
 
@@ -37,8 +37,8 @@ is rejected rather than silently accepted.
 
 #### Scenario: A bad element in a parsed array is still rejected
 
-- **WHEN** `read_notes` is called with `{ paths: 'Note.md', fields: '["bogus"]' }`
-- **THEN** the call SHALL fail with a `INVALID_PARAMS` error identifying the invalid `fields` element, not silently accept it
+- **WHEN** a parameter whose array elements are constrained (e.g. an enum) receives a stringified array containing an element that violates the element schema
+- **THEN** the call SHALL fail with a `INVALID_PARAMS` error identifying the invalid element, not silently accept it (parsing the outer string does not bypass element validation)
 
 ### Requirement: Unrecoverable arguments fail with a shape-naming message
 
@@ -49,7 +49,7 @@ validation message.
 
 #### Scenario: Non-JSON string for an array parameter names the expected shape
 
-- **WHEN** `read_notes` is called with `{ paths: 'Note.md', fields: 'frontmatter' }` (a non-JSON, non-array string)
+- **WHEN** `get_similar_notes` is called with `{ path: 'Note.md', exclude_folders: 'Templates' }` (a non-JSON, non-array string)
 - **THEN** the call SHALL fail with `INVALID_PARAMS` and a message naming the expected array shape
 
 #### Scenario: JSON string that resolves to a non-array names the expected shape

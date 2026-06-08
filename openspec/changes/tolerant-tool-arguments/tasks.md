@@ -9,7 +9,7 @@
 
 - [x] 2.1 In `src/lib/input-coercion.ts`, add a plain-`ZodArray` branch to `coerceFieldValue`: when the value is a string, `JSON.parse` it; an array result is returned (element validation stays with zod); a parse failure or non-array result throws a `CoerceError` naming the expected shape (e.g. "expected array or JSON-string of one, got …"). Leave the existing `string | string[]` union branch unchanged.
 - [x] 2.2 Tests in `test/lib/input-coercion.test.ts`: a stringified array parses; a JSON-string resolving to a non-array throws a shape-naming `CoerceError`; a non-JSON string throws a shape-naming `CoerceError`; the existing union (`paths`) and object (`filter`) coercion still pass (regression guard).
-- [x] 2.3 Tests at the tool boundary in `test/operations/tools/read-notes.test.ts`: `read_notes({ fields: '["frontmatter"]' })` parses and succeeds; `read_notes({ fields: '["bogus"]' })` fails with `INVALID_PARAMS` identifying the invalid element; a non-array `fields` string fails with a shape-naming message (covers spec requirements "Stringified collections are parsed when unambiguous" and "Unrecoverable arguments fail with a shape-naming message").
+- [x] 2.3 Tests at the tool boundary in `test/semantic/tools/get-similar-notes.test.ts`: a stringified `exclude_folders` array parses at the registration boundary; a non-array `exclude_folders` string fails with a shape-naming message (covers spec requirements "Stringified collections are parsed when unambiguous" and "Unrecoverable arguments fail with a shape-naming message"). _Re-pointed from the originally-planned `read_notes.fields` after the `read-notes-preview` merge removed that param — see the implementation note below and the retrospective._
 
 ## 3. Documentation & verification
 

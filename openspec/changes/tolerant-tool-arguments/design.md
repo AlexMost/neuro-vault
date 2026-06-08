@@ -87,6 +87,14 @@ maintainer (contract owner; ADR-0005 governs parameter naming).
 - **Alternatives considered**: special-casing only enum/string arrays — rejected as
   arbitrary; the JSON-parse-then-let-zod-validate approach generalizes cleanly to any
   array element type.
+- **Post-merge adjustment**: this change was authored against a `read_notes` that had a
+  plain-array `fields` parameter (the original demonstration vehicle). While in flight,
+  the sibling `read-notes-preview` change (merged to `main` as PR #47) replaced
+  `read_notes` `fields` with a `content` enum. The branch was rebased onto that `main`
+  and the boundary demonstration re-pointed to `get_similar_notes` `exclude_folders`
+  (`z.array(z.string()).optional()`), another top-level plain-array parameter on the
+  same `registerTool` coercion path. The coercion branch itself is unchanged and
+  generic; only the test/spec vehicle moved. See the retrospective for details.
 
 ### D5: Document `filters` as an accepted alias, no version bump
 
