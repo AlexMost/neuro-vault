@@ -5,7 +5,13 @@ dist/
 coverage/
 *.tsbuildinfo
 .DS_Store
-.claude
+
+# .claude/ holds local settings (ignored) alongside committed workflow assets:
+# the opsx slash commands and the OpenSpec routing rules are tracked so the
+# spec workflow is reproducible on a fresh clone; settings stay local.
+.claude/*
+!.claude/commands/
+!.claude/rules/
 
 # Implementation plans are local working artifacts; specs are the canonical record.
 docs/superpowers/plans/
