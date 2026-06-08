@@ -40,6 +40,7 @@
     "spec": "openspec",
     "prepare": "git config core.hooksPath .githooks",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "format:changelog": "prettier --write CHANGELOG.md",
@@ -59,6 +60,8 @@
     "yargs": "^18.0.0"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
     "@eslint/js": "^9.25.0",
     "@fission-ai/openspec": "^1.4.1",
     "@types/node": "^22.15.18",
