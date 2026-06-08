@@ -42,13 +42,7 @@ Tools that take both `name` and `path` for the same concept (note identifier) re
 
 ## Documentation layout
 
-Five locations, each answering one question (full map + routing: [`docs/workflow.md`](docs/workflow.md)):
-
-- `docs/adr/` — **WHY**: architecture decisions and their rationale. Immutable once Accepted; supersede via Status. Index: [`docs/adr/INDEX.md`](docs/adr/INDEX.md).
-- `docs/architecture/` — **HOW**: one file per concept, describing the **current** state (living, not historical). A reader should understand any one concept by reading exactly one file.
-- `openspec/specs/<capability>/` — **WHAT (current)**: the living, normative contract per capability (SHALL + scenarios). Updated on `openspec archive`.
-- `openspec/changes/<name>/` — **WHAT (proposed)**: a change in flight — spec delta + brainstorm/design/tasks/plan/verify/retrospective.
-- `docs/superpowers/specs/` (committed) + `docs/superpowers/plans/` (gitignored) — **FROZEN** pre-OpenSpec record. Readable, not migrated; nothing new is added (see [`docs/superpowers/specs/README.md`](docs/superpowers/specs/README.md)).
+Where each kind of doc lives and which question it answers — the five-location map (WHY / HOW / WHAT-now / WHAT-proposed / frozen) — is in [`docs/README.md`](docs/README.md).
 
 ## Workflow
 
