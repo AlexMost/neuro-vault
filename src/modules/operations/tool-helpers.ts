@@ -1,7 +1,7 @@
 import { ToolHandlerError } from '../../lib/tool-response.js';
 import type {
+  ContentMode,
   OperationsErrorCode,
-  ReadNotesField,
   ReadNotesToolInput,
   SetPropertyToolInput,
 } from './types.js';
@@ -125,12 +125,11 @@ export function normalizePath(raw: string): string {
   }
 }
 
-export const VALID_FIELDS: readonly ReadNotesField[] = ['frontmatter', 'content'];
-export const DEFAULT_FIELDS: ReadNotesField[] = ['frontmatter', 'content'];
+export const VALID_CONTENT_MODES: readonly ContentMode[] = ['full', 'preview', 'frontmatter'];
 
 export function validateReadNotesInput(input: ReadNotesToolInput): {
   paths: string[];
-  fields: ReadNotesField[];
+  content: ContentMode | undefined;
 } {
   let paths: string[];
   if (typeof input.paths === 'string') {
@@ -146,22 +145,16 @@ export function validateReadNotesInput(input: ReadNotesToolInput): {
   if (paths.length < 1 || paths.length > 50) {
     throw invalidArgument('paths must contain between 1 and 50 entries', 'paths');
   }
-  let fields: ReadNotesField[];
-  if (input.fields === undefined) {
-    fields = DEFAULT_FIELDS;
+  let content: ContentMode | undefined;
+  if (input.content === undefined) {
+    content = undefined;
+  } else if (VALID_CONTENT_MODES.includes(input.content)) {
+    content = input.content;
   } else {
-    if (!Array.isArray(input.fields) || input.fields.length === 0) {
-      throw invalidArgument('fields must be a non-empty array when provided', 'fields');
-    }
-    for (const f of input.fields) {
-      if (!VALID_FIELDS.includes(f)) {
-        throw invalidArgument(
-          `unknown field '${String(f)}'; allowed: ${VALID_FIELDS.join(', ')}`,
-          'fields',
-        );
-      }
-    }
-    fields = input.fields;
+    throw invalidArgument(
+      `unknown content mode '${String(input.content)}'; allowed: ${VALID_CONTENT_MODES.join(', ')}`,
+      'content',
+    );
   }
-  return { paths, fields };
+  return { paths, content };
 }

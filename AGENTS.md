@@ -8,10 +8,10 @@ This is a cheat sheet for working in the repo — deeper docs live under `docs/`
 
 - `npm test` — full vitest suite.
 - `npm run lint` — eslint.
-- `npx tsc --noEmit` — typecheck. **Authoritative** — a `tsup` build alone is not enough (`isolatedModules`).
+- `npm run typecheck` (`tsc --noEmit`) — typecheck. **Authoritative** — a `tsup` build alone is not enough (`isolatedModules`).
 - `npm run build` (tsup) · `npm run dev` (`tsx src/cli.ts`) · `npm run spec` (OpenSpec CLI).
 
-`npm test`, `npm run lint`, and `npx tsc --noEmit` must all pass before any commit or PR.
+`npm test`, `npm run lint`, and `npm run typecheck` must all pass before any commit or PR. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) enforces these plus `npm run build` and commitlint on every push to `main` and PR.
 
 ## Workflow
 
