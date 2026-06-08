@@ -6,7 +6,7 @@ Most write paths shell out to the `obsidian` CLI, so changes are picked up immed
 
 `read_notes` reads files directly from the vault directory, making it fast and available even when Obsidian is not running.
 
-**Per-vault failures.** When a fan-out tool (`list_tags`, `list_properties`, `query_notes`, `get_vault_overview`, `search_notes`) is called in multi-vault mode without an explicit `vault:`, per-vault failures do not abort the whole call. Successful vaults still return their results in `results_by_vault`; the failing vault appears in a `failed_vaults` array with its error code, message, and details. `failed_vaults` is always present (empty array when nothing failed). See [docs/architecture/fan-out.md](../architecture/fan-out.md) for the full contract.
+**Per-vault failures.** When a fan-out tool (`list_tags`, `query_notes`, `get_vault_overview`, `search_notes`) is called in multi-vault mode without an explicit `vault:`, per-vault failures do not abort the whole call. Successful vaults still return their results in `results_by_vault`; the failing vault appears in a `failed_vaults` array with its error code, message, and details. `failed_vaults` is always present (empty array when nothing failed). See [docs/architecture/fan-out.md](../architecture/fan-out.md) for the full contract.
 
 Most vault-operations tools accept `name` (wikilink-style) **or** `path` (vault-relative POSIX) for note identification — exactly one of the two. Both or neither yields `INVALID_ARGUMENT`. `read_notes` accepts `paths` only (no wikilink resolution); if you only have a note name, resolve it to a path with `search_notes` first.
 
@@ -57,7 +57,7 @@ Returns `{ results, count, errors }` where each item in `results` is either a su
 
 Each item comes back with frontmatter and a preview body. When `truncated: true`, re-read the individual note with `content: 'full'` before citing or editing it.
 
-**Example — read frontmatter only across a list of paths (replaces N `read_property` calls when you need several keys):**
+**Example — read frontmatter only across a list of paths (`content: 'frontmatter'` whenever you need metadata across several notes):**
 
 ```json
 {
@@ -216,7 +216,7 @@ The trade-off vs the old `append_daily` is one extra read per write. In an agent
 
 ## Properties & Tags
 
-Inspect and modify frontmatter without paying the token cost of reading whole notes. Properties and tags are the metadata an LLM agent checks dozens of times per session — _"what's the `status` on Quarterly review?"_, _"mark this task done"_, _"how many notes tagged #mcp?"_. Short request, precise answer, no full-note reads.
+Modify frontmatter and explore tag/property metadata without paying the token cost of reading whole notes. Properties and tags are the metadata an LLM agent updates dozens of times per session — _"mark this task done"_, _"what properties does this vault use?"_, _"how many notes tagged #mcp?"_. Short request, precise answer, no full-note reads. To **read** a specific property value, use [`read_notes`](#read_notes) with `fields: ['frontmatter']`.
 
 ### `set_property`
 
@@ -234,20 +234,6 @@ set_property({
 
 Returns `{ ok: true }`. Existing properties are overwritten. Paths without an extension are treated as `.md` notes.
 
-### `read_property`
-
-Read a single frontmatter property value. Use `read_notes` with `content: 'frontmatter'` if you need the full frontmatter or accurate type information across one or more notes.
-
-```typescript
-read_property({
-  name?: string,
-  path?: string,
-  key: string,
-})
-```
-
-Returns `{ value }`. Paths without an extension are treated as `.md` notes.
-
 ### `remove_property`
 
 Remove a frontmatter property. Idempotent — calling it on an absent property succeeds.
@@ -262,12 +248,6 @@ remove_property({
 
 Returns `{ ok: true }`. Paths without an extension are treated as `.md` notes.
 
-### `list_properties`
-
-List all frontmatter properties used across the vault, sorted by occurrence count desc. Useful for understanding the vault's metadata ontology before calling `set_property`.
-
-Returns `[{ name, count }, ...]`.
-
 ### `list_tags`
 
 List all tags used across the vault, sorted by occurrence count desc.
@@ -278,7 +258,7 @@ To list the notes that carry a specific tag, use [`query_notes`](#query_notes) w
 
 ### `get_vault_overview`
 
-Get a snapshot of your vault's structure in one call. Returns top-level folder counts, top tags, frontmatter properties, the total note count, and the top 10 notes by inbound wikilinks. This is the recommended first call for an agent orienting itself in a vault it has not seen before — one call replaces the older `list_tags + list_properties + exploratory query_notes` ritual.
+Get a snapshot of your vault's structure in one call. Returns top-level folder counts, top tags, frontmatter properties, the total note count, and the top 10 notes by inbound wikilinks. This is the recommended first call for an agent orienting itself in a vault it has not seen before — one call replaces the older `list_tags` + exploratory `query_notes` ritual.
 
 The same payload is available as the MCP resource `vault://overview`; clients that auto-load resources will pull it without an explicit tool call.
 

@@ -22,7 +22,6 @@ function makeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
     createNote: vi.fn().mockResolvedValue({ path: '' }),
     readDaily: vi.fn().mockResolvedValue({ path: '', frontmatter: null, content: '' }),
     setProperty: vi.fn().mockResolvedValue(undefined),
-    readProperty: vi.fn().mockResolvedValue({ value: '' }),
     removeProperty: vi.fn().mockResolvedValue(undefined),
     listProperties: vi.fn().mockResolvedValue([]),
     listTags: vi.fn().mockResolvedValue([]),

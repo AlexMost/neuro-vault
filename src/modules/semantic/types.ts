@@ -104,13 +104,6 @@ export interface FindDuplicatesInput {
   threshold?: number;
 }
 
-export interface ToolStats {
-  totalNotes: number;
-  totalBlocks: number;
-  embeddingDimension: number;
-  modelKey: string;
-}
-
 export type PathExistsCheck = (vaultRelativePath: string) => Promise<boolean>;
 
 export interface ToolHandlerDependencies {
@@ -136,5 +129,4 @@ export interface ToolHandlers {
   searchNotes(input: SearchNotesInput): Promise<RetrievalOutput | MultiRetrievalOutput>;
   getSimilarNotes(input: GetSimilarNotesInput): Promise<SimilarNoteResult[]>;
   findDuplicates(input?: FindDuplicatesInput): Promise<DuplicatePair[]>;
-  getStats(): Promise<ToolStats>;
 }

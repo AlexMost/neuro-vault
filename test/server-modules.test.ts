@@ -98,9 +98,9 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
       // The tool is registered, but calling it on the missing-corpus vault
       // returns a structured error (not a thrown exception — MCP wraps ToolHandlerError).
-      const getStats = server.toolHandlers.get('get_stats');
-      expect(getStats).toBeDefined();
-      const result = await getStats!({});
+      const findDuplicates = server.toolHandlers.get('find_duplicates');
+      expect(findDuplicates).toBeDefined();
+      const result = await findDuplicates!({});
       expect(result).toMatchObject({
         isError: true,
         structuredContent: { code: 'SEMANTIC_INDEX_NOT_FOUND' },
@@ -148,9 +148,9 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
       // The tool is registered, but calling it on the empty-corpus vault
       // returns a structured error (not a thrown exception — MCP wraps ToolHandlerError).
-      const getStats = server.toolHandlers.get('get_stats');
-      expect(getStats).toBeDefined();
-      const result = await getStats!({});
+      const findDuplicates = server.toolHandlers.get('find_duplicates');
+      expect(findDuplicates).toBeDefined();
+      const result = await findDuplicates!({});
       expect(result).toMatchObject({
         isError: true,
         structuredContent: { code: 'SEMANTIC_INDEX_NOT_FOUND' },
@@ -160,7 +160,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('registers twelve operations tools when --no-semantic is passed', async () => {
+  it('registers eleven operations tools when --no-semantic is passed', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
@@ -170,7 +170,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
       createNote: vi.fn(),
       readDaily: vi.fn(),
       setProperty: vi.fn().mockResolvedValue(undefined),
-      readProperty: vi.fn().mockResolvedValue({ value: '' }),
       removeProperty: vi.fn().mockResolvedValue(undefined),
       listProperties: vi.fn().mockResolvedValue([]),
       listTags: vi.fn().mockResolvedValue([]),
@@ -197,20 +196,23 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'edit_note',
         'read_daily',
         'set_property',
-        'read_property',
         'remove_property',
-        'list_properties',
         'list_tags',
         'get_note_links',
         'get_vault_overview',
       ]);
+      // Removed tools are absent; the unique low-use tool we keep is present.
+      expect(server.registeredToolNames).not.toContain('read_property');
+      expect(server.registeredToolNames).not.toContain('list_properties');
+      expect(server.registeredToolNames).toContain('remove_property');
+      expect(server.registeredToolNames).toContain('get_note_links');
       expect(server.registeredResourceUris).toEqual(['vault://overview']);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
   });
 
-  it('registers sixteen tools (4 semantic + 12 operations) when both modules are enabled', async () => {
+  it('registers thirteen tools (3 semantic + 10 operations) when both modules are enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
@@ -220,7 +222,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
       createNote: vi.fn(),
       readDaily: vi.fn(),
       setProperty: vi.fn().mockResolvedValue(undefined),
-      readProperty: vi.fn().mockResolvedValue({ value: '' }),
       removeProperty: vi.fn().mockResolvedValue(undefined),
       listProperties: vi.fn().mockResolvedValue([]),
       listTags: vi.fn().mockResolvedValue([]),
@@ -251,20 +252,25 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'search_notes',
         'get_similar_notes',
         'find_duplicates',
-        'get_stats',
         'read_notes',
         'query_notes',
         'create_note',
         'edit_note',
         'read_daily',
         'set_property',
-        'read_property',
         'remove_property',
-        'list_properties',
         'list_tags',
         'get_note_links',
         'get_vault_overview',
       ]);
+      // The three removed tools must be gone from the combined surface.
+      expect(server.registeredToolNames).not.toContain('read_property');
+      expect(server.registeredToolNames).not.toContain('list_properties');
+      expect(server.registeredToolNames).not.toContain('get_stats');
+      // The three unique low-use tools we keep stay registered.
+      expect(server.registeredToolNames).toContain('find_duplicates');
+      expect(server.registeredToolNames).toContain('get_note_links');
+      expect(server.registeredToolNames).toContain('remove_property');
       expect(server.registeredResourceUris).toEqual(['vault://overview']);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });

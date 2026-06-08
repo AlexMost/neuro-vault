@@ -291,7 +291,7 @@ describe('operations.readNotes handler', () => {
     expect(parsed['content']).toBeUndefined();
   });
 
-  it("replaces 8 read_property calls: 8 paths with content: 'frontmatter'", async () => {
+  it("returns frontmatter only for 8 paths with content: 'frontmatter'", async () => {
     const items = Array.from({ length: 8 }, (_, i) => ({
       path: `t${i}.md`,
       frontmatter: { status: i % 2 === 0 ? 'done' : 'todo' },

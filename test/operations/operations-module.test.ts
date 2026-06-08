@@ -13,7 +13,6 @@ describe('createOperationsModule', () => {
       createNote: vi.fn(),
       readDaily: vi.fn(),
       setProperty: vi.fn(),
-      readProperty: vi.fn(),
       removeProperty: vi.fn(),
       listProperties: vi.fn(),
       listTags: vi.fn(),
@@ -58,7 +57,7 @@ describe('createOperationsModule', () => {
 
     const result = createOperationsModule(fakeRegistry, { binaryPath: '/usr/bin/obsidian' });
 
-    expect(result.tools.length).toBe(12);
+    expect(result.tools.length).toBe(10);
     expect(result.resources.length).toBe(1);
   });
 });

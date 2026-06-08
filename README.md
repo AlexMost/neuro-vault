@@ -142,7 +142,7 @@ Two vaults cannot share the same directory basename — the basename doubles as 
 With multiple vaults registered:
 
 - **Every tool** accepts an optional `vault: "<name>"` parameter to target a specific vault.
-- **`search_notes`, `query_notes`, `get_vault_overview`, `list_tags`, and `list_properties`** fan out across all registered vaults when `vault` is omitted. The response shape switches to `results_by_vault: [...]` (one entry per vault) plus `skipped_vaults: [...]` for any vault the tool could not reach and `failed_vaults: [...]` for per-vault runtime errors (`{ vault, error: { code, message, details? } }`). A single failed vault does not abort the whole call.
+- **`search_notes`, `query_notes`, `get_vault_overview`, and `list_tags`** fan out across all registered vaults when `vault` is omitted. The response shape switches to `results_by_vault: [...]` (one entry per vault) plus `skipped_vaults: [...]` for any vault the tool could not reach and `failed_vaults: [...]` for per-vault runtime errors (`{ vault, error: { code, message, details? } }`). A single failed vault does not abort the whole call.
 - **All other tools** (writes, reads of specific paths, single-vault diagnostics) require an explicit `vault` in multi-vault mode. Omitting it returns `VAULT_REQUIRED`.
 - **Semantic fan-out** silently skips vaults whose Smart Connections `.smart-env/multi/` index is unavailable. Targeting such a vault explicitly with `vault: "<name>"` returns `SEMANTIC_INDEX_NOT_FOUND`.
 
@@ -163,7 +163,7 @@ For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./
 User guide lives in [`docs/guide/`](./docs/guide/README.md):
 
 - [Installation](./docs/guide/installation.md)
-- [Semantic Search](./docs/guide/semantic-search.md) — `search_notes`, `get_similar_notes`, `find_duplicates`, `get_stats`
+- [Semantic Search](./docs/guide/semantic-search.md) — `search_notes`, `get_similar_notes`, `find_duplicates`
 - [Vault Operations](./docs/guide/vault-operations.md) — note CRUD, daily notes, properties, tags, structured queries (`query_notes`), vault snapshot (`get_vault_overview`)
 - [Routing Between Tools](./docs/guide/routing.md)
 - [Configuration](./docs/guide/configuration.md) — CLI args, troubleshooting, limitations, development

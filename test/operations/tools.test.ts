@@ -11,7 +11,6 @@ const noopProvider = {
   createNote: vi.fn(),
   readDaily: vi.fn(),
   setProperty: vi.fn(),
-  readProperty: vi.fn(),
   removeProperty: vi.fn(),
   listProperties: vi.fn(),
   listTags: vi.fn(),
@@ -59,7 +58,7 @@ const noopDeps = {
 };
 
 describe('buildOperationsTools', () => {
-  it('returns 12 registrations with the expected names', () => {
+  it('returns 10 registrations with the expected names', () => {
     const tools = buildOperationsTools(noopDeps);
     expect(tools.map((t) => t.name)).toEqual([
       'read_notes',
@@ -68,9 +67,7 @@ describe('buildOperationsTools', () => {
       'edit_note',
       'read_daily',
       'set_property',
-      'read_property',
       'remove_property',
-      'list_properties',
       'list_tags',
       'get_note_links',
       'get_vault_overview',
@@ -92,12 +89,6 @@ describe('buildOperationsTools', () => {
     const createNote = tools.find((t) => t.name === 'create_note')!;
     expect(createNote.spec.description).toMatch(/ask the user/i);
     expect(createNote.spec.description).toMatch(/overwrite/i);
-  });
-
-  it('list_properties description mentions sorting by occurrence count', () => {
-    const tools = buildOperationsTools(noopDeps);
-    const listProperties = tools.find((t) => t.name === 'list_properties')!;
-    expect(listProperties.spec.description).toMatch(/sorted by occurrence count desc/i);
   });
 
   it('remove_property description states idempotency', () => {

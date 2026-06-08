@@ -236,15 +236,9 @@ find_duplicates({
 
 Returns `[{ note_a, note_b, similarity }, ...]` sorted by similarity descending.
 
-## `get_stats`
-
-Report loaded corpus statistics.
-
-Returns `{ totalNotes, totalBlocks, embeddingDimension, modelKey }`.
-
 ## Tips
 
 - Short keyword queries (1–4 words) outperform full sentences — embeddings are short-context.
 - Lower the threshold to 0.3 if nothing comes back; the server already auto-retries at 0.3 when an initial search returns empty.
 - For multilingual vaults, include translations in a single `query` array rather than calling repeatedly.
-- After semantic search finds a relevant note, switch to structural tools (`read_notes`, `read_property`) for exact retrieval. See [Routing](./routing.md).
+- After semantic search finds a relevant note, switch to structural tools (`read_notes`, `query_notes`) for exact retrieval. See [Routing](./routing.md).
