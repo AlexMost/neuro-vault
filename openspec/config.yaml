@@ -22,7 +22,8 @@ context: |
   - External processes run via `execFile` + an args array, never `exec` with an
     interpolated string. See ADR-0004.
   - One concept = one parameter name across every tool (the MCP parameter
-    dictionary in AGENTS.md). A rename costs a major version. See ADR-0005.
+    dictionary, docs/architecture/mcp-parameter-dictionary.md). A rename costs a
+    major version. See ADR-0005.
   - Semantic search consumes a read-only Smart Connections corpus; the server
     never writes embeddings (ADR-0006). Vault writes go through obsidian-cli;
     batch note reads go straight to disk (ADR-0007).
@@ -46,7 +47,7 @@ rules:
   design:
     - 'If the change captures a load-bearing architectural decision (new runtime/library dependency, change to a core invariant from a prior ADR, a close call between competing approaches), propose creating a numbered `docs/adr/NNNN-<slug>.md` entry alongside design.md. Number = next available in `docs/adr/`. Ask the user before writing.'
     - 'If the change adds or alters an architectural concept, create/update the matching `docs/architecture/<concept>.md` in the same change — a reader must be able to understand any one concept by reading exactly one file.'
-    - 'If the change adds, renames, or repurposes a tool parameter, conform to the MCP parameter dictionary in AGENTS.md (one concept = one parameter name). A rename is a breaking change and costs a major version — surface it explicitly.'
+    - 'If the change adds, renames, or repurposes a tool parameter, conform to the MCP parameter dictionary (docs/architecture/mcp-parameter-dictionary.md): one concept = one parameter name. A rename is a breaking change and costs a major version — surface it explicitly.'
   tasks:
     - 'Structure tasks as TDD-friendly units: each small enough that "failing test → implementation → refactor" is a reasonable per-task cadence (vitest; prefer DI over module-level mocks).'
     - 'Explicitly mark which task groups are parallel-safe (no shared state, no sequential deps) vs sequential. The apply phase uses subagent-driven-development, which reads this to decide when to dispatch parallel subagents.'

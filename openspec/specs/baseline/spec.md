@@ -42,7 +42,7 @@ External command invocations SHALL use `execFile` with an arguments array, never
 
 ### Requirement: Tool parameters follow one dictionary
 
-A concept SHALL use exactly one parameter name across every tool (the MCP parameter dictionary in AGENTS.md). Renaming a shared parameter is a breaking change.
+A concept SHALL use exactly one parameter name across every tool (the MCP parameter dictionary, `docs/architecture/mcp-parameter-dictionary.md`). Renaming a shared parameter is a breaking change.
 
 #### Scenario: A shared concept reuses its dictionary name
 
@@ -53,4 +53,4 @@ A concept SHALL use exactly one parameter name across every tool (the MCP parame
 
 - Behavior of any individual capability or tool — each has (or will get) its own `openspec/specs/<capability>/spec.md`.
 - Semantic-search ranking, retrieval policy, the wikilink graph, multi-vault routing — described in `docs/architecture/`, specced per change as they evolve.
-- The release process and documentation layout — recorded as conventions in AGENTS.md and ADRs, not as capability requirements.
+- The release process and documentation layout — recorded in `docs/workflow.md`, `docs/README.md`, and ADRs, not as capability requirements.

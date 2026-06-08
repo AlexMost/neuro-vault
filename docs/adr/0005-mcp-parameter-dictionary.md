@@ -9,7 +9,7 @@ The server exposes 16 tools across two modules. Several share concepts: a vault-
 
 ## Decision
 
-Maintain a single **MCP parameter dictionary** (the table in AGENTS.md): one concept maps to exactly one parameter name across every tool — `path`, `paths`, `path_prefix`, `exclude_path_prefix`, `name`, `key`, `query`, `filter`. New tools must reuse the dictionary name for any concept it already covers. A rename is a breaking change and **costs a major version**.
+Maintain a single **MCP parameter dictionary** (the table in [`docs/architecture/mcp-parameter-dictionary.md`](../architecture/mcp-parameter-dictionary.md)): one concept maps to exactly one parameter name across every tool — `path`, `paths`, `path_prefix`, `exclude_path_prefix`, `name`, `key`, `query`, `filter`. New tools must reuse the dictionary name for any concept it already covers. A rename is a breaking change and **costs a major version**.
 
 ## Consequences
 

@@ -43,4 +43,4 @@ Use the `/opsx:*` commands so the schema's artifact instructions inject at each 
 
 ## After merge: release
 
-On `main` only, after the PR merges: `npm run release` (commit-and-tag-version, Conventional Commits) → version bump + CHANGELOG + tag → `git push --follow-tags`. Never release from a feature branch. Detail in [AGENTS.md](../AGENTS.md).
+On `main` only, after the PR merges: `npm run release` (commit-and-tag-version, Conventional Commits) → version bump + CHANGELOG + tag → `git push --follow-tags`. Never release from a feature branch — the version bump and tag must land on `main` so the tag points at the merge commit and the changelog stays linear. `npm publish` only after explicit user approval.

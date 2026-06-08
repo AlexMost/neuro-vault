@@ -7,6 +7,7 @@ These are living documents. Update the relevant file in the same change that alt
 ## Concepts
 
 - [mcp-server-shape.md](./mcp-server-shape.md) — how MCP tools are registered, response/error wrappers, server instructions
+- [mcp-parameter-dictionary.md](./mcp-parameter-dictionary.md) — the cross-tool parameter naming contract (one concept = one name)
 - [smart-connections-corpus.md](./smart-connections-corpus.md) — `.ajson` loader, in-memory model, no watchers
 - [retrieval-policy.md](./retrieval-policy.md) — search modes, threshold fallback, expansion
 - [embedding-pipeline.md](./embedding-pipeline.md) — `@xenova/transformers` lazy initialization and value normalization
