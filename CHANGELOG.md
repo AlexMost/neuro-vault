@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [11.0.0](https://github.com/AlexMost/neuro-vault/compare/v10.1.0...v11.0.0) (2026-06-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* **tools:** removed MCP tools read_property (use read_notes
+fields:['frontmatter']), list_properties (use get_vault_overview), and
+get_stats (corpus diagnostics no longer exposed via MCP).
+* **read-notes:** the `read_notes` `fields` parameter is removed; callers
+must use the new `content` mode (`full` | `preview` | `frontmatter`).
+
+### Features
+
+* **coercion:** parse stringified arrays for plain-array params ([cdf0df9](https://github.com/AlexMost/neuro-vault/commit/cdf0df9b47622bdd85c914da36a66b9364411404))
+* **query_notes:** accept `filters` as an alias of `filter` ([35735e8](https://github.com/AlexMost/neuro-vault/commit/35735e87c4220cd561cee454448346e2a54e0afc))
+* **read-notes:** add pure previewBody truncation helper ([760a648](https://github.com/AlexMost/neuro-vault/commit/760a64839f4f19828f52a384031a36c70a9eb04e))
+* **read-notes:** replace fields with content full|preview|frontmatter mode ([6b53d24](https://github.com/AlexMost/neuro-vault/commit/6b53d24f6189725cdd3b2fd630753280f0c5e88d))
+* **tools:** remove read_property, list_properties, get_stats ([907b70d](https://github.com/AlexMost/neuro-vault/commit/907b70db2f26b625bc14f811248b28b6e82cf44b))
+
 ## [10.1.0](https://github.com/AlexMost/neuro-vault/compare/v10.0.2...v10.1.0) (2026-06-01)
 
 ### Features
