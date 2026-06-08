@@ -50,5 +50,5 @@ Parallel-safe vs sequential (read by the apply phase's subagent-driven-developme
 
 ## 6. Quality gates + release
 
-- [ ] 6.1 Run `npm test`, `npm run lint`, `npx tsc --noEmit` — all green. The vitest count drops by exactly the three deleted suites (intentional, per the baseline spec); `tsc --noEmit` confirms no stale `ToolName`/registration/type references survive.
-- [ ] 6.2 Confirm the breaking change is captured for a major release: a `BREAKING CHANGE:` footer listing the three removed tools and their replacement (or accepted loss), so `npm run release` on `main` cuts **11.0.0**.
+- [x] 6.1 Run `npm test`, `npm run lint`, `npx tsc --noEmit` — all green. The vitest count drops by exactly the three deleted suites (intentional, per the baseline spec); `tsc --noEmit` confirms no stale `ToolName`/registration/type references survive.
+- [x] 6.2 Confirm the breaking change is captured for a major release: a `BREAKING CHANGE:` footer listing the three removed tools and their replacement (or accepted loss), so `npm run release` on `main` cuts **11.0.0**.
