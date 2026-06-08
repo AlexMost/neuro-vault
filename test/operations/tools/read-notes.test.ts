@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildReadNotesTool } from '../../../src/modules/operations/tools/read-notes.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import { makeReader } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
@@ -193,5 +194,42 @@ describe('operations.readNotes handler', () => {
     expect(result.count).toBe(8);
     expect(result.errors).toBe(0);
     expect(result.results.every((r) => 'frontmatter' in r && !('content' in r))).toBe(true);
+  });
+});
+
+describe('operations.readNotes — coercion via registerTool', () => {
+  it('parses a stringified fields array', async () => {
+    const reader = makeReader({
+      readNotes: async () => [{ path: 'Folder/n.md', frontmatter: { a: 1 }, content: 'body' }],
+    });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
+    const reg = registerTool(buildReadNotesTool({ registry }));
+
+    const result = await reg.handler({ paths: 'Folder/n.md', fields: '["frontmatter"]' });
+
+    expect(result.isError).not.toBe(true);
+  });
+
+  it('rejects a bad element in a parsed fields array with INVALID_PARAMS', async () => {
+    // Coercion parses the array; zod rejects the bad enum element before the
+    // handler ever reads — so the reader stub is intentionally unused here.
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader() }]);
+    const reg = registerTool(buildReadNotesTool({ registry }));
+
+    const result = await reg.handler({ paths: 'Folder/n.md', fields: '["bogus"]' });
+
+    expect(result.isError).toBe(true);
+    expect((result.structuredContent as { code: string }).code).toBe('INVALID_PARAMS');
+  });
+
+  it('names the expected shape for a non-array fields string', async () => {
+    // Coercion fails before the handler reads — reader stub intentionally unused.
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader() }]);
+    const reg = registerTool(buildReadNotesTool({ registry }));
+
+    const result = await reg.handler({ paths: 'Folder/n.md', fields: 'frontmatter' });
+
+    expect(result.isError).toBe(true);
+    expect((result.structuredContent as { message: string }).message).toMatch(/array/i);
   });
 });

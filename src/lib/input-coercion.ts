@@ -117,6 +117,23 @@ export function coerceFieldValue(schema: ZodTypeAny, value: unknown, fieldName =
     return value;
   }
 
+  if (inner instanceof z.ZodArray && typeof value === 'string') {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(value) as unknown;
+    } catch {
+      throw new CoerceError(
+        fieldName,
+        `expected array or JSON-string of one, failed to parse: ${JSON.stringify(value)}`,
+      );
+    }
+    if (Array.isArray(parsed)) return parsed;
+    throw new CoerceError(
+      fieldName,
+      `expected array, parsed JSON resolved to ${describeJsonShape(parsed)}`,
+    );
+  }
+
   return value;
 }
 
