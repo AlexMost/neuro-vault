@@ -194,7 +194,7 @@ The trade-off vs the old `append_daily` is one extra read per write. In an agent
 
 ## Properties & Tags
 
-Inspect and modify frontmatter without paying the token cost of reading whole notes. Properties and tags are the metadata an LLM agent checks dozens of times per session — _"what's the `status` on Quarterly review?"_, _"mark this task done"_, _"how many notes tagged #mcp?"_. Short request, precise answer, no full-note reads.
+Modify frontmatter and explore tag/property metadata without paying the token cost of reading whole notes. Properties and tags are the metadata an LLM agent updates dozens of times per session — _"mark this task done"_, _"what properties does this vault use?"_, _"how many notes tagged #mcp?"_. Short request, precise answer, no full-note reads. To **read** a specific property value, use [`read_notes`](#read_notes) with `fields: ['frontmatter']`.
 
 ### `set_property`
 

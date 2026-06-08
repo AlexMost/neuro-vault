@@ -13,7 +13,7 @@ This is a cheat sheet for working in the repo — deeper docs live under `docs/`
 
 `npm test`, `npm run lint`, and `npx tsc --noEmit` must all pass before any commit or PR.
 
-## Rarely-used tools — when to reach for them
+## Rarely-used tools
 
 These tools are kept because each is the sole path to its capability; reach for them deliberately:
 
