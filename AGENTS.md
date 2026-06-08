@@ -1,6 +1,8 @@
 # Agent Working Notes
 
-A cheat sheet for this repo. Deeper docs live under `docs/` (map: [`docs/README.md`](docs/README.md)); decisions in [`docs/adr/`](docs/adr/INDEX.md). This file does not repeat them.
+`neuro-vault-mcp` is an MCP server that gives an AI assistant two things over an Obsidian vault: semantic search (over a Smart Connections embedding corpus) and direct vault operations (notes, properties, tags, structured queries). TypeScript, ESM, Node ≥ 20.
+
+This is a cheat sheet for working in the repo — deeper docs live under `docs/` (map: [`docs/README.md`](docs/README.md)), decisions in [`docs/adr/`](docs/adr/INDEX.md). It does not repeat them.
 
 ## Run / check
 

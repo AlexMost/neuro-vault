@@ -1,20 +1,6 @@
 # Workflow
 
-How a change gets from "idea" to "merged" in this repo, and where each artifact lives. neuro-vault runs **spec-driven development on two axes** — a _spec_ axis (living capability contracts) and a _process_ axis (plan / TDD / review per change) — bridged by the `superpowers-bridge` OpenSpec schema. See [ADR-0001](adr/0001-spec-workflow-openspec-superpowers.md).
-
-## Five locations, five questions
-
-Each location answers exactly one question, so they don't compete:
-
-| Location                                       | Axis                | Question                                                             | Lifecycle                                     |
-| ---------------------------------------------- | ------------------- | -------------------------------------------------------------------- | --------------------------------------------- |
-| [`docs/adr/`](adr/INDEX.md)                    | **WHY**             | why it is this way, could it have been otherwise                     | immutable once Accepted; supersede via Status |
-| [`docs/architecture/`](architecture/README.md) | **HOW**             | how a concept works now (mechanism)                                  | living — updated with the code                |
-| `openspec/specs/<cap>/`                        | **WHAT (current)**  | what a capability must do (SHALL / Scenario)                         | updated on `openspec archive`                 |
-| `openspec/changes/<name>/`                     | **WHAT (proposed)** | this change's spec delta + brainstorm/design/tasks/plan/verify/retro | temporary → archived                          |
-| `docs/superpowers/specs/` + `plans/`           | history             | pre-OpenSpec design+decision records                                 | **FROZEN** — do not add to it                 |
-
-The ~30 specs under `docs/superpowers/specs/` historically blended all three live axes into one document. Going forward that blend is split: WHY → an ADR, HOW → an architecture doc, WHAT → an OpenSpec spec, with per-change reasoning in `openspec/changes/<name>/design.md`.
+How a change gets from "idea" to "merged" in this repo. neuro-vault runs **spec-driven development on two axes** — a _spec_ axis (living capability contracts) and a _process_ axis (plan / TDD / review per change) — bridged by the `superpowers-bridge` OpenSpec schema ([ADR-0001](adr/0001-spec-workflow-openspec-superpowers.md)). For **where each kind of artifact lives** — the WHY / HOW / WHAT-now / WHAT-proposed / frozen map — see [`README.md`](README.md).
 
 ## Does this change need an opsx change, or a direct PR?
 
