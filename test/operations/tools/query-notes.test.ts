@@ -178,6 +178,24 @@ describe('operations.queryNotes handler', () => {
     expect((result.structuredContent as { count: number }).count).toBe(1);
   });
 
+  it('accepts `filters` through the SDK pre-validation gate (required `filter`)', async () => {
+    const reader = makeReader({
+      scan: vi.fn().mockResolvedValue(['Notes/a.md']),
+      readNotes: vi
+        .fn()
+        .mockResolvedValue([{ path: 'Notes/a.md', frontmatter: { type: 'idea' }, content: '' }]),
+    });
+    const registry = makeTestRegistry([{ name: 'v', reader, graph: makeGraph() }]);
+    const reg = registerTool(buildQueryNotesTool({ registry }));
+    // The SDK parses raw args against spec.inputSchema before calling the handler:
+    const parsed = (reg.spec.inputSchema as import('zod').ZodType).parse({
+      filters: { 'frontmatter.type': { $eq: 'idea' } },
+    });
+    const result = await reg.handler(parsed);
+    expect(result.isError).not.toBe(true);
+    expect((result.structuredContent as { count: number }).count).toBe(1);
+  });
+
   it('explicit vault: returns flat { results, count, truncated } shape (regression)', async () => {
     const readerA = makeReader({
       scan: vi.fn().mockResolvedValue(['a.md']),

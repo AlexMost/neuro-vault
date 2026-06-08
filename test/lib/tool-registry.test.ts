@@ -212,7 +212,7 @@ describe('registerTool', () => {
 
 describe('registerTool — inputAliases', () => {
   const schema = z.object({
-    filter: z.record(z.string(), z.unknown()).optional(),
+    filter: z.record(z.string(), z.unknown()),
   });
   function makeTool(): ITool<{ filter?: Record<string, unknown> }, { received: unknown }> {
     return {
@@ -257,9 +257,28 @@ describe('registerTool — inputAliases', () => {
     const reg = registerTool(makeTool());
     // The SDK parses raw args against spec.inputSchema BEFORE our handler; it must
     // not reject `filters` there, or the alias rename never runs.
+    // With `filter` required, this is a REAL test: before the fix, SDK gate rejects
+    // `{ filters }` because the required canonical `filter` is missing.
     expect((reg.spec.inputSchema as z.ZodObject).safeParse({ filters: { a: 1 } }).success).toBe(
       true,
     );
+  });
+
+  it('alias-only call passes the SDK gate and reaches the handler renamed', async () => {
+    const reg = registerTool(makeTool());
+    // mimic the SDK: pre-validate raw args against spec.inputSchema, then call the handler
+    const parsed = (reg.spec.inputSchema as z.ZodType).parse({ filters: { a: 1 } });
+    const result = await reg.handler(parsed);
+    expect(result.isError).not.toBe(true);
+    expect((result.structuredContent as { received: unknown }).received).toEqual({ a: 1 });
+  });
+
+  it('a call with neither alias nor canonical is still rejected by the handler gate', async () => {
+    const reg = registerTool(makeTool());
+    const parsed = (reg.spec.inputSchema as z.ZodType).parse({}); // SDK gate now allows missing canonical
+    const result = await reg.handler(parsed);
+    expect(result.isError).toBe(true);
+    expect((result.structuredContent as { code: string }).code).toBe('INVALID_PARAMS');
   });
 
   it('advertises a ZodObject for a tool without aliases (unchanged behavior)', () => {

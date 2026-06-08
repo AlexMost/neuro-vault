@@ -42,8 +42,7 @@ function formatZodError(error: ZodError): {
 
 export function registerTool<I, O>(tool: ITool<I, O>): ToolRegistration {
   const coercingSchema = wrapSchemaWithCoercion(tool.inputSchema, tool.inputAliases);
-  const hasAliases = !!tool.inputAliases && Object.keys(tool.inputAliases).length > 0;
-  const advertisedSchema = wrapSchemaForSdk(tool.inputSchema, hasAliases);
+  const advertisedSchema = wrapSchemaForSdk(tool.inputSchema, tool.inputAliases);
   return {
     name: tool.name,
     spec: {
