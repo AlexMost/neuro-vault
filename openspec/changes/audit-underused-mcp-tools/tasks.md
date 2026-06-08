@@ -14,21 +14,21 @@ Parallel-safe vs sequential (read by the apply phase's subagent-driven-developme
 
 ## 1. Remove the three tools + registrations + dead code
 
-- [ ] 1.1 Delete `src/modules/operations/tools/read-property.ts`. Then grep `readProperty` across `src/`: if `provider.readProperty` / the `ReadProperty*` types in `src/modules/operations/{types.ts,obsidian-cli-provider.ts}` and `src/lib/obsidian/vault-provider.ts` have **no remaining caller**, remove them too; if anything else still calls `readProperty`, keep the provider method and remove only the tool.
-- [ ] 1.2 Delete `src/modules/operations/tools/list-properties.ts`. **Keep** `provider.listProperties()` (in `vault-provider.ts` / `obsidian-cli-provider.ts`) — `src/lib/obsidian/vault-overview.ts` calls it. Do **not** change `get-vault-overview.ts` or `vault-overview.ts`.
-- [ ] 1.3 Delete `src/modules/semantic/tools/get-stats.ts`. Remove the now-dead `ToolStats` type and `readEmbeddingDimension` from `src/modules/semantic/types.ts` (and wherever `ToolStats` is referenced). **Keep** `modelKey` — `find_duplicates` still uses it.
-- [ ] 1.4 In `src/lib/tool-names.ts`: remove `'read_property'`, `'list_properties'`, and `'get_stats'` from `TOOL_NAMES` (the `ToolName` union narrows automatically — `tsc --noEmit` will then flag every stale reference).
-- [ ] 1.5 Remove the three tools from their module barrels: `read_property` + `list_properties` from `src/modules/operations/tools/index.ts`, and `get_stats` from `src/modules/semantic/tools/index.ts` (drop the `build*Tool` imports and their entries in the constructed tool arrays). Confirm `src/server.ts` registers tools via these barrels (no direct `build*Tool` calls to remove there).
+- [x] 1.1 Delete `src/modules/operations/tools/read-property.ts`. Then grep `readProperty` across `src/`: if `provider.readProperty` / the `ReadProperty*` types in `src/modules/operations/{types.ts,obsidian-cli-provider.ts}` and `src/lib/obsidian/vault-provider.ts` have **no remaining caller**, remove them too; if anything else still calls `readProperty`, keep the provider method and remove only the tool.
+- [x] 1.2 Delete `src/modules/operations/tools/list-properties.ts`. **Keep** `provider.listProperties()` (in `vault-provider.ts` / `obsidian-cli-provider.ts`) — `src/lib/obsidian/vault-overview.ts` calls it. Do **not** change `get-vault-overview.ts` or `vault-overview.ts`.
+- [x] 1.3 Delete `src/modules/semantic/tools/get-stats.ts`. Remove the now-dead `ToolStats` type and `readEmbeddingDimension` from `src/modules/semantic/types.ts` (and wherever `ToolStats` is referenced). **Keep** `modelKey` — `find_duplicates` still uses it.
+- [x] 1.4 In `src/lib/tool-names.ts`: remove `'read_property'`, `'list_properties'`, and `'get_stats'` from `TOOL_NAMES` (the `ToolName` union narrows automatically — `tsc --noEmit` will then flag every stale reference).
+- [x] 1.5 Remove the three tools from their module barrels: `read_property` + `list_properties` from `src/modules/operations/tools/index.ts`, and `get_stats` from `src/modules/semantic/tools/index.ts` (drop the `build*Tool` imports and their entries in the constructed tool arrays). Confirm `src/server.ts` registers tools via these barrels (no direct `build*Tool` calls to remove there).
 
 ## 2. Server external-agent instructions string (`src/server.ts`)
 
-- [ ] 2.1 Scrub the instructions-template string in `src/server.ts` of the removed tools: drop `list_properties` from the "fall back to … or exploratory `query_notes`" line (~58) and the `get_vault_overview` orientation line (~137); in the properties paragraph (~82) drop `read_property` from the `set_property, read_property, remove_property` list and delete the "Use `list_properties` to see what property names are in use" sentence; reword the "replaces N `read_property` calls" note (~86) to describe `read_notes({ fields: ['frontmatter'] })` on its own; remove `list_properties` from the multi-vault fan-out list (~148). Leave `set_property`/`remove_property`/`list_tags`/`get_vault_overview` intact.
+- [x] 2.1 Scrub the instructions-template string in `src/server.ts` of the removed tools: drop `list_properties` from the "fall back to … or exploratory `query_notes`" line (~58) and the `get_vault_overview` orientation line (~137); in the properties paragraph (~82) drop `read_property` from the `set_property, read_property, remove_property` list and delete the "Use `list_properties` to see what property names are in use" sentence; reword the "replaces N `read_property` calls" note (~86) to describe `read_notes({ fields: ['frontmatter'] })` on its own; remove `list_properties` from the multi-vault fan-out list (~148). Leave `set_property`/`remove_property`/`list_tags`/`get_vault_overview` intact.
 
 ## 3. Tests (delete removed-tool suites; fix shared references)
 
-- [ ] 3.1 Delete `test/operations/tools/read-property.test.ts`, `test/operations/tools/list-properties.test.ts`, and `test/semantic/tools/get-stats.test.ts`.
-- [ ] 3.2 Update shared/server tests that reference the removed tools: `test/server-modules.test.ts`, `test/server-instructions.test.ts` (assertions on the instructions string from Group 2), `test/operations/tools.test.ts`, `test/operations/tools/_helpers.ts`, `test/operations/operations-module.test.ts`, `test/operations/obsidian-cli-provider.test.ts`, and `test/lib/obsidian/vault-overview.test.ts` — remove expectations for the three tool names while keeping the `provider.listProperties` coverage that backs `get_vault_overview`. Add/adjust an assertion that the registered tool set no longer contains `read_property` / `list_properties` / `get_stats` (covers the spec's "not registered" scenarios).
-- [ ] 3.3 Grep `read_property|list_properties|get_stats` across `test/` and confirm no stale reference remains.
+- [x] 3.1 Delete `test/operations/tools/read-property.test.ts`, `test/operations/tools/list-properties.test.ts`, and `test/semantic/tools/get-stats.test.ts`.
+- [x] 3.2 Update shared/server tests that reference the removed tools: `test/server-modules.test.ts`, `test/server-instructions.test.ts` (assertions on the instructions string from Group 2), `test/operations/tools.test.ts`, `test/operations/tools/_helpers.ts`, `test/operations/operations-module.test.ts`, `test/operations/obsidian-cli-provider.test.ts`, and `test/lib/obsidian/vault-overview.test.ts` — remove expectations for the three tool names while keeping the `provider.listProperties` coverage that backs `get_vault_overview`. Add/adjust an assertion that the registered tool set no longer contains `read_property` / `list_properties` / `get_stats` (covers the spec's "not registered" scenarios).
+- [x] 3.3 Grep `read_property|list_properties|get_stats` across `test/` and confirm no stale reference remains.
 
 ## 4. Live docs + parameter dictionary (frozen `docs/superpowers/` untouched)
 
@@ -46,7 +46,7 @@ Parallel-safe vs sequential (read by the apply phase's subagent-driven-developme
 
 ## 5. AGENTS.md keep-nudges for the three retained tools
 
-- [ ] 5.1 Add a short "when to reach for it" note to `AGENTS.md` for the kept-but-rare tools: `get_note_links` (traverse the wikilink graph around a note — incoming/outgoing edges, incl. unresolved targets), `find_duplicates` (vault-wide all-pairs near-duplicate sweep for hygiene), `remove_property` (the only way to *delete* a frontmatter key). Keep it terse and in the cheat-sheet style.
+- [ ] 5.1 Add a short "when to reach for it" note to `AGENTS.md` for the kept-but-rare tools: `get_note_links` (traverse the wikilink graph around a note — incoming/outgoing edges, incl. unresolved targets), `find_duplicates` (vault-wide all-pairs near-duplicate sweep for hygiene), `remove_property` (the only way to _delete_ a frontmatter key). Keep it terse and in the cheat-sheet style.
 
 ## 6. Quality gates + release
 

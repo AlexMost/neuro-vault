@@ -13,18 +13,21 @@ before the surface grows further.
 The audit (source read + live overlap check per candidate) found **3 of 6 removable, 3 unique**.
 
 **Remove `read_property`** (operations)
+
 - From: a tool returning `{ vault, value }` for one frontmatter key, by `name` or `path`.
 - To: removed. "Status of X" is served by `read_notes(fields: ['frontmatter'])` / `query_notes`.
 - Reason: verified — `read_notes` returns the same value (inside full frontmatter) with no data loss; the only sliver lost is ergonomic (value-only return + `name` lookup).
 - Impact: **Breaking** (tool removed). `docs/guide/routing.md` currently recommends it → re-routed.
 
 **Remove `list_properties`** (operations)
+
 - From: a tool listing **all** `{ name, type, count }` frontmatter keys.
 - To: removed. `get_vault_overview` returns the same `properties` list (capped at top-30).
 - Reason: verified — overview covers every key with `count ≥ 1` that matters; the dropped tail is rare/`count: 0` noise. User chose remove-outright over lifting the cap. `provider.listProperties()` stays (overview calls it); `get_vault_overview` is unchanged.
 - Impact: **Breaking** (tool removed); full-tail enumeration via MCP is given up.
 
 **Remove `get_stats`** (semantic)
+
 - From: a tool reporting embedding-corpus stats (`totalNotes`, `totalBlocks`, `embeddingDimension`, `modelKey`).
 - To: removed.
 - Reason: **deliberate surface cut, not deduplication** — nothing else reports these fields, and they cannot fold into the operations-module `get_vault_overview` without coupling. The user accepted losing in-MCP corpus diagnostics (diagnosable outside the server).
