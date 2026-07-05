@@ -186,8 +186,7 @@ Full decision log: `brainstorm.md` (Q1–Q12). Origin: vault task note
 
 ## Open Questions
 
-- Parser pick: `mdast-util-from-markdown` vs `markdown-it` — decided at impl
-  by a spike over real vault notes (requirement fixed: block nodes + line
-  positions).
+- Parser pick: `mdast-util-from-markdown` — confirmed by spike (block nodes +
+  line positions verified; markdown-it fallback not needed).
 - Exact cap numbers (5/10 global, 3/note, 150-char window) — tuned at impl;
   spec states them as defaults, not invariants.
