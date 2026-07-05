@@ -112,7 +112,7 @@ export function rankNotes(opts: {
     (a, b) =>
       compareCandidates(a, b) ||
       opts.getBacklinkCount(b.path) - opts.getBacklinkCount(a.path) ||
-      a.path.localeCompare(b.path),
+      (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
   );
 
   const truncated = candidates.length > opts.noteCap;
