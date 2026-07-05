@@ -9,6 +9,7 @@ import {
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
+import type { IFanOutResult } from '../../../src/lib/fan-out.js';
 import {
   makeTestRegistry,
   makeFakeGraph,
@@ -193,6 +194,54 @@ describe('search_notes input axes (SDK gate)', () => {
       expect(out).not.toHaveProperty('results');
     } finally {
       await cleanup();
+    }
+  });
+});
+
+describe('multi-query and fan-out', () => {
+  it('multi-query annotates lexical items with matched_queries', async () => {
+    const { deps, cleanup } = await makeLexicalVault({
+      'Vector search.md': '',
+      'Векторний пошук.md': '',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['vector search', 'векторний пошук'],
+      })) as SearchNotesOutput;
+      expect(out.lexical_matches).toHaveLength(2);
+      const byPath = Object.fromEntries(
+        out.lexical_matches.map((m) => [m.path, m.matched_queries]),
+      );
+      expect(byPath['Vector search.md']).toEqual(['vector search']);
+      expect(byPath['Векторний пошук.md']).toEqual(['векторний пошук']);
+      expect((out as any).truncated).toBe(false);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('multi-vault fan-out wraps the hybrid shape per vault', async () => {
+    // build TWO lexical vaults and register both under one registry
+    const a = await makeLexicalVault({ 'пошук a.md': '' });
+    const b = await makeLexicalVault({ 'пошук b.md': '' }, { semantic: false });
+    const registry = makeTestRegistry([...a.deps.registry.list(), ...b.deps.registry.list()]);
+    // rename second entry to avoid the name collision
+    registry.list()[1]!.name = 'w';
+    try {
+      const tool = buildSearchNotesTool({ ...a.deps, registry });
+      const out = (await tool.handler({ query: 'пошук' })) as IFanOutResult<SearchNotesOutput>;
+      expect(out).toHaveProperty('results_by_vault');
+      expect(out.results_by_vault).toHaveLength(2);
+      for (const vaultResult of out.results_by_vault) {
+        // The fan-out envelope flattens per-vault fields alongside `vault`
+        // (results_by_vault: [{ vault, ...T }]), not nested under `.result`.
+        expect(vaultResult).toHaveProperty('semantic_matches');
+        expect(vaultResult).toHaveProperty('lexical_matches');
+      }
+    } finally {
+      await a.cleanup();
+      await b.cleanup();
     }
   });
 });
