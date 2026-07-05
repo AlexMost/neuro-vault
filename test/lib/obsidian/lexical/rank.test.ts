@@ -135,6 +135,45 @@ describe('rankNotes', () => {
     for (const n of ranked) expect(n.matchedQueries).toHaveLength(1);
   });
 
+  it('a phrase split across a hard-wrapped line still matches as one body unit at the paragraph line range', () => {
+    const map = notes([['n.md', 'векторний\nпошук у vault\n']]);
+    const { notes: ranked } = rankNotes({
+      notes: map,
+      queries: ['векторний пошук'],
+      noteCap: 10,
+      perNoteCap: 3,
+      getBacklinkCount: noBacklinks,
+    });
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0]!.matches[0]).toMatchObject({ matched_in: 'body', lines: [1, 2] });
+  });
+
+  it('a heading-looking line inside a fenced code block matches as body, not heading', () => {
+    const map = notes([['n.md', '```\n# пошук\n```\n']]);
+    const { notes: ranked } = rankNotes({
+      notes: map,
+      queries: ['пошук'],
+      noteCap: 10,
+      perNoteCap: 3,
+      getBacklinkCount: noBacklinks,
+    });
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0]!.matches[0]!.matched_in).toBe('body');
+  });
+
+  it('inflected forms match by substring (heading пошуком matches query пошук)', () => {
+    const map = notes([['n.md', '# розмова про пошуком\n']]);
+    const { notes: ranked } = rankNotes({
+      notes: map,
+      queries: ['пошук'],
+      noteCap: 10,
+      perNoteCap: 3,
+      getBacklinkCount: noBacklinks,
+    });
+    expect(ranked).toHaveLength(1);
+    expect(ranked[0]!.matches[0]!.matched_in).toBe('heading');
+  });
+
   it('is deterministic: backlink desc then path asc as final tie-breaks', () => {
     const map = notes([
       ['b пошук тут.md', ''],

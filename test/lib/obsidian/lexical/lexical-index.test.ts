@@ -72,6 +72,16 @@ describe('LexicalIndex', () => {
     expect((await idx.search({ queries: ['пошук'], ...searchOpts })).notes).toHaveLength(0);
   });
 
+  it('ordering is reproducible: the same query run twice against an unchanged vault is byte-for-byte identical', async () => {
+    await write('Пошук.md', '');
+    await write('a пошук.md', 'пошук раз і пошук два.\n');
+    await write('b пошук.md', 'один пошук.\n');
+    const idx = makeIndex();
+    const first = await idx.search({ queries: ['пошук'], ...searchOpts });
+    const second = await idx.search({ queries: ['пошук'], ...searchOpts });
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+  });
+
   it('respects the allowed pre-filter set', async () => {
     await write('Tasks/a.md', 'пошук в tasks.\n');
     await write('Archive/b.md', 'пошук в archive.\n');

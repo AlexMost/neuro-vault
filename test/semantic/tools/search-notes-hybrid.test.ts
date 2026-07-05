@@ -1,60 +1,12 @@
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-
 import { describe, expect, it, vi } from 'vitest';
 
 import {
   buildSearchNotesTool,
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
-import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import type { IFanOutResult } from '../../../src/lib/fan-out.js';
-import {
-  makeTestRegistry,
-  makeFakeGraph,
-  makeFakeCorpusIndex,
-  makeSearchDeps,
-} from './_helpers.js';
-
-function makeMockEngine() {
-  return {
-    findNeighbors: vi.fn().mockReturnValue([]),
-    findBlockNeighbors: vi.fn().mockReturnValue([]),
-    findDuplicates: vi.fn().mockReturnValue([]),
-  };
-}
-
-async function makeLexicalVault(
-  files: Record<string, string>,
-  opts: { semantic: boolean } = { semantic: true },
-) {
-  const vaultRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'hybrid-'));
-  for (const [rel, content] of Object.entries(files)) {
-    const full = path.join(vaultRoot, rel);
-    await fs.mkdir(path.dirname(full), { recursive: true });
-    await fs.writeFile(full, content, 'utf8');
-  }
-  const registry = makeTestRegistry([
-    {
-      name: 'v',
-      path: vaultRoot,
-      smartEnvPath: path.join(vaultRoot, '.smart-env'),
-      reader: new FsVaultReader({ vaultRoot }),
-      corpus: opts.semantic ? makeFakeCorpusIndex(new Map()) : undefined,
-      graph: makeFakeGraph(),
-      listMatchingPaths: async () => new Set(Object.keys(files)),
-      semanticAvailable: opts.semantic,
-    },
-  ]);
-  const deps = {
-    registry,
-    embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
-    searchEngine: makeMockEngine(),
-    modelKey: 'k',
-  };
-  return { deps, cleanup: () => fs.rm(vaultRoot, { recursive: true, force: true }) };
-}
+import { makeSearchDeps, makeTestRegistry } from './_helpers.js';
+import { makeLexicalVault, makeMockEngine } from './_hybrid-helpers.js';
 
 describe('lexical leg orchestration', () => {
   it('hybrid returns lexical matches alongside (empty) semantic ones', async () => {
@@ -123,6 +75,51 @@ describe('lexical leg orchestration', () => {
       expect(out.lexical_matches.map((n) => n.path)).toEqual(['Tasks/a пошук.md']);
     } finally {
       await cleanup();
+    }
+  });
+
+  it('mode: "lexical" never touches the corpus loader even when a corpus IS available', async () => {
+    const notePath = 'Пошук note.md';
+    const sources = new Map([[notePath, { path: notePath, embedding: [1, 0], blocks: [] }]]);
+    // If the corpus loader (or the semantic leg) were invoked despite
+    // `mode: "lexical"`, this engine would surface a hit — proving the
+    // assertion below isn't vacuously true because the corpus is empty.
+    const engine = makeMockEngine();
+    engine.findNeighbors.mockReturnValue([{ path: notePath, similarity: 0.9 }]);
+    const { deps, cleanup } = await makeLexicalVault({ [notePath]: '' }, { sources, engine });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: 'пошук',
+        mode: 'lexical',
+      })) as SearchNotesOutput;
+      expect(out.semantic_matches).toEqual([]);
+      expect(out.lexical_matches).toHaveLength(1);
+      const corpus = deps.registry.list()[0]!.corpus!;
+      expect(corpus.snapshot).not.toHaveBeenCalled();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('effort "deep" gives the lexical leg its larger default cap in hybrid mode (no explicit limit)', async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 7; i++) files[`note-${i} пошук.md`] = '';
+    const { deps: quickDeps, cleanup: quickCleanup } = await makeLexicalVault(files);
+    const { deps: deepDeps, cleanup: deepCleanup } = await makeLexicalVault(files);
+    try {
+      const quickOut = (await buildSearchNotesTool(quickDeps).handler({
+        query: 'пошук',
+      })) as SearchNotesOutput; // effort defaults to "quick" -> cap 5
+      const deepOut = (await buildSearchNotesTool(deepDeps).handler({
+        query: 'пошук',
+        effort: 'deep',
+      })) as SearchNotesOutput; // cap 10, so all 7 notes fit
+      expect(quickOut.lexical_matches).toHaveLength(5);
+      expect(deepOut.lexical_matches).toHaveLength(7);
+    } finally {
+      await quickCleanup();
+      await deepCleanup();
     }
   });
 
