@@ -928,7 +928,7 @@ describe('searchNotes', () => {
     }
   });
 
-  it('fan-out skips vaults without semantic index and surfaces them in skipped_vaults', async () => {
+  it('fan-out includes a vault without a semantic index, contributing lexical matches only', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
@@ -979,15 +979,22 @@ describe('searchNotes', () => {
         });
 
         const result = (await tool.handler({ query: 'q', threshold: 0 })) as {
-          results_by_vault: Array<{ vault: string; semantic_matches: Array<{ path: string }> }>;
+          results_by_vault: Array<{
+            vault: string;
+            semantic_matches: Array<{ path: string }>;
+            lexical_matches: Array<{ path: string }>;
+          }>;
           skipped_vaults: Array<{ vault: string; reason: string }>;
         };
 
-        expect(result.results_by_vault).toHaveLength(1);
-        expect(result.results_by_vault[0]!.vault).toBe('v1');
-        expect(result.skipped_vaults).toEqual([
-          { vault: 'v2', reason: 'SEMANTIC_INDEX_NOT_FOUND' },
-        ]);
+        expect(result.results_by_vault).toHaveLength(2);
+        expect(result.skipped_vaults).toEqual([]);
+        const byVault = new Map(result.results_by_vault.map((g) => [g.vault, g]));
+        expect(byVault.get('v1')!.semantic_matches[0]!.path).toBe('note-a.md');
+        // v2 has no semantic corpus — hybrid falls back to lexical-only rather
+        // than skipping the vault entirely.
+        expect(byVault.get('v2')!.semantic_matches).toEqual([]);
+        expect(byVault.get('v2')!.lexical_matches).toEqual([]);
       } finally {
         await (await import('node:fs/promises')).rm(vaultRoot1, { recursive: true, force: true });
       }
@@ -996,7 +1003,7 @@ describe('searchNotes', () => {
     }
   });
 
-  it('throws SEMANTIC_INDEX_NOT_FOUND when vault has semanticAvailable: false', async () => {
+  it('returns lexical-only matches (no throw) when vault has semanticAvailable: false', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
     try {
       const registry = makeTestRegistry([
@@ -1007,6 +1014,8 @@ describe('searchNotes', () => {
           corpus: undefined,
           semanticAvailable: false,
           semanticUnavailableReason: 'no corpus',
+          graph: makeFakeGraph(),
+          listMatchingPaths: async () => new Set(),
         },
       ]);
       const tool = buildSearchNotesTool({
@@ -1016,9 +1025,9 @@ describe('searchNotes', () => {
         modelKey: MODEL_KEY,
       });
 
-      await expect(tool.handler({ vault: 'v', query: 'q' })).rejects.toMatchObject({
-        code: 'SEMANTIC_INDEX_NOT_FOUND',
-      });
+      const result = (await tool.handler({ vault: 'v', query: 'q' })) as SearchNotesOutput;
+      expect(result.semantic_matches).toEqual([]);
+      expect(result.lexical_matches).toEqual([]);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
