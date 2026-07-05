@@ -3,9 +3,7 @@
 ## Purpose
 
 The set of tools the MCP server exposes, and the deliberate exclusions from it. This capability records which tool surface is _intentional_ — both the tools that exist and the ones removed because another tool covers them (or whose capability was deliberately surrendered) — so that a tool's absence reads as a decision, not an oversight, and a rarely-used tool is not mistaken for dead weight. It is enforced against the canonical `TOOL_NAMES` list and the server's registered tool set.
-
 ## Requirements
-
 ### Requirement: Reading a single frontmatter value uses read_notes
 
 The server SHALL NOT expose a `read_property` tool. Reading one frontmatter value SHALL be served
@@ -77,3 +75,25 @@ retained despite low usage. Their retention SHALL be made legible by a "when to 
 
 - **WHEN** `AGENTS.md` is read
 - **THEN** it contains a short "when to reach for it" note for `get_note_links`, `find_duplicates`, and `remove_property`
+
+### Requirement: Exact-text search is served by search_notes, not a standalone tool
+
+The server SHALL NOT expose a standalone `search_text`, `search_by_text`, or
+`search_semantic` tool. Lexical/exact-match search over titles, headings, and
+bodies SHALL be served by `search_notes` — hybrid by default, lexical-only via
+`mode: "lexical"`. This is a deliberate single-entry-point decision: splitting
+the legs into separate tools loses the cross-leg intersection signal and
+leaves silent semantic noise uncured. None of these names SHALL appear in the
+canonical `TOOL_NAMES` list, the registered tool set, or live documentation as
+available tools.
+
+#### Scenario: no standalone lexical search tool is registered
+
+- **WHEN** the server's registered tool names are enumerated
+- **THEN** `search_text`, `search_by_text`, and `search_semantic` are absent from both modules and from `TOOL_NAMES`
+
+#### Scenario: lexical-only search is reachable through search_notes
+
+- **WHEN** a caller needs exact text matches only and calls `search_notes` with `{ query: "<term>", mode: "lexical" }`
+- **THEN** the response's `lexical_matches` provides the exact-match results a standalone tool would have returned, with `semantic_matches: []`
+
