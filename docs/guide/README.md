@@ -5,9 +5,9 @@ User documentation for the Neuro Vault MCP server. Start here if you want to kno
 ## Pages
 
 - **[Installation](./installation.md)** — system requirements, install via `npm` or `npx`, MCP client configuration for Claude Code / Cursor / Windsurf, first-run behavior.
-- **[Semantic Search](./semantic-search.md)** — `search_notes`, `get_similar_notes`, `find_duplicates`. Modes, parameters, multi-query, output examples, threshold tuning.
-- **[Vault Operations](./vault-operations.md)** — `read_notes`, `create_note`, `edit_note`, daily notes, frontmatter properties, tags. Parameter reference and edge cases.
-- **[Routing Between Tools](./routing.md)** — when to use structural tools vs semantic search. Patterns the assistant should follow.
+- **[Finding Notes](./finding-notes.md)** — `search_notes` (hybrid semantic + lexical), `query_notes`, `get_similar_notes`, `find_duplicates`, `get_note_links`. Axes, parameters, multi-query, output examples, threshold tuning.
+- **[Reading & Modifying](./reading-and-modifying.md)** — `read_notes`, `read_daily`, `create_note`, `edit_note`, frontmatter properties, tags. Parameter reference and edge cases.
+- **[Routing Between Tools](./routing.md)** — when to reach for `search_notes` (and which mode), `query_notes`, or a direct read. Patterns the assistant should follow.
 - **[Configuration](./configuration.md)** — CLI arguments, startup behavior, AGENTS.md / CLAUDE.md snippet, troubleshooting, limitations, development commands.
 
 ## Architecture

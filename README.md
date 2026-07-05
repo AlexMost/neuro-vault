@@ -60,7 +60,7 @@ A few more questions Neuro Vault makes one-shot:
 
 One question, one answer. Your assistant stops being a file browser and starts being an actual second brain.
 
-→ See [docs/guide/vault-operations.md](./docs/guide/vault-operations.md#query_notes) for the full query language and examples.
+→ See [docs/guide/finding-notes.md](./docs/guide/finding-notes.md#query_notes) for the full query language and examples.
 
 ---
 
@@ -72,7 +72,7 @@ One question, one answer. Your assistant stops being a file browser and starts b
 { "query": "trading lessons", "filter": { "tags": ["trading"] } }
 ```
 
-`filter` accepts `path_prefix` (string or array), `exclude_path_prefix` (string or array — drops matched subtrees), `tags` (ANY-of), and a `frontmatter` sift filter. Composition is include → exclude → tags → frontmatter → threshold → semantic. See the [Semantic Search guide](./docs/guide/semantic-search.md#pre-filter-filter-parameter) for full details.
+`filter` accepts `path_prefix` (string or array), `exclude_path_prefix` (string or array — drops matched subtrees), `tags` (ANY-of), and a `frontmatter` sift filter. Composition is include → exclude → tags → frontmatter → threshold → semantic. See the [Finding Notes guide](./docs/guide/finding-notes.md#pre-filter-filter-parameter) for full details.
 
 ---
 
@@ -163,8 +163,8 @@ For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./
 User guide lives in [`docs/guide/`](./docs/guide/README.md):
 
 - [Installation](./docs/guide/installation.md)
-- [Semantic Search](./docs/guide/semantic-search.md) — `search_notes`, `get_similar_notes`, `find_duplicates`
-- [Vault Operations](./docs/guide/vault-operations.md) — note CRUD, daily notes, properties, tags, structured queries (`query_notes`), vault snapshot (`get_vault_overview`)
+- [Finding Notes](./docs/guide/finding-notes.md) — `search_notes` (hybrid semantic + lexical), structured queries (`query_notes`), `get_similar_notes`, `find_duplicates`, `get_note_links`
+- [Reading & Modifying](./docs/guide/reading-and-modifying.md) — note CRUD, daily notes, properties, tags, vault snapshot (`get_vault_overview`)
 - [Routing Between Tools](./docs/guide/routing.md)
 - [Configuration](./docs/guide/configuration.md) — CLI args, troubleshooting, limitations, development
 
