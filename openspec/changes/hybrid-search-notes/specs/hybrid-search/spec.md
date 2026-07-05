@@ -151,10 +151,10 @@ in `mode: "lexical"`). A note SHALL appear at most once in `lexical_matches`.
 
 ### Requirement: filter applies identically to both legs
 
-The existing `filter` parameter (`path_prefix`, `exclude_path_prefix`,
-`tags`, `frontmatter`) SHALL constrain the lexical leg through the same
-pre-filtered path set as the semantic leg; a note excluded by `filter` SHALL
-NOT appear in either leg.
+`filter` SHALL constrain the lexical leg through the same pre-filtered path
+set as the semantic leg — its `path_prefix`, `exclude_path_prefix`, `tags`,
+and `frontmatter` fields bind both legs identically; a note excluded by
+`filter` SHALL NOT appear in either leg.
 
 #### Scenario: path filter constrains lexical matches
 
