@@ -17,12 +17,15 @@ import type {
   NoteFilter,
   NoteResultNode,
   MultiNoteResultNode,
+  SearchChannelMode,
+  SearchEffort,
   SearchEngine,
   SmartSource,
 } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
 import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import { vaultParamShape } from '../../../lib/vault-param.js';
+import type { LexicalMatch } from '../../../lib/obsidian/lexical/index.js';
 
 const prefixSchema = z.union([z.string(), z.array(z.string()).min(1)]);
 
@@ -36,7 +39,8 @@ const filterSchema = z.object({
 interface SearchNotesInput {
   vault?: string;
   query: string | string[];
-  mode?: 'quick' | 'deep';
+  mode?: SearchChannelMode;
+  effort?: SearchEffort;
   limit?: number;
   threshold?: number;
   filter?: {
@@ -54,9 +58,23 @@ type EnrichedNoteNode<T extends NoteResultNode> = T & {
   vault: string;
 };
 
+// Placeholder shape until Task 7 wires the real lexical leg — this task only
+// establishes the axes + response rename, so lexical_matches is always [].
+export interface LexicalNoteResult {
+  path: string;
+  backlink_count: number;
+  vault: string;
+  matched_queries?: string[];
+  matches: LexicalMatch[];
+}
+
 export type SearchNotesOutput =
-  | { results: EnrichedNoteNode<NoteResultNode>[] }
-  | { results: EnrichedNoteNode<MultiNoteResultNode>[]; truncated: boolean };
+  | { semantic_matches: EnrichedNoteNode<NoteResultNode>[]; lexical_matches: LexicalNoteResult[] }
+  | {
+      semantic_matches: EnrichedNoteNode<MultiNoteResultNode>[];
+      lexical_matches: LexicalNoteResult[];
+      truncated: boolean;
+    };
 
 export interface SearchNotesDeps {
   registry: IVaultRegistry;
@@ -134,7 +152,11 @@ async function runSearchForEntry(
     });
   }
 
-  const mode = input.mode ?? 'quick';
+  // `_channel` picks which retrieval leg(s) run; wired up in Task 7 (the
+  // lexical leg is currently always []). `effort` maps onto the internal
+  // quick|deep retrieval-policy vocabulary.
+  const _channel = input.mode ?? 'hybrid';
+  const effort = input.effort ?? 'quick';
   const threshold =
     input.threshold !== undefined
       ? readThreshold(input.threshold, input.threshold, 'threshold')
@@ -170,8 +192,8 @@ async function runSearchForEntry(
     if (allowed.size === 0) {
       const isMulti = Array.isArray(input.query);
       return isMulti
-        ? ({ results: [], truncated: false } as SearchNotesOutput)
-        : ({ results: [] } as SearchNotesOutput);
+        ? ({ semantic_matches: [], lexical_matches: [], truncated: false } as SearchNotesOutput)
+        : ({ semantic_matches: [], lexical_matches: [] } as SearchNotesOutput);
     }
 
     effectiveSources = narrowSources(sources, allowed);
@@ -182,7 +204,7 @@ async function runSearchForEntry(
     try {
       const output = await executeMultiRetrieval({
         queries,
-        mode,
+        mode: effort,
         threshold,
         limit,
         sources: effectiveSources,
@@ -207,7 +229,7 @@ async function runSearchForEntry(
           backlink_count: graph.getBacklinkCount(r.path),
           vault: entry.name,
         }));
-      return { results: enriched, truncated: output.truncated };
+      return { semantic_matches: enriched, lexical_matches: [], truncated: output.truncated };
     } catch (error) {
       throw wrapDependencyError(error, 'Failed to search notes', {
         modelKey,
@@ -220,7 +242,7 @@ async function runSearchForEntry(
   try {
     const output = await executeRetrieval({
       query,
-      mode,
+      mode: effort,
       limit,
       threshold,
       sources: effectiveSources,
@@ -243,7 +265,7 @@ async function runSearchForEntry(
         backlink_count: graph.getBacklinkCount(r.path),
         vault: entry.name,
       }));
-    return { results: enriched };
+    return { semantic_matches: enriched, lexical_matches: [] };
   } catch (error) {
     throw wrapDependencyError(error, 'Failed to search notes', {
       modelKey,
@@ -260,7 +282,8 @@ export function buildSearchNotesTool(
   const inputSchema = z.object({
     ...vaultParamShape(registry),
     query: z.union([z.string(), z.array(z.string()).min(1).max(8)]),
-    mode: z.enum(['quick', 'deep']).optional(),
+    mode: z.enum(['hybrid', 'lexical']).optional(),
+    effort: z.enum(['quick', 'deep']).optional(),
     limit: z.number().int().positive().optional(),
     threshold: z.number().min(0).max(1).optional(),
     filter: filterSchema.optional(),
