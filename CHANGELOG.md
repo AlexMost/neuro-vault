@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [12.1.0](https://github.com/AlexMost/neuro-vault/compare/v12.0.0...v12.1.0) (2026-07-06)
+
+
+### Features
+
+* **tools:** restore list_properties ([902c64c](https://github.com/AlexMost/neuro-vault/commit/902c64c9220c8355e0effa4fa865e9b80ffbd944))
+
 ## [12.0.0](https://github.com/AlexMost/neuro-vault/compare/v11.0.0...v12.0.0) (2026-07-06)
 
 
