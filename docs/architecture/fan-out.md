@@ -71,6 +71,8 @@ interface IFailedVault {
 
 The two are intentionally separate. Skipped is "expected, deterministic, startup-time"; failed is "unexpected, runtime, recoverable on retry". Merging them would erase that signal.
 
+Since `search_notes` became hybrid, no shipped tool calls `runSemanticFanOut` — `search_notes` fans out via `runFanOut` over **all** vaults, because a vault without a semantic corpus still contributes `lexical_matches` (with `semantic_matches: []`). In practice `skipped_vaults` is therefore always `[]` today; the helper and the contract remain for a future semantic-only fan-out tool.
+
 ## Rejection mapping
 
 After `Promise.allSettled` completes, the helper:

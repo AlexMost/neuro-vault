@@ -16,8 +16,8 @@ Your second brain stops being a folder you open between contexts and becomes a f
 
 ## ✨ Why Neuro Vault?
 
-- 🧠 **Semantic search that already knows your vault** — reuses [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) embeddings. No re-indexing, no API keys, no extra infrastructure.
-- 🎯 **Quick or deep, your call** — fast direct lookups for "find that note", or exploratory mode with related-note expansion when the question is fuzzy.
+- 🧠 **Hybrid search that already knows your vault** — a semantic leg reuses [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) embeddings (no re-indexing, no API keys), and a lexical leg catches exact names, codes, and terms embeddings miss. One call, both answers; a note hit by both is the strongest relevance signal.
+- 🎯 **Quick or deep, your call** — `effort: "quick"` for fast direct lookups, `effort: "deep"` for exploration with related-note expansion; `mode: "lexical"` when you want exact text matching only (works even without embeddings).
 - 🧾 **Context with provenance, not mystery memory** — results come back with paths, matched queries, block-level snippets, and backlink counts so the assistant can show where an answer came from.
 - 🧭 **A real navigation toolkit for your agent** — instead of grepping files and opening notes one by one, your assistant walks the vault like a database: filter by tags and properties, batch-read metadata, traverse the wikilink graph, discover the structure, jump to semantic neighbours.
 - 🔎 **Ask structured questions in plain language** — _"active projects tagged #ai"_, _"todo tasks with a deadline this week"_, _"meeting notes from `Work/` newest first"_ — one call, ranked answer, no chains of reads.
@@ -31,13 +31,13 @@ Your second brain stops being a folder you open between contexts and becomes a f
 
 Most "vault MCP" servers give you one or the other. Neuro Vault gives you both, and lets your assistant pick the right one per question:
 
-|                  | 🔭 **Semantic recall**                                                    | 🛠 **Vault operations**                                                                                      |
-| ---------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **What it does** | Finds notes by meaning, not keywords. Surfaces neighbours and duplicates. | Reads, writes, edits notes (in-place replace and full-body rewrite); manages frontmatter, tags, daily notes. |
-| **Best for**     | _"What did I think about X?"_, fuzzy recall, exploratory research.        | Structured queries, capturing decisions, updating tasks, batch reads.                                        |
-| **Powered by**   | Smart Connections embeddings (already in your vault).                     | The official Obsidian CLI — Smart Connections, sync, plugins all stay in sync.                               |
+|                  | 🔭 **Hybrid recall**                                                                                                              | 🛠 **Vault operations**                                                                                      |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **What it does** | Finds notes by meaning _and_ by exact wording — semantic + lexical legs in one response. Surfaces neighbours and duplicates.       | Reads, writes, edits notes (in-place replace and full-body rewrite); manages frontmatter, tags, daily notes. |
+| **Best for**     | _"What did I think about X?"_, fuzzy recall, exploratory research — and exact names, codes, terms the embeddings don't know.      | Structured queries, capturing decisions, updating tasks, batch reads.                                        |
+| **Powered by**   | Smart Connections embeddings (already in your vault) + direct text matching over titles, headings, and bodies (no index needed). | The official Obsidian CLI — Smart Connections, sync, plugins all stay in sync.                               |
 
-The two work together: semantic search finds the right region of the vault, vault operations let the assistant actually _do something_ with what it found.
+The two work together: hybrid search finds the right region of the vault, vault operations let the assistant actually _do something_ with what it found.
 
 ---
 
@@ -47,7 +47,7 @@ The two work together: semantic search finds the right region of the vault, vaul
 → Assistant lists `Notes/`, opens 12 files, greps for "LangGraph", gives up halfway, you paste the relevant note manually.
 
 **After:** _"Could you check my notes about that LangGraph experiment?"_
-→ One semantic search, top-3 ranked notes back, follow-up question already grounded in your own writing.
+→ One hybrid search — semantic matches plus exact "LangGraph" hits in the same response — follow-up question already grounded in your own writing.
 
 A few more questions Neuro Vault makes one-shot:
 
@@ -64,15 +64,15 @@ One question, one answer. Your assistant stops being a file browser and starts b
 
 ---
 
-### 🔍 Hybrid search: scope semantic with structural filters
+### 🔍 Pre-filter: scope search with structural filters
 
-`search_notes` accepts an optional `filter` to narrow the candidate set **before** semantic ranking — combining the precision of `query_notes` with the recall of vector search. Useful when domain-relevant notes are crowded out by larger narrative clusters.
+`search_notes` accepts an optional `filter` to narrow the candidate set **before** ranking — combining the precision of `query_notes` with the recall of hybrid search. The filter applies identically to both legs: only notes that pass it can appear in `semantic_matches` or `lexical_matches`. Useful when domain-relevant notes are crowded out by larger narrative clusters.
 
 ```json
 { "query": "trading lessons", "filter": { "tags": ["trading"] } }
 ```
 
-`filter` accepts `path_prefix` (string or array), `exclude_path_prefix` (string or array — drops matched subtrees), `tags` (ANY-of), and a `frontmatter` sift filter. Composition is include → exclude → tags → frontmatter → threshold → semantic. See the [Finding Notes guide](./docs/guide/finding-notes.md#pre-filter-filter-parameter) for full details.
+`filter` accepts `path_prefix` (string or array), `exclude_path_prefix` (string or array — drops matched subtrees), `tags` (ANY-of), and a `frontmatter` sift filter. Composition is include → exclude → tags → frontmatter, then each leg ranks within the allowed set (`threshold` further cuts the semantic leg only). See the [Finding Notes guide](./docs/guide/finding-notes.md#pre-filter-filter-parameter) for full details.
 
 ---
 
@@ -85,7 +85,7 @@ flowchart LR
     NV <--> Vault[(Obsidian vault)]
 ```
 
-You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — semantic search uses embeddings already in `.smart-env/`, vault operations go through the `obsidian` CLI. No database, no background processes.
+You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — the semantic leg uses embeddings already in `.smart-env/`, the lexical leg reads notes straight from disk, vault operations go through the `obsidian` CLI. No database, no background processes.
 
 For module wiring and internal data flow, see [docs/architecture/module-structure.md](./docs/architecture/module-structure.md).
 
@@ -144,7 +144,7 @@ With multiple vaults registered:
 - **Every tool** accepts an optional `vault: "<name>"` parameter to target a specific vault.
 - **`search_notes`, `query_notes`, `get_vault_overview`, and `list_tags`** fan out across all registered vaults when `vault` is omitted. The response shape switches to `results_by_vault: [...]` (one entry per vault) plus `skipped_vaults: [...]` for any vault the tool could not reach and `failed_vaults: [...]` for per-vault runtime errors (`{ vault, error: { code, message, details? } }`). A single failed vault does not abort the whole call.
 - **All other tools** (writes, reads of specific paths, single-vault diagnostics) require an explicit `vault` in multi-vault mode. Omitting it returns `VAULT_REQUIRED`.
-- **Semantic fan-out** silently skips vaults whose Smart Connections `.smart-env/multi/` index is unavailable. Targeting such a vault explicitly with `vault: "<name>"` returns `SEMANTIC_INDEX_NOT_FOUND`.
+- **A vault without a Smart Connections `.smart-env/multi/` index still participates** in `search_notes` fan-out — it contributes `lexical_matches` with an empty `semantic_matches`; no vault is skipped. Targeting such a vault explicitly with the embeddings-only tools (`get_similar_notes`, `find_duplicates`) returns `SEMANTIC_INDEX_NOT_FOUND`.
 
 Then ask your assistant:
 

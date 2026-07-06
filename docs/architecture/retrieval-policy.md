@@ -2,9 +2,11 @@
 
 How a search request becomes a ranked set of notes and blocks. This is the "policy" layer that composes the embedding pipeline, the corpus, and the search engine into the behaviour described to the LLM.
 
+This document covers the **semantic leg** of `search_notes` only. The lexical leg (exact text matching over titles, headings, and bodies) is a separate pipeline documented in [`lexical-search.md`](./lexical-search.md); the tool handler runs both legs and returns `{ semantic_matches, lexical_matches }`.
+
 ## What it is
 
-`src/retrieval-policy.ts` exports a single function, `executeRetrieval(input)`, that runs a four-step pipeline:
+`src/modules/semantic/retrieval-policy.ts` exports a single function, `executeRetrieval(input)`, that runs a four-step pipeline:
 
 1. Embed the query.
 2. Find note-level neighbors (with a fallback if nothing matches).
@@ -54,7 +56,7 @@ deep:  limit=8, threshold=0.35, expansion=on, expansionLimit=3
 - `quick` is the default — used for specific lookups where the LLM expects a small, precise answer set.
 - `deep` lowers the threshold, doubles+ the limit, and turns on expansion — used for "tell me about X" exploration.
 
-The LLM picks the mode based on intent; the user can override per call.
+At the tool boundary this axis is called `effort` (`search_notes({ effort: "quick" | "deep" })`); the tool handler passes it into the policy as `mode`, which is the internal name this document uses. (The tool-level `mode` parameter is a different axis — it selects which legs run, `hybrid | lexical`.) The LLM picks the effort based on intent; the user can override per call.
 
 ## Step 1 — Embedding
 
