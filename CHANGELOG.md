@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [12.0.0](https://github.com/AlexMost/neuro-vault/compare/v11.0.0...v12.0.0) (2026-07-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **search:** search_notes now takes mode: 'hybrid'|'lexical' (retrieval
+channel) and effort: 'quick'|'deep' (replacing the old mode: 'quick'|'deep');
+old mode values are rejected. Response results key renamed to
+semantic_matches, with a new lexical_matches placeholder (always [] until
+the lexical leg is wired up).
+
+### Features
+
+* **lexical:** add LexicalIndex with mtime cache over vault reader ([595dcef](https://github.com/AlexMost/neuro-vault/commit/595dcef3f671406d8675e60a36a3b936966e4ea3))
+* **lexical:** markdown AST block extraction with line positions ([b2e2ea7](https://github.com/AlexMost/neuro-vault/commit/b2e2ea75978c4ab704097f94bcd9f90dbc07433c))
+* **lexical:** normalization with offset map (case/NFKD/apostrophes/whitespace) ([42e0225](https://github.com/AlexMost/neuro-vault/commit/42e0225ca22b33a9f6abccdf58701f382e009a1d))
+* **lexical:** tiered deterministic ranking with density and snippets ([69cc559](https://github.com/AlexMost/neuro-vault/commit/69cc559566afbf77ef673416281db3a68777d15f))
+* **search:** lexical leg orchestration — hybrid, lexical-only, cold corpus ([262bfeb](https://github.com/AlexMost/neuro-vault/commit/262bfebb6c29731328bd51cb665f33b418077126))
+* **search:** mode/effort axes and semantic_matches rename in search_notes ([21c7b08](https://github.com/AlexMost/neuro-vault/commit/21c7b08356cfefb6d55defc260c6fa57cbcfc472))
+* **search:** multi-query and multi-vault parity for the lexical leg ([cd214c4](https://github.com/AlexMost/neuro-vault/commit/cd214c426721b69b569b35de0796ace261c3df30))
+
 ## [11.0.0](https://github.com/AlexMost/neuro-vault/compare/v10.1.0...v11.0.0) (2026-06-08)
 
 
