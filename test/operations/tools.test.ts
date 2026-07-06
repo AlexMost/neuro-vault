@@ -57,7 +57,7 @@ const noopDeps = {
 };
 
 describe('buildOperationsTools', () => {
-  it('returns 10 registrations with the expected names', () => {
+  it('returns 11 registrations with the expected names', () => {
     const tools = buildOperationsTools(noopDeps);
     expect(tools.map((t) => t.name)).toEqual([
       'read_notes',
@@ -68,6 +68,7 @@ describe('buildOperationsTools', () => {
       'set_property',
       'remove_property',
       'list_tags',
+      'list_properties',
       'get_note_links',
       'get_vault_overview',
     ]);
@@ -88,6 +89,15 @@ describe('buildOperationsTools', () => {
     const createNote = tools.find((t) => t.name === 'create_note')!;
     expect(createNote.spec.description).toMatch(/ask the user/i);
     expect(createNote.spec.description).toMatch(/overwrite/i);
+  });
+
+  it('list_properties description promises the full inventory vs the truncated overview', () => {
+    const tools = buildOperationsTools(noopDeps);
+    const listProperties = tools.find((t) => t.name === 'list_properties')!;
+    expect(listProperties.spec.description).toMatch(/ALL frontmatter properties/);
+    expect(listProperties.spec.description).toMatch(/complete inventory/i);
+    expect(listProperties.spec.description).toMatch(/get_vault_overview/);
+    expect(listProperties.spec.description).toMatch(/count/i);
   });
 
   it('remove_property description states idempotency', () => {

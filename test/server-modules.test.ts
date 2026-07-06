@@ -198,12 +198,13 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'set_property',
         'remove_property',
         'list_tags',
+        'list_properties',
         'get_note_links',
         'get_vault_overview',
       ]);
-      // Removed tools are absent; the unique low-use tool we keep is present.
+      // Removed tools are absent; the unique low-use tools we keep are present.
       expect(server.registeredToolNames).not.toContain('read_property');
-      expect(server.registeredToolNames).not.toContain('list_properties');
+      expect(server.registeredToolNames).toContain('list_properties');
       expect(server.registeredToolNames).toContain('remove_property');
       expect(server.registeredToolNames).toContain('get_note_links');
       expect(server.registeredResourceUris).toEqual(['vault://overview']);
@@ -212,7 +213,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('registers thirteen tools (3 semantic + 10 operations) when both modules are enabled', async () => {
+  it('registers fourteen tools (3 semantic + 11 operations) when both modules are enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
@@ -260,14 +261,16 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'set_property',
         'remove_property',
         'list_tags',
+        'list_properties',
         'get_note_links',
         'get_vault_overview',
       ]);
-      // The three removed tools must be gone from the combined surface.
+      // The two removed tools must be gone from the combined surface;
+      // list_properties is back (full property inventory for consistency audits).
       expect(server.registeredToolNames).not.toContain('read_property');
-      expect(server.registeredToolNames).not.toContain('list_properties');
       expect(server.registeredToolNames).not.toContain('get_stats');
-      // The three unique low-use tools we keep stay registered.
+      expect(server.registeredToolNames).toContain('list_properties');
+      // The unique low-use tools we keep stay registered.
       expect(server.registeredToolNames).toContain('find_duplicates');
       expect(server.registeredToolNames).toContain('get_note_links');
       expect(server.registeredToolNames).toContain('remove_property');

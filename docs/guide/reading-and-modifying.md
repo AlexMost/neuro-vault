@@ -6,7 +6,7 @@ Most write paths shell out to the `obsidian` CLI, so changes are picked up immed
 
 `read_notes` reads files directly from the vault directory, making it fast and available even when Obsidian is not running.
 
-**Per-vault failures.** When a fan-out tool (`list_tags`, `query_notes`, `get_vault_overview`, `search_notes`) is called in multi-vault mode without an explicit `vault:`, per-vault failures do not abort the whole call. Successful vaults still return their results in `results_by_vault`; the failing vault appears in a `failed_vaults` array with its error code, message, and details. `failed_vaults` is always present (empty array when nothing failed). See [docs/architecture/fan-out.md](../architecture/fan-out.md) for the full contract.
+**Per-vault failures.** When a fan-out tool (`list_tags`, `list_properties`, `query_notes`, `get_vault_overview`, `search_notes`) is called in multi-vault mode without an explicit `vault:`, per-vault failures do not abort the whole call. Successful vaults still return their results in `results_by_vault`; the failing vault appears in a `failed_vaults` array with its error code, message, and details. `failed_vaults` is always present (empty array when nothing failed). See [docs/architecture/fan-out.md](../architecture/fan-out.md) for the full contract.
 
 Most tools on this page accept `name` (wikilink-style) **or** `path` (vault-relative POSIX) for note identification — exactly one of the two. Both or neither yields `INVALID_ARGUMENT`. `read_notes` accepts `paths` only (no wikilink resolution); if you only have a note name, resolve it to a path with [`search_notes`](./finding-notes.md) first.
 
@@ -193,8 +193,16 @@ Returns `[{ name, count }, ...]`.
 
 To list the notes that carry a specific tag, use [`query_notes`](./finding-notes.md#query_notes) with `{ filter: { tags: '<name>' } }`.
 
+### `list_properties`
+
+List **all** frontmatter properties used across the vault, sorted by occurrence count desc.
+
+Returns `[{ name, count }, ...]`.
+
+Unlike `get_vault_overview`, which truncates properties to the top entries, this returns the complete inventory — rare and one-off keys included. That makes it the right tool for property-consistency audits and for checking existing names before introducing a new property.
+
 ### `get_vault_overview`
 
-Get a snapshot of your vault's structure in one call. Returns top-level folder counts, top tags, frontmatter properties, the total note count, and the top 10 notes by inbound wikilinks. This is the recommended first call for an agent orienting itself in a vault it has not seen before — one call replaces the older `list_tags` + exploratory `query_notes` ritual.
+Get a snapshot of your vault's structure in one call. Returns top-level folder counts, top tags, frontmatter properties (top entries — see [`list_properties`](#list_properties) for the full inventory), the total note count, and the top 10 notes by inbound wikilinks. This is the recommended first call for an agent orienting itself in a vault it has not seen before — one call replaces the older `list_tags` + exploratory `query_notes` ritual.
 
 The same payload is available as the MCP resource `vault://overview`; clients that auto-load resources will pull it without an explicit tool call.
