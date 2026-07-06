@@ -15,6 +15,7 @@ export const TOOL_NAMES = [
   'set_property',
   'remove_property',
   'list_tags',
+  'list_properties',
   'get_note_links',
   'get_vault_overview',
   // Semantic module

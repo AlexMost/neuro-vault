@@ -142,7 +142,7 @@ Two vaults cannot share the same directory basename — the basename doubles as 
 With multiple vaults registered:
 
 - **Every tool** accepts an optional `vault: "<name>"` parameter to target a specific vault.
-- **`search_notes`, `query_notes`, `get_vault_overview`, and `list_tags`** fan out across all registered vaults when `vault` is omitted. The response shape switches to `results_by_vault: [...]` (one entry per vault) plus `skipped_vaults: [...]` for any vault the tool could not reach and `failed_vaults: [...]` for per-vault runtime errors (`{ vault, error: { code, message, details? } }`). A single failed vault does not abort the whole call.
+- **`search_notes`, `query_notes`, `get_vault_overview`, `list_tags`, and `list_properties`** fan out across all registered vaults when `vault` is omitted. The response shape switches to `results_by_vault: [...]` (one entry per vault) plus `skipped_vaults: [...]` for any vault the tool could not reach and `failed_vaults: [...]` for per-vault runtime errors (`{ vault, error: { code, message, details? } }`). A single failed vault does not abort the whole call.
 - **All other tools** (writes, reads of specific paths, single-vault diagnostics) require an explicit `vault` in multi-vault mode. Omitting it returns `VAULT_REQUIRED`.
 - **A vault without a Smart Connections `.smart-env/multi/` index still participates** in `search_notes` fan-out — it contributes `lexical_matches` with an empty `semantic_matches`; no vault is skipped. Targeting such a vault explicitly with the embeddings-only tools (`get_similar_notes`, `find_duplicates`) returns `SEMANTIC_INDEX_NOT_FOUND`.
 

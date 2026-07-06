@@ -10,8 +10,10 @@ All notable changes to this project will be documented in this file. See [commit
 * **search:** search_notes now takes mode: 'hybrid'|'lexical' (retrieval
 channel) and effort: 'quick'|'deep' (replacing the old mode: 'quick'|'deep');
 old mode values are rejected. Response results key renamed to
-semantic_matches, with a new lexical_matches placeholder (always [] until
-the lexical leg is wired up).
+semantic_matches, with a new lexical_matches key. The lexical leg is live
+in this release (see the lexical/search features below): hybrid mode runs
+both legs, mode: 'lexical' runs exact text matching only — including over
+a cold or absent embedding corpus.
 
 ### Features
 

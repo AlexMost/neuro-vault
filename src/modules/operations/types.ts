@@ -90,6 +90,7 @@ export interface RemovePropertyToolInput {
 }
 
 export type ListTagsToolInput = Record<string, never>;
+export type ListPropertiesToolInput = Record<string, never>;
 
 export interface OperationsToolHandlers {
   readNotes(input: ReadNotesToolInput): Promise<ReadNotesResult>;
@@ -109,4 +110,5 @@ export interface OperationsToolHandlers {
   setProperty(input: SetPropertyToolInput): Promise<{ ok: true }>;
   removeProperty(input: RemovePropertyToolInput): Promise<{ ok: true }>;
   listTags(input: ListTagsToolInput): Promise<Array<{ name: string; count: number }>>;
+  listProperties(input: ListPropertiesToolInput): Promise<Array<{ name: string; count: number }>>;
 }

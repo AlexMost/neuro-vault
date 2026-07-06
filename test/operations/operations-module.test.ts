@@ -56,7 +56,7 @@ describe('createOperationsModule', () => {
 
     const result = createOperationsModule(fakeRegistry, { binaryPath: '/usr/bin/obsidian' });
 
-    expect(result.tools.length).toBe(10);
+    expect(result.tools.length).toBe(11);
     expect(result.resources.length).toBe(1);
   });
 });
