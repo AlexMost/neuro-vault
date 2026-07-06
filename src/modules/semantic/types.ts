@@ -85,6 +85,13 @@ export interface SearchEngine {
 
 export type SearchMode = 'quick' | 'deep';
 
+// Public-facing input axes for search_notes. `SearchChannelMode` picks which
+// retrieval leg(s) run; `SearchEffort` maps onto the internal `SearchMode`
+// (quick|deep) retrieval-policy vocabulary above — kept separate so the
+// public contract can evolve independently of retrieval-policy internals.
+export type SearchChannelMode = 'hybrid' | 'lexical';
+export type SearchEffort = 'quick' | 'deep';
+
 export interface SearchNotesInput {
   query: string | string[];
   mode?: SearchMode;

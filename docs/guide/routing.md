@@ -4,11 +4,14 @@ Tool routing and retrieval policy are related, but not the same thing. Routing i
 
 ## Rules of thumb
 
-- Use **structural tools** first — your assistant's own file/path/title tools, or vault operations like `read_notes`, `query_notes` — for exact file, title, path, daily note, tag, property, wikilink, backlink, and link-traversal requests.
-- Use `search_notes` for fuzzy topic, concept, and semantic retrieval.
-- Use `get_similar_notes` after you already have a relevant note and want semantic expansion.
+`search_notes` is one hybrid entry point (semantic + lexical); route by what you know about the request:
+
+- **Fuzzy or unknown wording** — you don't know the exact term the note uses → `search_notes` (`mode: "hybrid"`, the default). Both legs run; a note hit by both is the strongest signal.
+- **Exact term, name, or code — or no embedding corpus available** → `search_notes({ mode: "lexical" })`. Substring matching over title/headings/body, independent of embeddings; works even on a cold or absent Smart Connections index.
+- **You already know the structural key** (a frontmatter field, a tag, a folder) → `query_notes`.
+- **You know exactly which note** (a path, or a name you can resolve) → `read_notes`.
+- Use `get_similar_notes` after you already have a relevant note and want semantic + wikilink expansion.
 - Treat the routing guidance as **behavior, not enforcement**; the server does not hard-block other tool choices.
-- Use semantic retrieval to find likely notes, then switch to structural tools when you need exact anchors.
 
 ## Examples
 
@@ -17,11 +20,12 @@ Tool routing and retrieval policy are related, but not the same thing. Routing i
 | "Read the note 'Q1 OKRs'"                    | `search_notes({ query: "Q1 OKRs" })` to resolve the path, then `read_notes({ paths: ["..."] })` (single path → full body by default) |
 | "What's the status of Quarterly review?"     | `search_notes({ query: "Quarterly review" })` to resolve the path, then `read_notes({ paths: ["..."], content: "frontmatter" })` and read the `status` key |
 | "Show me all notes tagged #mcp"              | `query_notes({ filter: { tags: "mcp" } })`                                                                                           |
-| "What did I write about building AI agents?" | `search_notes({ query: "building AI agents" })`                                                                                      |
-| "Tell me everything I know about embeddings" | `search_notes({ query: "embeddings", mode: "deep" })`                                                                                |
+| "What did I write about building AI agents?" | `search_notes({ query: "building AI agents" })` (hybrid default)                                                                     |
+| "Where's the note that mentions PARAM_DICT?" | `search_notes({ query: "PARAM_DICT", mode: "lexical" })` — exact code, no need for the semantic leg                                  |
+| "Tell me everything I know about embeddings" | `search_notes({ query: "embeddings", effort: "deep" })`                                                                              |
 | "Show me notes related to neuro-vault.md"    | `get_similar_notes({ path: "Projects/neuro-vault.md" })`                                                                             |
 | "Read today's daily note"                    | `read_daily()`                                                                                                                       |
-| "Append a TODO to today"                     | `read_daily()` → `edit_note({ path, content: body + "- [ ] new todo" })` (see vault-operations)                                      |
+| "Append a TODO to today"                     | `read_daily()` → `edit_note({ path, content: body + "- [ ] new todo" })` (see [Reading & Modifying](./reading-and-modifying.md))      |
 
 ## Multi-note triage: preview first, then full
 

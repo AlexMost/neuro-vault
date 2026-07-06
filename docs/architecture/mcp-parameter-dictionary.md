@@ -6,16 +6,18 @@ The cross-tool naming contract for the server's MCP tools. The rationale — why
 
 One concept = one parameter name across every tool the server exposes. New tools must follow this dictionary for any concept listed here; renames cost a major version.
 
-| Concept                                     | Param                 | Used by                                                                            |
-| ------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------- |
-| Vault-relative POSIX path                   | `path`                | `create_note`, `edit_note`, `set_property`, `remove_property`, `get_similar_notes` |
-| Vault-relative POSIX path list              | `paths`               | `read_notes`                                                                       |
-| Vault-relative POSIX path subtree (or list) | `path_prefix`         | `query_notes`, `search_notes` (inside `filter`)                                    |
-| Subtrees to exclude (string or list)        | `exclude_path_prefix` | `query_notes`, `search_notes` (inside `filter`)                                    |
-| Wikilink-style note identifier              | `name`                | `create_note`, `edit_note`, `set_property`, `remove_property`                      |
-| Frontmatter property key                    | `key`                 | `set_property`, `remove_property`                                                  |
-| Semantic search query                       | `query`               | `search_notes`                                                                     |
-| Structured query filter (MongoDB)           | `filter`              | `query_notes`                                                                      |
+| Concept                                              | Param                 | Used by                                                                            |
+| ----------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------- |
+| Vault-relative POSIX path                            | `path`                | `create_note`, `edit_note`, `set_property`, `remove_property`, `get_similar_notes` |
+| Vault-relative POSIX path list                       | `paths`               | `read_notes`                                                                       |
+| Vault-relative POSIX path subtree (or list)          | `path_prefix`         | `query_notes`, `search_notes` (inside `filter`)                                    |
+| Subtrees to exclude (string or list)                 | `exclude_path_prefix` | `query_notes`, `search_notes` (inside `filter`)                                    |
+| Wikilink-style note identifier                       | `name`                | `create_note`, `edit_note`, `set_property`, `remove_property`                      |
+| Frontmatter property key                             | `key`                 | `set_property`, `remove_property`                                                  |
+| Semantic search query                                | `query`               | `search_notes`                                                                     |
+| Structured query filter (MongoDB)                    | `filter`              | `query_notes`                                                                      |
+| Which search legs run: `hybrid` \| `lexical`         | `mode`                | `search_notes`                                                                     |
+| Result volume / exploration depth: `quick` \| `deep` | `effort`              | `search_notes`                                                                     |
 
 ## Rules
 
@@ -28,6 +30,10 @@ One concept = one parameter name across every tool the server exposes. New tools
 Some parameters are intentionally _not_ in the shared dictionary because they are meaningful only on one tool and should not be generalised. The dictionary table above covers only cross-tool shared concepts.
 
 **`content` on `read_notes`** is a body-granularity selector (`'full'` / `'preview'` / `'frontmatter'`) that is specific to `read_notes` and has no cross-tool meaning. It replaced the old `fields: ('frontmatter' | 'content')[]` parameter; that removal is a breaking change and was shipped as part of a major version increment. `content` does not appear in the dictionary table and must not be reused as a shared concept name for a different purpose on other tools.
+
+## Change log
+
+- **This major**: `mode` on `search_notes` is redefined. It previously meant `quick | deep` (result volume / exploration depth). It now means `hybrid | lexical` (which search legs run — hybrid runs both a semantic and a lexical leg; lexical runs exact text matching only). The old meaning moved to a new `effort` param (`quick | deep`). This is a breaking rename per [ADR-0005](../adr/0005-mcp-parameter-dictionary.md): existing callers passing `mode: "quick"` or `mode: "deep"` must switch to `effort`.
 
 ## Why it exists
 

@@ -53,7 +53,10 @@ describe('search_notes — filter', () => {
         filter: { path_prefix: 'Resources/' },
       })) as SearchNotesOutput;
 
-      expect(result.results.map((r) => r.path)).toEqual(['Resources/a.md', 'Resources/b.md']);
+      expect(result.semantic_matches.map((r) => r.path)).toEqual([
+        'Resources/a.md',
+        'Resources/b.md',
+      ]);
       const passedSources = [...findNeighbors.mock.calls[0]![0].sources];
       expect(passedSources.map((s) => s.path).sort()).toEqual(['Resources/a.md', 'Resources/b.md']);
     } finally {
@@ -79,7 +82,7 @@ describe('search_notes — filter', () => {
         filter: { tags: ['nonexistent'] },
       })) as SearchNotesOutput;
 
-      expect(result.results).toEqual([]);
+      expect(result.semantic_matches).toEqual([]);
       expect(embed).not.toHaveBeenCalled();
       expect(findNeighbors).not.toHaveBeenCalled();
     } finally {
@@ -100,11 +103,11 @@ describe('search_notes — filter', () => {
     try {
       const result = (await tool.handler({
         query: 'q',
-        mode: 'deep',
+        effort: 'deep',
         filter: { tags: ['x'] },
       })) as SearchNotesOutput;
 
-      expect(result.results).toEqual([]);
+      expect(result.semantic_matches).toEqual([]);
       expect(result).not.toHaveProperty('blockResults');
     } finally {
       await cleanup();
@@ -127,7 +130,7 @@ describe('search_notes — filter', () => {
         filter: { tags: ['x'] },
       })) as SearchNotesOutput;
 
-      expect(result.results).toEqual([]);
+      expect(result.semantic_matches).toEqual([]);
       expect((result as { truncated?: boolean }).truncated).toBe(false);
     } finally {
       await cleanup();
@@ -237,7 +240,7 @@ describe('search_notes — filter', () => {
     try {
       await tool.handler({
         query: 'q',
-        mode: 'deep',
+        effort: 'deep',
         filter: { path_prefix: 'Resources/' },
       });
 
@@ -273,7 +276,7 @@ describe('search_notes — filter', () => {
         filter: { path_prefix: 'Resources/' },
       })) as SearchNotesOutput;
 
-      expect(result.results.map((r) => r.path).sort()).toEqual([
+      expect(result.semantic_matches.map((r) => r.path).sort()).toEqual([
         'Resources/a.md',
         'Resources/b.md',
       ]);
@@ -307,7 +310,7 @@ describe('search_notes — filter', () => {
         filter: { exclude_path_prefix: 'Archive/' },
       })) as SearchNotesOutput;
 
-      expect(result.results.map((r) => r.path).sort()).toEqual(['Live/a.md', 'Live/b.md']);
+      expect(result.semantic_matches.map((r) => r.path).sort()).toEqual(['Live/a.md', 'Live/b.md']);
     } finally {
       await cleanup();
     }

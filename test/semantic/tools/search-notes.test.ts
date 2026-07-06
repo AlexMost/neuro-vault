@@ -76,9 +76,12 @@ describe('searchNotes', () => {
           query: 'semantic query',
           threshold: 0,
         })) as SearchNotesOutput;
-        expect(result.results.map((r) => r.path)).toEqual(['Folder/note-a.md', 'Folder/note-c.md']);
+        expect(result.semantic_matches.map((r) => r.path)).toEqual([
+          'Folder/note-a.md',
+          'Folder/note-c.md',
+        ]);
         // blocks now live under each result; assert none belong to the absent path
-        for (const r of result.results) {
+        for (const r of result.semantic_matches) {
           expect(r.path).not.toBe('Folder/note-b.md');
           for (const block of r.blocks) {
             expect(block).not.toHaveProperty('path');
@@ -118,13 +121,17 @@ describe('searchNotes', () => {
 
         expect(embed).toHaveBeenCalledTimes(1);
         expect(embed).toHaveBeenCalledWith('semantic query');
-        expect(result.results.map((r) => r.path)).toEqual([
+        expect(result.semantic_matches.map((r) => r.path)).toEqual([
           'Folder/note-a.md',
           'Folder/note-b.md',
           'Folder/note-c.md',
         ]);
-        expect(result.results[0]!.similarity).toBeGreaterThan(result.results[1]!.similarity);
-        expect(result.results[1]!.similarity).toBeGreaterThan(result.results[2]!.similarity);
+        expect(result.semantic_matches[0]!.similarity).toBeGreaterThan(
+          result.semantic_matches[1]!.similarity,
+        );
+        expect(result.semantic_matches[1]!.similarity).toBeGreaterThan(
+          result.semantic_matches[2]!.similarity,
+        );
       } finally {
         await cleanup();
       }
@@ -251,13 +258,16 @@ describe('searchNotes', () => {
         const output = (await tool.handler({
           query: ['alpha', 'beta'],
           threshold: 0,
-        })) as { results: Array<{ path: string; matched_queries: string[] }>; truncated: boolean };
+        })) as {
+          semantic_matches: Array<{ path: string; matched_queries: string[] }>;
+          truncated: boolean;
+        };
 
         expect(embed).toHaveBeenCalledTimes(2);
         expect(embed).toHaveBeenNthCalledWith(1, 'alpha');
         expect(embed).toHaveBeenNthCalledWith(2, 'beta');
         expect(output.truncated).toBe(false);
-        for (const result of output.results) {
+        for (const result of output.semantic_matches) {
           expect(Array.isArray(result.matched_queries)).toBe(true);
           expect(result.matched_queries.length).toBeGreaterThan(0);
         }
@@ -368,7 +378,7 @@ describe('searchNotes', () => {
 
         expect(output).not.toHaveProperty('matched_queries');
         expect(output).not.toHaveProperty('truncated');
-        for (const result of output.results as Array<Record<string, unknown>>) {
+        for (const result of output.semantic_matches as Array<Record<string, unknown>>) {
           expect(result).not.toHaveProperty('matched_queries');
           expect(result).toHaveProperty('blocks');
           expect(result).toHaveProperty('related');
@@ -432,12 +442,12 @@ describe('searchNotes', () => {
     const tool = buildSearchNotesTool(deps);
     try {
       const output = (await tool.handler({ query: ['single'], threshold: 0 })) as {
-        results: Array<{ path: string; matched_queries?: string[] }>;
+        semantic_matches: Array<{ path: string; matched_queries?: string[] }>;
         truncated: boolean;
       };
 
-      expect(output.results).toHaveLength(1);
-      expect(output.results[0]!.matched_queries).toEqual(['single']);
+      expect(output.semantic_matches).toHaveLength(1);
+      expect(output.semantic_matches[0]!.matched_queries).toEqual(['single']);
       expect(output.truncated).toBe(false);
     } finally {
       await cleanup();
@@ -467,11 +477,11 @@ describe('searchNotes', () => {
     const tool = buildSearchNotesTool(deps);
     try {
       const output = (await tool.handler({ query: ['q1', 'q2'], threshold: 0 })) as {
-        results: Array<{ path: string; matched_queries?: string[] }>;
+        semantic_matches: Array<{ path: string; matched_queries?: string[] }>;
         truncated: boolean;
       };
 
-      const byPath = new Map(output.results.map((r) => [r.path, r]));
+      const byPath = new Map(output.semantic_matches.map((r) => [r.path, r]));
       expect(byPath.get('note-a.md')!.matched_queries).toEqual(['q1']);
       expect(byPath.get('note-b.md')!.matched_queries).toEqual(['q2']);
     } finally {
@@ -498,8 +508,8 @@ describe('searchNotes', () => {
     });
     const tool = buildSearchNotesTool(deps);
     try {
-      const output = (await tool.handler({ query: ['q1'], mode: 'deep', threshold: 0 })) as {
-        results: Array<{
+      const output = (await tool.handler({ query: ['q1'], effort: 'deep', threshold: 0 })) as {
+        semantic_matches: Array<{
           path: string;
           matched_queries: string[];
           related: Array<{ path: string; expansion_similarity: number }>;
@@ -507,10 +517,10 @@ describe('searchNotes', () => {
         truncated: boolean;
       };
 
-      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      const noteA = output.semantic_matches.find((r) => r.path === 'note-a.md')!;
       expect(noteA.matched_queries).toEqual(['q1']);
       expect(noteA.related).toEqual([{ path: 'exp.md', expansion_similarity: 0.7 }]);
-      expect(output.results.find((r) => r.path === 'exp.md')).toBeUndefined();
+      expect(output.semantic_matches.find((r) => r.path === 'exp.md')).toBeUndefined();
     } finally {
       await cleanup();
     }
@@ -535,11 +545,11 @@ describe('searchNotes', () => {
     try {
       const output = (await tool.handler({
         query: ['q1', 'q2'],
-        mode: 'quick',
+        effort: 'quick',
         threshold: 0,
-      })) as { results: Array<{ related: unknown[] }> };
+      })) as { semantic_matches: Array<{ related: unknown[] }> };
 
-      expect(output.results.every((r) => r.related.length === 0)).toBe(true);
+      expect(output.semantic_matches.every((r) => r.related.length === 0)).toBe(true);
       expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(2);
     } finally {
       await cleanup();
@@ -565,14 +575,18 @@ describe('searchNotes', () => {
     });
     const tool = buildSearchNotesTool(deps);
     try {
-      const output = (await tool.handler({ query: 'test query', mode: 'deep', threshold: 0 })) as {
-        results: Array<{
+      const output = (await tool.handler({
+        query: 'test query',
+        effort: 'deep',
+        threshold: 0,
+      })) as {
+        semantic_matches: Array<{
           path: string;
           related: Array<{ path: string; expansion_similarity: number }>;
         }>;
       };
 
-      const noteA = output.results.find((r) => r.path === 'note-a.md')!;
+      const noteA = output.semantic_matches.find((r) => r.path === 'note-a.md')!;
       expect(noteA.related).toEqual([{ path: 'exp.md', expansion_similarity: 0.7 }]);
     } finally {
       await cleanup();
@@ -603,17 +617,17 @@ describe('searchNotes', () => {
     try {
       const output = (await tool.handler({
         query: ['q1', 'q2'],
-        mode: 'deep',
+        effort: 'deep',
         threshold: 0,
       })) as {
-        results: Array<{
+        semantic_matches: Array<{
           path: string;
           related: Array<{ path: string; expansion_similarity: number; similarity?: number }>;
         }>;
       };
 
-      const noteA = output.results.find((r) => r.path === 'seed-a.md')!;
-      const noteB = output.results.find((r) => r.path === 'seed-b.md')!;
+      const noteA = output.semantic_matches.find((r) => r.path === 'seed-a.md')!;
+      const noteB = output.semantic_matches.find((r) => r.path === 'seed-b.md')!;
       expect(noteA.related).toEqual([{ path: 'shared.md', expansion_similarity: 0.85 }]);
       expect(noteB.related).toEqual([{ path: 'shared.md', expansion_similarity: 0.81 }]);
       for (const rel of [...noteA.related, ...noteB.related]) {
@@ -644,11 +658,11 @@ describe('searchNotes', () => {
     const tool = buildSearchNotesTool(deps);
     try {
       const output = (await tool.handler({ query: 'topic', threshold: 0 })) as {
-        results: Array<{ path: string; backlink_count: number }>;
+        semantic_matches: Array<{ path: string; backlink_count: number }>;
       };
 
       expect(graph.ensureFresh).toHaveBeenCalled();
-      const byPath = new Map(output.results.map((r) => [r.path, r]));
+      const byPath = new Map(output.semantic_matches.map((r) => [r.path, r]));
       expect(byPath.get('note-a.md')!.backlink_count).toBe(3);
       expect(byPath.get('note-b.md')!.backlink_count).toBe(0);
     } finally {
@@ -676,11 +690,11 @@ describe('searchNotes', () => {
     const tool = buildSearchNotesTool(deps);
     try {
       const output = (await tool.handler({ query: ['q1', 'q2'], threshold: 0 })) as {
-        results: Array<{ path: string; backlink_count: number }>;
+        semantic_matches: Array<{ path: string; backlink_count: number }>;
       };
 
       expect(graph.ensureFresh).toHaveBeenCalled();
-      const byPath = new Map(output.results.map((r) => [r.path, r]));
+      const byPath = new Map(output.semantic_matches.map((r) => [r.path, r]));
       expect(byPath.get('note-a.md')!.backlink_count).toBe(5);
       expect(byPath.get('note-b.md')!.backlink_count).toBe(1);
     } finally {
@@ -717,12 +731,12 @@ describe('searchNotes', () => {
     try {
       const output = (await tool.handler({
         query: ['q1', 'q2', 'q3'],
-        mode: 'quick',
+        effort: 'quick',
         limit: 2,
         threshold: 0,
-      })) as { results: unknown[]; truncated: boolean };
+      })) as { semantic_matches: unknown[]; truncated: boolean };
 
-      expect(output.results.length).toBeLessThanOrEqual(2);
+      expect(output.semantic_matches.length).toBeLessThanOrEqual(2);
       expect(output.truncated).toBe(true);
     } finally {
       await cleanup();
@@ -747,7 +761,7 @@ describe('searchNotes', () => {
     const tool = buildSearchNotesTool(deps);
     try {
       const output = (await tool.handler({ query: 'topic', threshold: 0 })) as SearchNotesOutput;
-      expect(output.results.every((r) => r.vault === 'v')).toBe(true);
+      expect(output.semantic_matches.every((r) => r.vault === 'v')).toBe(true);
     } finally {
       await cleanup();
     }
@@ -814,7 +828,7 @@ describe('searchNotes', () => {
         });
 
         const result = (await tool.handler({ query: 'q', threshold: 0 })) as {
-          results_by_vault: Array<{ vault: string; results: Array<{ path: string }> }>;
+          results_by_vault: Array<{ vault: string; semantic_matches: Array<{ path: string }> }>;
           skipped_vaults: Array<{ vault: string; reason: string }>;
         };
 
@@ -823,8 +837,8 @@ describe('searchNotes', () => {
         const byVault = new Map(result.results_by_vault.map((g) => [g.vault, g]));
         expect(byVault.has('v1')).toBe(true);
         expect(byVault.has('v2')).toBe(true);
-        expect(byVault.get('v1')!.results[0]!.path).toBe('note-a.md');
-        expect(byVault.get('v2')!.results[0]!.path).toBe('note-b.md');
+        expect(byVault.get('v1')!.semantic_matches[0]!.path).toBe('note-a.md');
+        expect(byVault.get('v2')!.semantic_matches[0]!.path).toBe('note-b.md');
       } finally {
         await fs2.rm(vaultRoot1, { recursive: true, force: true });
         await fs2.rm(vaultRoot2, { recursive: true, force: true });
@@ -889,7 +903,7 @@ describe('searchNotes', () => {
         });
 
         const result = (await tool.handler({ query: 'q', threshold: 0 })) as {
-          results_by_vault: Array<{ vault: string; results: Array<{ path: string }> }>;
+          results_by_vault: Array<{ vault: string; semantic_matches: Array<{ path: string }> }>;
           skipped_vaults: Array<{ vault: string; reason: string }>;
           failed_vaults: Array<{ vault: string; error: { code: string; message: string } }>;
         };
@@ -904,7 +918,7 @@ describe('searchNotes', () => {
         expect(result.results_by_vault).toHaveLength(1);
         const v1Entry = result.results_by_vault[0]!;
         expect(v1Entry.vault).toBe('v1');
-        expect(v1Entry.results[0]!.path).toBe('note-a.md');
+        expect(v1Entry.semantic_matches[0]!.path).toBe('note-a.md');
       } finally {
         await fs2.rm(vaultRoot1, { recursive: true, force: true });
         await fs2.rm(vaultRoot2, { recursive: true, force: true });
@@ -914,7 +928,7 @@ describe('searchNotes', () => {
     }
   });
 
-  it('fan-out skips vaults without semantic index and surfaces them in skipped_vaults', async () => {
+  it('fan-out includes a vault without a semantic index, contributing lexical matches only', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
@@ -965,15 +979,22 @@ describe('searchNotes', () => {
         });
 
         const result = (await tool.handler({ query: 'q', threshold: 0 })) as {
-          results_by_vault: Array<{ vault: string; results: Array<{ path: string }> }>;
+          results_by_vault: Array<{
+            vault: string;
+            semantic_matches: Array<{ path: string }>;
+            lexical_matches: Array<{ path: string }>;
+          }>;
           skipped_vaults: Array<{ vault: string; reason: string }>;
         };
 
-        expect(result.results_by_vault).toHaveLength(1);
-        expect(result.results_by_vault[0]!.vault).toBe('v1');
-        expect(result.skipped_vaults).toEqual([
-          { vault: 'v2', reason: 'SEMANTIC_INDEX_NOT_FOUND' },
-        ]);
+        expect(result.results_by_vault).toHaveLength(2);
+        expect(result.skipped_vaults).toEqual([]);
+        const byVault = new Map(result.results_by_vault.map((g) => [g.vault, g]));
+        expect(byVault.get('v1')!.semantic_matches[0]!.path).toBe('note-a.md');
+        // v2 has no semantic corpus — hybrid falls back to lexical-only rather
+        // than skipping the vault entirely.
+        expect(byVault.get('v2')!.semantic_matches).toEqual([]);
+        expect(byVault.get('v2')!.lexical_matches).toEqual([]);
       } finally {
         await (await import('node:fs/promises')).rm(vaultRoot1, { recursive: true, force: true });
       }
@@ -982,7 +1003,7 @@ describe('searchNotes', () => {
     }
   });
 
-  it('throws SEMANTIC_INDEX_NOT_FOUND when vault has semanticAvailable: false', async () => {
+  it('returns lexical-only matches (no throw) when vault has semanticAvailable: false', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
     try {
       const registry = makeTestRegistry([
@@ -993,6 +1014,8 @@ describe('searchNotes', () => {
           corpus: undefined,
           semanticAvailable: false,
           semanticUnavailableReason: 'no corpus',
+          graph: makeFakeGraph(),
+          listMatchingPaths: async () => new Set(),
         },
       ]);
       const tool = buildSearchNotesTool({
@@ -1002,9 +1025,9 @@ describe('searchNotes', () => {
         modelKey: MODEL_KEY,
       });
 
-      await expect(tool.handler({ vault: 'v', query: 'q' })).rejects.toMatchObject({
-        code: 'SEMANTIC_INDEX_NOT_FOUND',
-      });
+      const result = (await tool.handler({ vault: 'v', query: 'q' })) as SearchNotesOutput;
+      expect(result.semantic_matches).toEqual([]);
+      expect(result.lexical_matches).toEqual([]);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }

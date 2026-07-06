@@ -10,6 +10,7 @@ These are living documents. Update the relevant file in the same change that alt
 - [mcp-parameter-dictionary.md](./mcp-parameter-dictionary.md) — the cross-tool parameter naming contract (one concept = one name)
 - [smart-connections-corpus.md](./smart-connections-corpus.md) — `.ajson` loader, in-memory model, no watchers
 - [retrieval-policy.md](./retrieval-policy.md) — search modes, threshold fallback, expansion
+- [lexical-search.md](./lexical-search.md) — `search_notes`'s lexical leg: mdast block extraction, normalization, tiered ranking, mtime cache
 - [embedding-pipeline.md](./embedding-pipeline.md) — `@xenova/transformers` lazy initialization and value normalization
 - [search-engine.md](./search-engine.md) — cosine similarity, neighbor / block / duplicate search
 - [module-structure.md](./module-structure.md) — how `src/modules/{semantic,operations}/` plug into the server

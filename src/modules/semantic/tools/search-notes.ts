@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
-import { runSemanticFanOut, type IFanOutResult } from '../../../lib/fan-out.js';
+import { resolveVault } from '../../../lib/resolve-vault.js';
+import { runFanOut, type IFanOutResult } from '../../../lib/fan-out.js';
 import { executeMultiRetrieval, executeRetrieval } from '../retrieval-policy.js';
 import {
   normalizeQuery,
@@ -17,12 +17,14 @@ import type {
   NoteFilter,
   NoteResultNode,
   MultiNoteResultNode,
+  SearchChannelMode,
+  SearchEffort,
   SearchEngine,
   SmartSource,
 } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
-import type { SmartConnectionsCorpusIndex } from '../../../lib/obsidian/smart-connections-corpus-index.js';
 import { vaultParamShape } from '../../../lib/vault-param.js';
+import { LexicalIndex, type LexicalMatch } from '../../../lib/obsidian/lexical/index.js';
 
 const prefixSchema = z.union([z.string(), z.array(z.string()).min(1)]);
 
@@ -36,7 +38,8 @@ const filterSchema = z.object({
 interface SearchNotesInput {
   vault?: string;
   query: string | string[];
-  mode?: 'quick' | 'deep';
+  mode?: SearchChannelMode;
+  effort?: SearchEffort;
   limit?: number;
   threshold?: number;
   filter?: {
@@ -54,9 +57,21 @@ type EnrichedNoteNode<T extends NoteResultNode> = T & {
   vault: string;
 };
 
+export interface LexicalNoteResult {
+  path: string;
+  backlink_count: number;
+  vault: string;
+  matched_queries?: string[];
+  matches: LexicalMatch[];
+}
+
 export type SearchNotesOutput =
-  | { results: EnrichedNoteNode<NoteResultNode>[] }
-  | { results: EnrichedNoteNode<MultiNoteResultNode>[]; truncated: boolean };
+  | { semantic_matches: EnrichedNoteNode<NoteResultNode>[]; lexical_matches: LexicalNoteResult[] }
+  | {
+      semantic_matches: EnrichedNoteNode<MultiNoteResultNode>[];
+      lexical_matches: LexicalNoteResult[];
+      truncated: boolean;
+    };
 
 export interface SearchNotesDeps {
   registry: IVaultRegistry;
@@ -116,25 +131,20 @@ function narrowSources(
 }
 
 async function runSearchForEntry(
-  entry: IVaultEntry & { corpus: SmartConnectionsCorpusIndex },
+  entry: IVaultEntry,
   input: SearchNotesInput,
-  deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'searchEngine' | 'modelKey'>,
+  deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'searchEngine' | 'modelKey'> & {
+    lexicalFor: (entry: IVaultEntry) => LexicalIndex;
+  },
 ): Promise<SearchNotesOutput> {
-  const corpus = entry.corpus;
   const { graph, listMatchingPaths } = entry;
-  const { embeddingProvider, searchEngine, modelKey } = deps;
+  const { embeddingProvider, searchEngine, modelKey, lexicalFor } = deps;
 
-  let sources: Map<string, SmartSource>;
-  try {
-    ({ sources } = await corpus.snapshot());
-  } catch (error) {
-    throw wrapDependencyError(error, 'Failed to search notes', {
-      modelKey,
-      operation: 'search_notes',
-    });
-  }
-
-  const mode = input.mode ?? 'quick';
+  // `channel` picks which retrieval leg(s) run. `effort` maps onto the
+  // internal quick|deep retrieval-policy vocabulary. `threshold` is
+  // semantic-only; the lexical leg has no similarity score to threshold.
+  const channel = input.mode ?? 'hybrid';
+  const effort = input.effort ?? 'quick';
   const threshold =
     input.threshold !== undefined
       ? readThreshold(input.threshold, input.threshold, 'threshold')
@@ -142,7 +152,7 @@ async function runSearchForEntry(
   const limit =
     input.limit !== undefined ? readPositiveInteger(input.limit, input.limit, 'limit') : undefined;
 
-  let effectiveSources = sources;
+  let allowed: Set<string> | undefined;
 
   if (input.filter !== undefined) {
     if (isFilterEmpty(input.filter)) {
@@ -152,7 +162,6 @@ async function runSearchForEntry(
       );
     }
 
-    let allowed: Set<string>;
     try {
       allowed = await listMatchingPaths(input.filter);
     } catch (error) {
@@ -170,19 +179,76 @@ async function runSearchForEntry(
     if (allowed.size === 0) {
       const isMulti = Array.isArray(input.query);
       return isMulti
-        ? ({ results: [], truncated: false } as SearchNotesOutput)
-        : ({ results: [] } as SearchNotesOutput);
+        ? ({ semantic_matches: [], lexical_matches: [], truncated: false } as SearchNotesOutput)
+        : ({ semantic_matches: [], lexical_matches: [] } as SearchNotesOutput);
     }
-
-    effectiveSources = narrowSources(sources, allowed);
   }
 
+  let isMulti: boolean;
+  let queries: string[];
   if (Array.isArray(input.query)) {
-    const queries = normalizeQueryArray(input.query);
-    try {
+    isMulti = true;
+    queries = normalizeQueryArray(input.query);
+  } else {
+    isMulti = false;
+    queries = [normalizeQuery(input.query)];
+  }
+
+  // Global lexical cap: in lexical-only mode the caller's `limit` steers the
+  // list directly (falling back to the quick/deep default); in hybrid mode
+  // `limit` is reserved for the semantic leg, so the lexical leg always uses
+  // the quick/deep default regardless of `limit`.
+  const lexCap =
+    channel === 'lexical' ? (limit ?? (effort === 'deep' ? 10 : 5)) : effort === 'deep' ? 10 : 5;
+
+  await graph.ensureFresh();
+  const lexical = await lexicalFor(entry).search({
+    queries,
+    allowed,
+    noteCap: lexCap,
+    perNoteCap: 3,
+    getBacklinkCount: (p) => graph.getBacklinkCount(p),
+  });
+  const lexical_matches: LexicalNoteResult[] = lexical.notes.map((n) => ({
+    path: n.path,
+    backlink_count: graph.getBacklinkCount(n.path),
+    vault: entry.name,
+    ...(isMulti ? { matched_queries: n.matchedQueries } : {}),
+    matches: n.matches,
+  }));
+
+  // `mode: "lexical"` never touches the corpus loader. A vault without an
+  // available semantic corpus (cold/absent) also falls back to lexical-only
+  // rather than throwing — an available corpus that errors mid-search still
+  // throws DEPENDENCY_ERROR below, unchanged.
+  if (channel === 'lexical' || !entry.semanticAvailable || entry.corpus === undefined) {
+    return isMulti
+      ? ({
+          semantic_matches: [],
+          lexical_matches,
+          truncated: lexical.truncated,
+        } as SearchNotesOutput)
+      : ({ semantic_matches: [], lexical_matches } as SearchNotesOutput);
+  }
+
+  const corpus = entry.corpus;
+  let sources: Map<string, SmartSource>;
+  try {
+    ({ sources } = await corpus.snapshot());
+  } catch (error) {
+    throw wrapDependencyError(error, 'Failed to search notes', {
+      modelKey,
+      operation: 'search_notes',
+    });
+  }
+
+  const effectiveSources = allowed !== undefined ? narrowSources(sources, allowed) : sources;
+
+  try {
+    if (isMulti) {
       const output = await executeMultiRetrieval({
         queries,
-        mode,
+        mode: effort,
         threshold,
         limit,
         sources: effectiveSources,
@@ -195,10 +261,7 @@ async function runSearchForEntry(
         ...output.results.map((r) => r.path),
         ...output.results.flatMap((r) => r.related.map((rel) => rel.path)),
       ];
-      const [existing] = await Promise.all([
-        buildExistingPathSet(entry, candidatePaths),
-        graph.ensureFresh(),
-      ]);
+      const existing = await buildExistingPathSet(entry, candidatePaths);
       const enriched = output.results
         .filter((r) => existing.has(r.path))
         .map((r) => ({
@@ -207,20 +270,12 @@ async function runSearchForEntry(
           backlink_count: graph.getBacklinkCount(r.path),
           vault: entry.name,
         }));
-      return { results: enriched, truncated: output.truncated };
-    } catch (error) {
-      throw wrapDependencyError(error, 'Failed to search notes', {
-        modelKey,
-        operation: 'search_notes',
-      });
+      return { semantic_matches: enriched, lexical_matches, truncated: output.truncated };
     }
-  }
 
-  const query = normalizeQuery(input.query);
-  try {
     const output = await executeRetrieval({
-      query,
-      mode,
+      query: queries[0],
+      mode: effort,
       limit,
       threshold,
       sources: effectiveSources,
@@ -231,10 +286,7 @@ async function runSearchForEntry(
       ...output.results.map((r) => r.path),
       ...output.results.flatMap((r) => r.related.map((rel) => rel.path)),
     ];
-    const [existing] = await Promise.all([
-      buildExistingPathSet(entry, candidatePaths),
-      graph.ensureFresh(),
-    ]);
+    const existing = await buildExistingPathSet(entry, candidatePaths);
     const enriched = output.results
       .filter((r) => existing.has(r.path))
       .map((r) => ({
@@ -243,7 +295,7 @@ async function runSearchForEntry(
         backlink_count: graph.getBacklinkCount(r.path),
         vault: entry.name,
       }));
-    return { results: enriched };
+    return { semantic_matches: enriched, lexical_matches };
   } catch (error) {
     throw wrapDependencyError(error, 'Failed to search notes', {
       modelKey,
@@ -256,66 +308,74 @@ export function buildSearchNotesTool(
   deps: SearchNotesDeps,
 ): ITool<SearchNotesInput, SearchNotesOutput | IFanOutResult<SearchNotesOutput>> {
   const { registry, embeddingProvider, searchEngine, modelKey } = deps;
-  const entryDeps = { embeddingProvider, searchEngine, modelKey };
+
+  // Per-vault lexical indexes, created lazily; the Map lives for the tool's
+  // lifetime. Never touches the Smart Connections corpus — it's a read-through
+  // cache over the filesystem via `entry.reader`.
+  const lexicalIndexes = new Map<string, LexicalIndex>();
+  const lexicalFor = (entry: IVaultEntry): LexicalIndex => {
+    let idx = lexicalIndexes.get(entry.name);
+    if (!idx) {
+      idx = new LexicalIndex({ vaultRoot: entry.path, reader: entry.reader });
+      lexicalIndexes.set(entry.name, idx);
+    }
+    return idx;
+  };
+
+  const entryDeps = { embeddingProvider, searchEngine, modelKey, lexicalFor };
   const inputSchema = z.object({
     ...vaultParamShape(registry),
     query: z.union([z.string(), z.array(z.string()).min(1).max(8)]),
-    mode: z.enum(['quick', 'deep']).optional(),
+    mode: z.enum(['hybrid', 'lexical']).optional(),
+    effort: z.enum(['quick', 'deep']).optional(),
     limit: z.number().int().positive().optional(),
     threshold: z.number().min(0).max(1).optional(),
     filter: filterSchema.optional(),
   });
   const SEARCH_NOTES_DESCRIPTION = [
-    'Search notes by semantic similarity. Best for fuzzy recall, topic exploration, or cross-language matches. Pass short keyword queries (1-4 words), not sentences.',
+    'Hybrid search over notes: a semantic leg (embedding similarity — fuzzy recall, topic exploration, cross-language) and a lexical leg (exact text matches over note titles, headings, and body — names, codes, terms). Returns both in one response. Pass short keyword queries (1-4 words), not sentences.',
     '',
-    'MODES (pick based on intent):',
-    '- "quick" (default) — specific lookup. Returns up to 3 notes; each note carries `blocks[]` scoped to itself and `related: []`. Use when you want one or two specific notes.',
-    '- "deep" — topic exploration. Returns up to 8 notes; each note carries `blocks[]` (scoped to itself) and `related[]` (semantically neighbouring notes). Use for "tell me about X" or building an overview.',
+    'AXES:',
+    '- mode: "hybrid" (default) runs both legs; "lexical" runs ONLY exact text matching — works even when no embedding corpus exists.',
+    '- effort: "quick" (default) — compact lookup (up to 3 semantic notes, ~5 lexical); "deep" — exploration (up to 8 semantic notes + related[], ~10 lexical).',
     '',
     'PARAMETERS:',
-    '- query (required): string, or array of 1-8 strings. Pass an array for synonyms / reformulations / translations — embedded in batch, merged into one ranked list. Each result carries `matched_queries` (which of your queries hit it). `limit` is the FINAL result count regardless of how many queries are passed.',
-    '- mode: "quick" | "deep" (default "quick").',
-    '- limit: max notes in `results`. Default 3 (quick) / 8 (deep). Does not affect leaves (`blocks` / `related`).',
-    '- threshold: min similarity, 0-1. Default 0.5 (quick) / 0.35 (deep). Raise to 0.6+ to cut weak matches; lower (e.g. 0.3) when nothing comes back.',
+    '- query (required): string, or array of 1-8 strings for synonyms/translations — merged into one ranked list per leg; each result carries `matched_queries`.',
+    '- mode: "hybrid" | "lexical" (default "hybrid").',
+    '- effort: "quick" | "deep" (default "quick").',
+    '- limit: in hybrid mode caps `semantic_matches`; in lexical mode caps `lexical_matches`.',
+    '- threshold: min similarity 0-1 — SEMANTIC LEG ONLY. Default 0.5 (quick) / 0.35 (deep).',
     ...(registry.isMulti()
       ? ['- vault: target a specific vault by name when multiple are registered.']
       : []),
     '',
-    'RESPONSE SHAPE (tree, depth = 2):',
-    '- `results[]` — top-level direct note matches, ranked by query similarity.',
-    '  - `path`, `similarity` (query-similarity), `backlink_count`, `vault`',
-    '  - `matched_queries` (only when `query` is an array) — which of your queries hit this note',
-    '  - `blocks[]` — section-level matches WITHIN this note. Each block has `heading`, `lines: [start, end]`, `similarity` (query-similarity at block level).',
-    '  - `related[]` — expansion neighbours OF this note (deep mode only; empty otherwise). Each item has `path` and `expansion_similarity` (note-to-note, DIFFERENT SCALE from `similarity` — do not compare them numerically).',
-    '- `truncated` — top-level, only when `query` is an array; true when merged candidates exceeded `limit`.',
+    'RESPONSE SHAPE:',
+    '- `semantic_matches[]` — the semantic tree: `path`, `similarity`, `backlink_count`, `vault`, `blocks[]` (heading, lines, similarity), `related[]` (deep only, `expansion_similarity`). Empty in lexical mode or when no corpus exists.',
+    '- `lexical_matches[]` — grouped per note: `path`, `backlink_count`, `vault`, and `matches[]` (max ~3) of `{ matched_in: "title"|"heading"|"body", snippet, lines?, heading? }`. `heading` on a body match names its enclosing section. No numeric score — order and matched_in carry the ranking (title > heading > body; exact phrase > all-tokens).',
+    '- `truncated` — top-level, only when `query` is an array.',
+    '',
+    'LEXICAL MATCHING: case-, accent-, and apostrophe-variant-insensitive substring; multiword query = ALL tokens must appear (AND), contiguous phrase ranks higher. A note in BOTH legs is a strong relevance signal.',
     '',
     'INVARIANTS:',
-    "- A `related` item NEVER has a `similarity` field — only `expansion_similarity`. A direct result NEVER has `expansion_similarity`. Don't conflate them.",
-    "- The same neighbour can appear in `related[]` of multiple direct results (with different `expansion_similarity` values per parent) — that's by design.",
-    '- `blocks[]` and `related[]` are always present on direct results (possibly empty).',
-    '- After finding a relevant note, call `get_similar_notes` on it for a deeper neighbour profile — do not infer relationships from `related[]` alone.',
+    '- `similarity`/`expansion_similarity` appear ONLY on semantic nodes; lexical items never carry scores.',
+    '- `blocks[]` and `related[]` are always present on semantic results (possibly empty); `matches[]` is always non-empty on lexical items.',
+    '- Empty `lexical_matches` means literally no exact match — unlike the semantic leg, it does not degrade to weak matches.',
     '',
     'EXAMPLES:',
-    '- "where did I write about X?" → search_notes({query: "X"}) — quick.',
-    '- "what do I know about Y?" → search_notes({query: "Y", mode: "deep"}).',
-    '- multilingual pair: search_notes({query: ["embeddings", "векторний пошук"]}).',
-    '- multilingual deep: search_notes({query: ["optimization", "оптимізація"], mode: "deep"}).',
+    '- "where did I write about X?" → search_notes({query: "X"}).',
+    '- exact name/code/term → search_notes({query: "PARAM_DICT", mode: "lexical"}).',
+    '- "what do I know about Y?" → search_notes({query: "Y", effort: "deep"}).',
+    '- multilingual: search_notes({query: ["embeddings", "векторний пошук"]}).',
     '',
-    'PRE-FILTER (filter parameter):',
-    '- filter: optional structural narrowing applied BEFORE semantic ranking. Best when vault has many narrative notes that crowd top-K on a niche query.',
+    'PRE-FILTER (filter parameter) — applies to BOTH legs identically:',
     '  Shape: { path_prefix?, exclude_path_prefix?, tags?, frontmatter? }. At least one field required.',
-    '  - path_prefix: scope to a folder, or array of folders for OR-semantics (e.g. ["Tasks/", "Reflections/"]).',
-    '  - exclude_path_prefix: drop notes whose path starts with any of the listed prefixes (e.g. ["Resources/", "Archive/"]). Valid as the sole filter field.',
-    '  - tags: notes that have ANY of these tags (OR within the array; no leading "#").',
-    '  - frontmatter: sift filter on frontmatter keys (e.g. { type: "reflection", status: "active" }). Same operator allow-list as query_notes.',
-    '  Composition: include → exclude → tags → frontmatter → threshold → semantic.',
-    '- scoped recall: search_notes({query: "trading lessons", filter: {tags: ["trading"]}}).',
-    '- carve out noise: search_notes({query: "active thinking", filter: {exclude_path_prefix: ["Resources/", "Archive/"]}, mode: "deep"}).',
-    '- scoped multi-query: search_notes({query: ["embeddings","векторний пошук"], filter: {path_prefix: ["Resources/", "Inbox/"]}, mode: "deep"}).',
+    '  - path_prefix / exclude_path_prefix: scope to / drop folder subtrees (string or array).',
+    '  - tags: notes with ANY of these tags (no leading "#").',
+    '  - frontmatter: sift filter on frontmatter keys, same operator allow-list as query_notes.',
     ...(registry.isMulti()
       ? [
           '',
-          'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `skipped_vaults: [...]` (vaults without a semantic index are listed in `skipped_vaults`).',
+          'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]`. A vault without a semantic index still contributes its `lexical_matches` (with `semantic_matches: []`); none are skipped.',
           '',
           'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
         ]
@@ -329,20 +389,11 @@ export function buildSearchNotesTool(
     inputSchema,
     handler: async (input) => {
       if (input.vault === undefined && registry.isMulti()) {
-        // runSemanticFanOut filters via semanticAvailableEntries(), so every
-        // entry reaching the callback has corpus defined — the cast bridges
-        // what TS cannot prove from the flag alone.
-        return await runSemanticFanOut(registry, (entry) =>
-          runSearchForEntry(
-            entry as IVaultEntry & { corpus: SmartConnectionsCorpusIndex },
-            input,
-            entryDeps,
-          ),
-        );
+        // Fan out over every registered vault, not just semantically-available
+        // ones — a vault without a corpus still contributes lexical matches.
+        return await runFanOut(registry, (entry) => runSearchForEntry(entry, input, entryDeps));
       }
-      const entry = resolveSemanticVault(input, registry, {
-        tool: 'search_notes',
-      });
+      const entry = resolveVault(input, registry, { tool: 'search_notes' });
       return runSearchForEntry(entry, input, entryDeps);
     },
   };
