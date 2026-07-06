@@ -18,7 +18,6 @@ function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
     list: () => list,
     names: () => list.map((e) => e.name!),
     isMulti: () => list.length > 1,
-    semanticAvailableEntries: () => list.filter((e) => e.semanticAvailable),
   };
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { runFanOut, runSemanticFanOut } from '../../src/lib/fan-out.js';
+import { runFanOut } from '../../src/lib/fan-out.js';
 import { FATAL_TOOL_ERROR_CODES, ToolHandlerError } from '../../src/lib/tool-response.js';
 import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.js';
 
@@ -12,7 +12,6 @@ function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
     list: () => list,
     names: () => list.map((e) => e.name),
     isMulti: () => list.length > 1,
-    semanticAvailableEntries: () => list.filter((e) => e.semanticAvailable),
   };
 }
 
@@ -47,55 +46,6 @@ describe('runFanOut', () => {
     expect(out.results_by_vault).toEqual([]);
     expect(out.failed_vaults).toEqual([
       { vault: 'a', error: { code: 'DEPENDENCY_ERROR', message: 'boom', details: { vault: 'a' } } },
-    ]);
-  });
-});
-
-describe('runSemanticFanOut', () => {
-  it('runs fn only on semantically-available entries', async () => {
-    const reg = makeRegistry([
-      { name: 'a', semanticAvailable: true },
-      { name: 'b', semanticAvailable: true },
-    ]);
-    const out = await runSemanticFanOut(reg, async (entry) => ({ count: entry.name.length }));
-    expect(out.results_by_vault.map((g) => g.vault)).toEqual(['a', 'b']);
-    expect(out.skipped_vaults).toEqual([]);
-    expect(out.failed_vaults).toEqual([]);
-  });
-
-  it('skips vaults without a semantic index and lists them in skipped_vaults', async () => {
-    const reg = makeRegistry([
-      { name: 'a', semanticAvailable: true },
-      { name: 'b', semanticAvailable: false, semanticUnavailableReason: 'no .smart-env/' },
-    ]);
-    const out = await runSemanticFanOut(reg, async (entry) => ({ count: entry.name.length }));
-    expect(out.results_by_vault).toEqual([{ vault: 'a', count: 1 }]);
-    expect(out.skipped_vaults).toEqual([{ vault: 'b', reason: 'SEMANTIC_INDEX_NOT_FOUND' }]);
-    expect(out.failed_vaults).toEqual([]);
-  });
-
-  it('returns empty results_by_vault and lists all when no vault has semantic', async () => {
-    const reg = makeRegistry([
-      { name: 'a', semanticAvailable: false },
-      { name: 'b', semanticAvailable: false },
-    ]);
-    const out = await runSemanticFanOut(reg, async () => ({ count: 1 }));
-    expect(out.results_by_vault).toEqual([]);
-    expect(out.skipped_vaults).toEqual([
-      { vault: 'a', reason: 'SEMANTIC_INDEX_NOT_FOUND' },
-      { vault: 'b', reason: 'SEMANTIC_INDEX_NOT_FOUND' },
-    ]);
-    expect(out.failed_vaults).toEqual([]);
-  });
-
-  it('captures fn rejections into failed_vaults instead of throwing', async () => {
-    const reg = makeRegistry([{ name: 'a', semanticAvailable: true }]);
-    const out = await runSemanticFanOut(reg, async () => {
-      throw new ToolHandlerError('DEPENDENCY_ERROR', 'boom', { details: {} });
-    });
-    expect(out.results_by_vault).toEqual([]);
-    expect(out.failed_vaults).toEqual([
-      { vault: 'a', error: { code: 'DEPENDENCY_ERROR', message: 'boom', details: {} } },
     ]);
   });
 });
@@ -157,25 +107,6 @@ describe('partial failure', () => {
     expect(out.failed_vaults.map((f) => f.vault)).toEqual(['b', 'd']);
   });
 
-  it('runSemanticFanOut: skipped + failed co-exist on the same response', async () => {
-    const reg = makeRegistry([
-      { name: 'a', semanticAvailable: true },
-      { name: 'b', semanticAvailable: false, semanticUnavailableReason: 'no corpus' },
-      { name: 'c', semanticAvailable: true },
-    ]);
-    const out = await runSemanticFanOut(reg, async (entry) => {
-      if (entry.name === 'c') {
-        throw new ToolHandlerError('DEPENDENCY_ERROR', 'oom');
-      }
-      return { v: entry.name };
-    });
-    expect(out.results_by_vault).toEqual([{ vault: 'a', v: 'a' }]);
-    expect(out.skipped_vaults).toEqual([{ vault: 'b', reason: 'SEMANTIC_INDEX_NOT_FOUND' }]);
-    expect(out.failed_vaults).toEqual([
-      { vault: 'c', error: { code: 'DEPENDENCY_ERROR', message: 'oom' } },
-    ]);
-  });
-
   it('ToolHandlerError details are preserved verbatim in failed_vaults', async () => {
     const reg = makeRegistry([{ name: 'a' }]);
     const out = await runFanOut(reg, async () => {
@@ -207,21 +138,6 @@ describe('fatal-code re-throw', () => {
       const reg = makeRegistry([{ name: 'a' }, { name: 'b' }, { name: 'c' }]);
       await expect(
         runFanOut(reg, async () => {
-          throw new ToolHandlerError(code, `bad ${code} payload`);
-        }),
-      ).rejects.toMatchObject({
-        code,
-        message: `bad ${code} payload`,
-      });
-    });
-
-    it(`runSemanticFanOut: re-throws ToolHandlerError when code is "${code}"`, async () => {
-      const reg = makeRegistry([
-        { name: 'a', semanticAvailable: true },
-        { name: 'b', semanticAvailable: true },
-      ]);
-      await expect(
-        runSemanticFanOut(reg, async () => {
           throw new ToolHandlerError(code, `bad ${code} payload`);
         }),
       ).rejects.toMatchObject({

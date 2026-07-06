@@ -52,7 +52,6 @@ describe('createOperationsModule', () => {
       list: vi.fn(() => [fakeEntry]),
       isMulti: vi.fn(() => false),
       names: vi.fn(() => ['MyVault']),
-      semanticAvailableEntries: vi.fn(() => []),
     };
 
     const result = createOperationsModule(fakeRegistry, { binaryPath: '/usr/bin/obsidian' });

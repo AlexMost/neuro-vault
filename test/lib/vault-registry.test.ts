@@ -175,32 +175,6 @@ describe('createVaultRegistry', () => {
     expect(registry.require('a').semanticAvailable).toBe(false);
   });
 
-  it('semanticAvailableEntries returns only entries with available corpus', async () => {
-    const deps = fakeDeps();
-    let call = 0;
-    deps.corpusFactory = async () => {
-      call += 1;
-      if (call === 1) {
-        return {
-          snapshot: async () => ({
-            sources: new Map([['a.md', { path: 'a.md' } as never]]),
-            basenameIndex: new Map(),
-          }),
-        } as never;
-      }
-      return { snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) } as never;
-    };
-    const registry = await VaultRegistry.create(
-      {
-        vaults: [vault('a', '/v/a'), vault('b', '/v/b')],
-        semanticEnabled: true,
-        modelKey: 'm',
-      },
-      deps,
-    );
-    expect(registry.semanticAvailableEntries().map((e) => e.name)).toEqual(['a']);
-  });
-
   it('always populates writer and provider on every entry', async () => {
     const registry = await VaultRegistry.create(
       {

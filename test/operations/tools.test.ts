@@ -50,7 +50,6 @@ const noopRegistry = {
   list: vi.fn(() => [noopEntry]),
   isMulti: vi.fn(() => false),
   names: vi.fn(() => ['test']),
-  semanticAvailableEntries: vi.fn(() => []),
 } as unknown as IVaultRegistry;
 
 const noopDeps = {
