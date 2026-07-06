@@ -40,7 +40,6 @@ function makeRegistry(vaultPath: string, multi = false): IVaultRegistry {
     list: vi.fn(() => entries),
     isMulti: vi.fn(() => multi),
     names: vi.fn(() => entries.map((e) => e.name)),
-    semanticAvailableEntries: vi.fn(() => []),
   };
 }
 
@@ -227,7 +226,6 @@ describe('buildServerInstructions', () => {
         list: vi.fn(() => entries),
         isMulti: vi.fn(() => true),
         names: vi.fn(() => entries.map((e) => e.name)),
-        semanticAvailableEntries: vi.fn(() => []),
       };
 
       const result = await buildServerInstructions(registry);

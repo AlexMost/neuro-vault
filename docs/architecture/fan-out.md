@@ -4,7 +4,7 @@ How multi-vault tools spread a single call across every registered vault and ass
 
 ## What it is
 
-`src/lib/fan-out.ts` provides two helpers — `runFanOut` and `runSemanticFanOut` — that take a `VaultRegistry` and a per-vault async function and produce a uniform response shape: `{ results_by_vault, skipped_vaults, failed_vaults }`. Tools that need to answer for "all vaults" (when the caller omits the `vault:` parameter in multi-vault mode) call one of these helpers; tools that target a single named vault call `resolveVault` / `resolveSemanticVault` directly and never touch fan-out.
+`src/lib/fan-out.ts` provides one helper — `runFanOut` — that takes a `VaultRegistry` and a per-vault async function and produces a uniform response shape: `{ results_by_vault, skipped_vaults, failed_vaults }`. Tools that need to answer for "all vaults" (when the caller omits the `vault:` parameter in multi-vault mode) call this helper; tools that target a single named vault call `resolveVault` / `resolveSemanticVault` directly and never touch fan-out.
 
 ## Why it exists
 
@@ -20,8 +20,8 @@ Without a shared helper, every multi-vault tool would repeat the same loop: iter
 │   (zod, validators)        → MCP isError: true (one fatal)       │
 │            │                                                     │
 │            ▼                                                     │
-│   runFanOut /              per-vault throws ─► failed_vaults[]   │
-│   runSemanticFanOut         (Promise.allSettled — never throws)  │
+│   runFanOut                per-vault throws ─► failed_vaults[]   │
+│                             (Promise.allSettled — never throws)  │
 │            │                                                     │
 │            ▼                                                     │
 │   { results_by_vault, skipped_vaults, failed_vaults }            │
@@ -62,16 +62,16 @@ interface IFailedVault {
 
 ## skipped vs failed
 
-|                  | `skipped_vaults`                                                 | `failed_vaults`                                    |
-| ---------------- | ---------------------------------------------------------------- | -------------------------------------------------- |
-| Semantics        | Pre-filtered out due to known limitation                         | Attempt was made and crashed                       |
-| When             | Before `fn(entry)` is called                                     | Inside `fn(entry)`                                 |
-| Today's producer | `runSemanticFanOut` skips vaults with `semanticAvailable: false` | `mapRejectionToFailedVault` catches all rejections |
-| Typical example  | "Smart Connections index missing for vault X"                    | "Obsidian CLI rejected — daemon not running"       |
+|                  | `skipped_vaults`                              | `failed_vaults`                                    |
+| ---------------- | ---------------------------------------------- | -------------------------------------------------- |
+| Semantics        | Pre-filtered out due to known limitation       | Attempt was made and crashed                       |
+| When             | Before `fn(entry)` is called                   | Inside `fn(entry)`                                 |
+| Today's producer | None — `runFanOut` never skips a vault         | `mapRejectionToFailedVault` catches all rejections |
+| Typical example  | "Smart Connections index missing for vault X"  | "Obsidian CLI rejected — daemon not running"       |
 
 The two are intentionally separate. Skipped is "expected, deterministic, startup-time"; failed is "unexpected, runtime, recoverable on retry". Merging them would erase that signal.
 
-Since `search_notes` became hybrid, no shipped tool calls `runSemanticFanOut` — `search_notes` fans out via `runFanOut` over **all** vaults, because a vault without a semantic corpus still contributes `lexical_matches` (with `semantic_matches: []`). In practice `skipped_vaults` is therefore always `[]` today; the helper and the contract remain for a future semantic-only fan-out tool.
+There used to be a second helper, `runSemanticFanOut`, that skipped vaults with `semanticAvailable: false` and listed them in `skipped_vaults`. When `search_notes` became hybrid it switched to `runFanOut` over **all** vaults — a vault without a semantic corpus still contributes `lexical_matches` (with `semantic_matches: []`) — which left the semantic variant with no callers, and it was removed. `skipped_vaults` is therefore always `[]` today; the field stays in the response shape both for contract stability (always-present fields are discoverable for agents) and as the designated slot for a future fan-out tool that must pre-filter vaults.
 
 ## Rejection mapping
 

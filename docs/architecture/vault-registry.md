@@ -30,7 +30,6 @@ interface VaultRegistry {
   list(): IVaultEntry[];
   isMulti(): boolean;
   names(): string[];
-  semanticAvailableEntries(): IVaultEntry[];
 }
 ```
 
@@ -39,7 +38,7 @@ interface VaultRegistry {
 Before the registry, per-vault wiring lived inline in each module factory, which meant every module duplicated reader/provider construction and every tool handler received multiple config arguments. The registry centralises all of that:
 
 - **Modules become stateless consumers.** `createSemanticModule(registry, ...)` and `createOperationsModule(registry, ...)` pull the `VaultEntry` they need instead of receiving raw paths and constructing things themselves.
-- **Tool handlers are vault-agnostic.** A handler receives `(input, registry)`, calls `registry.require(name)` for a named vault, or fans out via `registry.list()` / `registry.semanticAvailableEntries()`. No handler owns startup wiring.
+- **Tool handlers are vault-agnostic.** A handler receives `(input, registry)`, calls `registry.require(name)` for a named vault, or fans out via `registry.list()`. No handler owns startup wiring.
 - **Per-vault failures are data, not crashes.** If one vault's `.smart-env/multi/` is missing or empty, `VaultRegistry.create` catches the throw, sets `semanticAvailable: false` and records the reason in `semanticUnavailableReason`. The server starts and the healthy vaults work normally. The failure surfaces at call time as `SEMANTIC_INDEX_NOT_FOUND`.
 
 ## How it interacts
@@ -64,7 +63,7 @@ Tool handlers access the registry through three patterns:
 
 1. **Single named vault** — `registry.require(input.vault)` when the caller supplied an explicit `vault` parameter.
 2. **Single-vault fallback** — `registry.list()[0]` when `registry.isMulti()` is `false` and no vault was specified.
-3. **Fan-out** — `registry.list()` or `registry.semanticAvailableEntries()` for `search_notes`, `query_notes`, and `get_vault_overview` when `vault` is omitted in multi-vault mode.
+3. **Fan-out** — `registry.list()` for `search_notes`, `query_notes`, and `get_vault_overview` when `vault` is omitted in multi-vault mode.
 
 ## Invariants
 

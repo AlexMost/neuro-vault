@@ -47,7 +47,6 @@ function makeRegistryForEntry(entry: IVaultEntry): IVaultRegistry {
     list: vi.fn(() => [entry]),
     isMulti: vi.fn(() => false),
     names: vi.fn(() => [entry.name]),
-    semanticAvailableEntries: vi.fn(() => (entry.semanticAvailable ? [entry] : [])),
   };
 }
 

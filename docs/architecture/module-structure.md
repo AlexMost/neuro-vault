@@ -43,7 +43,7 @@ startNeuroVaultServer(config, deps)
    └─ register all → server.connect(transport) → warmup
 ```
 
-Both module factories receive the whole `VaultRegistry` rather than individual vault configs. Tool handlers reach into the registry at call time — either targeting a named vault (`registry.require(name)`) or fanning out across all vaults (`registry.list()` / `registry.semanticAvailableEntries()`). See [`vault-registry.md`](./vault-registry.md) for details.
+Both module factories receive the whole `VaultRegistry` rather than individual vault configs. Tool handlers reach into the registry at call time — either targeting a named vault (`registry.require(name)`) or fanning out across all vaults (`registry.list()`). See [`vault-registry.md`](./vault-registry.md) for details.
 
 Operations tools are always registered — their construction is a zero-cost pure-object factory with no warmup or initialization. Errors related to missing CLI or unavailable Obsidian surface at tool-call time rather than at startup.
 

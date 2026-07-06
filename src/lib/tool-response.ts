@@ -26,9 +26,9 @@ export class ToolHandlerError extends Error {
  * caller passed a malformed filter, asked for a vault that does not exist, or
  * omitted a required `vault:` in multi-vault mode.
  *
- * Used by the multi-vault fan-out helpers ({@link runFanOut} /
- * {@link runSemanticFanOut}) to decide whether to re-throw a per-vault
- * rejection as fatal or capture it under `failed_vaults`.
+ * Used by the multi-vault fan-out helper ({@link runFanOut}) to decide
+ * whether to re-throw a per-vault rejection as fatal or capture it under
+ * `failed_vaults`.
  *
  * Most of these codes are thrown upstream of the fan-out callback today, so
  * the set acts mostly as defense in depth — but if a future tool routes any

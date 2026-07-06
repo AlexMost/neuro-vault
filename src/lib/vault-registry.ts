@@ -58,7 +58,6 @@ export interface IVaultRegistry {
   list(): IVaultEntry[];
   isMulti(): boolean;
   names(): string[];
-  semanticAvailableEntries(): IVaultEntry[];
 }
 
 /**
@@ -151,9 +150,5 @@ export class VaultRegistry implements IVaultRegistry {
 
   isMulti(): boolean {
     return this.entries.length > 1;
-  }
-
-  semanticAvailableEntries(): IVaultEntry[] {
-    return this.entries.filter((e) => e.semanticAvailable);
   }
 }
