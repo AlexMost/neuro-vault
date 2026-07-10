@@ -59,7 +59,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function toToolResponse(value: unknown): CallToolResult {
-  const text = value === undefined ? 'ok' : JSON.stringify(value, null, 2);
+  const text = value === undefined ? 'ok' : JSON.stringify(value);
   const result: CallToolResult = {
     content: [{ type: 'text', text }] satisfies ToolContentBlock[],
   };
@@ -71,8 +71,12 @@ export function toToolResponse(value: unknown): CallToolResult {
 
 export function toToolErrorResponse(error: unknown): CallToolResult {
   if (error instanceof ToolHandlerError) {
+    const text =
+      error.details !== undefined
+        ? `${error.code}: ${error.message}\ndetails: ${JSON.stringify(error.details)}`
+        : `${error.code}: ${error.message}`;
     return {
-      content: [{ type: 'text', text: error.message }],
+      content: [{ type: 'text', text }],
       structuredContent: {
         code: error.code,
         message: error.message,

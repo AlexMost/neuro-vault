@@ -7,6 +7,7 @@ These are living documents. Update the relevant file in the same change that alt
 ## Concepts
 
 - [mcp-server-shape.md](./mcp-server-shape.md) — how MCP tools are registered, response/error wrappers, server instructions
+- [tool-response-envelope.md](./tool-response-envelope.md) — the `toToolResponse`/`toToolErrorResponse` choke point: minified success text, `CODE: message` error text, client-behavior rationale
 - [mcp-parameter-dictionary.md](./mcp-parameter-dictionary.md) — the cross-tool parameter naming contract (one concept = one name)
 - [smart-connections-corpus.md](./smart-connections-corpus.md) — `.ajson` loader, in-memory model, no watchers
 - [retrieval-policy.md](./retrieval-policy.md) — search modes, threshold fallback, expansion
