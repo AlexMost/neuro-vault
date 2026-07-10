@@ -85,7 +85,7 @@ describe('registerTool', () => {
     expect(result.structuredContent).toBeUndefined();
     expect(result.content[0]).toMatchObject({
       type: 'text',
-      text: JSON.stringify([{ name: 'a' }, { name: 'b' }], null, 2),
+      text: JSON.stringify([{ name: 'a' }, { name: 'b' }]),
     });
   });
 

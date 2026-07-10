@@ -11,10 +11,25 @@ describe('toToolResponse', () => {
     expect(block.text.length).toBeGreaterThan(0);
   });
 
-  it('serializes objects as pretty JSON', () => {
-    const result = toToolResponse({ path: 'a.md' });
+  it('serializes objects as minified JSON equal to structuredContent', () => {
+    const result = toToolResponse({ path: 'a.md', nested: { n: 1 } });
     const block = result.content[0] as { type: 'text'; text: string };
-    expect(block.text).toBe('{\n  "path": "a.md"\n}');
+    expect(block.text).toBe('{"path":"a.md","nested":{"n":1}}');
+    expect(block.text).toBe(JSON.stringify(result.structuredContent));
+  });
+
+  it('serializes arrays as minified JSON without structuredContent', () => {
+    const result = toToolResponse([{ name: 'a' }]);
+    const block = result.content[0] as { type: 'text'; text: string };
+    expect(block.text).toBe('[{"name":"a"}]');
+    expect(result.structuredContent).toBeUndefined();
+  });
+
+  it('keeps the ok sentinel for void results', () => {
+    const result = toToolResponse(undefined);
+    const block = result.content[0] as { type: 'text'; text: string };
+    expect(block.text).toBe('ok');
+    expect(result.structuredContent).toBeUndefined();
   });
 });
 

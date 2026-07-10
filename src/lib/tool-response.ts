@@ -59,7 +59,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function toToolResponse(value: unknown): CallToolResult {
-  const text = value === undefined ? 'ok' : JSON.stringify(value, null, 2);
+  const text = value === undefined ? 'ok' : JSON.stringify(value);
   const result: CallToolResult = {
     content: [{ type: 'text', text }] satisfies ToolContentBlock[],
   };
