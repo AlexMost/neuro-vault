@@ -71,8 +71,12 @@ export function toToolResponse(value: unknown): CallToolResult {
 
 export function toToolErrorResponse(error: unknown): CallToolResult {
   if (error instanceof ToolHandlerError) {
+    const text =
+      error.details !== undefined
+        ? `${error.code}: ${error.message}\ndetails: ${JSON.stringify(error.details)}`
+        : `${error.code}: ${error.message}`;
     return {
-      content: [{ type: 'text', text: error.message }],
+      content: [{ type: 'text', text }],
       structuredContent: {
         code: error.code,
         message: error.message,
