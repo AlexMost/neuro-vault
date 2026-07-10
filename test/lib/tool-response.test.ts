@@ -75,6 +75,11 @@ describe('toToolErrorResponse', () => {
     expect(block.text).toBe(
       'INVALID_FILTER: operator $bad is not allowed\ndetails: {"field":"filter"}',
     );
+    expect(result.structuredContent).toEqual({
+      code: 'INVALID_FILTER',
+      message: 'operator $bad is not allowed',
+      details: { field: 'filter' },
+    });
   });
 
   it('keeps message-only text for non-handler errors', () => {
