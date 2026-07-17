@@ -17,7 +17,6 @@ export type OperationsErrorCode =
   | 'PATH_NOT_FOUND'
   | 'PROPERTY_NOT_FOUND'
   | 'UNSUPPORTED_VALUE_TYPE'
-  | 'CLI_ERROR'
   | 'READ_FAILED'
   | 'AMBIGUOUS_MATCH'
   | 'VAULT_REQUIRED'

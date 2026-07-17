@@ -358,8 +358,6 @@ describe('CLI removal invariant', () => {
   it('no CLI_* error codes remain in src/', async () => {
     const grep = promisify(execFile);
     // grep exits 1 when nothing matches — that is the PASS condition.
-    await expect(
-      grep('grep', ['-rE', 'CLI_NOT_FOUND|CLI_UNAVAILABLE|CLI_TIMEOUT', 'src/']),
-    ).rejects.toMatchObject({ code: 1 });
+    await expect(grep('grep', ['-rE', 'CLI_', 'src/'])).rejects.toMatchObject({ code: 1 });
   });
 });
