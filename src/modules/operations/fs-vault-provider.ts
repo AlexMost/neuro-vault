@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { parseDocument } from 'yaml';
+import { isMap, parseDocument } from 'yaml';
 
 import { readDailyNotesConfig } from '../../lib/obsidian/daily-notes-config.js';
 import { formatDailyDate } from '../../lib/obsidian/daily-note-path.js';
@@ -74,7 +74,17 @@ export class FsVaultProvider implements VaultProvider {
     }
     const absPath = path.join(vaultRoot, relPath);
 
-    await mkdir(path.dirname(absPath), { recursive: true });
+    try {
+      await mkdir(path.dirname(absPath), { recursive: true });
+    } catch (err) {
+      // e.g. a parent path component is a file, not a directory — a creation
+      // failure, not a "note already exists" case.
+      throw new ToolHandlerError(
+        'CREATE_FAILED',
+        `Failed to create directory for ${relPath}: ${(err as Error).message}`,
+        { details: { path: relPath }, cause: err },
+      );
+    }
     try {
       await writeFile(absPath, input.content ?? '', {
         encoding: 'utf8',
@@ -123,7 +133,25 @@ export class FsVaultProvider implements VaultProvider {
   async readDaily(): Promise<DailyNoteResult> {
     const vaultRoot = this.vaultRoot;
     const config = await readDailyNotesConfig(vaultRoot);
-    const relPath = `${config.folder}/${formatDailyDate(config.format, new Date())}.md`;
+    // `folder` and `format` come straight from daily-notes.json — a malicious
+    // or misconfigured `folder: "../outside"` (or a `[literal]` format with
+    // slashes) would otherwise resolve outside the vault. Normalize the whole
+    // path so `..`/absolute components are rejected, and surface it as the
+    // config error rather than an escape. (formatDailyDate's own
+    // unsupported-token error is left to propagate unchanged.)
+    const formatted = formatDailyDate(config.format, new Date());
+    let relPath: string;
+    try {
+      relPath = normalizeNotePath(`${config.folder}/${formatted}.md`);
+    } catch (err) {
+      throw new ToolHandlerError(
+        'DAILY_NOTES_NOT_CONFIGURED',
+        `Daily Notes config resolves to a path outside the vault ` +
+          `(folder='${config.folder}', format='${config.format}'). ` +
+          `Fix the Daily Notes folder/format in Obsidian.`,
+        { details: { folder: config.folder, format: config.format }, cause: err },
+      );
+    }
 
     let raw: string;
     try {
@@ -204,6 +232,17 @@ export class FsVaultProvider implements VaultProvider {
         { details: { path: relPath, errors: doc.errors.map((e) => e.message) } },
       );
     }
+    // Syntactically valid YAML whose root is a scalar or sequence (e.g. a
+    // frontmatter block that is just `scalar` or a `- list`) parses without
+    // errors, but doc.set()/doc.delete() would throw a plain Error. An empty
+    // block yields `contents === null`, which the mutators handle fine.
+    if (doc.contents !== null && !isMap(doc.contents)) {
+      throw new ToolHandlerError(
+        'READ_FAILED',
+        `Frontmatter of ${relPath} is not a YAML mapping; properties can only be edited on key/value frontmatter.`,
+        { details: { path: relPath } },
+      );
+    }
 
     if (!mutate(doc)) return;
 
@@ -220,7 +259,15 @@ export class FsVaultProvider implements VaultProvider {
     } else {
       newPrefix = `---\n${doc.toString()}---\n`;
     }
-    await writeFile(absPath, newPrefix + body, 'utf8');
+    try {
+      await writeFile(absPath, newPrefix + body, 'utf8');
+    } catch (err) {
+      throw new ToolHandlerError(
+        'WRITE_FAILED',
+        `Failed to write ${relPath}: ${(err as Error).message}`,
+        { details: { path: relPath }, cause: err },
+      );
+    }
   }
 
   private async resolveIdentifierPath(identifier: NoteIdentifier): Promise<string> {

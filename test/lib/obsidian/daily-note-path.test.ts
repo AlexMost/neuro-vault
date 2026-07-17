@@ -29,6 +29,15 @@ describe('formatDailyDate', () => {
       expect.objectContaining({ code: 'DAILY_NOTES_NOT_CONFIGURED' }),
     );
   });
+  it('rejects longer year runs instead of rendering them (YYYYYY, YYYYYYYY)', () => {
+    // Regression: 'YYYYYY' must not split into YYYY+YY ("202626"), and
+    // 'YYYYYYYY' must not become YYYY+YYYY ("20262026").
+    for (const fmt of ['YYYYYY-MM-DD', 'YYYYYYYY']) {
+      expect(() => formatDailyDate(fmt, d)).toThrowError(
+        expect.objectContaining({ code: 'DAILY_NOTES_NOT_CONFIGURED' }),
+      );
+    }
+  });
   it('rejects an unclosed bracketed literal', () => {
     expect(() => formatDailyDate('[day-YYYY-MM-DD', d)).toThrowError(
       expect.objectContaining({

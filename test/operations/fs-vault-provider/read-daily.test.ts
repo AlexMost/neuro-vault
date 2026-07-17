@@ -107,6 +107,21 @@ describe('FsVaultProvider.readDaily (disk)', () => {
     });
   });
 
+  it('rejects a folder that escapes the vault instead of reading outside it', async () => {
+    // Repro from review: a traversal `folder` must not resolve to a file
+    // outside the vault root. Plant the target so a successful read would be
+    // a real escape, then assert it is refused as a config error.
+    const root = await makeVault({
+      '.obsidian/daily-notes.json': '{"folder":"../outside","format":"[secret]"}',
+    });
+    const provider = makeProvider(root);
+
+    await expect(provider.readDaily()).rejects.toMatchObject({
+      code: 'DAILY_NOTES_NOT_CONFIGURED',
+      details: { folder: '../outside' },
+    });
+  });
+
   it('fails DAILY_NOTES_NOT_CONFIGURED when config is malformed JSON', async () => {
     const root = await makeVault({
       '.obsidian/daily-notes.json': '{oops',

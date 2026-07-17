@@ -19,6 +19,7 @@ export function formatDailyDate(format: string, date: Date): string {
       out += format.slice(i + 1, close);
       i = close + 1;
     } else if (format.startsWith('YYYY', i)) {
+      if (format[i + 4] === 'Y') throw unsupported(format, 'YYYYY');
       out += String(date.getFullYear()).padStart(4, '0');
       i += 4;
     } else if (format.startsWith('YY', i)) {

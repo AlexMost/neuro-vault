@@ -1,9 +1,11 @@
-import { readFile } from 'node:fs/promises';
+import { chmod, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { byName, byPath, makeProvider, makeVault } from './_helpers.js';
+
+const isRoot = process.getuid?.() === 0;
 
 describe('FsVaultProvider.setProperty (disk)', () => {
   it('sets a property preserving body bytes and neighbor formatting', async () => {
@@ -124,6 +126,28 @@ describe('FsVaultProvider.setProperty (disk)', () => {
     await expect(
       provider.setProperty({ identifier: byPath('x.md'), name: 'a', value: 1 }),
     ).rejects.toMatchObject({ code: 'READ_FAILED' });
+  });
+
+  it('fails READ_FAILED on syntactically valid but non-map frontmatter root', async () => {
+    // `---\njust a scalar\n---` parses without YAML errors, but its root is a
+    // scalar — doc.set() would throw a plain Error. Must be the contract code.
+    const root = await makeVault({ 'x.md': '---\njust a scalar\n---\nbody\n' });
+    const provider = makeProvider(root);
+
+    await expect(
+      provider.setProperty({ identifier: byPath('x.md'), name: 'a', value: 1 }),
+    ).rejects.toMatchObject({ code: 'READ_FAILED' });
+  });
+
+  it.skipIf(isRoot)('maps a write failure to WRITE_FAILED (read-only note)', async () => {
+    const root = await makeVault({ 'x.md': '---\na: 1\n---\nbody\n' });
+    const provider = makeProvider(root);
+    // Read-only file: the frontmatter read succeeds, the rewrite hits EACCES.
+    await chmod(path.join(root, 'x.md'), 0o444);
+
+    await expect(
+      provider.setProperty({ identifier: byPath('x.md'), name: 'a', value: 2 }),
+    ).rejects.toMatchObject({ code: 'WRITE_FAILED', details: { path: 'x.md' } });
   });
 
   it('fails NOT_FOUND when the note does not exist on disk', async () => {

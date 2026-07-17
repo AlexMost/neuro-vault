@@ -18,6 +18,7 @@ export type OperationsErrorCode =
   | 'PROPERTY_NOT_FOUND'
   | 'UNSUPPORTED_VALUE_TYPE'
   | 'READ_FAILED'
+  | 'WRITE_FAILED'
   | 'AMBIGUOUS_MATCH'
   | 'VAULT_REQUIRED'
   | 'VAULT_NOT_FOUND'

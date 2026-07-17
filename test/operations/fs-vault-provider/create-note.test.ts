@@ -65,6 +65,20 @@ describe('FsVaultProvider.createNote (disk)', () => {
     });
   });
 
+  it('maps a directory-creation failure to CREATE_FAILED (parent path is a file)', async () => {
+    // `blocked` exists as a file, so mkdir for `blocked/x.md`'s parent fails
+    // (ENOTDIR). That must surface as the contract error, not a raw fs error.
+    const root = await makeVault({ blocked: 'i am a file\n' });
+    const provider = makeProvider(root);
+
+    await expect(provider.createNote({ path: 'blocked/x.md', content: 'y' })).rejects.toMatchObject(
+      {
+        code: 'CREATE_FAILED',
+        details: { path: 'blocked/x.md' },
+      },
+    );
+  });
+
   it('throws when neither name nor path is given', async () => {
     const root = await makeVault({});
     const provider = makeProvider(root);

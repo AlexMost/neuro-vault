@@ -52,6 +52,11 @@ Every `VaultProvider` method (`createNote`, `readDaily`, `setProperty`, `removeP
 - **WHEN** `.obsidian/daily-notes.json` is absent or does not define a usable configuration
 - **THEN** `readDaily` fails with `DAILY_NOTES_NOT_CONFIGURED`
 
+#### Scenario: A folder or format that escapes the vault is refused
+
+- **WHEN** `.obsidian/daily-notes.json` defines a `folder` or `format` whose resolved path leaves the vault root (e.g. `folder: "../outside"`)
+- **THEN** `readDaily` fails with `DAILY_NOTES_NOT_CONFIGURED` and reads no file outside the vault
+
 #### Scenario: Missing today-note behavior is preserved
 
 - **WHEN** the configuration is valid but today's daily note file does not exist
