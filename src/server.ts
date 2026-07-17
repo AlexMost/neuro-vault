@@ -12,7 +12,7 @@ import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { FsVaultWriter } from './lib/obsidian/vault-writer.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
-import { ObsidianCLIProvider } from './modules/operations/obsidian-cli-provider.js';
+import { FsVaultProvider } from './modules/operations/fs-vault-provider.js';
 import { createSmartConnectionsCorpusIndex } from './lib/obsidian/smart-connections-corpus-index.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ResourceRegistration } from './lib/resource-registration.js';
@@ -177,7 +177,7 @@ function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): I
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
     providerFactory: ({ vaultName, vaultRoot, binaryPath }) =>
-      new ObsidianCLIProvider({ vaultName, vaultRoot, binaryPath }),
+      new FsVaultProvider({ vaultName, vaultRoot, binaryPath }),
     corpusFactory: ({ smartEnvPath, modelKey }) =>
       createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey }),
     ...overrides,
