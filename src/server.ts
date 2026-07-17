@@ -176,8 +176,8 @@ function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): I
     writerFactory: ({ vaultRoot }) => new FsVaultWriter({ vaultRoot }),
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
-    providerFactory: ({ vaultName, vaultRoot, binaryPath }) =>
-      new FsVaultProvider({ vaultName, vaultRoot, binaryPath }),
+    providerFactory: ({ vaultName, vaultRoot, binaryPath, reader }) =>
+      new FsVaultProvider({ vaultName, vaultRoot, binaryPath, reader }),
     corpusFactory: ({ smartEnvPath, modelKey }) =>
       createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey }),
     ...overrides,

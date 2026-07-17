@@ -9,8 +9,11 @@ import type {
   TagListEntry,
   VaultProvider,
 } from '../../lib/obsidian/vault-provider.js';
+import type { VaultReader } from '../../lib/obsidian/vault-reader.js';
 
-export interface FsVaultProviderOptions extends ObsidianCLIProviderOptions {}
+export interface FsVaultProviderOptions extends ObsidianCLIProviderOptions {
+  reader?: VaultReader;
+}
 
 /**
  * Disk-direct VaultProvider (strangler fig over ObsidianCLIProvider).
@@ -20,9 +23,16 @@ export interface FsVaultProviderOptions extends ObsidianCLIProviderOptions {}
  */
 export class FsVaultProvider implements VaultProvider {
   private readonly cli: ObsidianCLIProvider;
+  private readonly reader: VaultReader | undefined;
 
   constructor(opts: FsVaultProviderOptions = {}) {
     this.cli = new ObsidianCLIProvider(opts);
+    this.reader = opts.reader;
+  }
+
+  private requireReader(): VaultReader {
+    if (!this.reader) throw new Error('FsVaultProvider: reader not wired');
+    return this.reader;
   }
 
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {

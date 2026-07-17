@@ -6,6 +6,7 @@ import {
   type IVaultEntry,
   type IVaultEntryDeps,
 } from '../../src/lib/vault-registry.js';
+import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import type { IVaultConfig } from '../../src/types.js';
 
 // Type-level guard: writer and provider must be required on IVaultEntry.
@@ -25,8 +26,8 @@ function fakeDeps(): IVaultEntryDeps {
     writerFactory: ({ vaultRoot }) => ({ vaultRoot }) as never,
     graphFactory: ({ reader }) => ({ reader, ensureFresh: async () => {} }) as never,
     listMatchingPathsFactory: () => (async () => new Set<string>()) as never,
-    providerFactory: ({ vaultName, vaultRoot, binaryPath }) =>
-      ({ vaultName, vaultRoot, binaryPath }) as never,
+    providerFactory: ({ vaultName, vaultRoot, binaryPath, reader }) =>
+      ({ vaultName, vaultRoot, binaryPath, reader }) as never,
     corpusFactory: async () =>
       ({ snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) }) as never,
   };
@@ -173,6 +174,27 @@ describe('createVaultRegistry', () => {
       deps,
     );
     expect(registry.require('a').semanticAvailable).toBe(false);
+  });
+
+  it('passes the vault reader to providerFactory', async () => {
+    const fakeReader = { sentinel: 'reader' } as unknown as VaultReader;
+    const seen: unknown[] = [];
+    const deps = fakeDeps();
+    deps.readerFactory = () => fakeReader;
+    deps.providerFactory = (opts) => {
+      seen.push(opts.reader);
+      return { vaultName: opts.vaultName, vaultRoot: opts.vaultRoot } as never;
+    };
+    await VaultRegistry.create(
+      {
+        vaults: [vault('a', '/v/a')],
+        semanticEnabled: false,
+        modelKey: 'm',
+      },
+      deps,
+    );
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBe(fakeReader);
   });
 
   it('always populates writer and provider on every entry', async () => {
