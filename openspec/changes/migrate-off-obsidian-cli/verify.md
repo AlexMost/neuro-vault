@@ -12,6 +12,12 @@ Verified at HEAD `900302e` + `4.4` checkoff commit, branch `worktree-migrate-off
 
 **Final assessment: All checks passed. Ready for archive.** No CRITICAL or WARNING issues. Non-blocking SUGGESTIONs (follow-ups) listed below.
 
+### Overall Decision
+
+- [x] ✅ PASS
+- [ ] ⚠️ PASS WITH WARNINGS
+- [ ] ❌ FAIL
+
 ## Verify gates (openspec/config.yaml rules.verify)
 
 | Gate                 | Result                                                    |
