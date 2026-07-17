@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -27,20 +27,6 @@ function makeMockGraph(): WikilinkGraphIndex {
 }
 
 describe('FsVaultProvider delegation', () => {
-  it('delegates createNote to the internal CLI provider (same exec seam)', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: '', stderr: '' });
-    const provider = new FsVaultProvider({ exec });
-
-    const result = await provider.createNote({ name: 'Idea 42', content: 'first thought' });
-
-    expect(exec).toHaveBeenCalledWith(
-      'obsidian',
-      ['create', 'name=Idea 42', 'content=first thought'],
-      { timeout: 10_000 },
-    );
-    expect(result).toEqual({ path: 'Idea 42' });
-  });
-
   it('delegates setProperty, removeProperty', async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: '[]', stderr: '' });
     const provider = new FsVaultProvider({ vaultName: 'V', exec });
@@ -80,6 +66,68 @@ describe('FsVaultProvider delegation', () => {
         value: 'done',
       }),
     ).rejects.toMatchObject({ code: 'CLI_NOT_FOUND' });
+  });
+});
+
+describe('FsVaultProvider.createNote (disk)', () => {
+  it('writes content verbatim and creates parent folders', async () => {
+    const root = await makeVault({});
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    const result = await provider.createNote({
+      path: 'Deep/Nested/x.md',
+      content: '---\na: 1\n---\nbody\n',
+    });
+
+    expect(result).toEqual({ path: 'Deep/Nested/x.md' });
+    expect(await readFile(path.join(root, 'Deep/Nested/x.md'), 'utf8')).toBe(
+      '---\na: 1\n---\nbody\n',
+    );
+  });
+
+  it('fails NOTE_EXISTS without overwrite, succeeds with it', async () => {
+    const root = await makeVault({ 'x.md': 'old' });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await expect(provider.createNote({ path: 'x.md', content: 'new' })).rejects.toMatchObject({
+      code: 'NOTE_EXISTS',
+    });
+    await provider.createNote({ path: 'x.md', content: 'new', overwrite: true });
+    expect(await readFile(path.join(root, 'x.md'), 'utf8')).toBe('new');
+  });
+
+  it('resolves name via app.json newFileFolderPath', async () => {
+    const root = await makeVault({
+      '.obsidian/app.json': '{"newFileLocation":"folder","newFileFolderPath":"Inbox"}',
+    });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    const result = await provider.createNote({ name: 'Idea 42' });
+
+    expect(result).toEqual({ path: 'Inbox/Idea 42.md' });
+  });
+
+  it('resolves name to vault root without app.json', async () => {
+    const root = await makeVault({});
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    expect(await provider.createNote({ name: 'Idea' })).toEqual({ path: 'Idea.md' });
   });
 });
 

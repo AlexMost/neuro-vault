@@ -1,9 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { readDailyNotesConfig } from '../../lib/obsidian/daily-notes-config.js';
 import { formatDailyDate } from '../../lib/obsidian/daily-note-path.js';
 import { splitFrontmatter } from '../../lib/obsidian/frontmatter.js';
+import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
 import { extractTags } from '../../lib/obsidian/query/note-record.js';
 import type {
   CreateNoteInput,
@@ -57,7 +58,58 @@ export class FsVaultProvider implements VaultProvider {
   }
 
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
-    return this.cli.createNote(input);
+    const vaultRoot = this.requireVaultRoot();
+    if (input.name === undefined && input.path === undefined) {
+      throw new Error('createNote requires name or path');
+    }
+    const relPath =
+      input.path ?? normalizeNotePath((await this.newNoteDir(vaultRoot)) + input.name!);
+    const absPath = path.join(vaultRoot, relPath);
+
+    await mkdir(path.dirname(absPath), { recursive: true });
+    try {
+      await writeFile(absPath, input.content ?? '', {
+        encoding: 'utf8',
+        flag: input.overwrite ? 'w' : 'wx',
+      });
+    } catch (err) {
+      if ((err as { code?: string }).code === 'EEXIST') {
+        throw new ToolHandlerError(
+          'NOTE_EXISTS',
+          'Note already exists. Pass overwrite: true after confirming with the user.',
+          { details: { path: relPath }, cause: err },
+        );
+      }
+      throw new ToolHandlerError(
+        'CREATE_FAILED',
+        `Failed to write ${relPath}: ${(err as Error).message}`,
+        {
+          details: { path: relPath },
+          cause: err,
+        },
+      );
+    }
+    return { path: relPath };
+  }
+
+  /** '' or 'Folder/' prefix for name-identified new notes, per .obsidian/app.json. */
+  private async newNoteDir(vaultRoot: string): Promise<string> {
+    let raw: string;
+    try {
+      raw = await readFile(path.join(vaultRoot, '.obsidian/app.json'), 'utf8');
+    } catch {
+      return '';
+    }
+    try {
+      const parsed = JSON.parse(raw) as { newFileLocation?: string; newFileFolderPath?: string };
+      if (parsed.newFileLocation === 'folder' && typeof parsed.newFileFolderPath === 'string') {
+        const folder = parsed.newFileFolderPath.trim().replace(/\/+$/, '');
+        if (folder !== '') return `${folder}/`;
+      }
+    } catch {
+      /* malformed app.json → vault root */
+    }
+    return '';
   }
 
   async readDaily(): Promise<DailyNoteResult> {
