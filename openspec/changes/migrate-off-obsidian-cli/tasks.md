@@ -13,10 +13,10 @@
 
 ## 3. Daily leg — readDaily from daily-notes.json
 
-- [ ] 3.1 Resolve the open question: confirm `read_daily`'s `notes_today` section is scan-based (if it touches the provider, pull it into this leg's scope)
-- [ ] 3.2 Characterize current CLI behavior for a missing today-note (error code + how the resolved path reaches the caller) as a pinned test
-- [ ] 3.3 Implement `readDaily`: parse `.obsidian/daily-notes.json` via `daily-notes-config.ts`, resolve today's path, read from disk; `DAILY_NOTES_NOT_CONFIGURED` on absent/unusable config; missing today-note matches the pinned behavior; remove the delegation
-- [ ] 3.4 Tests: configured+exists, config missing, today-note missing (parity with 3.2)
+- [x] 3.1 Resolve the open question: confirm `read_daily`'s `notes_today` section is scan-based (if it touches the provider, pull it into this leg's scope)
+- [x] 3.2 Characterize current CLI behavior for a missing today-note (error code + how the resolved path reaches the caller) as a pinned test
+- [x] 3.3 Implement `readDaily`: parse `.obsidian/daily-notes.json` via `daily-notes-config.ts`, resolve today's path, read from disk; `DAILY_NOTES_NOT_CONFIGURED` on absent/unusable config; missing today-note matches the pinned behavior; remove the delegation
+- [x] 3.4 Tests: configured+exists, config missing, today-note missing (parity with 3.2)
 
 ## 4. Write leg — createNote / setProperty / removeProperty from disk
 
