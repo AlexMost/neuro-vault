@@ -157,7 +157,7 @@ Modify frontmatter and explore tag/property metadata without paying the token co
 
 ### `set_property`
 
-Set a frontmatter property on a note. The YAML type is inferred from the JS value (`string` → text, `number` → number, `boolean` → checkbox, `Array` → list). For `date` / `datetime` pass `type` explicitly. List items must not contain commas — a comma inside a list item is indistinguishable from an item separator once serialized, so it is rejected up front rather than silently mis-split.
+Set a frontmatter property on a note. The YAML type is inferred from the JS value (`string` → text, `number` → number, `boolean` → checkbox, `Array` → list). For `date` / `datetime` pass `type` explicitly. List items must not contain commas (a validation retained from the earlier CLI-based implementation).
 
 ```typescript
 set_property({
