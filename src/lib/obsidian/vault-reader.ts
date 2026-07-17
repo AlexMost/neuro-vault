@@ -75,7 +75,8 @@ export class FsVaultReader implements VaultReader {
   }
 
   async readNotes(input: ReadNotesInput): Promise<ReadNotesItem[]> {
-    return Promise.all(input.paths.map((p) => this.readOne(p)));
+    const includeContent = input.fields.includes('content');
+    return Promise.all(input.paths.map((p) => this.readOne(p, includeContent)));
   }
 
   async scan(opts: ScanOptions = {}): Promise<string[]> {
@@ -111,7 +112,10 @@ export class FsVaultReader implements VaultReader {
     return matches.map((m) => `${prefix}/${toPosixSlashes(m)}`).sort();
   }
 
-  private async readOne(vaultRelativePath: string): Promise<ReadNotesItem> {
+  private async readOne(
+    vaultRelativePath: string,
+    includeContent: boolean,
+  ): Promise<ReadNotesItem> {
     const absPath = path.join(this.vaultRoot, vaultRelativePath);
     let raw: string;
     try {
@@ -137,6 +141,9 @@ export class FsVaultReader implements VaultReader {
       };
     }
     const { frontmatter, content } = splitFrontmatter(raw);
-    return { path: vaultRelativePath, frontmatter, content };
+    // When the caller only wants frontmatter, drop the body instead of retaining
+    // it. listTags/listProperties/get_vault_overview read frontmatter across the
+    // whole vault; holding every note's body would be a real memory cost there.
+    return { path: vaultRelativePath, frontmatter, content: includeContent ? content : '' };
   }
 }
