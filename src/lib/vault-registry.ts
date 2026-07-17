@@ -32,7 +32,7 @@ export interface IVaultEntryDeps {
   providerFactory: (opts: {
     vaultName: string;
     vaultRoot: string;
-    binaryPath?: string;
+    reader: VaultReader;
   }) => VaultProvider;
   corpusFactory: (opts: {
     smartEnvPath: string;
@@ -44,7 +44,6 @@ export interface IVaultRegistryConfig {
   vaults: IVaultConfig[];
   semanticEnabled: boolean;
   modelKey: string;
-  binaryPath?: string;
 }
 
 /**
@@ -86,7 +85,7 @@ export class VaultRegistry implements IVaultRegistry {
       const provider = deps.providerFactory({
         vaultName: v.name,
         vaultRoot: v.path,
-        binaryPath: config.binaryPath,
+        reader,
       });
 
       let corpus: SmartConnectionsCorpusIndex | undefined;

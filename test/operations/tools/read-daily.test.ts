@@ -1,10 +1,11 @@
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 import { buildReadDailyTool } from '../../../src/modules/operations/tools/read-daily.js';
+import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { type ReadNotesItem, type VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import { makeGraph, makeProvider } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
@@ -41,36 +42,32 @@ describe('operations.readDaily handler', () => {
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'read-daily-test-'));
-    await mkdir(join(tmpDir, '.obsidian'), { recursive: true });
-    await writeFile(
-      join(tmpDir, '.obsidian', 'daily-notes.json'),
-      JSON.stringify({ folder: '01 Daily' }),
-    );
   });
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('throws DAILY_NOTES_NOT_CONFIGURED before invoking the provider on an unconfigured vault', async () => {
-    // Use a fresh tmp dir with NO .obsidian/daily-notes.json
-    const emptyDir = await mkdtemp(join(tmpdir(), 'read-daily-unconfigured-'));
-    try {
-      const provider = makeProvider({
-        readDaily: vi.fn().mockRejectedValue(new Error('should not be called')),
-      });
-      const registry = makeTestRegistry([
-        { name: 'v', path: emptyDir, provider, reader: buildReader([]), graph: makeGraph() },
-      ]);
-      const tool = buildReadDailyTool({ registry });
+  it('propagates DAILY_NOTES_NOT_CONFIGURED from the provider on an unconfigured vault', async () => {
+    // Config validation is the provider's job (FsVaultProvider.readDaily reads
+    // daily-notes.json itself); the handler adds no preflight of its own and
+    // must surface the provider's contract error untouched.
+    const provider = makeProvider({
+      readDaily: vi
+        .fn()
+        .mockRejectedValue(
+          new ToolHandlerError('DAILY_NOTES_NOT_CONFIGURED', 'Daily Notes plugin not configured'),
+        ),
+    });
+    const registry = makeTestRegistry([
+      { name: 'v', path: tmpDir, provider, reader: buildReader([]), graph: makeGraph() },
+    ]);
+    const tool = buildReadDailyTool({ registry });
 
-      await expect(tool.handler({})).rejects.toMatchObject({
-        code: 'DAILY_NOTES_NOT_CONFIGURED',
-      });
-      expect(provider.readDaily).not.toHaveBeenCalled();
-    } finally {
-      await rm(emptyDir, { recursive: true, force: true });
-    }
+    await expect(tool.handler({})).rejects.toMatchObject({
+      code: 'DAILY_NOTES_NOT_CONFIGURED',
+    });
+    expect(provider.readDaily).toHaveBeenCalledTimes(1);
   });
 
   it('forwards to provider.readDaily and returns daily fields with vault', async () => {

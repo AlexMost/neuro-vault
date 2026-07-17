@@ -6,10 +6,9 @@
 | ---------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--vault`        | yes      | —          | Absolute path to an Obsidian vault directory. Repeat the flag to register additional vaults. The MCP-side alias is always the directory basename; there is no override. |
 | `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip)                                                                                                                 |
-| `--obsidian-cli` | no       | `obsidian` | Path to the `obsidian` CLI binary (override only)                                                                                                                       |
 | `--help`         | no       | —          | Show help                                                                                                                                                               |
 
-The vault's directory basename doubles as the MCP-side alias **and** as the vault name passed to the Obsidian CLI. If write tools fail with `VAULT_NOT_FOUND`, the display name shown in Obsidian's **Manage vaults** UI does not match the directory basename — rename one side so the two agree.
+The vault's directory basename is the MCP-side alias used by the `vault` parameter on multi-vault tool calls. If a tool call fails with `VAULT_NOT_FOUND`, the `vault` value passed does not match any registered `--vault name:path` alias — check the flags the server was started with.
 
 ## AGENTS.md / CLAUDE.md snippet
 
@@ -31,8 +30,6 @@ Follow the Neuro Vault MCP server instructions for routing between semantic sear
 
 **Search returns nothing** — try lowering the threshold: `threshold: 0.3`. Also confirm the Smart Connections corpus path is configured and that `search_notes` returns results for a broad query like `search_notes({ query: "note", threshold: 0.3 })`.
 
-**Vault operations fail with `CLI_NOT_FOUND` / `CLI_UNAVAILABLE`** — the `obsidian` CLI isn't on `PATH`, or Obsidian isn't running. Install the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli), or pass `--obsidian-cli /absolute/path/to/obsidian`.
-
 ## Limitations
 
 - Requires Smart Connections `.ajson` files already present in the vault.
@@ -40,7 +37,7 @@ Follow the Neuro Vault MCP server instructions for routing between semantic sear
 - stdio transport only — not HTTP or SSE.
 - Local vault path only — no remote vaults.
 - Embedding model loaded at startup; first run can be slow.
-- Write operations (`create_note`, `edit_note`, properties, tags, daily notes) require the Obsidian CLI and a running Obsidian instance — they fail gracefully per call when unavailable. `read_notes` reads directly from disk and is not affected by this limitation.
+- All vault operations (`read_notes`, `create_note`, `edit_note`, properties, tags, daily notes) read and write the vault directory directly on disk. No Obsidian installation or running instance is required — the server runs fully headless.
 
 ## Lenient input coercion
 

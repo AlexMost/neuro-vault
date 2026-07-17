@@ -62,10 +62,6 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
       default: true,
       describe: 'Enable semantic search module (Smart Connections embeddings)',
     })
-    .option('obsidian-cli', {
-      type: 'string',
-      describe: 'Path to the obsidian CLI binary (default: "obsidian" from PATH)',
-    })
     .strict()
     .help()
     .version(false)
@@ -101,6 +97,5 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
       modelKey: DEFAULT_MODEL_KEY,
       modelId: DEFAULT_MODEL_ID,
     },
-    obsidianCli: args['obsidian-cli'],
   };
 }

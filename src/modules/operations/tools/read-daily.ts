@@ -5,7 +5,6 @@ import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
 import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
-import { readDailyNotesConfig } from '../../../lib/obsidian/daily-notes-config.js';
 
 const NOTES_TODAY_CAP = 200;
 const DAILY_BASENAME_RE = /(\d{4}-\d{2}-\d{2})\.md$/;
@@ -49,7 +48,8 @@ export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyH
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'read_daily' });
-      await readDailyNotesConfig(entry.path);
+      // Config validation lives in the provider: FsVaultProvider.readDaily
+      // reads daily-notes.json itself and throws DAILY_NOTES_NOT_CONFIGURED.
       const daily = await entry.provider.readDaily();
       const today = deriveToday(daily.path);
       const query = await runQueryNotes(

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { serializeFrontmatter, splitFrontmatter } from '../../../src/lib/obsidian/frontmatter.js';
+import {
+  serializeFrontmatter,
+  sliceFrontmatterYaml,
+  splitFrontmatter,
+} from '../../../src/lib/obsidian/frontmatter.js';
+import { splitRawFrontmatter } from '../../../src/lib/obsidian/in-place-edit.js';
 
 describe('splitFrontmatter', () => {
   it('returns null frontmatter and full content when no delimiters', () => {
@@ -93,6 +98,30 @@ describe('splitFrontmatter', () => {
       frontmatter: null,
       content: raw,
     });
+  });
+});
+
+describe('sliceFrontmatterYaml', () => {
+  // Feeds `sliceFrontmatterYaml` the exact `prefix` shape it consumes in
+  // production (from `splitRawFrontmatter`), so the two stay contract-aligned.
+  const yamlOf = (raw: string) => sliceFrontmatterYaml(splitRawFrontmatter(raw).prefix);
+
+  it('strips the fence lines and returns the inner YAML', () => {
+    expect(yamlOf('---\nstatus: todo\npriority: 2\n---\nbody\n')).toBe(
+      'status: todo\npriority: 2\n',
+    );
+  });
+
+  it('handles CRLF line endings', () => {
+    expect(yamlOf('---\r\nstatus: todo\r\n---\r\nbody\r\n')).toBe('status: todo\r\n');
+  });
+
+  it('keeps a value that embeds --- (closing fence is the rightmost)', () => {
+    expect(yamlOf('---\nrule: "a --- b"\n---\nbody\n')).toBe('rule: "a --- b"\n');
+  });
+
+  it('returns empty string for an empty frontmatter block', () => {
+    expect(yamlOf('---\n---\nbody\n')).toBe('');
   });
 });
 

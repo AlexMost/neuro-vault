@@ -20,9 +20,11 @@ const DEFAULT_FORMAT = 'YYYY-MM-DD';
  * `ToolHandlerError('DAILY_NOTES_NOT_CONFIGURED')` when the config is absent,
  * unreadable, malformed JSON, or its `folder` is missing/empty/blank.
  *
- * Required by `read_daily` as a preflight check: without this, the Obsidian
- * CLI silently falls back to creating a stub at the vault root for vaults
- * where the Daily Notes plugin has never been configured.
+ * `FsVaultProvider.readDaily` depends on this failing fast: for a vault where
+ * the Daily Notes plugin has never been configured there is no folder/format
+ * to resolve headlessly, so the server refuses with the contract error rather
+ * than guessing a path at the vault root (see
+ * docs/architecture/disk-write-path.md).
  */
 export async function readDailyNotesConfig(
   vaultRoot: string,

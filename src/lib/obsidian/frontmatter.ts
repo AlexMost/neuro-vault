@@ -7,18 +7,27 @@ export interface SplitResult {
   content: string;
 }
 
+/**
+ * Extract the YAML text from a raw frontmatter prefix — the `---<eol>…---<eol>`
+ * slice returned as `prefix` by {@link splitRawFrontmatter} (never the empty
+ * string). Strips the opening and closing `---` fence lines.
+ *
+ * `lastIndexOf('---')` is safe even when a value embeds `---`: the prefix always
+ * ends at the closing fence, so the rightmost `---` is that fence.
+ */
+export function sliceFrontmatterYaml(prefix: string): string {
+  const firstEol = prefix.indexOf('\n');
+  const lastFence = prefix.lastIndexOf('---');
+  return prefix.slice(firstEol + 1, lastFence);
+}
+
 export function splitFrontmatter(raw: string): SplitResult {
   const { prefix, body } = splitRawFrontmatter(raw);
   if (prefix === '') {
     return { frontmatter: null, content: raw };
   }
 
-  // Strip the opening "---" line and closing "---" line from the prefix to get
-  // just the YAML body. The prefix is `---<eol>...---<eol>`.
-  const firstEol = prefix.indexOf('\n');
-  const yamlStart = firstEol + 1;
-  const lastFence = prefix.lastIndexOf('---');
-  const yamlBody = prefix.slice(yamlStart, lastFence);
+  const yamlBody = sliceFrontmatterYaml(prefix);
   const content = body;
 
   let parsed: unknown;

@@ -51,7 +51,7 @@ The selection logic lives in `src/modules/operations/resources/index.ts`; the pe
 There is no central tool-handlers module. Each tool lives in its own file under `src/modules/<module>/tools/<name>.ts` and exports a `buildXTool(deps)` factory that returns an `ITool<I, O>` — name, title, description, zod input schema, and an async `handler`. Each handler:
 
 - Validates and normalizes its input (paths, queries, thresholds) and throws `ToolHandlerError('INVALID_ARGUMENT', ...)` on bad input.
-- Calls the search engine / embedding provider / corpus / Obsidian CLI provider via the dependencies passed into its factory.
+- Calls the search engine / embedding provider / corpus / vault provider via the dependencies passed into its factory.
 - Wraps unexpected dependency failures via `wrapDependencyError`, which keeps the original cause but adds the operation name and `modelKey` to `details`.
 
 Per-module aggregators (`src/modules/semantic/tools/index.ts`, `src/modules/operations/tools/index.ts`) compose every tool factory with its dependencies and return a list of `ToolRegistration` objects via the `registerTool` helper from `src/lib/tool-registry.ts`. Dependencies (vault registry, search engine, embedding provider, modelKey) are passed into the factories — pure dependency injection, no module-level state. Tests inject mocks; runtime injects the real implementations.

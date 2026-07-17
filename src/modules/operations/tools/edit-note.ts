@@ -5,10 +5,8 @@ import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument } from '../tool-helpers.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
-import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { buildBasenameIndex } from '../../../lib/obsidian/link-resolver.js';
+import { resolveNoteName } from '../resolve-note-name.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
-import type { OperationsErrorCode } from '../types.js';
 import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
 interface Input {
@@ -91,20 +89,5 @@ async function resolveToPath(input: Input, reader: VaultReader): Promise<string>
   if (name === '') {
     throw invalidArgument('name must not be empty', 'name');
   }
-  const matches = buildBasenameIndex(await reader.scan()).resolveAll(name);
-  if (matches.length === 0) {
-    throw new ToolHandlerError(
-      'NOT_FOUND' satisfies OperationsErrorCode,
-      `Note not found for name: ${name}`,
-      { details: { name } },
-    );
-  }
-  if (matches.length > 1) {
-    throw new ToolHandlerError(
-      'AMBIGUOUS_MATCH' satisfies OperationsErrorCode,
-      `Multiple notes match name '${name}': ${matches.join(', ')}; pass an explicit path`,
-      { details: { name, matches } },
-    );
-  }
-  return matches[0]!;
+  return resolveNoteName(reader, name);
 }

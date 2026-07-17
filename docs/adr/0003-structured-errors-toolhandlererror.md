@@ -13,9 +13,8 @@ Every tool error is a `ToolHandlerError` carrying a structured `{ code, message,
 
 ## Consequences
 
-- Clients (and the LLM behind them) branch on a stable `code` instead of parsing prose. Codes are the contract; see `docs/architecture/error-mapping-cli.md` for the CLI mapping table and `mcp-server-shape.md` for the wrapper.
+- Clients (and the LLM behind them) branch on a stable `code` instead of parsing prose. Codes are the contract; see `mcp-server-shape.md` for the wrapper. (`ObsidianCLIProvider` and its CLI-stderr mapping table described above were removed in [ADR-0009](0009-disk-direct-vault-operations.md); the `ToolHandlerError` contract this ADR establishes is unaffected and is now populated directly by `FsVaultProvider`'s `fs` error handling.)
 - New error conditions require choosing/adding a code deliberately, not inventing ad-hoc strings.
-- CLI stderr pattern-matching is fragile by design (it depends on a tool we do not control); the mapping table is the single canonical place to update when the CLI's wording changes.
 
 ## Alternatives considered
 

@@ -15,11 +15,11 @@ These are living documents. Update the relevant file in the same change that alt
 - [embedding-pipeline.md](./embedding-pipeline.md) — `@xenova/transformers` lazy initialization and value normalization
 - [search-engine.md](./search-engine.md) — cosine similarity, neighbor / block / duplicate search
 - [module-structure.md](./module-structure.md) — how `src/modules/{semantic,operations}/` plug into the server
-- [vault-provider.md](./vault-provider.md) — the operations-module abstraction over the Obsidian CLI
-- [vault-reader.md](./vault-reader.md) — the `FsVaultReader` abstraction for direct disk reads (decoupled from the Obsidian CLI)
+- [vault-provider.md](./vault-provider.md) — the operations-module write abstraction, implemented by `FsVaultProvider` directly against the vault directory
+- [vault-reader.md](./vault-reader.md) — the `FsVaultReader` abstraction for direct disk reads
+- [disk-write-path.md](./disk-write-path.md) — how `create_note` writes and why `read_daily`'s Daily Notes preflight still exists, now that both are disk-direct
 - [wikilink-graph.md](./wikilink-graph.md) — in-memory adjacency over `[[wikilinks]]` and `![[embeds]]`, shared across modules
 - [query.md](./query.md) — the `query_notes` pipeline: tag normalisation, MongoDB-query (sift) filtering, sort/limit
-- [error-mapping-cli.md](./error-mapping-cli.md) — Obsidian CLI stderr → structured `ToolHandlerError` codes
 - [input-coercion.md](./input-coercion.md) — how realistic stringification of MCP arguments is reshaped at the boundary, and the meaningful-error contract on coerce failure
 
 ## Reading order

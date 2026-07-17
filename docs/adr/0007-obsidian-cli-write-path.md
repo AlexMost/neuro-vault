@@ -1,6 +1,6 @@
 # ADR-0007 — obsidian-cli as the vault write path; reads from disk
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0009](0009-disk-direct-vault-operations.md)
 - **Date**: 2026-06-08
 
 ## Context
@@ -15,7 +15,7 @@ Route vault **writes** through the `obsidian` CLI behind a `VaultProvider` inter
 
 - Writes stay consistent with Obsidian's own bookkeeping; the provider is a thin shell, swappable for a REST/plugin backend without touching handlers.
 - Reads are fast and available offline (Obsidian need not be running); `query_notes` and `read_notes` read from disk.
-- The CLI is an external dependency with the failure modes in ADR-0003/ADR-0004; the silent-success failure mode is specifically guarded at the MCP layer (`docs/architecture/cli-write-defenses.md`).
+- The CLI is an external dependency with the failure modes in ADR-0003/ADR-0004; the silent-success failure mode is specifically guarded at the MCP layer (see `docs/architecture/disk-write-path.md`, which now documents this history alongside the disk-direct behavior that superseded it — [ADR-0009](0009-disk-direct-vault-operations.md)).
 
 ## Alternatives considered
 

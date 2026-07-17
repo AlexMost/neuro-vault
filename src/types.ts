@@ -28,5 +28,4 @@ export interface ServerConfig {
     modelKey: string;
     modelId: string;
   };
-  obsidianCli?: string;
 }
