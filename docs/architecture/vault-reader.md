@@ -43,8 +43,10 @@ explicitly.
 ## Per-item failure model
 
 `readNotes` returns one entry per input path. Successful entries carry
-`frontmatter` and `content` (the reader does not project — projection happens
-in the tool handler so the reader stays a thin fs adapter). Failed entries
+`frontmatter` and `content`. The reader honours `fields` only coarsely: when
+`fields` omits `'content'` it drops the body (returns `content: ''`) rather than
+retaining every note's full text — the finer projection (full / preview /
+frontmatter shaping) still happens in the tool handler. Failed entries
 carry an `error: { code, message }` with one of:
 
 - `NOT_FOUND` — `fs.readFile` returned `ENOENT`.
@@ -61,8 +63,10 @@ carry an `error: { code, message }` with one of:
 - It does not cache. Caching is deferred to a future `VaultIndex`.
 - It does not bound concurrency. `Promise.all` over up to 50 reads is safe on
   any modern OS; the kernel handles the parallelism.
-- It does not project fields. The handler decides which of `frontmatter` /
-  `content` to include in each successful item.
+- It does not finely project fields. It drops the body when `fields` omits
+  `'content'` (a memory-retention guard for whole-vault frontmatter scans), but
+  the handler still decides how much of `content` (full / preview / none) to
+  include in each successful item.
 - It does not normalise tags or interpret frontmatter. `query_notes` builds a
   `NoteRecord` (path / frontmatter / tags) from the reader's raw output in its
   own module — the reader stays a thin fs adapter.

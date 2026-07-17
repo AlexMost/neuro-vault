@@ -117,18 +117,21 @@ describe('FsVaultReader', () => {
     expect(item).toEqual({ path: 'a/b/c.md', frontmatter: null, content: '# c\n' });
   });
 
-  it('always returns both frontmatter and content on success regardless of fields', async () => {
+  it('does not return the note body when fields is frontmatter-only', async () => {
     const readFile = fakeReadFile({
-      '/v/n.md': '---\nstatus: done\n---\n\nbody\n',
+      '/v/n.md': '---\nstatus: done\n---\n\nthe full body text\n',
     });
     const reader = new FsVaultReader({ vaultRoot: '/v', readFile });
 
     const [item] = await reader.readNotes({ paths: ['n.md'], fields: ['frontmatter'] });
 
+    // Frontmatter is still parsed, but the body is dropped rather than retained —
+    // callers that pass frontmatter-only fields (listTags/listProperties/overview)
+    // scan the whole vault and never look at content.
     expect(item).toEqual({
       path: 'n.md',
       frontmatter: { status: 'done' },
-      content: '\nbody\n',
+      content: '',
     });
   });
 });
