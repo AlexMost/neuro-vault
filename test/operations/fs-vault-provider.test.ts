@@ -26,49 +26,6 @@ function makeMockGraph(): WikilinkGraphIndex {
   } as unknown as WikilinkGraphIndex;
 }
 
-describe('FsVaultProvider delegation', () => {
-  it('delegates setProperty, removeProperty', async () => {
-    const exec = vi.fn().mockResolvedValue({ stdout: '[]', stderr: '' });
-    const provider = new FsVaultProvider({ vaultName: 'V', exec });
-
-    await provider.setProperty({
-      identifier: { kind: 'path', value: 'Inbox/x.md' },
-      name: 'status',
-      value: 'done',
-    });
-    await provider.removeProperty({
-      identifier: { kind: 'path', value: 'Inbox/x.md' },
-      name: 'status',
-    });
-
-    expect(exec).toHaveBeenNthCalledWith(
-      1,
-      'obsidian',
-      ['vault=V', 'property:set', 'name=status', 'value=done', 'path=Inbox/x.md'],
-      { timeout: 10_000 },
-    );
-    expect(exec).toHaveBeenNthCalledWith(
-      2,
-      'obsidian',
-      ['vault=V', 'property:remove', 'name=status', 'path=Inbox/x.md'],
-      { timeout: 10_000 },
-    );
-  });
-
-  it('propagates CLI errors unchanged', async () => {
-    const exec = vi.fn().mockRejectedValue(Object.assign(new Error('boom'), { code: 'ENOENT' }));
-    const provider = new FsVaultProvider({ exec });
-
-    await expect(
-      provider.setProperty({
-        identifier: { kind: 'path', value: 'Inbox/x.md' },
-        name: 'status',
-        value: 'done',
-      }),
-    ).rejects.toMatchObject({ code: 'CLI_NOT_FOUND' });
-  });
-});
-
 describe('FsVaultProvider.createNote (disk)', () => {
   it('writes content verbatim and creates parent folders', async () => {
     const root = await makeVault({});
@@ -262,5 +219,163 @@ describe('FsVaultProvider.listTags / listProperties (disk)', () => {
       { name: 'tags', count: 1 },
     ]);
     expect(exec).not.toHaveBeenCalled();
+  });
+});
+
+describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
+  const byPath = (p: string) => ({ kind: 'path' as const, value: p });
+
+  it('sets a property preserving body bytes and neighbor formatting', async () => {
+    const src = '---\n# keep me\nstatus: todo\n---\nbody stays\r\nexactly\n';
+    const root = await makeVault({ 'x.md': src });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await provider.setProperty({ identifier: byPath('x.md'), name: 'priority', value: 2 });
+
+    const out = await readFile(path.join(root, 'x.md'), 'utf8');
+    expect(out).toContain('# keep me');
+    expect(out).toContain('priority: 2');
+    expect(out.endsWith('body stays\r\nexactly\n')).toBe(true);
+  });
+
+  it('creates a frontmatter block when the note has none', async () => {
+    const root = await makeVault({ 'x.md': 'just body\n' });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await provider.setProperty({ identifier: byPath('x.md'), name: 'status', value: 'todo' });
+
+    expect(await readFile(path.join(root, 'x.md'), 'utf8')).toBe(
+      '---\nstatus: todo\n---\njust body\n',
+    );
+  });
+
+  it('writes real YAML lists for array values', async () => {
+    const root = await makeVault({ 'x.md': '---\na: 1\n---\n' });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await provider.setProperty({
+      identifier: byPath('x.md'),
+      name: 'tags',
+      value: ['alpha', 'beta'],
+      type: 'list',
+    });
+
+    const out = await readFile(path.join(root, 'x.md'), 'utf8');
+    expect(out).toMatch(/tags:\n\s+- alpha\n\s+- beta/);
+  });
+
+  it('removeProperty is idempotent on absent keys (no rewrite)', async () => {
+    const src = '---\nstatus:   todo   # odd spacing preserved\n---\n';
+    const root = await makeVault({ 'x.md': src });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await provider.removeProperty({ identifier: byPath('x.md'), name: 'missing' });
+
+    expect(await readFile(path.join(root, 'x.md'), 'utf8')).toBe(src);
+  });
+
+  it('removes a property; removing the last key strips the block', async () => {
+    const root = await makeVault({ 'x.md': '---\nstatus: todo\n---\nbody\n' });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await provider.removeProperty({ identifier: byPath('x.md'), name: 'status' });
+
+    expect(await readFile(path.join(root, 'x.md'), 'utf8')).toBe('body\n');
+  });
+
+  it('resolves kind:name via the basename index', async () => {
+    const root = await makeVault({ 'Deep/Idea 42.md': '---\na: 1\n---\n' });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await provider.setProperty({
+      identifier: { kind: 'name', value: 'Idea 42' },
+      name: 'a',
+      value: 2,
+    });
+
+    expect(await readFile(path.join(root, 'Deep/Idea 42.md'), 'utf8')).toContain('a: 2');
+  });
+
+  it('fails NOT_FOUND when kind:name is unresolvable', async () => {
+    const root = await makeVault({ 'x.md': '---\na: 1\n---\n' });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await expect(
+      provider.setProperty({ identifier: { kind: 'name', value: 'Nope' }, name: 'a', value: 1 }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('fails READ_FAILED on unparsable existing frontmatter YAML', async () => {
+    const root = await makeVault({ 'x.md': '---\na: [1, 2\n---\nbody\n' });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await expect(
+      provider.setProperty({ identifier: byPath('x.md'), name: 'a', value: 1 }),
+    ).rejects.toMatchObject({ code: 'READ_FAILED' });
+  });
+
+  it('fails NOT_FOUND when the note does not exist on disk', async () => {
+    const root = await makeVault({});
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await expect(
+      provider.setProperty({ identifier: byPath('missing.md'), name: 'a', value: 1 }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('never touches .obsidian/types.json', async () => {
+    const root = await makeVault({ 'x.md': '---\na: 1\n---\n' });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await provider.setProperty({
+      identifier: byPath('x.md'),
+      name: 'due',
+      value: '2026-08-01',
+      type: 'date',
+    });
+
+    await expect(readFile(path.join(root, '.obsidian/types.json'), 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 });

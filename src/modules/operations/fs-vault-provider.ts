@@ -1,15 +1,20 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { parseDocument } from 'yaml';
+
 import { readDailyNotesConfig } from '../../lib/obsidian/daily-notes-config.js';
 import { formatDailyDate } from '../../lib/obsidian/daily-note-path.js';
-import { splitFrontmatter } from '../../lib/obsidian/frontmatter.js';
+import { serializeFrontmatter, splitFrontmatter } from '../../lib/obsidian/frontmatter.js';
+import { splitRawFrontmatter } from '../../lib/obsidian/in-place-edit.js';
+import { buildBasenameIndex } from '../../lib/obsidian/link-resolver.js';
 import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
 import { extractTags } from '../../lib/obsidian/query/note-record.js';
 import type {
   CreateNoteInput,
   CreateNoteResult,
   DailyNoteResult,
+  NoteIdentifier,
   PropertyListEntry,
   RemovePropertyInput,
   SetPropertyInput,
@@ -24,6 +29,13 @@ function sortCounts(counts: Map<string, number>): Array<{ name: string; count: n
   return [...counts.entries()]
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+/** Slices the YAML body out of a raw frontmatter prefix (mirrors frontmatter.ts:18-21). */
+function sliceYamlBody(prefix: string): string {
+  const firstEol = prefix.indexOf('\n');
+  const lastFence = prefix.lastIndexOf('---');
+  return prefix.slice(firstEol + 1, lastFence);
 }
 
 export interface FsVaultProviderOptions extends ObsidianCLIProviderOptions {
@@ -143,11 +155,88 @@ export class FsVaultProvider implements VaultProvider {
   }
 
   async setProperty(input: SetPropertyInput): Promise<void> {
-    return this.cli.setProperty(input);
+    await this.editFrontmatter(input.identifier, (doc) => {
+      doc.set(input.name, input.value);
+      return true;
+    });
   }
 
   async removeProperty(input: RemovePropertyInput): Promise<void> {
-    return this.cli.removeProperty(input);
+    await this.editFrontmatter(input.identifier, (doc) => {
+      if (!doc.has(input.name)) return false;
+      doc.delete(input.name);
+      return true;
+    });
+  }
+
+  /** Shared read → mutate YAML document → write path. `mutate` returns false to skip the write. */
+  private async editFrontmatter(
+    identifier: NoteIdentifier,
+    mutate: (doc: ReturnType<typeof parseDocument>) => boolean,
+  ): Promise<void> {
+    const vaultRoot = this.requireVaultRoot();
+    const relPath = await this.resolveIdentifierPath(identifier);
+    const absPath = path.join(vaultRoot, relPath);
+
+    let raw: string;
+    try {
+      raw = await readFile(absPath, 'utf8');
+    } catch (err) {
+      if ((err as { code?: string }).code === 'ENOENT') {
+        throw new ToolHandlerError('NOT_FOUND', `Note not found: ${relPath}`, {
+          details: { path: relPath },
+          cause: err,
+        });
+      }
+      throw new ToolHandlerError(
+        'READ_FAILED',
+        `Failed to read ${relPath}: ${(err as Error).message}`,
+        {
+          details: { path: relPath },
+          cause: err,
+        },
+      );
+    }
+
+    const { prefix, body } = splitRawFrontmatter(raw);
+    const yamlBody = prefix === '' ? '' : sliceYamlBody(prefix);
+    const doc = parseDocument(yamlBody === '' ? '{}' : yamlBody);
+    if (doc.errors.length > 0) {
+      throw new ToolHandlerError(
+        'READ_FAILED',
+        `Frontmatter of ${relPath} is not valid YAML; fix the note before editing properties.`,
+        { details: { path: relPath, errors: doc.errors.map((e) => e.message) } },
+      );
+    }
+
+    if (!mutate(doc)) return;
+
+    const contents = doc.contents;
+    const isEmptyMap =
+      contents === null ||
+      (typeof contents === 'object' && 'items' in contents && contents.items.length === 0);
+    let newPrefix: string;
+    if (isEmptyMap) {
+      newPrefix = '';
+    } else if (yamlBody === '') {
+      // The note had no frontmatter: serialize the fresh object cleanly.
+      newPrefix = serializeFrontmatter(doc.toJS() as Record<string, unknown>);
+    } else {
+      newPrefix = `---\n${doc.toString()}---\n`;
+    }
+    await writeFile(absPath, newPrefix + body, 'utf8');
+  }
+
+  private async resolveIdentifierPath(identifier: NoteIdentifier): Promise<string> {
+    if (identifier.kind === 'path') return normalizeNotePath(identifier.value);
+    const index = buildBasenameIndex(await this.requireReader().scan());
+    const resolved = index.resolve(identifier.value);
+    if (resolved === null) {
+      throw new ToolHandlerError('NOT_FOUND', `Note not found: ${identifier.value}`, {
+        details: { name: identifier.value },
+      });
+    }
+    return resolved;
   }
 
   async listProperties(): Promise<PropertyListEntry[]> {
