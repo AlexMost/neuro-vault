@@ -1,8 +1,8 @@
 # Reading & Modifying
 
-> CLI-routed operations (`create_note`, `read_daily`, properties, tags) require the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) on `PATH` and Obsidian running. `edit_note` and `read_notes` work directly against the filesystem and do **not** require Obsidian to be running.
+> All operations on this page — reads and writes — go directly against the vault directory on disk. None of them require Obsidian to be installed or running.
 
-Most write paths shell out to the `obsidian` CLI, so changes are picked up immediately by Smart Connections, sync, and any other plugin you have installed. The exception is `edit_note` (in-place replace and full-body rewrite), which writes directly to disk — Obsidian's file watcher then notifies plugins on its own cadence.
+Every write tool (`create_note`, `edit_note`, `set_property`, `remove_property`) writes directly to disk. If you have Obsidian open on the same vault, its own file watcher picks up the change on its usual cadence — there is no separate fast path through the app.
 
 `read_notes` reads files directly from the vault directory, making it fast and available even when Obsidian is not running.
 
@@ -157,7 +157,7 @@ Modify frontmatter and explore tag/property metadata without paying the token co
 
 ### `set_property`
 
-Set a frontmatter property on a note. The YAML type is inferred from the JS value (`string` → text, `number` → number, `boolean` → checkbox, `Array` → list). For `date` / `datetime` pass `type` explicitly. List items must not contain commas (obsidian-cli limitation).
+Set a frontmatter property on a note. The YAML type is inferred from the JS value (`string` → text, `number` → number, `boolean` → checkbox, `Array` → list). For `date` / `datetime` pass `type` explicitly. List items must not contain commas — a comma inside a list item is indistinguishable from an item separator once serialized, so it is rejected up front rather than silently mis-split.
 
 ```typescript
 set_property({

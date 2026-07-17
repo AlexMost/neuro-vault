@@ -29,15 +29,13 @@ deferred to a future `VaultIndex`-style implementation.
 
 ## Why it exists separately from `VaultProvider`
 
-`VaultProvider` describes operations that go through the Obsidian app (CLI):
-creates, edits, daily notes, properties, tags. Reads do not need the Obsidian
-app — files on disk are the source of truth — so they belong on a different
-backend. Splitting the abstractions keeps each one honest: implementers do not
-have to stub a backend they do not own, and tests do not have to fake CLI calls
-when they only care about reads.
+Both `VaultReader` and `VaultProvider` are disk-direct today (see [ADR-0009](../adr/0009-disk-direct-vault-operations.md)), so the split is no longer about which backend a call goes through — it is about shape. `VaultReader` is a narrow, read-only, batch-oriented interface (`readNotes` over up to 50 paths, `scan`) built for the high-volume read paths (`read_notes`, `query_notes`, the lexical search leg). `VaultProvider` is single-note, mutation-oriented, and owns a few pieces of note-format knowledge reads don't need (frontmatter YAML mutation, Daily Notes config resolution). Splitting the abstractions keeps each one honest: implementers do not have to stub mutation behavior they do not own, and tests that only care about reads do not have to fake writes.
 
 The two abstractions are siblings: the operations module's `index.ts`
-constructs both and injects them into the handlers. The handlers depend on each
+constructs both and injects them into the handlers — `FsVaultProvider` is even
+constructed with a `VaultReader` instance, since resolving a `name`-style
+`NoteIdentifier` and scanning frontmatter for `listTags`/`listProperties`
+reuse the reader's `scan`/`readNotes`. The handlers depend on each
 explicitly.
 
 ## Per-item failure model

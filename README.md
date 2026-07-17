@@ -21,7 +21,7 @@ Your second brain stops being a folder you open between contexts and becomes a f
 - 🧾 **Context with provenance, not mystery memory** — results come back with paths, matched queries, block-level snippets, and backlink counts so the assistant can show where an answer came from.
 - 🧭 **A real navigation toolkit for your agent** — instead of grepping files and opening notes one by one, your assistant walks the vault like a database: filter by tags and properties, batch-read metadata, traverse the wikilink graph, discover the structure, jump to semantic neighbours.
 - 🔎 **Ask structured questions in plain language** — _"active projects tagged #ai"_, _"todo tasks with a deadline this week"_, _"meeting notes from `Work/` newest first"_ — one call, ranked answer, no chains of reads.
-- ✍️ **Full write surface for your notes** — create, in-place replace, or rewrite the whole body; manage frontmatter, tags, and daily notes. Frontmatter and creation route through the [Obsidian CLI](https://github.com/AlexMost/obsidian-cli) so Smart Connections, sync, and other plugins stay in the loop; in-place edits write directly to disk and the watcher catches up.
+- ✍️ **Full write surface for your notes** — create, in-place replace, or rewrite the whole body; manage frontmatter, tags, and daily notes. Every write goes directly to disk — no Obsidian installation or running instance required; if you have Obsidian open, its own file watcher picks up the change on its usual cadence.
 - ⚡ **Zero infrastructure** — local stdio MCP server, in-memory index, no database, no background processes, no watchers.
 - 🔌 **Drop-in for any MCP client** — Claude Code, Cursor, Windsurf — configuration is a single JSON block.
 
@@ -35,7 +35,7 @@ Most "vault MCP" servers give you one or the other. Neuro Vault gives you both, 
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | **What it does** | Finds notes by meaning _and_ by exact wording — semantic + lexical legs in one response. Surfaces neighbours and duplicates.       | Reads, writes, edits notes (in-place replace and full-body rewrite); manages frontmatter, tags, daily notes. |
 | **Best for**     | _"What did I think about X?"_, fuzzy recall, exploratory research — and exact names, codes, terms the embeddings don't know.      | Structured queries, capturing decisions, updating tasks, batch reads.                                        |
-| **Powered by**   | Smart Connections embeddings (already in your vault) + direct text matching over titles, headings, and bodies (no index needed). | The official Obsidian CLI — Smart Connections, sync, plugins all stay in sync.                               |
+| **Powered by**   | Smart Connections embeddings (already in your vault) + direct text matching over titles, headings, and bodies (no index needed). | Direct reads and writes against the vault directory on disk — no Obsidian install or running instance needed. |
 
 The two work together: hybrid search finds the right region of the vault, vault operations let the assistant actually _do something_ with what it found.
 
@@ -85,7 +85,7 @@ flowchart LR
     NV <--> Vault[(Obsidian vault)]
 ```
 
-You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — the semantic leg uses embeddings already in `.smart-env/`, the lexical leg reads notes straight from disk, vault operations go through the `obsidian` CLI. No database, no background processes.
+You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — the semantic leg uses embeddings already in `.smart-env/`, the lexical leg reads notes straight from disk, and vault operations read and write the vault directory directly on disk too. No database, no background processes, no Obsidian install required.
 
 For module wiring and internal data flow, see [docs/architecture/module-structure.md](./docs/architecture/module-structure.md).
 

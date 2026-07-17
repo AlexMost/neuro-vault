@@ -44,5 +44,5 @@ The policy above is shaped by one measured fact about the primary client, Claude
 ## Boundaries
 
 - `tool-response.ts` has no knowledge of any specific tool's payload shape. It only inspects `value`'s runtime type (object vs. array vs. primitive vs. `undefined`) and whether an error is a `ToolHandlerError`.
-- It does not decide *what* error code or message to use — that is each handler's responsibility (see [error-mapping-cli.md](./error-mapping-cli.md) for one source of codes). It only decides how a given `{ code, message, details }` is rendered into `content`/`structuredContent`.
+- It does not decide *what* error code or message to use — that is each handler's responsibility (`FsVaultProvider`, for instance, maps `fs` errors like `ENOENT`/`EEXIST` to codes inline — see [`fs-vault-provider.ts`](../../src/modules/operations/fs-vault-provider.ts)). It only decides how a given `{ code, message, details }` is rendered into `content`/`structuredContent`.
 - No per-tool override exists. A tool that wanted a different envelope shape would need a change here, not a local one — the same "single choke point" discipline `input-coercion.md` and `mcp-server-shape.md` describe for their own concerns.

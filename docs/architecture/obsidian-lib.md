@@ -12,8 +12,11 @@ Before this layer, vault-format knowledge was scattered across `src/modules/oper
 
 - **`paths.ts`** — vault-relative path validation (`normalizeVaultPath`), naive backslash-to-slash conversion (`toPosixSlashes`), subtree-prefix normalization (`normalizeScanPrefix`). Throws plain `Error`. Tool-handler wrappers in `src/modules/operations/tool-helpers.ts` and `src/modules/semantic/tool-helpers.ts` translate to `ToolHandlerError` for the MCP layer.
 - **`frontmatter.ts`** — `splitFrontmatter(raw)` separates a YAML-fenced frontmatter block from the body. Tolerant of malformed YAML (returns `frontmatter: null` and the raw content).
-- **`vault-provider.ts`** — `VaultProvider` interface plus the type vocabulary (`NoteIdentifier`, `PropertyType`, `PropertyValue`, etc.) used by both the abstraction and its consumers.
+- **`vault-provider.ts`** — `VaultProvider` interface plus the type vocabulary (`NoteIdentifier`, `PropertyType`, `PropertyValue`, etc.) used by both the abstraction and its consumers. See [`./vault-provider.md`](./vault-provider.md).
 - **`vault-reader.ts`** — `VaultReader` interface and `FsVaultReader` (filesystem-backed implementation). Reads notes, splits frontmatter, supports subtree scanning. Reports stale-path conditions via `ScanPathNotFoundError`.
+- **`note-path.ts`** — `normalizeNotePath(raw)`, the single-note path normalizer (auto-appends `.md`) shared by every tool that identifies one note. See [`./note-path-resolution.md`](./note-path-resolution.md).
+- **`daily-notes-config.ts`** — `readDailyNotesConfig(vaultRoot)` reads and validates `.obsidian/daily-notes.json`, throwing `DAILY_NOTES_NOT_CONFIGURED` when it is absent, malformed, or has no `folder`.
+- **`daily-note-path.ts`** — `formatDailyDate(format, date)`, a minimal moment.js-compatible renderer for the Daily Notes basename format.
 - **`smart-connections-types.ts`** — `SmartBlock` / `SmartSource` interfaces describing the parsed shape of a Smart Connections AJSON record.
 - **`smart-connections-loader.ts`** — parses the Smart Connections plugin's `.ajson` corpus into a `Map<vaultPath, SmartSource>`. The semantic search module consumes this at startup.
 - **`wikilink.ts`** — `parseWikilinks(text)` extracts `[[...]]` occurrences from arbitrary text (matches embeds `![[...]]` too). `normalizeWikilinkTarget(raw)` strips `#heading` and `|alias` suffixes, returning the bare target.
@@ -25,7 +28,7 @@ Before this layer, vault-format knowledge was scattered across `src/modules/oper
 
 - MCP tool handlers (`src/modules/operations/tools/*`, `src/modules/semantic/tools/*`) — they bind input schemas and translate errors.
 - Module wiring (`src/modules/operations/index.ts`, `src/modules/semantic/index.ts`) — they assemble dependency-injection graphs.
-- `obsidian-cli-provider.ts` — an implementation of `VaultProvider` that shells out to the `obsidian-cli` binary; subprocess orchestration is not vault-format knowledge.
+- `fs-vault-provider.ts` (`src/modules/operations/fs-vault-provider.ts`) — the `VaultProvider` implementation itself lives with the operations module, not here; this library owns only the interface and the vault-format primitives the implementation composes (`frontmatter.ts`, `note-path.ts`, `link-resolver.ts`, `daily-notes-config.ts`, `daily-note-path.ts`).
 - ML / search-engine code (`src/modules/semantic/embedding-service.ts`, `search-engine.ts`, `retrieval-policy.ts`).
 - `OperationsErrorCode` and other MCP-tool error vocabularies.
 

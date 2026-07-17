@@ -67,7 +67,7 @@ interface IFailedVault {
 | Semantics        | Pre-filtered out due to known limitation       | Attempt was made and crashed                       |
 | When             | Before `fn(entry)` is called                   | Inside `fn(entry)`                                 |
 | Today's producer | None — `runFanOut` never skips a vault         | `mapRejectionToFailedVault` catches all rejections |
-| Typical example  | "Smart Connections index missing for vault X"  | "Obsidian CLI rejected — daemon not running"       |
+| Typical example  | "Smart Connections index missing for vault X"  | "Vault directory unreadable — permission denied"   |
 
 The two are intentionally separate. Skipped is "expected, deterministic, startup-time"; failed is "unexpected, runtime, recoverable on retry". Merging them would erase that signal.
 
