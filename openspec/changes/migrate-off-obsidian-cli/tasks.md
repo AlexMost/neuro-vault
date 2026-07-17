@@ -27,8 +27,8 @@
 
 ## 5. Removal — delete the CLI path (major)
 
-- [ ] 5.1 Delete the internal delegate field and `src/modules/operations/obsidian-cli-provider.ts`; drop `CLI_NOT_FOUND` / `CLI_UNAVAILABLE` / `CLI_TIMEOUT` mapping and their tests
-- [ ] 5.2 Remove `--obsidian-cli` from `src/config.ts` and `binaryPath` threading from `IVaultRegistryConfig` / factory opts
-- [ ] 5.3 Rewrite the "CLI availability" section of server instructions in `src/server.ts` (tools no longer need Obsidian; refresh the stale disk-direct list)
-- [ ] 5.4 Docs: mint the ADR superseding ADR-0007 (vault writes go direct to disk), update `docs/architecture/` provider/tool notes and README claims about obsidian-cli
-- [ ] 5.5 Assert the producible error-code set contains no `CLI_*` codes; changelog migration note for the removed flag; release as major
+- [x] 5.1 Delete the internal delegate field and `src/modules/operations/obsidian-cli-provider.ts`; drop `CLI_NOT_FOUND` / `CLI_UNAVAILABLE` / `CLI_TIMEOUT` mapping and their tests
+- [x] 5.2 Remove `--obsidian-cli` from `src/config.ts` and `binaryPath` threading from `IVaultRegistryConfig` / factory opts
+- [x] 5.3 Rewrite the "CLI availability" section of server instructions in `src/server.ts` (tools no longer need Obsidian; refresh the stale disk-direct list)
+- [x] 5.4 Docs: mint the ADR superseding ADR-0007 (vault writes go direct to disk), update `docs/architecture/` provider/tool notes and README claims about obsidian-cli
+- [x] 5.5 Assert the producible error-code set contains no `CLI_*` codes; changelog migration note for the removed flag; release as major
