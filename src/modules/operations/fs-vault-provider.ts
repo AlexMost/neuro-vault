@@ -1,4 +1,4 @@
-import { ObsidianCLIProvider, type ObsidianCLIProviderOptions } from './obsidian-cli-provider.js';
+import { extractTags } from '../../lib/obsidian/query/note-record.js';
 import type {
   CreateNoteInput,
   CreateNoteResult,
@@ -9,7 +9,14 @@ import type {
   TagListEntry,
   VaultProvider,
 } from '../../lib/obsidian/vault-provider.js';
-import type { VaultReader } from '../../lib/obsidian/vault-reader.js';
+import type { ReadNotesItemSuccess, VaultReader } from '../../lib/obsidian/vault-reader.js';
+import { ObsidianCLIProvider, type ObsidianCLIProviderOptions } from './obsidian-cli-provider.js';
+
+function sortCounts(counts: Map<string, number>): Array<{ name: string; count: number }> {
+  return [...counts.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
 
 export interface FsVaultProviderOptions extends ObsidianCLIProviderOptions {
   reader?: VaultReader;
@@ -52,10 +59,27 @@ export class FsVaultProvider implements VaultProvider {
   }
 
   async listProperties(): Promise<PropertyListEntry[]> {
-    return this.cli.listProperties();
+    const counts = new Map<string, number>();
+    for (const fm of await this.scanFrontmatter()) {
+      for (const key of Object.keys(fm)) counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return sortCounts(counts);
   }
 
   async listTags(): Promise<TagListEntry[]> {
-    return this.cli.listTags();
+    const counts = new Map<string, number>();
+    for (const fm of await this.scanFrontmatter()) {
+      for (const tag of extractTags(fm)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+    return sortCounts(counts);
+  }
+
+  private async scanFrontmatter(): Promise<Array<Record<string, unknown>>> {
+    const reader = this.requireReader();
+    const paths = await reader.scan();
+    const items = await reader.readNotes({ paths, fields: ['frontmatter'] });
+    return items
+      .filter((i): i is ReadNotesItemSuccess => !('error' in i))
+      .map((i) => i.frontmatter ?? {});
   }
 }

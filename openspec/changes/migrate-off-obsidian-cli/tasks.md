@@ -6,10 +6,10 @@
 
 ## 2. Scan leg — listTags / listProperties from disk
 
-- [ ] 2.1 Thread `reader` (and whatever the scan aggregation needs) into `IVaultEntryDeps.providerFactory` opts in `src/lib/vault-registry.ts` + `src/server.ts`
-- [ ] 2.2 Implement `listTags` / `listProperties` as `{ name, count }` aggregation over the `query_notes` scan extractors; remove those two delegations
-- [ ] 2.3 Tests: frontmatter tags counted, inline `#tags` ignored, property-key counts, empty vault; assert via the SDK gate (`reg.spec.inputSchema` + handler), not handler-only
-- [ ] 2.4 Verify `get_vault_overview` is fully populated with no `obsidian` binary available
+- [x] 2.1 Thread `reader` (and whatever the scan aggregation needs) into `IVaultEntryDeps.providerFactory` opts in `src/lib/vault-registry.ts` + `src/server.ts`
+- [x] 2.2 Implement `listTags` / `listProperties` as `{ name, count }` aggregation over the `query_notes` scan extractors; remove those two delegations
+- [x] 2.3 Tests: frontmatter tags counted, inline `#tags` ignored, property-key counts, empty vault; assert via the SDK gate (`reg.spec.inputSchema` + handler), not handler-only
+- [x] 2.4 Verify `get_vault_overview` is fully populated with no `obsidian` binary available
 
 ## 3. Daily leg — readDaily from daily-notes.json
 
