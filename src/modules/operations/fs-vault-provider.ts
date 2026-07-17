@@ -5,7 +5,11 @@ import { parseDocument } from 'yaml';
 
 import { readDailyNotesConfig } from '../../lib/obsidian/daily-notes-config.js';
 import { formatDailyDate } from '../../lib/obsidian/daily-note-path.js';
-import { serializeFrontmatter, splitFrontmatter } from '../../lib/obsidian/frontmatter.js';
+import {
+  serializeFrontmatter,
+  sliceFrontmatterYaml,
+  splitFrontmatter,
+} from '../../lib/obsidian/frontmatter.js';
 import { splitRawFrontmatter } from '../../lib/obsidian/in-place-edit.js';
 import { buildBasenameIndex } from '../../lib/obsidian/link-resolver.js';
 import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
@@ -28,13 +32,6 @@ function sortCounts(counts: Map<string, number>): Array<{ name: string; count: n
   return [...counts.entries()]
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-}
-
-/** Slices the YAML body out of a raw frontmatter prefix (mirrors frontmatter.ts:18-21). */
-function sliceYamlBody(prefix: string): string {
-  const firstEol = prefix.indexOf('\n');
-  const lastFence = prefix.lastIndexOf('---');
-  return prefix.slice(firstEol + 1, lastFence);
 }
 
 export interface FsVaultProviderOptions {
@@ -187,7 +184,7 @@ export class FsVaultProvider implements VaultProvider {
     }
 
     const { prefix, body } = splitRawFrontmatter(raw);
-    const yamlBody = prefix === '' ? '' : sliceYamlBody(prefix);
+    const yamlBody = prefix === '' ? '' : sliceFrontmatterYaml(prefix);
     const doc = parseDocument(yamlBody === '' ? '{}' : yamlBody);
     if (doc.errors.length > 0) {
       throw new ToolHandlerError(
