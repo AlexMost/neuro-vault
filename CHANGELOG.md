@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [13.0.0](https://github.com/AlexMost/neuro-vault/compare/v12.1.0...v13.0.0) (2026-07-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **operations:** the server no longer shells out to obsidian-cli. The
+--obsidian-cli option is removed (launch commands passing it fail to start)
+and the CLI_NOT_FOUND/CLI_UNAVAILABLE/CLI_TIMEOUT error codes no longer occur.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+### Features
+
+* **mcp:** emit minified JSON in tool response text channel ([46522f8](https://github.com/AlexMost/neuro-vault/commit/46522f86a28bb0cbf4fe1ce29315f47ea1f09a1a))
+* **mcp:** include error code and details in error text channel ([6bef576](https://github.com/AlexMost/neuro-vault/commit/6bef576f2a0a5eecca8f798602049b1dca2de4bb))
+* **obsidian:** minimal moment-format renderer for daily note paths ([8036fc6](https://github.com/AlexMost/neuro-vault/commit/8036fc663ef971169804690b6981a46fca15b514))
+* **operations:** add FsVaultProvider delegating to ObsidianCLIProvider ([30c89d1](https://github.com/AlexMost/neuro-vault/commit/30c89d121e80ad64b02ba620149094f28e6ff322))
+* **operations:** disk-direct createNote in FsVaultProvider ([ea2e728](https://github.com/AlexMost/neuro-vault/commit/ea2e7283ac75e1f45a48212591b3ec21b8f65bac))
+* **operations:** disk-direct listTags and listProperties in FsVaultProvider ([d27957b](https://github.com/AlexMost/neuro-vault/commit/d27957b54f7ef2843291d4077e7a83ddbe12cfba))
+* **operations:** disk-direct property writes, drop CLI delegation ([2e118c7](https://github.com/AlexMost/neuro-vault/commit/2e118c7fa2f20f2a9016a448e18be7795a94e6da))
+* **operations:** disk-direct readDaily in FsVaultProvider ([ff4d08c](https://github.com/AlexMost/neuro-vault/commit/ff4d08c9b8c12771a94ab22deac573e3e71342a6))
+* **operations:** remove ObsidianCLIProvider and the --obsidian-cli flag ([1c09f26](https://github.com/AlexMost/neuro-vault/commit/1c09f268f8527f764c78b72d3dc3d2cbc523ec46))
+* **operations:** thread vault reader into providerFactory ([0cdca89](https://github.com/AlexMost/neuro-vault/commit/0cdca896e4a022db6f1f3691a16c8664919fbd9b))
+
+
+### Bug Fixes
+
+* **operations:** address PR [#58](https://github.com/AlexMost/neuro-vault/issues/58) review findings ([f05a932](https://github.com/AlexMost/neuro-vault/commit/f05a932155f6f19877867edd0886287d4cd3394b))
+* **operations:** close path-traversal and error-contract gaps (PR [#58](https://github.com/AlexMost/neuro-vault/issues/58) review 2) ([6463ef7](https://github.com/AlexMost/neuro-vault/commit/6463ef72ce32ecea03831754aa92e6043127d2b3))
+
 ## [12.1.0](https://github.com/AlexMost/neuro-vault/compare/v12.0.0...v12.1.0) (2026-07-06)
 
 
