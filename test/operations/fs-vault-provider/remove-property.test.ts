@@ -60,6 +60,41 @@ describe('FsVaultProvider.removeProperty (disk)', () => {
     expect(out).toContain('b: 2');
   });
 
+  it('keeps inline and tail comments when removing the last key (yaml caveat pin)', async () => {
+    const root = await makeVault({ 'x.md': '---\na: 1 # inline\nlast: x\n# tail\n---\nbody\n' });
+    const provider = makeProvider(root);
+
+    await provider.removeProperty({ identifier: byPath('x.md'), name: 'last' });
+
+    // Documented `yaml` caveat pin: deleting the key before a tail comment
+    // keeps both remaining comments; a blank line replaces the removed entry.
+    expect(await readFile(path.join(root, 'x.md'), 'utf8')).toBe(
+      '---\na: 1 # inline\n\n# tail\n---\nbody\n',
+    );
+  });
+
+  it('fails AMBIGUOUS_MATCH when two notes share the basename, removing from neither', async () => {
+    const before = '---\na: 1\n---\n';
+    const root = await makeVault({
+      'A/Meeting Notes.md': before,
+      'B/Meeting Notes.md': before,
+    });
+    const provider = makeProvider(root);
+
+    await expect(
+      provider.removeProperty({ identifier: byName('Meeting Notes'), name: 'a' }),
+    ).rejects.toMatchObject({
+      code: 'AMBIGUOUS_MATCH',
+      details: {
+        name: 'Meeting Notes',
+        matches: ['A/Meeting Notes.md', 'B/Meeting Notes.md'],
+      },
+    });
+
+    expect(await readFile(path.join(root, 'A/Meeting Notes.md'), 'utf8')).toBe(before);
+    expect(await readFile(path.join(root, 'B/Meeting Notes.md'), 'utf8')).toBe(before);
+  });
+
   it('fails NOT_FOUND when the note does not exist on disk', async () => {
     const root = await makeVault({});
     const provider = makeProvider(root);

@@ -65,6 +65,58 @@ describe('FsVaultProvider.setProperty (disk)', () => {
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
+  it('fails AMBIGUOUS_MATCH when two notes share the basename, writing neither', async () => {
+    const before = '---\na: 1\n---\n';
+    const root = await makeVault({
+      'A/Meeting Notes.md': before,
+      'B/Meeting Notes.md': before,
+    });
+    const provider = makeProvider(root);
+
+    await expect(
+      provider.setProperty({ identifier: byName('Meeting Notes'), name: 'a', value: 2 }),
+    ).rejects.toMatchObject({
+      code: 'AMBIGUOUS_MATCH',
+      details: {
+        name: 'Meeting Notes',
+        matches: ['A/Meeting Notes.md', 'B/Meeting Notes.md'],
+      },
+    });
+
+    // Neither candidate was silently written (the pre-fix behavior picked the
+    // alphabetically-first match).
+    expect(await readFile(path.join(root, 'A/Meeting Notes.md'), 'utf8')).toBe(before);
+    expect(await readFile(path.join(root, 'B/Meeting Notes.md'), 'utf8')).toBe(before);
+  });
+
+  it('still resolves a unique name when another basename is duplicated', async () => {
+    const root = await makeVault({
+      'A/Dup.md': '---\na: 1\n---\n',
+      'B/Dup.md': '---\na: 1\n---\n',
+      'C/Unique.md': '---\na: 1\n---\n',
+    });
+    const provider = makeProvider(root);
+
+    await provider.setProperty({ identifier: byName('Unique'), name: 'a', value: 2 });
+
+    expect(await readFile(path.join(root, 'C/Unique.md'), 'utf8')).toContain('a: 2');
+  });
+
+  it('keeps a document-trailing comment when inserting a new key (yaml caveat pin)', async () => {
+    const root = await makeVault({ 'x.md': '---\na: 1\n# trailing comment\n---\nbody\n' });
+    const provider = makeProvider(root);
+
+    await provider.setProperty({ identifier: byPath('x.md'), name: 'b', value: 2 });
+
+    // Documented `yaml` caveat: a document-trailing comment does not stick to
+    // the last key — the new key lands before it and a blank line appears. The
+    // comment itself survives. Pin the exact shape so a `yaml` upgrade can't
+    // silently change comment association.
+    expect(await readFile(path.join(root, 'x.md'), 'utf8')).toBe(
+      '---\na: 1\nb: 2\n\n# trailing comment\n---\nbody\n',
+    );
+  });
+
   it('fails READ_FAILED on unparsable existing frontmatter YAML', async () => {
     const root = await makeVault({ 'x.md': '---\na: [1, 2\n---\nbody\n' });
     const provider = makeProvider(root);

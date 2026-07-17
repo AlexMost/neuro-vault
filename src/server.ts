@@ -6,7 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createSemanticModule, type ISemanticModuleDeps } from './modules/semantic/index.js';
-import { createOperationsModule, type IOperationsModuleDeps } from './modules/operations/index.js';
+import { createOperationsModule } from './modules/operations/index.js';
 import { VaultRegistry, type IVaultEntryDeps, type IVaultRegistry } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { FsVaultWriter } from './lib/obsidian/vault-writer.js';
@@ -40,7 +40,6 @@ export async function readExternalAgentInstructions(vaultPath: string): Promise<
 
 export interface NeuroVaultStartupDependencies {
   semantic?: ISemanticModuleDeps;
-  operations?: IOperationsModuleDeps;
   vaultEntryDeps?: Partial<IVaultEntryDeps>;
   serverFactory?: (instructions: string) => ToolServer;
   transportFactory?: () => StdioServerTransport;
@@ -215,7 +214,7 @@ export async function startNeuroVaultServer(
     warmup = semantic.warmup;
   }
 
-  const operations = createOperationsModule(registry, {}, deps.operations);
+  const operations = createOperationsModule(registry);
   toolRegistrations.push(...operations.tools);
   resourceRegistrations.push(...operations.resources);
 

@@ -51,6 +51,20 @@ describe('FsVaultProvider.createNote (disk)', () => {
     expect(await provider.createNote({ name: 'Idea' })).toEqual({ path: 'Idea.md' });
   });
 
+  it('fails INVALID_ARGUMENT on a traversal name, creating nothing outside the vault', async () => {
+    const root = await makeVault({});
+    const provider = makeProvider(root);
+
+    await expect(provider.createNote({ name: '../escape', content: 'x' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      details: { field: 'name' },
+    });
+
+    await expect(readFile(path.join(root, '..', 'escape.md'), 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
   it('throws when neither name nor path is given', async () => {
     const root = await makeVault({});
     const provider = makeProvider(root);

@@ -22,4 +22,19 @@ describe('formatDailyDate', () => {
       expect.objectContaining({ code: 'DAILY_NOTES_NOT_CONFIGURED' }),
     );
   });
+  it('rejects a five-Y year token instead of silently splitting it', () => {
+    // 'YYYYY' must not render as YYYY + stray literal — the leftover 'Y' is
+    // an unsupported token.
+    expect(() => formatDailyDate('YYYYY-MM-DD', d)).toThrowError(
+      expect.objectContaining({ code: 'DAILY_NOTES_NOT_CONFIGURED' }),
+    );
+  });
+  it('rejects an unclosed bracketed literal', () => {
+    expect(() => formatDailyDate('[day-YYYY-MM-DD', d)).toThrowError(
+      expect.objectContaining({
+        code: 'DAILY_NOTES_NOT_CONFIGURED',
+        details: expect.objectContaining({ token: '[' }),
+      }),
+    );
+  });
 });

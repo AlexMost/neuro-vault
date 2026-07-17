@@ -11,8 +11,9 @@ import {
   splitFrontmatter,
 } from '../../lib/obsidian/frontmatter.js';
 import { splitRawFrontmatter } from '../../lib/obsidian/in-place-edit.js';
-import { buildBasenameIndex } from '../../lib/obsidian/link-resolver.js';
 import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
+import { resolveNoteName } from './resolve-note-name.js';
+import { invalidArgument } from './tool-helpers.js';
 import { extractTags } from '../../lib/obsidian/query/note-record.js';
 import type {
   CreateNoteInput,
@@ -59,8 +60,18 @@ export class FsVaultProvider implements VaultProvider {
     if (input.name === undefined && input.path === undefined) {
       throw new Error('createNote requires name or path');
     }
-    const relPath =
-      input.path ?? normalizeNotePath((await this.newNoteDir(vaultRoot)) + input.name!);
+    let relPath: string;
+    if (input.path !== undefined) {
+      relPath = input.path;
+    } else {
+      try {
+        relPath = normalizeNotePath((await this.newNoteDir(vaultRoot)) + input.name!);
+      } catch (err) {
+        // Mirror the tool-layer `path` branch: a name that normalizes outside
+        // the vault (e.g. '../x') is a caller error, not an internal failure.
+        throw invalidArgument((err as Error).message, 'name');
+      }
+    }
     const absPath = path.join(vaultRoot, relPath);
 
     await mkdir(path.dirname(absPath), { recursive: true });
@@ -214,14 +225,7 @@ export class FsVaultProvider implements VaultProvider {
 
   private async resolveIdentifierPath(identifier: NoteIdentifier): Promise<string> {
     if (identifier.kind === 'path') return normalizeNotePath(identifier.value);
-    const index = buildBasenameIndex(await this.reader.scan());
-    const resolved = index.resolve(identifier.value);
-    if (resolved === null) {
-      throw new ToolHandlerError('NOT_FOUND', `Note not found: ${identifier.value}`, {
-        details: { name: identifier.value },
-      });
-    }
-    return resolved;
+    return resolveNoteName(this.reader, identifier.value);
   }
 
   async listProperties(): Promise<PropertyListEntry[]> {

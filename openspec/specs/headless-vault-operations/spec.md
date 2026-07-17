@@ -1,7 +1,9 @@
 # headless-vault-operations Specification
 
 ## Purpose
-TBD - created by archiving change migrate-off-obsidian-cli. Update Purpose after archive.
+
+Vault operations (`create_note`, `read_daily`, `set_property`, `remove_property`, `list_tags`, `list_properties`, and the tag/property sections of `get_vault_overview`) run headless: the server reads and writes the vault directory on disk directly, with no dependency on the Obsidian application or the `obsidian` CLI. This capability pins the disk-direct behavior contract — error codes, frontmatter round-trip guarantees, and the conveniences deliberately dropped with the CLI (template expansion, `types.json` maintenance).
+
 ## Requirements
 ### Requirement: Vault operations run without Obsidian
 
@@ -73,6 +75,11 @@ Every `VaultProvider` method (`createNote`, `readDaily`, `setProperty`, `removeP
 
 - **WHEN** `removeProperty` names a key the note's frontmatter does not contain
 - **THEN** the call succeeds without modifying the file
+
+#### Scenario: Ambiguous name is rejected, never silently resolved
+
+- **WHEN** `setProperty` or `removeProperty` is addressed by `name` and more than one note shares that basename
+- **THEN** the call fails with `AMBIGUOUS_MATCH` listing the matching paths (the same behavior as `edit_note`), and no file is written
 
 ### Requirement: Dropped Obsidian conveniences are explicit non-behavior
 
