@@ -41,22 +41,6 @@ describe('FsVaultProvider delegation', () => {
     expect(result).toEqual({ path: 'Idea 42' });
   });
 
-  it('delegates readDaily to daily:path + daily:read', async () => {
-    const exec = vi
-      .fn()
-      .mockResolvedValueOnce({ stdout: 'Daily/2026-07-16.md\n', stderr: '' })
-      .mockResolvedValueOnce({ stdout: '---\nmood: ok\n---\n# Today\n', stderr: '' });
-    const provider = new FsVaultProvider({ exec });
-
-    const result = await provider.readDaily();
-
-    expect(result).toEqual({
-      path: 'Daily/2026-07-16.md',
-      frontmatter: { mood: 'ok' },
-      content: '# Today\n',
-    });
-  });
-
   it('delegates setProperty, removeProperty', async () => {
     const exec = vi.fn().mockResolvedValue({ stdout: '[]', stderr: '' });
     const provider = new FsVaultProvider({ vaultName: 'V', exec });
@@ -96,6 +80,66 @@ describe('FsVaultProvider delegation', () => {
         value: 'done',
       }),
     ).rejects.toMatchObject({ code: 'CLI_NOT_FOUND' });
+  });
+});
+
+function todayBasename(): string {
+  const now = new Date();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${m}-${day}`;
+}
+
+describe('FsVaultProvider.readDaily (disk)', () => {
+  it("reads today's note per daily-notes.json without the CLI", async () => {
+    const root = await makeVault({
+      '.obsidian/daily-notes.json': '{"folder":"Daily","format":"YYYY-MM-DD"}',
+      [`Daily/${todayBasename()}.md`]: '---\nmood: ok\n---\n# Today\n',
+    });
+    const exec = vi.fn();
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec,
+    });
+
+    const result = await provider.readDaily();
+
+    expect(result).toEqual({
+      path: `Daily/${todayBasename()}.md`,
+      frontmatter: { mood: 'ok' },
+      content: '# Today\n',
+    });
+    expect(exec).not.toHaveBeenCalled();
+  });
+
+  it('fails DAILY_NOTES_NOT_CONFIGURED when config is absent', async () => {
+    const root = await makeVault({ 'a.md': 'x' });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await expect(provider.readDaily()).rejects.toMatchObject({
+      code: 'DAILY_NOTES_NOT_CONFIGURED',
+    });
+  });
+
+  it("fails NOT_FOUND with the resolved path when today's note is missing", async () => {
+    const root = await makeVault({
+      '.obsidian/daily-notes.json': '{"folder":"Daily","format":"YYYY-MM-DD"}',
+    });
+    const provider = new FsVaultProvider({
+      vaultRoot: root,
+      reader: new FsVaultReader({ vaultRoot: root }),
+      exec: vi.fn(),
+    });
+
+    await expect(provider.readDaily()).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      details: { path: `Daily/${todayBasename()}.md` },
+    });
   });
 });
 

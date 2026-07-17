@@ -1,3 +1,9 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+
+import { readDailyNotesConfig } from '../../lib/obsidian/daily-notes-config.js';
+import { formatDailyDate } from '../../lib/obsidian/daily-note-path.js';
+import { splitFrontmatter } from '../../lib/obsidian/frontmatter.js';
 import { extractTags } from '../../lib/obsidian/query/note-record.js';
 import type {
   CreateNoteInput,
@@ -10,6 +16,7 @@ import type {
   VaultProvider,
 } from '../../lib/obsidian/vault-provider.js';
 import type { ReadNotesItemSuccess, VaultReader } from '../../lib/obsidian/vault-reader.js';
+import { ToolHandlerError } from '../../lib/tool-response.js';
 import { ObsidianCLIProvider, type ObsidianCLIProviderOptions } from './obsidian-cli-provider.js';
 
 function sortCounts(counts: Map<string, number>): Array<{ name: string; count: number }> {
@@ -31,10 +38,12 @@ export interface FsVaultProviderOptions extends ObsidianCLIProviderOptions {
 export class FsVaultProvider implements VaultProvider {
   private readonly cli: ObsidianCLIProvider;
   private readonly reader: VaultReader | undefined;
+  private readonly vaultRootOpt: string | undefined;
 
   constructor(opts: FsVaultProviderOptions = {}) {
     this.cli = new ObsidianCLIProvider(opts);
     this.reader = opts.reader;
+    this.vaultRootOpt = opts.vaultRoot;
   }
 
   private requireReader(): VaultReader {
@@ -42,12 +51,43 @@ export class FsVaultProvider implements VaultProvider {
     return this.reader;
   }
 
+  private requireVaultRoot(): string {
+    if (this.vaultRootOpt === undefined) throw new Error('FsVaultProvider: vaultRoot not wired');
+    return this.vaultRootOpt;
+  }
+
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
     return this.cli.createNote(input);
   }
 
   async readDaily(): Promise<DailyNoteResult> {
-    return this.cli.readDaily();
+    const vaultRoot = this.requireVaultRoot();
+    const config = await readDailyNotesConfig(vaultRoot);
+    const relPath = `${config.folder}/${formatDailyDate(config.format, new Date())}.md`;
+
+    let raw: string;
+    try {
+      raw = await readFile(path.join(vaultRoot, relPath), 'utf8');
+    } catch (err) {
+      if ((err as { code?: string }).code === 'ENOENT') {
+        throw new ToolHandlerError(
+          'NOT_FOUND',
+          `Today's daily note does not exist yet: ${relPath}. Create it with create_note at this path.`,
+          { details: { path: relPath }, cause: err },
+        );
+      }
+      throw new ToolHandlerError(
+        'READ_FAILED',
+        `Failed to read ${relPath}: ${(err as Error).message}`,
+        {
+          details: { path: relPath },
+          cause: err,
+        },
+      );
+    }
+
+    const { frontmatter, content } = splitFrontmatter(raw);
+    return { path: relPath, frontmatter, content };
   }
 
   async setProperty(input: SetPropertyInput): Promise<void> {
