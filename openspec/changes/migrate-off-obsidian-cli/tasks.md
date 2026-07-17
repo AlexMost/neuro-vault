@@ -1,8 +1,8 @@
 ## 1. Skeleton — FsVaultProvider with internal delegation
 
-- [ ] 1.1 Create `src/modules/operations/fs-vault-provider.ts`: `FsVaultProvider implements VaultProvider`, constructor accepts `ObsidianCLIProviderOptions` and constructs an internal `ObsidianCLIProvider`; all 6 methods delegate to it
-- [ ] 1.2 Swap the wiring in `src/server.ts` `buildDefaultVaultEntryDeps` from `ObsidianCLIProvider` to `FsVaultProvider` (one class name; `providerFactory` signature unchanged)
-- [ ] 1.3 Delegation tests via the `exec`/`stat` seams: each method forwards its arguments to the CLI provider and returns/throws its result unchanged; full suite (`npm test && npm run lint && npm run typecheck`) green with zero behavior change
+- [x] 1.1 Create `src/modules/operations/fs-vault-provider.ts`: `FsVaultProvider implements VaultProvider`, constructor accepts `ObsidianCLIProviderOptions` and constructs an internal `ObsidianCLIProvider`; all 6 methods delegate to it
+- [x] 1.2 Swap the wiring in `src/server.ts` `buildDefaultVaultEntryDeps` from `ObsidianCLIProvider` to `FsVaultProvider` (one class name; `providerFactory` signature unchanged)
+- [x] 1.3 Delegation tests via the `exec`/`stat` seams: each method forwards its arguments to the CLI provider and returns/throws its result unchanged; full suite (`npm test && npm run lint && npm run typecheck`) green with zero behavior change
 
 ## 2. Scan leg — listTags / listProperties from disk
 
