@@ -23,7 +23,6 @@ import type {
 } from '../../lib/obsidian/vault-provider.js';
 import type { ReadNotesItemSuccess, VaultReader } from '../../lib/obsidian/vault-reader.js';
 import { ToolHandlerError } from '../../lib/tool-response.js';
-import { ObsidianCLIProvider, type ObsidianCLIProviderOptions } from './obsidian-cli-provider.js';
 
 function sortCounts(counts: Map<string, number>): Array<{ name: string; count: number }> {
   return [...counts.entries()]
@@ -38,39 +37,28 @@ function sliceYamlBody(prefix: string): string {
   return prefix.slice(firstEol + 1, lastFence);
 }
 
-export interface FsVaultProviderOptions extends ObsidianCLIProviderOptions {
-  reader?: VaultReader;
+export interface FsVaultProviderOptions {
+  vaultRoot: string;
+  reader: VaultReader;
 }
 
 /**
- * Disk-direct VaultProvider (strangler fig over ObsidianCLIProvider).
- * Methods without a disk implementation yet delegate to an internal CLI
- * provider; each migration step replaces one delegation. When none remain,
- * the delegate and ObsidianCLIProvider are deleted.
+ * Disk-direct VaultProvider. Every method reads and writes the vault directory
+ * straight from disk (via `node:fs` and the injected {@link VaultReader}) — the
+ * server no longer shells out to the Obsidian CLI, so Obsidian need not be
+ * installed or running.
  */
 export class FsVaultProvider implements VaultProvider {
-  private readonly cli: ObsidianCLIProvider;
-  private readonly reader: VaultReader | undefined;
-  private readonly vaultRootOpt: string | undefined;
+  private readonly reader: VaultReader;
+  private readonly vaultRoot: string;
 
-  constructor(opts: FsVaultProviderOptions = {}) {
-    this.cli = new ObsidianCLIProvider(opts);
+  constructor(opts: FsVaultProviderOptions) {
     this.reader = opts.reader;
-    this.vaultRootOpt = opts.vaultRoot;
-  }
-
-  private requireReader(): VaultReader {
-    if (!this.reader) throw new Error('FsVaultProvider: reader not wired');
-    return this.reader;
-  }
-
-  private requireVaultRoot(): string {
-    if (this.vaultRootOpt === undefined) throw new Error('FsVaultProvider: vaultRoot not wired');
-    return this.vaultRootOpt;
+    this.vaultRoot = opts.vaultRoot;
   }
 
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
-    const vaultRoot = this.requireVaultRoot();
+    const vaultRoot = this.vaultRoot;
     if (input.name === undefined && input.path === undefined) {
       throw new Error('createNote requires name or path');
     }
@@ -125,7 +113,7 @@ export class FsVaultProvider implements VaultProvider {
   }
 
   async readDaily(): Promise<DailyNoteResult> {
-    const vaultRoot = this.requireVaultRoot();
+    const vaultRoot = this.vaultRoot;
     const config = await readDailyNotesConfig(vaultRoot);
     const relPath = `${config.folder}/${formatDailyDate(config.format, new Date())}.md`;
 
@@ -174,7 +162,7 @@ export class FsVaultProvider implements VaultProvider {
     identifier: NoteIdentifier,
     mutate: (doc: ReturnType<typeof parseDocument>) => boolean,
   ): Promise<void> {
-    const vaultRoot = this.requireVaultRoot();
+    const vaultRoot = this.vaultRoot;
     const relPath = await this.resolveIdentifierPath(identifier);
     const absPath = path.join(vaultRoot, relPath);
 
@@ -229,7 +217,7 @@ export class FsVaultProvider implements VaultProvider {
 
   private async resolveIdentifierPath(identifier: NoteIdentifier): Promise<string> {
     if (identifier.kind === 'path') return normalizeNotePath(identifier.value);
-    const index = buildBasenameIndex(await this.requireReader().scan());
+    const index = buildBasenameIndex(await this.reader.scan());
     const resolved = index.resolve(identifier.value);
     if (resolved === null) {
       throw new ToolHandlerError('NOT_FOUND', `Note not found: ${identifier.value}`, {
@@ -256,7 +244,7 @@ export class FsVaultProvider implements VaultProvider {
   }
 
   private async scanFrontmatter(): Promise<Array<Record<string, unknown>>> {
-    const reader = this.requireReader();
+    const reader = this.reader;
     const paths = await reader.scan();
     const items = await reader.readNotes({ paths, fields: ['frontmatter'] });
     return items

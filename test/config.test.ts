@@ -109,16 +109,17 @@ describe('parseConfig', () => {
     );
   });
 
-  it('captures --obsidian-cli as the binary path', async () => {
-    const config = await parseConfig([
-      'node',
-      'cli.js',
-      '--vault',
-      vaultPath,
-      '--obsidian-cli',
-      '/usr/local/bin/obsidian',
-    ]);
-    expect(config.obsidianCli).toBe('/usr/local/bin/obsidian');
+  it('rejects the removed --obsidian-cli flag with an unknown-option error', async () => {
+    await expect(
+      parseConfig([
+        'node',
+        'cli.js',
+        '--vault',
+        vaultPath,
+        '--obsidian-cli',
+        '/usr/local/bin/obsidian',
+      ]),
+    ).rejects.toThrow(/unknown.*obsidian-cli/i);
   });
 
   it('rejects --no-operations with an unknown-option error', async () => {
@@ -127,9 +128,8 @@ describe('parseConfig', () => {
     ).rejects.toThrow(/unknown.*operations/i);
   });
 
-  it('returns semantic enabled by default with obsidianCli undefined', async () => {
+  it('returns semantic enabled by default', async () => {
     const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
     expect(config.semantic.enabled).toBe(true);
-    expect(config.obsidianCli).toBeUndefined();
   });
 });

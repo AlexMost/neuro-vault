@@ -100,6 +100,20 @@ describe('buildServerInstructions', () => {
     }
   });
 
+  it('describes disk-direct runtime requirements and drops the old CLI-availability section', async () => {
+    const vault = await makeTempVault();
+    try {
+      const result = await buildServerInstructions(makeRegistry(vault));
+      expect(result).toMatch(/### Runtime requirements/);
+      expect(result).toMatch(/directly on disk/);
+      expect(result).not.toMatch(/### CLI availability/);
+      expect(result).not.toMatch(/CLI_NOT_FOUND/);
+      expect(result).not.toMatch(/CLI_UNAVAILABLE/);
+    } finally {
+      await fs.rm(vault, { recursive: true, force: true });
+    }
+  });
+
   it('recommends get_vault_overview as the first probe step (not the old list_tags / list_properties chain)', async () => {
     const vault = await makeTempVault();
     try {

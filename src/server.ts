@@ -83,7 +83,7 @@ Use \`set_property\`, \`remove_property\` when the user asks to set or remove a 
 
 Use \`list_properties\` for the complete inventory of property names with occurrence counts. \`get_vault_overview\` truncates properties to the top entries, so property-consistency audits and rare or one-off keys need \`list_properties\`. Also useful before introducing a new property name.
 
-\`set_property\` infers \`type\` from the JS value (string→text, number→number, boolean→checkbox, array→list). For \`date\`/\`datetime\` you MUST pass \`type\` explicitly AND use ISO format (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]\`) — non-ISO values are silently dropped by the CLI, so the tool rejects them up front. Existing values are overwritten without asking.
+\`set_property\` infers \`type\` from the JS value (string→text, number→number, boolean→checkbox, array→list). For \`date\`/\`datetime\` you MUST pass \`type\` explicitly AND use ISO format (\`YYYY-MM-DD\` or \`YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]\`) — non-ISO values are rejected up front (Obsidian's date properties require ISO). Existing values are overwritten without asking.
 
 To read a single frontmatter value, or the full frontmatter of one or more notes, call \`read_notes\` with \`content: 'frontmatter'\` — a single batch call returns each note's frontmatter object with accurate types.
 
@@ -95,9 +95,9 @@ Use \`list_tags\` to see all tags ranked by frequency. To list the notes that ca
 
 Use \`get_note_links\` for "what links here / where does this point" questions about a single note. It returns the full \`{ incoming, outgoing }\` adjacency from the vault-wide wikilink graph (covers both \`[[X]]\` and \`![[X]]\` embeds, in body and frontmatter). \`outgoing\` entries carry \`resolved: bool\`; unresolved targets are kept verbatim — useful for surfacing concepts the user has anchored but not yet written. The same graph powers the \`backlink_count\` field on \`search_notes\` and \`query_notes\` results, which is the right signal when you only need ranking by inbound popularity rather than a full edge list.
 
-### CLI availability
+### Runtime requirements
 
-The vault-operations tools (other than \`read_notes\` and \`query_notes\`) route through the Obsidian CLI and require Obsidian to be running. If a call fails with \`CLI_NOT_FOUND\` or \`CLI_UNAVAILABLE\`, tell the user and stop — do not retry. \`read_notes\` and \`query_notes\` read directly from disk and do not need Obsidian to be running.
+All vault tools read and write the vault directory directly on disk — Obsidian does not need to be installed or running. Concurrent reads while a live Obsidian session has the vault open are safe; for writes, the last writer wins per file.
 
 ## When to use semantic search
 
@@ -176,8 +176,7 @@ function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): I
     writerFactory: ({ vaultRoot }) => new FsVaultWriter({ vaultRoot }),
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
-    providerFactory: ({ vaultName, vaultRoot, binaryPath, reader }) =>
-      new FsVaultProvider({ vaultName, vaultRoot, binaryPath, reader }),
+    providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
     corpusFactory: ({ smartEnvPath, modelKey }) =>
       createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey }),
     ...overrides,
@@ -193,7 +192,6 @@ export async function startNeuroVaultServer(
       vaults: config.vaults,
       semanticEnabled: config.semantic.enabled,
       modelKey: config.semantic.modelKey,
-      binaryPath: config.obsidianCli,
     },
     buildDefaultVaultEntryDeps(deps.vaultEntryDeps),
   );

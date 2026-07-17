@@ -54,7 +54,7 @@ describe('createOperationsModule', () => {
       names: vi.fn(() => ['MyVault']),
     };
 
-    const result = createOperationsModule(fakeRegistry, { binaryPath: '/usr/bin/obsidian' });
+    const result = createOperationsModule(fakeRegistry);
 
     expect(result.tools.length).toBe(11);
     expect(result.resources.length).toBe(1);

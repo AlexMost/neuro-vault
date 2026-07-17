@@ -53,10 +53,7 @@ export function validateDateValue(value: unknown, type: 'date' | 'datetime'): st
   const re = type === 'date' ? DATE_RE : DATETIME_RE;
   if (!re.test(value)) {
     const expected = type === 'date' ? 'YYYY-MM-DD' : 'YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]';
-    throw invalidArgument(
-      `value must be ISO ${expected} when type is ${type} (obsidian-cli silently drops non-ISO values)`,
-      'value',
-    );
+    throw invalidArgument(`value must be ISO ${expected} when type is ${type}`, 'value');
   }
   if (Number.isNaN(Date.parse(value))) {
     throw invalidArgument(`value is not a valid ${type}`, 'value');
@@ -92,10 +89,7 @@ export function inferTypeAndValidate(
       return String(v);
     });
     if (stringified.some((s) => s.includes(','))) {
-      throw invalidArgument(
-        'list items containing commas are not supported by obsidian-cli',
-        'value',
-      );
+      throw invalidArgument('list items must not contain commas', 'value');
     }
     return { value: stringified, type: explicitType ?? 'list' };
   }

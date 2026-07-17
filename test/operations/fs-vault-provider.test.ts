@@ -1,6 +1,8 @@
+import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -32,7 +34,6 @@ describe('FsVaultProvider.createNote (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     const result = await provider.createNote({
@@ -51,7 +52,6 @@ describe('FsVaultProvider.createNote (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await expect(provider.createNote({ path: 'x.md', content: 'new' })).rejects.toMatchObject({
@@ -68,7 +68,6 @@ describe('FsVaultProvider.createNote (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     const result = await provider.createNote({ name: 'Idea 42' });
@@ -81,7 +80,6 @@ describe('FsVaultProvider.createNote (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     expect(await provider.createNote({ name: 'Idea' })).toEqual({ path: 'Idea.md' });
@@ -101,11 +99,9 @@ describe('FsVaultProvider.readDaily (disk)', () => {
       '.obsidian/daily-notes.json': '{"folder":"Daily","format":"YYYY-MM-DD"}',
       [`Daily/${todayBasename()}.md`]: '---\nmood: ok\n---\n# Today\n',
     });
-    const exec = vi.fn();
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec,
     });
 
     const result = await provider.readDaily();
@@ -115,7 +111,6 @@ describe('FsVaultProvider.readDaily (disk)', () => {
       frontmatter: { mood: 'ok' },
       content: '# Today\n',
     });
-    expect(exec).not.toHaveBeenCalled();
   });
 
   it('fails DAILY_NOTES_NOT_CONFIGURED when config is absent', async () => {
@@ -123,7 +118,6 @@ describe('FsVaultProvider.readDaily (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await expect(provider.readDaily()).rejects.toMatchObject({
@@ -138,7 +132,6 @@ describe('FsVaultProvider.readDaily (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await expect(provider.readDaily()).rejects.toMatchObject({
@@ -155,11 +148,9 @@ describe('FsVaultProvider.listTags / listProperties (disk)', () => {
       'b.md': '---\ntags: alpha\n---\n',
       'c.md': 'no frontmatter #beta\n',
     });
-    const exec = vi.fn(); // must never be called
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec,
     });
 
     const tags = await provider.listTags();
@@ -168,7 +159,6 @@ describe('FsVaultProvider.listTags / listProperties (disk)', () => {
       { name: 'alpha', count: 2 },
       { name: 'beta', count: 1 },
     ]);
-    expect(exec).not.toHaveBeenCalled();
   });
 
   it('counts each frontmatter key once per note', async () => {
@@ -179,7 +169,6 @@ describe('FsVaultProvider.listTags / listProperties (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     const props = await provider.listProperties();
@@ -195,20 +184,16 @@ describe('FsVaultProvider.listTags / listProperties (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     expect(await provider.listTags()).toEqual([]);
     expect(await provider.listProperties()).toEqual([]);
   });
 
-  it('get_vault_overview core is fully populated with a dead CLI', async () => {
+  it('get_vault_overview core is fully populated straight from disk', async () => {
     const root = await makeVault({ 'Tasks/a.md': '---\ntags: [alpha]\nstatus: todo\n---\n' });
     const reader = new FsVaultReader({ vaultRoot: root });
-    const exec = vi
-      .fn()
-      .mockRejectedValue(Object.assign(new Error('spawn obsidian ENOENT'), { code: 'ENOENT' }));
-    const provider = new FsVaultProvider({ vaultRoot: root, reader, exec });
+    const provider = new FsVaultProvider({ vaultRoot: root, reader });
     const graph = makeMockGraph();
 
     const overview = await computeVaultOverview({ reader, provider, graph });
@@ -218,7 +203,6 @@ describe('FsVaultProvider.listTags / listProperties (disk)', () => {
       { name: 'status', count: 1 },
       { name: 'tags', count: 1 },
     ]);
-    expect(exec).not.toHaveBeenCalled();
   });
 });
 
@@ -231,7 +215,6 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await provider.setProperty({ identifier: byPath('x.md'), name: 'priority', value: 2 });
@@ -247,7 +230,6 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await provider.setProperty({ identifier: byPath('x.md'), name: 'status', value: 'todo' });
@@ -262,7 +244,6 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await provider.setProperty({
@@ -282,7 +263,6 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await provider.removeProperty({ identifier: byPath('x.md'), name: 'missing' });
@@ -295,7 +275,6 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await provider.removeProperty({ identifier: byPath('x.md'), name: 'status' });
@@ -308,7 +287,6 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await provider.setProperty({
@@ -325,7 +303,6 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await expect(
@@ -338,7 +315,6 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await expect(
@@ -351,7 +327,6 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await expect(
@@ -364,7 +339,6 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     const provider = new FsVaultProvider({
       vaultRoot: root,
       reader: new FsVaultReader({ vaultRoot: root }),
-      exec: vi.fn(),
     });
 
     await provider.setProperty({
@@ -377,5 +351,15 @@ describe('FsVaultProvider.setProperty / removeProperty (disk)', () => {
     await expect(readFile(path.join(root, '.obsidian/types.json'), 'utf8')).rejects.toMatchObject({
       code: 'ENOENT',
     });
+  });
+});
+
+describe('CLI removal invariant', () => {
+  it('no CLI_* error codes remain in src/', async () => {
+    const grep = promisify(execFile);
+    // grep exits 1 when nothing matches — that is the PASS condition.
+    await expect(
+      grep('grep', ['-rE', 'CLI_NOT_FOUND|CLI_UNAVAILABLE|CLI_TIMEOUT', 'src/']),
+    ).rejects.toMatchObject({ code: 1 });
   });
 });
