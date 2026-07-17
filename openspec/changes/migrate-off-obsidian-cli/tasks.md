@@ -20,9 +20,9 @@
 
 ## 4. Write leg — createNote / setProperty / removeProperty from disk
 
-- [ ] 4.1 Implement `createNote` via `FsVaultWriter`: resolve vault-relative path, `NOTE_EXISTS` without `overwrite`, verbatim content (no templates); remove the delegation
-- [ ] 4.2 Implement `setProperty` / `removeProperty` as frontmatter-only rewrites reusing the existing frontmatter helpers; body preserved byte-for-byte; `removeProperty` idempotent on absent keys; no `.obsidian/types.json` writes; remove the delegations
-- [ ] 4.3 Tests: create-collision, overwrite path, property round-trips over representative fixture notes (body byte-identity), absent-key removal, ISO date/datetime validation parity
+- [x] 4.1 Implement `createNote` via `FsVaultWriter`: resolve vault-relative path, `NOTE_EXISTS` without `overwrite`, verbatim content (no templates); remove the delegation
+- [x] 4.2 Implement `setProperty` / `removeProperty` as frontmatter-only rewrites reusing the existing frontmatter helpers; body preserved byte-for-byte; `removeProperty` idempotent on absent keys; no `.obsidian/types.json` writes; remove the delegations
+- [x] 4.3 Tests: create-collision, overwrite path, property round-trips over representative fixture notes (body byte-identity), absent-key removal, ISO date/datetime validation parity
 - [ ] 4.4 Headless smoke: run the server without an `obsidian` binary and exercise `create_note`, `read_daily`, `set_property`, `list_tags`, `get_vault_overview` end-to-end
 
 ## 5. Removal — delete the CLI path (major)
