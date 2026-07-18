@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [13.0.1](https://github.com/AlexMost/neuro-vault/compare/v13.0.0...v13.0.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **frontmatter:** silence yaml collection-key warning on template notes ([8ffeaac](https://github.com/AlexMost/neuro-vault/commit/8ffeaacda059165058066c71f5d4bc9a58a82e17))
+
 ## [13.0.0](https://github.com/AlexMost/neuro-vault/compare/v12.1.0...v13.0.0) (2026-07-17)
 
 
