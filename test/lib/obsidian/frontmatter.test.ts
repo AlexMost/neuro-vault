@@ -92,6 +92,21 @@ describe('splitFrontmatter', () => {
     });
   });
 
+  // Templater placeholders like `{{date}}` are valid YAML flow syntax that parses
+  // to a collection-valued key, which `yaml` reports via `process.emitWarning`.
+  // Reading a template note must not spam stderr (once per note on every scan).
+  it('does not emit a process warning for template-placeholder frontmatter', () => {
+    const emit = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    try {
+      const raw = '---\ndate: {{date}}\ntitle: Untitled\n---\nbody\n';
+      // Parsing still succeeds; only the stderr noise is suppressed.
+      expect(splitFrontmatter(raw).content).toBe('body\n');
+      expect(emit).not.toHaveBeenCalled();
+    } finally {
+      emit.mockRestore();
+    }
+  });
+
   it('does not treat a non-leading "---" as frontmatter', () => {
     const raw = 'preamble\n---\ntitle: x\n---\nbody\n';
     expect(splitFrontmatter(raw)).toEqual({

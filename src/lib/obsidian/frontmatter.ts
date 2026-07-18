@@ -32,7 +32,10 @@ export function splitFrontmatter(raw: string): SplitResult {
 
   let parsed: unknown;
   try {
-    parsed = parseYaml(yamlBody);
+    // `logLevel: 'error'` suppresses yaml's `process.emitWarning` noise (e.g.
+    // Templater `{{date}}` placeholders parse to a collection-valued key), while
+    // still throwing on genuinely malformed YAML — which we handle below.
+    parsed = parseYaml(yamlBody, { logLevel: 'error' });
   } catch (err) {
     console.warn(
       `[neuro-vault] frontmatter YAML parse failed: ${(err as Error).message}; returning raw content`,
