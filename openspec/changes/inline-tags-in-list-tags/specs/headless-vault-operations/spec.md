@@ -1,6 +1,14 @@
-## MODIFIED Requirements
+## REMOVED Requirements
 
 ### Requirement: Tag and property listings aggregate from the frontmatter scan
+
+**Reason**: Tag counting is no longer frontmatter-only — `listTags` now aggregates the per-note union of frontmatter and inline body `#tags`, so both the requirement name ("frontmatter scan") and its scenario "Inline body tags are not counted" describe superseded behavior. Replaced wholesale (not modified) because OpenSpec's MODIFIED apply intentionally refuses to drop a scenario, and this change deliberately inverts that scenario.
+
+**Migration**: Superseded by the ADDED requirement "Tag and property listings aggregate from the vault scan" below — property counting is unchanged (frontmatter keys only); tag counting gains inline body tags with per-note dedup. Consumers of `list_tags` see the same `{ name, count }` shape with counts that now include inline tags.
+
+## ADDED Requirements
+
+### Requirement: Tag and property listings aggregate from the vault scan
 
 `listTags` and `listProperties` SHALL return `{ name, count }` entries aggregated from the same disk scan that powers `query_notes`; property counting SHALL include frontmatter keys only, and tag counting SHALL include the per-note union of frontmatter `tags:` values and inline body `#tags`, counting each distinct tag at most once per note. Inline tags SHALL follow the Obsidian-documented grammar — `#` preceded by start-of-text or whitespace, tag characters `[A-Za-z0-9_/-]`, at least one non-numeric character, nested tags counted verbatim — and SHALL NOT be extracted from code fences, inline code, URL fragments, or markdown heading markers. The `tags` filter of `query_notes` and `search_notes` remains frontmatter-only; `list_tags` MAY therefore report tags that a `tags` filter cannot match, and both tool descriptions SHALL state this asymmetry.
 
