@@ -833,6 +833,39 @@ describe('executeMultiRetrieval', () => {
     expect(output.per_query_hits).toEqual({ a: 2, dead: 0 });
   });
 
+  it('reports pre-cap hit counts for a query whose hits are all dropped by the cross-query cap', async () => {
+    // limit=2. Query 'a' contributes 2 high-similarity notes that alone fill the cap.
+    // Query 'b' contributes 1 lower-similarity note that survives the merge sort but
+    // is sliced off by the Step-3 cap. per_query_hits must still report b's pre-cap
+    // count (1), taken from perQueryOutputs, not from the post-cap seeds.
+    const embeddingProvider: EmbeddingProvider = {
+      initialize: vi.fn(),
+      embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+    };
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([
+          makeSearchResult('note-a1.md', 0.9),
+          makeSearchResult('note-a2.md', 0.85),
+        ])
+        .mockReturnValueOnce([makeSearchResult('note-b1.md', 0.5)]),
+    });
+
+    const output = await executeMultiRetrieval({
+      queries: ['a', 'b'],
+      mode: 'quick',
+      limit: 2,
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+
+    expect(output.results.map((r) => r.path)).toEqual(['note-a1.md', 'note-a2.md']);
+    expect(output.truncated).toBe(true);
+    expect(output.per_query_hits).toEqual({ a: 2, b: 1 });
+  });
+
   describe('blocks (multi-query)', () => {
     it('dedupes blocks across queries, keeping max similarity', async () => {
       // Two queries each surface the same block at different similarities.
