@@ -44,7 +44,7 @@ Sort order for the fused list, applied in order until one comparator is decisive
 
 1. `score` descending — the RRF sum itself.
 2. `sourceCount` descending — reinforces the multi-source signal RRF exists for: given equal scores, the note more legs agree on wins.
-3. `backlink_count` descending — an independent relevance signal (inbound wikilinks/embeds), same field `query_notes` and `get_similar_notes` expose.
+3. `backlink_count` descending — an independent relevance signal (inbound wikilinks/embeds), same field `search_notes` and `query_notes` expose.
 4. `path` ascending — final deterministic tiebreak so ordering never depends on Map/object iteration order.
 
 This chain (and everything upstream of it) is a pure function of vault state, so the same query against an unchanged vault produces a byte-for-byte identical `matches[]` every time.
@@ -64,7 +64,7 @@ In `effort: "quick"` no expansion is computed at all (`related[]` is always empt
 
 Top-level `truncated` must be true whenever candidates were dropped **anywhere** on the way to `matches[]` — either by the merged-list cap (`fused.length > cap` in `assembleUnified`) or by a source leg's own internal pool cap, even when that leg-level drop doesn't happen to also exceed the merged cap (e.g. `mode: "lexical"` with more matches than the lexical pool cap but fewer than the merged cap). A leg's pool cap is invisible from array length alone — a leg that returns exactly `limit` items looks identical whether the true candidate count was `limit` or `limit + 50`.
 
-Both legs solve this the same way: **over-fetch by one beyond the pool cap**, then compare. The semantic leg's `executeRetrieval`/`executeMultiRetrieval` request `limit + 1` neighbours and check `vectorResults.length > limit` before slicing back to `limit`; the lexical leg's `rankNotes` computes `candidates.length > opts.noteCap` before slicing to `noteCap`. Either leg's overflow folds into `legTruncated`, which `assembleUnified` ORs with the merged-cap check to produce the final `truncated`. See the semantic leg's own `RetrievalOutput.truncated` / `MultiRetrievalOutput.truncated` in [`retrieval-policy.md`](./retrieval-policy.md) and the lexical leg's `truncated` in [`lexical-search.md`](./lexical-search.md) for where each half of this signal originates.
+The two legs detect overflow via distinct mechanisms: the semantic leg detects it by over-fetching one beyond the pool cap; the lexical leg computes the true candidate count and compares it to its cap. The semantic leg's `executeRetrieval`/`executeMultiRetrieval` request `limit + 1` neighbours and check `vectorResults.length > limit` before slicing back to `limit`; the lexical leg's `rankNotes` computes `candidates.length > opts.noteCap` before slicing to `noteCap`. Either leg's overflow folds into `legTruncated`, which `assembleUnified` ORs with the merged-cap check to produce the final `truncated`. See the semantic leg's own `RetrievalOutput.truncated` / `MultiRetrievalOutput.truncated` in [`retrieval-policy.md`](./retrieval-policy.md) and the lexical leg's `truncated` in [`lexical-search.md`](./lexical-search.md) for where each half of this signal originates.
 
 The two causes need different fixes, which is why the tool description calls this out explicitly: merged-cap truncation is recovered by raising `limit`; a leg's pool-cap truncation is not (raising `limit` never grows a leg's internal pool) — raise `effort` to `"deep"` (larger pools, plus expansion) or narrow `query`/`filter` instead.
 
