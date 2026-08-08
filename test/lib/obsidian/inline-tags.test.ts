@@ -57,4 +57,14 @@ describe('extractInlineTags', () => {
     expect(sorted('')).toEqual([]);
     expect(sorted('no tags here\n')).toEqual([]);
   });
+
+  it('rejects tags glued to inline markup with no source whitespace', () => {
+    expect(sorted('*bold*#glued\n')).toEqual([]);
+    expect(sorted('**#tag** bold\n')).toEqual([]);
+    expect(sorted('[text](url)#glued\n')).toEqual([]);
+  });
+
+  it('accepts a tag separated from inline markup by whitespace', () => {
+    expect(sorted('*bold* #real\n')).toEqual(['real']);
+  });
 });
