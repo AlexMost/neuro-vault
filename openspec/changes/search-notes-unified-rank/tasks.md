@@ -1,7 +1,7 @@
 ## 1. Leg output extensions (per-query counts)
 
-- [ ] 1.1 Extend `executeMultiRetrieval` (src/modules/semantic/retrieval-policy.ts) to expose per-query pre-merge hit counts (post-threshold, per-query retrieval limit) alongside `results`/`truncated`; update `MultiRetrievalOutput` type; unit tests including a zero-hit query and a query whose hits are all cut by the cross-query cap.
-- [ ] 1.2 Extend the lexical search path (src/lib/obsidian/lexical/rank.ts + lexical-index.ts) to expose per-query pre-`noteCap` note counts; unit tests including a zero-hit query and counts unaffected by `noteCap`.
+- [x] 1.1 Extend `executeMultiRetrieval` (src/modules/semantic/retrieval-policy.ts) to expose per-query pre-merge hit counts (post-threshold, per-query retrieval limit) alongside `results`/`truncated`; update `MultiRetrievalOutput` type; unit tests including a zero-hit query and a query whose hits are all cut by the cross-query cap.
+- [x] 1.2 Extend the lexical search path (src/lib/obsidian/lexical/rank.ts + lexical-index.ts) to expose per-query pre-`noteCap` note counts; unit tests including a zero-hit query and counts unaffected by `noteCap`.
 
 ## 2. Fusion module
 

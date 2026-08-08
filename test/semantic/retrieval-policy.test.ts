@@ -806,6 +806,33 @@ describe('executeMultiRetrieval', () => {
     });
   });
 
+  it('reports per-query hits before the cross-query cap', async () => {
+    const embeddingProvider: EmbeddingProvider = {
+      initialize: vi.fn(),
+      embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+    };
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([
+          makeSearchResult('note-a.md', 0.9),
+          makeSearchResult('note-b.md', 0.7),
+        ])
+        .mockReturnValueOnce([]) // 'dead' initial threshold
+        .mockReturnValueOnce([]), // 'dead' fallback threshold (still no hits)
+    });
+
+    const output = await executeMultiRetrieval({
+      queries: ['a', 'dead'],
+      mode: 'quick',
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+
+    expect(output.per_query_hits).toEqual({ a: 2, dead: 0 });
+  });
+
   describe('blocks (multi-query)', () => {
     it('dedupes blocks across queries, keeping max similarity', async () => {
       // Two queries each surface the same block at different similarities.

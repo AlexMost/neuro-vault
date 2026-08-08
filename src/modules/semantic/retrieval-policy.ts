@@ -169,6 +169,7 @@ export interface MultiRetrievalInput extends Omit<RetrievalInput, 'query'> {
 export interface MultiRetrievalOutput {
   results: MultiNoteResultNode[];
   truncated: boolean;
+  per_query_hits: Record<string, number>;
 }
 
 interface MergedSeed {
@@ -237,6 +238,9 @@ export async function executeMultiRetrieval(
       return { query, queryVector, neighbors };
     }),
   );
+
+  const per_query_hits: Record<string, number> = {};
+  for (const { query, neighbors } of perQueryOutputs) per_query_hits[query] = neighbors.length;
 
   // Step 2: merge seeds across queries
   const merged = mergeNoteResults(
@@ -318,5 +322,5 @@ export async function executeMultiRetrieval(
     related: relatedByPath.get(seed.path) ?? [],
   }));
 
-  return { results, truncated };
+  return { results, truncated, per_query_hits };
 }
