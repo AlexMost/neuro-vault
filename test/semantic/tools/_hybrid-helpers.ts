@@ -28,6 +28,21 @@ export function makeMockEngine() {
   };
 }
 
+export function sourcesWithEmbeddingFor(
+  notePath: string,
+  embedding: number[] = [1, 0],
+): Map<string, SmartSource> {
+  return new Map([[notePath, { path: notePath, embedding, blocks: [] }]]);
+}
+
+export function engineReturning(hits: Array<{ path: string; similarity: number }>): SearchEngine {
+  return {
+    findNeighbors: vi.fn().mockReturnValue(hits),
+    findBlockNeighbors: vi.fn().mockReturnValue([]),
+    findDuplicates: vi.fn().mockReturnValue([]),
+  };
+}
+
 export async function makeLexicalVault(
   files: Record<string, string>,
   opts: {
