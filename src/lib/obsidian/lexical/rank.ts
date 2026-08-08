@@ -42,7 +42,7 @@ export function rankNotes(opts: {
   noteCap: number;
   perNoteCap: number;
   getBacklinkCount: (path: string) => number;
-}): { notes: RankedNote[]; truncated: boolean } {
+}): { notes: RankedNote[]; truncated: boolean; perQueryCounts: Record<string, number> } {
   const prepared = opts.queries.map((q) => ({
     original: q,
     norm: normalizeText(q),
@@ -115,6 +115,11 @@ export function rankNotes(opts: {
       (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
   );
 
+  const perQueryCounts: Record<string, number> = {};
+  for (const q of opts.queries) perQueryCounts[q] = 0;
+  for (const cand of candidates)
+    for (const q of cand.matchedQueries) perQueryCounts[q] = (perQueryCounts[q] ?? 0) + 1;
+
   const truncated = candidates.length > opts.noteCap;
   const selected = candidates.slice(0, opts.noteCap).map((c) => ({
     path: c.path,
@@ -125,5 +130,5 @@ export function rankNotes(opts: {
     matchedQueries: [...c.matchedQueries],
   }));
 
-  return { notes: selected, truncated };
+  return { notes: selected, truncated, perQueryCounts };
 }
