@@ -500,7 +500,7 @@ where `perQueryHits` is `output.per_query_hits` on the hybrid path and `undefine
 ```
 RESPONSE SHAPE:
 - `matches[]` — ONE list fused across three rank sources (semantic, lexical, expansion) via reciprocal-rank fusion; a note found by 2+ sources ranks higher. Each entry: `path`, `vault`, `backlink_count`, `found_in` (provenance: "semantic", "lexical:title" | "lexical:heading" | "lexical:body", "expansion"), plus evidence per source — `similarity` + `blocks[]` (semantic), `lexical[]` snippet matches (lexical, ≤3), `expansion_similarity` (expansion), `matched_queries` (array queries: union across legs).
-- `truncated` — always present; true when the merged cap dropped candidates. Default cap: 5 (quick) / 12 (deep); `limit` overrides it in every mode.
+- `truncated` — always present; true when candidates were dropped by the merged cap or a source leg's pool cap. Default cap: 5 (quick) / 12 (deep); `limit` overrides it in every mode.
 - `query_stats` — array queries only: per query `{ semantic, lexical }` PRE-cap hit counts; `{ semantic: 0, lexical: 0 }` marks a dead variant worth rephrasing.
 
 INVARIANTS:

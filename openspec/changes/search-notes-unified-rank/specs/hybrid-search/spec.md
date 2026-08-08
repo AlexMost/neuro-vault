@@ -76,7 +76,7 @@ In `mode: "lexical"`, or when no semantic corpus is available, the merge SHALL d
 
 ### Requirement: Input axes mode and effort are orthogonal
 
-The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap, expansion only in `deep`) and the default merged-list cap (quick: 5, deep: 12). The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`. `threshold` SHALL affect only the semantic leg. Top-level `truncated` SHALL be present in every response and true when the merged cap dropped candidates.
+The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap, expansion only in `deep`) and the default merged-list cap (quick: 5, deep: 12). The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`. `threshold` SHALL affect only the semantic leg. Top-level `truncated` SHALL be present in every response and true when candidates were dropped anywhere on the way to `matches[]` — by the merged-list cap or by a source leg's internal pool cap.
 
 #### Scenario: old mode values are rejected
 
@@ -92,6 +92,11 @@ The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) 
 
 - **WHEN** `search_notes` is called with `{ query: "x", limit: 20 }`
 - **THEN** `matches[]` contains at most 20 entries and `truncated` reports whether candidates were dropped
+
+#### Scenario: leg-level truncation surfaces even when the merged cap is not hit
+
+- **WHEN** a lexical-mode query matches more notes than the lexical leg's internal pool cap
+- **THEN** `truncated` is true even though the merged list itself was not capped
 
 ### Requirement: Lexical leg matches title, headings, and body blocks
 
@@ -174,7 +179,7 @@ Lexical evidence SHALL be grouped per note on its `matches[]` entry as `lexical:
 
 ### Requirement: Multi-query and multi-vault keep their shapes
 
-For an array `query`, each leg SHALL compute per-query results and merge them into its single source ranking before fusion; entries SHALL carry `matched_queries` as the union of queries that hit the note in any leg. Top-level `truncated` SHALL reflect merged-candidate overflow and `query_stats` SHALL accompany the response. In multi-vault mode without `vault`, fan-out SHALL wrap the unified response per vault in the existing `results_by_vault` envelope, with fusion computed independently per vault.
+For an array `query`, each leg SHALL compute per-query results and merge them into its single source ranking before fusion; entries SHALL carry `matched_queries` as the union of queries that hit the note in any leg. Top-level `truncated` SHALL reflect candidate overflow from the merged cap or any source leg's pool cap, and `query_stats` SHALL accompany the response. In multi-vault mode without `vault`, fan-out SHALL wrap the unified response per vault in the existing `results_by_vault` envelope, with fusion computed independently per vault.
 
 #### Scenario: matched_queries unions across legs
 
