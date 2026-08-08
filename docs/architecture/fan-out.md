@@ -71,7 +71,7 @@ interface IFailedVault {
 
 The two are intentionally separate. Skipped is "expected, deterministic, startup-time"; failed is "unexpected, runtime, recoverable on retry". Merging them would erase that signal.
 
-There used to be a second helper, `runSemanticFanOut`, that skipped vaults with `semanticAvailable: false` and listed them in `skipped_vaults`. When `search_notes` became hybrid it switched to `runFanOut` over **all** vaults — a vault without a semantic corpus still contributes `lexical_matches` (with `semantic_matches: []`) — which left the semantic variant with no callers, and it was removed. `skipped_vaults` is therefore always `[]` today; the field stays in the response shape both for contract stability (always-present fields are discoverable for agents) and as the designated slot for a future fan-out tool that must pre-filter vaults.
+There used to be a second helper, `runSemanticFanOut`, that skipped vaults with `semanticAvailable: false` and listed them in `skipped_vaults`. When `search_notes` became hybrid it switched to `runFanOut` over **all** vaults — a vault without a semantic corpus still contributes matches, fused from its lexical leg alone (see [`rank-fusion.md`](./rank-fusion.md#degradation-modes)) — which left the semantic variant with no callers, and it was removed. `skipped_vaults` is therefore always `[]` today; the field stays in the response shape both for contract stability (always-present fields are discoverable for agents) and as the designated slot for a future fan-out tool that must pre-filter vaults.
 
 ## Rejection mapping
 

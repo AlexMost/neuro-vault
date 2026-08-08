@@ -8,16 +8,16 @@ For the retrieval internals behind each tool, see [`docs/architecture/`](../arch
 
 ### `search_notes`
 
-`search_notes` is hybrid: one call returns a **semantic leg** (embedding cosine similarity over the Smart Connections corpus — fuzzy recall, topic exploration, cross-language) and a **lexical leg** (exact/substring text matching over note titles, headings, and body — names, codes, terms), independent of each other.
+`search_notes` is hybrid: one call fuses a **semantic leg** (embedding cosine similarity over the Smart Connections corpus — fuzzy recall, topic exploration, cross-language), a **lexical leg** (exact/substring text matching over note titles, headings, and body — names, codes, terms), and (in `effort: "deep"`) an **expansion leg** (semantic neighbours of the top hits) into **one reciprocal-rank-fused list**, `matches[]`. A note surfaced by more than one leg is lifted in the merged order automatically — you never have to cross-reference separate lists by hand.
 
 ```typescript
 search_notes({
   query: string | string[],     // 1-4 word keywords; array of 1-8 for synonyms / translations
   mode?: 'hybrid' | 'lexical',  // which legs run — default: 'hybrid'
-  effort?: 'quick' | 'deep',    // result volume / exploration depth — default: 'quick'
-  limit?: number,               // steers semantic_matches in hybrid, lexical_matches in lexical
+  effort?: 'quick' | 'deep',    // candidate volume / exploration depth — default: 'quick'
+  limit?: number,               // caps `matches[]` in every mode; does not change any leg's pool size
   threshold?: number,           // semantic leg only, 0-1
-  filter?: {                    // optional: narrow candidate set before ranking, both legs
+  filter?: {                    // optional: narrow candidate set before ranking, every leg
     path_prefix?: string | string[],
     exclude_path_prefix?: string | string[],
     tags?: string[],
@@ -32,21 +32,21 @@ search_notes({
 
 | Mode      | Runs                                              | Use when                                                        |
 | --------- | -------------------------------------------------- | ----------------------------------------------------------------- |
-| `hybrid`  | semantic + lexical (default)                     | default — you don't know in advance which channel will land     |
+| `hybrid`  | semantic + lexical + expansion (default)          | default — you don't know in advance which channel will land     |
 | `lexical` | lexical only — never touches the embedding corpus | exact term/name/code, or the vault has no embedding corpus at all |
 
-#### `effort` — result volume / exploration depth
+#### `effort` — candidate volume / exploration depth
 
-| Effort  | Use when                          | `limit` default (semantic) | `threshold` default | Semantic block search                                    | Expansion                      | Lexical note cap |
-| ------- | ---------------------------------- | --------------------------- | -------------------- | ---------------------------------------------------------- | -------------------------------- | ------------------ |
-| `quick` | Specific question, need 1–2 notes | 3                            | 0.50                  | scoped to result notes, threshold = 0, cap = 5 per note   | off                               | ~5                  |
-| `deep`  | Broad topic, need an overview     | 8                            | 0.35                  | scoped to result notes, threshold = mode, limit = mode    | on, per-seed cap = 3 (default)  | ~10                 |
+| Effort  | Use when                          | Semantic pool | Lexical pool | Expansion | Merged-list cap (`matches[]`, unless `limit` overrides) |
+| ------- | ---------------------------------- | -------------- | -------------- | ----------- | ---------------------------------------------------------- |
+| `quick` | Specific question, need 1–2 notes | up to 3        | ~5             | off         | 5                                                            |
+| `deep`  | Broad topic, need an overview     | up to 8        | ~10            | on          | 12                                                           |
 
-`limit` widens or narrows `semantic_matches[]` in `hybrid` mode (or `lexical_matches[]` directly in `lexical` mode) but does not directly bound nested `blocks[]`, `related[]`, or per-note `matches[]`, which are capped per result (see tables above). `expansion` is not a tool parameter — it is fixed by `effort`. `threshold` only ever affects the semantic leg — the lexical leg has no similarity score to threshold.
+`limit` bounds only the final fused `matches[]` list, in every mode — it overrides the effort default merged-list cap but never changes a leg's internal pool size (semantic, lexical, or expansion). To widen a leg's own candidate pool, raise `effort` to `"deep"` instead. `threshold` only ever affects the semantic leg — the lexical leg has no similarity score to threshold. For how the three legs fuse into one order, see [`docs/architecture/rank-fusion.md`](../architecture/rank-fusion.md).
 
 ### Pre-filter (`filter` parameter)
 
-Pass `filter` to narrow the candidate set **before** ranking — applies identically to both legs. Useful when the vault contains many narrative notes that otherwise crowd the top-K on a niche query, or many notes share a common lexical token.
+Pass `filter` to narrow the candidate set **before** ranking — applies identically to every leg. Useful when the vault contains many narrative notes that otherwise crowd the top-K on a niche query, or many notes share a common lexical token.
 
 ```json
 {
@@ -63,7 +63,7 @@ Pass `filter` to narrow the candidate set **before** ranking — applies identic
 - `tags` — string array; matches any note carrying ANY of these tags (no leading `#`).
 - `frontmatter` — sift filter against frontmatter keys; same operator allow-list as `query_notes` (`$eq`, `$ne`, `$in`, `$nin`, `$gt`, `$gte`, `$lt`, `$lte`, `$exists`, `$regex`, `$and`, `$or`, `$nor`, `$not`).
 
-Composition: include → exclude → tags → frontmatter → (threshold → semantic similarity | lexical matching). The output shape is unchanged — just smaller and more relevant, on both legs.
+Composition: include → exclude → tags → frontmatter → (threshold → semantic similarity | lexical matching), then fusion. The output shape is unchanged — just smaller and more relevant, across every leg.
 
 Example — carve out absorbed atoms and dead notes from a broad query:
 
@@ -77,99 +77,17 @@ Example — carve out absorbed atoms and dead notes from a broad query:
 
 ### Output shape
 
-Every call returns both keys, regardless of `mode` — `lexical_matches` is `[]` (never absent) when `mode: "hybrid"` finds nothing lexically, and `semantic_matches` is `[]` when `mode: "lexical"`, or when no embedding corpus is available for the vault (hybrid degrades gracefully to lexical-only rather than erroring).
+Every call returns `{ matches, truncated }`, plus `query_stats` when `query` is an array. `matches[]` is always present, `[]` when nothing matched on any leg.
 
 ```json
 {
-  "semantic_matches": [
-    {
-      "path": "Projects/neuro-vault.md",
-      "similarity": 0.81,
-      "backlink_count": 7,
-      "vault": "Obsidian",
-      "blocks": [
-        { "heading": "Projects/neuro-vault.md#Architecture", "lines": [42, 58], "similarity": 0.79 }
-      ],
-      "related": []
-    }
-  ],
-  "lexical_matches": [
+  "matches": [
     {
       "path": "Notes/embeddings.md",
-      "backlink_count": 2,
       "vault": "Obsidian",
-      "matches": [
-        { "matched_in": "title", "snippet": "embeddings" },
-        {
-          "matched_in": "body",
-          "snippet": "…the Smart Connections embeddings corpus loaded into memory…",
-          "lines": [12, 14],
-          "heading": "What is an embedding"
-        }
-      ]
-    }
-  ]
-}
-```
-
-**`semantic_matches[]`** — each direct result is a node with:
-
-- `path`, `similarity` (query-similarity), `backlink_count`, `vault` — basic identity.
-- `blocks[]` — section-level matches WITHIN this note (own-path scope). Always present; possibly empty.
-- `related[]` — expansion neighbours OF this note. Always present; populated only in `effort: "deep"`.
-
-`backlink_count` is the total number of inbound wikilinks and `![[embeds]]` derived from the same in-memory index used by `get_note_links` and `query_notes`. Useful as a relevance signal when several results have similar similarity scores.
-
-**`lexical_matches[]`** — grouped per note: `path`, `backlink_count`, `vault`, optional `matched_queries` (multi-query only), and `matches[]` (capped ~3/note) of `{ matched_in: "title" | "heading" | "body", snippet, lines?, heading? }`. `heading` on a body match names its enclosing section. **No numeric score** — order and `matched_in` carry the ranking (title > heading > body; exact phrase > all-tokens within each level). `matches[]` is always non-empty on a lexical item; an empty `lexical_matches` means literally no exact match was found anywhere — unlike the semantic leg, the lexical leg does not degrade to weak matches.
-
-### Intersection signal
-
-A note appearing in **both** `semantic_matches` and `lexical_matches` for the same query is the strongest relevance evidence the tool can hand back — the meaning and the exact wording agree. There is no explicit "intersection" field; check for a shared `path` across the two arrays and weight those notes first. This is the whole point of one hybrid entry point instead of two separate tools: the intersection signal only exists because both legs run together and the LLM can fuse the two lists for free.
-
-### Output shape — multi-query (`query` is an array)
-
-```json
-{
-  "semantic_matches": [
-    {
-      "path": "Notes/embeddings.md",
+      "backlink_count": 4,
+      "found_in": ["semantic", "lexical:title"],
       "similarity": 0.82,
-      "matched_queries": ["embeddings", "векторний пошук"],
-      "backlink_count": 4,
-      "vault": "Obsidian",
-      "blocks": [],
-      "related": []
-    }
-  ],
-  "lexical_matches": [
-    {
-      "path": "Notes/embeddings.md",
-      "backlink_count": 4,
-      "vault": "Obsidian",
-      "matched_queries": ["embeddings"],
-      "matches": [{ "matched_in": "title", "snippet": "embeddings" }]
-    }
-  ],
-  "truncated": false
-}
-```
-
-- `matched_queries` (per result, on both legs) lists which of your queries surfaced this note. If only one of your synonyms hit, that's a useful signal.
-- `truncated: true` (top-level) means unique merged candidates exceeded `limit`. Widen `limit` to see more. `limit` is the **final** result count — it is not multiplied by the number of queries; passing more queries widens coverage, not result count.
-
-### Expansion (`related[]`) in `effort: "deep"`
-
-In `deep` mode, after the top-`limit` result notes are merged and capped, expansion runs per-seed: for each direct semantic result, the server pulls its semantically nearest neighbour notes into `related[]` on that result. The neighbour's score is `expansion_similarity` (note-to-note), a **different scale** from the top-level `similarity` (query-to-note); do not compare them numerically.
-
-```json
-{
-  "semantic_matches": [
-    {
-      "path": "Notes/embeddings.md",
-      "similarity": 0.82,
-      "matched_queries": ["embeddings", "векторний пошук"],
-      "backlink_count": 4,
-      "vault": "Obsidian",
       "blocks": [
         {
           "heading": "Notes/embeddings.md#What is an embedding",
@@ -177,33 +95,65 @@ In `deep` mode, after the top-`limit` result notes are merged and capped, expans
           "similarity": 0.71
         }
       ],
-      "related": [
-        { "path": "Notes/vector-search-internals.md", "expansion_similarity": 0.94 },
-        { "path": "Resources/Information retrieval.md", "expansion_similarity": 0.88 }
-      ]
+      "lexical": [{ "matched_in": "title", "snippet": "embeddings" }]
+    },
+    {
+      "path": "Notes/vector-search-internals.md",
+      "vault": "Obsidian",
+      "backlink_count": 2,
+      "found_in": ["expansion"],
+      "expansion_similarity": 0.89
     }
   ],
-  "lexical_matches": [],
   "truncated": false
 }
 ```
 
-Invariants:
+Each entry carries `path`, `vault`, `backlink_count`, and `found_in` — a non-empty array naming every source that surfaced it, drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"` (one per distinct lexical kind matched), and `"expansion"`. Per-source evidence accompanies its provenance and only its provenance:
 
-- A `related[]` item never has a `similarity` field — only `expansion_similarity`. A direct semantic result never has `expansion_similarity`.
-- The same neighbour may appear in `related[]` of multiple direct results, with potentially different `expansion_similarity` values per parent. This is by design — neighbourhood is a pairwise property.
-- `blocks[]` and `related[]` are always present on semantic results (possibly empty); `matches[]` is always non-empty on lexical items.
-- `similarity` / `expansion_similarity` appear ONLY on semantic nodes; lexical items never carry a numeric score.
-- After finding a relevant note, call `get_similar_notes` on it for a deeper neighbour profile — don't infer relationships from `related[]` alone.
+- `similarity` and `blocks[]` (section-level matches within the note) — present iff `found_in` contains `"semantic"`.
+- `lexical[]` (capped ~3/note, `{ matched_in: "title" | "heading" | "body", snippet, lines?, heading? }`) — present iff `found_in` contains any `"lexical:*"` value. `heading` on a body match names its enclosing section. **No numeric score** on this evidence — order plus `matched_in` carried the ranking signal into the fused order already.
+- `expansion_similarity` (note-to-note similarity to the seed that surfaced it — a **different scale** from `similarity`, do not compare them numerically) — present iff `found_in` contains `"expansion"`. An expansion-only entry (like the second one above) is evidence-light by design: no `similarity`, no `blocks`, no `lexical` — path, provenance, `expansion_similarity`, and `backlink_count` only. Call `read_notes` or `get_similar_notes` on it for more.
+- `matched_queries` — array queries only, the union of queries that hit the note in any leg.
 
-For more on the semantic pipeline (merge, cap, per-seed expansion, orphan-block scoping), see [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md). For the lexical pipeline (normalization, AST blocks, tiers, density, snippets), see [`docs/architecture/lexical-search.md`](../architecture/lexical-search.md).
+`backlink_count` is the total number of inbound wikilinks and `![[embeds]]` derived from the same in-memory index used by `get_note_links` and `query_notes`. It also participates directly in ranking — it's the fusion tie-break used after RRF score and source count (see [`rank-fusion.md`](../architecture/rank-fusion.md)).
+
+Each note appears **at most once** in `matches[]`, even when multiple legs surface it — that's the whole point of fusing instead of returning separate lists: a note in two or three sources is lifted automatically, no caller-side merging required. `expansion` never competes against a note that's already a semantic result — an entry's `found_in` never contains both `"semantic"` and `"expansion"` for the same path.
+
+`truncated` (top-level, always present) is true when candidates were dropped anywhere on the way to `matches[]` — either the merged-list cap or a leg's own internal pool cap. The two causes need different fixes: merged-cap truncation is recovered by raising `limit`; a leg's pool-cap truncation is not — raise `effort` to `"deep"` (or narrow `query`/`filter`) instead. See [`rank-fusion.md`](../architecture/rank-fusion.md#truncated-observability-the-1-over-fetch) for the mechanism.
+
+### `query_stats` (array queries only)
+
+For an array `query`, the response also includes `query_stats` — one line per input query, with pre-cap hit counts from each leg:
+
+```json
+{
+  "query": ["monetization research", "Мобі"],
+  "effort": "deep"
+}
+```
+
+```json
+{
+  "matches": [ /* ... */ ],
+  "truncated": false,
+  "query_stats": {
+    "monetization research": { "semantic": 4, "lexical": 1 },
+    "Мобі": { "semantic": 0, "lexical": 0 }
+  }
+}
+```
+
+`{ semantic, lexical }` counts are taken **before** cross-query merging and **before** the `matches[]` cap — a query whose hits were entirely cut by the merged-list cap still reports its real pre-cap counts, so `{ semantic: 0, lexical: 0 }` reliably means "this phrasing found nothing anywhere," not "this phrasing's hits lost out to a bigger cap." That's the dead-variant signal: rephrase or drop that query, keep the ones with non-zero counts. `query_stats` is omitted entirely for a single string `query`.
+
+For more on the semantic pipeline (merge, cap, per-seed expansion, orphan-block scoping), see [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md). For the lexical pipeline (normalization, AST blocks, tiers, density, snippets), see [`docs/architecture/lexical-search.md`](../architecture/lexical-search.md). For how the three legs become one ranked list, see [`docs/architecture/rank-fusion.md`](../architecture/rank-fusion.md).
 
 ### Lexical matching semantics
 
 - Case-, accent-, and apostrophe-variant-insensitive **substring** matching (not word-boundary) — Ukrainian declensions make substring the right recall bias (`пошук` ⊂ `пошуком`).
 - A multiword query requires ALL tokens to appear somewhere in the same unit (AND semantics); a contiguous phrase match ranks higher than a scattered-tokens match at the same location.
-- Ranking is six deterministic tiers — title/heading/body × phrase/tokens — with density (matched-chars ÷ unit length) as the tie-break within a tier, then `backlink_count` desc, then `path` asc. No opaque scoring, byte-for-byte reproducible.
-- `mode: "lexical"` never touches the embedding corpus loader — it works even when the vault has a cold or absent Smart Connections index.
+- Ranking is six deterministic tiers — title/heading/body × phrase/tokens — with density (matched-chars ÷ unit length) as the tie-break within a tier, then `backlink_count` desc, then `path` asc. No opaque scoring, byte-for-byte reproducible. This is the order rank fusion consumes for the lexical source — see [`rank-fusion.md`](../architecture/rank-fusion.md).
+- `mode: "lexical"` never touches the embedding corpus loader — it works even when the vault has a cold or absent Smart Connections index. In this mode `matches[]` preserves the lexical leg's order exactly and every `found_in` is lexical-only.
 
 ### Tuning threshold (semantic leg)
 
@@ -216,7 +166,7 @@ There is no equivalent knob for the lexical leg — an exact/substring match eit
 
 ### When to pass multiple queries
 
-Pass `query: string[]` (up to 8) instead of calling `search_notes` multiple times. The server batch-embeds all queries in parallel for the semantic leg and evaluates all queries against the lexical leg in one pass, returning one merged ranked list per leg. Each result's `matched_queries` tells you which synonym was load-bearing.
+Pass `query: string[]` (up to 8) instead of calling `search_notes` multiple times. The server batch-embeds all queries in parallel for the semantic leg and evaluates all queries against the lexical leg in one pass, merging per-query hits into each leg's single source ranking before fusion runs once over the merged sources. Each result's `matched_queries` tells you which synonym was load-bearing; `query_stats` tells you which synonym found nothing at all.
 
 Common patterns:
 
@@ -224,15 +174,15 @@ Common patterns:
 - **Cross-language** — `["optimization", "оптимізація"]` (UA/EN pair)
 - **Three-way synonym** — `["MCP server", "MCP сервер", "neuro-vault"]`
 
-The only reason to call more than once: the first call returned nothing on both legs and lowering the threshold / trying `filter` didn't help — try a different keyword set.
+The only reason to call more than once: the first call returned nothing on any leg (check `query_stats`) and lowering the threshold / trying `filter` didn't help — try a different keyword set.
 
 ### Tips
 
 - Short keyword queries (1–4 words) outperform full sentences on the semantic leg — embeddings are short-context. The lexical leg tokenizes on whitespace, so the same short queries work well there too.
-- A note in **both** legs is a strong relevance signal — check for it before trusting either list alone.
-- Lower the threshold to 0.3 if the semantic leg comes back empty; the server already auto-retries at 0.3 when an initial search returns empty. Empty `lexical_matches` has no such fallback — it means no exact match exists.
-- For multilingual vaults, include translations in a single `query` array rather than calling repeatedly.
-- No embedding corpus, or a cold one? Use `mode: "lexical"` explicitly, or just trust `hybrid`'s graceful degradation — `semantic_matches` comes back empty and `lexical_matches` still works.
+- A note surfaced by multiple legs (`found_in` with more than one value) is the strongest relevance signal `search_notes` can hand back — rank fusion already lifts it for you, no manual cross-referencing needed.
+- Lower the threshold to 0.3 if the semantic leg comes back empty; the server already auto-retries at 0.3 when an initial search returns empty. The lexical leg has no such fallback — an entry with no `lexical:*` value in `found_in` means no exact match exists for that note.
+- For multilingual vaults, include translations in a single `query` array rather than calling repeatedly, and check `query_stats` for dead variants.
+- No embedding corpus, or a cold one? Use `mode: "lexical"` explicitly, or just trust `hybrid`'s graceful degradation — the merge falls back to the lexical source alone and `matches[]` still works.
 - After search finds a relevant note, switch to structural tools (`read_notes`, `query_notes`) for exact retrieval. See [Routing](./routing.md).
 
 ## Structured queries
