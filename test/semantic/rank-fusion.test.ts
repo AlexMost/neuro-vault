@@ -74,4 +74,28 @@ describe('fuseRanks', () => {
     expect(fuseRanks(args)).toEqual(fuseRanks(args));
     expect(fuseRanks(args).map((e) => e.path)).toEqual(['t.md', 'h.md', 'b.md']);
   });
+  it('breaks an exact score tie by sourceCount before backlinks', () => {
+    // k = adaptiveK(25) = 5.
+    // X: semantic rank 1 (index 0) → 1/(5+0+1) = 1/6. sourceCount 1.
+    // Y: lexical rank 7 + expansion rank 7 (index 6 each) →
+    //    1/(5+6+1) + 1/(5+6+1) = 1/12 + 1/12 = 1/6 (floating-point-exact). sourceCount 2.
+    // Scores tie exactly; X has more backlinks, but Y's higher sourceCount must win —
+    // this exercises the sourceCount branch of the comparator, which the equal-sourceCount
+    // "breaks score ties by source count..." test above cannot reach.
+    const out = fuseRanks({
+      sources: {
+        semantic: ['X.md'],
+        lexical: ['l1.md', 'l2.md', 'l3.md', 'l4.md', 'l5.md', 'l6.md', 'Y.md'],
+        expansion: ['e1.md', 'e2.md', 'e3.md', 'e4.md', 'e5.md', 'e6.md', 'Y.md'],
+      },
+      totalNotes: 25,
+      getBacklinkCount: (p) => (p === 'X.md' ? 10 : 0),
+    });
+    const x = out.find((c) => c.path === 'X.md')!;
+    const y = out.find((c) => c.path === 'Y.md')!;
+    expect(y.score).toBe(x.score);
+    expect(y.sourceCount).toBe(2);
+    expect(x.sourceCount).toBe(1);
+    expect(out[0].path).toBe('Y.md');
+  });
 });
