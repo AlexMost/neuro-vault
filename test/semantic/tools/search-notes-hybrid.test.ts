@@ -80,6 +80,38 @@ describe('unified matches shape', () => {
       await cleanup();
     }
   });
+
+  it('surfaces leg-level truncation even when the merged cap is not hit', async () => {
+    // 7 lexically-matching notes, quick effort: lexCap 5 == merged cap 5, so
+    // the merged cap never fires on its own — only the lexical leg's
+    // internal pool cap drops the other 2. `truncated` must still be true.
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 7; i++) files[`note-${i} пошук.md`] = '';
+    const { deps, cleanup } = await makeLexicalVault(files);
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({ query: 'пошук', mode: 'lexical' })) as SearchNotesOutput;
+      expect(out.matches).toHaveLength(5);
+      expect(out.truncated).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('truncated is false when neither the merged cap nor a leg pool cap dropped anything', async () => {
+    const { deps, cleanup } = await makeLexicalVault({
+      'a пошук.md': '',
+      'b пошук.md': '',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({ query: 'пошук', mode: 'lexical' })) as SearchNotesOutput;
+      expect(out.matches).toHaveLength(2);
+      expect(out.truncated).toBe(false);
+    } finally {
+      await cleanup();
+    }
+  });
 });
 
 describe('lexical leg orchestration', () => {
@@ -187,7 +219,11 @@ describe('lexical leg orchestration', () => {
     try {
       const quickOut = (await buildSearchNotesTool(quickDeps).handler({
         query: 'пошук',
-      })) as SearchNotesOutput; // effort defaults to "quick" -> merged cap 5 == lexCap 5
+        // limit: 12 raises the merged cap well above lexCap 5, so a lexCap
+        // regression (e.g. lexCap silently widening) can't hide behind the
+        // merged cap also being 5 by coincidence.
+        limit: 12,
+      })) as SearchNotesOutput; // effort defaults to "quick" -> lexCap 5 is the binding cap
       const deepOut = (await buildSearchNotesTool(deepDeps).handler({
         query: 'пошук',
         effort: 'deep',

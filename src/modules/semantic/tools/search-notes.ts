@@ -158,8 +158,14 @@ function assembleUnified(args: {
   totalNotes: number;
   cap: number;
   isMulti: boolean;
+  // True when a source leg's internal pool cap already dropped candidates
+  // (lexical `noteCap`, or the multi-query semantic merge cap) before fusion
+  // ever ran. `truncated` must reflect this even when the merged cap itself
+  // isn't hit — e.g. lexical mode with more matches than `lexCap` but fewer
+  // than the merged cap.
+  legTruncated: boolean;
 }): SearchNotesOutput {
-  const { semanticNodes, lexicalNotes, entry, totalNotes, cap, isMulti } = args;
+  const { semanticNodes, lexicalNotes, entry, totalNotes, cap, isMulti, legTruncated } = args;
   const expansion = flattenExpansion(semanticNodes);
   const semanticByPath = new Map(semanticNodes.map((n) => [n.path, n]));
   const lexicalByPath = new Map(lexicalNotes.map((n) => [n.path, n]));
@@ -206,7 +212,7 @@ function assembleUnified(args: {
       ...(matchedQueries !== undefined ? { matched_queries: matchedQueries } : {}),
     };
   });
-  return { matches, truncated: fused.length > cap };
+  return { matches, truncated: fused.length > cap || legTruncated };
 }
 
 async function runSearchForEntry(
@@ -297,6 +303,7 @@ async function runSearchForEntry(
       totalNotes: lexical.totalNotes,
       cap,
       isMulti,
+      legTruncated: lexical.truncated,
     });
   }
 
@@ -316,31 +323,45 @@ async function runSearchForEntry(
   try {
     // `limit` is deliberately NOT forwarded here — it bounds only the final
     // fused list (via `cap` below), never either leg's internal pool size.
-    const rawSemanticNodes: (NoteResultNode | MultiNoteResultNode)[] = isMulti
-      ? (
-          await executeMultiRetrieval({
-            queries,
-            mode: effort,
-            threshold,
-            sources: effectiveSources,
-            embeddingProvider,
-            searchEngine,
-          })
-        ).results
-      : (
-          await executeRetrieval({
-            query: queries[0],
-            mode: effort,
-            threshold,
-            sources: effectiveSources,
-            embeddingProvider,
-            searchEngine,
-          })
-        ).results;
+    // Only the multi-query semantic merge exposes a pool-cap `truncated` flag
+    // (the cross-query cap in `executeMultiRetrieval`); the single-query leg
+    // has no such flag — its pool cut is at the fixed `limit` per mode and
+    // isn't separately observable, which is fine per spec (only lexical's
+    // and the multi-query semantic merge's leg-level caps are surfaced).
+    let rawSemanticNodes: (NoteResultNode | MultiNoteResultNode)[];
+    let semanticLegTruncated = false;
+    if (isMulti) {
+      const output = await executeMultiRetrieval({
+        queries,
+        mode: effort,
+        threshold,
+        sources: effectiveSources,
+        embeddingProvider,
+        searchEngine,
+      });
+      rawSemanticNodes = output.results;
+      semanticLegTruncated = output.truncated;
+    } else {
+      rawSemanticNodes = (
+        await executeRetrieval({
+          query: queries[0],
+          mode: effort,
+          threshold,
+          sources: effectiveSources,
+          embeddingProvider,
+          searchEngine,
+        })
+      ).results;
+    }
 
     // Existence check covers semantic seeds AND their flattened expansion
     // targets before fusion — lexical notes are existence-safe by
-    // construction (read from disk this request).
+    // construction (read from disk this request). This flattening pass is
+    // only to collect candidate paths to existence-check; `assembleUnified`
+    // below recomputes `flattenExpansion` from the existence-filtered
+    // `semanticNodes` — intentionally, since the seed set (and each seed's
+    // `related[]`) narrows after the existence check, and the expansion
+    // source must reflect only surviving seeds/paths.
     const rawExpansion = flattenExpansion(rawSemanticNodes);
     const candidatePaths: string[] = [
       ...rawSemanticNodes.map((n) => n.path),
@@ -358,6 +379,7 @@ async function runSearchForEntry(
       totalNotes: lexical.totalNotes,
       cap,
       isMulti,
+      legTruncated: lexical.truncated || semanticLegTruncated,
     });
   } catch (error) {
     throw wrapDependencyError(error, 'Failed to search notes', {
@@ -414,7 +436,7 @@ export function buildSearchNotesTool(
     '',
     'RESPONSE SHAPE:',
     '- `matches[]` — one fused, ranked list. Each entry: `path`, `vault`, `backlink_count`, `found_in` (which source(s) surfaced it: "semantic", "lexical:title"|"lexical:heading"|"lexical:body", "expansion" — always non-empty), plus evidence fields present only for the sources that hit: `similarity`/`blocks[]` (semantic), `lexical[]` (snippet matches, max ~3, `{ matched_in, snippet, lines?, heading? }`), `expansion_similarity` (expansion).',
-    '- `truncated` — top-level, always present; true when the merged cap dropped fused candidates.',
+    "- `truncated` — top-level, always present; true when candidates were dropped by the merged cap or a source leg's pool cap.",
     '',
     'LEXICAL MATCHING: case-, accent-, and apostrophe-variant-insensitive substring; multiword query = ALL tokens must appear (AND), contiguous phrase ranks higher. A note surfaced by multiple legs ranks higher via rank fusion — that is the strongest relevance signal.',
     '',
