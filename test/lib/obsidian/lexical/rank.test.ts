@@ -174,6 +174,24 @@ describe('rankNotes', () => {
     expect(ranked[0]!.matches[0]!.matched_in).toBe('heading');
   });
 
+  it('reports per-query candidate counts before the note cap', () => {
+    const map = notes([
+      ['a пошук.md', ''],
+      ['b пошук.md', ''],
+      ['c пошук.md', ''],
+      ['retrieval.md', ''],
+    ]);
+    const { notes: ranked, perQueryCounts } = rankNotes({
+      notes: map,
+      queries: ['пошук', 'retrieval', 'відсутнє'],
+      noteCap: 1,
+      perNoteCap: 3,
+      getBacklinkCount: noBacklinks,
+    });
+    expect(ranked).toHaveLength(1); // cap applied to the list…
+    expect(perQueryCounts).toEqual({ пошук: 3, retrieval: 1, відсутнє: 0 }); // …not to the counts
+  });
+
   it('is deterministic: backlink desc then path asc as final tie-breaks', () => {
     const map = notes([
       ['b пошук тут.md', ''],
