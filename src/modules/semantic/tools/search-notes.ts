@@ -260,8 +260,21 @@ async function runSearchForEntry(
   const limit =
     input.limit !== undefined ? readPositiveInteger(input.limit, input.limit, 'limit') : undefined;
 
-  // Normalized ahead of filter handling so `query_stats` (array queries only)
-  // can be attached even on the empty-filter early return below.
+  let allowed: Set<string> | undefined;
+
+  // Filter-shape validation runs before query normalization, unchanged from
+  // before `query_stats` existed — a malformed filter must still win over a
+  // malformed query.
+  if (input.filter !== undefined && isFilterEmpty(input.filter)) {
+    throw new ToolHandlerError(
+      'INVALID_ARGUMENT',
+      'filter must specify at least one of: path_prefix, exclude_path_prefix, tags, frontmatter',
+    );
+  }
+
+  // Normalized after filter-shape validation above but before the
+  // empty-filter early return below, which needs `queries` to attach
+  // `query_stats` (array queries only).
   let isMulti: boolean;
   let queries: string[];
   if (Array.isArray(input.query)) {
@@ -272,16 +285,7 @@ async function runSearchForEntry(
     queries = [normalizeQuery(input.query)];
   }
 
-  let allowed: Set<string> | undefined;
-
   if (input.filter !== undefined) {
-    if (isFilterEmpty(input.filter)) {
-      throw new ToolHandlerError(
-        'INVALID_ARGUMENT',
-        'filter must specify at least one of: path_prefix, exclude_path_prefix, tags, frontmatter',
-      );
-    }
-
     try {
       allowed = await listMatchingPaths(input.filter);
     } catch (error) {

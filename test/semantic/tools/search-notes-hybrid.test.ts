@@ -340,6 +340,24 @@ describe('search_notes input axes (SDK gate)', () => {
       await cleanup();
     }
   });
+
+  it('filter-shape validation wins over query normalization when both are invalid', async () => {
+    // A whitespace-only query entry passes schema (array length >= 1 is all
+    // zod checks) but fails `normalizeQueryArray` at the handler level. An
+    // empty filter object fails `isFilterEmpty` at the handler level too.
+    // Filter-shape validation must win — it ran first before query_stats
+    // existed, and query_stats support must not silently reorder it.
+    const { tool, cleanup } = await makeTool();
+    try {
+      expect(tool.inputSchema.safeParse({ query: ['   '], filter: {} }).success).toBe(true);
+      await expect(tool.handler({ query: ['   '], filter: {} })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: expect.stringContaining('filter must specify at least one of'),
+      });
+    } finally {
+      await cleanup();
+    }
+  });
 });
 
 describe('multi-query and fan-out', () => {
@@ -471,6 +489,48 @@ describe('query_stats', () => {
       expect(out.query_stats).toEqual({
         пошук: { semantic: 0, lexical: 1 },
         тест: { semantic: 0, lexical: 1 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("reports pre-cap semantic stats even when the merge cap drops all of a query's hits (hybrid mode)", async () => {
+    // Two notes, each surfaced semantically by exactly one of the two
+    // queries (and by neither lexically). `limit: 1` caps the merged list to
+    // one entry, so whichever note loses the fusion tie-break is entirely
+    // absent from `matches[]` — its query must still report its pre-cap
+    // semantic hit count.
+    const noteA = 'a.md';
+    const noteB = 'b.md';
+    const sources = new Map<string, SmartSource>([
+      [noteA, { path: noteA, embedding: [1, 0], blocks: [] }],
+      [noteB, { path: noteB, embedding: [0, 1], blocks: [] }],
+    ]);
+    const engine: SearchEngine = {
+      findNeighbors: vi.fn(({ queryVector }: { queryVector: number[] }) =>
+        queryVector[0] === 1
+          ? [{ path: noteA, similarity: 0.9 }]
+          : [{ path: noteB, similarity: 0.8 }],
+      ),
+      findBlockNeighbors: vi.fn().mockReturnValue([]),
+      findDuplicates: vi.fn().mockReturnValue([]),
+    };
+    const { deps, cleanup } = await makeLexicalVault(
+      { [noteA]: '', [noteB]: '' },
+      { sources, engine },
+    );
+    deps.embeddingProvider.embed = vi.fn(async (q: string) => (q === 'q1' ? [1, 0] : [0, 1]));
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['q1', 'q2'],
+        limit: 1,
+      })) as SearchNotesOutput;
+      expect(out.matches).toHaveLength(1);
+      expect(out.query_stats).toEqual({
+        q1: { semantic: 1, lexical: 0 },
+        q2: { semantic: 1, lexical: 0 },
       });
     } finally {
       await cleanup();
