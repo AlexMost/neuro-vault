@@ -60,4 +60,20 @@ describe('FsVaultProvider → get_vault_overview (disk integration)', () => {
     expect(overview.top_tags).toEqual([]);
     expect(overview.properties).toEqual([]);
   });
+
+  it('top_tags includes inline-only tags from note bodies', async () => {
+    const root = await makeVault({
+      'a.md': '---\ntags: [fm]\n---\nbody #inlineonly\n',
+      'b.md': 'plain body #inlineonly\n',
+    });
+    const reader = new FsVaultReader({ vaultRoot: root });
+    const provider = makeProvider(root);
+
+    const overview = await computeVaultOverview({ reader, provider, graph: makeMockGraph() });
+
+    expect(overview.top_tags).toEqual([
+      { name: 'inlineonly', count: 2 },
+      { name: 'fm', count: 1 },
+    ]);
+  });
 });
