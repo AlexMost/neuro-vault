@@ -32,7 +32,7 @@ export function buildListTagsTool(
     name: 'list_tags',
     title: 'List Tags',
     description:
-      'List all tags used across the vault, sorted by occurrence count desc. Returns `{ vault, results: [{name, count}] }`.' +
+      'List all tags used across the vault, sorted by occurrence count desc. Returns `{ vault, results: [{name, count}] }`. Counts aggregate frontmatter `tags:` values and inline body `#tags` (Obsidian grammar), deduplicated per note — each distinct tag counts once per note. Note: the `tags` filter of `query_notes`/`search_notes` matches frontmatter tags only, so a tag that exists only inline is reported here but not filterable there.' +
       describeMultiVault(
         registry,
         'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]`. Pass `vault: "<name>"` to target a specific vault.',

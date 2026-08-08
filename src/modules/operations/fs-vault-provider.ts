@@ -15,6 +15,7 @@ import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
 import { resolveNoteName } from './resolve-note-name.js';
 import { invalidArgument } from './tool-helpers.js';
 import { extractTags } from '../../lib/obsidian/query/note-record.js';
+import { extractInlineTags } from '../../lib/obsidian/inline-tags.js';
 import type {
   CreateNoteInput,
   CreateNoteResult,
@@ -34,6 +35,9 @@ function sortCounts(counts: Map<string, number>): Array<{ name: string; count: n
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
+
+/** Same batching pattern as query-notes.ts — bound memory, never hold every body at once. */
+const READ_BATCH_SIZE = 32;
 
 export interface FsVaultProviderOptions {
   vaultRoot: string;
@@ -284,9 +288,20 @@ export class FsVaultProvider implements VaultProvider {
   }
 
   async listTags(): Promise<TagListEntry[]> {
+    const reader = this.reader;
     const counts = new Map<string, number>();
-    for (const fm of await this.scanFrontmatter()) {
-      for (const tag of extractTags(fm)) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    const paths = await reader.scan();
+    for (let i = 0; i < paths.length; i += READ_BATCH_SIZE) {
+      const slice = paths.slice(i, i + READ_BATCH_SIZE);
+      const items = await reader.readNotes({ paths: slice, fields: ['frontmatter', 'content'] });
+      for (const item of items) {
+        if ('error' in item) continue;
+        const noteTags = new Set([
+          ...extractTags(item.frontmatter ?? {}),
+          ...extractInlineTags(item.content),
+        ]);
+        for (const tag of noteTags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      }
     }
     return sortCounts(counts);
   }

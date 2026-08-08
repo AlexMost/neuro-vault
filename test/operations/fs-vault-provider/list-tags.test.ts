@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { makeProvider, makeVault } from './_helpers.js';
 
 describe('FsVaultProvider.listTags (disk)', () => {
-  it('counts frontmatter tags only, ignoring inline #tags', async () => {
+  it('counts frontmatter and inline #tags together', async () => {
     const root = await makeVault({
       'a.md': '---\ntags: [alpha, beta]\n---\nbody #inline\n',
       'b.md': '---\ntags: alpha\n---\n',
@@ -13,11 +13,12 @@ describe('FsVaultProvider.listTags (disk)', () => {
 
     expect(await provider.listTags()).toEqual([
       { name: 'alpha', count: 2 },
-      { name: 'beta', count: 1 },
+      { name: 'beta', count: 2 },
+      { name: 'inline', count: 1 },
     ]);
   });
 
-  it('returns [] for a vault with no frontmatter', async () => {
+  it('returns [] for a vault with no frontmatter and no inline tags', async () => {
     const root = await makeVault({ 'a.md': 'plain\n' });
     const provider = makeProvider(root);
 
@@ -109,5 +110,56 @@ describe('FsVaultProvider.listTags (disk)', () => {
     const provider = makeProvider(root);
 
     expect(await provider.listTags()).toEqual([{ name: 'buried', count: 1 }]);
+  });
+
+  it('counts a tag once per note when it appears in frontmatter and body', async () => {
+    const root = await makeVault({
+      'a.md': '---\ntags: [gamma]\n---\n#gamma again #gamma\n',
+    });
+    const provider = makeProvider(root);
+
+    expect(await provider.listTags()).toEqual([{ name: 'gamma', count: 1 }]);
+  });
+
+  it('counts duplicated frontmatter entries once per note', async () => {
+    const root = await makeVault({ 'a.md': '---\ntags: [alpha, alpha]\n---\n' });
+    const provider = makeProvider(root);
+
+    expect(await provider.listTags()).toEqual([{ name: 'alpha', count: 1 }]);
+  });
+
+  it('excludes code, URL fragments, heading markers, and numeric pseudo-tags', async () => {
+    const root = await makeVault({
+      'a.md':
+        '## Heading\n\nsee https://example.com/#section and #123\n\n```\n#fenced\n```\n\n`#inline` but #real\n',
+    });
+    const provider = makeProvider(root);
+
+    expect(await provider.listTags()).toEqual([{ name: 'real', count: 1 }]);
+  });
+
+  it('counts nested inline tags verbatim', async () => {
+    const root = await makeVault({ 'a.md': 'work #project/alpha\n' });
+    const provider = makeProvider(root);
+
+    expect(await provider.listTags()).toEqual([{ name: 'project/alpha', count: 1 }]);
+  });
+
+  it('broken frontmatter: body scan sees the raw file (pinned edge, design D5)', async () => {
+    const root = await makeVault({
+      'a.md': '---\ntags: [unclosed\n---\nbody #real\n',
+    });
+    const provider = makeProvider(root);
+
+    expect(await provider.listTags()).toEqual([{ name: 'real', count: 1 }]);
+  });
+
+  it('scans more notes than one read batch', async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 40; i += 1) files[`n${String(i).padStart(2, '0')}.md`] = 'note #bulk\n';
+    const root = await makeVault(files);
+    const provider = makeProvider(root);
+
+    expect(await provider.listTags()).toEqual([{ name: 'bulk', count: 40 }]);
   });
 });
