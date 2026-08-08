@@ -77,8 +77,9 @@ future read-only scan tools a natural home.
 ## What it deliberately does not do
 
 - It does not parse inline `#tags` from the body. Only frontmatter `tags:` is
-  read. Body parsing needs a tokenizer aware of code-fences, wikilink anchors,
-  and headings; separate ticket.
+  read by the query/filter path. (`list_tags` counting does include inline
+  tags via `src/lib/obsidian/inline-tags.ts`; the filter leg deliberately
+  does not follow — see change `inline-tags-in-list-tags`.)
 - It does not implement hierarchical tag matching. `"ai"` does not match
   `#ai/ml`. Agents pass `$in` / `$regex` explicitly until sugar lands.
 - It does not auto-prefix `frontmatter.`. Filter authors write the full
