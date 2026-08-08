@@ -62,7 +62,7 @@ describe('executeRetrieval', () => {
   ]);
 
   describe('quick mode defaults', () => {
-    it('calls findNeighbors with threshold 0.5 and limit 3', async () => {
+    it('calls findNeighbors with threshold 0.5 and limit 4 (mode limit 3 + 1 truncation-detection overfetch)', async () => {
       const searchEngine = makeSearchEngine();
       const embeddingProvider = makeEmbeddingProvider();
 
@@ -75,7 +75,7 @@ describe('executeRetrieval', () => {
       });
 
       expect(searchEngine.findNeighbors).toHaveBeenCalledWith(
-        expect.objectContaining({ threshold: 0.5, limit: 3 }),
+        expect.objectContaining({ threshold: 0.5, limit: 4 }),
       );
     });
 
@@ -121,7 +121,7 @@ describe('executeRetrieval', () => {
   });
 
   describe('deep mode defaults', () => {
-    it('calls findNeighbors with threshold 0.35 and limit 8', async () => {
+    it('calls findNeighbors with threshold 0.35 and limit 9 (mode limit 8 + 1 truncation-detection overfetch)', async () => {
       const searchEngine = makeSearchEngine();
       const embeddingProvider = makeEmbeddingProvider();
 
@@ -134,7 +134,7 @@ describe('executeRetrieval', () => {
       });
 
       expect(searchEngine.findNeighbors).toHaveBeenCalledWith(
-        expect.objectContaining({ threshold: 0.35, limit: 8 }),
+        expect.objectContaining({ threshold: 0.35, limit: 9 }),
       );
     });
 
@@ -545,6 +545,56 @@ describe('executeRetrieval', () => {
     });
   });
 
+  describe('leg-level pool truncation', () => {
+    it('truncated is true when the engine yields more than the mode limit (quick: 4 hits, limit 3)', async () => {
+      const embeddingProvider = makeEmbeddingProvider();
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi
+          .fn()
+          .mockReturnValue([
+            makeSearchResult('note-a.md', 0.9),
+            makeSearchResult('note-b.md', 0.8),
+            makeSearchResult('note-c.md', 0.7),
+            makeSearchResult('note-d.md', 0.6),
+          ]),
+      });
+
+      const output = await executeRetrieval({
+        query: 'test query',
+        mode: 'quick',
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      expect(output.results).toHaveLength(3);
+      expect(output.truncated).toBe(true);
+    });
+
+    it('truncated is false when the engine yields at most the mode limit', async () => {
+      const embeddingProvider = makeEmbeddingProvider();
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi
+          .fn()
+          .mockReturnValue([
+            makeSearchResult('note-a.md', 0.9),
+            makeSearchResult('note-b.md', 0.8),
+          ]),
+      });
+
+      const output = await executeRetrieval({
+        query: 'test query',
+        mode: 'quick',
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      expect(output.results).toHaveLength(2);
+      expect(output.truncated).toBe(false);
+    });
+  });
+
   describe('user-supplied limit', () => {
     it('overrides the mode default', async () => {
       const embeddingProvider = makeEmbeddingProvider();
@@ -564,7 +614,9 @@ describe('executeRetrieval', () => {
       });
 
       expect(output.results).toHaveLength(7);
-      expect(findNeighbors).toHaveBeenCalledWith(expect.objectContaining({ limit: 7 }));
+      // requests limit + 1 (8) so an overflow beyond the user-supplied limit
+      // is observable; `seeds`/`output.results` still bound to 7.
+      expect(findNeighbors).toHaveBeenCalledWith(expect.objectContaining({ limit: 8 }));
     });
   });
 });
@@ -663,6 +715,49 @@ describe('executeMultiRetrieval', () => {
     });
 
     expect(output.truncated).toBe(false);
+  });
+
+  it("truncated is true when a single query's own pool overflows, even though the merged list fits under limit", async () => {
+    // limit defaults to 3 (quick). Query 'a' yields 4 hits — more than its
+    // own pool cap — so it overflows and is sliced to its top 3. Query 'b'
+    // returns exactly those same 3 paths, contributing no new unique paths,
+    // so the CROSS-QUERY merge cap never fires (merged.length === limit).
+    // `truncated` must still be true, driven by query 'a's per-query overflow.
+    const embeddingProvider: EmbeddingProvider = {
+      initialize: vi.fn(),
+      embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+    };
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([
+          makeSearchResult('note-a.md', 0.95),
+          makeSearchResult('note-b.md', 0.9),
+          makeSearchResult('note-c.md', 0.85),
+          makeSearchResult('note-d.md', 0.8),
+        ])
+        .mockReturnValueOnce([
+          makeSearchResult('note-a.md', 0.5),
+          makeSearchResult('note-b.md', 0.4),
+          makeSearchResult('note-c.md', 0.3),
+        ]),
+    });
+
+    const output = await executeMultiRetrieval({
+      queries: ['a', 'b'],
+      mode: 'quick',
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+
+    expect(output.results.map((r) => r.path).sort()).toEqual([
+      'note-a.md',
+      'note-b.md',
+      'note-c.md',
+    ]);
+    expect(output.results.length).toBeLessThanOrEqual(3);
+    expect(output.truncated).toBe(true);
   });
 
   describe('expansion (per-seed, deep mode)', () => {

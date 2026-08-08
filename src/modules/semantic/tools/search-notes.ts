@@ -323,13 +323,12 @@ async function runSearchForEntry(
   try {
     // `limit` is deliberately NOT forwarded here — it bounds only the final
     // fused list (via `cap` below), never either leg's internal pool size.
-    // Only the multi-query semantic merge exposes a pool-cap `truncated` flag
-    // (the cross-query cap in `executeMultiRetrieval`); the single-query leg
-    // has no such flag — its pool cut is at the fixed `limit` per mode and
-    // isn't separately observable, which is fine per spec (only lexical's
-    // and the multi-query semantic merge's leg-level caps are surfaced).
+    // Both `executeRetrieval` and `executeMultiRetrieval` surface their own
+    // `truncated` (a leg-level pool-cap overflow, independent of `cap`) —
+    // captured below as `semanticLegTruncated` and folded into `legTruncated`
+    // so every leg's pool overflow is surfaced, not just lexical's.
     let rawSemanticNodes: (NoteResultNode | MultiNoteResultNode)[];
-    let semanticLegTruncated = false;
+    let semanticLegTruncated: boolean;
     if (isMulti) {
       const output = await executeMultiRetrieval({
         queries,
@@ -342,16 +341,16 @@ async function runSearchForEntry(
       rawSemanticNodes = output.results;
       semanticLegTruncated = output.truncated;
     } else {
-      rawSemanticNodes = (
-        await executeRetrieval({
-          query: queries[0],
-          mode: effort,
-          threshold,
-          sources: effectiveSources,
-          embeddingProvider,
-          searchEngine,
-        })
-      ).results;
+      const output = await executeRetrieval({
+        query: queries[0],
+        mode: effort,
+        threshold,
+        sources: effectiveSources,
+        embeddingProvider,
+        searchEngine,
+      });
+      rawSemanticNodes = output.results;
+      semanticLegTruncated = output.truncated;
     }
 
     // Existence check covers semantic seeds AND their flattened expansion
@@ -436,7 +435,7 @@ export function buildSearchNotesTool(
     '',
     'RESPONSE SHAPE:',
     '- `matches[]` — one fused, ranked list. Each entry: `path`, `vault`, `backlink_count`, `found_in` (which source(s) surfaced it: "semantic", "lexical:title"|"lexical:heading"|"lexical:body", "expansion" — always non-empty), plus evidence fields present only for the sources that hit: `similarity`/`blocks[]` (semantic), `lexical[]` (snippet matches, max ~3, `{ matched_in, snippet, lines?, heading? }`), `expansion_similarity` (expansion).',
-    "- `truncated` — top-level, always present; true when candidates were dropped by the merged cap or a source leg's pool cap.",
+    '- `truncated` — top-level, always present; true when candidates were dropped by the merged cap or a source leg\'s internal pool cap. The two causes need different fixes: merged-cap truncation is recovered by raising `limit`; a source leg\'s pool-cap truncation is NOT — raise `effort` to "deep" (or narrow `query`/`filter`) instead.',
     '',
     'LEXICAL MATCHING: case-, accent-, and apostrophe-variant-insensitive substring; multiword query = ALL tokens must appear (AND), contiguous phrase ranks higher. A note surfaced by multiple legs ranks higher via rank fusion — that is the strongest relevance signal.',
     '',

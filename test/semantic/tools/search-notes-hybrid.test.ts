@@ -5,6 +5,7 @@ import {
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import type { IFanOutResult } from '../../../src/lib/fan-out.js';
+import type { SmartSource } from '../../../src/modules/semantic/types.js';
 import { makeSearchDeps, makeTestRegistry } from './_helpers.js';
 import {
   engineReturning,
@@ -112,6 +113,36 @@ describe('unified matches shape', () => {
       await cleanup();
     }
   });
+
+  it('surfaces the semantic leg pool overflow even when the lexical leg is empty and the merged cap is not hit', async () => {
+    // 4 files that don't lexically match the query at all (0 lexical hits),
+    // with the semantic engine mocked to always return all 4 regardless of
+    // query — quick effort's semantic pool cap is 3, so the leg overflows
+    // (4 > 3) even though the merged list (3 semantic-only entries) sits
+    // well under the quick merged cap of 5.
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 4; i++) files[`note-${i}.md`] = 'irrelevant body text';
+    const sources: Map<string, SmartSource> = new Map(
+      Object.keys(files).map((p) => [p, { path: p, embedding: [1, 0], blocks: [] }]),
+    );
+    const engine = engineReturning([
+      { path: 'note-0.md', similarity: 0.9 },
+      { path: 'note-1.md', similarity: 0.8 },
+      { path: 'note-2.md', similarity: 0.7 },
+      { path: 'note-3.md', similarity: 0.6 },
+    ]);
+    const { deps, cleanup } = await makeLexicalVault(files, { sources, engine });
+    try {
+      const out = (await buildSearchNotesTool(deps).handler({
+        query: 'zzz-no-lexical-match',
+      })) as SearchNotesOutput;
+      expect(out.matches).toHaveLength(3);
+      expect(out.matches.every((m) => m.found_in.every((s) => s === 'semantic'))).toBe(true);
+      expect(out.truncated).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
 });
 
 describe('lexical leg orchestration', () => {
@@ -211,7 +242,7 @@ describe('lexical leg orchestration', () => {
     }
   });
 
-  it('effort "deep" gives the lexical leg its larger default cap in hybrid mode (no explicit limit)', async () => {
+  it('effort "deep" gives the lexical leg its larger default cap in hybrid mode', async () => {
     const files: Record<string, string> = {};
     for (let i = 0; i < 7; i++) files[`note-${i} пошук.md`] = '';
     const { deps: quickDeps, cleanup: quickCleanup } = await makeLexicalVault(files);
