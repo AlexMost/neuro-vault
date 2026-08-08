@@ -83,10 +83,15 @@ The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) 
 - **WHEN** `search_notes` is called with `{ query: "x", mode: "quick" }`
 - **THEN** the call fails schema validation with an `INVALID_PARAMS`-class error naming the allowed values `"hybrid"` and `"lexical"`
 
-#### Scenario: effort controls merged volume
+#### Scenario: effort controls volume in hybrid mode
 
 - **WHEN** `search_notes` is called with `{ query: "x", effort: "deep" }`
 - **THEN** `matches[]` contains at most 12 entries drawn from the deep candidate pools, and expansion participates as a fusion source
+
+#### Scenario: limit steers the lexical list in lexical mode
+
+- **WHEN** `search_notes` is called with `{ query: "x", mode: "lexical", limit: 20 }`
+- **THEN** `matches[]` contains at most 20 lexically-sourced entries
 
 #### Scenario: limit caps the merged list in any mode
 
@@ -144,7 +149,7 @@ Matching SHALL be case- and accent-insensitive substring comparison over normali
 
 The lexical rank source SHALL order its candidates by six ordinal tiers — phrase-in-title, tokens-in-title, phrase-in-heading, tokens-in-heading, phrase-in-body-block, tokens-within-body-block — then within a tier by density (sum of matched token lengths / unit length) descending, then `backlink_count` descending, then `path` ascending. This ordering SHALL be deterministic for a fixed vault state and SHALL be the rank the fusion consumes for the lexical source. Lexically-sourced entries SHALL NOT carry a numeric lexical score field. An implementation MAY evaluate tiers lazily with early exit once the lexical cap is filled, provided the output is identical to full evaluation.
 
-#### Scenario: title match outranks body match in the lexical source
+#### Scenario: title match outranks body match
 
 - **WHEN** the query is `retrieval eval` in `mode: "lexical"`, one note's title contains it and another note only mentions it in the body
 - **THEN** the title-matching note precedes the body-matching note in `matches[]`
@@ -154,11 +159,16 @@ The lexical rank source SHALL order its candidates by six ordinal tiers — phra
 - **WHEN** the query is `пошук` in `mode: "lexical"` and two notes match in title: `Пошук` and `Довгі роздуми про пошук сенсу`
 - **THEN** `Пошук` precedes the longer title in `matches[]`
 
+#### Scenario: ordering is reproducible
+
+- **WHEN** the same query runs twice in `mode: "lexical"` against an unchanged vault
+- **THEN** `matches[]` is byte-for-byte identical
+
 ### Requirement: Lexical results are grouped per note with capped evidence
 
 Lexical evidence SHALL be grouped per note on its `matches[]` entry as `lexical: [...]`, where each item carries `matched_in: "title" | "heading" | "body"`, a `snippet` (a bounded window around the first match, ellipsized, grapheme-safe), `lines: [start, end]` for heading/body matches (from AST positions), and the enclosing section `heading` for body matches. `lexical` SHALL be capped per note (~3) and SHALL be present exactly on entries whose `found_in` contains a `lexical:*` value.
 
-#### Scenario: one note aggregates its lexical evidence
+#### Scenario: one note aggregates its matches
 
 - **WHEN** a note matches the query in its title and in four body blocks
 - **THEN** `matches[]` contains one entry for that note whose `lexical[]` holds the title match plus at most the top body matches within the per-note cap
@@ -172,7 +182,7 @@ Lexical evidence SHALL be grouped per note on its `matches[]` entry as `lexical:
 
 `filter` SHALL constrain the lexical leg through the same pre-filtered path set as the semantic leg — its `path_prefix`, `exclude_path_prefix`, `tags`, and `frontmatter` fields bind both legs identically; a note excluded by `filter` SHALL NOT appear in any fusion source or in `matches[]`.
 
-#### Scenario: path filter constrains the merged list
+#### Scenario: path filter constrains lexical matches
 
 - **WHEN** `search_notes` is called with `{ query: "пошук", filter: { path_prefix: "Tasks/" } }`
 - **THEN** every entry in `matches[]` has a `path` starting with `Tasks/`
@@ -181,12 +191,17 @@ Lexical evidence SHALL be grouped per note on its `matches[]` entry as `lexical:
 
 For an array `query`, each leg SHALL compute per-query results and merge them into its single source ranking before fusion; entries SHALL carry `matched_queries` as the union of queries that hit the note in any leg. Top-level `truncated` SHALL reflect candidate overflow from the merged cap or the semantic or lexical leg's pool cap, and `query_stats` SHALL accompany the response. In multi-vault mode without `vault`, fan-out SHALL wrap the unified response per vault in the existing `results_by_vault` envelope, with fusion computed independently per vault.
 
+#### Scenario: multi-query lexical merge
+
+- **WHEN** `search_notes` is called with `{ query: ["векторний пошук", "vector search"], mode: "lexical" }`
+- **THEN** each entry in `matches[]` carries `matched_queries` naming which queries hit it
+
 #### Scenario: matched_queries unions across legs
 
 - **WHEN** `search_notes` is called with `{ query: ["векторний пошук", "vector search"] }` and a note is hit by the first query lexically and the second semantically
 - **THEN** that note's entry carries both queries in `matched_queries`
 
-#### Scenario: fan-out preserves the unified shape
+#### Scenario: fan-out preserves the hybrid shape
 
 - **WHEN** multiple vaults are registered and `search_notes` is called without `vault`
 - **THEN** each per-vault entry in the fan-out envelope contains `{ matches, truncated }` fused from that vault's own sources
