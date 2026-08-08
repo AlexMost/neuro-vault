@@ -21,8 +21,8 @@
 
 ## 5. Docs
 
-- [ ] 5.1 Update the `docs/architecture/` living doc for the search response shape (fusion mechanism, k formula, provenance vocabulary); check `docs/architecture/mcp-parameter-dictionary.md` for response-field naming collisions (`found_in`, `query_stats`, `lexical`, `expansion_similarity`) and record them if the dictionary covers response fields.
+- [x] 5.1 Update the `docs/architecture/` living doc for the search response shape (fusion mechanism, k formula, provenance vocabulary); check `docs/architecture/mcp-parameter-dictionary.md` for response-field naming collisions (`found_in`, `query_stats`, `lexical`, `expansion_similarity`) and record them if the dictionary covers response fields.
 
 ## 6. Verification
 
-- [ ] 6.1 `npm test`, `npm run lint`, `npm run typecheck` all pass; `openspec validate --all` passes; confirm the change warrants a major release note in the PR description (breaking response shape).
+- [x] 6.1 `npm test`, `npm run lint`, `npm run typecheck` all pass; `openspec validate --all` passes; confirm the change warrants a major release note in the PR description (breaking response shape).
