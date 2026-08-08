@@ -177,6 +177,10 @@ export interface MultiRetrievalInput extends Omit<RetrievalInput, 'query'> {
 
 export interface MultiRetrievalOutput {
   results: MultiNoteResultNode[];
+  // True when candidates were dropped either by the cross-query merge cap
+  // (`limit`) or by any single query's own per-query pool cap — i.e. a
+  // `limit + 1` over-fetch on at least one query (see Step 1's `overflow`
+  // below); `seeds` still bounds the output to exactly `limit`.
   truncated: boolean;
   per_query_hits: Record<string, number>;
 }

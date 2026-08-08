@@ -5,7 +5,7 @@ import {
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import type { IFanOutResult } from '../../../src/lib/fan-out.js';
-import type { SmartSource } from '../../../src/modules/semantic/types.js';
+import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import { makeSearchDeps, makeTestRegistry } from './_helpers.js';
 import {
   engineReturning,
@@ -384,6 +384,153 @@ describe('multi-query and fan-out', () => {
     } finally {
       await a.cleanup();
       await b.cleanup();
+    }
+  });
+});
+
+describe('query_stats', () => {
+  it('reports pre-cap per-query stats and surfaces dead variants', async () => {
+    // "пошук" matches both lexically (title) and semantically; "Мобі"
+    // matches nothing in either leg — a dead query variant.
+    const sources = sourcesWithEmbeddingFor('пошук note.md', [1, 0]);
+    const engine: SearchEngine = {
+      findNeighbors: vi.fn(({ queryVector }: { queryVector: number[] }) =>
+        queryVector[0] === 1 ? [{ path: 'пошук note.md', similarity: 0.9 }] : [],
+      ),
+      findBlockNeighbors: vi.fn().mockReturnValue([]),
+      findDuplicates: vi.fn().mockReturnValue([]),
+    };
+    const { deps, cleanup } = await makeLexicalVault(
+      { 'пошук note.md': 'зміст нотатки' },
+      { sources, engine },
+    );
+    deps.embeddingProvider.embed = vi.fn(async (q: string) => (q === 'пошук' ? [1, 0] : [0, 1]));
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({ query: ['пошук', 'Мобі'] })) as SearchNotesOutput;
+      expect(out.query_stats).toEqual({
+        пошук: { semantic: 1, lexical: 1 },
+        Мобі: { semantic: 0, lexical: 0 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('unions matched_queries across legs even when each leg is hit by a different query', async () => {
+    // note hit lexically by q1 ("пошук"), semantically by q2 ("vector") only.
+    const notePath = 'Target пошук.md';
+    const sources = sourcesWithEmbeddingFor(notePath, [1, 0]);
+    const engine: SearchEngine = {
+      findNeighbors: vi.fn(({ queryVector }: { queryVector: number[] }) =>
+        queryVector[0] === 1 ? [{ path: notePath, similarity: 0.9 }] : [],
+      ),
+      findBlockNeighbors: vi.fn().mockReturnValue([]),
+      findDuplicates: vi.fn().mockReturnValue([]),
+    };
+    const { deps, cleanup } = await makeLexicalVault({ [notePath]: '' }, { sources, engine });
+    deps.embeddingProvider.embed = vi.fn(async (q: string) => (q === 'vector' ? [1, 0] : [0, 1]));
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['пошук', 'vector'],
+      })) as SearchNotesOutput;
+      const m = out.matches.find((x) => x.path === notePath);
+      expect(m?.matched_queries?.sort()).toEqual(['vector', 'пошук']);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('omits query_stats for a string query', async () => {
+    const { deps, cleanup } = await makeLexicalVault({ 'пошук.md': '' });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+      expect(out.query_stats).toBeUndefined();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("reports pre-cap stats even when the merge cap drops all of a query's notes", async () => {
+    const { deps, cleanup } = await makeLexicalVault({
+      'a пошук.md': '',
+      'b тест.md': '',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['пошук', 'тест'],
+        mode: 'lexical',
+        limit: 1,
+      })) as SearchNotesOutput;
+      // the merged cap keeps only one of the two notes...
+      expect(out.matches).toHaveLength(1);
+      // ...but both queries still report their pre-cap lexical hit count.
+      expect(out.query_stats).toEqual({
+        пошук: { semantic: 0, lexical: 1 },
+        тест: { semantic: 0, lexical: 1 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reports query_stats in lexical mode with semantic always 0', async () => {
+    const { deps, cleanup } = await makeLexicalVault({
+      'a пошук.md': '',
+      'b тест.md': '',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['пошук', 'нема'],
+        mode: 'lexical',
+      })) as SearchNotesOutput;
+      expect(out.query_stats).toEqual({
+        пошук: { semantic: 0, lexical: 1 },
+        нема: { semantic: 0, lexical: 0 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reports query_stats with semantic always 0 when no semantic corpus is available', async () => {
+    const { deps, cleanup } = await makeLexicalVault({ 'пошук note.md': '' }, { semantic: false });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['пошук', 'нема'],
+      })) as SearchNotesOutput;
+      expect(out.query_stats).toEqual({
+        пошук: { semantic: 0, lexical: 1 },
+        нема: { semantic: 0, lexical: 0 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('query_stats accompanies the empty-filter early return for array queries', async () => {
+    const { deps, cleanup } = await makeLexicalVault(
+      { 'a.md': '' },
+      { listMatchingPaths: async () => new Set() },
+    );
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['x', 'y'],
+        filter: { path_prefix: 'nomatch/' },
+      })) as SearchNotesOutput;
+      expect(out.matches).toEqual([]);
+      expect(out.query_stats).toEqual({
+        x: { semantic: 0, lexical: 0 },
+        y: { semantic: 0, lexical: 0 },
+      });
+    } finally {
+      await cleanup();
     }
   });
 });

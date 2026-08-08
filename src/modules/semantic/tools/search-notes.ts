@@ -146,6 +146,29 @@ function isMultiNode(node: NoteResultNode | MultiNoteResultNode): node is MultiN
   return 'matched_queries' in node;
 }
 
+// Pre-cap per-query hit counts for array queries — `semantic` from
+// `executeMultiRetrieval`'s `per_query_hits` (undefined on every
+// degradation path: lexical mode, no-corpus, empty-filter early return —
+// `semantic` reports 0 there), `lexical` from the lexical leg's
+// `perQueryCounts` (always computed, pre lexical `noteCap`). Both counts are
+// taken before the cross-query merge and before the final `matches[]` cap, so
+// a query whose hits were entirely cut by that cap still reports non-zero.
+// `undefined` for a single string query — `query_stats` is array-query-only.
+function buildQueryStats(
+  isMulti: boolean,
+  queries: string[],
+  lexicalPerQueryCounts: Record<string, number>,
+  semanticPerQueryHits: Record<string, number> | undefined,
+): Record<string, { semantic: number; lexical: number }> | undefined {
+  if (!isMulti) return undefined;
+  return Object.fromEntries(
+    queries.map((q) => [
+      q,
+      { semantic: semanticPerQueryHits?.[q] ?? 0, lexical: lexicalPerQueryCounts[q] ?? 0 },
+    ]),
+  );
+}
+
 // Fuses the three rank sources (semantic seeds, lexical notes, flattened
 // expansion) into one RRF-ranked, cap-sliced `matches[]` list. `semanticNodes`
 // must already be existence-checked (both the seed itself and every path in
@@ -237,6 +260,18 @@ async function runSearchForEntry(
   const limit =
     input.limit !== undefined ? readPositiveInteger(input.limit, input.limit, 'limit') : undefined;
 
+  // Normalized ahead of filter handling so `query_stats` (array queries only)
+  // can be attached even on the empty-filter early return below.
+  let isMulti: boolean;
+  let queries: string[];
+  if (Array.isArray(input.query)) {
+    isMulti = true;
+    queries = normalizeQueryArray(input.query);
+  } else {
+    isMulti = false;
+    queries = [normalizeQuery(input.query)];
+  }
+
   let allowed: Set<string> | undefined;
 
   if (input.filter !== undefined) {
@@ -262,18 +297,13 @@ async function runSearchForEntry(
     }
 
     if (allowed.size === 0) {
-      return { matches: [], truncated: false };
+      const query_stats = buildQueryStats(isMulti, queries, {}, undefined);
+      return {
+        matches: [],
+        truncated: false,
+        ...(query_stats !== undefined ? { query_stats } : {}),
+      };
     }
-  }
-
-  let isMulti: boolean;
-  let queries: string[];
-  if (Array.isArray(input.query)) {
-    isMulti = true;
-    queries = normalizeQueryArray(input.query);
-  } else {
-    isMulti = false;
-    queries = [normalizeQuery(input.query)];
   }
 
   // Merged-list cap: `limit` overrides the effort default in every mode and
@@ -296,15 +326,19 @@ async function runSearchForEntry(
   // rather than throwing — an available corpus that errors mid-search still
   // throws DEPENDENCY_ERROR below, unchanged.
   if (channel === 'lexical' || !entry.semanticAvailable || entry.corpus === undefined) {
-    return assembleUnified({
-      semanticNodes: [],
-      lexicalNotes: lexical.notes,
-      entry,
-      totalNotes: lexical.totalNotes,
-      cap,
-      isMulti,
-      legTruncated: lexical.truncated,
-    });
+    const query_stats = buildQueryStats(isMulti, queries, lexical.perQueryCounts, undefined);
+    return {
+      ...assembleUnified({
+        semanticNodes: [],
+        lexicalNotes: lexical.notes,
+        entry,
+        totalNotes: lexical.totalNotes,
+        cap,
+        isMulti,
+        legTruncated: lexical.truncated,
+      }),
+      ...(query_stats !== undefined ? { query_stats } : {}),
+    };
   }
 
   const corpus = entry.corpus;
@@ -329,6 +363,7 @@ async function runSearchForEntry(
     // so every leg's pool overflow is surfaced, not just lexical's.
     let rawSemanticNodes: (NoteResultNode | MultiNoteResultNode)[];
     let semanticLegTruncated: boolean;
+    let semanticPerQueryHits: Record<string, number> | undefined;
     if (isMulti) {
       const output = await executeMultiRetrieval({
         queries,
@@ -340,6 +375,7 @@ async function runSearchForEntry(
       });
       rawSemanticNodes = output.results;
       semanticLegTruncated = output.truncated;
+      semanticPerQueryHits = output.per_query_hits;
     } else {
       const output = await executeRetrieval({
         query: queries[0],
@@ -371,15 +407,24 @@ async function runSearchForEntry(
       .filter((n) => existing.has(n.path))
       .map((n) => ({ ...n, related: n.related.filter((rel) => existing.has(rel.path)) }));
 
-    return assembleUnified({
-      semanticNodes,
-      lexicalNotes: lexical.notes,
-      entry,
-      totalNotes: lexical.totalNotes,
-      cap,
+    const query_stats = buildQueryStats(
       isMulti,
-      legTruncated: lexical.truncated || semanticLegTruncated,
-    });
+      queries,
+      lexical.perQueryCounts,
+      semanticPerQueryHits,
+    );
+    return {
+      ...assembleUnified({
+        semanticNodes,
+        lexicalNotes: lexical.notes,
+        entry,
+        totalNotes: lexical.totalNotes,
+        cap,
+        isMulti,
+        legTruncated: lexical.truncated || semanticLegTruncated,
+      }),
+      ...(query_stats !== undefined ? { query_stats } : {}),
+    };
   } catch (error) {
     throw wrapDependencyError(error, 'Failed to search notes', {
       modelKey,
@@ -436,6 +481,7 @@ export function buildSearchNotesTool(
     'RESPONSE SHAPE:',
     '- `matches[]` — one fused, ranked list. Each entry: `path`, `vault`, `backlink_count`, `found_in` (which source(s) surfaced it: "semantic", "lexical:title"|"lexical:heading"|"lexical:body", "expansion" — always non-empty), plus evidence fields present only for the sources that hit: `similarity`/`blocks[]` (semantic), `lexical[]` (snippet matches, max ~3, `{ matched_in, snippet, lines?, heading? }`), `expansion_similarity` (expansion).',
     '- `truncated` — top-level, always present; true when candidates were dropped by the merged cap or a source leg\'s internal pool cap. The two causes need different fixes: merged-cap truncation is recovered by raising `limit`; a source leg\'s pool-cap truncation is NOT — raise `effort` to "deep" (or narrow `query`/`filter`) instead.',
+    '- `query_stats` — array queries only (omitted for a single string `query`), present in every mode: `{ [query]: { semantic, lexical } }`, PRE-cap hit counts (before cross-query merging and before the `matches[]` cap) per input query. `{ semantic: 0, lexical: 0 }` marks a dead variant — that phrasing/language found nothing in either leg and is worth rephrasing or dropping.',
     '',
     'LEXICAL MATCHING: case-, accent-, and apostrophe-variant-insensitive substring; multiword query = ALL tokens must appear (AND), contiguous phrase ranks higher. A note surfaced by multiple legs ranks higher via rank fusion — that is the strongest relevance signal.',
     '',

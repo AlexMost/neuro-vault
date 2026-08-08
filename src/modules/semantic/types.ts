@@ -1,4 +1,3 @@
-import type { MultiRetrievalOutput, RetrievalOutput } from './retrieval-policy.js';
 import type { SmartSource } from '../../lib/obsidian/smart-connections-types.js';
 import type {
   ListMatchingPaths,
@@ -133,7 +132,6 @@ export type ToolHandlerErrorCode =
   | 'SEMANTIC_INDEX_NOT_FOUND';
 
 export interface ToolHandlers {
-  searchNotes(input: SearchNotesInput): Promise<RetrievalOutput | MultiRetrievalOutput>;
   getSimilarNotes(input: GetSimilarNotesInput): Promise<SimilarNoteResult[]>;
   findDuplicates(input?: FindDuplicatesInput): Promise<DuplicatePair[]>;
 }

@@ -11,13 +11,13 @@
 ## 3. search_notes integration
 
 - [x] 3.1 Define the new output types (`matches[]` entry with `found_in`, per-source evidence fields, top-level `truncated`, optional `query_stats`) in search-notes.ts / types.ts and wire the fusion into `runSearchForEntry` for the single-query hybrid path, including entry enrichment (existence check, `backlink_count`, `vault`) and `found_in` derivation (distinct lexical match kinds).
-- [ ] 3.2 Wire the multi-query path: per-leg per-query merge feeding fusion, `matched_queries` as the cross-leg union, `query_stats` from the leg count extensions (array queries only). (`matched_queries` union done; `query_stats` deferred to Task 5.)
+- [x] 3.2 Wire the multi-query path: per-leg per-query merge feeding fusion, `matched_queries` as the cross-leg union, `query_stats` from the leg count extensions (array queries only).
 - [x] 3.3 Implement merged-cap semantics: effort defaults (quick 5, deep 12), `limit` overriding in every mode, always-present `truncated`; verify degradation (`mode: "lexical"`, corpus-less vault → pure lexical order, no corpus loader call) and that multi-vault fan-out fuses per vault unchanged.
-- [x] 3.4 Rewrite `SEARCH_NOTES_DESCRIPTION`: response shape, `found_in` vocabulary, invariants (no split keys, no `related[]`, evidence-presence rules), `limit`/`truncated` semantics, updated examples. (`query_stats` documentation deferred to Task 5.)
+- [x] 3.4 Rewrite `SEARCH_NOTES_DESCRIPTION`: response shape, `found_in` vocabulary, invariants (no split keys, no `related[]`, evidence-presence rules), `limit`/`truncated` semantics, updated examples, including `query_stats`.
 
 ## 4. Tool-surface tests
 
-- [x] 4.1 Update search_notes tool tests via the SDK gate (`reg.spec.inputSchema` + handler through the gate): new response shape scenarios from the delta spec — two-source entry with dual evidence, expansion-only entry, absent split keys, lexical-mode purity, filter constraining `matches[]`, fan-out shape; remove all old-shape assertions. (Dead-query `query_stats` / merge-cap-not-zeroing-stats scenarios deferred to Task 5.)
+- [x] 4.1 Update search_notes tool tests via the SDK gate (`reg.spec.inputSchema` + handler through the gate): new response shape scenarios from the delta spec — two-source entry with dual evidence, expansion-only entry, absent split keys, lexical-mode purity, filter constraining `matches[]`, fan-out shape, dead-query `query_stats`, and merge-cap-not-zeroing-stats; remove all old-shape assertions.
 
 ## 5. Docs
 
