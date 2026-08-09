@@ -2,7 +2,7 @@
 
 ### Requirement: search_notes returns one RRF-ranked matches list
 
-`search_notes` SHALL return `{ matches, truncated }` (plus `query_stats` for array queries) where `matches[]` is a single list ranked by reciprocal-rank fusion over three rank sources: the semantic leg's order, the lexical leg's order, and the flattened expansion order. Each entry SHALL carry `path`, `vault`, `backlink_count`, and provenance `found_in` — a non-empty array drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"`, `"expansion"` listing every source (and every distinct lexical match kind) that surfaced the note. Per-source evidence SHALL accompany its provenance: `similarity` and `blocks[]` when `"semantic"` is present, `lexical[]` (snippet matches) when any `"lexical:*"` value is present, `expansion_similarity` when `"expansion"` is present; evidence fields for absent sources SHALL be omitted. A note SHALL appear at most once in `matches[]`. An empty result SHALL be `matches: []`, never omitted. The response SHALL NOT contain `semantic_matches`, `lexical_matches`, or nested `related[]`.
+`search_notes` SHALL return `{ matches, truncated }` (plus `query_stats` for array queries) where `matches[]` is a single list ranked by reciprocal-rank fusion over three rank sources: the semantic leg's order, the lexical leg's order, and the flattened expansion order. Each entry SHALL carry `path`, `vault`, `backlink_count`, and provenance `found_in` — a non-empty array drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"`, `"expansion"` listing every source that surfaced the note (lexical kinds: every distinct `matched_in` present in the entry's capped `lexical[]` evidence). Per-source evidence SHALL accompany its provenance: `similarity` and `blocks[]` when `"semantic"` is present, `lexical[]` (snippet matches) when any `"lexical:*"` value is present, `expansion_similarity` when `"expansion"` is present; evidence fields for absent sources SHALL be omitted. A note SHALL appear at most once in `matches[]`. An empty result SHALL be `matches: []`, never omitted. The response SHALL NOT contain `semantic_matches`, `lexical_matches`, or nested `related[]`.
 
 #### Scenario: a two-source note carries both provenance and both evidence kinds
 
@@ -49,7 +49,7 @@ Expansion candidates SHALL be collected across all seeds' neighbour sets, SHALL 
 
 ### Requirement: query_stats reports pre-cap per-query hit counts
 
-For an array `query`, the response SHALL include `query_stats` mapping every input query to `{ semantic, lexical }` hit counts taken before cross-query merging and before any result-list cap: `semantic` counts the notes that query retrieved from the semantic leg (post-threshold), `lexical` counts the notes it matched before the lexical note cap. A query with zero hits in both legs SHALL report `{ semantic: 0, lexical: 0 }`. `query_stats` SHALL be omitted for a single string `query`.
+For an array `query`, the response SHALL include `query_stats` mapping every normalized input query (trimmed, de-duplicated) to `{ semantic, lexical }` hit counts taken before cross-query merging and before any result-list cap: `semantic` counts the notes that query retrieved from the semantic leg (post-threshold), `lexical` counts the notes it matched before the lexical note cap. A query with zero hits in both legs SHALL report `{ semantic: 0, lexical: 0 }`. `query_stats` SHALL be omitted for a single string `query`.
 
 #### Scenario: a dead query variant is visible in one line
 
@@ -76,7 +76,7 @@ In `mode: "lexical"`, or when no semantic corpus is available, the merge SHALL d
 
 ### Requirement: Input axes mode and effort are orthogonal
 
-The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap, expansion only in `deep`) and the default merged-list cap (quick: 5, deep: 12). The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`. `threshold` SHALL affect only the semantic leg. Top-level `truncated` SHALL be present in every response and true when candidates were dropped anywhere on the way to `matches[]` — by the merged-list cap or by a source leg's internal pool cap.
+The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap, expansion only in `deep`) and the default merged-list cap (quick: 5, deep: 12). The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`. `threshold` SHALL affect only the semantic leg. Top-level `truncated` SHALL be present in every response and true when candidates were dropped on the way to `matches[]` — by the merged-list cap or by the semantic or lexical leg's internal pool cap. Expansion per-seed neighbour caps are not surfaced (a literal signal there would be near-always true in deep mode).
 
 #### Scenario: old mode values are rejected
 
@@ -179,7 +179,7 @@ Lexical evidence SHALL be grouped per note on its `matches[]` entry as `lexical:
 
 ### Requirement: Multi-query and multi-vault keep their shapes
 
-For an array `query`, each leg SHALL compute per-query results and merge them into its single source ranking before fusion; entries SHALL carry `matched_queries` as the union of queries that hit the note in any leg. Top-level `truncated` SHALL reflect candidate overflow from the merged cap or any source leg's pool cap, and `query_stats` SHALL accompany the response. In multi-vault mode without `vault`, fan-out SHALL wrap the unified response per vault in the existing `results_by_vault` envelope, with fusion computed independently per vault.
+For an array `query`, each leg SHALL compute per-query results and merge them into its single source ranking before fusion; entries SHALL carry `matched_queries` as the union of queries that hit the note in any leg. Top-level `truncated` SHALL reflect candidate overflow from the merged cap or the semantic or lexical leg's pool cap, and `query_stats` SHALL accompany the response. In multi-vault mode without `vault`, fan-out SHALL wrap the unified response per vault in the existing `results_by_vault` envelope, with fusion computed independently per vault.
 
 #### Scenario: matched_queries unions across legs
 

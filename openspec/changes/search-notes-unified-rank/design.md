@@ -55,7 +55,7 @@ Constraints: the lexical no-score invariant must survive; `compact-tool-response
 
 ### D6: `limit` caps the merged list; internal leg caps stay effort-driven
 
-- **Choice**: default merged cap: quick → 5, deep → 12; `limit` overrides it in every mode. Internal candidate-pool caps are unchanged (semantic 3/8, lexical 5/10, expansion 3/seed, block caps as today). `truncated` is always present (both string and array queries) and true when candidates were dropped anywhere on the way to `matches[]` — by the merged cap or by a source leg's internal pool cap (a leg that cut its pool means more matches exist in the vault than were returned).
+- **Choice**: default merged cap: quick → 5, deep → 12; `limit` overrides it in every mode. Internal candidate-pool caps are unchanged (semantic 3/8, lexical 5/10, expansion 3/seed, block caps as today). `truncated` is always present (both string and array queries) and true when candidates were dropped anywhere on the way to `matches[]` — by the merged cap or by the semantic or lexical leg's internal pool cap (a leg that cut its pool means more matches exist in the vault than were returned). Expansion per-seed caps are deliberately not surfaced — they would fire on nearly every deep search.
 - **Rationale**: one knob for one list matches the unified shape; the old split semantics (`limit` → semantic in hybrid, lexical in lexical mode) died with the split lists. Always-present `truncated` removes a shape asymmetry while we are breaking anyway.
 - **Alternative considered**: `limit` scaling internal leg caps proportionally — rejected: opaque, and candidate pools already exceed default merged caps.
 
