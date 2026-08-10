@@ -116,7 +116,7 @@ Each entry carries `path`, `vault`, `backlink_count`, and `found_in` — a non-e
 - `expansion_similarity` (note-to-note similarity to the seed that surfaced it — a **different scale** from `similarity`, do not compare them numerically) — present iff `found_in` contains `"expansion"`. An expansion-only entry (like the second one above) is evidence-light by design: no `similarity`, no `blocks`, no `lexical` — path, provenance, `expansion_similarity`, and `backlink_count` only. Call `read_notes` or `get_similar_notes` on it for more.
 - `matched_queries` — array queries only, the union of queries that hit the note in any leg.
 
-`backlink_count` is the total number of inbound wikilinks and `![[embeds]]` derived from the same in-memory index used by `get_note_links` and `query_notes`. It also participates directly in ranking — it's the fusion tie-break used after RRF score and source count (see [`rank-fusion.md`](../architecture/rank-fusion.md)).
+`backlink_count` is the total number of inbound wikilinks and `![[embeds]]` derived from the same in-memory index used by `get_note_links` and `query_notes`. It no longer participates in fusion ordering — it's response enrichment the model can weigh itself (see [`rank-fusion.md`](../architecture/rank-fusion.md)).
 
 Each note appears **at most once** in `matches[]`, even when multiple legs surface it — that's the whole point of fusing instead of returning separate lists: a note in two or three sources is lifted automatically, no caller-side merging required. `expansion` never competes against a note that's already a semantic result — an entry's `found_in` never contains both `"semantic"` and `"expansion"` for the same path.
 

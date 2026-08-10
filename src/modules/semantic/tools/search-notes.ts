@@ -200,7 +200,6 @@ function assembleUnified(args: {
       expansion: expansion.map((e) => e.path),
     },
     totalNotes,
-    getBacklinkCount: (p) => entry.graph.getBacklinkCount(p),
   });
   const kindOrder = ['title', 'heading', 'body'] as const;
   const matches: UnifiedMatch[] = fused.slice(0, cap).map((c) => {

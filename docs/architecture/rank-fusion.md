@@ -8,7 +8,7 @@ How `search_notes`' three rank sources — semantic, lexical, expansion — beco
 
 - `adaptiveK(totalNotes)` — the RRF constant `k`, sized to the vault.
 - `flattenExpansion(seeds)` — collapses per-seed `related[]` into one ranked list, the third fusion source.
-- `fuseRanks({ sources, totalNotes, getBacklinkCount })` — reciprocal-rank-fuses the three ordered source lists into one scored, sorted list of `{ path, score, sourceCount }`.
+- `fuseRanks({ sources, totalNotes, expansionWeight? })` — reciprocal-rank-fuses the three ordered source lists into one scored, sorted list of `{ path, score, sourceCount }`.
 
 Neither function touches the corpus, the lexical index, or the filesystem — they operate on path arrays already produced by the two legs (see [`retrieval-policy.md`](./retrieval-policy.md) for the semantic leg, [`lexical-search.md`](./lexical-search.md) for the lexical leg). `assembleUnified` calls `fuseRanks`, slices to the merged-list cap, and attaches each entry's `found_in` provenance and per-source evidence — that assembly step is documented at the tool boundary in [`docs/guide/finding-notes.md`](../guide/finding-notes.md); this file covers only the fusion mechanism itself.
 
@@ -17,10 +17,10 @@ Neither function touches the corpus, the lexical index, or the filesystem — th
 `fuseRanks` takes exactly three ordered path lists — `sources.semantic`, `sources.lexical`, `sources.expansion` — and computes, for every path appearing in at least one of them:
 
 ```
-score(path) = Σ_sources 1 / (k + rank_source(path))
+score(path) = Σ_sources weight_source / (k + rank_source(path))
 ```
 
-with **1-based** ranks and **equal weights** across sources — no source is privileged over another in the formula itself (title-vs-body weighting already lives inside the lexical leg's six-tier ordering; RRF only consumes the order that ordering produced, it does not re-weight it). A path's `sourceCount` is how many of the three lists contained it; a path present in two or three sources accumulates the sum of the corresponding reciprocal ranks, which is why co-occurrence lifts a note over a single-source top hit — that is the entire point of fusing rather than showing three lists side by side.
+with **1-based** ranks. Semantic and lexical are both weighted `1` — neither is privileged over the other in the formula itself (title-vs-body weighting already lives inside the lexical leg's six-tier ordering; RRF only consumes the order that ordering produced, it does not re-weight it). Expansion is weighted `EXPANSION_WEIGHT = 0.85` by default, because it is a second-order signal: its candidates are neighbours of a semantic seed, not results of the query itself — an expansion hit answers someone else's hit, not the query. At equal weight it exactly tied the primary legs' contribution rank-for-rank (see Tie-break chain below for why that mattered) and it is a module-level default — `fuseRanks` accepts an optional `expansionWeight` override (for the eval harness); it is not an MCP tool parameter; callers who want the shipped behavior simply omit it. A path's `sourceCount` is how many of the three lists contained it; a path present in two or three sources accumulates the sum of the corresponding weighted reciprocal ranks, which is why co-occurrence lifts a note over a single-source top hit — that is the entire point of fusing rather than showing three lists side by side. Down-weighting expansion doesn't remove it from that co-occurrence effect — it still reinforces a semantic or lexical hit it agrees with, and still fills a thin result list — it only stops it from *out-scoring* an equal-rank primary-source hit on its own.
 
 Fusion consumes only source *ranks*. It never looks at the semantic leg's `similarity`, nor does it manufacture a numeric score for the lexical leg — the lexical no-score invariant (see `lexical-search.md`) survives the merge untouched.
 
@@ -44,8 +44,9 @@ Sort order for the fused list, applied in order until one comparator is decisive
 
 1. `score` descending — the RRF sum itself.
 2. `sourceCount` descending — reinforces the multi-source signal RRF exists for: given equal scores, the note more legs agree on wins.
-3. `backlink_count` descending — an independent relevance signal (inbound wikilinks/embeds), same field `search_notes` and `query_notes` expose.
-4. `path` ascending — final deterministic tiebreak so ordering never depends on Map/object iteration order.
+3. `path` ascending — final deterministic tiebreak so ordering never depends on Map/object iteration order.
+
+`backlink_count` does not participate here. It used to be step 3, and with expansion at equal weight that step was doing far more work than "final tiebreak" implies: with `k` adaptive and large relative to these tiny lists, within-leg reciprocal ranks are nearly flat, so the semantic and expansion legs would tie *exactly* rank-for-rank whenever the lexical leg was empty — every position in the fused list then came down to the backlink step. Expansion candidates are structural hubs by construction (`flattenExpansion` keeps a neighbour's max similarity across every seed it's adjacent to, so a note near many seeds surfaces repeatedly and tends to carry more inbound links than a specific single-source hit), so that tie-break systematically favoured expansion-only hub notes over direct, on-query hits — an expansion-only note could reach `#1` with `matched_queries: []`. Down-weighting expansion (see Mechanism above) removes the exact ties that made backlinks decisive, so the biased step was dropped along with them rather than kept as now-mostly-inert machinery; `path asc` alone is sufficient to keep the chain a total order. The `backlink_count` *field* is untouched — `search_notes` and `query_notes` responses still carry it, attached by `assembleUnified` outside of fusion, for the model to use as its own signal — this is purely about what `fuseRanks` sorts by.
 
 This chain (and everything upstream of it) is a pure function of vault state, so the same query against an unchanged vault produces a byte-for-byte identical `matches[]` every time.
 
@@ -77,6 +78,6 @@ The two causes need different fixes, which is why the tool description calls thi
 
 ## What is deliberately not here
 
-- **Per-source weights** — RRF here is equal-weight across all three sources by design (design decision D2). Weighted RRF (e.g. a heavier lexical-title weight) was considered and deferred as a trivial future extension if evidence for it appears; v1 relies on each leg's own internal ordering (lexical's title>heading>body tiers, semantic's similarity) to carry that signal instead of a second weighting layer on top.
+- **Further per-source weights** — expansion now carries a real weight (`EXPANSION_WEIGHT = 0.85`, see Mechanism above), but semantic and lexical are still equal at `1`, and there is no weighting *within* a leg (e.g. a heavier lexical-title vs. lexical-body split). Each leg's own internal ordering (lexical's title>heading>body tiers, semantic's similarity) still carries that finer-grained signal instead of a second weighting layer on top. Further fusion-level weights remain deferred pending data from the retrieval eval harness — the 0.85 expansion default is itself a hand-picked start, not a tuned value, and is a candidate for the same re-tuning once that harness exists.
 - **Expansion occurrence-counting** — a path appearing under multiple seeds' `related[]` currently keeps only its max similarity (see Expansion flattening above); how *many* seeds agree on it is not folded into score. Deferred as a separate importance signal, not implemented.
 - **ML re-ranking** — out of scope for this merge layer entirely; a separate research thread (vault note «Research reranker stage for search_notes») explores that direction independently. This file describes only the mechanical RRF merge that ships today.
