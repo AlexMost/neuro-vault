@@ -4,7 +4,14 @@ import tsParser from '@typescript-eslint/parser';
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.worktrees/**', 'package-lock.json'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'coverage/**',
+      '.worktrees/**',
+      'package-lock.json',
+      '.claude/worktrees/**',
+    ],
   },
   js.configs.recommended,
   {
