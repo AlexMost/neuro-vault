@@ -344,7 +344,7 @@ describe('searchNotes', () => {
     }
   });
 
-  it('keeps single-string output shape unchanged (no matched_queries, blocks always present on semantic hits)', async () => {
+  it('keeps single-string output shape unchanged (no matched_queries, blocks omitted when the note has no block embeddings)', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
@@ -366,9 +366,12 @@ describe('searchNotes', () => {
           threshold: 0,
         })) as SearchNotesOutput;
 
+        // The fixture notes' blocks carry no embeddings, so the real
+        // `findBlockNeighbors` never surfaces a hit and backfill can't
+        // manufacture one — `blocks` is omitted, not `[]`.
         for (const result of output.matches) {
           expect(result).not.toHaveProperty('matched_queries');
-          expect(result).toHaveProperty('blocks');
+          expect(result).not.toHaveProperty('blocks');
           expect(result).not.toHaveProperty('related');
         }
       } finally {

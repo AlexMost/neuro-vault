@@ -42,7 +42,14 @@ export function rankNotes(opts: {
   noteCap: number;
   perNoteCap: number;
   getBacklinkCount: (path: string) => number;
-}): { notes: RankedNote[]; truncated: boolean; perQueryCounts: Record<string, number> } {
+}): {
+  notes: RankedNote[];
+  truncated: boolean;
+  perQueryCounts: Record<string, number>;
+  // Failure-path diagnostic: entries only for queries with zero AND-matches
+  // and ≥2 tokens — normalized token → notes where that token alone matches.
+  perQueryTokenCounts: Record<string, Record<string, number>>;
+} {
   const prepared = opts.queries.map((q) => ({
     original: q,
     norm: normalizeText(q),
@@ -120,6 +127,26 @@ export function rankNotes(opts: {
   for (const cand of candidates)
     for (const q of cand.matchedQueries) perQueryCounts[q] = (perQueryCounts[q] ?? 0) + 1;
 
+  // Per-token counts, only where they explain a zero: a multi-token query
+  // that matched nothing gets each token counted individually so the caller
+  // sees which token killed the AND.
+  const perQueryTokenCounts: Record<string, Record<string, number>> = {};
+  for (const q of prepared) {
+    if (q.tokens.length < 2 || (perQueryCounts[q.original] ?? 0) !== 0) continue;
+    const uniqueTokens = [...new Set(q.tokens)];
+    const counts: Record<string, number> = {};
+    for (const token of uniqueTokens) counts[token] = 0;
+    for (const parsed of opts.notes.values()) {
+      for (const token of uniqueTokens) {
+        const hit =
+          matchUnit(parsed.title.norm, token, [token]) !== null ||
+          parsed.units.some((u) => matchUnit(u.norm, token, [token]) !== null);
+        if (hit) counts[token] = (counts[token] ?? 0) + 1;
+      }
+    }
+    perQueryTokenCounts[q.original] = counts;
+  }
+
   const truncated = candidates.length > opts.noteCap;
   const selected = candidates.slice(0, opts.noteCap).map((c) => ({
     path: c.path,
@@ -130,5 +157,5 @@ export function rankNotes(opts: {
     matchedQueries: [...c.matchedQueries],
   }));
 
-  return { notes: selected, truncated, perQueryCounts };
+  return { notes: selected, truncated, perQueryCounts, perQueryTokenCounts };
 }

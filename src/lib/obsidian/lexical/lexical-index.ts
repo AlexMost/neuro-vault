@@ -45,6 +45,7 @@ export class LexicalIndex {
     notes: RankedNote[];
     truncated: boolean;
     perQueryCounts: Record<string, number>;
+    perQueryTokenCounts: Record<string, Record<string, number>>;
     totalNotes: number;
   }> {
     const paths = await this.reader.scan();

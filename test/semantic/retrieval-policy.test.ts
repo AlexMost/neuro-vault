@@ -1035,3 +1035,114 @@ describe('executeMultiRetrieval', () => {
     });
   });
 });
+
+describe('per-seed block backfill', () => {
+  const sources = makeSources([
+    ['note-a.md', [1, 0]],
+    ['note-b.md', [0.8, 0.2]],
+  ]);
+
+  it('backfills the best block for a seed starved by the shared pass (single query)', async () => {
+    const findBlockNeighbors = vi
+      .fn()
+      // shared pass: everything goes to note-a
+      .mockReturnValueOnce([makeBlockResult('note-a.md', 0.9)])
+      // backfill lookup for note-b, scoped to its own source
+      .mockReturnValueOnce([makeBlockResult('note-b.md', 0.42)]);
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValue([makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)]),
+      findBlockNeighbors,
+    });
+
+    const output = await executeRetrieval({
+      query: 'q',
+      mode: 'quick',
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+
+    const noteB = output.results.find((r) => r.path === 'note-b.md')!;
+    expect(noteB.blocks).toEqual([{ heading: '#block', lines: [1, 3], similarity: 0.42 }]);
+    // backfill call is scoped to note-b's source alone, threshold 0, limit 1
+    expect(findBlockNeighbors).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sources: [sources.get('note-b.md')], threshold: 0, limit: 1 }),
+    );
+  });
+
+  it('leaves blocks empty when the note has no block embeddings', async () => {
+    const blockless = new Map(sources);
+    blockless.set('note-b.md', { path: 'note-b.md', embedding: [0.8, 0.2], blocks: [] });
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValue([makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)]),
+      findBlockNeighbors: vi.fn().mockReturnValue([]),
+    });
+
+    const output = await executeRetrieval({
+      query: 'q',
+      mode: 'quick',
+      sources: blockless,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+
+    expect(output.results.find((r) => r.path === 'note-b.md')!.blocks).toEqual([]);
+  });
+
+  it('backfills across query vectors keeping the best block (multi query)', async () => {
+    const findBlockNeighbors = vi.fn().mockImplementation(({ sources: scoped, limit }) => {
+      // backfill calls are the single-source, limit-1 ones
+      if (Array.isArray(scoped) && scoped.length === 1 && limit === 1) {
+        return [makeBlockResult('note-b.md', 0.3)];
+      }
+      return [makeBlockResult('note-a.md', 0.9)];
+    });
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValue([makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)]),
+      findBlockNeighbors,
+    });
+
+    const output = await executeMultiRetrieval({
+      queries: ['q1', 'q2'],
+      mode: 'quick',
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+
+    const noteB = output.results.find((r) => r.path === 'note-b.md')!;
+    expect(noteB.blocks).toEqual([{ heading: '#block', lines: [1, 3], similarity: 0.3 }]);
+  });
+
+  it('ignores foreign-path results from a backfill lookup', async () => {
+    // Defensive: a (mis)behaving engine returning another note's block for a
+    // scoped lookup must not attach evidence to the wrong seed.
+    const findBlockNeighbors = vi
+      .fn()
+      .mockReturnValueOnce([makeBlockResult('note-a.md', 0.9)])
+      .mockReturnValueOnce([makeBlockResult('note-a.md', 0.5)]);
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi
+        .fn()
+        .mockReturnValue([makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)]),
+      findBlockNeighbors,
+    });
+
+    const output = await executeRetrieval({
+      query: 'q',
+      mode: 'quick',
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+
+    expect(output.results.find((r) => r.path === 'note-b.md')!.blocks).toEqual([]);
+    expect(findBlockNeighbors).toHaveBeenCalledTimes(2);
+  });
+});
