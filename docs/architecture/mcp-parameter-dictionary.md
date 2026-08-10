@@ -18,12 +18,16 @@ One concept = one parameter name across every tool the server exposes. New tools
 | Structured query filter (MongoDB)                    | `filter`              | `query_notes`                                                                      |
 | Which search legs run: `hybrid` \| `lexical`         | `mode`                | `search_notes`                                                                     |
 | Result volume / exploration depth: `quick` \| `deep` | `effort`              | `search_notes`                                                                     |
+| Similarity floor, hard filter, tool-scoped default   | `threshold`           | `search_notes` (semantic leg's note scores only — never blocks, expansion, or the lexical leg), `get_similar_notes` (semantic branch only), `find_duplicates` |
+| Expansion-leg similarity floor, seed↔note scale      | `expansion_floor`     | `search_notes`                                                                     |
 
 ## Rules
 
 `name` vs `path` (note identifier): tools that take both for the same concept require **exactly one** — both or neither produces `INVALID_ARGUMENT`. `read_notes` is paths-only (batch reads from disk); to read by wikilink, resolve to a path first via `search_notes` or another path-producing tool.
 
 `.md` auto-append: when the target is an _individual note_, `.md` is appended if the final path segment has no extension (`Tasks/Foo` → `Tasks/Foo.md`). This applies to `create_note`, `edit_note`, `set_property`, `remove_property`, `get_note_links`, and `get_similar_notes`. Subtree-prefix uses (`path_prefix`, `exclude_path_prefix`) and `read_notes` paths do not auto-append.
+
+`threshold` on `search_notes` reaches the semantic leg's note scores only — never the block-evidence pass (always filtered at the internal mode default, 0.35), never the expansion leg (owned by `expansion_floor` below), never the lexical leg (no similarity score to threshold). An explicit value is a hard filter: notes scoring below it are excluded with no rescue, and zero hits is an honest answer. Omitting `threshold` applies the effort default (0.5 quick / 0.35 deep) and, only in that default case, retries once at 0.3 if nothing passes — surfaced per query as `semantic_fallback: true` in `query_stats` (array `query` only; see [`docs/guide/finding-notes.md`](../guide/finding-notes.md)). `expansion_floor` (`search_notes` only) is a separate knob for the expansion leg's seed↔note similarity scale — empirically 0.89–0.985, 0.9+ typical, incomparable to the semantic leg's query↔note scale — defaulting to 0.35; `threshold` never reaches it. `expansion_floor` shares its note↔note similarity scale with `get_similar_notes`' `threshold` (not `search_notes`' `threshold`, which is query↔note-scaled).
 
 ## Tool-local parameters not in the dictionary
 

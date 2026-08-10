@@ -1146,3 +1146,160 @@ describe('per-seed block backfill', () => {
     expect(findBlockNeighbors).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('explicit threshold is a hard filter', () => {
+  const sources = makeSources([['note-a.md', [1, 0]]]);
+
+  it('does not retry at 0.3 when an explicit threshold filters everything', async () => {
+    const findNeighbors = vi.fn().mockReturnValue([]);
+    const searchEngine = makeSearchEngine({ findNeighbors });
+    const output = await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.99,
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+    expect(output.results).toEqual([]);
+    expect(findNeighbors).toHaveBeenCalledTimes(1);
+    expect(findNeighbors).toHaveBeenCalledWith(expect.objectContaining({ threshold: 0.99 }));
+    expect(output.fallback).toBe(false);
+  });
+
+  it('retries at 0.3 for the default threshold and reports fallback: true', async () => {
+    const findNeighbors = vi
+      .fn()
+      .mockReturnValueOnce([])
+      .mockReturnValueOnce([makeSearchResult('note-a.md', 0.4)]);
+    const searchEngine = makeSearchEngine({ findNeighbors });
+    const output = await executeRetrieval({
+      query: 'q',
+      mode: 'quick',
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+    expect(findNeighbors).toHaveBeenNthCalledWith(2, expect.objectContaining({ threshold: 0.3 }));
+    expect(output.results.map((r) => r.path)).toEqual(['note-a.md']);
+    expect(output.fallback).toBe(true);
+  });
+
+  it('reports fallback: false when the first pass already had hits', async () => {
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
+    });
+    const output = await executeRetrieval({
+      query: 'q',
+      mode: 'quick',
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+    expect(output.fallback).toBe(false);
+  });
+});
+
+describe('expansion floor and block decoupling', () => {
+  const sources = makeSources([['note-a.md', [1, 0]]]);
+
+  it('floors the per-seed neighbour lookup at expansionFloor, not threshold', async () => {
+    const findNeighbors = vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]);
+    const searchEngine = makeSearchEngine({ findNeighbors });
+    await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.7, // explicit, must NOT reach expansion
+      expansionFloor: 0.93,
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+    const expansionCalls = findNeighbors.mock.calls.slice(1); // call 0 = Step 1 seeds
+    expect(expansionCalls.length).toBeGreaterThan(0);
+    for (const [args] of expansionCalls) {
+      expect(args.threshold).toBe(0.93);
+    }
+  });
+
+  it('defaults the floor to 0.35 when expansionFloor is absent', async () => {
+    const findNeighbors = vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]);
+    const searchEngine = makeSearchEngine({ findNeighbors });
+    await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.7,
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+    const expansionCalls = findNeighbors.mock.calls.slice(1);
+    for (const [args] of expansionCalls) {
+      expect(args.threshold).toBe(0.35);
+    }
+  });
+
+  it('filters deep blocks at the internal default, not the user threshold', async () => {
+    const findBlockNeighbors = vi.fn().mockReturnValue([makeBlockResult('note-a.md', 0.75)]);
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
+      findBlockNeighbors,
+    });
+    await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.7,
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+    expect(findBlockNeighbors).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ threshold: 0.35 }),
+    );
+  });
+});
+
+describe('multi-query fallback tracking', () => {
+  const sources = makeSources([
+    ['note-a.md', [1, 0]],
+    ['note-b.md', [0, 1]],
+  ]);
+
+  it('tracks fallback per query', async () => {
+    // Keyed by query vector, not call order — Promise.all interleaving must
+    // not matter.
+    const embeddingProvider = {
+      initialize: vi.fn(),
+      embed: vi.fn().mockImplementation(async (q: string) => (q === 'q1' ? [1, 0] : [0, 1])),
+    };
+    const findNeighbors = vi.fn().mockImplementation(({ queryVector, threshold }) => {
+      if (queryVector[0] === 1) return [makeSearchResult('note-a.md', 0.8)];
+      return threshold <= 0.3 ? [makeSearchResult('note-b.md', 0.4)] : [];
+    });
+    const searchEngine = makeSearchEngine({ findNeighbors });
+    const output = await executeMultiRetrieval({
+      queries: ['q1', 'q2'],
+      mode: 'quick',
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+    expect(output.per_query_fallback).toEqual({ q1: false, q2: true });
+  });
+
+  it('never falls back for an explicit threshold in the multi path', async () => {
+    const findNeighbors = vi.fn().mockReturnValue([]);
+    const searchEngine = makeSearchEngine({ findNeighbors });
+    const output = await executeMultiRetrieval({
+      queries: ['q1', 'q2'],
+      mode: 'deep',
+      threshold: 0.99,
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+    expect(findNeighbors).toHaveBeenCalledTimes(2); // one pass per query, no retries
+    expect(output.per_query_fallback).toEqual({ q1: false, q2: false });
+  });
+});

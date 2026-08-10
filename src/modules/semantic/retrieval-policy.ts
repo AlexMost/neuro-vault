@@ -12,6 +12,11 @@ import type {
 
 const FALLBACK_THRESHOLD = 0.3;
 const QUICK_BLOCK_LIMIT = 5;
+// The expansion leg's similarity floor operates on the seed↔note scale
+// (empirically 0.89–0.985 in real corpora) — incomparable with the semantic
+// leg's query↔note scale, which is why it is a separate knob. 0.35 matches
+// what default calls effectively used before the split (behavior-preserving).
+const DEFAULT_EXPANSION_FLOOR = 0.35;
 
 interface ModeConfig {
   limit: number;
@@ -32,6 +37,7 @@ export interface RetrievalInput {
   threshold?: number;
   expansion?: boolean;
   expansionLimit?: number;
+  expansionFloor?: number;
   sources: Map<string, SmartSource>;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
@@ -44,6 +50,10 @@ export interface RetrievalOutput {
   // caller-side merge cap. Observable via a `limit + 1` over-fetch (see
   // Step 1/2 below); `seeds` still bounds the output to exactly `limit`.
   truncated: boolean;
+  // True when the semantic hits came from the default-threshold retry at
+  // FALLBACK_THRESHOLD. Never true when the caller passed threshold
+  // explicitly — an explicit threshold is a hard filter with no rescue.
+  fallback: boolean;
 }
 
 // Per-seed expansion. Each seed gets its own sorted, capped list of neighbours.
@@ -53,10 +63,10 @@ function computeRelatedPerSeed(args: {
   seedPaths: string[];
   sources: Map<string, SmartSource>;
   searchEngine: SearchEngine;
-  threshold: number;
+  floor: number;
   perSeedLimit: number;
 }): Map<string, RelatedNote[]> {
-  const { seedPaths, sources, searchEngine, threshold, perSeedLimit } = args;
+  const { seedPaths, sources, searchEngine, floor, perSeedLimit } = args;
   const seedSet = new Set(seedPaths);
   const out = new Map<string, RelatedNote[]>();
   for (const seedPath of seedPaths) {
@@ -68,7 +78,7 @@ function computeRelatedPerSeed(args: {
     const neighbours = searchEngine.findNeighbors({
       queryVector: source.embedding,
       sources: sources.values(),
-      threshold,
+      threshold: floor,
       limit: perSeedLimit + seedSet.size,
     });
     const related = neighbours
@@ -85,9 +95,11 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const { query, mode, sources, embeddingProvider, searchEngine } = input;
 
   const modeConfig = MODE_DEFAULTS[mode];
+  const explicitThreshold = input.threshold !== undefined;
   const threshold = input.threshold ?? modeConfig.threshold;
   const expansion = input.expansion ?? modeConfig.expansion;
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
+  const expansionFloor = input.expansionFloor ?? DEFAULT_EXPANSION_FLOOR;
   const limit = input.limit ?? modeConfig.limit;
 
   // Step 1: embed + vector search. Request one extra hit beyond `limit` so
@@ -101,14 +113,20 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     limit: limit + 1,
   });
 
-  // Step 2: fallback threshold
-  if (vectorResults.length === 0 && threshold > FALLBACK_THRESHOLD) {
+  // Step 2: fallback threshold — default thresholds only. An explicit
+  // threshold that filters everything returns an honest zero. The
+  // `threshold > FALLBACK_THRESHOLD` guard is defensive: with
+  // `!explicitThreshold`, `threshold` is always a mode default (0.5 quick /
+  // 0.35 deep), both already > FALLBACK_THRESHOLD (0.3).
+  let fallback = false;
+  if (vectorResults.length === 0 && !explicitThreshold && threshold > FALLBACK_THRESHOLD) {
     vectorResults = searchEngine.findNeighbors({
       queryVector,
       sources: sources.values(),
       threshold: FALLBACK_THRESHOLD,
       limit: limit + 1,
     });
+    fallback = vectorResults.length > 0;
   }
 
   const truncated = vectorResults.length > limit;
@@ -127,7 +145,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
         ? searchEngine.findBlockNeighbors({
             queryVector,
             sources: seedSources,
-            threshold,
+            threshold: MODE_DEFAULTS.deep.threshold,
             limit,
           })
         : searchEngine.findBlockNeighbors({
@@ -174,7 +192,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
       seedPaths,
       sources,
       searchEngine,
-      threshold,
+      floor: expansionFloor,
       perSeedLimit: expansionLimit,
     });
   }
@@ -187,7 +205,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     related: relatedByPath.get(seed.path) ?? [],
   }));
 
-  return { results, truncated };
+  return { results, truncated, fallback };
 }
 
 export interface MultiRetrievalInput extends Omit<RetrievalInput, 'query'> {
@@ -203,6 +221,7 @@ export interface MultiRetrievalOutput {
   // below); `seeds` still bounds the output to exactly `limit`.
   truncated: boolean;
   per_query_hits: Record<string, number>;
+  per_query_fallback: Record<string, boolean>;
 }
 
 interface MergedSeed {
@@ -245,9 +264,11 @@ export async function executeMultiRetrieval(
   const { queries, mode, sources, embeddingProvider, searchEngine } = input;
 
   const modeConfig = MODE_DEFAULTS[mode];
+  const explicitThreshold = input.threshold !== undefined;
   const threshold = input.threshold ?? modeConfig.threshold;
   const expansion = input.expansion ?? modeConfig.expansion;
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
+  const expansionFloor = input.expansionFloor ?? DEFAULT_EXPANSION_FLOOR;
   const limit = input.limit ?? modeConfig.limit;
 
   // Step 1: per-query embed + retrieve (no expansion here). Request one
@@ -265,22 +286,31 @@ export async function executeMultiRetrieval(
         threshold,
         limit: limit + 1,
       });
-      if (neighbors.length === 0 && threshold > FALLBACK_THRESHOLD) {
+      // Step 2 (per query): fallback threshold — default thresholds only. An
+      // explicit threshold that filters everything returns an honest zero,
+      // same rule as the single-query path above.
+      let fallback = false;
+      if (neighbors.length === 0 && !explicitThreshold && threshold > FALLBACK_THRESHOLD) {
         neighbors = searchEngine.findNeighbors({
           queryVector,
           sources: sources.values(),
           threshold: FALLBACK_THRESHOLD,
           limit: limit + 1,
         });
+        fallback = neighbors.length > 0;
       }
       const overflow = neighbors.length > limit;
       neighbors = neighbors.slice(0, limit);
-      return { query, queryVector, neighbors, overflow };
+      return { query, queryVector, neighbors, overflow, fallback };
     }),
   );
 
   const per_query_hits: Record<string, number> = {};
-  for (const { query, neighbors } of perQueryOutputs) per_query_hits[query] = neighbors.length;
+  const per_query_fallback: Record<string, boolean> = {};
+  for (const { query, neighbors, fallback } of perQueryOutputs) {
+    per_query_hits[query] = neighbors.length;
+    per_query_fallback[query] = fallback;
+  }
 
   // Step 2: merge seeds across queries
   const merged = mergeNoteResults(
@@ -309,7 +339,7 @@ export async function executeMultiRetrieval(
           ? searchEngine.findBlockNeighbors({
               queryVector,
               sources: seedSources,
-              threshold,
+              threshold: MODE_DEFAULTS.deep.threshold,
               limit,
             })
           : searchEngine.findBlockNeighbors({
@@ -372,7 +402,7 @@ export async function executeMultiRetrieval(
       seedPaths,
       sources,
       searchEngine,
-      threshold,
+      floor: expansionFloor,
       perSeedLimit: expansionLimit,
     });
   }
@@ -386,5 +416,5 @@ export async function executeMultiRetrieval(
     related: relatedByPath.get(seed.path) ?? [],
   }));
 
-  return { results, truncated, per_query_hits };
+  return { results, truncated, per_query_hits, per_query_fallback };
 }
