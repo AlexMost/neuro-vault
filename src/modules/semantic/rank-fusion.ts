@@ -48,7 +48,6 @@ export function fuseRanks(args: {
   sources: { semantic: string[]; lexical: string[]; expansion: string[] };
   totalNotes: number;
   expansionWeight?: number;
-  getBacklinkCount: (path: string) => number;
 }): FusedCandidate[] {
   const k = adaptiveK(args.totalNotes);
   const w = args.expansionWeight ?? EXPANSION_WEIGHT;
@@ -67,10 +66,6 @@ export function fuseRanks(args: {
     });
   }
   return [...acc.values()].sort(
-    (a, b) =>
-      b.score - a.score ||
-      b.sourceCount - a.sourceCount ||
-      args.getBacklinkCount(b.path) - args.getBacklinkCount(a.path) ||
-      a.path.localeCompare(b.path),
+    (a, b) => b.score - a.score || b.sourceCount - a.sourceCount || a.path.localeCompare(b.path),
   );
 }

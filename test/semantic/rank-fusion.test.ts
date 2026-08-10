@@ -44,32 +44,31 @@ describe('flattenExpansion', () => {
 });
 
 describe('fuseRanks', () => {
-  const noBacklinks = () => 0;
   it('lifts a two-source mid-rank note over a single-source top hit', () => {
     // k = adaptiveK(25) = 5. A: semantic rank 1 → 1/6 ≈ 0.167.
     // B: lexical rank 2 + expansion rank 2 → 1/7 + 1/7 ≈ 0.286.
     const out = fuseRanks({
       sources: { semantic: ['A.md'], lexical: ['C.md', 'B.md'], expansion: ['D.md', 'B.md'] },
       totalNotes: 25,
-      getBacklinkCount: noBacklinks,
     });
     expect(out[0].path).toBe('B.md');
     expect(out[0].sourceCount).toBe(2);
   });
-  it('breaks score ties by source count, then backlinks, then path', () => {
+  it('breaks residual exact ties by path, never by backlinks', () => {
+    // a.md and b.md tie exactly (both rank 1 in a weight-1 leg, sourceCount 1).
+    // b.md has more backlinks; under the old comparator it won. Backlinks are
+    // hub bias (see AGENTS.md anti-pattern) and no longer participate: path
+    // ascending is the final, deterministic step.
     const out = fuseRanks({
       sources: { semantic: ['a.md'], lexical: ['b.md'], expansion: [] },
       totalNotes: 25,
-      getBacklinkCount: (p) => (p === 'b.md' ? 3 : 0),
     });
-    // рівні score (обидва rank 1 в одному джерелі) → backlinks вирішують
-    expect(out.map((e) => e.path)).toEqual(['b.md', 'a.md']);
+    expect(out.map((e) => e.path)).toEqual(['a.md', 'b.md']);
   });
   it('is deterministic and preserves source order under single-source degradation', () => {
     const args = {
       sources: { semantic: [], lexical: ['t.md', 'h.md', 'b.md'], expansion: [] },
       totalNotes: 1000,
-      getBacklinkCount: noBacklinks,
     };
     expect(fuseRanks(args)).toEqual(fuseRanks(args));
     expect(fuseRanks(args).map((e) => e.path)).toEqual(['t.md', 'h.md', 'b.md']);
@@ -79,9 +78,9 @@ describe('fuseRanks', () => {
     // X: semantic rank 1 (index 0) → 1/(5+0+1) = 1/6. sourceCount 1.
     // Y: semantic rank 7 + lexical rank 7 (index 6 each) →
     //    1/(5+6+1) + 1/(5+6+1) = 1/12 + 1/12 = 1/6 (floating-point-exact). sourceCount 2.
-    // Scores tie exactly; X has more backlinks, but Y's higher sourceCount must win —
+    // Scores tie exactly; Y's higher sourceCount must win —
     // this exercises the sourceCount branch of the comparator, which the equal-sourceCount
-    // "breaks score ties by source count..." test above cannot reach.
+    // "breaks residual exact ties..." test above cannot reach.
     const out = fuseRanks({
       sources: {
         semantic: ['X.md', 'l2.md', 'l3.md', 'l4.md', 'l5.md', 'l6.md', 'Y.md'],
@@ -89,7 +88,6 @@ describe('fuseRanks', () => {
         expansion: [],
       },
       totalNotes: 25,
-      getBacklinkCount: (p) => (p === 'X.md' ? 10 : 0),
     });
     const x = out.find((c) => c.path === 'X.md')!;
     const y = out.find((c) => c.path === 'Y.md')!;
@@ -100,10 +98,9 @@ describe('fuseRanks', () => {
   });
   it('keeps equal-rank expansion candidates below primary hits (retention case, 2026-08-10)', () => {
     // Empty lexical leg: under equal weights semantic[i] and expansion[i] tie
-    // exactly at every rank and the backlink step decided — expansion hubs
-    // (high backlink_count by construction) won every position. With
-    // w_expansion < 1 the expansion contribution is strictly smaller at every
-    // rank, so no primary hit can lose its slot to its rank-peer hub.
+    // exactly at every rank. With w_expansion < 1 the expansion contribution
+    // is strictly smaller at every rank, so no primary hit can lose its slot
+    // to its rank-peer expansion candidate.
     const out = fuseRanks({
       sources: {
         semantic: ['s1.md', 's2.md', 's3.md'],
@@ -111,7 +108,6 @@ describe('fuseRanks', () => {
         expansion: ['hub1.md', 'hub2.md', 'hub3.md'],
       },
       totalNotes: 25,
-      getBacklinkCount: (p) => (p.startsWith('hub') ? 50 : 0),
     });
     const order = out.map((c) => c.path);
     for (const [primary, hub] of [
