@@ -143,6 +143,37 @@ describe('unified matches shape', () => {
       await cleanup();
     }
   });
+
+  it('never returns an empty blocks array', async () => {
+    // findBlockNeighbors is mocked to always return a hit for the seed note,
+    // so `blocks` is populated (non-empty) whenever it's present at all —
+    // proving `assembleUnified` never emits `blocks: []`.
+    const notePath = 'пошук note.md';
+    const sources = sourcesWithEmbeddingFor(notePath, [1, 0]);
+    const engine: SearchEngine = {
+      findNeighbors: vi.fn().mockReturnValue([{ path: notePath, similarity: 0.9 }]),
+      findBlockNeighbors: vi
+        .fn()
+        .mockReturnValue([{ path: notePath, heading: '#h', lines: [1, 3], similarity: 0.7 }]),
+      findDuplicates: vi.fn().mockReturnValue([]),
+    };
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'зміст нотатки' },
+      { sources, engine },
+    );
+    try {
+      const out = (await buildSearchNotesTool(deps).handler({
+        query: 'пошук',
+        effort: 'quick',
+      })) as SearchNotesOutput;
+      for (const m of out.matches) {
+        if ('blocks' in m) expect(m.blocks!.length).toBeGreaterThan(0);
+      }
+      expect(out.matches.some((m) => 'blocks' in m)).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
 });
 
 describe('lexical leg orchestration', () => {
@@ -486,9 +517,10 @@ describe('query_stats', () => {
       // the merged cap keeps only one of the two notes...
       expect(out.matches).toHaveLength(1);
       // ...but both queries still report their pre-cap lexical hit count.
+      // mode: 'lexical' — the semantic leg never ran, so semantic is null.
       expect(out.query_stats).toEqual({
-        пошук: { semantic: 0, lexical: 1 },
-        тест: { semantic: 0, lexical: 1 },
+        пошук: { semantic: null, lexical: 1 },
+        тест: { semantic: null, lexical: 1 },
       });
     } finally {
       await cleanup();
@@ -537,7 +569,7 @@ describe('query_stats', () => {
     }
   });
 
-  it('reports query_stats in lexical mode with semantic always 0', async () => {
+  it('reports query_stats in lexical mode with semantic null', async () => {
     const { deps, cleanup } = await makeLexicalVault({
       'a пошук.md': '',
       'b тест.md': '',
@@ -549,15 +581,15 @@ describe('query_stats', () => {
         mode: 'lexical',
       })) as SearchNotesOutput;
       expect(out.query_stats).toEqual({
-        пошук: { semantic: 0, lexical: 1 },
-        нема: { semantic: 0, lexical: 0 },
+        пошук: { semantic: null, lexical: 1 },
+        нема: { semantic: null, lexical: 0 },
       });
     } finally {
       await cleanup();
     }
   });
 
-  it('reports query_stats with semantic always 0 when no semantic corpus is available', async () => {
+  it('reports query_stats with semantic null when no semantic corpus is available', async () => {
     const { deps, cleanup } = await makeLexicalVault({ 'пошук note.md': '' }, { semantic: false });
     try {
       const tool = buildSearchNotesTool(deps);
@@ -565,8 +597,8 @@ describe('query_stats', () => {
         query: ['пошук', 'нема'],
       })) as SearchNotesOutput;
       expect(out.query_stats).toEqual({
-        пошук: { semantic: 0, lexical: 1 },
-        нема: { semantic: 0, lexical: 0 },
+        пошук: { semantic: null, lexical: 1 },
+        нема: { semantic: null, lexical: 0 },
       });
     } finally {
       await cleanup();
@@ -586,9 +618,47 @@ describe('query_stats', () => {
       })) as SearchNotesOutput;
       expect(out.matches).toEqual([]);
       expect(out.query_stats).toEqual({
-        x: { semantic: 0, lexical: 0 },
-        y: { semantic: 0, lexical: 0 },
+        x: { semantic: null, lexical: 0 },
+        y: { semantic: null, lexical: 0 },
       });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('names the killer token for an AND-killed multi-token query', async () => {
+    // vault fixture: a note containing «алертів» but not «ретеншн».
+    const { deps, cleanup } = await makeLexicalVault({
+      'note.md': 'зміст про алертів у системі',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['ретеншн алертів'],
+        mode: 'lexical',
+      })) as SearchNotesOutput;
+      expect(out.query_stats!['ретеншн алертів']).toEqual({
+        semantic: null,
+        lexical: 0,
+        lexical_tokens: { ретеншн: 0, алертів: 1 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('omits lexical_tokens for single-token dead queries and for matching queries', async () => {
+    const { deps, cleanup } = await makeLexicalVault({
+      'note.md': 'звіт про пошук у системі',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['нема', 'пошук'],
+        mode: 'lexical',
+      })) as SearchNotesOutput;
+      expect(out.query_stats!['нема']).toEqual({ semantic: null, lexical: 0 });
+      expect(out.query_stats!['пошук'].lexical_tokens).toBeUndefined();
     } finally {
       await cleanup();
     }
