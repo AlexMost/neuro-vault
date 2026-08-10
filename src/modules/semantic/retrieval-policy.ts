@@ -44,6 +44,10 @@ export interface RetrievalOutput {
   // caller-side merge cap. Observable via a `limit + 1` over-fetch (see
   // Step 1/2 below); `seeds` still bounds the output to exactly `limit`.
   truncated: boolean;
+  // True when the semantic hits came from the default-threshold retry at
+  // FALLBACK_THRESHOLD. Never true when the caller passed threshold
+  // explicitly — an explicit threshold is a hard filter with no rescue.
+  fallback: boolean;
 }
 
 // Per-seed expansion. Each seed gets its own sorted, capped list of neighbours.
@@ -85,6 +89,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const { query, mode, sources, embeddingProvider, searchEngine } = input;
 
   const modeConfig = MODE_DEFAULTS[mode];
+  const explicitThreshold = input.threshold !== undefined;
   const threshold = input.threshold ?? modeConfig.threshold;
   const expansion = input.expansion ?? modeConfig.expansion;
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
@@ -101,14 +106,17 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     limit: limit + 1,
   });
 
-  // Step 2: fallback threshold
-  if (vectorResults.length === 0 && threshold > FALLBACK_THRESHOLD) {
+  // Step 2: fallback threshold — default thresholds only. An explicit
+  // threshold that filters everything returns an honest zero.
+  let fallback = false;
+  if (vectorResults.length === 0 && !explicitThreshold && threshold > FALLBACK_THRESHOLD) {
     vectorResults = searchEngine.findNeighbors({
       queryVector,
       sources: sources.values(),
       threshold: FALLBACK_THRESHOLD,
       limit: limit + 1,
     });
+    fallback = vectorResults.length > 0;
   }
 
   const truncated = vectorResults.length > limit;
@@ -187,7 +195,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     related: relatedByPath.get(seed.path) ?? [],
   }));
 
-  return { results, truncated };
+  return { results, truncated, fallback };
 }
 
 export interface MultiRetrievalInput extends Omit<RetrievalInput, 'query'> {
@@ -203,6 +211,7 @@ export interface MultiRetrievalOutput {
   // below); `seeds` still bounds the output to exactly `limit`.
   truncated: boolean;
   per_query_hits: Record<string, number>;
+  per_query_fallback: Record<string, boolean>;
 }
 
 interface MergedSeed {
@@ -245,6 +254,7 @@ export async function executeMultiRetrieval(
   const { queries, mode, sources, embeddingProvider, searchEngine } = input;
 
   const modeConfig = MODE_DEFAULTS[mode];
+  const explicitThreshold = input.threshold !== undefined;
   const threshold = input.threshold ?? modeConfig.threshold;
   const expansion = input.expansion ?? modeConfig.expansion;
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
@@ -265,22 +275,28 @@ export async function executeMultiRetrieval(
         threshold,
         limit: limit + 1,
       });
-      if (neighbors.length === 0 && threshold > FALLBACK_THRESHOLD) {
+      let fallback = false;
+      if (neighbors.length === 0 && !explicitThreshold && threshold > FALLBACK_THRESHOLD) {
         neighbors = searchEngine.findNeighbors({
           queryVector,
           sources: sources.values(),
           threshold: FALLBACK_THRESHOLD,
           limit: limit + 1,
         });
+        fallback = neighbors.length > 0;
       }
       const overflow = neighbors.length > limit;
       neighbors = neighbors.slice(0, limit);
-      return { query, queryVector, neighbors, overflow };
+      return { query, queryVector, neighbors, overflow, fallback };
     }),
   );
 
   const per_query_hits: Record<string, number> = {};
-  for (const { query, neighbors } of perQueryOutputs) per_query_hits[query] = neighbors.length;
+  const per_query_fallback: Record<string, boolean> = {};
+  for (const { query, neighbors, fallback } of perQueryOutputs) {
+    per_query_hits[query] = neighbors.length;
+    per_query_fallback[query] = fallback;
+  }
 
   // Step 2: merge seeds across queries
   const merged = mergeNoteResults(
@@ -386,5 +402,5 @@ export async function executeMultiRetrieval(
     related: relatedByPath.get(seed.path) ?? [],
   }));
 
-  return { results, truncated, per_query_hits };
+  return { results, truncated, per_query_hits, per_query_fallback };
 }
