@@ -39,6 +39,11 @@ export interface RetrievalInput {
 
 export interface RetrievalOutput {
   results: NoteResultNode[];
+  // True when the semantic leg's vector search returned more candidates than
+  // `limit` — i.e. the leg's own pool cap dropped hits, independent of any
+  // caller-side merge cap. Observable via a `limit + 1` over-fetch (see
+  // Step 1/2 below); `seeds` still bounds the output to exactly `limit`.
+  truncated: boolean;
 }
 
 // Per-seed expansion. Each seed gets its own sorted, capped list of neighbours.
@@ -85,13 +90,15 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
   const limit = input.limit ?? modeConfig.limit;
 
-  // Step 1: embed + vector search
+  // Step 1: embed + vector search. Request one extra hit beyond `limit` so
+  // an actual pool overflow is observable (Step 3 still bounds `seeds` to
+  // exactly `limit` — the +1 is only ever used to detect truncation).
   const queryVector = await embeddingProvider.embed(query);
   let vectorResults: SearchResult[] = searchEngine.findNeighbors({
     queryVector,
     sources: sources.values(),
     threshold,
-    limit,
+    limit: limit + 1,
   });
 
   // Step 2: fallback threshold
@@ -100,9 +107,11 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
       queryVector,
       sources: sources.values(),
       threshold: FALLBACK_THRESHOLD,
-      limit,
+      limit: limit + 1,
     });
   }
+
+  const truncated = vectorResults.length > limit;
 
   // Step 3: cap seeds to `limit`
   const seeds = vectorResults.slice(0, limit);
@@ -158,7 +167,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     related: relatedByPath.get(seed.path) ?? [],
   }));
 
-  return { results };
+  return { results, truncated };
 }
 
 export interface MultiRetrievalInput extends Omit<RetrievalInput, 'query'> {
@@ -168,7 +177,12 @@ export interface MultiRetrievalInput extends Omit<RetrievalInput, 'query'> {
 
 export interface MultiRetrievalOutput {
   results: MultiNoteResultNode[];
+  // True when candidates were dropped either by the cross-query merge cap
+  // (`limit`) or by any single query's own per-query pool cap — i.e. a
+  // `limit + 1` over-fetch on at least one query (see Step 1's `overflow`
+  // below); `seeds` still bounds the output to exactly `limit`.
   truncated: boolean;
+  per_query_hits: Record<string, number>;
 }
 
 interface MergedSeed {
@@ -216,7 +230,12 @@ export async function executeMultiRetrieval(
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
   const limit = input.limit ?? modeConfig.limit;
 
-  // Step 1: per-query embed + retrieve (no expansion here)
+  // Step 1: per-query embed + retrieve (no expansion here). Request one
+  // extra hit beyond `limit` per query so a per-query pool overflow is
+  // observable, then immediately slice back down to `limit` — `neighbors`
+  // (and therefore `per_query_hits` and the merge step below) keep exactly
+  // the same limit-bounded semantics as before the over-fetch; `overflow` is
+  // the only new signal carried out of this step.
   const perQueryOutputs = await Promise.all(
     queries.map(async (query) => {
       const queryVector = await embeddingProvider.embed(query);
@@ -224,27 +243,37 @@ export async function executeMultiRetrieval(
         queryVector,
         sources: sources.values(),
         threshold,
-        limit,
+        limit: limit + 1,
       });
       if (neighbors.length === 0 && threshold > FALLBACK_THRESHOLD) {
         neighbors = searchEngine.findNeighbors({
           queryVector,
           sources: sources.values(),
           threshold: FALLBACK_THRESHOLD,
-          limit,
+          limit: limit + 1,
         });
       }
-      return { query, queryVector, neighbors };
+      const overflow = neighbors.length > limit;
+      neighbors = neighbors.slice(0, limit);
+      return { query, queryVector, neighbors, overflow };
     }),
   );
+
+  const per_query_hits: Record<string, number> = {};
+  for (const { query, neighbors } of perQueryOutputs) per_query_hits[query] = neighbors.length;
 
   // Step 2: merge seeds across queries
   const merged = mergeNoteResults(
     perQueryOutputs.map(({ query, neighbors }) => ({ query, results: neighbors })),
   );
 
-  // Step 3: cap to `limit`
-  const truncated = merged.length > limit;
+  // Step 3: cap to `limit`. `truncated` reflects candidates dropped either
+  // by this cross-query merge cap OR by any single query's own pool cap
+  // (Step 1's overflow) — both are "a source leg's pool cap" from the
+  // caller's perspective.
+  const mergeOverflow = merged.length > limit;
+  const anyQueryOverflow = perQueryOutputs.some((o) => o.overflow);
+  const truncated = mergeOverflow || anyQueryOverflow;
   const seeds = merged.slice(0, limit);
   const seedPaths = seeds.map((s) => s.path);
   const seedPathSet = new Set(seedPaths);
@@ -318,5 +347,5 @@ export async function executeMultiRetrieval(
     related: relatedByPath.get(seed.path) ?? [],
   }));
 
-  return { results, truncated };
+  return { results, truncated, per_query_hits };
 }

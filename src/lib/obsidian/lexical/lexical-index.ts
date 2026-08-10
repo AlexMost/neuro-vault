@@ -41,7 +41,12 @@ export class LexicalIndex {
     noteCap: number;
     perNoteCap: number;
     getBacklinkCount: (path: string) => number;
-  }): Promise<{ notes: RankedNote[]; truncated: boolean }> {
+  }): Promise<{
+    notes: RankedNote[];
+    truncated: boolean;
+    perQueryCounts: Record<string, number>;
+    totalNotes: number;
+  }> {
     const paths = await this.reader.scan();
     const scoped = opts.allowed ? paths.filter((p) => opts.allowed!.has(p)) : paths;
 
@@ -53,13 +58,14 @@ export class LexicalIndex {
       if (entry) notes.set(p, entry.parsed);
     }
 
-    return rankNotes({
+    const ranked = rankNotes({
       notes,
       queries: opts.queries,
       noteCap: opts.noteCap,
       perNoteCap: opts.perNoteCap,
       getBacklinkCount: opts.getBacklinkCount,
     });
+    return { ...ranked, totalNotes: paths.length };
   }
 
   private async refresh(scopedPaths: string[]): Promise<void> {

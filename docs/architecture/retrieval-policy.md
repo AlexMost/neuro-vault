@@ -2,7 +2,7 @@
 
 How a search request becomes a ranked set of notes and blocks. This is the "policy" layer that composes the embedding pipeline, the corpus, and the search engine into the behaviour described to the LLM.
 
-This document covers the **semantic leg** of `search_notes` only. The lexical leg (exact text matching over titles, headings, and bodies) is a separate pipeline documented in [`lexical-search.md`](./lexical-search.md); the tool handler runs both legs and returns `{ semantic_matches, lexical_matches }`.
+This document covers the **semantic leg** of `search_notes` only. The lexical leg (exact text matching over titles, headings, and bodies) is a separate pipeline documented in [`lexical-search.md`](./lexical-search.md). The tool handler runs both legs plus a flattened expansion leg and fuses all three into one ranked `matches[]` list — see [`rank-fusion.md`](./rank-fusion.md) for the merge mechanism. This document's `results[]`/`truncated`/`per_query_hits` outputs are a fusion **source**, not a response shape of their own.
 
 ## What it is
 
@@ -13,7 +13,7 @@ This document covers the **semantic leg** of `search_notes` only. The lexical le
 3. Find block-level neighbors (scoped to seed notes).
 4. Optionally expand per seed by treating each top result as a new query vector.
 
-The output is `{ results: NoteResultNode[] }` — a tree where each result note carries its own `blocks[]` (section-level matches within that note) and `related[]` (per-seed expansion neighbours in deep mode).
+The output is `{ results: NoteResultNode[], truncated: boolean }` — a tree where each result note carries its own `blocks[]` (section-level matches within that note) and `related[]` (per-seed expansion neighbours in deep mode). `truncated` is true when the vector search's own pool cap dropped candidates before `results[]` was sliced to `limit`, independent of the tool-level merged-list cap — see [Truncated observability](./rank-fusion.md#truncated-observability-the-1-over-fetch) in `rank-fusion.md` for how this leg-level signal folds into the tool's top-level `truncated`.
 
 ## Flow
 
@@ -99,13 +99,15 @@ Merge rule for note seeds (`mergeNoteResults` → `MergedSeed[]`):
 - similarity is `max` across the queries that matched it
 - `matched_queries: string[]` records which queries surfaced this path
 
-After merging, seeds are sorted by similarity descending (with path tiebreak). `truncated = merged.length > limit`. Then seeds are sliced to `limit`.
+After merging, seeds are sorted by similarity descending (with path tiebreak), then sliced to `limit`. `truncated` is true when either the cross-query merge itself dropped candidates (`merged.length > limit`) or any single query's own per-query pool cap overflowed before merging — each query over-fetches `limit + 1` neighbours so that overflow is observable, then slices back to `limit` before the merge runs. Either cause means "this leg's pool cap dropped something," which is exactly what the tool-level `truncated` (see [`rank-fusion.md`](./rank-fusion.md#truncated-observability-the-1-over-fetch)) needs to know about.
+
+`per_query_hits: Record<string, number>` records each query's post-slice hit count — after that query's own `limit + 1`→`limit` overflow check, before the cross-query merge. This is the semantic half of `search_notes`'s `query_stats` (the lexical half is the lexical leg's `perQueryCounts`, documented in [`lexical-search.md`](./lexical-search.md)); see [`docs/guide/finding-notes.md`](../guide/finding-notes.md) for the response-level contract.
 
 Block search runs **per query** with each query's own vector, scoped to seed notes; the per-query block hits are deduped by `(path, heading, lineRange)` keeping max similarity, then bucketed under each seed and sorted by similarity desc. The NUL character is used as the in-key separator so headings containing spaces (`#Meeting Notes`) cannot collide.
 
 Per-seed expansion reuses the same `computeRelatedPerSeed` helper as single-query — no duplicated expansion logic.
 
-Output: `{ results: MultiNoteResultNode[], truncated: boolean }`. Each `MultiNoteResultNode` extends `NoteResultNode` with `matched_queries: string[]`.
+Output: `{ results: MultiNoteResultNode[], truncated: boolean, per_query_hits: Record<string, number> }`. Each `MultiNoteResultNode` extends `NoteResultNode` with `matched_queries: string[]`.
 
 ## Invariants
 

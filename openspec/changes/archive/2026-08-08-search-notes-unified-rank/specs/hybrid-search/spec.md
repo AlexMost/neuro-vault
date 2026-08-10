@@ -1,8 +1,79 @@
-# hybrid-search Specification
+## ADDED Requirements
 
-## Purpose
-TBD - created by archiving change hybrid-search-notes. Update Purpose after archive.
-## Requirements
+### Requirement: search_notes returns one RRF-ranked matches list
+
+`search_notes` SHALL return `{ matches, truncated }` (plus `query_stats` for array queries) where `matches[]` is a single list ranked by reciprocal-rank fusion over three rank sources: the semantic leg's order, the lexical leg's order, and the flattened expansion order. Each entry SHALL carry `path`, `vault`, `backlink_count`, and provenance `found_in` — a non-empty array drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"`, `"expansion"` listing every source that surfaced the note (lexical kinds: every distinct `matched_in` present in the entry's capped `lexical[]` evidence). Per-source evidence SHALL accompany its provenance: `similarity` and `blocks[]` when `"semantic"` is present, `lexical[]` (snippet matches) when any `"lexical:*"` value is present, `expansion_similarity` when `"expansion"` is present; evidence fields for absent sources SHALL be omitted. A note SHALL appear at most once in `matches[]`. An empty result SHALL be `matches: []`, never omitted. The response SHALL NOT contain `semantic_matches`, `lexical_matches`, or nested `related[]`.
+
+#### Scenario: a two-source note carries both provenance and both evidence kinds
+
+- **WHEN** a note is surfaced by both the semantic and lexical legs for `{ query: "retrieval" }`
+- **THEN** `matches[]` contains one entry for it whose `found_in` includes `"semantic"` and a `"lexical:*"` value, with both `similarity`/`blocks[]` and `lexical[]` present
+
+#### Scenario: expansion-only entry is provenance-complete but evidence-light
+
+- **WHEN** a note enters the merged list only via expansion under `{ query: "x", effort: "deep" }`
+- **THEN** its entry has `found_in: ["expansion"]`, `expansion_similarity`, `path`, `vault`, `backlink_count`, and no `similarity`, `blocks`, or `lexical` fields
+
+#### Scenario: the old split keys are gone
+
+- **WHEN** `search_notes` returns any response
+- **THEN** the response contains no `semantic_matches`, `lexical_matches`, or `related` keys
+
+### Requirement: Rank fusion is reciprocal-rank with adaptive k
+
+The merged order SHALL be computed as `score(note) = Σ_sources 1 / (k + rank)` with 1-based ranks, equal source weights, and `k = clamp(round(sqrt(N)), 5, 60)` where `N` is the vault's total note count independent of any `filter`. Ties SHALL break by source count descending, then `backlink_count` descending, then `path` ascending. The full ordering SHALL be deterministic for a fixed vault state. Fusion SHALL consume only source ranks — lexical entries SHALL NOT acquire a numeric score in the response.
+
+#### Scenario: presence in two sources lifts a note over single-source top hits
+
+- **WHEN** note A ranks first in the semantic leg only, and note B ranks mid-list in both the lexical leg and the expansion source
+- **THEN** B's RRF score is the sum of two reciprocal ranks and B precedes A whenever that sum exceeds A's single reciprocal rank
+
+#### Scenario: ordering is reproducible
+
+- **WHEN** the same query runs twice against an unchanged vault
+- **THEN** `matches[]` is byte-for-byte identical
+
+### Requirement: Expansion is a flattened third rank source
+
+Expansion candidates SHALL be collected across all seeds' neighbour sets, SHALL exclude paths already present as semantic results, and SHALL be deduplicated to unique paths keeping the maximum `expansion_similarity`, ordered by it. This flattened list SHALL be the third fusion source. In `effort: "quick"` (no expansion computed) the source SHALL be empty.
+
+#### Scenario: a path repeated under several seeds fuses once at its best similarity
+
+- **WHEN** the same path appears in two seeds' neighbour sets with expansion similarities 0.82 and 0.89
+- **THEN** the expansion source contains that path once, ranked by 0.89, and its entry (if surfaced) carries `expansion_similarity: 0.89`
+
+#### Scenario: semantic seeds do not compete against themselves
+
+- **WHEN** a note is a semantic result and also appears in another seed's neighbour set
+- **THEN** the expansion source excludes it and its entry's `found_in` does not contain `"expansion"`
+
+### Requirement: query_stats reports pre-cap per-query hit counts
+
+For an array `query`, the response SHALL include `query_stats` mapping every normalized input query (trimmed, de-duplicated) to `{ semantic, lexical }` hit counts taken before cross-query merging and before any result-list cap: `semantic` counts the notes that query retrieved from the semantic leg (post-threshold), `lexical` counts the notes it matched before the lexical note cap. A query with zero hits in both legs SHALL report `{ semantic: 0, lexical: 0 }`. `query_stats` SHALL be omitted for a single string `query`.
+
+#### Scenario: a dead query variant is visible in one line
+
+- **WHEN** `search_notes` is called with `{ query: ["monetization research", "Мобі"] }` and «Мобі» matches nothing in either leg
+- **THEN** `query_stats["Мобі"]` is `{ semantic: 0, lexical: 0 }` while the other query reports non-zero counts
+
+#### Scenario: merge-cap cuts do not zero a query's stats
+
+- **WHEN** every note retrieved by query Q is dropped from `matches[]` by the merged-list cap
+- **THEN** `query_stats[Q]` still reports Q's pre-cap hit counts
+
+### Requirement: Single-source degradation preserves source order
+
+In `mode: "lexical"`, or when no semantic corpus is available, the merge SHALL degrade to the lexical source alone: `matches[]` SHALL preserve the lexical ordering, every `found_in` SHALL contain only `lexical:*` values, and semantic evidence fields SHALL be absent. The corpus loader SHALL NOT be invoked in `mode: "lexical"`.
+
+#### Scenario: lexical mode yields a purely lexical merged list
+
+- **WHEN** `search_notes` is called with `{ query: "пошук", mode: "lexical" }`
+- **THEN** `matches[]` is ordered exactly as the lexical source and no entry carries `similarity`, `blocks`, or `expansion_similarity`
+
+---
+
+## MODIFIED Requirements
+
 ### Requirement: Input axes mode and effort are orthogonal
 
 The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap, expansion only in `deep`) and the default merged-list cap (quick: 5, deep: 12). The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`. `threshold` SHALL affect only the semantic leg. Top-level `truncated` SHALL be present in every response and true when candidates were dropped on the way to `matches[]` — by the merged-list cap or by the semantic or lexical leg's internal pool cap. Expansion per-seed neighbour caps are not surfaced (a literal signal there would be near-always true in deep mode).
@@ -146,75 +217,10 @@ Lexical matching SHALL reflect the vault state at request time: content is re-re
 
 ---
 
-### Requirement: search_notes returns one RRF-ranked matches list
+## REMOVED Requirements
 
-`search_notes` SHALL return `{ matches, truncated }` (plus `query_stats` for array queries) where `matches[]` is a single list ranked by reciprocal-rank fusion over three rank sources: the semantic leg's order, the lexical leg's order, and the flattened expansion order. Each entry SHALL carry `path`, `vault`, `backlink_count`, and provenance `found_in` — a non-empty array drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"`, `"expansion"` listing every source that surfaced the note (lexical kinds: every distinct `matched_in` present in the entry's capped `lexical[]` evidence). Per-source evidence SHALL accompany its provenance: `similarity` and `blocks[]` when `"semantic"` is present, `lexical[]` (snippet matches) when any `"lexical:*"` value is present, `expansion_similarity` when `"expansion"` is present; evidence fields for absent sources SHALL be omitted. A note SHALL appear at most once in `matches[]`. An empty result SHALL be `matches: []`, never omitted. The response SHALL NOT contain `semantic_matches`, `lexical_matches`, or nested `related[]`.
+### Requirement: search_notes returns a symmetric hybrid response
 
-#### Scenario: a two-source note carries both provenance and both evidence kinds
+**Reason**: The symmetric two-list shape (`semantic_matches` + `lexical_matches` + nested `related[]`) left rank fusion to the caller; the multi-source relevance signal the contract itself declared never materialized in result order. Replaced by the unified RRF-ranked `matches[]` (see ADDED requirements).
 
-- **WHEN** a note is surfaced by both the semantic and lexical legs for `{ query: "retrieval" }`
-- **THEN** `matches[]` contains one entry for it whose `found_in` includes `"semantic"` and a `"lexical:*"` value, with both `similarity`/`blocks[]` and `lexical[]` present
-
-#### Scenario: expansion-only entry is provenance-complete but evidence-light
-
-- **WHEN** a note enters the merged list only via expansion under `{ query: "x", effort: "deep" }`
-- **THEN** its entry has `found_in: ["expansion"]`, `expansion_similarity`, `path`, `vault`, `backlink_count`, and no `similarity`, `blocks`, or `lexical` fields
-
-#### Scenario: the old split keys are gone
-
-- **WHEN** `search_notes` returns any response
-- **THEN** the response contains no `semantic_matches`, `lexical_matches`, or `related` keys
-
-### Requirement: Rank fusion is reciprocal-rank with adaptive k
-
-The merged order SHALL be computed as `score(note) = Σ_sources 1 / (k + rank)` with 1-based ranks, equal source weights, and `k = clamp(round(sqrt(N)), 5, 60)` where `N` is the vault's total note count independent of any `filter`. Ties SHALL break by source count descending, then `backlink_count` descending, then `path` ascending. The full ordering SHALL be deterministic for a fixed vault state. Fusion SHALL consume only source ranks — lexical entries SHALL NOT acquire a numeric score in the response.
-
-#### Scenario: presence in two sources lifts a note over single-source top hits
-
-- **WHEN** note A ranks first in the semantic leg only, and note B ranks mid-list in both the lexical leg and the expansion source
-- **THEN** B's RRF score is the sum of two reciprocal ranks and B precedes A whenever that sum exceeds A's single reciprocal rank
-
-#### Scenario: ordering is reproducible
-
-- **WHEN** the same query runs twice against an unchanged vault
-- **THEN** `matches[]` is byte-for-byte identical
-
-### Requirement: Expansion is a flattened third rank source
-
-Expansion candidates SHALL be collected across all seeds' neighbour sets, SHALL exclude paths already present as semantic results, and SHALL be deduplicated to unique paths keeping the maximum `expansion_similarity`, ordered by it. This flattened list SHALL be the third fusion source. In `effort: "quick"` (no expansion computed) the source SHALL be empty.
-
-#### Scenario: a path repeated under several seeds fuses once at its best similarity
-
-- **WHEN** the same path appears in two seeds' neighbour sets with expansion similarities 0.82 and 0.89
-- **THEN** the expansion source contains that path once, ranked by 0.89, and its entry (if surfaced) carries `expansion_similarity: 0.89`
-
-#### Scenario: semantic seeds do not compete against themselves
-
-- **WHEN** a note is a semantic result and also appears in another seed's neighbour set
-- **THEN** the expansion source excludes it and its entry's `found_in` does not contain `"expansion"`
-
-### Requirement: query_stats reports pre-cap per-query hit counts
-
-For an array `query`, the response SHALL include `query_stats` mapping every normalized input query (trimmed, de-duplicated) to `{ semantic, lexical }` hit counts taken before cross-query merging and before any result-list cap: `semantic` counts the notes that query retrieved from the semantic leg (post-threshold), `lexical` counts the notes it matched before the lexical note cap. A query with zero hits in both legs SHALL report `{ semantic: 0, lexical: 0 }`. `query_stats` SHALL be omitted for a single string `query`.
-
-#### Scenario: a dead query variant is visible in one line
-
-- **WHEN** `search_notes` is called with `{ query: ["monetization research", "Мобі"] }` and «Мобі» matches nothing in either leg
-- **THEN** `query_stats["Мобі"]` is `{ semantic: 0, lexical: 0 }` while the other query reports non-zero counts
-
-#### Scenario: merge-cap cuts do not zero a query's stats
-
-- **WHEN** every note retrieved by query Q is dropped from `matches[]` by the merged-list cap
-- **THEN** `query_stats[Q]` still reports Q's pre-cap hit counts
-
-### Requirement: Single-source degradation preserves source order
-
-In `mode: "lexical"`, or when no semantic corpus is available, the merge SHALL degrade to the lexical source alone: `matches[]` SHALL preserve the lexical ordering, every `found_in` SHALL contain only `lexical:*` values, and semantic evidence fields SHALL be absent. The corpus loader SHALL NOT be invoked in `mode: "lexical"`.
-
-#### Scenario: lexical mode yields a purely lexical merged list
-
-- **WHEN** `search_notes` is called with `{ query: "пошук", mode: "lexical" }`
-- **THEN** `matches[]` is ordered exactly as the lexical source and no entry carries `similarity`, `blocks`, or `expansion_similarity`
-
----
-
+**Migration**: Consumers switch to `matches[]`: entry-level `found_in` replaces "which list is it in", `similarity`/`blocks[]` keep their meaning on semantic-sourced entries, per-note lexical evidence moves from `lexical_matches[].matches` to the entry's `lexical[]`, and nested `related[]` is gone — expansion-sourced entries appear directly in `matches[]` with `expansion_similarity`; use `get_similar_notes` for deliberate neighbour exploration. Breaking change, shipped as a major release.

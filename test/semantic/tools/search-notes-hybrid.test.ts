@@ -5,23 +5,161 @@ import {
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import type { IFanOutResult } from '../../../src/lib/fan-out.js';
+import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import { makeSearchDeps, makeTestRegistry } from './_helpers.js';
-import { makeLexicalVault, makeMockEngine } from './_hybrid-helpers.js';
+import {
+  engineReturning,
+  makeLexicalVault,
+  makeMockEngine,
+  sourcesWithEmbeddingFor,
+} from './_hybrid-helpers.js';
+
+describe('unified matches shape', () => {
+  it('returns one fused matches list with provenance and dual evidence', async () => {
+    // vault: note hit by BOTH legs → single entry, both evidence kinds. Body
+    // text deliberately avoids repeating "target" so the note surfaces via
+    // exactly one lexical kind (title), keeping found_in assertion precise.
+    const { deps, cleanup } = await makeLexicalVault(
+      { 'Target.md': 'Notes on building a retrieval evaluation harness.\n' },
+      {
+        sources: sourcesWithEmbeddingFor('Target.md'),
+        engine: engineReturning([{ path: 'Target.md', similarity: 0.8 }]),
+      },
+    );
+    try {
+      const out = (await buildSearchNotesTool(deps).handler({
+        query: 'target',
+      })) as SearchNotesOutput;
+      expect(out.matches).toHaveLength(1);
+      const m = out.matches[0]!;
+      expect(m.found_in).toEqual(['semantic', 'lexical:title']);
+      expect(m.similarity).toBe(0.8);
+      expect(m.lexical?.[0]?.matched_in).toBe('title');
+      expect(out).not.toHaveProperty('semantic_matches');
+      expect(out).not.toHaveProperty('lexical_matches');
+      expect(out.truncated).toBe(false);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('degrades to pure lexical order in lexical mode with no semantic fields', async () => {
+    const { deps, cleanup } = await makeLexicalVault({
+      'a пошук.md': '',
+      'b пошук.md': '',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({ query: 'пошук', mode: 'lexical' })) as SearchNotesOutput;
+      expect(out.matches.length).toBeGreaterThan(0);
+      for (const m of out.matches) {
+        expect(m.found_in.every((s) => s.startsWith('lexical:'))).toBe(true);
+        expect(m.similarity).toBeUndefined();
+        expect(m.expansion_similarity).toBeUndefined();
+      }
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('caps the merged list via limit and reports truncated', async () => {
+    const { deps, cleanup } = await makeLexicalVault({
+      'a пошук.md': '',
+      'b пошук.md': '',
+      'c пошук.md': '',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: 'пошук',
+        mode: 'lexical',
+        limit: 2,
+      })) as SearchNotesOutput;
+      expect(out.matches).toHaveLength(2);
+      expect(out.truncated).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('surfaces leg-level truncation even when the merged cap is not hit', async () => {
+    // 7 lexically-matching notes, quick effort: lexCap 5 == merged cap 5, so
+    // the merged cap never fires on its own — only the lexical leg's
+    // internal pool cap drops the other 2. `truncated` must still be true.
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 7; i++) files[`note-${i} пошук.md`] = '';
+    const { deps, cleanup } = await makeLexicalVault(files);
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({ query: 'пошук', mode: 'lexical' })) as SearchNotesOutput;
+      expect(out.matches).toHaveLength(5);
+      expect(out.truncated).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('truncated is false when neither the merged cap nor a leg pool cap dropped anything', async () => {
+    const { deps, cleanup } = await makeLexicalVault({
+      'a пошук.md': '',
+      'b пошук.md': '',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({ query: 'пошук', mode: 'lexical' })) as SearchNotesOutput;
+      expect(out.matches).toHaveLength(2);
+      expect(out.truncated).toBe(false);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('surfaces the semantic leg pool overflow even when the lexical leg is empty and the merged cap is not hit', async () => {
+    // 4 files that don't lexically match the query at all (0 lexical hits),
+    // with the semantic engine mocked to always return all 4 regardless of
+    // query — quick effort's semantic pool cap is 3, so the leg overflows
+    // (4 > 3) even though the merged list (3 semantic-only entries) sits
+    // well under the quick merged cap of 5.
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 4; i++) files[`note-${i}.md`] = 'irrelevant body text';
+    const sources: Map<string, SmartSource> = new Map(
+      Object.keys(files).map((p) => [p, { path: p, embedding: [1, 0], blocks: [] }]),
+    );
+    const engine = engineReturning([
+      { path: 'note-0.md', similarity: 0.9 },
+      { path: 'note-1.md', similarity: 0.8 },
+      { path: 'note-2.md', similarity: 0.7 },
+      { path: 'note-3.md', similarity: 0.6 },
+    ]);
+    const { deps, cleanup } = await makeLexicalVault(files, { sources, engine });
+    try {
+      const out = (await buildSearchNotesTool(deps).handler({
+        query: 'zzz-no-lexical-match',
+      })) as SearchNotesOutput;
+      expect(out.matches).toHaveLength(3);
+      expect(out.matches.every((m) => m.found_in.every((s) => s === 'semantic'))).toBe(true);
+      expect(out.truncated).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+});
 
 describe('lexical leg orchestration', () => {
-  it('hybrid returns lexical matches alongside (empty) semantic ones', async () => {
+  it('hybrid returns lexically-sourced matches when semantic is empty', async () => {
     const { deps, cleanup } = await makeLexicalVault({ 'Пошук.md': '' });
     try {
       const tool = buildSearchNotesTool(deps);
       const out = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
-      expect(out.lexical_matches).toHaveLength(1);
-      expect(out.lexical_matches[0]).toMatchObject({
+      expect(out.matches).toHaveLength(1);
+      expect(out.matches[0]).toMatchObject({
         path: 'Пошук.md',
         vault: 'v',
         backlink_count: 0,
-        matches: [{ matched_in: 'title', snippet: 'Пошук' }],
+        found_in: ['lexical:title'],
+        lexical: [{ matched_in: 'title', snippet: 'Пошук' }],
       });
-      expect(out.lexical_matches[0]).not.toHaveProperty('similarity');
+      expect(out.matches[0]).not.toHaveProperty('similarity');
     } finally {
       await cleanup();
     }
@@ -36,8 +174,10 @@ describe('lexical leg orchestration', () => {
       const tool = buildSearchNotesTool(deps);
       // apostrophe variant in the query (U+2019) must still match (U+0027 in file)
       const out = (await tool.handler({ query: 'об’єкт', mode: 'lexical' })) as SearchNotesOutput;
-      expect(out.semantic_matches).toEqual([]);
-      expect(out.lexical_matches[0]!.matches[0]).toMatchObject({
+      expect(out.matches.every((m) => m.found_in.every((s) => s.startsWith('lexical:')))).toBe(
+        true,
+      );
+      expect(out.matches[0]!.lexical?.[0]).toMatchObject({
         matched_in: 'body',
         heading: 'Рішення',
         lines: [3, 3],
@@ -47,13 +187,14 @@ describe('lexical leg orchestration', () => {
     }
   });
 
-  it('hybrid on a cold corpus still returns lexical matches instead of throwing', async () => {
+  it('hybrid on a cold corpus still returns lexically-sourced matches instead of throwing', async () => {
     const { deps, cleanup } = await makeLexicalVault({ 'Пошук.md': '' }, { semantic: false });
     try {
       const tool = buildSearchNotesTool(deps);
       const out = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
-      expect(out.semantic_matches).toEqual([]);
-      expect(out.lexical_matches).toHaveLength(1);
+      expect(out.matches).toHaveLength(1);
+      expect(out.matches[0]!.found_in).toEqual(['lexical:title']);
+      expect(out.matches[0]!.similarity).toBeUndefined();
     } finally {
       await cleanup();
     }
@@ -72,7 +213,7 @@ describe('lexical leg orchestration', () => {
         query: 'пошук',
         filter: { path_prefix: 'Tasks/' },
       })) as SearchNotesOutput;
-      expect(out.lexical_matches.map((n) => n.path)).toEqual(['Tasks/a пошук.md']);
+      expect(out.matches.map((n) => n.path)).toEqual(['Tasks/a пошук.md']);
     } finally {
       await cleanup();
     }
@@ -80,12 +221,11 @@ describe('lexical leg orchestration', () => {
 
   it('mode: "lexical" never touches the corpus loader even when a corpus IS available', async () => {
     const notePath = 'Пошук note.md';
-    const sources = new Map([[notePath, { path: notePath, embedding: [1, 0], blocks: [] }]]);
+    const sources = sourcesWithEmbeddingFor(notePath);
     // If the corpus loader (or the semantic leg) were invoked despite
     // `mode: "lexical"`, this engine would surface a hit — proving the
     // assertion below isn't vacuously true because the corpus is empty.
-    const engine = makeMockEngine();
-    engine.findNeighbors.mockReturnValue([{ path: notePath, similarity: 0.9 }]);
+    const engine = engineReturning([{ path: notePath, similarity: 0.9 }]);
     const { deps, cleanup } = await makeLexicalVault({ [notePath]: '' }, { sources, engine });
     try {
       const tool = buildSearchNotesTool(deps);
@@ -93,8 +233,8 @@ describe('lexical leg orchestration', () => {
         query: 'пошук',
         mode: 'lexical',
       })) as SearchNotesOutput;
-      expect(out.semantic_matches).toEqual([]);
-      expect(out.lexical_matches).toHaveLength(1);
+      expect(out.matches).toHaveLength(1);
+      expect(out.matches[0]!.found_in).toEqual(['lexical:title']);
       const corpus = deps.registry.list()[0]!.corpus!;
       expect(corpus.snapshot).not.toHaveBeenCalled();
     } finally {
@@ -102,7 +242,7 @@ describe('lexical leg orchestration', () => {
     }
   });
 
-  it('effort "deep" gives the lexical leg its larger default cap in hybrid mode (no explicit limit)', async () => {
+  it('effort "deep" gives the lexical leg its larger default cap in hybrid mode', async () => {
     const files: Record<string, string> = {};
     for (let i = 0; i < 7; i++) files[`note-${i} пошук.md`] = '';
     const { deps: quickDeps, cleanup: quickCleanup } = await makeLexicalVault(files);
@@ -110,20 +250,24 @@ describe('lexical leg orchestration', () => {
     try {
       const quickOut = (await buildSearchNotesTool(quickDeps).handler({
         query: 'пошук',
-      })) as SearchNotesOutput; // effort defaults to "quick" -> cap 5
+        // limit: 12 raises the merged cap well above lexCap 5, so a lexCap
+        // regression (e.g. lexCap silently widening) can't hide behind the
+        // merged cap also being 5 by coincidence.
+        limit: 12,
+      })) as SearchNotesOutput; // effort defaults to "quick" -> lexCap 5 is the binding cap
       const deepOut = (await buildSearchNotesTool(deepDeps).handler({
         query: 'пошук',
         effort: 'deep',
-      })) as SearchNotesOutput; // cap 10, so all 7 notes fit
-      expect(quickOut.lexical_matches).toHaveLength(5);
-      expect(deepOut.lexical_matches).toHaveLength(7);
+      })) as SearchNotesOutput; // lexCap 10, merged cap 12, so all 7 notes fit
+      expect(quickOut.matches).toHaveLength(5);
+      expect(deepOut.matches).toHaveLength(7);
     } finally {
       await quickCleanup();
       await deepCleanup();
     }
   });
 
-  it('limit steers the lexical list in lexical mode', async () => {
+  it('limit steers the merged list in lexical mode', async () => {
     const { deps, cleanup } = await makeLexicalVault({
       'a пошук.md': '',
       'b пошук.md': '',
@@ -136,7 +280,7 @@ describe('lexical leg orchestration', () => {
         mode: 'lexical',
         limit: 2,
       })) as SearchNotesOutput;
-      expect(out.lexical_matches).toHaveLength(2);
+      expect(out.matches).toHaveLength(2);
     } finally {
       await cleanup();
     }
@@ -182,13 +326,34 @@ describe('search_notes input axes (SDK gate)', () => {
     }
   });
 
-  it('response carries semantic_matches and lexical_matches, no results key', async () => {
+  it('response carries matches and truncated, no split keys or results key', async () => {
     const { tool, cleanup } = await makeTool();
     try {
       const out = await tool.handler({ query: 'x' });
-      expect(out).toHaveProperty('semantic_matches');
-      expect(out).toHaveProperty('lexical_matches');
+      expect(out).toHaveProperty('matches');
+      expect(out).toHaveProperty('truncated');
+      expect(out).not.toHaveProperty('semantic_matches');
+      expect(out).not.toHaveProperty('lexical_matches');
+      expect(out).not.toHaveProperty('related');
       expect(out).not.toHaveProperty('results');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('filter-shape validation wins over query normalization when both are invalid', async () => {
+    // A whitespace-only query entry passes schema (array length >= 1 is all
+    // zod checks) but fails `normalizeQueryArray` at the handler level. An
+    // empty filter object fails `isFilterEmpty` at the handler level too.
+    // Filter-shape validation must win — it ran first before query_stats
+    // existed, and query_stats support must not silently reorder it.
+    const { tool, cleanup } = await makeTool();
+    try {
+      expect(tool.inputSchema.safeParse({ query: ['   '], filter: {} }).success).toBe(true);
+      await expect(tool.handler({ query: ['   '], filter: {} })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: expect.stringContaining('filter must specify at least one of'),
+      });
     } finally {
       await cleanup();
     }
@@ -196,7 +361,7 @@ describe('search_notes input axes (SDK gate)', () => {
 });
 
 describe('multi-query and fan-out', () => {
-  it('multi-query annotates lexical items with matched_queries', async () => {
+  it('multi-query unions matched_queries across matches', async () => {
     const { deps, cleanup } = await makeLexicalVault({
       'Vector search.md': '',
       'Векторний пошук.md': '',
@@ -206,19 +371,17 @@ describe('multi-query and fan-out', () => {
       const out = (await tool.handler({
         query: ['vector search', 'векторний пошук'],
       })) as SearchNotesOutput;
-      expect(out.lexical_matches).toHaveLength(2);
-      const byPath = Object.fromEntries(
-        out.lexical_matches.map((m) => [m.path, m.matched_queries]),
-      );
+      expect(out.matches).toHaveLength(2);
+      const byPath = Object.fromEntries(out.matches.map((m) => [m.path, m.matched_queries]));
       expect(byPath['Vector search.md']).toEqual(['vector search']);
       expect(byPath['Векторний пошук.md']).toEqual(['векторний пошук']);
-      expect((out as any).truncated).toBe(false);
+      expect(out.truncated).toBe(false);
     } finally {
       await cleanup();
     }
   });
 
-  it('multi-vault fan-out wraps the hybrid shape per vault', async () => {
+  it('multi-vault fan-out wraps the unified shape per vault', async () => {
     // build TWO lexical vaults and register both under one registry
     const a = await makeLexicalVault({ 'пошук a.md': '' });
     const b = await makeLexicalVault({ 'пошук b.md': '' }, { semantic: false });
@@ -233,12 +396,201 @@ describe('multi-query and fan-out', () => {
       for (const vaultResult of out.results_by_vault) {
         // The fan-out envelope flattens per-vault fields alongside `vault`
         // (results_by_vault: [{ vault, ...T }]), not nested under `.result`.
-        expect(vaultResult).toHaveProperty('semantic_matches');
-        expect(vaultResult).toHaveProperty('lexical_matches');
+        expect(vaultResult).toHaveProperty('matches');
+        expect(vaultResult).toHaveProperty('truncated');
       }
     } finally {
       await a.cleanup();
       await b.cleanup();
+    }
+  });
+});
+
+describe('query_stats', () => {
+  it('reports pre-cap per-query stats and surfaces dead variants', async () => {
+    // "пошук" matches both lexically (title) and semantically; "Мобі"
+    // matches nothing in either leg — a dead query variant.
+    const sources = sourcesWithEmbeddingFor('пошук note.md', [1, 0]);
+    const engine: SearchEngine = {
+      findNeighbors: vi.fn(({ queryVector }: { queryVector: number[] }) =>
+        queryVector[0] === 1 ? [{ path: 'пошук note.md', similarity: 0.9 }] : [],
+      ),
+      findBlockNeighbors: vi.fn().mockReturnValue([]),
+      findDuplicates: vi.fn().mockReturnValue([]),
+    };
+    const { deps, cleanup } = await makeLexicalVault(
+      { 'пошук note.md': 'зміст нотатки' },
+      { sources, engine },
+    );
+    deps.embeddingProvider.embed = vi.fn(async (q: string) => (q === 'пошук' ? [1, 0] : [0, 1]));
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({ query: ['пошук', 'Мобі'] })) as SearchNotesOutput;
+      expect(out.query_stats).toEqual({
+        пошук: { semantic: 1, lexical: 1 },
+        Мобі: { semantic: 0, lexical: 0 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('unions matched_queries across legs even when each leg is hit by a different query', async () => {
+    // note hit lexically by q1 ("пошук"), semantically by q2 ("vector") only.
+    const notePath = 'Target пошук.md';
+    const sources = sourcesWithEmbeddingFor(notePath, [1, 0]);
+    const engine: SearchEngine = {
+      findNeighbors: vi.fn(({ queryVector }: { queryVector: number[] }) =>
+        queryVector[0] === 1 ? [{ path: notePath, similarity: 0.9 }] : [],
+      ),
+      findBlockNeighbors: vi.fn().mockReturnValue([]),
+      findDuplicates: vi.fn().mockReturnValue([]),
+    };
+    const { deps, cleanup } = await makeLexicalVault({ [notePath]: '' }, { sources, engine });
+    deps.embeddingProvider.embed = vi.fn(async (q: string) => (q === 'vector' ? [1, 0] : [0, 1]));
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['пошук', 'vector'],
+      })) as SearchNotesOutput;
+      const m = out.matches.find((x) => x.path === notePath);
+      expect(m?.matched_queries?.sort()).toEqual(['vector', 'пошук']);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('omits query_stats for a string query', async () => {
+    const { deps, cleanup } = await makeLexicalVault({ 'пошук.md': '' });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+      expect(out.query_stats).toBeUndefined();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("reports pre-cap stats even when the merge cap drops all of a query's notes", async () => {
+    const { deps, cleanup } = await makeLexicalVault({
+      'a пошук.md': '',
+      'b тест.md': '',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['пошук', 'тест'],
+        mode: 'lexical',
+        limit: 1,
+      })) as SearchNotesOutput;
+      // the merged cap keeps only one of the two notes...
+      expect(out.matches).toHaveLength(1);
+      // ...but both queries still report their pre-cap lexical hit count.
+      expect(out.query_stats).toEqual({
+        пошук: { semantic: 0, lexical: 1 },
+        тест: { semantic: 0, lexical: 1 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("reports pre-cap semantic stats even when the merge cap drops all of a query's hits (hybrid mode)", async () => {
+    // Two notes, each surfaced semantically by exactly one of the two
+    // queries (and by neither lexically). `limit: 1` caps the merged list to
+    // one entry, so whichever note loses the fusion tie-break is entirely
+    // absent from `matches[]` — its query must still report its pre-cap
+    // semantic hit count.
+    const noteA = 'a.md';
+    const noteB = 'b.md';
+    const sources = new Map<string, SmartSource>([
+      [noteA, { path: noteA, embedding: [1, 0], blocks: [] }],
+      [noteB, { path: noteB, embedding: [0, 1], blocks: [] }],
+    ]);
+    const engine: SearchEngine = {
+      findNeighbors: vi.fn(({ queryVector }: { queryVector: number[] }) =>
+        queryVector[0] === 1
+          ? [{ path: noteA, similarity: 0.9 }]
+          : [{ path: noteB, similarity: 0.8 }],
+      ),
+      findBlockNeighbors: vi.fn().mockReturnValue([]),
+      findDuplicates: vi.fn().mockReturnValue([]),
+    };
+    const { deps, cleanup } = await makeLexicalVault(
+      { [noteA]: '', [noteB]: '' },
+      { sources, engine },
+    );
+    deps.embeddingProvider.embed = vi.fn(async (q: string) => (q === 'q1' ? [1, 0] : [0, 1]));
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['q1', 'q2'],
+        limit: 1,
+      })) as SearchNotesOutput;
+      expect(out.matches).toHaveLength(1);
+      expect(out.query_stats).toEqual({
+        q1: { semantic: 1, lexical: 0 },
+        q2: { semantic: 1, lexical: 0 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reports query_stats in lexical mode with semantic always 0', async () => {
+    const { deps, cleanup } = await makeLexicalVault({
+      'a пошук.md': '',
+      'b тест.md': '',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['пошук', 'нема'],
+        mode: 'lexical',
+      })) as SearchNotesOutput;
+      expect(out.query_stats).toEqual({
+        пошук: { semantic: 0, lexical: 1 },
+        нема: { semantic: 0, lexical: 0 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reports query_stats with semantic always 0 when no semantic corpus is available', async () => {
+    const { deps, cleanup } = await makeLexicalVault({ 'пошук note.md': '' }, { semantic: false });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['пошук', 'нема'],
+      })) as SearchNotesOutput;
+      expect(out.query_stats).toEqual({
+        пошук: { semantic: 0, lexical: 1 },
+        нема: { semantic: 0, lexical: 0 },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('query_stats accompanies the empty-filter early return for array queries', async () => {
+    const { deps, cleanup } = await makeLexicalVault(
+      { 'a.md': '' },
+      { listMatchingPaths: async () => new Set() },
+    );
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['x', 'y'],
+        filter: { path_prefix: 'nomatch/' },
+      })) as SearchNotesOutput;
+      expect(out.matches).toEqual([]);
+      expect(out.query_stats).toEqual({
+        x: { semantic: 0, lexical: 0 },
+        y: { semantic: 0, lexical: 0 },
+      });
+    } finally {
+      await cleanup();
     }
   });
 });

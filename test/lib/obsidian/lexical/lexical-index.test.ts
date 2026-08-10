@@ -93,4 +93,18 @@ describe('LexicalIndex', () => {
     });
     expect(notes.map((n) => n.path)).toEqual(['Tasks/a.md']);
   });
+
+  it('exposes totalNotes as the pre-scope vault scan count', async () => {
+    await write('Tasks/a.md', 'пошук в tasks.\n');
+    await write('Archive/b.md', 'нічого спільного.\n');
+    await write('Archive/c.md', 'теж нічого.\n');
+    const idx = makeIndex();
+    const result = await idx.search({
+      queries: ['пошук'],
+      allowed: new Set(['Tasks/a.md']),
+      ...searchOpts,
+    });
+    expect(result.totalNotes).toBe(3);
+    expect(result.perQueryCounts).toBeDefined();
+  });
 });

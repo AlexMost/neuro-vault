@@ -11,11 +11,11 @@ import { makeLexicalVault } from './_hybrid-helpers.js';
 // (real `FsVaultReader`, real markdown parser via `LexicalIndex`), with only
 // the embedding layer (corpus sources + `SearchEngine`) faked. Each `it` is
 // an independent vault fixture exercising one behavior called out in
-// openspec/changes/hybrid-search-notes/specs/hybrid-search/spec.md — see the
-// scenario -> test mapping table in the task report.
+// openspec/changes/search-notes-unified-rank/specs/hybrid-search/spec.md —
+// now asserted against the unified `matches[]`/`found_in` shape.
 
 describe('search_notes end-to-end sanity fixture', () => {
-  it('a note hit by BOTH legs appears in semantic_matches AND lexical_matches (intersection)', async () => {
+  it('a note hit by BOTH legs surfaces once in matches[] with both provenance kinds', async () => {
     const notePath = 'Retrieval eval harness.md';
     const sources = new Map<string, SmartSource>([
       [notePath, { path: notePath, embedding: [1, 0], blocks: [] }],
@@ -35,10 +35,13 @@ describe('search_notes end-to-end sanity fixture', () => {
       const tool = buildSearchNotesTool(deps);
       const out = (await tool.handler({ query: 'retrieval eval harness' })) as SearchNotesOutput;
 
-      expect(out.semantic_matches.map((m) => m.path)).toContain(notePath);
-      expect(out.lexical_matches.map((m) => m.path)).toContain(notePath);
-      const lexicalHit = out.lexical_matches.find((m) => m.path === notePath);
-      expect(lexicalHit?.matches[0]).toMatchObject({ matched_in: 'title' });
+      expect(out.matches).toHaveLength(1);
+      const m = out.matches[0]!;
+      expect(m.path).toBe(notePath);
+      expect(m.found_in).toContain('semantic');
+      expect(m.found_in).toContain('lexical:title');
+      expect(m.similarity).toBe(0.92);
+      expect(m.lexical?.[0]).toMatchObject({ matched_in: 'title' });
     } finally {
       await cleanup();
     }
@@ -57,15 +60,16 @@ describe('search_notes end-to-end sanity fixture', () => {
         mode: 'lexical',
       })) as SearchNotesOutput;
 
-      expect(out.lexical_matches).toHaveLength(1);
-      expect(out.lexical_matches[0]).toMatchObject({ path: 'Note.md' });
-      expect(out.lexical_matches[0]!.matches[0]).toMatchObject({ matched_in: 'body' });
+      expect(out.matches).toHaveLength(1);
+      expect(out.matches[0]).toMatchObject({ path: 'Note.md' });
+      expect(out.matches[0]!.found_in).toEqual(['lexical:body']);
+      expect(out.matches[0]!.lexical?.[0]).toMatchObject({ matched_in: 'body' });
     } finally {
       await cleanup();
     }
   });
 
-  it('filter: { path_prefix: "Tasks/" } excludes an Archive/ note from BOTH legs', async () => {
+  it('filter: { path_prefix: "Tasks/" } excludes an Archive/ note from the merged list', async () => {
     const tasksPath = 'Tasks/Retrieval task.md';
     const archivePath = 'Archive/Retrieval archive.md';
     const sources = new Map<string, SmartSource>([
@@ -97,14 +101,16 @@ describe('search_notes end-to-end sanity fixture', () => {
         filter: { path_prefix: 'Tasks/' },
       })) as SearchNotesOutput;
 
-      expect(out.semantic_matches.map((m) => m.path)).toEqual([tasksPath]);
-      expect(out.lexical_matches.map((m) => m.path)).toEqual([tasksPath]);
+      expect(out.matches.map((m) => m.path)).toEqual([tasksPath]);
+      const m = out.matches[0]!;
+      expect(m.found_in).toContain('semantic');
+      expect(m.found_in.some((s) => s.startsWith('lexical:'))).toBe(true);
     } finally {
       await cleanup();
     }
   });
 
-  it('mode: "lexical" on a semanticAvailable: false vault returns full lexical results, semantic_matches: []', async () => {
+  it('mode: "lexical" on a semanticAvailable: false vault returns full lexical results with no semantic fields', async () => {
     const { deps, cleanup } = await makeLexicalVault(
       { 'Cold corpus note.md': 'холодний корпус і пошук без embedding\n' },
       { semantic: false },
@@ -116,9 +122,10 @@ describe('search_notes end-to-end sanity fixture', () => {
         mode: 'lexical',
       })) as SearchNotesOutput;
 
-      expect(out.semantic_matches).toEqual([]);
-      expect(out.lexical_matches).toHaveLength(1);
-      expect(out.lexical_matches[0]).toMatchObject({ path: 'Cold corpus note.md' });
+      expect(out.matches).toHaveLength(1);
+      expect(out.matches[0]).toMatchObject({ path: 'Cold corpus note.md' });
+      expect(out.matches[0]!.found_in).toEqual(['lexical:body']);
+      expect(out.matches[0]!.similarity).toBeUndefined();
     } finally {
       await cleanup();
     }

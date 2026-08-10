@@ -53,7 +53,10 @@ describe('search_notes — filter', () => {
         filter: { path_prefix: 'Resources/' },
       })) as SearchNotesOutput;
 
-      expect(result.semantic_matches.map((r) => r.path)).toEqual([
+      // every match path starts with the filter prefix — proves the filter
+      // scoped the merged list, not just the semantic leg
+      expect(result.matches.every((m) => m.path.startsWith('Resources/'))).toBe(true);
+      expect(result.matches.map((m) => m.path).sort()).toEqual([
         'Resources/a.md',
         'Resources/b.md',
       ]);
@@ -82,7 +85,8 @@ describe('search_notes — filter', () => {
         filter: { tags: ['nonexistent'] },
       })) as SearchNotesOutput;
 
-      expect(result.semantic_matches).toEqual([]);
+      expect(result.matches).toEqual([]);
+      expect(result.truncated).toBe(false);
       expect(embed).not.toHaveBeenCalled();
       expect(findNeighbors).not.toHaveBeenCalled();
     } finally {
@@ -90,7 +94,7 @@ describe('search_notes — filter', () => {
     }
   });
 
-  it('returns an empty results[] for deep mode with empty allowed set (no top-level blockResults)', async () => {
+  it('returns an empty matches[] for deep mode with empty allowed set (no top-level blockResults)', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
       embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
@@ -107,7 +111,7 @@ describe('search_notes — filter', () => {
         filter: { tags: ['x'] },
       })) as SearchNotesOutput;
 
-      expect(result.semantic_matches).toEqual([]);
+      expect(result.matches).toEqual([]);
       expect(result).not.toHaveProperty('blockResults');
     } finally {
       await cleanup();
@@ -130,8 +134,8 @@ describe('search_notes — filter', () => {
         filter: { tags: ['x'] },
       })) as SearchNotesOutput;
 
-      expect(result.semantic_matches).toEqual([]);
-      expect((result as { truncated?: boolean }).truncated).toBe(false);
+      expect(result.matches).toEqual([]);
+      expect(result.truncated).toBe(false);
     } finally {
       await cleanup();
     }
@@ -276,7 +280,7 @@ describe('search_notes — filter', () => {
         filter: { path_prefix: 'Resources/' },
       })) as SearchNotesOutput;
 
-      expect(result.semantic_matches.map((r) => r.path).sort()).toEqual([
+      expect(result.matches.map((m) => m.path).sort()).toEqual([
         'Resources/a.md',
         'Resources/b.md',
       ]);
@@ -310,7 +314,7 @@ describe('search_notes — filter', () => {
         filter: { exclude_path_prefix: 'Archive/' },
       })) as SearchNotesOutput;
 
-      expect(result.semantic_matches.map((r) => r.path).sort()).toEqual(['Live/a.md', 'Live/b.md']);
+      expect(result.matches.map((m) => m.path).sort()).toEqual(['Live/a.md', 'Live/b.md']);
     } finally {
       await cleanup();
     }

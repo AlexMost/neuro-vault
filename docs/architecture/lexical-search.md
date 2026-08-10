@@ -15,11 +15,18 @@ class LexicalIndex {
     noteCap: number;
     perNoteCap: number;
     getBacklinkCount: (path: string) => number;
-  }): Promise<{ notes: RankedNote[]; truncated: boolean }>;
+  }): Promise<{
+    notes: RankedNote[];
+    truncated: boolean; // pool-cap overflow: candidates.length > noteCap, pre-slice
+    perQueryCounts: Record<string, number>; // pre-noteCap hits per input query
+    totalNotes: number; // full scan().length, pre-`filter` — feeds rank-fusion's adaptive k
+  }>;
 }
 ```
 
 One `LexicalIndex` instance is created lazily per vault name (a module-level `Map` inside `buildSearchNotesTool`) and lives for the server process's lifetime — so its mtime cache persists across calls, not just within one request.
+
+`notes[]` (the ranked, capped, per-note-grouped result set) is one of the three ordered rank sources `search_notes` fuses into `matches[]` — see [`rank-fusion.md`](./rank-fusion.md). The other three fields feed the tool boundary directly rather than the fusion math: `truncated` folds into the tool's top-level `truncated` (leg-level pool overflow, see [rank-fusion.md's truncated-observability section](./rank-fusion.md#truncated-observability-the-1-over-fetch)); `perQueryCounts` is the lexical half of `query_stats` (see [`docs/guide/finding-notes.md`](../guide/finding-notes.md)); `totalNotes` is `N` in rank-fusion's adaptive-`k` formula — the full `scan().length`, taken before `allowed` narrows the search, so `k` does not shrink under a `filter`.
 
 ## Pipeline
 
@@ -102,13 +109,13 @@ A note's overall tier is the **best** (lowest-numbered) tier across all its unit
 
 ### 7. Caps and snippets
 
-- **Global note cap** (`noteCap`): in `mode: "lexical"`, the caller's `limit` steers it directly (falling back to the `effort` default — 5 quick / 10 deep); in `mode: "hybrid"`, `limit` is reserved for the semantic leg, so the lexical cap always uses the `effort` default regardless of `limit`.
+- **Global note cap** (`noteCap`): always the `effort` default (5 quick / 10 deep), in every `mode`. `limit` no longer steers any leg's internal pool — it bounds only the final fused `matches[]` list (see [`rank-fusion.md`](./rank-fusion.md)); a caller who wants a larger lexical candidate pool raises `effort`, not `limit`.
 - **Per-note match cap** (`perNoteCap`, ~3): a note's matches are deduplicated across queries by `(matched_in, first line)`, sorted by tier then density, and sliced to the cap — so a note that matches many times still surfaces only its strongest evidence rows.
 - **Snippet** (`snippet.ts`): a ~150-character window centered on the match, computed over **graphemes** (`Intl.Segmenter`) so multi-codepoint characters are never split mid-cluster, projected from normalized match coordinates back onto the raw text via the offset map, with `…` ellipses when the window doesn't reach an edge. Text shorter than the window is returned whole.
 
 ## Response mapping
 
-The tool handler maps each `RankedNote` into the MCP-facing `lexical_matches[]` item: `{ path, backlink_count, vault, matched_queries? (multi-query only), matches: [{ matched_in, snippet, lines?, heading? }] }`. There is **no numeric score** on lexical items — `similarity` remains a semantic-only concept; order plus `matched_in` (title > heading > body, phrase > tokens) carry the ranking signal instead. See the guide for the full response contract: [`docs/guide/finding-notes.md`](../guide/finding-notes.md#one-search-entry-point).
+`RankedNote[]` (the `notes[]` field of `search()`'s return value) does not reach the caller as its own top-level list — it is one of the three sources `rank-fusion.ts` fuses into `search_notes`' unified `matches[]` (see [`rank-fusion.md`](./rank-fusion.md)). A note surfaced by this leg gets a `"lexical:title"` / `"lexical:heading"` / `"lexical:body"` entry in that unified entry's `found_in` (one per distinct kind matched), and the `RankedNote`'s per-note match list is carried across verbatim as the entry's `lexical[]`: `{ matched_in, snippet, lines?, heading? }`, capped ~3/note. `matched_queries` (multi-query only) unions with the semantic leg's own `matched_queries` at the fusion boundary rather than staying a lexical-only field. There is **no numeric score** on this evidence — `similarity` remains a semantic-only concept; within this leg's own source order, `matched_in` (title > heading > body, phrase > tokens) carries the ranking signal, and RRF consumes that order rather than any score. See the guide for the full response contract: [`docs/guide/finding-notes.md`](../guide/finding-notes.md#one-search-entry-point).
 
 ## Why no search index
 

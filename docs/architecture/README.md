@@ -12,6 +12,7 @@ These are living documents. Update the relevant file in the same change that alt
 - [smart-connections-corpus.md](./smart-connections-corpus.md) — `.ajson` loader, in-memory model, no watchers
 - [retrieval-policy.md](./retrieval-policy.md) — search modes, threshold fallback, expansion
 - [lexical-search.md](./lexical-search.md) — `search_notes`'s lexical leg: mdast block extraction, normalization, tiered ranking, mtime cache
+- [rank-fusion.md](./rank-fusion.md) — `search_notes`'s merge layer: RRF over semantic/lexical/expansion, adaptive k, tie-breaks, truncated observability
 - [embedding-pipeline.md](./embedding-pipeline.md) — `@xenova/transformers` lazy initialization and value normalization
 - [search-engine.md](./search-engine.md) — cosine similarity, neighbor / block / duplicate search
 - [module-structure.md](./module-structure.md) — how `src/modules/{semantic,operations}/` plug into the server
@@ -24,4 +25,4 @@ These are living documents. Update the relevant file in the same change that alt
 
 ## Reading order
 
-If you are new to the codebase, read in this order: `mcp-server-shape` → `smart-connections-corpus` → `embedding-pipeline` → `search-engine` → `retrieval-policy`. The first four describe the building blocks; the last describes how they are composed.
+If you are new to the codebase, read in this order: `mcp-server-shape` → `smart-connections-corpus` → `embedding-pipeline` → `search-engine` → `retrieval-policy` → `rank-fusion`. The first four describe the building blocks; the last two describe how they are composed — `retrieval-policy` into the semantic leg, `rank-fusion` into the unified `matches[]` list `search_notes` returns.
