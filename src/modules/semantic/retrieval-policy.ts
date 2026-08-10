@@ -12,6 +12,11 @@ import type {
 
 const FALLBACK_THRESHOLD = 0.3;
 const QUICK_BLOCK_LIMIT = 5;
+// The expansion leg's similarity floor operates on the seed↔note scale
+// (empirically 0.89–0.985 in real corpora) — incomparable with the semantic
+// leg's query↔note scale, which is why it is a separate knob. 0.35 matches
+// what default calls effectively used before the split (behavior-preserving).
+const DEFAULT_EXPANSION_FLOOR = 0.35;
 
 interface ModeConfig {
   limit: number;
@@ -32,6 +37,7 @@ export interface RetrievalInput {
   threshold?: number;
   expansion?: boolean;
   expansionLimit?: number;
+  expansionFloor?: number;
   sources: Map<string, SmartSource>;
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
@@ -57,10 +63,10 @@ function computeRelatedPerSeed(args: {
   seedPaths: string[];
   sources: Map<string, SmartSource>;
   searchEngine: SearchEngine;
-  threshold: number;
+  floor: number;
   perSeedLimit: number;
 }): Map<string, RelatedNote[]> {
-  const { seedPaths, sources, searchEngine, threshold, perSeedLimit } = args;
+  const { seedPaths, sources, searchEngine, floor, perSeedLimit } = args;
   const seedSet = new Set(seedPaths);
   const out = new Map<string, RelatedNote[]>();
   for (const seedPath of seedPaths) {
@@ -72,7 +78,7 @@ function computeRelatedPerSeed(args: {
     const neighbours = searchEngine.findNeighbors({
       queryVector: source.embedding,
       sources: sources.values(),
-      threshold,
+      threshold: floor,
       limit: perSeedLimit + seedSet.size,
     });
     const related = neighbours
@@ -93,6 +99,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const threshold = input.threshold ?? modeConfig.threshold;
   const expansion = input.expansion ?? modeConfig.expansion;
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
+  const expansionFloor = input.expansionFloor ?? DEFAULT_EXPANSION_FLOOR;
   const limit = input.limit ?? modeConfig.limit;
 
   // Step 1: embed + vector search. Request one extra hit beyond `limit` so
@@ -135,7 +142,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
         ? searchEngine.findBlockNeighbors({
             queryVector,
             sources: seedSources,
-            threshold,
+            threshold: MODE_DEFAULTS.deep.threshold,
             limit,
           })
         : searchEngine.findBlockNeighbors({
@@ -182,7 +189,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
       seedPaths,
       sources,
       searchEngine,
-      threshold,
+      floor: expansionFloor,
       perSeedLimit: expansionLimit,
     });
   }
@@ -258,6 +265,7 @@ export async function executeMultiRetrieval(
   const threshold = input.threshold ?? modeConfig.threshold;
   const expansion = input.expansion ?? modeConfig.expansion;
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
+  const expansionFloor = input.expansionFloor ?? DEFAULT_EXPANSION_FLOOR;
   const limit = input.limit ?? modeConfig.limit;
 
   // Step 1: per-query embed + retrieve (no expansion here). Request one
@@ -325,7 +333,7 @@ export async function executeMultiRetrieval(
           ? searchEngine.findBlockNeighbors({
               queryVector,
               sources: seedSources,
-              threshold,
+              threshold: MODE_DEFAULTS.deep.threshold,
               limit,
             })
           : searchEngine.findBlockNeighbors({
@@ -388,7 +396,7 @@ export async function executeMultiRetrieval(
       seedPaths,
       sources,
       searchEngine,
-      threshold,
+      floor: expansionFloor,
       perSeedLimit: expansionLimit,
     });
   }

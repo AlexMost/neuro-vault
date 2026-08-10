@@ -1200,6 +1200,66 @@ describe('explicit threshold is a hard filter', () => {
   });
 });
 
+describe('expansion floor and block decoupling', () => {
+  const sources = makeSources([['note-a.md', [1, 0]]]);
+
+  it('floors the per-seed neighbour lookup at expansionFloor, not threshold', async () => {
+    const findNeighbors = vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]);
+    const searchEngine = makeSearchEngine({ findNeighbors });
+    await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.7, // explicit, must NOT reach expansion
+      expansionFloor: 0.93,
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+    const expansionCalls = findNeighbors.mock.calls.slice(1); // call 0 = Step 1 seeds
+    expect(expansionCalls.length).toBeGreaterThan(0);
+    for (const [args] of expansionCalls) {
+      expect(args.threshold).toBe(0.93);
+    }
+  });
+
+  it('defaults the floor to 0.35 when expansionFloor is absent', async () => {
+    const findNeighbors = vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]);
+    const searchEngine = makeSearchEngine({ findNeighbors });
+    await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.7,
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+    const expansionCalls = findNeighbors.mock.calls.slice(1);
+    for (const [args] of expansionCalls) {
+      expect(args.threshold).toBe(0.35);
+    }
+  });
+
+  it('filters deep blocks at the internal default, not the user threshold', async () => {
+    const findBlockNeighbors = vi.fn().mockReturnValue([makeBlockResult('note-a.md', 0.75)]);
+    const searchEngine = makeSearchEngine({
+      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
+      findBlockNeighbors,
+    });
+    await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.7,
+      sources,
+      embeddingProvider: makeEmbeddingProvider(),
+      searchEngine,
+    });
+    expect(findBlockNeighbors).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ threshold: 0.35 }),
+    );
+  });
+});
+
 describe('multi-query fallback tracking', () => {
   const sources = makeSources([
     ['note-a.md', [1, 0]],

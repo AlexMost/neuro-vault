@@ -111,3 +111,101 @@ describe('calibration fixture baseline (default inputs)', () => {
     );
   });
 });
+
+describe('split thresholds on the calibration fixture', () => {
+  it('expansionFloor 0.93 keeps only the top neighbour; 0.99 empties expansion', async () => {
+    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const at93 = await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      expansionFloor: 0.93,
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+    const survivors93 = new Set(at93.results.flatMap((r) => r.related.map((n) => n.path)));
+    expect(survivors93.size).toBeGreaterThan(0);
+    for (const r of at93.results) {
+      for (const n of r.related) expect(n.expansion_similarity).toBeGreaterThanOrEqual(0.93);
+    }
+
+    const at99 = await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      expansionFloor: 0.99,
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+    expect(at99.results.every((r) => r.related.length === 0)).toBe(true);
+  });
+
+  it('an explicit threshold no longer shapes expansion', async () => {
+    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    // 0.6: below the band (all 8 seeds survive), far above the old
+    // accidental expansion coupling's bite point.
+    const output = await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.6,
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+    const defaults = await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+    expect(output.results.map((r) => r.related)).toEqual(defaults.results.map((r) => r.related));
+  });
+
+  it('explicit threshold 0.99 yields honest zero seeds (deep)', async () => {
+    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const output = await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.99,
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+    expect(output.results).toEqual([]);
+    expect(output.fallback).toBe(false);
+  });
+
+  it('an in-band explicit threshold filters partially', async () => {
+    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const output = await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.787,
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+    expect(output.results.length).toBeGreaterThan(0);
+    expect(output.results.length).toBeLessThan(8);
+    for (const r of output.results) expect(r.similarity).toBeGreaterThanOrEqual(0.787);
+  });
+
+  it('an explicit note threshold does not thin block evidence', async () => {
+    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    // Band blocks sit ~0.2 below their note (inside (0.35, band)); with the
+    // old coupling a 0.787 note threshold silently dropped them to backfill.
+    const output = await executeRetrieval({
+      query: 'q',
+      mode: 'deep',
+      threshold: 0.787,
+      sources,
+      embeddingProvider,
+      searchEngine,
+    });
+    for (const r of output.results) {
+      expect(r.blocks.length).toBeGreaterThan(0);
+      expect(r.blocks[0]!.similarity).toBeGreaterThan(0.35);
+    }
+  });
+});
