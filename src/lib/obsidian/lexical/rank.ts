@@ -133,10 +133,11 @@ export function rankNotes(opts: {
   const perQueryTokenCounts: Record<string, Record<string, number>> = {};
   for (const q of prepared) {
     if (q.tokens.length < 2 || (perQueryCounts[q.original] ?? 0) !== 0) continue;
+    const uniqueTokens = [...new Set(q.tokens)];
     const counts: Record<string, number> = {};
-    for (const token of q.tokens) counts[token] = 0;
+    for (const token of uniqueTokens) counts[token] = 0;
     for (const parsed of opts.notes.values()) {
-      for (const token of q.tokens) {
+      for (const token of uniqueTokens) {
         const hit =
           matchUnit(parsed.title.norm, token, [token]) !== null ||
           parsed.units.some((u) => matchUnit(u.norm, token, [token]) !== null);

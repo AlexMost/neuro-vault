@@ -263,5 +263,20 @@ describe('rankNotes', () => {
       });
       expect(perQueryTokenCounts['ретеншн алертів']).toEqual({ ретеншн: 0, алертів: 1 });
     });
+
+    it('counts a note once per token even when the query repeats a token', () => {
+      const map = notes([['multi.md', 'тут є алертів\n']]);
+      const { perQueryTokenCounts } = rankNotes({
+        notes: map,
+        queries: ['алертів алертів ретеншн'],
+        noteCap: 10,
+        perNoteCap: 3,
+        getBacklinkCount: noBacklinks,
+      });
+      expect(perQueryTokenCounts['алертів алертів ретеншн']).toEqual({
+        алертів: 1,
+        ретеншн: 0,
+      });
+    });
   });
 });
