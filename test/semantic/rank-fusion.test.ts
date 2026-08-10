@@ -77,16 +77,16 @@ describe('fuseRanks', () => {
   it('breaks an exact score tie by sourceCount before backlinks', () => {
     // k = adaptiveK(25) = 5.
     // X: semantic rank 1 (index 0) → 1/(5+0+1) = 1/6. sourceCount 1.
-    // Y: lexical rank 7 + expansion rank 7 (index 6 each) →
+    // Y: semantic rank 7 + lexical rank 7 (index 6 each) →
     //    1/(5+6+1) + 1/(5+6+1) = 1/12 + 1/12 = 1/6 (floating-point-exact). sourceCount 2.
     // Scores tie exactly; X has more backlinks, but Y's higher sourceCount must win —
     // this exercises the sourceCount branch of the comparator, which the equal-sourceCount
     // "breaks score ties by source count..." test above cannot reach.
     const out = fuseRanks({
       sources: {
-        semantic: ['X.md'],
-        lexical: ['l1.md', 'l2.md', 'l3.md', 'l4.md', 'l5.md', 'l6.md', 'Y.md'],
-        expansion: ['e1.md', 'e2.md', 'e3.md', 'e4.md', 'e5.md', 'e6.md', 'Y.md'],
+        semantic: ['X.md', 'l2.md', 'l3.md', 'l4.md', 'l5.md', 'l6.md', 'Y.md'],
+        lexical: ['l1.md', 'x2.md', 'x3.md', 'x4.md', 'x5.md', 'x6.md', 'Y.md'],
+        expansion: [],
       },
       totalNotes: 25,
       getBacklinkCount: (p) => (p === 'X.md' ? 10 : 0),
@@ -97,5 +97,29 @@ describe('fuseRanks', () => {
     expect(y.sourceCount).toBe(2);
     expect(x.sourceCount).toBe(1);
     expect(out[0].path).toBe('Y.md');
+  });
+  it('keeps equal-rank expansion candidates below primary hits (retention case, 2026-08-10)', () => {
+    // Empty lexical leg: under equal weights semantic[i] and expansion[i] tie
+    // exactly at every rank and the backlink step decided — expansion hubs
+    // (high backlink_count by construction) won every position. With
+    // w_expansion < 1 the expansion contribution is strictly smaller at every
+    // rank, so no primary hit can lose its slot to its rank-peer hub.
+    const out = fuseRanks({
+      sources: {
+        semantic: ['s1.md', 's2.md', 's3.md'],
+        lexical: [],
+        expansion: ['hub1.md', 'hub2.md', 'hub3.md'],
+      },
+      totalNotes: 25,
+      getBacklinkCount: (p) => (p.startsWith('hub') ? 50 : 0),
+    });
+    const order = out.map((c) => c.path);
+    for (const [primary, hub] of [
+      ['s1.md', 'hub1.md'],
+      ['s2.md', 'hub2.md'],
+      ['s3.md', 'hub3.md'],
+    ] as const) {
+      expect(order.indexOf(primary)).toBeLessThan(order.indexOf(hub));
+    }
   });
 });

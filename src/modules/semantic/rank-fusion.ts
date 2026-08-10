@@ -37,17 +37,31 @@ export interface FusedCandidate {
   sourceCount: number;
 }
 
+// Expansion answers someone else's hit, not the query — a second-order
+// signal. Its RRF contribution is down-weighted so it can reinforce and
+// fill thin lists but never outrank an equal-rank primary hit. Hand-picked
+// start; re-tuned via the retrieval eval harness (see change
+// weighted-rrf-expansion, design D1).
+export const EXPANSION_WEIGHT = 0.85;
+
 export function fuseRanks(args: {
   sources: { semantic: string[]; lexical: string[]; expansion: string[] };
   totalNotes: number;
+  expansionWeight?: number;
   getBacklinkCount: (path: string) => number;
 }): FusedCandidate[] {
   const k = adaptiveK(args.totalNotes);
+  const w = args.expansionWeight ?? EXPANSION_WEIGHT;
   const acc = new Map<string, FusedCandidate>();
-  for (const ordered of [args.sources.semantic, args.sources.lexical, args.sources.expansion]) {
+  const legs: [string[], number][] = [
+    [args.sources.semantic, 1],
+    [args.sources.lexical, 1],
+    [args.sources.expansion, w],
+  ];
+  for (const [ordered, weight] of legs) {
     ordered.forEach((path, i) => {
       const cand = acc.get(path) ?? { path, score: 0, sourceCount: 0 };
-      cand.score += 1 / (k + i + 1);
+      cand.score += weight / (k + i + 1);
       cand.sourceCount += 1;
       acc.set(path, cand);
     });
