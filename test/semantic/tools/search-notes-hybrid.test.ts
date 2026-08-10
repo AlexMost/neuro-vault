@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
 import {
   buildSearchNotesTool,
@@ -6,6 +7,7 @@ import {
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import type { IFanOutResult } from '../../../src/lib/fan-out.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import { makeSearchDeps, makeTestRegistry } from './_helpers.js';
 import {
   engineReturning,
@@ -659,6 +661,95 @@ describe('query_stats', () => {
       })) as SearchNotesOutput;
       expect(out.query_stats!['нема']).toEqual({ semantic: null, lexical: 0 });
       expect(out.query_stats!['пошук'].lexical_tokens).toBeUndefined();
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+describe('expansion_floor input schema (SDK gate)', () => {
+  it('advertises and validates expansion_floor', async () => {
+    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'x' });
+    try {
+      const reg = registerTool(buildSearchNotesTool(deps));
+      const inputSchema = reg.spec.inputSchema as z.ZodTypeAny;
+      expect(inputSchema.safeParse({ query: 'x', expansion_floor: 0.93 }).success).toBe(true);
+      // tolerant-arguments: numeric strings coerce
+      expect(inputSchema.safeParse({ query: 'x', expansion_floor: '0.93' }).success).toBe(true);
+      expect(inputSchema.safeParse({ query: 'x', expansion_floor: 1.5 }).success).toBe(false);
+      expect(inputSchema.safeParse({ query: 'x', expansion_floor: -0.1 }).success).toBe(false);
+      expect(reg.spec.description).toContain('expansion_floor');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('accepts expansion_floor as inert in lexical mode and quick effort', async () => {
+    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'alpha text' });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      await expect(
+        tool.handler({ query: 'alpha', mode: 'lexical', expansion_floor: 0.9 }),
+      ).resolves.toMatchObject({ truncated: false });
+      await expect(
+        tool.handler({ query: 'alpha', effort: 'quick', expansion_floor: 0.9 }),
+      ).resolves.toBeDefined();
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+describe('query_stats semantic_fallback flag', () => {
+  it('flags a query rescued by the default-threshold fallback', async () => {
+    // Hits at 0.4: below the quick default 0.5, above the 0.3 fallback.
+    const engine = makeMockEngine();
+    engine.findNeighbors.mockImplementation(({ threshold }: { threshold: number }) =>
+      threshold <= 0.4 ? [{ path: 'a.md', similarity: 0.4 }] : [],
+    );
+    const sources = sourcesWithEmbeddingFor('a.md');
+    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'body' }, { sources, engine });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const output = (await tool.handler({ query: ['alpha', 'beta'] })) as {
+        query_stats: Record<string, { semantic: number | null; semantic_fallback?: true }>;
+      };
+      expect(output.query_stats['alpha']).toMatchObject({ semantic: 1, semantic_fallback: true });
+      expect(output.query_stats['beta']).toMatchObject({ semantic: 1, semantic_fallback: true });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('never flags explicit-threshold requests, even at zero hits', async () => {
+    const engine = makeMockEngine(); // findNeighbors always []
+    const sources = sourcesWithEmbeddingFor('a.md');
+    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'body' }, { sources, engine });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const output = (await tool.handler({ query: ['alpha', 'beta'], threshold: 0.99 })) as {
+        query_stats: Record<string, { semantic: number | null; semantic_fallback?: true }>;
+      };
+      expect(output.query_stats['alpha']).toEqual(
+        expect.not.objectContaining({ semantic_fallback: true }),
+      );
+      expect(output.query_stats['alpha']!.semantic).toBe(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('does not flag queries whose first pass had hits', async () => {
+    const engine = makeMockEngine();
+    engine.findNeighbors.mockReturnValue([{ path: 'a.md', similarity: 0.8 }]);
+    const sources = sourcesWithEmbeddingFor('a.md');
+    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'body' }, { sources, engine });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const output = (await tool.handler({ query: ['alpha', 'beta'] })) as {
+        query_stats: Record<string, { semantic_fallback?: true }>;
+      };
+      expect(output.query_stats['alpha']).not.toHaveProperty('semantic_fallback');
     } finally {
       await cleanup();
     }

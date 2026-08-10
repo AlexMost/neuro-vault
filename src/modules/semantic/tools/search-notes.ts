@@ -48,6 +48,7 @@ interface SearchNotesInput {
   effort?: SearchEffort;
   limit?: number;
   threshold?: number;
+  expansion_floor?: number;
   filter?: {
     path_prefix?: string | string[];
     exclude_path_prefix?: string | string[];
@@ -84,7 +85,12 @@ export type SearchNotesOutput = {
   truncated: boolean;
   query_stats?: Record<
     string,
-    { semantic: number | null; lexical: number; lexical_tokens?: Record<string, number> }
+    {
+      semantic: number | null;
+      lexical: number;
+      lexical_tokens?: Record<string, number>;
+      semantic_fallback?: true;
+    }
   >;
 };
 
@@ -164,6 +170,7 @@ function buildQueryStats(
   lexicalPerQueryCounts: Record<string, number>,
   lexicalPerQueryTokenCounts: Record<string, Record<string, number>>,
   semanticPerQueryHits: Record<string, number> | undefined,
+  semanticPerQueryFallback: Record<string, boolean> | undefined,
   semanticRan: boolean,
 ): SearchNotesOutput['query_stats'] {
   if (!isMulti) return undefined;
@@ -176,6 +183,9 @@ function buildQueryStats(
           semantic: semanticRan ? (semanticPerQueryHits?.[q] ?? 0) : null,
           lexical: lexicalPerQueryCounts[q] ?? 0,
           ...(tokenCounts !== undefined ? { lexical_tokens: tokenCounts } : {}),
+          ...(semanticRan && semanticPerQueryFallback?.[q]
+            ? { semantic_fallback: true as const }
+            : {}),
         },
       ];
     }),
@@ -274,6 +284,10 @@ async function runSearchForEntry(
     input.threshold !== undefined
       ? readThreshold(input.threshold, input.threshold, 'threshold')
       : undefined;
+  const expansionFloor =
+    input.expansion_floor !== undefined
+      ? readThreshold(input.expansion_floor, input.expansion_floor, 'expansion_floor')
+      : undefined;
   const limit =
     input.limit !== undefined ? readPositiveInteger(input.limit, input.limit, 'limit') : undefined;
 
@@ -318,7 +332,7 @@ async function runSearchForEntry(
     }
 
     if (allowed.size === 0) {
-      const query_stats = buildQueryStats(isMulti, queries, {}, {}, undefined, false);
+      const query_stats = buildQueryStats(isMulti, queries, {}, {}, undefined, undefined, false);
       return {
         matches: [],
         truncated: false,
@@ -352,6 +366,7 @@ async function runSearchForEntry(
       queries,
       lexical.perQueryCounts,
       lexical.perQueryTokenCounts,
+      undefined,
       undefined,
       false,
     );
@@ -392,11 +407,13 @@ async function runSearchForEntry(
     let rawSemanticNodes: (NoteResultNode | MultiNoteResultNode)[];
     let semanticLegTruncated: boolean;
     let semanticPerQueryHits: Record<string, number> | undefined;
+    let semanticPerQueryFallback: Record<string, boolean> | undefined;
     if (isMulti) {
       const output = await executeMultiRetrieval({
         queries,
         mode: effort,
         threshold,
+        expansionFloor,
         sources: effectiveSources,
         embeddingProvider,
         searchEngine,
@@ -404,11 +421,13 @@ async function runSearchForEntry(
       rawSemanticNodes = output.results;
       semanticLegTruncated = output.truncated;
       semanticPerQueryHits = output.per_query_hits;
+      semanticPerQueryFallback = output.per_query_fallback;
     } else {
       const output = await executeRetrieval({
         query: queries[0],
         mode: effort,
         threshold,
+        expansionFloor,
         sources: effectiveSources,
         embeddingProvider,
         searchEngine,
@@ -441,6 +460,7 @@ async function runSearchForEntry(
       lexical.perQueryCounts,
       lexical.perQueryTokenCounts,
       semanticPerQueryHits,
+      semanticPerQueryFallback,
       true,
     );
     return {
@@ -489,6 +509,7 @@ export function buildSearchNotesTool(
     effort: z.enum(['quick', 'deep']).optional(),
     limit: z.number().int().positive().optional(),
     threshold: z.number().min(0).max(1).optional(),
+    expansion_floor: z.number().min(0).max(1).optional(),
     filter: filterSchema.optional(),
   });
   const SEARCH_NOTES_DESCRIPTION = [
@@ -503,7 +524,8 @@ export function buildSearchNotesTool(
     '- mode: "hybrid" | "lexical" (default "hybrid").',
     '- effort: "quick" | "deep" (default "quick").',
     "- limit: caps `matches[]` in every mode, overriding the effort default merged-list cap. Does not change either leg's internal pool size.",
-    '- threshold: min similarity 0-1 — SEMANTIC LEG ONLY. Default 0.5 (quick) / 0.35 (deep).',
+    "- threshold: min similarity 0-1, hard filter on the semantic leg's note scores — an explicit value is enforced with no fallback (zero hits are honest). When omitted, effort defaults apply (0.5 quick / 0.35 deep) with a one-shot retry at 0.3 if nothing passes, flagged per query as `semantic_fallback` in `query_stats`.",
+    '- expansion_floor: min seed↔note similarity 0-1 for the expansion leg (deep effort only; this note-to-note scale runs much higher than query scores — 0.9+ is typical). Default 0.35. threshold never affects expansion.',
     ...(registry.isMulti()
       ? ['- vault: target a specific vault by name when multiple are registered.']
       : []),
@@ -511,7 +533,7 @@ export function buildSearchNotesTool(
     'RESPONSE SHAPE:',
     '- `matches[]` — one fused, ranked list. Each entry: `path`, `vault`, `backlink_count`, `found_in` (which source(s) surfaced it: "semantic", "lexical:title"|"lexical:heading"|"lexical:body", "expansion" — always non-empty), plus evidence fields present only for the sources that hit: `similarity` (semantic; `blocks[]` accompanies it whenever the note has block-level evidence — non-empty when present, absent for a note without block embeddings), `lexical[]` (snippet matches, max ~3, `{ matched_in, snippet, lines?, heading? }`), `expansion_similarity` (expansion).',
     '- `truncated` — top-level, always present; true when candidates were dropped by the merged cap or the semantic or lexical leg\'s internal pool cap. The two causes need different fixes: merged-cap truncation is recovered by raising `limit`; the semantic or lexical leg\'s pool-cap truncation is NOT — raise `effort` to "deep" (or narrow `query`/`filter`) instead.',
-    '- `query_stats` — array queries only (omitted for a single string `query`): `{ [query]: { semantic, lexical } }`, PRE-cap hit counts (before cross-query merging and before the `matches[]` cap) per input query. `semantic` is `null` when the semantic leg did not run (mode "lexical", no corpus, empty filter set) — a number always means the leg ran; `{ semantic: 0, lexical: 0 }` marks a dead variant worth rephrasing or dropping. When the lexical leg ran and `lexical` is 0 for a multi-word query, `lexical_tokens` maps each token to the count of notes it matches alone — a zero names the token that killed the AND match; drop or replace that token. If every token is non-zero, the tokens exist but never co-occur within one title/heading/paragraph — split the query into an array so each token can match independently. (Omitted when the leg never ran, e.g. a filter matching zero notes.)',
+    '- `query_stats` — array queries only (omitted for a single string `query`): `{ [query]: { semantic, lexical } }`, PRE-cap hit counts (before cross-query merging and before the `matches[]` cap) per input query. `semantic` is `null` when the semantic leg did not run (mode "lexical", no corpus, empty filter set) — a number always means the leg ran; `{ semantic: 0, lexical: 0 }` marks a dead variant worth rephrasing or dropping. When the lexical leg ran and `lexical` is 0 for a multi-word query, `lexical_tokens` maps each token to the count of notes it matches alone — a zero names the token that killed the AND match; drop or replace that token. If every token is non-zero, the tokens exist but never co-occur within one title/heading/paragraph — split the query into an array so each token can match independently. (Omitted when the leg never ran, e.g. a filter matching zero notes.) `semantic_fallback: true` marks a query whose semantic hits came from the default-threshold 0.3 retry (absent otherwise, and never present with an explicit `threshold`).',
     '',
     'LEXICAL MATCHING: case-, accent-, and apostrophe-variant-insensitive substring; multiword query = ALL tokens must appear (AND), contiguous phrase ranks higher. A note surfaced by multiple legs ranks higher via rank fusion — that is the strongest relevance signal.',
     '',
