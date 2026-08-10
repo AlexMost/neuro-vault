@@ -16,4 +16,4 @@
 - [x] 3.1 Run `npm test && npm run lint && npm run typecheck` and confirm all pass
 - [x] 3.2 Run `openspec validate --all` to confirm the delta spec still validates
 - [x] 3.3 Update the tie-break wording in the `search_notes` architecture/docs surface if any file under `docs/architecture/` describes the fusion comparator (grep for `backlink` tie-break mentions); skip if none
-- [ ] 3.4 Open a PR to `main` via `gh pr create` (single PR: code + tests + delta spec)
+- [x] 3.4 Open a PR to `main` via `gh pr create` (single PR: code + tests + delta spec)
