@@ -95,5 +95,5 @@ available tools.
 #### Scenario: lexical-only search is reachable through search_notes
 
 - **WHEN** a caller needs exact text matches only and calls `search_notes` with `{ query: "<term>", mode: "lexical" }`
-- **THEN** the response's `lexical_matches` provides the exact-match results a standalone tool would have returned, with `semantic_matches: []`
+- **THEN** the response's `matches[]` provides the exact-match results a standalone tool would have returned — every entry's `found_in` contains only `lexical:*` values and the entry carries `lexical[]` evidence, per the hybrid-search response contract (no `semantic_matches` or `lexical_matches` keys)
 
