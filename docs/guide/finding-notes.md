@@ -111,7 +111,8 @@ Every call returns `{ matches, truncated }`, plus `query_stats` when `query` is 
 
 Each entry carries `path`, `vault`, `backlink_count`, and `found_in` — a non-empty array naming every source that surfaced it, drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"` (one per distinct lexical kind matched), and `"expansion"`. Per-source evidence accompanies its provenance and only its provenance:
 
-- `similarity` and `blocks[]` (section-level matches within the note) — present iff `found_in` contains `"semantic"`.
+- `similarity` — present iff `found_in` contains `"semantic"`.
+- `blocks[]` (section-level matches within the note) — present alongside `similarity` whenever the note has block-level evidence. **Never empty when present** — a semantic entry either carries at least one block or omits the key entirely; `blocks: []` never appears in a response. `blocks` is absent only when the note has no block embeddings at all (a note-level-only embedding, or a note the corpus never chunked). A semantic seed that the shared block pass happened to starve — e.g. every top-N block on this call went to other seeds — still gets its own best block via a per-seed fallback lookup before the response is built, so a starved-but-chunked note is not mistaken for an unchunked one. See [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md#step-3b--per-seed-backfill-for-starved-seeds) for the mechanism.
 - `lexical[]` (capped ~3/note, `{ matched_in: "title" | "heading" | "body", snippet, lines?, heading? }`) — present iff `found_in` contains any `"lexical:*"` value. `heading` on a body match names its enclosing section. **No numeric score** on this evidence — order plus `matched_in` carried the ranking signal into the fused order already.
 - `expansion_similarity` (note-to-note similarity to the seed that surfaced it — a **different scale** from `similarity`, do not compare them numerically) — present iff `found_in` contains `"expansion"`. An expansion-only entry (like the second one above) is evidence-light by design: no `similarity`, no `blocks`, no `lexical` — path, provenance, `expansion_similarity`, and `backlink_count` only. Call `read_notes` or `get_similar_notes` on it for more.
 - `matched_queries` — array queries only, the union of queries that hit the note in any leg.
@@ -146,7 +147,34 @@ For an array `query`, the response also includes `query_stats` — one line per 
 
 `{ semantic, lexical }` counts are taken **before** cross-query merging and **before** the `matches[]` cap — a query whose hits were entirely cut by the merged-list cap still reports its real pre-cap counts, so `{ semantic: 0, lexical: 0 }` reliably means "this phrasing found nothing anywhere," not "this phrasing's hits lost out to a bigger cap." That's the dead-variant signal: rephrase or drop that query, keep the ones with non-zero counts. `query_stats` is omitted entirely for a single string `query`.
 
-For more on the semantic pipeline (merge, cap, per-seed expansion, orphan-block scoping), see [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md). For the lexical pipeline (normalization, AST blocks, tiers, density, snippets), see [`docs/architecture/lexical-search.md`](../architecture/lexical-search.md). For how the three legs become one ranked list, see [`docs/architecture/rank-fusion.md`](../architecture/rank-fusion.md).
+**`semantic: null` means the semantic leg never ran for this call — not "ran and found nothing."** It's `null` under `mode: "lexical"`, when no semantic corpus is available for the vault (cold or absent Smart Connections index), or when the `filter` matched zero notes (the empty-filter early return skips both legs). A *numeric* `semantic` — including `0` — always means the leg executed and counted; `{ semantic: 0, lexical: 3 }` says "this phrasing has no semantic neighbours, but it does match lexically," a different situation from `null`, which says "don't read anything into the missing semantic score, hybrid didn't run it this time." Check `mode` (or whether the vault has a corpus at all) before treating `null` as a dead-query signal — it usually isn't one.
+
+**`lexical_tokens` explains an AND-killed multi-word query.** When a query's `lexical` count is `0` and the query has two or more normalized tokens, its entry also carries `lexical_tokens` — the same tokens, each mapped to how many notes *that token alone* matches (same normalization, same `filter` scope):
+
+```json
+{
+  "query": ["ретеншн алертів"],
+  "mode": "lexical"
+}
+```
+
+```json
+{
+  "matches": [],
+  "truncated": false,
+  "query_stats": {
+    "ретеншн алертів": {
+      "semantic": null,
+      "lexical": 0,
+      "lexical_tokens": { "ретеншн": 0, "алертів": 12 }
+    }
+  }
+}
+```
+
+Read it as: the AND match failed because `"ретеншн"` matches zero notes, while `"алертів"` alone matches 12 — the query would likely succeed if you dropped or respelled `"ретеншн"`, or split the query into an array so `"алертів"` alone can carry it. A token count of `0` names the token to drop or replace; a token with a non-zero count was present but couldn't rescue the phrase because some other token was missing everywhere. `lexical_tokens` is omitted whenever `lexical` is non-zero, or the query has a single token — it exists purely to diagnose *this specific* failure mode.
+
+For more on the semantic pipeline (merge, cap, per-seed expansion, orphan-block scoping, per-seed block backfill), see [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md). For the lexical pipeline (normalization, AST blocks, tiers, density, snippets, the per-token diagnostic), see [`docs/architecture/lexical-search.md`](../architecture/lexical-search.md). For how the three legs become one ranked list, see [`docs/architecture/rank-fusion.md`](../architecture/rank-fusion.md).
 
 ### Lexical matching semantics
 

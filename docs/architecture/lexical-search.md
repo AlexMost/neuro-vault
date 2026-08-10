@@ -19,6 +19,7 @@ class LexicalIndex {
     notes: RankedNote[];
     truncated: boolean; // pool-cap overflow: candidates.length > noteCap, pre-slice
     perQueryCounts: Record<string, number>; // pre-noteCap hits per input query
+    perQueryTokenCounts: Record<string, Record<string, number>>; // failure-path only, see below
     totalNotes: number; // full scan().length, pre-`filter` — feeds rank-fusion's adaptive k
   }>;
 }
@@ -26,7 +27,7 @@ class LexicalIndex {
 
 One `LexicalIndex` instance is created lazily per vault name (a module-level `Map` inside `buildSearchNotesTool`) and lives for the server process's lifetime — so its mtime cache persists across calls, not just within one request.
 
-`notes[]` (the ranked, capped, per-note-grouped result set) is one of the three ordered rank sources `search_notes` fuses into `matches[]` — see [`rank-fusion.md`](./rank-fusion.md). The other three fields feed the tool boundary directly rather than the fusion math: `truncated` folds into the tool's top-level `truncated` (leg-level pool overflow, see [rank-fusion.md's truncated-observability section](./rank-fusion.md#truncated-observability-the-1-over-fetch)); `perQueryCounts` is the lexical half of `query_stats` (see [`docs/guide/finding-notes.md`](../guide/finding-notes.md)); `totalNotes` is `N` in rank-fusion's adaptive-`k` formula — the full `scan().length`, taken before `allowed` narrows the search, so `k` does not shrink under a `filter`.
+`notes[]` (the ranked, capped, per-note-grouped result set) is one of the three ordered rank sources `search_notes` fuses into `matches[]` — see [`rank-fusion.md`](./rank-fusion.md). The other fields feed the tool boundary directly rather than the fusion math: `truncated` folds into the tool's top-level `truncated` (leg-level pool overflow, see [rank-fusion.md's truncated-observability section](./rank-fusion.md#truncated-observability-the-1-over-fetch)); `perQueryCounts` is the lexical half of `query_stats` (see [`docs/guide/finding-notes.md`](../guide/finding-notes.md)); `perQueryTokenCounts` is a failure-path diagnostic layered on top of `perQueryCounts` (see [Per-token diagnostic for AND-killed queries](#per-token-diagnostic-for-and-killed-queries) below); `totalNotes` is `N` in rank-fusion's adaptive-`k` formula — the full `scan().length`, taken before `allowed` narrows the search, so `k` does not shrink under a `filter`.
 
 ## Pipeline
 
@@ -112,6 +113,14 @@ A note's overall tier is the **best** (lowest-numbered) tier across all its unit
 - **Global note cap** (`noteCap`): always the `effort` default (5 quick / 10 deep), in every `mode`. `limit` no longer steers any leg's internal pool — it bounds only the final fused `matches[]` list (see [`rank-fusion.md`](./rank-fusion.md)); a caller who wants a larger lexical candidate pool raises `effort`, not `limit`.
 - **Per-note match cap** (`perNoteCap`, ~3): a note's matches are deduplicated across queries by `(matched_in, first line)`, sorted by tier then density, and sliced to the cap — so a note that matches many times still surfaces only its strongest evidence rows.
 - **Snippet** (`snippet.ts`): a ~150-character window centered on the match, computed over **graphemes** (`Intl.Segmenter`) so multi-codepoint characters are never split mid-cluster, projected from normalized match coordinates back onto the raw text via the offset map, with `…` ellipses when the window doesn't reach an edge. Text shorter than the window is returned whole.
+
+### Per-token diagnostic for AND-killed queries
+
+`rankNotes` also computes `perQueryTokenCounts`, a failure-path-only diagnostic that rides alongside `perQueryCounts` (step 6's output) rather than being its own pipeline stage. It exists to answer one question a bare `lexical: 0` can't: for a multi-token query that matched nothing, *which* token was the problem?
+
+An entry appears in `perQueryTokenCounts` only for a query that both (a) tokenizes to two or more tokens and (b) has zero AND-matches in `perQueryCounts` — a single-token miss or any non-zero hit count gets no entry at all, keeping the diagnostic silent in the common case. For a qualifying query, each unique normalized token (deduplicated — a repeated token is counted once, not once per occurrence) is matched independently against the same note set, same normalization, and same `allowed`/`filter` scope as the AND match — `matchUnit(unit.norm, token, [token])` against the title and every body/heading unit — and mapped to the number of notes where that token alone hits. A token with count `0` is the one that killed the AND match; a token with count `>0` was present but couldn't rescue the phrase because some other token in the query was missing everywhere.
+
+This mirrors the AND-substring semantics exactly — it is not a fuzzy "closest match" search, just the same substring check run per-token instead of per-query.
 
 ## Response mapping
 

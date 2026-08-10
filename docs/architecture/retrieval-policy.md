@@ -10,7 +10,7 @@ This document covers the **semantic leg** of `search_notes` only. The lexical le
 
 1. Embed the query.
 2. Find note-level neighbors (with a fallback if nothing matches).
-3. Find block-level neighbors (scoped to seed notes).
+3. Find block-level neighbors (scoped to seed notes), then backfill any seed the shared pass left blockless with its own best block.
 4. Optionally expand per seed by treating each top result as a new query vector.
 
 The output is `{ results: NoteResultNode[], truncated: boolean }` — a tree where each result note carries its own `blocks[]` (section-level matches within that note) and `related[]` (per-seed expansion neighbours in deep mode). `truncated` is true when the vector search's own pool cap dropped candidates before `results[]` was sliced to `limit`, independent of the tool-level merged-list cap — see [Truncated observability](./rank-fusion.md#truncated-observability-the-1-over-fetch) in `rank-fusion.md` for how this leg-level signal folds into the tool's top-level `truncated`.
@@ -34,6 +34,10 @@ slice(0, limit) ──► seed notes
   │   quick: threshold=0, cap=5 (engine-side)
   │   deep:  threshold=mode, limit=mode
   │   (sources narrowed to seed notes — orphan blocks dropped)
+  ▼
+[per-seed backfill] (Step 3b) ─► starved seed gets its own best block
+  │   threshold=0, limit=1, scoped to that seed's source alone
+  │   (multi-query: max-similarity block across query vectors)
   ▼
 [per-seed expansion] (deep only) ──► related[] per seed
   │   each seed asks for perSeedLimit + seedCount neighbours,
@@ -81,6 +85,14 @@ Block search runs over the **seed notes** (the top-K from step 2), not the whole
 
 When seed-note count is 0, block search is skipped entirely. Blocks per note are sorted by `similarity` desc with `lines[0]` as tiebreak.
 
+### Step 3b — Per-seed backfill for starved seeds
+
+(Named "Step 4b" in the source comments in both `executeRetrieval` and `executeMultiRetrieval`, since the code's own step numbering counts fallback-threshold as a separate step.)
+
+The shared block pass above is a global top-N (quick) or a shared threshold (deep) — either way, it can leave a seed with zero blocks even though the note has block embeddings: quick's global cap may hand every one of its top-5 blocks to other seeds; deep's threshold may exclude all of a seed's blocks while still admitting the seed itself at the note level. After the shared pass, every seed that ended up with zero blocks gets a second, per-seed lookup: `findBlockNeighbors` scoped to just that seed's own source, at `threshold: 0`, `limit: 1` — its single best block, regardless of how weak. For `executeMultiRetrieval`, the backfill runs once per query vector and keeps the max-similarity hit across all of them, so a multi-query seed still gets one best block, not one per query.
+
+This makes "no `blocks[]`" mean exactly one thing: the note has no block embeddings at all. A seed that has *any* block embeddings always surfaces at least one block after this backfill — the tool layer (`search-notes.ts`) relies on this to omit the `blocks` key entirely rather than ever emitting `blocks: []` (see [`docs/guide/finding-notes.md`](../guide/finding-notes.md#output-shape)).
+
 ## Step 4 — Per-seed expansion
 
 If `expansion` is on and there are seeds, each seed gets its own `related[]` list. `computeRelatedPerSeed` asks the search engine for `perSeedLimit + seedCount` neighbours per seed (the `+ seedCount` is headroom so that if some top neighbours are themselves seeds and get filtered out, the cap can still be reached), filters out any neighbour whose path is a seed, sorts by similarity desc, and slices to `perSeedLimit`.
@@ -103,7 +115,7 @@ After merging, seeds are sorted by similarity descending (with path tiebreak), t
 
 `per_query_hits: Record<string, number>` records each query's post-slice hit count — after that query's own `limit + 1`→`limit` overflow check, before the cross-query merge. This is the semantic half of `search_notes`'s `query_stats` (the lexical half is the lexical leg's `perQueryCounts`, documented in [`lexical-search.md`](./lexical-search.md)); see [`docs/guide/finding-notes.md`](../guide/finding-notes.md) for the response-level contract.
 
-Block search runs **per query** with each query's own vector, scoped to seed notes; the per-query block hits are deduped by `(path, heading, lineRange)` keeping max similarity, then bucketed under each seed and sorted by similarity desc. The NUL character is used as the in-key separator so headings containing spaces (`#Meeting Notes`) cannot collide.
+Block search runs **per query** with each query's own vector, scoped to seed notes; the per-query block hits are deduped by `(path, heading, lineRange)` keeping max similarity, then bucketed under each seed and sorted by similarity desc. The NUL character is used as the in-key separator so headings containing spaces (`#Meeting Notes`) cannot collide. The same Step 3b backfill described above runs afterward, per seed, over every query vector — a starved seed keeps the single highest-similarity block found across all queries' `threshold: 0, limit: 1` lookups, not one block per query.
 
 Per-seed expansion reuses the same `computeRelatedPerSeed` helper as single-query — no duplicated expansion logic.
 
@@ -115,6 +127,7 @@ Output: `{ results: MultiNoteResultNode[], truncated: boolean, per_query_hits: R
 - Final note count is bounded by `input.limit ?? mode.limit`.
 - `related[]` is bounded by `expansionLimit` (default `3`) **per seed** — total count is up to `seedCount × expansionLimit`, with duplicates allowed across seeds.
 - `blocks[]` belong strictly to their parent note; orphan blocks (blocks whose note is not in `results[]`) are dropped.
+- Every seed with at least one block embedding ends up with a non-empty `blocks[]`, thanks to the Step 3b backfill — a seed's `blocks[]` is empty (here, at the policy layer) only when its note has no block embeddings at all. The tool layer turns that empty array into an omitted `blocks` key (see [`docs/guide/finding-notes.md`](../guide/finding-notes.md#output-shape)).
 - `similarity` lives only on direct results. `expansion_similarity` lives only on `related[]` items. They never co-occur on the same object.
 - User-supplied `threshold` and `limit` override the mode defaults; `expansion` and `expansionLimit` are fixed by mode and not exposed to MCP callers.
 
