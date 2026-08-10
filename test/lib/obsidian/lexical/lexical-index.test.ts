@@ -107,4 +107,17 @@ describe('LexicalIndex', () => {
     expect(result.totalNotes).toBe(3);
     expect(result.perQueryCounts).toBeDefined();
   });
+
+  it('passes perQueryTokenCounts through from rankNotes', async () => {
+    await write('note.md', 'алертів тут.\n');
+    const idx = makeIndex();
+    const result = await idx.search({
+      queries: ['ретеншн алертів'],
+      ...searchOpts,
+    });
+    expect(result.perQueryTokenCounts['ретеншн алертів']).toEqual({
+      ретеншн: 0,
+      алертів: 1,
+    });
+  });
 });
