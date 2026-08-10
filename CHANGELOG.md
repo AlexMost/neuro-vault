@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [14.0.0](https://github.com/AlexMost/neuro-vault/compare/v13.0.1...v14.0.0) (2026-08-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **search:** fuse semantic, lexical and expansion sources into one RRF-ranked matches list
+
+### Features
+
+* **lexical:** expose per-query pre-cap counts and vault note total ([21d1041](https://github.com/AlexMost/neuro-vault/commit/21d1041411ba30e821b48aa0b9bd67fc7f10f6b3))
+* **search:** add pre-cap query_stats for array queries ([29830b9](https://github.com/AlexMost/neuro-vault/commit/29830b9eda303936bc5ae5c72e96da633036bba9))
+* **search:** fuse semantic, lexical and expansion sources into one RRF-ranked matches list ([c8e325a](https://github.com/AlexMost/neuro-vault/commit/c8e325af9ad2c2fb996e878f6ed609fe547410e0))
+* **semantic:** add RRF rank-fusion module with adaptive k and expansion flattening ([9223691](https://github.com/AlexMost/neuro-vault/commit/9223691cb98022682f214e7fc81cf0ab884ec3c0))
+* **semantic:** expose per-query pre-merge hit counts from multi retrieval ([c4efcbe](https://github.com/AlexMost/neuro-vault/commit/c4efcbee078ca032cab678f49c34cf384a347b13))
+* **tags:** add inline #tag extractor over mdast ([54742f7](https://github.com/AlexMost/neuro-vault/commit/54742f7265f8a577d246d1e3166b637adde90359))
+* **tags:** count inline body #tags in list_tags, dedup per note ([f2d0f52](https://github.com/AlexMost/neuro-vault/commit/f2d0f52a27bcc299b0062edbb55b307f98c3d52c))
+
+
+### Bug Fixes
+
+* **search:** keep filter-shape validation ahead of query normalization ([8e762bf](https://github.com/AlexMost/neuro-vault/commit/8e762bf36a9e2a1770253461ba23ecb383e67c89))
+* **search:** surface source-leg truncation in the unified truncated flag ([bbac5e3](https://github.com/AlexMost/neuro-vault/commit/bbac5e38a544f140a1416d4ae7457669ce706a1b))
+* **semantic:** make per-leg pool truncation observable in the unified truncated flag ([5e12df0](https://github.com/AlexMost/neuro-vault/commit/5e12df001892ee740920284ac8958da298954361))
+* **tags:** enforce tag boundary across mdast text-node splits ([6d2576f](https://github.com/AlexMost/neuro-vault/commit/6d2576f13c52fe6ff3b2cd41440d29fb5b715157))
+
 ## [13.0.1](https://github.com/AlexMost/neuro-vault/compare/v13.0.0...v13.0.1) (2026-07-18)
 
 
