@@ -92,7 +92,7 @@ describe('fuseRanks', () => {
     expect(fuseRanks(args)).toEqual(fuseRanks(args));
     expect(fuseRanks(args).map((e) => e.path)).toEqual(['t.md', 'h.md', 'b.md']);
   });
-  it('breaks an exact score tie by sourceCount before backlinks', () => {
+  it('breaks an exact score tie by sourceCount', () => {
     // k = adaptiveK(25) = 5.
     // X: semantic rank 1 (index 0) → 1/(5+0+1) = 1/6. sourceCount 1.
     // Y: semantic rank 7 + lexical rank 7 (index 6 each) →
