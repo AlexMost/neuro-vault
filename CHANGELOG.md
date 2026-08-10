@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [15.0.0](https://github.com/AlexMost/neuro-vault/compare/v14.0.0...v15.0.0) (2026-08-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **search:** query_stats.semantic is null when the semantic leg did not run (was 0);
+blocks is omitted instead of [] when a semantic hit has no block evidence.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+
+### Features
+
+* **lexical:** expose perQueryTokenCounts from LexicalIndex.search ([91a01a3](https://github.com/AlexMost/neuro-vault/commit/91a01a305d1ee9678656ec7b0eb0cf978d3a5f11))
+* **lexical:** report per-token note counts for AND-killed queries ([bfb1406](https://github.com/AlexMost/neuro-vault/commit/bfb14062ad6a367c29f61980ed51731e59f12f46))
+* **search:** honest query_stats (null semantic, lexical_tokens) and no empty blocks ([3c9e756](https://github.com/AlexMost/neuro-vault/commit/3c9e756fc988e530a0d44c545fac5ce04cfbb6c9))
+* **semantic:** backfill best block for seeds starved by the shared block pass ([d540c4b](https://github.com/AlexMost/neuro-vault/commit/d540c4b89f2fcdb547575a6aad80f22e3ea2dfbd))
+* **semantic:** down-weight expansion leg in RRF fusion (w=0.85) ([23086aa](https://github.com/AlexMost/neuro-vault/commit/23086aa842ca26b1830389cc505871252d7dae8b))
+* **semantic:** drop backlink_count from RRF tie-break ([fe893bc](https://github.com/AlexMost/neuro-vault/commit/fe893bc885e191bf3f9fb4bb7cb126f73d99fba7))
+
+
+### Bug Fixes
+
+* **lexical:** count each note once per token when a query repeats tokens ([bb34f14](https://github.com/AlexMost/neuro-vault/commit/bb34f14e76068a09e165b27ea4199a8f335bbf60))
+* **search:** scope lexical_tokens promise to an executed lexical leg; docs and test polish ([5d9775f](https://github.com/AlexMost/neuro-vault/commit/5d9775ffa19d04bf5f5834fd167b3bfc2b50e75b))
+
 ## [14.0.0](https://github.com/AlexMost/neuro-vault/compare/v13.0.1...v14.0.0) (2026-08-10)
 
 
