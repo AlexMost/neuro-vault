@@ -207,4 +207,61 @@ describe('rankNotes', () => {
     });
     expect(ranked.map((n) => n.path)).toEqual(['b пошук тут.md', 'a пошук тут.md']);
   });
+
+  describe('perQueryTokenCounts', () => {
+    it('reports per-token note counts for an AND-killed multi-token query', () => {
+      const map = notes([
+        ['Копірайт-ревізія алертів.md', 'нотатка про алертів і їх ревізію\n'],
+        ['Інша нотатка.md', 'нічого дотичного\n'],
+      ]);
+      const { perQueryCounts, perQueryTokenCounts } = rankNotes({
+        notes: map,
+        queries: ['ретеншн алертів'],
+        noteCap: 10,
+        perNoteCap: 3,
+        getBacklinkCount: noBacklinks,
+      });
+      expect(perQueryCounts['ретеншн алертів']).toBe(0);
+      expect(perQueryTokenCounts['ретеншн алертів']).toEqual({
+        ретеншн: 0,
+        алертів: 1,
+      });
+    });
+
+    it('has no entry for a single-token dead query', () => {
+      const map = notes([['Пошук.md', '']]);
+      const { perQueryTokenCounts } = rankNotes({
+        notes: map,
+        queries: ['нема'],
+        noteCap: 10,
+        perNoteCap: 3,
+        getBacklinkCount: noBacklinks,
+      });
+      expect(perQueryTokenCounts).toEqual({});
+    });
+
+    it('has no entry for a matching multi-token query', () => {
+      const map = notes([['phrase.md', '# векторний пошук\n']]);
+      const { perQueryTokenCounts } = rankNotes({
+        notes: map,
+        queries: ['векторний пошук'],
+        noteCap: 10,
+        perNoteCap: 3,
+        getBacklinkCount: noBacklinks,
+      });
+      expect(perQueryTokenCounts).toEqual({});
+    });
+
+    it('counts a note once per token even when the token hits several units', () => {
+      const map = notes([['multi.md', '# алертів\n\nще раз алертів у тілі\n']]);
+      const { perQueryTokenCounts } = rankNotes({
+        notes: map,
+        queries: ['ретеншн алертів'],
+        noteCap: 10,
+        perNoteCap: 3,
+        getBacklinkCount: noBacklinks,
+      });
+      expect(perQueryTokenCounts['ретеншн алертів']).toEqual({ ретеншн: 0, алертів: 1 });
+    });
+  });
 });
