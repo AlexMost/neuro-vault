@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [15.1.0](https://github.com/AlexMost/neuro-vault/compare/v15.0.0...v15.1.0) (2026-08-10)
+
+
+### Features
+
+* **semantic:** dedicated expansion floor; decouple blocks from user threshold ([42830d9](https://github.com/AlexMost/neuro-vault/commit/42830d9ab9fb248ef3861dfd9a82a5dc3deaec9d))
+* **semantic:** expansion_floor parameter and semantic_fallback query_stats flag ([8cdf5d2](https://github.com/AlexMost/neuro-vault/commit/8cdf5d27328c8deb32cffd24658b6406f7eaba4b))
+
+
+### Bug Fixes
+
+* **semantic:** address split-leg-thresholds final-review findings ([8ca5283](https://github.com/AlexMost/neuro-vault/commit/8ca5283ddbb528c8b0fa7f344538e7af5735ec7b))
+* **semantic:** restrict the 0.3 fallback retry to default thresholds ([4fa22d2](https://github.com/AlexMost/neuro-vault/commit/4fa22d234ea7961810cf06def18c83f65fac8149))
+
 ## [15.0.0](https://github.com/AlexMost/neuro-vault/compare/v14.0.0...v15.0.0) (2026-08-10)
 
 
