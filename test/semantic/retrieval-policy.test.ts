@@ -1143,5 +1143,6 @@ describe('per-seed block backfill', () => {
     });
 
     expect(output.results.find((r) => r.path === 'note-b.md')!.blocks).toEqual([]);
+    expect(findBlockNeighbors).toHaveBeenCalledTimes(2);
   });
 });
