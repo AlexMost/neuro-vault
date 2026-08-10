@@ -19,4 +19,4 @@
 
 - [x] 4.1 Update the touched-field docs only: `docs/architecture/retrieval-policy.md` (backfill step), `docs/architecture/lexical-search.md` (per-token diagnostic), `docs/guide/finding-notes.md` (query_stats null semantics, `lexical_tokens`, blocks presence rule)
 - [x] 4.2 Run `npm test && npm run lint && npm run typecheck` and confirm all green
-- [ ] 4.3 Push branch and open PR to `main` via `gh pr create` (single PR — the three fixes ship together as one contract polish; release as major 15.0.0 on `main` after merge, not from the branch)
+- [x] 4.3 Push branch and open PR to `main` via `gh pr create` (single PR — the three fixes ship together as one contract polish; release as major 15.0.0 on `main` after merge, not from the branch)
