@@ -1,14 +1,14 @@
 # Retrospective: sync-docs-fused-contract
 
 > Written: 2026-08-10 (after verify passed)
-> Commit range: `b27802b..e11d238`
+> Commit range: `b27802b..b8a076f`
 > Worktree: `.claude/worktrees/sync-docs-fused-contract`
 
 ---
 
 ## 0. Evidence
 
-- **Commit range**: `b27802b..e11d238` (5 commits vs `origin/main`)
+- **Commit range**: `b27802b..b8a076f` (5 commits vs `origin/main`)
 - **Diff size**: +537 / -3 lines across 10 files (527 of the + lines are the change artifacts themselves; the living-docs payload is 3 files, ±10 lines)
 - **Tasks done**: 8/8 (`grep -cE '^\s*- \[x\]' tasks.md` → 8)
 - **Active hours**: ~0.5 (single session, propose → apply → verify)
@@ -26,7 +26,7 @@ b27802b docs(openspec): add sync-docs-fused-contract change artifacts
 9499748 docs(spec): restate lexical-only search_notes scenario against fused matches[] contract
 1e8a7bc docs(architecture): point rank-fusion D3 link at committed archive path
 3af3951 docs(openspec): tick sync-docs-fused-contract tasks after apply
-e11d238 docs: fix stale pre-archive link in lexical-search.md; align change-artifact wording with sweep reality
+b8a076f docs: fix stale pre-archive link in lexical-search.md and align artifact sweep wording
 ```
 
 ---
@@ -35,7 +35,7 @@ e11d238 docs: fix stale pre-archive link in lexical-search.md; align change-arti
 
 - [evidence: §0 diff size] Payload stayed surgical — 3 living-docs files, ±10 lines, byte-identical to the delta spec where it mattered (9499748 vs delta THEN-clause, confirmed by two independent reviewers).
 - [evidence: brainstorm.md §Verification] Re-verifying all four vault-note items against current state *before* writing artifacts caught that item 3 had drifted (the four named dirs were already gone; the same failure mode had recurred as `polish-fused-response-contract/`) — the plan encoded the failure mode, not a stale literal list.
-- [evidence: e11d238] The final whole-branch review earned its cost on a tiny branch: it found a second instance of the exact defect class being fixed (`lexical-search.md:131` pre-archive link) that the task-scoped sweeps missed because the grep targeted contract vocabulary, not link paths.
+- [evidence: b8a076f] The final whole-branch review earned its cost on a tiny branch: it found a second instance of the exact defect class being fixed (`lexical-search.md:131` pre-archive link) that the task-scoped sweeps missed because the grep targeted contract vocabulary, not link paths.
 - [evidence: §0 out-of-branch] Vault-side read-back verification caught a fifth stale claim beyond the plan's four (`effort` bullet promising nested `related[]`, forbidden by hybrid-search spec:151) — fixed in the same pass instead of shipping a half-synced file.
 - [evidence: task-2 dispatch + plan Task 2 Step 3] The delete-guard worked as designed: diff direction was re-confirmed (archive strictly newer/superset) immediately before `rm -rf`, from live output rather than memory.
 
@@ -53,7 +53,7 @@ e11d238 docs: fix stale pre-archive link in lexical-search.md; align change-arti
 | Task 2 Steps 3-4 | Executed by controller in main checkout, not the worktree implementer | Untracked dirs don't propagate to worktrees; the target only exists in the shared checkout |
 | Task 3 | 4 planned replacements became 5 | Read-back verification surfaced a stale nested-`related[]` claim in the effort bullet — same defect class, same file, fixed under D4's intent; recorded in ledger + verify §4 |
 | Task 4 Step 4 (PR) | Deferred past verify → retrospective → archive | Bridge's canonical sequence ("PR is the LAST step") overrides the plan's inline PR step |
-| (added) e11d238 | Post-final-review fix commit | Final review found a second broken pre-archive link + artifact-wording drift; fixed in-branch rather than follow-up |
+| (added) b8a076f | Post-final-review fix commit | Final review found a second broken pre-archive link + artifact-wording drift; fixed in-branch rather than follow-up |
 
 ## 4. Skill / workflow compliance
 
@@ -71,7 +71,7 @@ e11d238 docs: fix stale pre-archive link in lexical-search.md; align change-arti
 
 - **`superpowers:test-driven-development`**
   - **What was skipped**: the RED-GREEN-REFACTOR cycle per task, in full
-  - **Why this cycle**: every deliverable is prose (2 markdown link/scenario edits in-branch, vault file out-of-branch) — commits 9499748/1e8a7bc/e11d238 touch zero executable code, and the contract being documented already has its behavior covered by the existing 885-test suite from the 14.0.0 cycle. There is no failing test to write for a sentence; the plan defined command evidence instead (`openspec validate --all`, grep sweeps, `ls` target checks), which each implementer ran and reported.
+  - **Why this cycle**: every deliverable is prose (2 markdown link/scenario edits in-branch, vault file out-of-branch) — commits 9499748/1e8a7bc/b8a076f touch zero executable code, and the contract being documented already has its behavior covered by the existing 885-test suite from the 14.0.0 cycle. There is no failing test to write for a sentence; the plan defined command evidence instead (`openspec validate --all`, grep sweeps, `ls` target checks), which each implementer ran and reported.
   - **How to prevent recurrence**: scope-judgment rule — for docs-only tasks (diff touches no `src/`/`test/` path), TDD's slot is filled by named verification commands in each plan step; reviewers check the command output is present in the report. This retro records the rule; recurrence of the same skip with the same rationale is expected and correct for this task class.
 
 ## 5. Surprises

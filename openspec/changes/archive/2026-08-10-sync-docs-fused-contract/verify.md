@@ -68,10 +68,10 @@ all valid: True | items: 9 (7 specs + 2 changes, incl. change/sync-docs-fused-co
 - [x] Worktree 內無未 staged 的檔案（`git status --porcelain` → 空）
 - [ ] 所有相關 commit 已推送（push 發生於 finishing-a-development-branch 階段）
 
-**Commit 範圍**：`b27802b..e11d238`（5 commits vs `origin/main`；trailer 已統一為
+**Commit 範圍**：`b27802b..b8a076f`（5 commits vs `origin/main`；trailer 已統一為
 `Claude Opus 4.7` via msg-only filter-branch，branch 未曾 push 故安全）
 
-含 final whole-branch review（READY TO MERGE）之修正 commit `e11d238`：
+含 final whole-branch review（READY TO MERGE）之修正 commit `b8a076f`：
 lexical-search.md 同類 broken pre-archive link（review Finding 1，Important）
 與 change-artifact 措辭對齊（Findings 2-3，Minor）。
 
