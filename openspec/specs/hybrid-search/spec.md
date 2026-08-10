@@ -5,7 +5,7 @@ TBD - created by archiving change hybrid-search-notes. Update Purpose after arch
 ## Requirements
 ### Requirement: Input axes mode and effort are orthogonal
 
-The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap, expansion only in `deep`) and the default merged-list cap (quick: 5, deep: 12). The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`. `threshold` SHALL affect only the semantic leg. Top-level `truncated` SHALL be present in every response and true when candidates were dropped on the way to `matches[]` — by the merged-list cap or by the semantic or lexical leg's internal pool cap. Expansion per-seed neighbour caps are not surfaced (a literal signal there would be near-always true in deep mode).
+The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap, expansion only in `deep`) and the default merged-list cap (quick: 5, deep: 12). The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`. `threshold` SHALL affect only the semantic leg's note scores (see Requirement: threshold is a hard semantic filter with default-only fallback); `expansion_floor` SHALL affect only the expansion leg (see Requirement: expansion_floor bounds the expansion leg). Top-level `truncated` SHALL be present in every response and true when candidates were dropped on the way to `matches[]` — by the merged-list cap or by the semantic or lexical leg's internal pool cap. Expansion per-seed neighbour caps are not surfaced (a literal signal there would be near-always true in deep mode).
 
 #### Scenario: old mode values are rejected
 
@@ -194,9 +194,33 @@ The merged order SHALL be computed as `score(note) = Σ_sources w_source / (k + 
 - **WHEN** two notes tie exactly on fused score and source count while their backlink counts differ
 - **THEN** their relative order is by `path` ascending, unaffected by either note's `backlink_count`
 
+### Requirement: expansion_floor bounds the expansion leg
+
+The input schema SHALL expose `expansion_floor: number` (0–1, optional), subject to the same tolerant numeric coercion as `threshold`. The expansion leg SHALL discard neighbour candidates whose seed↔note similarity falls below `expansion_floor`; its default SHALL be 0.35, preserving the pre-change output of default calls byte-for-byte. `expansion_floor` SHALL be the only input that bounds expansion similarity — `threshold` SHALL NOT reach the expansion leg. In `effort: "quick"` and `mode: "lexical"` the parameter SHALL be accepted and inert, consistent with `threshold`'s behavior there.
+
+#### Scenario: the calibration curve reproduces on the new parameter
+
+- **WHEN** `search_notes` runs with `{ query: ["ретеншн алертів", "retention alerts"], effort: "deep", expansion_floor: 0.93 }` against a corpus whose expansion candidates score 0.9206, 0.9259, 0.9272, and 0.9341
+- **THEN** every entry carrying `"expansion"` provenance has `expansion_similarity` ≥ 0.93, at least one such entry survives, and every neighbour whose maximum seed↔note similarity falls below 0.93 (across all seeds it appears under) is absent from the expansion source — lower-ranked seeds can see higher neighbour similarities than higher-ranked ones, so the exact surviving count varies with seed geometry rather than being fixed at one
+
+#### Scenario: a floor above every candidate empties the expansion source
+
+- **WHEN** the same query runs with `expansion_floor: 0.99`
+- **THEN** no entry in `matches[]` carries `"expansion"` in `found_in`
+
+#### Scenario: threshold no longer cuts expansion
+
+- **WHEN** the same query runs with `{ threshold: 0.93 }` and no `expansion_floor`
+- **THEN** the expansion source is not filtered at 0.93 — its content is determined solely by the default floor and the surviving semantic seeds
+
+#### Scenario: default calls are unchanged
+
+- **WHEN** any `search_notes` call omits both `threshold` and `expansion_floor` against a fixed vault state
+- **THEN** the response is byte-for-byte identical to the pre-change output
+
 ### Requirement: Expansion is a flattened third rank source
 
-Expansion candidates SHALL be collected across all seeds' neighbour sets, SHALL exclude paths already present as semantic results, and SHALL be deduplicated to unique paths keeping the maximum `expansion_similarity`, ordered by it. This flattened list SHALL be the third fusion source. In `effort: "quick"` (no expansion computed) the source SHALL be empty.
+Expansion candidates SHALL be collected across all seeds' neighbour sets with `expansion_floor` (default 0.35) as the similarity floor — the user `threshold` SHALL NOT participate — SHALL exclude paths already present as semantic results, and SHALL be deduplicated to unique paths keeping the maximum `expansion_similarity`, ordered by it. This flattened list SHALL be the third fusion source. In `effort: "quick"` (no expansion computed) the source SHALL be empty.
 
 #### Scenario: a path repeated under several seeds fuses once at its best similarity
 
@@ -208,9 +232,33 @@ Expansion candidates SHALL be collected across all seeds' neighbour sets, SHALL 
 - **WHEN** a note is a semantic result and also appears in another seed's neighbour set
 - **THEN** the expansion source excludes it and its entry's `found_in` does not contain `"expansion"`
 
+#### Scenario: the floor, not the threshold, bounds neighbour similarity
+
+- **WHEN** `effort: "deep"` runs with an explicit `threshold` and no `expansion_floor`
+- **THEN** every seed's neighbour set is floored at the default `expansion_floor` (0.35) and the explicit `threshold` value has no effect on which neighbours survive
+
+### Requirement: threshold is a hard semantic filter with default-only fallback
+
+An explicitly provided `threshold` SHALL be a hard filter on the semantic leg's note scores: notes scoring below it SHALL NOT become semantic seeds, and when every note falls below it the semantic leg SHALL return zero hits — no retry, no rescue. Only when `threshold` is not provided SHALL the effort default apply (0.5 quick / 0.35 deep), and only then, on zero semantic hits, SHALL the leg retry once at the internal fallback threshold 0.3; the retry's engagement SHALL be observable via `query_stats` (see Requirement: query_stats reports pre-cap per-query hit counts). `threshold` SHALL NOT affect the expansion leg, the block-evidence pass, or the lexical leg.
+
+#### Scenario: an explicit threshold above the hit band yields honest zero
+
+- **WHEN** `search_notes` runs with `{ query: ["ретеншн алертів", "retention alerts"], effort: "deep", threshold: 0.99 }` against a corpus whose semantic hits score 0.7749–0.7964
+- **THEN** no entry in `matches[]` carries `found_in: ["semantic"]` provenance and every `query_stats` entry reports `semantic: 0`
+
+#### Scenario: an explicit threshold inside the hit band filters partially
+
+- **WHEN** the semantic candidates for a query score between 0.7749 and 0.7964 and `threshold: 0.78` is passed explicitly
+- **THEN** only notes scoring ≥ 0.78 appear with `"semantic"` provenance — more than zero and fewer than the unfiltered count
+
+#### Scenario: default calls keep the fallback rescue
+
+- **WHEN** `search_notes` runs without `threshold` and every note scores below the effort default but at least one scores ≥ 0.3
+- **THEN** the semantic leg returns those notes via the fallback retry, exactly as before this change
+
 ### Requirement: query_stats reports pre-cap per-query hit counts
 
-For an array `query`, the response SHALL include `query_stats` mapping every normalized input query (trimmed, de-duplicated) to `{ semantic, lexical }` hit counts taken before cross-query merging and before any result-list cap. `semantic` SHALL be the number of notes that query retrieved from the semantic leg (post-threshold) when the leg executed, and SHALL be `null` — never `0` — when the semantic leg did not execute for the request (`mode: "lexical"`, no semantic corpus available, or the empty-filter early return); a numeric `semantic` SHALL always mean the leg ran and counted. `lexical` SHALL be the number of notes the query matched before the lexical note cap, counted over the leg's candidate set (`0` over an empty filter set). When the lexical leg executed and a query's `lexical` count is `0` while the query has two or more normalized tokens, its entry SHALL additionally carry `lexical_tokens` mapping each normalized token to the number of notes that token alone matches under the same normalization rules and filter set; `lexical_tokens` SHALL be omitted in every other case, including the empty-filter early return where neither leg runs. A query with zero hits in both executed legs SHALL report `{ semantic: 0, lexical: 0 }`. `query_stats` SHALL be omitted for a single string `query`.
+For an array `query`, the response SHALL include `query_stats` mapping every normalized input query (trimmed, de-duplicated) to `{ semantic, lexical }` hit counts taken before cross-query merging and before any result-list cap. `semantic` SHALL be the number of notes that query retrieved from the semantic leg (post-threshold) when the leg executed, and SHALL be `null` — never `0` — when the semantic leg did not execute for the request (`mode: "lexical"`, no semantic corpus available, or the empty-filter early return); a numeric `semantic` SHALL always mean the leg ran and counted. When a query's semantic hits were produced by the default-threshold fallback retry at 0.3 (see Requirement: threshold is a hard semantic filter with default-only fallback), that query's entry SHALL additionally carry `semantic_fallback: true`; the key SHALL be absent in every other case, including explicit-threshold requests (where no fallback exists). `lexical` SHALL be the number of notes the query matched before the lexical note cap, counted over the leg's candidate set (`0` over an empty filter set). When the lexical leg executed and a query's `lexical` count is `0` while the query has two or more normalized tokens, its entry SHALL additionally carry `lexical_tokens` mapping each normalized token to the number of notes that token alone matches under the same normalization rules and filter set; `lexical_tokens` SHALL be omitted in every other case, including the empty-filter early return where neither leg runs. A query with zero hits in both executed legs SHALL report `{ semantic: 0, lexical: 0 }`. `query_stats` SHALL be omitted for a single string `query`.
 
 #### Scenario: a dead query variant is visible in one line
 
@@ -252,6 +300,16 @@ For an array `query`, the response SHALL include `query_stats` mapping every nor
 - **WHEN** `filter` matches zero notes and `search_notes` is called with a multi-token array query
 - **THEN** each `query_stats` entry is `{ semantic: null, lexical: 0 }` with no `lexical_tokens` key
 
+#### Scenario: fallback-rescued hits are flagged per query
+
+- **WHEN** `search_notes` runs with an array `query` and no `threshold`, and one query's notes all score below the effort default but above 0.3 while another query has hits above the default
+- **THEN** the first query's `query_stats` entry carries `semantic_fallback: true` alongside its counts and the second query's entry has no `semantic_fallback` key
+
+#### Scenario: explicit-threshold requests never carry the fallback flag
+
+- **WHEN** `search_notes` runs with an array `query` and an explicit `threshold` that filters out every semantic hit
+- **THEN** every `query_stats` entry reports `semantic: 0` with no `semantic_fallback` key
+
 ### Requirement: Single-source degradation preserves source order
 
 In `mode: "lexical"`, or when no semantic corpus is available, the merge SHALL degrade to the lexical source alone: `matches[]` SHALL preserve the lexical ordering, every `found_in` SHALL contain only `lexical:*` values, and semantic evidence fields SHALL be absent. The corpus loader SHALL NOT be invoked in `mode: "lexical"`.
@@ -265,7 +323,7 @@ In `mode: "lexical"`, or when no semantic corpus is available, the merge SHALL d
 
 ### Requirement: Semantic seeds carry backfilled block evidence
 
-The semantic leg SHALL guarantee per-seed block evidence after its shared block pass: every seed that ends the shared pass with zero blocks SHALL receive its own best block via a per-seed lookup scoped to that seed's source at threshold 0 with limit 1 (for an array `query`, the maximum-similarity block across all query vectors). Only when the note has no block embeddings at all SHALL the seed remain block-less, and its `matches[]` entry SHALL then omit the `blocks` key entirely.
+The semantic leg SHALL guarantee per-seed block evidence after its shared block pass, and that pass SHALL be independent of the user `threshold`: in `effort: "deep"` the shared pass filters blocks at the internal mode-default threshold (0.35), in `effort: "quick"` at threshold 0 — an explicitly provided `threshold` SHALL NOT change which blocks are selected. Every seed that ends the shared pass with zero blocks SHALL receive its own best block via a per-seed lookup scoped to that seed's source at threshold 0 with limit 1 (for an array `query`, the maximum-similarity block across all query vectors). Only when the note has no block embeddings at all SHALL the seed remain block-less, and its `matches[]` entry SHALL then omit the `blocks` key entirely.
 
 #### Scenario: a seed starved by the shared block pass gets its own best block
 
@@ -276,6 +334,11 @@ The semantic leg SHALL guarantee per-seed block evidence after its shared block 
 
 - **WHEN** a semantic seed's note has a note-level embedding but no block embeddings
 - **THEN** its `matches[]` entry carries `similarity` and no `blocks` key — not `blocks: []`
+
+#### Scenario: an explicit threshold does not thin block evidence
+
+- **WHEN** `effort: "deep"` runs with an explicit `threshold` inside the semantic note-score band, and a surviving seed's blocks score between 0.35 and that threshold
+- **THEN** those blocks still appear in the seed's `blocks[]` — block selection used the internal 0.35 default, not the user threshold
 
 ---
 
