@@ -145,6 +145,26 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     for (const bucket of blocksByPath.values()) {
       bucket.sort((a, b) => b.similarity - a.similarity || a.lines[0] - b.lines[0]);
     }
+
+    // Step 4b: per-seed backfill. The shared pass above can starve a seed
+    // (quick: global top-N went to other seeds; deep: all its blocks fell
+    // below threshold). Every starved seed gets its own best block at
+    // threshold 0 — evidence is only ever absent when the note has no block
+    // embeddings at all.
+    for (const seedPath of seedPaths) {
+      if (blocksByPath.get(seedPath)?.length) continue;
+      const source = sources.get(seedPath);
+      if (!source) continue;
+      const best = searchEngine
+        .findBlockNeighbors({ queryVector, sources: [source], threshold: 0, limit: 1 })
+        .filter((b) => b.path === seedPath);
+      if (best.length > 0) {
+        const block = best[0];
+        blocksByPath.set(seedPath, [
+          { heading: block.heading, lines: block.lines, similarity: block.similarity },
+        ]);
+      }
+    }
   }
 
   // Step 5: per-seed expansion (deep only)
@@ -323,6 +343,25 @@ export async function executeMultiRetrieval(
     }
     for (const bucket of blocksByPath.values()) {
       bucket.sort((a, b) => b.similarity - a.similarity || a.lines[0] - b.lines[0]);
+    }
+
+    // Step 4b: per-seed backfill across query vectors — keep the single best
+    // block over all queries for each starved seed. Same guarantee as the
+    // single-query path: empty only when the note has no block embeddings.
+    for (const seedPath of seedPaths) {
+      if (blocksByPath.get(seedPath)?.length) continue;
+      const source = sources.get(seedPath);
+      if (!source) continue;
+      let best: BlockMatch | undefined;
+      for (const { queryVector } of perQueryOutputs) {
+        const [hit] = searchEngine
+          .findBlockNeighbors({ queryVector, sources: [source], threshold: 0, limit: 1 })
+          .filter((b) => b.path === seedPath);
+        if (hit && (!best || hit.similarity > best.similarity)) {
+          best = { heading: hit.heading, lines: hit.lines, similarity: hit.similarity };
+        }
+      }
+      if (best) blocksByPath.set(seedPath, [best]);
     }
   }
 
