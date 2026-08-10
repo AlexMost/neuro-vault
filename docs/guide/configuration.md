@@ -28,7 +28,7 @@ Follow the Neuro Vault MCP server instructions for routing between semantic sear
 
 **First startup is slow** — the embedding model (~40 MB) is downloading. Subsequent starts use the cached model.
 
-**Search returns nothing** — try lowering the threshold: `threshold: 0.3`. Also confirm the Smart Connections corpus path is configured and that `search_notes` returns results for a broad query like `search_notes({ query: "note", threshold: 0.3 })`.
+**Search returns nothing** — first try the call again *without* `threshold` at all: an omitted threshold gets the effort default (0.5 quick / 0.35 deep) plus an automatic one-shot retry at 0.3 if that finds nothing (flagged as `semantic_fallback: true` in `query_stats` for array queries). Passing `threshold` explicitly disables that retry — an explicit value is a hard filter with no rescue, so `threshold: 0.3` returns zero rather than falling back further. Also confirm the Smart Connections corpus path is configured and that `search_notes` returns results for a broad query like `search_notes({ query: "note" })`.
 
 ## Limitations
 
