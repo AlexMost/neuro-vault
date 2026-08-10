@@ -113,7 +113,7 @@ describe('calibration fixture baseline (default inputs)', () => {
 });
 
 describe('split thresholds on the calibration fixture', () => {
-  it('expansionFloor 0.93 keeps only the top neighbour; 0.99 empties expansion', async () => {
+  it('expansionFloor 0.93 floors expansion at 0.93; 0.99 empties expansion', async () => {
     const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
     const at93 = await executeRetrieval({
       query: 'q',

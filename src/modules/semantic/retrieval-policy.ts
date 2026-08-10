@@ -114,7 +114,10 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   });
 
   // Step 2: fallback threshold — default thresholds only. An explicit
-  // threshold that filters everything returns an honest zero.
+  // threshold that filters everything returns an honest zero. The
+  // `threshold > FALLBACK_THRESHOLD` guard is defensive: with
+  // `!explicitThreshold`, `threshold` is always a mode default (0.5 quick /
+  // 0.35 deep), both already > FALLBACK_THRESHOLD (0.3).
   let fallback = false;
   if (vectorResults.length === 0 && !explicitThreshold && threshold > FALLBACK_THRESHOLD) {
     vectorResults = searchEngine.findNeighbors({
@@ -283,6 +286,9 @@ export async function executeMultiRetrieval(
         threshold,
         limit: limit + 1,
       });
+      // Step 2 (per query): fallback threshold — default thresholds only. An
+      // explicit threshold that filters everything returns an honest zero,
+      // same rule as the single-query path above.
       let fallback = false;
       if (neighbors.length === 0 && !explicitThreshold && threshold > FALLBACK_THRESHOLD) {
         neighbors = searchEngine.findNeighbors({

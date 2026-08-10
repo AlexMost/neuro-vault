@@ -755,3 +755,25 @@ describe('query_stats semantic_fallback flag', () => {
     }
   });
 });
+
+describe('expansion_floor wiring', () => {
+  it('forwards expansion_floor to the expansion leg as the per-seed findNeighbors threshold', async () => {
+    const engine = makeMockEngine();
+    engine.findNeighbors.mockReturnValue([{ path: 'a.md', similarity: 0.8 }]);
+    const sources = sourcesWithEmbeddingFor('a.md');
+    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'alpha body' }, { sources, engine });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      await tool.handler({ query: 'alpha', effort: 'deep', expansion_floor: 0.91 });
+      const thresholds = engine.findNeighbors.mock.calls.map(
+        (call) => (call[0] as { threshold: number }).threshold,
+      );
+      // First call is the query pass at the deep default threshold (0.35);
+      // a later call is the per-seed expansion lookup, which must carry the
+      // forwarded expansion_floor rather than the default or the threshold.
+      expect(thresholds).toContain(0.91);
+    } finally {
+      await cleanup();
+    }
+  });
+});

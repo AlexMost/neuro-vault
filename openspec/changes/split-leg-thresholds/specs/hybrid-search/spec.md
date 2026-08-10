@@ -28,7 +28,7 @@ The input schema SHALL expose `expansion_floor: number` (0–1, optional), subje
 #### Scenario: the calibration curve reproduces on the new parameter
 
 - **WHEN** `search_notes` runs with `{ query: ["ретеншн алертів", "retention alerts"], effort: "deep", expansion_floor: 0.93 }` against a corpus whose expansion candidates score 0.9206, 0.9259, 0.9272, and 0.9341
-- **THEN** exactly one entry carries `"expansion"` provenance (`expansion_similarity: 0.9341`) and the three lower-scoring candidates are absent from the expansion source
+- **THEN** every entry carrying `"expansion"` provenance has `expansion_similarity` ≥ 0.93, at least one such entry survives, and every neighbour whose maximum seed↔note similarity falls below 0.93 (across all seeds it appears under) is absent from the expansion source — lower-ranked seeds can see higher neighbour similarities than higher-ranked ones, so the exact surviving count varies with seed geometry rather than being fixed at one
 
 #### Scenario: a floor above every candidate empties the expansion source
 
