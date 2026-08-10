@@ -46,13 +46,32 @@ describe('flattenExpansion', () => {
 describe('fuseRanks', () => {
   it('lifts a two-source mid-rank note over a single-source top hit', () => {
     // k = adaptiveK(25) = 5. A: semantic rank 1 → 1/6 ≈ 0.167.
-    // B: lexical rank 2 + expansion rank 2 → 1/7 + 1/7 ≈ 0.286.
+    // B: lexical rank 2 + expansion rank 2 → 1/7 + 0.85/7 ≈ 0.264.
+    // Multi-source reinforcement must survive the expansion down-weight —
+    // fusion, not raw similarity, is still the strongest relevance signal.
     const out = fuseRanks({
       sources: { semantic: ['A.md'], lexical: ['C.md', 'B.md'], expansion: ['D.md', 'B.md'] },
       totalNotes: 25,
     });
     expect(out[0].path).toBe('B.md');
     expect(out[0].sourceCount).toBe(2);
+  });
+  it('a direct semantic hit outranks an expansion-only hub (Moby case, 2026-08-10)', () => {
+    // Live report: the expansion-only "Дата-гігієна фіду" (hub, 72 backlinks)
+    // outranked the direct semantic hit whose literal name was in the query.
+    // Large-k regime (k = adaptiveK(2500) = 50): 1/51 vs 0.85/51.
+    const out = fuseRanks({
+      sources: {
+        semantic: ['Projects/Moby dick bot.md'],
+        lexical: [],
+        expansion: ['Tasks/Дата-гігієна фіду.md'],
+      },
+      totalNotes: 2500,
+    });
+    expect(out.map((c) => c.path)).toEqual([
+      'Projects/Moby dick bot.md',
+      'Tasks/Дата-гігієна фіду.md',
+    ]);
   });
   it('breaks residual exact ties by path, never by backlinks', () => {
     // a.md and b.md tie exactly (both rank 1 in a weight-1 leg, sourceCount 1).
