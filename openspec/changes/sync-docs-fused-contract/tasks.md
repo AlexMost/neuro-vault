@@ -2,7 +2,7 @@
 
 - [x] 1.1 Rewrite the "lexical-only search is reachable through search_notes" scenario in `openspec/specs/mcp-tool-surface/spec.md` (lines ~95-98) per the delta spec in this change: `matches[]` with lexical-only `found_in` (`lexical:*` values only) and `lexical[]` evidence; drop the `lexical_matches`/`semantic_matches: []` wording. Run `openspec validate --all` after.
 - [x] 1.2 Fix the D3 link in `docs/architecture/rank-fusion.md` (line ~39): `openspec/changes/search-notes-unified-rank/design.md` → `openspec/changes/archive/2026-08-08-search-notes-unified-rank/design.md`. Verify the target file exists.
-- [x] 1.3 Sweep living docs for stale contract vocabulary: `grep -rn "semantic_matches\|lexical_matches" docs/ openspec/specs/ README.md --exclude-dir=superpowers` (archive dirs are historical and stay). Fix any hit that isn't in this task list already; record a clean result.
+- [x] 1.3 Sweep living docs for stale contract vocabulary: `grep -rn "semantic_matches\|lexical_matches" docs/ openspec/specs/ README.md --exclude-dir=superpowers` (archive dirs are historical and stay). Fix any hit that isn't in this task list already; hits inside negative assertions (spec text forbidding the keys) are correct and stay. Record the result.
 
 ## 2. Pre-archive leftover cleanup
 
@@ -16,4 +16,4 @@
 ## 4. Verification
 
 - [x] 4.1 Run `npm test && npm run lint && npm run typecheck` (must stay green — no code touched) and `openspec validate --all`.
-- [x] 4.2 Re-run the grep sweep from 1.3 plus vault-side check (`grep -n "semantic_matches\|lexical_matches"` on the vault `AGENTS.md`) — all clean; confirm the rank-fusion D3 link path exists on disk.
+- [x] 4.2 Re-run the grep sweep from 1.3 plus vault-side check (`grep -n "semantic_matches\|lexical_matches"` on the vault `AGENTS.md`) — no hits outside negative assertions; confirm the rank-fusion D3 link path exists on disk.

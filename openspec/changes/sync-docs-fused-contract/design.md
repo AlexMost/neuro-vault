@@ -35,7 +35,7 @@ Constraints: `openspec/changes/archive/` and `docs/superpowers/` are historical 
 - **Choice**: THEN-clause asserts `matches[]` entries whose `found_in` contains only `lexical:*` values, with `lexical[]` evidence present — phrasing borrowed from hybrid-search's own lexical-mode scenarios
 - **Rationale**: two main specs describing one response must use one vocabulary; inventing parallel phrasing reintroduces drift
 - **Alternative considered**: delete the scenario (redundant with hybrid-search) — rejected: it guards a different requirement (no standalone lexical tool; `search_notes` is the single entry point)
-- Mechanics: delta spec under `specs/mcp-tool-surface/` in this change, synced to the main spec at archive time (`/opsx:sync`), matching how polish-fused-response-contract handled hybrid-search.
+- Mechanics: delta spec under `specs/mcp-tool-surface/` in this change, with the identical text applied to the main spec in-branch; the archive-time sync (`/opsx:sync`) is then a byte-identical no-op, matching how polish-fused-response-contract handled hybrid-search.
 
 ### D4: AGENTS.md — targeted sentence rewrite, not a section rework
 - **Choice**: replace only the sentences naming the old shape; describe `matches[]`, `found_in` provenance, per-entry `lexical[]` evidence, and `query_stats` (with `lexical_tokens` on zero-hit multi-token queries)
@@ -52,7 +52,7 @@ Constraints: `openspec/changes/archive/` and `docs/superpowers/` are historical 
 
 ## Migration Plan
 
-N/A — docs-only; no deployment, no release. Rollback is `git revert` for repo files and vault file history (Obsidian sync) for `AGENTS.md`. Acceptance: `npm test`, `npm run lint`, `npm run typecheck` green; `openspec validate --all` passes; grep for `semantic_matches|lexical_matches` over living docs/specs (excluding archive + superpowers) returns nothing; the rank-fusion D3 link resolves in a fresh clone; `git status` shows no untracked pre-archive change dirs.
+N/A — docs-only; no deployment, no release. Rollback is `git revert` for repo files and vault file history (Obsidian sync) for `AGENTS.md`. Acceptance: `npm test`, `npm run lint`, `npm run typecheck` green; `openspec validate --all` passes; grep for `semantic_matches|lexical_matches` over living docs/specs (excluding archive + superpowers) returns no hits outside negative assertions (spec sentences forbidding those keys); the rank-fusion D3 link resolves in a fresh clone; `git status` shows no untracked pre-archive change dirs.
 
 ## Open Questions
 
