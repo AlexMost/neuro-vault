@@ -3,8 +3,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildQueryNotesTool } from '../../../src/modules/operations/tools/query-notes.js';
 import type { QueryNotesResultWithVault } from '../../../src/modules/operations/tools/query-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
+import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
+import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { makeGraph, makeReader } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
+
+function registryOf(...names: string[]): IVaultRegistry {
+  return makeTestRegistry(
+    names.map((name) => ({
+      name,
+      reader: makeReader({
+        scan: vi.fn().mockResolvedValue(['a.md']),
+        readNotes: vi.fn().mockResolvedValue([{ path: 'a.md', frontmatter: {}, content: '' }]),
+      }),
+      graph: makeGraph(),
+    })),
+  );
+}
 
 describe('operations.queryNotes handler', () => {
   it('passes the query through runQueryNotes and adds vault to each result item', async () => {
@@ -168,5 +183,23 @@ describe('operations.queryNotes handler', () => {
     expect((result as unknown as Record<string, unknown>).results_by_vault).toBeUndefined();
     expect(result.results).toHaveLength(1);
     expect(result.results[0]!.vault).toBe('vault-a');
+  });
+
+  it('returns the payload unchanged for a single vault — vault rides on each item', async () => {
+    const tool = buildQueryNotesTool({ registry: registryOf('only') });
+    const out = (await tool.handler({ filter: {} })) as {
+      results: Array<{ vault: string }>;
+      count: number;
+      truncated: boolean;
+    };
+    expect(Object.keys(out).sort()).toEqual(['count', 'results', 'truncated']);
+    expect(out).not.toHaveProperty('vault');
+    for (const item of out.results) expect(item.vault).toBe('only');
+  });
+
+  it('drops the skipped_vaults sentence from its description', () => {
+    const tool = buildQueryNotesTool({ registry: registryOf('a', 'b') });
+    expect(tool.description).not.toContain('skipped_vaults');
+    expect(tool.description).toContain(FAN_OUT_SUFFIX);
   });
 });
