@@ -59,7 +59,7 @@ misses the model-facing guide layer.
 - [x] 5.3 Confirm `retrieval-policy.ts` lost ~150–180 lines. A materially smaller delta means the duplication was not collapsed.
 - [x] 5.4 Confirm no `SearchNotesOutput` / `inputSchema` / zod change leaked into `search-notes.ts`.
 - [x] 5.5 Confirm no `__scratch__` path appears in any commit on the branch.
-- [ ] 5.6 Push and open the PR against `main` with `gh pr create`. Never push directly to `main`.
+- [x] 5.6 Push and open the PR against `main` with `gh pr create`. Never push directly to `main`.
 
 ## Parallelism
 
