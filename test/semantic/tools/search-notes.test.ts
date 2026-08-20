@@ -761,7 +761,7 @@ describe('searchNotes', () => {
       const corpusIndex1 = makeFakeCorpusIndex(sources1);
       const corpusIndex2 = makeFakeCorpusIndex(sources2);
 
-      // Create temp vault roots so pathExistsForEntry works
+      // Create temp vault roots so entry.filterExisting works
       const fs2 = await import('node:fs/promises');
       const os2 = await import('node:os');
       const path2 = await import('node:path');
@@ -769,7 +769,7 @@ describe('searchNotes', () => {
       const vaultRoot2 = await fs2.mkdtemp(path2.join(os2.tmpdir(), 'fanout-v2-'));
       await fs2.mkdir(path2.join(vaultRoot1), { recursive: true });
       await fs2.mkdir(path2.join(vaultRoot2), { recursive: true });
-      // Write the note files so pathExistsForEntry returns true
+      // Write the note files so entry.filterExisting keeps them
       await fs2.writeFile(path2.join(vaultRoot1, 'note-a.md'), '', 'utf8');
       await fs2.writeFile(path2.join(vaultRoot2, 'note-b.md'), '', 'utf8');
 

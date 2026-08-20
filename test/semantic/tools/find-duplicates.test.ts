@@ -26,7 +26,7 @@ describe('findDuplicates', () => {
 
     try {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      // Use real tempRoot so pathExistsForEntry checks an actual directory
+      // Use real tempRoot so entry.filterExisting checks an actual directory
       // The test expects 'Folder/note-d.md' to NOT exist (it doesn't in tempRoot)
       const corpusIndex = makeFakeCorpusIndex(createDuplicateCorpus(corpus).sources);
       const registry = makeTestRegistry([
@@ -52,7 +52,7 @@ describe('findDuplicates', () => {
       // So all pairs involving note-d or note-e should be dropped
       // Original note-a,b,c.md exist on disk in tempRoot/Folder? Actually no:
       // makeVaultFixture creates the smartEnvPath inside tempRoot/vault but the .md files
-      // are not created on disk. The pathExistsForEntry checks entry.path/vaultRelativePath.
+      // are not created on disk. entry.filterExisting joins each path to entry.path.
       // All note paths like 'Folder/note-a.md' won't exist in tempRoot.
       // So all pairs will be filtered out. This test validates the filtering mechanism.
       expect(results.map((r) => [r.note_a, r.note_b])).toEqual([]);
@@ -61,7 +61,7 @@ describe('findDuplicates', () => {
     }
   });
 
-  it('drops duplicate pairs whose paths no longer exist on disk (using mock pathExists)', async () => {
+  it('drops duplicate pairs whose paths no longer exist on disk (partially populated vault)', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
@@ -220,5 +220,35 @@ describe('findDuplicates', () => {
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
+  });
+  it('honours a substituted existence filter with no files on disk', async () => {
+    const corpus = makeFakeCorpusIndex(
+      new Map([
+        ['Folder/note-d.md', { path: 'Folder/note-d.md', embedding: [1, 0, 0], blocks: [] }],
+        ['Folder/note-e.md', { path: 'Folder/note-e.md', embedding: [1, 0, 0], blocks: [] }],
+      ]),
+    );
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        path: '/nonexistent',
+        smartEnvPath: '/nonexistent/.smart-env',
+        corpus,
+        semanticAvailable: true,
+        // Everything the corpus names is declared present — no temp dir.
+        filterExisting: async (paths) => new Set(paths),
+      },
+    ]);
+    const tool = buildFindDuplicatesTool({
+      registry,
+      searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+      modelKey: MODEL_KEY,
+    });
+
+    const results = await tool.handler({ threshold: 0.95 });
+
+    expect(results.map((r) => [r.note_a, r.note_b])).toEqual([
+      ['Folder/note-d.md', 'Folder/note-e.md'],
+    ]);
   });
 });
