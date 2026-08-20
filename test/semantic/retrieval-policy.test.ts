@@ -1018,6 +1018,65 @@ describe('cross-query behaviour (query array only)', () => {
     const noteA = output.results.find((r) => r.path === 'note-a.md')!;
     expect(noteA.blocks).toEqual([{ heading: '#h', lines: [1, 3], similarity: 0.8 }]);
   });
+  // Step 4's shared-pass dedup (above) and Step 4b's per-seed backfill are two
+  // separate max-keeping comparisons. This is the backfill one: a seed the
+  // shared pass starved gets one scoped lookup per query vector, and must end
+  // up with the highest-similarity block of them — whichever query order the
+  // vectors arrive in. A fixture embedding every query to one vector cannot
+  // observe this, so the two vectors here have to genuinely differ.
+  it.each([
+    { label: 'higher-similarity query last', queries: ['q-low', 'q-high'] },
+    { label: 'higher-similarity query first', queries: ['q-high', 'q-low'] },
+  ])(
+    'backfills a starved seed with the best block across query vectors ($label)',
+    async ({ queries }) => {
+      const embeddingProvider: EmbeddingProvider = {
+        initialize: vi.fn(),
+        embed: vi.fn((query: string) => Promise.resolve(query === 'q-high' ? [0, 1] : [1, 0])),
+      };
+      const findBlockNeighbors = vi.fn(
+        ({
+          sources: scoped,
+          queryVector,
+          limit,
+        }: {
+          sources: Iterable<SmartSource>;
+          queryVector: number[];
+          limit?: number;
+        }) => {
+          // Same shape test the backfill suite uses: the scoped, limit-1 call.
+          if (!(Array.isArray(scoped) && scoped.length === 1 && limit === 1)) {
+            return [makeBlockResult('note-a.md', 0.9)]; // shared pass starves note-b
+          }
+          // The backfill lookup answers differently per vector: [0, 1] finds
+          // a strictly better block than [1, 0] does.
+          return [makeBlockResult('note-b.md', queryVector[1] === 1 ? 0.7 : 0.3)];
+        },
+      );
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi
+          .fn()
+          .mockReturnValue([
+            makeSearchResult('note-a.md', 0.9),
+            makeSearchResult('note-b.md', 0.8),
+          ]),
+        findBlockNeighbors,
+      });
+
+      const output = await executeRetrieval({
+        queries,
+        mode: 'quick',
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      const noteB = output.results.find((r) => r.path === 'note-b.md')!;
+      expect(noteB.blocks).toEqual([{ heading: '#block', lines: [1, 3], similarity: 0.7 }]);
+      // Both vectors were actually probed: 2 shared-pass calls + 2 backfill lookups.
+      expect(findBlockNeighbors).toHaveBeenCalledTimes(4);
+    },
+  );
 
   it("truncated is true when a single query's own pool overflows, even though the merged list fits under limit", async () => {
     // limit defaults to 3 (quick). Query 'a' yields 4 hits — more than its own
