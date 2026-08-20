@@ -34,7 +34,7 @@ The lint config SHALL apply the `disableTypeChecked` preset to JS config files o
 - **THEN** the run completes without parser "file not found in project service" errors
 
 ### Requirement: Config tracks upstream presets
-The ESLint flat config SHALL be composed with `tseslint.config(...)` from the `typescript-eslint` meta-package, referencing named presets (`recommendedTypeChecked`, `disableTypeChecked`) rather than hand-copied rule lists; `@typescript-eslint/eslint-plugin` and `@typescript-eslint/parser` MUST NOT appear as direct devDependencies.
+The ESLint flat config SHALL be composed with `defineConfig(...)` from `'eslint/config'`, referencing the `typescript-eslint` meta-package's named presets (`recommendedTypeChecked`, `disableTypeChecked`) rather than hand-copied rule lists; `@typescript-eslint/eslint-plugin` and `@typescript-eslint/parser` MUST NOT appear as direct devDependencies.
 
 #### Scenario: Presets referenced, not inlined
 - **WHEN** `eslint.config.js` and `package.json` are inspected

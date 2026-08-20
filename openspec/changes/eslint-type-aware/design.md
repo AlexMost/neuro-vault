@@ -36,7 +36,9 @@ same `npm run lint` step; the existing tsconfig already includes `src`,
 - No `strict-type-checked` or `stylistic-type-checked` tiers (weighed and
   rejected in brainstorm — contention over marginal gain).
 - No mass rewrite of test files to satisfy test-noisy rules.
-- No `noUncheckedIndexAccess` or other tsconfig changes.
+- No `noUncheckedIndexAccess` or other tsconfig compiler-option changes
+  (adding `vitest.config.ts` to `include` is in scope — ruling 2026-08-20,
+  it must be type-checked like `tsup.config.ts` rather than exempted).
 - No CI workflow changes.
 
 ## Decisions
@@ -67,7 +69,9 @@ same `npm run lint` step; the existing tsconfig already includes `src`,
 ### D3: Plumbing — `typescript-eslint` meta-package + `projectService`
 
 - **Choice**: add devDep `typescript-eslint`; rewrite `eslint.config.js` on
-  `tseslint.config(...)`; `parserOptions.projectService: true` +
+  `defineConfig(...)` from `'eslint/config'` (the `tseslint.config(...)`
+  helper is deprecated since typescript-eslint 8.67 — ruling 2026-08-20);
+  `parserOptions.projectService: true` +
   `tsconfigRootDir: import.meta.dirname`; drop direct
   `@typescript-eslint/eslint-plugin` and `@typescript-eslint/parser` devDeps
   (they arrive transitively).

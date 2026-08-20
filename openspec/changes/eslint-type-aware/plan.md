@@ -69,10 +69,11 @@ git commit -m "chore(deps): swap @typescript-eslint plugin+parser for the typesc
 - [ ] **Step 1: Replace the whole file with:**
 
 ```js
+import { defineConfig } from 'eslint/config';
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
-export default tseslint.config(
+export default defineConfig(
   {
     ignores: [
       'dist/**',
@@ -132,7 +133,16 @@ export default tseslint.config(
 );
 ```
 
+- [ ] **Step 1b: Add vitest.config.ts to the TS project**
+
+`vitest.config.ts` is NOT in tsconfig's `include` (`["src", "test", "scripts", "tsup.config.ts"]`), so `projectService` errors on it. Ruling (user, 2026-08-20): bring it into the project rather than exempting it from type-aware lint. In `tsconfig.json`:
+
+```json
+  "include": ["src", "test", "scripts", "tsup.config.ts", "vitest.config.ts"]
+```
+
 Notes for the implementer:
+- `defineConfig` from `'eslint/config'` is used instead of the deprecated `tseslint.config(...)` helper (ruling, 2026-08-20; typescript-eslint ≥8.67 deprecates the latter in favor of ESLint's own `defineConfig`).
 - The old `globals: { console, process, URL }` block is dropped on purpose: the typescript-eslint presets disable core `no-undef` for TS files (TS itself checks identifiers), and the remaining JS files (`eslint.config.js`, `commitlint.config.js`) contain only imports/exports. Step 2 verifies this.
 - `import.meta.dirname` needs Node ≥ 20.11 — fine for local dev and CI (`node-version: 20` resolves to latest 20.x).
 
