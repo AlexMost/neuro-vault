@@ -167,7 +167,7 @@ User guide lives in [`docs/guide/`](./docs/guide/README.md):
 - [Finding Notes](./docs/guide/finding-notes.md) — `search_notes` (hybrid semantic + lexical), structured queries (`query_notes`), `get_similar_notes`, `find_duplicates`, `get_note_links`
 - [Reading & Modifying](./docs/guide/reading-and-modifying.md) — note CRUD, daily notes, properties, tags, vault snapshot (`get_vault_overview`)
 - [Routing Between Tools](./docs/guide/routing.md)
-- [Configuration](./docs/guide/configuration.md) — CLI args, troubleshooting, limitations, development
+- [Configuration](./docs/guide/configuration.md) — CLI args, vault conventions for external agents, troubleshooting, limitations, development
 
 Architecture / internals: [`docs/architecture/`](./docs/architecture/).
 
@@ -177,7 +177,16 @@ Architecture / internals: [`docs/architecture/`](./docs/architecture/).
 
 ### Vault-specific conventions for external agents
 
-When the server starts, it looks for `<vault>/.neuro-vault/for-external-agents.md`. If the file exists, its content is appended to the MCP `instructions` that clients receive at `initialize`, under a `## Vault-specific conventions` section. Use this file to teach external agents vault-specific rules that cannot be derived from the snapshot — for example, closed sets of frontmatter `type` values, or folders that are off-limits for writes. The file is optional; without it the server still ships sane defaults plus a pointer to `get_vault_overview`.
+Drop a `<vault>/.neuro-vault/for-external-agents.md` into your vault to teach external agents the rules that cannot be derived from a structural snapshot — closed sets of frontmatter `type` values, folders that are off-limits for writes, how you scope notes to a project. The file is optional; without it the server still ships sane defaults plus a pointer to `get_vault_overview`.
+
+It is delivered two ways:
+
+- 📦 **In every `get_vault_overview` response**, as a `conventions` field — and in the `vault://overview` resource. This is the channel to rely on: it is read at call time (so edits take effect on the next call, **no server restart**), it reaches sub-agents, and no client truncates it. The field is simply absent when you have no such file.
+- 📨 **At the front of the MCP `instructions`**, under a `## Vault-specific conventions` heading, for clients that render them. Treat this one as best-effort — Claude Code cuts `instructions` at exactly 2048 characters and gives sub-agents none of it, and other clients may differ. The conventions are placed first precisely so they survive that cut.
+
+Keep the file under **8,000 characters**. Past that the `conventions` field carries a trimmed slice and sets `conventions_truncated: true` — you never lose the call, but you do lose the tail, so compact rules beat exhaustive ones.
+
+With several vaults registered, each one carries its own file: every entry in a fanned-out `results_by_vault` gets its own vault's `conventions`, and the `instructions` get one clearly-labelled block per vault.
 
 ---
 

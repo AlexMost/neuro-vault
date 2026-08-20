@@ -205,4 +205,6 @@ Unlike `get_vault_overview`, which truncates properties to the top entries, this
 
 Get a snapshot of your vault's structure in one call. Returns top-level folder counts, top tags, frontmatter properties (top entries — see [`list_properties`](#list_properties) for the full inventory), the total note count, and the top 10 notes by inbound wikilinks. This is the recommended first call for an agent orienting itself in a vault it has not seen before — one call replaces the older `list_tags` + exploratory `query_notes` ritual.
 
+When the vault owner has written a `.neuro-vault/for-external-agents.md`, the response also carries a `conventions` field — their rules for how this vault is organised. Follow them when reading, writing, or organising notes here. The file is re-read on every call, so an edit shows up on the next one without a server restart. The field is absent entirely when the vault has no such file, and a file over 8,000 characters comes back trimmed with `conventions_truncated: true` alongside it.
+
 The same payload is available as the MCP resource `vault://overview`; clients that auto-load resources will pull it without an explicit tool call.

@@ -19,8 +19,25 @@ Add this to your `AGENTS.md` or `CLAUDE.md` to help the AI assistant use the vau
 
 Use vault-aware tools when vault context matters.
 Do not guess about note contents when the vault can be searched.
-Follow the Neuro Vault MCP server instructions for routing between semantic search (`search_notes`, `get_similar_notes`) and operations (`read_notes`, `create_note`, `edit_note`, `read_daily`).
+Route by what you already know: an exact anchor (a path, today's daily note, a tag, a
+frontmatter field) → vault operations (`read_notes`, `query_notes`, `create_note`,
+`edit_note`, `read_daily`); fuzzy recall or a conceptual question → semantic search
+(`search_notes`, `get_similar_notes`).
+Call `get_vault_overview` once to orient yourself, and follow the `conventions` it
+returns when reading, writing, or organising notes.
 ```
+
+Spell the routing rule out rather than pointing at the server's MCP `instructions`. Clients truncate that string (Claude Code cuts it at 2048 characters) and sub-agents may receive none of it, so a project file that only says "follow the server instructions" can end up pointing at nothing. Tool descriptions and tool responses always arrive — which is why the snippet routes through `get_vault_overview` for the vault's own conventions.
+
+## Vault conventions for external agents
+
+An optional `<vault>/.neuro-vault/for-external-agents.md` carries your rules for how *your* vault is organised — closed sets of frontmatter `type` values, folders that are off-limits for writes, how you scope notes to a project. The server picks it up with no configuration.
+
+It reaches the agent through the `conventions` field of every `get_vault_overview` response (and the `vault://overview` resource), read fresh on each call — edit the file and the next call sees it, with no server restart. The same text is also placed at the front of the MCP `instructions`, best-effort, for clients that render them.
+
+Keep it under **8,000 characters**: beyond that the field carries a trimmed slice and sets `conventions_truncated: true`. The call still succeeds; the tail is simply gone. In multi-vault mode each vault carries its own file.
+
+Full behaviour: [`docs/architecture/vault-conventions.md`](../architecture/vault-conventions.md).
 
 ## Troubleshooting
 
