@@ -15,9 +15,9 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Confirm the guard rules are live: a scratch file with a deliberate floating promise fails lint with `no-floating-promises` (do not commit the scratch file)
-- [ ] 4.2 Full gate green: `npm run lint`, `npm test`, `npm run typecheck`, `npm run build`
+- [x] 4.1 Confirm the guard rules are live: a scratch file with a deliberate floating promise fails lint with `no-floating-promises` (do not commit the scratch file)
+- [x] 4.2 Full gate green: `npm run lint`, `npm test`, `npm run typecheck`, `npm run build`
 
 ## 5. Docs
 
-- [ ] 5.1 Sweep docs for lint-setup claims (AGENTS.md, docs/, README badges/sections) and update any that describe the old non-type-aware config
+- [x] 5.1 Sweep docs for lint-setup claims (AGENTS.md, docs/, README badges/sections) and update any that describe the old non-type-aware config
