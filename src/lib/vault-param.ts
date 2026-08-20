@@ -31,3 +31,15 @@ export function vaultParamShape(
 export function describeMultiVault(registry: IVaultRegistry, suffix: string): string {
   return registry.isMulti() ? ' ' + suffix : '';
 }
+
+/**
+ * The shared suffix for tools that cannot fan out — reads of a specific path,
+ * writes, single-vault diagnostics. Pass it to `describeMultiVault`. It names
+ * the error code because this contract has no other delivery channel: the
+ * server `instructions` string is truncated by the client and withheld from
+ * sub-agents entirely, so the tool's own description is the only place a model
+ * reliably reads it.
+ */
+export const EXPLICIT_VAULT_SUFFIX =
+  'Pass `vault: "<name>"` to target a specific vault when multiple are registered — ' +
+  'omitting it returns `VAULT_REQUIRED`.';

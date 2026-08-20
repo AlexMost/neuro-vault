@@ -4,7 +4,11 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument, resolveIdentifier } from '../tool-helpers.js';
-import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
+import {
+  describeMultiVault,
+  EXPLICIT_VAULT_SUFFIX,
+  vaultParamShape,
+} from '../../../lib/vault-param.js';
 
 interface Input {
   vault?: string;
@@ -32,10 +36,7 @@ export function buildRemovePropertyTool(
     title: 'Remove Property',
     description:
       'Remove a frontmatter property from a note. Provide `name` or `path`, plus `key`. Idempotent — succeeds whether or not the property existed. Returns `{ vault, ok: true }`.' +
-      describeMultiVault(
-        registry,
-        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
-      ),
+      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'remove_property' });

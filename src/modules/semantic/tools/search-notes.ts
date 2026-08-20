@@ -515,6 +515,11 @@ export function buildSearchNotesTool(
   const SEARCH_NOTES_DESCRIPTION = [
     'Hybrid search over notes: fuses a semantic leg (embedding similarity — fuzzy recall, topic exploration, cross-language), a lexical leg (exact text matches over note titles, headings, and body — names, codes, terms), and (deep effort) an expansion leg (neighbours of the semantic hits) into ONE reciprocal-rank-fused list. Pass short keyword queries (1-4 words), not sentences.',
     '',
+    'QUERY WRITING:',
+    '- Build the query from the core nouns and concepts in the user\'s message; drop filler words and verbs. "remind me what I wanted to build with LLM agents" → "LLM agents".',
+    '- For synonyms, reformulations, or translations, pass all variants as ONE array (1-8 strings) in a SINGLE call rather than issuing separate searches.',
+    '- A vault may hold notes in more than one language. When you have evidence of which languages are in use (earlier results, note titles, file names), add translations of the key concepts into each of those languages to the same array.',
+    '',
     'AXES:',
     '- mode: "hybrid" (default) runs all legs; "lexical" runs ONLY exact text matching — works even when no embedding corpus exists.',
     '- effort: "quick" (default) — compact lookup (up to 3 semantic notes, ~5 lexical, no expansion, merged list capped at 5); "deep" — exploration (up to 8 semantic notes, ~10 lexical, expansion leg active, merged list capped at 12).',
@@ -555,7 +560,7 @@ export function buildSearchNotesTool(
     ...(registry.isMulti()
       ? [
           '',
-          'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]`. A vault without a semantic index still contributes lexically-sourced matches; none are skipped.',
+          'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `failed_vaults: [...]` (per-vault runtime errors) — one failing vault never aborts the call. A vault without a semantic index still contributes lexically-sourced matches; none are skipped.',
           '',
           'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
         ]

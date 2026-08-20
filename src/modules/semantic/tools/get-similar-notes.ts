@@ -13,7 +13,11 @@ import {
 } from '../tool-helpers.js';
 import type { EmbeddingProvider, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
-import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
+import {
+  describeMultiVault,
+  EXPLICIT_VAULT_SUFFIX,
+  vaultParamShape,
+} from '../../../lib/vault-param.js';
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_THRESHOLD = 0.5;
@@ -175,10 +179,8 @@ export function buildGetSimilarNotesTool(
     title: 'Get Similar Notes',
     description:
       'Find related notes — both semantically similar and explicitly linked from this note via [[wikilinks]]. Pass a vault-relative POSIX path (e.g. "Folder/note.md") as `path`. Forward-linked results rank ahead of semantic-only ones.' +
-      describeMultiVault(
-        registry,
-        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
-      ),
+      ' Typical flow: `search_notes` surfaces a relevant note, then call this on its path to expand the surrounding context into a deeper neighbour profile.' +
+      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
     inputSchema,
     handler: async (input) => {
       const entry = resolveSemanticVault(input, registry, {

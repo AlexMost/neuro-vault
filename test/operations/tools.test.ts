@@ -56,6 +56,14 @@ const noopDeps = {
   registry: noopRegistry,
 };
 
+const multiRegistry = {
+  get: vi.fn(),
+  require: vi.fn(),
+  list: vi.fn(() => [noopEntry, { ...noopEntry, name: 'other' }]),
+  isMulti: vi.fn(() => true),
+  names: vi.fn(() => ['test', 'other']),
+} as unknown as IVaultRegistry;
+
 describe('buildOperationsTools', () => {
   it('returns 11 registrations with the expected names', () => {
     const tools = buildOperationsTools(noopDeps);
@@ -122,5 +130,49 @@ describe('buildOperationsTools', () => {
     expect(readDaily.spec.description).toMatch(/created today/i);
     expect(readDaily.spec.description).toMatch(/excluding daily notes/i);
     expect(readDaily.spec.description).toMatch(/200/);
+  });
+
+  // The next three guard content that used to live only in the server
+  // `instructions` string, which the client truncates and never gives to
+  // sub-agents. Tool descriptions are delivered in full, so this is where the
+  // guidance has to be asserted.
+  it('read_daily description names the write-back route into today’s note', () => {
+    const tools = buildOperationsTools(noopDeps);
+    const readDaily = tools.find((t) => t.name === 'read_daily')!;
+    expect(readDaily.spec.description).toMatch(/edit_note/);
+    expect(readDaily.spec.description).toMatch(/create_note/);
+  });
+
+  it('edit_note description states disk-direct writes and the last-writer-wins caveat', () => {
+    const tools = buildOperationsTools(noopDeps);
+    const editNote = tools.find((t) => t.name === 'edit_note')!;
+    expect(editNote.spec.description).toMatch(/directly on disk/i);
+    expect(editNote.spec.description).toMatch(/Obsidian does not need to be installed or running/i);
+    expect(editNote.spec.description).toMatch(/last writer wins/i);
+  });
+
+  it('states the VAULT_REQUIRED contract on every tool that cannot fan out', () => {
+    const tools = buildOperationsTools({ registry: multiRegistry });
+    const explicitVaultTools = [
+      'read_notes',
+      'create_note',
+      'edit_note',
+      'read_daily',
+      'set_property',
+      'remove_property',
+      'get_note_links',
+    ];
+    for (const name of explicitVaultTools) {
+      const tool = tools.find((t) => t.name === name)!;
+      expect(tool.spec.description, name).toMatch(/VAULT_REQUIRED/);
+    }
+  });
+
+  it('names failed_vaults on every fan-out tool description', () => {
+    const tools = buildOperationsTools({ registry: multiRegistry });
+    for (const name of ['query_notes', 'list_tags', 'list_properties', 'get_vault_overview']) {
+      const tool = tools.find((t) => t.name === name)!;
+      expect(tool.spec.description, name).toMatch(/failed_vaults/);
+    }
   });
 });

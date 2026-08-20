@@ -7,7 +7,11 @@ import { pathExistsForEntry } from '../tool-helpers.js';
 import { readThreshold } from '../tool-helpers.js';
 import type { DuplicatePair, SearchEngine } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
-import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
+import {
+  describeMultiVault,
+  EXPLICIT_VAULT_SUFFIX,
+  vaultParamShape,
+} from '../../../lib/vault-param.js';
 
 const DEFAULT_DUPLICATE_THRESHOLD = 0.9;
 
@@ -50,10 +54,7 @@ export function buildFindDuplicatesTool(
     title: 'Find Duplicates',
     description:
       'Identify note pairs with high embedding similarity.' +
-      describeMultiVault(
-        registry,
-        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
-      ),
+      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
     inputSchema,
     handler: async (input) => {
       const entry = resolveSemanticVault(input, registry, {

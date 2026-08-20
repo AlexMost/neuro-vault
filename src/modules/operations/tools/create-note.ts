@@ -7,7 +7,11 @@ import { invalidArgument } from '../tool-helpers.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import { serializeFrontmatter, splitFrontmatter } from '../../../lib/obsidian/frontmatter.js';
 import type { CreateNoteToolInput } from '../types.js';
-import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
+import {
+  describeMultiVault,
+  EXPLICIT_VAULT_SUFFIX,
+  vaultParamShape,
+} from '../../../lib/vault-param.js';
 
 interface Input {
   vault?: string;
@@ -49,10 +53,7 @@ export function buildCreateNoteTool(
       'Before composing `content`, sample 1–2 similar notes from the vault to mimic existing conventions instead of inventing your own. A reliable pattern: `search_notes` for the topic (or `query_notes` with a tag/folder filter that fits) to find candidates, then `read_notes` on the closest match to inspect its frontmatter shape, tag values, heading layout, and folder placement. Match those conventions — the user almost always prefers a new note that looks like its neighbours. Be especially careful with the `type` frontmatter field: vaults tend to use a small closed set (e.g. project / task / idea / reflection / daily / review / inbox / resource); pick from what other notes use rather than coining a new value.' +
       '\n\n' +
       'Templates are not handled by this tool — render any template yourself (Obsidian Core Templates, Templater, or anything else) and pass the result as `content`.' +
-      describeMultiVault(
-        registry,
-        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
-      ) +
+      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX) +
       ' If a note with this path/name might already exist and the user has not explicitly asked to replace it, ask the user before passing `overwrite: true` — overwrite is destructive. Default behavior fails when the note exists.',
     inputSchema,
     handler: async (input) => {

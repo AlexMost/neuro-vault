@@ -601,4 +601,17 @@ describe('getSimilarNotes — graph signals', () => {
       await cleanup();
     }
   });
+
+  // Guards a routing hint that used to live only in the truncated server
+  // `instructions` string.
+  it('advertises the search_notes to get_similar_notes expansion flow', async () => {
+    const { tool, cleanup } = await buildToolWithVault();
+    try {
+      const description = registerTool(tool).spec.description!;
+      expect(description).toMatch(/search_notes/);
+      expect(description).toMatch(/expand/i);
+    } finally {
+      await cleanup();
+    }
+  });
 });

@@ -7,6 +7,7 @@ import {
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import type { SmartConnectionsCorpusIndex } from '../../../src/lib/obsidian/smart-connections-corpus-index.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import {
@@ -1011,5 +1012,44 @@ describe('searchNotes', () => {
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
+  });
+});
+
+// The advertised `description` is the only channel every client (sub-agents
+// included) receives in full — the server `instructions` string is truncated.
+// These guard the query-writing recipe and the multi-vault contract that used
+// to live only in `instructions`.
+describe('search_notes advertised description', () => {
+  function describeWith(vaultNames: string[]): string {
+    const registry = makeTestRegistry(
+      vaultNames.map((name) => ({
+        name,
+        path: `/vaults/${name}`,
+        smartEnvPath: `/vaults/${name}/.smart-env`,
+        graph: makeFakeGraph(),
+        listMatchingPaths: async () => new Set<string>(),
+      })),
+    );
+    const tool = buildSearchNotesTool({
+      registry,
+      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+      modelKey: MODEL_KEY,
+    });
+    return registerTool(tool).spec.description!;
+  }
+
+  it('carries the query-writing recipe: concept extraction and multilingual arrays', () => {
+    const description = describeWith(['v']);
+    expect(description).toMatch(/core nouns/i);
+    expect(description).toMatch(/filler/i);
+    expect(description).toMatch(/1-8 strings/);
+    expect(description).toMatch(/translat/i);
+    expect(description).toMatch(/more than one language/i);
+  });
+
+  it('names failed_vaults in the multi-vault fan-out contract', () => {
+    expect(describeWith(['a', 'b'])).toMatch(/failed_vaults/);
+    expect(describeWith(['v'])).not.toMatch(/failed_vaults/);
   });
 });

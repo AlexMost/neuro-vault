@@ -7,7 +7,11 @@ import { invalidArgument } from '../tool-helpers.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import { resolveNoteName } from '../resolve-note-name.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
-import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
+import {
+  describeMultiVault,
+  EXPLICIT_VAULT_SUFFIX,
+  vaultParamShape,
+} from '../../../lib/vault-param.js';
 
 interface Input {
   vault?: string;
@@ -39,10 +43,9 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: str
       'With `replace`: the exact string in `replace` is located in the body (case- and whitespace-sensitive) and swapped for `content`. If the string is not found, the call fails with `NOT_FOUND`. If it appears more than once, the call fails with `AMBIGUOUS_MATCH` listing the line numbers — make `replace` more specific, or omit it to do a full rewrite.' +
       '\n\n' +
       'Without `replace`: the entire body is overwritten with `content`. Use this for whole-body rewrites; pre-fetch the body with `read_notes` if you need to preserve parts of it. Use `\\n` for newlines in either mode.' +
-      describeMultiVault(
-        registry,
-        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
-      ),
+      '\n\n' +
+      'Writes land in the vault directory directly on disk — Obsidian does not need to be installed or running. Editing while a live Obsidian session has the vault open is safe; the last writer wins per file.' +
+      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'edit_note' });
