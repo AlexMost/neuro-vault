@@ -1,9 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildListTagsTool } from '../../../src/modules/operations/tools/list-tags.js';
+import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
+import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { makeProvider } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
+
+function registryOf(...names: string[]): IVaultRegistry {
+  return makeTestRegistry(
+    names.map((name) => ({
+      name,
+      provider: makeProvider({ listTags: vi.fn().mockResolvedValue([{ name: 'x', count: 1 }]) }),
+    })),
+  );
+}
 
 describe('operations.listTags handler', () => {
   it('forwards to provider and wraps result with vault', async () => {
@@ -95,5 +106,17 @@ describe('operations.listTags handler', () => {
       },
     ]);
     expect(result.skipped_vaults).toEqual([]);
+  });
+
+  it('returns { vault, results } for a single vault and never a top-level fan-out envelope', async () => {
+    const tool = buildListTagsTool({ registry: registryOf('only') });
+    const out = await tool.handler({});
+    expect(out).toEqual({ vault: 'only', results: [{ name: 'x', count: 1 }] });
+  });
+
+  it('carries the shared fan-out prose and never mentions skipped_vaults', () => {
+    const tool = buildListTagsTool({ registry: registryOf('a', 'b') });
+    expect(tool.description).toContain(FAN_OUT_SUFFIX);
+    expect(tool.description).not.toContain('skipped_vaults');
   });
 });

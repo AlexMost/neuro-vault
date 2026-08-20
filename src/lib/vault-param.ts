@@ -53,3 +53,23 @@ export function describeMultiVault(registry: IVaultRegistry, suffix: string): st
 export const EXPLICIT_VAULT_SUFFIX =
   'Pass `vault: "<name>"` to target a specific vault when multiple are registered — ' +
   'omitting it returns `VAULT_REQUIRED`.';
+
+/**
+ * The shared suffix for tools that CAN fan out — the mirror of
+ * `EXPLICIT_VAULT_SUFFIX`. Pass it to `describeMultiVault`, which prefixes the
+ * registered vault names.
+ *
+ * It deliberately says nothing about `skipped_vaults`. That field is always
+ * `[]` — `runFanOut` hard-codes it and no helper populates it since
+ * `runSemanticFanOut` was removed — so describing it would spend the
+ * per-`tools/list` description budget on a promise no code path keeps. The
+ * field stays in the response shape for contract stability; see
+ * `docs/architecture/fan-out.md`.
+ *
+ * This constant exists so the contract has exactly one copy. Five tool
+ * descriptions previously carried three drifted variants of it.
+ */
+export const FAN_OUT_SUFFIX =
+  'Omit `vault:` to fan out across all registered vaults — the response shape switches to ' +
+  '`results_by_vault: [...]` with `failed_vaults: [...]` (per-vault runtime errors); one ' +
+  'failing vault never aborts the call. Pass `vault: "<name>"` to target a specific vault.';

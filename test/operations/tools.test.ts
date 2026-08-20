@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildOperationsTools } from '../../src/modules/operations/tools/index.js';
+import { FAN_OUT_SUFFIX } from '../../src/lib/vault-param.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
@@ -196,5 +197,12 @@ describe('buildOperationsTools', () => {
       const tool = tools.find((t) => t.name === name)!;
       expect(tool.spec.description, name).toMatch(/failed_vaults/);
     }
+  });
+
+  it('list_properties carries the shared fan-out prose and no skipped_vaults', () => {
+    const tools = buildOperationsTools({ registry: multiRegistry });
+    const listProperties = tools.find((t) => t.name === 'list_properties')!;
+    expect(listProperties.spec.description).toContain(FAN_OUT_SUFFIX);
+    expect(listProperties.spec.description).not.toContain('skipped_vaults');
   });
 });

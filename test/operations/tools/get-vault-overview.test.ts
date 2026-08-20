@@ -4,10 +4,22 @@ import { buildGetVaultOverviewTool } from '../../../src/modules/operations/tools
 import type { VaultOverview } from '../../../src/lib/obsidian/vault-overview.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
+import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
+import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { makeGraph, makeProvider, makeReader } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 type SingleOverview = { vault: string } & VaultOverview;
+
+function registryOf(...names: string[]): IVaultRegistry {
+  return makeTestRegistry(
+    names.map((name) => ({
+      name,
+      reader: makeReader(),
+      graph: makeGraph(),
+    })),
+  );
+}
 
 describe('operations.getVaultOverview tool', () => {
   it('declares the expected name, title, and empty input schema', () => {
@@ -178,5 +190,14 @@ describe('operations.getVaultOverview tool', () => {
     expect(description).toMatch(
       /the response carries them in `conventions`.*Follow them when reading, writing, or organising notes here/,
     );
+  });
+
+  it('keeps the conventions sentence and drops the skipped_vaults sentence', () => {
+    const tool = buildGetVaultOverviewTool({ registry: registryOf('a', 'b') });
+    expect(tool.description).toContain(
+      "the response carries them in `conventions` — the vault owner's rules for how this vault is organised.",
+    );
+    expect(tool.description).not.toContain('skipped_vaults');
+    expect(tool.description).toContain(FAN_OUT_SUFFIX);
   });
 });
