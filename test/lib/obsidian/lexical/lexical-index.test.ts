@@ -43,7 +43,7 @@ describe('LexicalIndex', () => {
     const idx = makeIndex();
     const { notes } = await idx.search({ queries: ['пошук'], ...searchOpts });
     expect(notes).toHaveLength(1);
-    expect(notes[0]!.matches[0]!.lines).toEqual([5, 5]);
+    expect(notes[0].matches[0].lines).toEqual([5, 5]);
   });
 
   it('does not match frontmatter content', async () => {

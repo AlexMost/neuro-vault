@@ -44,7 +44,7 @@ function makeReader(
         content: notes[p]?.content ?? '',
       })),
     ),
-  } as unknown as VaultReader;
+  };
 }
 
 function buildReader(notes: FakeNote[]): VaultReader {

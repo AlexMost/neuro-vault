@@ -27,9 +27,9 @@ describe('rankNotes', () => {
       getBacklinkCount: noBacklinks,
     });
     expect(ranked.map((n) => n.path)).toEqual(['Пошук.md', 'b-head.md', 'c-body.md']);
-    expect(ranked[0]!.matches[0]!.matched_in).toBe('title');
-    expect(ranked[1]!.matches[0]!.matched_in).toBe('heading');
-    expect(ranked[2]!.matches[0]!.matched_in).toBe('body');
+    expect(ranked[0].matches[0].matched_in).toBe('title');
+    expect(ranked[1].matches[0].matched_in).toBe('heading');
+    expect(ranked[2].matches[0].matched_in).toBe('body');
   });
 
   it('density breaks ties within a tier', () => {
@@ -84,8 +84,8 @@ describe('rankNotes', () => {
       getBacklinkCount: noBacklinks,
     });
     expect(ranked).toHaveLength(1);
-    expect(ranked[0]!.matches).toHaveLength(3); // capped, best tiers first
-    expect(ranked[0]!.matches[0]!.matched_in).toBe('title');
+    expect(ranked[0].matches).toHaveLength(3); // capped, best tiers first
+    expect(ranked[0].matches[0].matched_in).toBe('title');
   });
 
   it('body match carries section heading and lines', () => {
@@ -97,7 +97,7 @@ describe('rankNotes', () => {
       perNoteCap: 3,
       getBacklinkCount: noBacklinks,
     });
-    const body = ranked[0]!.matches.find((m) => m.matched_in === 'body')!;
+    const body = ranked[0].matches.find((m) => m.matched_in === 'body')!;
     expect(body.heading).toBe('Рішення');
     expect(body.lines).toEqual([3, 3]);
   });
@@ -145,7 +145,7 @@ describe('rankNotes', () => {
       getBacklinkCount: noBacklinks,
     });
     expect(ranked).toHaveLength(1);
-    expect(ranked[0]!.matches[0]).toMatchObject({ matched_in: 'body', lines: [1, 2] });
+    expect(ranked[0].matches[0]).toMatchObject({ matched_in: 'body', lines: [1, 2] });
   });
 
   it('a heading-looking line inside a fenced code block matches as body, not heading', () => {
@@ -158,7 +158,7 @@ describe('rankNotes', () => {
       getBacklinkCount: noBacklinks,
     });
     expect(ranked).toHaveLength(1);
-    expect(ranked[0]!.matches[0]!.matched_in).toBe('body');
+    expect(ranked[0].matches[0].matched_in).toBe('body');
   });
 
   it('inflected forms match by substring (heading пошуком matches query пошук)', () => {
@@ -171,7 +171,7 @@ describe('rankNotes', () => {
       getBacklinkCount: noBacklinks,
     });
     expect(ranked).toHaveLength(1);
-    expect(ranked[0]!.matches[0]!.matched_in).toBe('heading');
+    expect(ranked[0].matches[0].matched_in).toBe('heading');
   });
 
   it('reports per-query candidate counts before the note cap', () => {

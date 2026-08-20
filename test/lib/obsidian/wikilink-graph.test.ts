@@ -40,7 +40,7 @@ function createReader(initial: Record<string, FakeNote>): {
           return {
             path: p,
             error: { code: 'NOT_FOUND', message: `Missing: ${p}` },
-          } as ReadNotesItem;
+          };
         }
         return {
           path: p,
@@ -284,7 +284,7 @@ describe('WikilinkGraphIndex', () => {
             return {
               path: p,
               error: { code: 'READ_FAILED', message: 'boom' },
-            } as ReadNotesItem;
+            };
           }
           return { path: p, frontmatter: null, content: '[[A]]\n' };
         });

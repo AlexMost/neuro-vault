@@ -33,7 +33,7 @@ describe('unified matches shape', () => {
         query: 'target',
       })) as SearchNotesOutput;
       expect(out.matches).toHaveLength(1);
-      const m = out.matches[0]!;
+      const m = out.matches[0];
       expect(m.found_in).toEqual(['semantic', 'lexical:title']);
       expect(m.similarity).toBe(0.8);
       expect(m.lexical?.[0]?.matched_in).toBe('title');
@@ -210,7 +210,7 @@ describe('lexical leg orchestration', () => {
       expect(out.matches.every((m) => m.found_in.every((s) => s.startsWith('lexical:')))).toBe(
         true,
       );
-      expect(out.matches[0]!.lexical?.[0]).toMatchObject({
+      expect(out.matches[0].lexical?.[0]).toMatchObject({
         matched_in: 'body',
         heading: 'Рішення',
         lines: [3, 3],
@@ -226,8 +226,8 @@ describe('lexical leg orchestration', () => {
       const tool = buildSearchNotesTool(deps);
       const out = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
       expect(out.matches).toHaveLength(1);
-      expect(out.matches[0]!.found_in).toEqual(['lexical:title']);
-      expect(out.matches[0]!.similarity).toBeUndefined();
+      expect(out.matches[0].found_in).toEqual(['lexical:title']);
+      expect(out.matches[0].similarity).toBeUndefined();
     } finally {
       await cleanup();
     }
@@ -239,7 +239,7 @@ describe('lexical leg orchestration', () => {
       'Archive/b пошук.md': '',
     });
     // narrow the allowed set to Tasks/ only
-    deps.registry.list()[0]!.listMatchingPaths = async () => new Set(['Tasks/a пошук.md']);
+    deps.registry.list()[0].listMatchingPaths = async () => new Set(['Tasks/a пошук.md']);
     try {
       const tool = buildSearchNotesTool(deps);
       const out = (await tool.handler({
@@ -267,8 +267,8 @@ describe('lexical leg orchestration', () => {
         mode: 'lexical',
       })) as SearchNotesOutput;
       expect(out.matches).toHaveLength(1);
-      expect(out.matches[0]!.found_in).toEqual(['lexical:title']);
-      const corpus = deps.registry.list()[0]!.corpus!;
+      expect(out.matches[0].found_in).toEqual(['lexical:title']);
+      const corpus = deps.registry.list()[0].corpus!;
       expect(corpus.snapshot).not.toHaveBeenCalled();
     } finally {
       await cleanup();
@@ -420,7 +420,7 @@ describe('multi-query and fan-out', () => {
     const b = await makeLexicalVault({ 'пошук b.md': '' }, { semantic: false });
     const registry = makeTestRegistry([...a.deps.registry.list(), ...b.deps.registry.list()]);
     // rename second entry to avoid the name collision
-    registry.list()[1]!.name = 'w';
+    registry.list()[1].name = 'w';
     try {
       const tool = buildSearchNotesTool({ ...a.deps, registry });
       const out = (await tool.handler({ query: 'пошук' })) as IFanOutResult<SearchNotesOutput>;
@@ -733,7 +733,7 @@ describe('query_stats semantic_fallback flag', () => {
       expect(output.query_stats['alpha']).toEqual(
         expect.not.objectContaining({ semantic_fallback: true }),
       );
-      expect(output.query_stats['alpha']!.semantic).toBe(0);
+      expect(output.query_stats['alpha'].semantic).toBe(0);
     } finally {
       await cleanup();
     }
@@ -851,7 +851,7 @@ describe('arity invariance (SDK gate)', () => {
       );
       // Preconditions: the comparisons above are not vacuous.
       expect(asString.matches.length).toBeGreaterThan(0);
-      expect(asString.matches[0]!.blocks?.length ?? 0).toBeGreaterThan(0);
+      expect(asString.matches[0].blocks?.length ?? 0).toBeGreaterThan(0);
       expect(asString.matches.some((m) => m.expansion_similarity !== undefined)).toBe(true);
     } finally {
       await cleanup();

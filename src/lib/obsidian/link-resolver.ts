@@ -40,7 +40,7 @@ export function buildBasenameIndex(paths: Iterable<string>): BasenameIndex {
   return {
     resolve(target: string): string | null {
       const all = resolveAll(target);
-      return all.length > 0 ? all[0]! : null;
+      return all.length > 0 ? all[0] : null;
     },
     resolveAll,
   };

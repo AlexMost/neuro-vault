@@ -101,10 +101,10 @@ describe('operations.queryNotes handler', () => {
     const byVault = new Map(result.results_by_vault.map((g) => [g.vault, g]));
     expect(byVault.has('vault-a')).toBe(true);
     expect(byVault.has('vault-b')).toBe(true);
-    expect(byVault.get('vault-a')!.results[0]!.path).toBe('a.md');
-    expect(byVault.get('vault-a')!.results[0]!.vault).toBe('vault-a');
-    expect(byVault.get('vault-b')!.results[0]!.path).toBe('b.md');
-    expect(byVault.get('vault-b')!.results[0]!.vault).toBe('vault-b');
+    expect(byVault.get('vault-a')!.results[0].path).toBe('a.md');
+    expect(byVault.get('vault-a')!.results[0].vault).toBe('vault-a');
+    expect(byVault.get('vault-b')!.results[0].path).toBe('b.md');
+    expect(byVault.get('vault-b')!.results[0].vault).toBe('vault-b');
     expect(byVault.get('vault-a')!.count).toBe(1);
     expect(byVault.get('vault-b')!.count).toBe(1);
     expect(byVault.get('vault-a')!.truncated).toBe(false);
@@ -146,10 +146,10 @@ describe('operations.queryNotes handler', () => {
       },
     ]);
     expect(result.results_by_vault).toHaveLength(1);
-    const vaultA = result.results_by_vault[0]!;
+    const vaultA = result.results_by_vault[0];
     expect(vaultA.vault).toBe('vault-a');
-    expect(vaultA.results[0]!.path).toBe('a.md');
-    expect(vaultA.results[0]!.vault).toBe('vault-a');
+    expect(vaultA.results[0].path).toBe('a.md');
+    expect(vaultA.results[0].vault).toBe('vault-a');
     expect(vaultA.count).toBe(1);
     expect(vaultA.truncated).toBe(false);
   });
@@ -182,7 +182,7 @@ describe('operations.queryNotes handler', () => {
     expect(result).toHaveProperty('truncated');
     expect((result as unknown as Record<string, unknown>).results_by_vault).toBeUndefined();
     expect(result.results).toHaveLength(1);
-    expect(result.results[0]!.vault).toBe('vault-a');
+    expect(result.results[0].vault).toBe('vault-a');
   });
 
   it('returns the payload unchanged for a single vault — vault rides on each item', async () => {

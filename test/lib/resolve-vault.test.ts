@@ -7,7 +7,7 @@ import type { SmartConnectionsCorpusIndex } from '../../src/lib/obsidian/smart-c
 
 function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
   const list = entries.map((e) => ({ readConventions: async () => null, ...e }) as IVaultEntry);
-  const byName = new Map(list.map((e) => [e.name!, e]));
+  const byName = new Map(list.map((e) => [e.name, e]));
   return {
     get: (n) => byName.get(n),
     require: (n) => {
@@ -16,7 +16,7 @@ function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
       return e;
     },
     list: () => list,
-    names: () => list.map((e) => e.name!),
+    names: () => list.map((e) => e.name),
     isMulti: () => list.length > 1,
   };
 }

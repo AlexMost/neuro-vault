@@ -54,8 +54,8 @@ describe('findNeighbors', () => {
 
     expect(results.map((result) => result.path)).toEqual(['alpha.md', 'delta.md', 'bravo.md']);
     expect(results.every((result) => result.similarity >= 0.5)).toBe(true);
-    expect(results[0]!.similarity).toBeGreaterThan(results[1]!.similarity);
-    expect(results[1]!.similarity).toBeGreaterThan(results[2]!.similarity);
+    expect(results[0].similarity).toBeGreaterThan(results[1].similarity);
+    expect(results[1].similarity).toBeGreaterThan(results[2].similarity);
   });
 
   it('breaks ties deterministically and includes exact-threshold matches', () => {
@@ -157,12 +157,12 @@ describe('findBlockNeighbors', () => {
     expect(results.map((r) => r.heading)).not.toContain('#empty');
 
     // Results should be sorted by similarity descending
-    expect(results[0]!.similarity).toBeGreaterThanOrEqual(results[1]!.similarity);
-    expect(results[1]!.similarity).toBeGreaterThanOrEqual(results[2]!.similarity);
+    expect(results[0].similarity).toBeGreaterThanOrEqual(results[1].similarity);
+    expect(results[1].similarity).toBeGreaterThanOrEqual(results[2].similarity);
 
     // The most similar block to [1,0,0] is note-a.md#intro with embedding [0.9,0.1,0]
-    expect(results[0]!.path).toBe('note-a.md');
-    expect(results[0]!.heading).toBe('#intro');
+    expect(results[0].path).toBe('note-a.md');
+    expect(results[0].heading).toBe('#intro');
 
     // Each result has path, heading, lines and similarity
     expect(results[0]).toMatchObject({
@@ -170,7 +170,7 @@ describe('findBlockNeighbors', () => {
       heading: '#intro',
       lines: [1, 5],
     });
-    expect(typeof results[0]!.similarity).toBe('number');
+    expect(typeof results[0].similarity).toBe('number');
   });
 
   it('respects threshold', () => {
@@ -194,7 +194,7 @@ describe('findBlockNeighbors', () => {
     });
 
     expect(results).toHaveLength(1);
-    expect(results[0]!.heading).toBe('#intro');
+    expect(results[0].heading).toBe('#intro');
   });
 });
 
@@ -217,12 +217,12 @@ describe('findDuplicates', () => {
       ['charlie.md', 'delta.md'],
     ]);
     expect(results.every((result) => result.similarity >= 0.95)).toBe(true);
-    expect(results[0]!.similarity).toBeGreaterThan(results[1]!.similarity);
+    expect(results[0].similarity).toBeGreaterThan(results[1].similarity);
     expect(results[0]).toMatchObject({
       note_a: 'alpha.md',
       note_b: 'bravo.md',
     });
-    expect(results[0]!.similarity).toBeCloseTo(0.9999499987499375);
+    expect(results[0].similarity).toBeCloseTo(0.9999499987499375);
   });
 
   it('breaks ties deterministically and includes exact-threshold pairs', () => {

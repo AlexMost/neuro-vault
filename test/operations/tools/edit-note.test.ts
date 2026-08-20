@@ -145,7 +145,7 @@ describe('edit_note: identifier validation', () => {
 
   it('rejects when neither name nor path is provided', async () => {
     const { tool } = buildTool();
-    await expect(tool.handler({ content: 'y' } as never)).rejects.toMatchObject({
+    await expect(tool.handler({ content: 'y' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
   });

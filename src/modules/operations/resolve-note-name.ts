@@ -26,5 +26,5 @@ export async function resolveNoteName(reader: VaultReader, name: string): Promis
       { details: { name, matches } },
     );
   }
-  return matches[0]!;
+  return matches[0];
 }

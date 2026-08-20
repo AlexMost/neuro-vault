@@ -4,8 +4,8 @@ import type { IVaultRegistry } from '../../lib/vault-registry.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 import type { ResourceRegistration } from '../../lib/resource-registration.js';
 
-// empty body — reserved for future module-level options
-export interface IOperationsModuleConfig {}
+// no options yet — becomes an interface again when the first option lands
+export type IOperationsModuleConfig = Record<string, never>;
 
 export interface IOperationsModule {
   tools: ToolRegistration[];

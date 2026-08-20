@@ -44,14 +44,14 @@ export function parseAjsonContent(content: string): AjsonEntry[] {
     let key = '';
     while (pos < len && content[pos] !== '"') {
       if (content[pos] === '\\') {
-        key += content[pos]!;
+        key += content[pos];
         pos++;
         if (pos < len) {
-          key += content[pos]!;
+          key += content[pos];
           pos++;
         }
       } else {
-        key += content[pos]!;
+        key += content[pos];
         pos++;
       }
     }
@@ -82,7 +82,7 @@ export function parseAjsonContent(content: string): AjsonEntry[] {
     let inString = false;
 
     while (pos < len) {
-      const ch = content[pos]!;
+      const ch = content[pos];
       if (inString) {
         if (ch === '\\') {
           pos++;

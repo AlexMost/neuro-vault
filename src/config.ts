@@ -68,7 +68,7 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
     .exitProcess(false)
     .parse();
 
-  const rawVaults = (args.vault ?? []) as string[];
+  const rawVaults = args.vault ?? [];
   if (rawVaults.length === 0) {
     throw new Error('--vault is required: provide at least one vault with --vault <path>');
   }

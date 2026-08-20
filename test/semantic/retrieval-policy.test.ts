@@ -758,7 +758,7 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
       searchEngine,
     });
 
-    expect(output.results[0]!.matched_queries).toEqual(queries);
+    expect(output.results[0].matched_queries).toEqual(queries);
   });
 
   it('related items never carry a similarity field — only expansion_similarity', async () => {

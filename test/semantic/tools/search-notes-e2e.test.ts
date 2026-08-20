@@ -36,7 +36,7 @@ describe('search_notes end-to-end sanity fixture', () => {
       const out = (await tool.handler({ query: 'retrieval eval harness' })) as SearchNotesOutput;
 
       expect(out.matches).toHaveLength(1);
-      const m = out.matches[0]!;
+      const m = out.matches[0];
       expect(m.path).toBe(notePath);
       expect(m.found_in).toContain('semantic');
       expect(m.found_in).toContain('lexical:title');
@@ -62,8 +62,8 @@ describe('search_notes end-to-end sanity fixture', () => {
 
       expect(out.matches).toHaveLength(1);
       expect(out.matches[0]).toMatchObject({ path: 'Note.md' });
-      expect(out.matches[0]!.found_in).toEqual(['lexical:body']);
-      expect(out.matches[0]!.lexical?.[0]).toMatchObject({ matched_in: 'body' });
+      expect(out.matches[0].found_in).toEqual(['lexical:body']);
+      expect(out.matches[0].lexical?.[0]).toMatchObject({ matched_in: 'body' });
     } finally {
       await cleanup();
     }
@@ -102,7 +102,7 @@ describe('search_notes end-to-end sanity fixture', () => {
       })) as SearchNotesOutput;
 
       expect(out.matches.map((m) => m.path)).toEqual([tasksPath]);
-      const m = out.matches[0]!;
+      const m = out.matches[0];
       expect(m.found_in).toContain('semantic');
       expect(m.found_in.some((s) => s.startsWith('lexical:'))).toBe(true);
     } finally {
@@ -124,8 +124,8 @@ describe('search_notes end-to-end sanity fixture', () => {
 
       expect(out.matches).toHaveLength(1);
       expect(out.matches[0]).toMatchObject({ path: 'Cold corpus note.md' });
-      expect(out.matches[0]!.found_in).toEqual(['lexical:body']);
-      expect(out.matches[0]!.similarity).toBeUndefined();
+      expect(out.matches[0].found_in).toEqual(['lexical:body']);
+      expect(out.matches[0].similarity).toBeUndefined();
     } finally {
       await cleanup();
     }

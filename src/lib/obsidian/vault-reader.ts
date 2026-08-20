@@ -70,8 +70,7 @@ export class FsVaultReader implements VaultReader {
     this.vaultRoot = opts.vaultRoot;
     this.readFile = opts.readFile ?? ((p, enc) => fsReadFile(p, enc));
     this.stat = opts.stat ?? ((p) => fsStat(p));
-    this.glob =
-      opts.glob ?? ((pattern, options) => fastGlob(pattern, { ...options }) as Promise<string[]>);
+    this.glob = opts.glob ?? ((pattern, options) => fastGlob(pattern, { ...options }));
   }
 
   async readNotes(input: ReadNotesInput): Promise<ReadNotesItem[]> {

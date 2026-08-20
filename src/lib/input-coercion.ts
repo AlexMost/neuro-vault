@@ -21,7 +21,7 @@ function unwrap(schema: ZodTypeAny): ZodTypeAny {
   ) {
     const unwrapped = (current as z.ZodOptional<ZodTypeAny>).unwrap();
     if (!unwrapped) break;
-    current = unwrapped as ZodTypeAny;
+    current = unwrapped;
   }
   return current;
 }
@@ -163,7 +163,7 @@ function wrapField(field: ZodTypeAny, fieldName: string): ZodTypeAny {
     if (inner instanceof z.ZodOptional) isOptional = true;
     const next = (inner as z.ZodOptional<ZodTypeAny>).unwrap();
     if (!next) break;
-    inner = next as ZodTypeAny;
+    inner = next;
   }
   const wrapped = z.preprocess((v, ctx) => {
     try {

@@ -178,12 +178,11 @@ describe('Neuro Vault MCP server bootstrap', () => {
     try {
       await main(['node', 'cli.js', '--vault', vaultPath, '--no-semantic'], {
         vaultEntryDeps: {
-          providerFactory: () => fakeProvider as never,
-          readerFactory: () =>
-            ({
-              readNotes: vi.fn().mockResolvedValue([]),
-              scan: vi.fn().mockResolvedValue([]),
-            }) as never,
+          providerFactory: () => fakeProvider,
+          readerFactory: () => ({
+            readNotes: vi.fn().mockResolvedValue([]),
+            scan: vi.fn().mockResolvedValue([]),
+          }),
         },
         serverFactory: (_instructions: string) => server,
         transportFactory: () => ({}) as never,
@@ -232,12 +231,11 @@ describe('Neuro Vault MCP server bootstrap', () => {
       await main(['node', 'cli.js', '--vault', vaultPath], {
         vaultEntryDeps: {
           corpusFactory: () => Promise.resolve(makeFakeCorpusIndex()),
-          providerFactory: () => fakeProvider as never,
-          readerFactory: () =>
-            ({
-              readNotes: vi.fn().mockResolvedValue([]),
-              scan: vi.fn().mockResolvedValue([]),
-            }) as never,
+          providerFactory: () => fakeProvider,
+          readerFactory: () => ({
+            readNotes: vi.fn().mockResolvedValue([]),
+            scan: vi.fn().mockResolvedValue([]),
+          }),
         },
         semantic: {
           embeddingServiceFactory: () => ({
