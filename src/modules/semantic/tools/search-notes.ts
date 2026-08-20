@@ -9,7 +9,6 @@ import { fuseRanks, flattenExpansion } from '../rank-fusion.js';
 import {
   normalizeQuery,
   normalizeQueryArray,
-  pathExistsForEntry,
   readPositiveInteger,
   readThreshold,
 } from '../tool-helpers.js';
@@ -99,19 +98,6 @@ export interface SearchNotesDeps {
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
-}
-
-async function buildExistingPathSet(
-  entry: IVaultEntry,
-  paths: Iterable<string>,
-): Promise<Set<string>> {
-  const unique = new Set(paths);
-  const checks = await Promise.all(
-    [...unique].map(
-      async (notePath) => [notePath, await pathExistsForEntry(entry, notePath)] as const,
-    ),
-  );
-  return new Set(checks.filter(([, exists]) => exists).map(([notePath]) => notePath));
 }
 
 function wrapDependencyError(
@@ -449,7 +435,7 @@ async function runSearchForEntry(
       ...rawSemanticNodes.map((n) => n.path),
       ...rawExpansion.map((e) => e.path),
     ];
-    const existing = await buildExistingPathSet(entry, candidatePaths);
+    const existing = await entry.filterExisting(candidatePaths);
     const semanticNodes = rawSemanticNodes
       .filter((n) => existing.has(n.path))
       .map((n) => ({ ...n, related: n.related.filter((rel) => existing.has(rel.path)) }));
