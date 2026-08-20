@@ -151,9 +151,9 @@ Output: `{ results: MultiNoteResultNode[], truncated: boolean, per_query_hits: R
 
 ## Stale-path filtering
 
-The Smart Connections embeddings index is keyed by note path. When a file is moved (e.g. `Tasks/foo.md` → `Archive/foo.md`) Smart Connections may not evict the old entry, so `findNeighbors` can return a path that no longer exists on disk. The MCP `search_notes`, `get_similar_notes`, and `find_duplicates` handlers post-filter results through a `pathExists(vaultRelativePath)` predicate and drop entries (and duplicate pairs) whose paths are missing.
+The Smart Connections embeddings index is keyed by note path. When a file is moved (e.g. `Tasks/foo.md` → `Archive/foo.md`) Smart Connections may not evict the old entry, so `findNeighbors` can return a path that no longer exists on disk. The MCP `search_notes`, `get_similar_notes`, and `find_duplicates` handlers post-filter results through `entry.filterExisting(paths)` and drop entries (and duplicate pairs) whose paths are missing.
 
-The default predicate in `src/modules/semantic/index.ts` is a `fs.access` check rooted at the configured `--vault` directory. Tests inject a fake. The policy itself is unchanged — filtering happens at the handler boundary so the math layer stays pure.
+That filter is one per-vault adapter (`src/lib/obsidian/existing-paths.ts`), bound to the vault root and reached from the entry the handler already holds; tests substitute it directly. See [smart-connections-corpus §Stale paths](smart-connections-corpus.md#stale-paths) for what each tool filters and why. The policy itself is unchanged — filtering happens at the handler boundary so the math layer stays pure.
 
 ## Pre-filter
 

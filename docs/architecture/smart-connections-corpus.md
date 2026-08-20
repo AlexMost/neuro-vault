@@ -56,3 +56,19 @@ Reload failure throws — we never silently serve a snapshot known to be inconsi
 Concurrent `snapshot()` calls share a single in-flight reload via an internal latch; the second caller awaits the first and returns once the swap completes. The mtime+file-count signature is captured BEFORE the reload begins, so any writes that land during the reload trigger another reload on the next call (eventually consistent, no silent staleness).
 
 Mirrors the pattern in `WikilinkGraphIndex.ensureFresh()` (`src/lib/obsidian/wikilink-graph.ts`).
+
+## Stale paths
+
+Refresh keeps the corpus consistent with the `.ajson` files, not with the vault. Between a note's deletion on disk and the plugin's next index write, the corpus still names it — and `null` tombstones mean a path can outlive its file even after a reload. So a corpus-derived path is a claim about the index, never a promise about the filesystem.
+
+Every tool that returns corpus-derived paths therefore filters them at the handler seam, through `IVaultEntry.filterExisting` (`src/lib/obsidian/existing-paths.ts`). It takes vault-relative paths and returns those that still resolve under that vault's root: input de-duplicated, each path checked independently, a missing file reported as absent rather than raised. Current consumers:
+
+| Tool | What it filters |
+| --- | --- |
+| `search_notes` | semantic seeds and their flattened expansion targets, against one set. Lexical-only matches skip the check — reading them from disk this request already proved they exist. |
+| `find_duplicates` | both members of every pair; a pair with one missing member is dropped whole. |
+| `get_similar_notes` | every candidate, semantic or forward-linked, after `exclude_folders` has been applied. |
+
+One implementation, so no consumer can disagree about what "exists" means or skip the check by forgetting it, and a new corpus-reading tool inherits the guarantee from the entry it already holds. The filter is built per vault by `existingPathFilterFactory` in `IVaultEntryDeps` — see [vault-registry](vault-registry.md) — which is also what makes it substitutable in tests without provisioning files.
+
+Two things this deliberately is not. The corpus itself is not made staleness-aware: it stays read-only and unwatched, as [ADR-0006](../adr/0006-smart-connections-corpus.md) decided, and the filter compensates at the edge rather than moving the problem upstream. And the check does not live in the retrieval policy layer, which stays free of disk I/O — handlers call it, policy does not.

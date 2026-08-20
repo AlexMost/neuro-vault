@@ -17,9 +17,13 @@ A `VaultEntry` bundles everything a module or tool handler needs to reach one va
 | `provider`                  | always                                   | `FsVaultProvider` — direct disk creates, daily notes, properties, tags   |
 | `graph`                     | always                                   | `WikilinkGraphIndex` — lazy wikilink adjacency                            |
 | `listMatchingPaths`         | always                                   | Factory-produced function for structured path queries                     |
+| `readConventions`           | always                                   | Best-effort read of this vault's `.neuro-vault/for-external-agents.md`    |
+| `filterExisting`            | always                                   | Filters vault-relative paths down to those still present on disk          |
 | `corpus`                    | `--semantic` enabled AND corpus loadable | `SmartConnectionsCorpusIndex` wrapping the `.smart-env/multi/` data       |
 | `semanticAvailable`         | always                                   | `true` only when `corpus` is set                                          |
 | `semanticUnavailableReason` | when `semanticAvailable === false`       | Human-readable explanation (missing directory, empty corpus, parse error) |
+
+`readConventions` and `filterExisting` are *per-vault capabilities*: small closures pre-bound to one vault's root, built by `conventionsReaderFactory` and `existingPathFilterFactory` in `IVaultEntryDeps` the same way `reader`, `writer`, and `provider` are. A consumer holding an entry gets the behaviour without threading `entry.path` anywhere, and a test substitutes it by passing its own function — no files on disk required. `filterExisting` exists because a Smart Connections path is a claim about the index and not a promise about the filesystem; [smart-connections-corpus](smart-connections-corpus.md#stale-paths) explains the obligation and lists which tools discharge it.
 
 The `VaultRegistry` interface exposes a small, stable API:
 
