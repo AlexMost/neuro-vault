@@ -22,6 +22,7 @@ export default defineConfig(
     languageOptions: {
       parserOptions: {
         projectService: true,
+        // import.meta.dirname requires Node >= 20.11 (engines says >=20; CI uses latest 20.x)
         tsconfigRootDir: import.meta.dirname,
       },
     },

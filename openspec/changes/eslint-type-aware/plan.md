@@ -4,7 +4,7 @@
 
 **Goal:** Turn on typescript-eslint `recommended-type-checked` (incl. `no-floating-promises` / `no-misused-promises`) via `projectService`, with a bounded relaxation for `test/**`, and land the repo green.
 
-**Architecture:** Replace the hand-rolled flat config with `tseslint.config(...)` from the `typescript-eslint` meta-package. Type info comes from the existing `tsconfig.json` (it already includes `src`, `test`, `scripts`, `tsup.config.ts`) — no `tsconfig.eslint.json`. JS config files outside tsconfig get `disableTypeChecked`. Code changes are types/assertions only.
+**Architecture:** Replace the hand-rolled flat config with `defineConfig(...)` from the `typescript-eslint` meta-package. Type info comes from the existing `tsconfig.json` (it already includes `src`, `test`, `scripts`, `tsup.config.ts`) — no `tsconfig.eslint.json`. JS config files outside tsconfig get `disableTypeChecked`. Code changes are types/assertions only.
 
 **Tech Stack:** ESLint 9 flat config, `typescript-eslint` ^8.67.0, Node ≥ 20, npm.
 

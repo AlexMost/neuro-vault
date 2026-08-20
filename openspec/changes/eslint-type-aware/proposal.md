@@ -7,7 +7,7 @@ The ESLint config runs with `parserOptions.project: false` — no type-aware rul
 **ESLint config plumbing**
 
 - From: separate `@typescript-eslint/eslint-plugin` + `@typescript-eslint/parser` devDeps, hand-rolled flat config, `project: false`.
-- To: `typescript-eslint` meta-package, `tseslint.config(...)` with `recommendedTypeChecked` presets, `parserOptions.projectService: true` (reusing the existing tsconfig — no `tsconfig.eslint.json`), `disableTypeChecked` block for JS config files outside tsconfig.
+- To: `typescript-eslint` meta-package, `defineConfig(...)` (from 'eslint/config') with `recommendedTypeChecked` presets, `parserOptions.projectService: true` (reusing the existing tsconfig — no `tsconfig.eslint.json`), `disableTypeChecked` block for JS config files outside tsconfig.
 - Reason: upstream-recommended path; presets track typescript-eslint releases instead of drifting.
 - Impact: non-breaking; dev-time only. The two old devDeps become transitive and are removed.
 
