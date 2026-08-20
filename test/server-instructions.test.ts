@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildServerInstructions, readExternalAgentInstructions } from '../src/server.js';
+import { buildServerInstructions } from '../src/server.js';
 import type { IVaultRegistry } from '../src/lib/vault-registry.js';
 
 async function makeTempVault(): Promise<string> {
@@ -42,51 +42,6 @@ function makeRegistry(vaultPath: string, multi = false): IVaultRegistry {
     names: vi.fn(() => entries.map((e) => e.name)),
   };
 }
-
-describe('readExternalAgentInstructions', () => {
-  it('returns null when the file is missing', async () => {
-    const vault = await makeTempVault();
-    try {
-      const result = await readExternalAgentInstructions(vault);
-      expect(result).toBeNull();
-    } finally {
-      await fs.rm(vault, { recursive: true, force: true });
-    }
-  });
-
-  it('returns the trimmed file content when the file is present', async () => {
-    const vault = await makeTempVault();
-    try {
-      const dir = path.join(vault, '.neuro-vault');
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(
-        path.join(dir, 'for-external-agents.md'),
-        '\n\n# Conventions\n- Do not write into Resources/\n\n',
-        'utf8',
-      );
-
-      const result = await readExternalAgentInstructions(vault);
-      expect(result).toBe('# Conventions\n- Do not write into Resources/');
-    } finally {
-      await fs.rm(vault, { recursive: true, force: true });
-    }
-  });
-
-  it('returns null when the path is unreadable (e.g. a directory)', async () => {
-    const vault = await makeTempVault();
-    try {
-      const dir = path.join(vault, '.neuro-vault');
-      await fs.mkdir(dir, { recursive: true });
-      // Make the path a directory so readFile fails with EISDIR.
-      await fs.mkdir(path.join(dir, 'for-external-agents.md'));
-
-      const result = await readExternalAgentInstructions(vault);
-      expect(result).toBeNull();
-    } finally {
-      await fs.rm(vault, { recursive: true, force: true });
-    }
-  });
-});
 
 describe('buildServerInstructions', () => {
   it('appends the get_vault_overview hint regardless of whether the file exists', async () => {

@@ -1,6 +1,4 @@
 import { createRequire } from 'node:module';
-import fs from 'node:fs/promises';
-import path from 'node:path';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -14,6 +12,7 @@ import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
 import { FsVaultProvider } from './modules/operations/fs-vault-provider.js';
 import { createSmartConnectionsCorpusIndex } from './lib/obsidian/smart-connections-corpus-index.js';
+import { readVaultConventions } from './lib/obsidian/vault-conventions.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ResourceRegistration } from './lib/resource-registration.js';
 import type { ServerConfig } from './types.js';
@@ -25,18 +24,6 @@ const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json'
 };
 
 type ToolServer = Pick<McpServer, 'registerTool' | 'registerResource' | 'connect'>;
-
-const EXTERNAL_AGENT_INSTRUCTIONS_PATH = '.neuro-vault/for-external-agents.md';
-
-export async function readExternalAgentInstructions(vaultPath: string): Promise<string | null> {
-  const filePath = path.join(vaultPath, EXTERNAL_AGENT_INSTRUCTIONS_PATH);
-  try {
-    const raw = await fs.readFile(filePath, 'utf8');
-    return raw.trim();
-  } catch {
-    return null;
-  }
-}
 
 export interface NeuroVaultStartupDependencies {
   semantic?: ISemanticModuleDeps;
@@ -150,7 +137,7 @@ export async function buildServerInstructions(registry: IVaultRegistry): Promise
   }
 
   for (const entry of registry.list()) {
-    const extra = await readExternalAgentInstructions(entry.path);
+    const extra = await readVaultConventions(entry.path);
     if (extra !== null && extra !== '') {
       const heading = registry.isMulti()
         ? `## Vault-specific conventions — ${entry.name}`
