@@ -91,6 +91,8 @@ for each query, concurrently:
   neighbors = neighbors.slice(0, limit)
 ```
 
+`embeddingProvider.embed(query)` is called directly, with no `try`/`catch` anywhere in this file (`retrieval-policy.ts` has none) — if any one query's embed call rejects, the surrounding `Promise.all` (`retrieval-policy.ts:142`) rejects too, and the whole `executeRetrieval` call throws: there is no partial result and no per-query error isolation, even though embedding itself runs per query. The policy lets that rejection bubble all the way up; the tool handler is what turns it into `DEPENDENCY_ERROR` — the `executeRetrieval` call sits inside a `try` block (`search-notes.ts:390-445`) whose `catch` (`:446-450`) calls `wrapDependencyError(error, 'Failed to search notes', ...)`, which wraps any non-`ToolHandlerError` as `new ToolHandlerError('DEPENDENCY_ERROR', ...)` (`wrapDependencyError` defined at `search-notes.ts:116-124`).
+
 `threshold` and `explicitThreshold` are computed once for the whole call (`input.threshold !== undefined`), not per query — every query in the array is filtered by the same threshold value:
 
 - **Explicit** (`input.threshold` is set): a **hard filter**. Notes scoring below it never become seeds, and if `findNeighbors(threshold)` returns nothing for a given query, that's the final answer for that query — zero hits, no retry. This is deliberate: an explicit value is a promise the caller is opting out of the rescue, and a silent widening would contradict what they asked for.
@@ -140,7 +142,7 @@ Block evidence is deliberately decoupled from the note-score `threshold`: a call
 
 ### Step 3b — Per-seed backfill for starved seeds
 
-(Named "Step 4b" in the source comments — `retrieval-policy.ts:239` — since the code's own step numbering counts the fallback-threshold retry inside Step 1 as its own step.)
+(Named "Step 4b" in the source comments — `retrieval-policy.ts:239` — because the source's own step-comment numbering is offset from this document's: the `// Step 2` label is used twice in the source, once for the per-query fallback retry inside Step 1's `Promise.all` block (`retrieval-policy.ts:151`, "Step 2 (per query): fallback threshold") and again for the cross-query merge (`retrieval-policy.ts:176`, "Step 2: merge seeds across queries") — so every source-comment step number after that point runs one ahead of this document's own numbering.)
 
 The shared block pass above applies a single global limit across *all* seeds' blocks in both modes (quick's top-5 `QUICK_BLOCK_LIMIT`, deep's `limit`) — deep additionally filters at the internal 0.35 default on top of that shared cap, quick does not (`threshold: 0`). Either mechanism, alone or combined, can leave a seed with zero blocks even though the note has block embeddings: quick's shared cap may hand every one of its top-5 blocks to other seeds; deep's shared cap can do the same, and its internal-default filter can *additionally* exclude all of a seed's blocks while still admitting the seed itself at the note level. After the shared pass, every seed that ended up with zero blocks gets a second, per-seed lookup (`retrieval-policy.ts:242-256`): `findBlockNeighbors` scoped to just that seed's own source, at `threshold: 0`, `limit: 1` — its single best block, regardless of how weak. This backfill runs once per query vector and keeps the max-similarity hit across all of them, so a multi-query seed still gets one best block, not one per query; for a single-query call this reduces to that one query's own best block.
 
