@@ -4,10 +4,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   buildSearchNotesTool,
+  type SearchNotesDeps,
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
+import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { SmartConnectionsCorpusIndex } from '../../../src/lib/obsidian/smart-connections-corpus-index.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import {
@@ -1020,6 +1022,48 @@ describe('searchNotes', () => {
 // These guard the query-writing recipe and the multi-vault contract that used
 // to live only in `instructions`.
 describe('search_notes advertised description', () => {
+  function depsFor(...names: string[]): SearchNotesDeps {
+    const registry = makeTestRegistry(
+      names.map((name) => ({
+        name,
+        path: `/vaults/${name}`,
+        smartEnvPath: `/vaults/${name}/.smart-env`,
+        graph: makeFakeGraph(),
+        listMatchingPaths: async () => new Set<string>(),
+      })),
+    );
+    return {
+      registry,
+      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+      modelKey: MODEL_KEY,
+    };
+  }
+
+  it('names the registered vaults exactly once', () => {
+    const tool = buildSearchNotesTool(depsFor('alpha', 'beta'));
+    const occurrences = tool.description.split('Registered vaults:').length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it('carries the shared fan-out prose followed by its semantic-index note', () => {
+    const tool = buildSearchNotesTool(depsFor('alpha', 'beta'));
+    expect(tool.description).toContain(FAN_OUT_SUFFIX);
+    expect(tool.description.indexOf(FAN_OUT_SUFFIX)).toBeLessThan(
+      tool.description.indexOf('still contributes lexically-sourced matches'),
+    );
+  });
+
+  it('keeps the vault parameter line in the PARAMETERS block, gated on multi-vault mode', () => {
+    const multi = buildSearchNotesTool(depsFor('alpha', 'beta'));
+    const single = buildSearchNotesTool(depsFor('only'));
+    expect(multi.description).toContain(
+      '- vault: target a specific vault by name when multiple are registered.',
+    );
+    expect(single.description).not.toContain('- vault:');
+    expect(single.description).not.toContain('Registered vaults:');
+  });
+
   function describeWith(vaultNames: string[]): string {
     const registry = makeTestRegistry(
       vaultNames.map((name) => ({

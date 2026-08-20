@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { resolveVault } from '../../../lib/resolve-vault.js';
-import { runFanOut, type IFanOutResult } from '../../../lib/fan-out.js';
+import type { IFanOutResult } from '../../../lib/fan-out.js';
+import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.js';
 import { executeMultiRetrieval, executeRetrieval } from '../retrieval-policy.js';
 import { fuseRanks, flattenExpansion } from '../rank-fusion.js';
 import {
@@ -25,7 +25,6 @@ import type {
   SmartSource,
 } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
-import { vaultParamShape } from '../../../lib/vault-param.js';
 import {
   LexicalIndex,
   type LexicalMatch,
@@ -502,16 +501,6 @@ export function buildSearchNotesTool(
   };
 
   const entryDeps = { embeddingProvider, searchEngine, modelKey, lexicalFor };
-  const inputSchema = z.object({
-    ...vaultParamShape(registry),
-    query: z.union([z.string(), z.array(z.string()).min(1).max(8)]),
-    mode: z.enum(['hybrid', 'lexical']).optional(),
-    effort: z.enum(['quick', 'deep']).optional(),
-    limit: z.number().int().positive().optional(),
-    threshold: z.number().min(0).max(1).optional(),
-    expansion_floor: z.number().min(0).max(1).optional(),
-    filter: filterSchema.optional(),
-  });
   const SEARCH_NOTES_DESCRIPTION = [
     'Hybrid search over notes: fuses a semantic leg (embedding similarity — fuzzy recall, topic exploration, cross-language), a lexical leg (exact text matches over note titles, headings, and body — names, codes, terms), and (deep effort) an expansion leg (neighbours of the semantic hits) into ONE reciprocal-rank-fused list. Pass short keyword queries (1-4 words), not sentences.',
     '',
@@ -557,32 +546,25 @@ export function buildSearchNotesTool(
     '  - path_prefix / exclude_path_prefix: scope to / drop folder subtrees (string or array).',
     '  - tags: notes with ANY of these tags (no leading "#").',
     '  - frontmatter: sift filter on frontmatter keys, same operator allow-list as query_notes.',
-    ...(registry.isMulti()
-      ? [
-          '',
-          'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `failed_vaults: [...]` (per-vault runtime errors) — one failing vault never aborts the call. A vault without a semantic index still contributes lexically-sourced matches; none are skipped.',
-          '',
-          `Registered vaults: ${registry
-            .names()
-            .map((n) => `"${n}"`)
-            .join(', ')}. Pass \`vault: "<name>"\` to target a specific one.`,
-        ]
-      : []),
+    '',
   ].join('\n');
 
-  return {
+  return buildMultiVaultTool(registry, {
     name: 'search_notes',
     title: 'Search Notes',
     description: SEARCH_NOTES_DESCRIPTION,
-    inputSchema,
-    handler: async (input) => {
-      if (input.vault === undefined && registry.isMulti()) {
-        // Fan out over every registered vault, not just semantically-available
-        // ones — a vault without a corpus still contributes lexical matches.
-        return await runFanOut(registry, (entry) => runSearchForEntry(entry, input, entryDeps));
-      }
-      const entry = resolveVault(input, registry, { tool: 'search_notes' });
-      return runSearchForEntry(entry, input, entryDeps);
+    multiVaultNote:
+      'A vault without a semantic index still contributes lexically-sourced matches; none are skipped.',
+    inputShape: {
+      query: z.union([z.string(), z.array(z.string()).min(1).max(8)]),
+      mode: z.enum(['hybrid', 'lexical']).optional(),
+      effort: z.enum(['quick', 'deep']).optional(),
+      limit: z.number().int().positive().optional(),
+      threshold: z.number().min(0).max(1).optional(),
+      expansion_floor: z.number().min(0).max(1).optional(),
+      filter: filterSchema.optional(),
     },
-  };
+    runForEntry: (entry, input: SearchNotesInput) => runSearchForEntry(entry, input, entryDeps),
+    single: payloadOnly,
+  });
 }
