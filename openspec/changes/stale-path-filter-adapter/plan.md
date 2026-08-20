@@ -1,6 +1,6 @@
 # Stale-Path Filter Adapter Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Replace three private copies of the Smart Connections stale-path existence check with one `filterExisting` adapter on `IVaultEntry`.
 
@@ -41,7 +41,7 @@
 - Consumes: nothing from earlier tasks.
 - Produces: `createExistingPathFilter(opts: { vaultRoot: string; access?: PathAccess }): (paths: Iterable<string>) => Promise<Set<string>>` and `type PathAccess = (p: string) => Promise<void>`. Task 2 imports both.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `test/lib/obsidian/existing-paths.test.ts`:
 
@@ -110,7 +110,7 @@ describe('createExistingPathFilter', () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 ```bash
 npx vitest run test/lib/obsidian/existing-paths.test.ts
@@ -118,7 +118,7 @@ npx vitest run test/lib/obsidian/existing-paths.test.ts
 
 Expected: FAIL — `Failed to resolve import ".../existing-paths.js"`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `src/lib/obsidian/existing-paths.ts`:
 
@@ -165,7 +165,7 @@ export function createExistingPathFilter(opts: {
 }
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 ```bash
 npx vitest run test/lib/obsidian/existing-paths.test.ts
@@ -173,7 +173,7 @@ npx vitest run test/lib/obsidian/existing-paths.test.ts
 
 Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/obsidian/existing-paths.ts test/lib/obsidian/existing-paths.test.ts
@@ -193,7 +193,7 @@ git commit -m "feat(obsidian): add per-vault existing-path filter"
 - Consumes: `createExistingPathFilter` from Task 1.
 - Produces: `IVaultEntry.filterExisting: FilterExistingPaths` and `IVaultEntryDeps.existingPathFilterFactory: (opts: { vaultRoot: string }) => FilterExistingPaths`, where `export type FilterExistingPaths = (paths: Iterable<string>) => Promise<Set<string>>` is exported from `src/lib/vault-registry.ts`. Tasks 3–6 call `entry.filterExisting(paths)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to the final `describe` block in `test/lib/vault-registry.test.ts`:
 
@@ -229,7 +229,7 @@ Append to the final `describe` block in `test/lib/vault-registry.test.ts`:
 
 Also add `existingPathFilterFactory: () => async (paths) => new Set(paths)` to the object returned by `fakeDeps()`.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 ```bash
 npx vitest run test/lib/vault-registry.test.ts
@@ -237,7 +237,7 @@ npx vitest run test/lib/vault-registry.test.ts
 
 Expected: FAIL — `existingPathFilterFactory` is not a known property of `IVaultEntryDeps`, and `filterExisting` is not on `IVaultEntry`.
 
-- [ ] **Step 3: Declare the capability on the entry**
+- [x] **Step 3: Declare the capability on the entry**
 
 In `src/lib/vault-registry.ts`, add the exported type above `IVaultEntry`:
 
@@ -266,7 +266,7 @@ Add the factory to `IVaultEntryDeps`, after `conventionsReaderFactory`:
   existingPathFilterFactory: (opts: { vaultRoot: string }) => FilterExistingPaths;
 ```
 
-- [ ] **Step 4: Assemble it in `VaultRegistry.create`**
+- [x] **Step 4: Assemble it in `VaultRegistry.create`**
 
 Next to the existing `readConventions` line:
 
@@ -277,7 +277,7 @@ Next to the existing `readConventions` line:
 
 and add `filterExisting,` to the `entries.push({ … })` literal, directly after `readConventions,`.
 
-- [ ] **Step 5: Wire the real factory in `src/server.ts`**
+- [x] **Step 5: Wire the real factory in `src/server.ts`**
 
 Import the adapter alongside the existing obsidian-lib imports:
 
@@ -291,7 +291,7 @@ and add to the object returned by `buildDefaultVaultEntryDeps`, after `conventio
     existingPathFilterFactory: ({ vaultRoot }) => createExistingPathFilter({ vaultRoot }),
 ```
 
-- [ ] **Step 6: Run the tests and the typechecker**
+- [x] **Step 6: Run the tests and the typechecker**
 
 ```bash
 npx vitest run test/lib/vault-registry.test.ts && npx tsc --noEmit
@@ -299,7 +299,7 @@ npx vitest run test/lib/vault-registry.test.ts && npx tsc --noEmit
 
 Expected: the registry tests PASS. `tsc` will now report errors in `test/operations/tools/_test-registry.ts` only if that file constructs entries without a cast — check the output. It currently casts `Partial<IVaultEntry>` with `as IVaultEntry`, so expect zero errors; if any other site constructs a bare `IVaultEntry` literal, fix it here before moving on.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/lib/vault-registry.ts src/server.ts test/lib/vault-registry.test.ts
@@ -319,7 +319,7 @@ git commit -m "feat(registry): expose filterExisting as a per-vault capability"
 
 This task deliberately changes no behaviour. Its whole deliverable is "the suite is still green after Task 2 made `filterExisting` required".
 
-- [ ] **Step 1: Add the default**
+- [x] **Step 1: Add the default**
 
 In `test/operations/tools/_test-registry.ts`, import the adapter:
 
@@ -347,7 +347,7 @@ export function makeTestRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistr
   );
 ```
 
-- [ ] **Step 2: Run the full suite**
+- [x] **Step 2: Run the full suite**
 
 ```bash
 npm test
@@ -355,7 +355,7 @@ npm test
 
 Expected: PASS, with the same test count as before Task 1 plus the 6 tests added in Tasks 1–2. No test file other than the two already touched should need an edit. If a suite fails here, it is constructing entries outside `makeTestRegistry` — give that rig an explicit `filterExisting` rather than weakening the default.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add test/operations/tools/_test-registry.ts
@@ -376,7 +376,7 @@ git commit -m "test(registry): default filterExisting to the real disk filter"
 
 Smallest of the three call sites and character-identical to the `search-notes` copy — do it first to validate the seam.
 
-- [ ] **Step 1: Confirm the existing staleness test passes before the edit**
+- [x] **Step 1: Confirm the existing staleness test passes before the edit**
 
 ```bash
 npx vitest run test/semantic/tools/find-duplicates.test.ts
@@ -384,7 +384,7 @@ npx vitest run test/semantic/tools/find-duplicates.test.ts
 
 Expected: PASS. This is the regression guard for the edit — record that it is green *before* touching the file.
 
-- [ ] **Step 2: Delete the private copy and call the adapter**
+- [x] **Step 2: Delete the private copy and call the adapter**
 
 Remove the whole `async function buildExistingPathSet(…)` block (lines 31–41) and the now-unused import. The import line
 
@@ -400,7 +400,7 @@ Replace the call:
         const existing = await entry.filterExisting(pairs.flatMap((p) => [p.note_a, p.note_b]));
 ```
 
-- [ ] **Step 3: Run the test and the typechecker**
+- [x] **Step 3: Run the test and the typechecker**
 
 ```bash
 npx vitest run test/semantic/tools/find-duplicates.test.ts && npx tsc --noEmit
@@ -408,7 +408,7 @@ npx vitest run test/semantic/tools/find-duplicates.test.ts && npx tsc --noEmit
 
 Expected: PASS, no type errors, and the test file itself is unmodified in `git status`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/modules/semantic/tools/find-duplicates.ts
@@ -427,7 +427,7 @@ git commit -m "refactor(semantic): find_duplicates uses entry.filterExisting"
 - Consumes: `entry.filterExisting` (Task 2), the rig default (Task 3).
 - Produces: nothing later tasks depend on.
 
-- [ ] **Step 1: Confirm the search suites pass before the edit**
+- [x] **Step 1: Confirm the search suites pass before the edit**
 
 ```bash
 npx vitest run test/semantic/tools/
@@ -435,7 +435,7 @@ npx vitest run test/semantic/tools/
 
 Expected: PASS (Task 4 already landed).
 
-- [ ] **Step 2: Delete the private copy and call the adapter**
+- [x] **Step 2: Delete the private copy and call the adapter**
 
 Remove the `async function buildExistingPathSet(…)` block at lines 104–114, and drop `pathExistsForEntry` from the `../tool-helpers.js` import list at line 12 — keep every other name on that import.
 
@@ -453,7 +453,7 @@ with:
 
 Leave the block comment above `const rawExpansion = …` exactly as it is — it explains why `assembleUnified` recomputes `flattenExpansion` from the filtered seeds, which this change does not alter.
 
-- [ ] **Step 3: Run the suites and the typechecker**
+- [x] **Step 3: Run the suites and the typechecker**
 
 ```bash
 npx vitest run test/semantic/ && npx tsc --noEmit
@@ -461,7 +461,7 @@ npx vitest run test/semantic/ && npx tsc --noEmit
 
 Expected: PASS, no type errors, and no test file modified in `git status`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/modules/semantic/tools/search-notes.ts
@@ -482,7 +482,7 @@ git commit -m "refactor(semantic): search_notes uses entry.filterExisting"
 
 The one non-mechanical edit — its copy is interleaved with `exclude_folders` filtering. Exclusion stays local and runs first (design D4).
 
-- [ ] **Step 1: Confirm the existing staleness test passes before the edit**
+- [x] **Step 1: Confirm the existing staleness test passes before the edit**
 
 ```bash
 npx vitest run test/semantic/tools/get-similar-notes.test.ts -t "respects pathExists filter on linked targets too"
@@ -490,7 +490,7 @@ npx vitest run test/semantic/tools/get-similar-notes.test.ts -t "respects pathEx
 
 Expected: PASS. This is the regression guard.
 
-- [ ] **Step 2: Write the failing test for the combined case**
+- [x] **Step 2: Write the failing test for the combined case**
 
 Add to `test/semantic/tools/get-similar-notes.test.ts`, next to the existing existence test (spec Requirement 4, second scenario):
 
@@ -513,7 +513,7 @@ Add to `test/semantic/tools/get-similar-notes.test.ts`, next to the existing exi
   });
 ```
 
-- [ ] **Step 3: Run it**
+- [x] **Step 3: Run it**
 
 ```bash
 npx vitest run test/semantic/tools/get-similar-notes.test.ts
@@ -521,7 +521,7 @@ npx vitest run test/semantic/tools/get-similar-notes.test.ts
 
 Expected: PASS already — the current interleaved implementation also handles this. That is fine and intended: this test exists to pin the behaviour *across* the refactor, so it must be green before and after. If it fails now, stop and investigate before changing any source.
 
-- [ ] **Step 4: Split the function**
+- [x] **Step 4: Split the function**
 
 Replace `filterCandidates` (lines 126–142) with:
 
@@ -544,7 +544,7 @@ async function filterCandidates(args: {
 
 Then drop `pathExistsForEntry` from the `../tool-helpers.js` import list at lines 9–13, keeping `readNoteContentForEntry`, `readPositiveInteger`, and `readThreshold`.
 
-- [ ] **Step 5: Run the suite and the typechecker**
+- [x] **Step 5: Run the suite and the typechecker**
 
 ```bash
 npx vitest run test/semantic/tools/get-similar-notes.test.ts && npx tsc --noEmit
@@ -552,7 +552,7 @@ npx vitest run test/semantic/tools/get-similar-notes.test.ts && npx tsc --noEmit
 
 Expected: PASS, including both the pre-existing `respects pathExists filter on linked targets too` and the new combined-case test.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/modules/semantic/tools/get-similar-notes.ts test/semantic/tools/get-similar-notes.test.ts
@@ -571,11 +571,11 @@ git commit -m "refactor(semantic): get_similar_notes uses entry.filterExisting"
 - Consumes: Tasks 4–6 complete (no callers of `pathExistsForEntry` remain).
 - Produces: nothing.
 
-- [ ] **Step 1: Delete `pathExistsForEntry`**
+- [x] **Step 1: Delete `pathExistsForEntry`**
 
 Remove the `pathExistsForEntry` function from `src/modules/semantic/tool-helpers.ts`. Keep `readNoteContentForEntry` — `get_similar_notes` still calls it for forward-link resolution. If `fs`/`path` imports are now unused by the remaining code, remove them too; if `readNoteContentForEntry` still needs them, leave them.
 
-- [ ] **Step 2: Prove no caller remains**
+- [x] **Step 2: Prove no caller remains**
 
 ```bash
 npx tsc --noEmit && grep -rn "pathExistsForEntry" src test
@@ -583,7 +583,7 @@ npx tsc --noEmit && grep -rn "pathExistsForEntry" src test
 
 Expected: `tsc` clean; `grep` matches only comments in test files (`_helpers.ts:100`, `search-notes.test.ts:764,772`, `find-duplicates.test.ts:29,55`). Update those comments to name `entry.filterExisting` instead — a stale comment naming a deleted function is the seed of the next private copy.
 
-- [ ] **Step 3: Write the injectable-filter test**
+- [x] **Step 3: Write the injectable-filter test**
 
 Spec Requirement 2, second scenario — proves the adapter is substitutable without touching disk. Add to `test/semantic/tools/find-duplicates.test.ts`:
 
@@ -620,7 +620,7 @@ Spec Requirement 2, second scenario — proves the adapter is substitutable with
   });
 ```
 
-- [ ] **Step 4: Run it**
+- [x] **Step 4: Run it**
 
 ```bash
 npx vitest run test/semantic/tools/find-duplicates.test.ts
@@ -628,7 +628,7 @@ npx vitest run test/semantic/tools/find-duplicates.test.ts
 
 Expected: PASS. If the pair ordering differs from the assertion, read the actual output and fix the expectation to match `findDuplicates`' own ordering — do not change the tool to satisfy the test.
 
-- [ ] **Step 5: Confirm exactly one implementation remains**
+- [x] **Step 5: Confirm exactly one implementation remains**
 
 ```bash
 grep -rn "buildExistingPathSet\|fs.access\|pathExists" src
@@ -636,7 +636,7 @@ grep -rn "buildExistingPathSet\|fs.access\|pathExists" src
 
 Expected: the only existence-filtering match is inside `src/lib/obsidian/existing-paths.ts`. Any other match is either unrelated (a different concern reading files) or a fourth copy that must be removed now.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/modules/semantic/tool-helpers.ts test/semantic/
@@ -656,15 +656,15 @@ git commit -m "refactor(semantic): drop pathExistsForEntry, the adapter owns exi
 - Consumes: the shipped implementation from Tasks 1–7.
 - Produces: nothing.
 
-- [ ] **Step 1: State the obligation and name its owner**
+- [x] **Step 1: State the obligation and name its owner**
 
 In `docs/architecture/smart-connections-corpus.md`, near the existing note that the loader does not watch for changes, add a short subsection saying: the corpus can name notes deleted since the plugin last wrote its index, so every tool returning corpus-derived paths filters them through `IVaultEntry.filterExisting` (`src/lib/obsidian/existing-paths.ts`) at the handler seam; the corpus itself is not made staleness-aware, and the retrieval policy layer stays free of disk I/O. Name the three current consumers. Do not present this as a clause of ADR-0006 — it is a consequence of the read-only, unwatched decision recorded there.
 
-- [ ] **Step 2: Document the per-entry capability**
+- [x] **Step 2: Document the per-entry capability**
 
 In `docs/architecture/vault-registry.md`, add `filterExisting` / `existingPathFilterFactory` wherever `readConventions` / `conventionsReaderFactory` is described, with one line on why it is a per-entry capability (bound to one vault root, substitutable in tests) and a cross-link to `smart-connections-corpus.md` for the why.
 
-- [ ] **Step 3: Sweep the rest of `docs/`**
+- [x] **Step 3: Sweep the rest of `docs/`**
 
 ```bash
 grep -rn "pathExists\|buildExistingPathSet\|exists on disk\|existence check" docs/ --exclude-dir=superpowers
@@ -672,7 +672,7 @@ grep -rn "pathExists\|buildExistingPathSet\|exists on disk\|existence check" doc
 
 Fix any prose that describes existence checking as per-tool behaviour. `docs/superpowers/` is the frozen pre-OpenSpec record — do not edit it. Include `docs/guide/` in the sweep: architecture-scoped greps miss the model-facing layer.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/
@@ -685,7 +685,7 @@ git commit -m "docs: record the staleness obligation and its single owner"
 
 **Files:** none modified beyond what earlier tasks touched.
 
-- [ ] **Step 1: Run every gate**
+- [x] **Step 1: Run every gate**
 
 ```bash
 npm test && npm run lint && npm run typecheck
@@ -693,11 +693,11 @@ npm test && npm run lint && npm run typecheck
 
 Expected: all three PASS.
 
-- [ ] **Step 2: Check the test count did not drop**
+- [x] **Step 2: Check the test count did not drop**
 
 Compare the vitest total against the count on `main` before this branch. It must be higher by the tests added in Tasks 1, 2, 6, and 7 — never lower. If any suite lost tests, find out which and restore them.
 
-- [ ] **Step 3: Confirm no MCP contract moved**
+- [x] **Step 3: Confirm no MCP contract moved**
 
 ```bash
 git diff main --stat && git diff main -- src/modules/semantic/tools/ | grep -E "^[-+].*(description|inputSchema|ToolHandlerError\(')" 
@@ -705,7 +705,7 @@ git diff main --stat && git diff main -- src/modules/semantic/tools/ | grep -E "
 
 Expected: no added/removed line touches a tool description string, an input schema field, or an error code. Only import lines, the deleted private functions, and the call sites should appear.
 
-- [ ] **Step 4: Open the PR**
+- [x] **Step 4: Open the PR**
 
 ```bash
 git push -u origin HEAD
