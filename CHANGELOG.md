@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [15.3.0](https://github.com/AlexMost/neuro-vault/compare/v15.2.0...v15.3.0) (2026-08-20)
+
+
+### Features
+
+* **lib:** add buildMultiVaultTool owning the fan-out dispatch contract ([4ab8b1b](https://github.com/AlexMost/neuro-vault/commit/4ab8b1b173d9faa5270e113525dae33b0db11f03))
+* **lib:** add FAN_OUT_SUFFIX as the single copy of the fan-out prose ([e0fcbdb](https://github.com/AlexMost/neuro-vault/commit/e0fcbdb15f69b77afc22903884cdda6bc0363e94))
+* **obsidian:** add per-vault existing-path filter ([1b80154](https://github.com/AlexMost/neuro-vault/commit/1b80154c4b461ec57321fd342b506edcc9dcc3d1))
+* **registry:** expose filterExisting as a per-vault capability ([b16ddb3](https://github.com/AlexMost/neuro-vault/commit/b16ddb33a03a3b57a62978a4a2d981fc40bb45c8))
+
+
+### Bug Fixes
+
+* **lib:** forbid vault in multi-vault tool inputShape at the type level ([c5afd26](https://github.com/AlexMost/neuro-vault/commit/c5afd26992e29b2de6bba5148abdedd5ad3b94f6))
+* **test:** close arity-invariance blind spot in fallback and vacuous-field tests ([863ee7c](https://github.com/AlexMost/neuro-vault/commit/863ee7c11cc3c90b8a8c925807c008f3540e7e3c))
+* **tools:** fix search_notes description separator and test duplication ([8d12f82](https://github.com/AlexMost/neuro-vault/commit/8d12f8200900b213e4c483eed75b17eacb244752))
+
 ## [15.2.0](https://github.com/AlexMost/neuro-vault/compare/v15.1.0...v15.2.0) (2026-08-20)
 
 
