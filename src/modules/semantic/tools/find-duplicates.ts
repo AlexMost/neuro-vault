@@ -3,10 +3,9 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
-import { pathExistsForEntry } from '../tool-helpers.js';
 import { readThreshold } from '../tool-helpers.js';
 import type { DuplicatePair, SearchEngine } from '../types.js';
-import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
+import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import {
   describeMultiVault,
   EXPLICIT_VAULT_SUFFIX,
@@ -26,19 +25,6 @@ export interface FindDuplicatesDeps {
   registry: IVaultRegistry;
   searchEngine: SearchEngine;
   modelKey: string;
-}
-
-async function buildExistingPathSet(
-  entry: IVaultEntry,
-  paths: Iterable<string>,
-): Promise<Set<string>> {
-  const unique = new Set(paths);
-  const checks = await Promise.all(
-    [...unique].map(
-      async (notePath) => [notePath, await pathExistsForEntry(entry, notePath)] as const,
-    ),
-  );
-  return new Set(checks.filter(([, exists]) => exists).map(([notePath]) => notePath));
 }
 
 export function buildFindDuplicatesTool(
@@ -68,10 +54,7 @@ export function buildFindDuplicatesTool(
           sources: sources.values(),
           threshold,
         });
-        const existing = await buildExistingPathSet(
-          entry,
-          pairs.flatMap((p) => [p.note_a, p.note_b]),
-        );
+        const existing = await entry.filterExisting(pairs.flatMap((p) => [p.note_a, p.note_b]));
         return pairs
           .filter((p) => existing.has(p.note_a) && existing.has(p.note_b))
           .map((p) => ({ vault: entry.name, ...p }));
