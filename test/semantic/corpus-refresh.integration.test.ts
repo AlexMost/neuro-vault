@@ -13,6 +13,7 @@ import type { ToolRegistration } from '../../src/lib/tool-registration.js';
 import type { IVaultRegistry, IVaultEntry } from '../../src/lib/vault-registry.js';
 import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
+import { createExistingPathFilter } from '../../src/lib/obsidian/existing-paths.js';
 
 const MODEL_KEY = 'bge-micro-v2';
 
@@ -92,6 +93,7 @@ describe('corpus refresh through semantic tools', () => {
       graph,
       listMatchingPaths,
       readConventions: async () => null,
+      filterExisting: createExistingPathFilter({ vaultRoot: vaultPath }),
       corpus,
       semanticAvailable: true,
     };

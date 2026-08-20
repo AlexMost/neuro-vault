@@ -7,6 +7,9 @@ import type { VaultProvider } from './obsidian/vault-provider.js';
 import type { SmartConnectionsCorpusIndex } from './obsidian/smart-connections-corpus-index.js';
 import type { IVaultConfig } from '../types.js';
 
+/** Filter vault-relative note paths down to those present on disk. */
+export type FilterExistingPaths = (paths: Iterable<string>) => Promise<Set<string>>;
+
 export interface IVaultEntry {
   name: string;
   path: string;
@@ -24,6 +27,15 @@ export interface IVaultEntry {
    * "absent" means.
    */
   readConventions: () => Promise<string | null>;
+  /**
+   * Filter vault-relative note paths down to those still present on this
+   * vault's disk. The Smart Connections corpus is read-only and unwatched
+   * (ADR-0006), so it can name notes deleted since the plugin last indexed;
+   * every tool returning corpus-derived paths runs them through here first.
+   * One implementation, so no consumer can disagree about what "exists" means
+   * or forget the check entirely.
+   */
+  filterExisting: FilterExistingPaths;
   corpus?: SmartConnectionsCorpusIndex;
   semanticAvailable: boolean;
   semanticUnavailableReason?: string;
@@ -47,6 +59,7 @@ export interface IVaultEntryDeps {
     modelKey: string;
   }) => Promise<SmartConnectionsCorpusIndex>;
   conventionsReaderFactory: (opts: { vaultRoot: string }) => () => Promise<string | null>;
+  existingPathFilterFactory: (opts: { vaultRoot: string }) => FilterExistingPaths;
 }
 
 export interface IVaultRegistryConfig {
@@ -97,6 +110,7 @@ export class VaultRegistry implements IVaultRegistry {
         reader,
       });
       const readConventions = deps.conventionsReaderFactory({ vaultRoot: v.path });
+      const filterExisting = deps.existingPathFilterFactory({ vaultRoot: v.path });
 
       let corpus: SmartConnectionsCorpusIndex | undefined;
       let semanticAvailable = false;
@@ -130,6 +144,7 @@ export class VaultRegistry implements IVaultRegistry {
         graph,
         listMatchingPaths,
         readConventions,
+        filterExisting,
         corpus,
         semanticAvailable,
         semanticUnavailableReason,
