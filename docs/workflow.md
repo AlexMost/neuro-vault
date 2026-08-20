@@ -30,3 +30,5 @@ Use the `/opsx:*` commands so the schema's artifact instructions inject at each 
 ## After merge: release
 
 On `main` only, after the PR merges: `npm run release` (commit-and-tag-version, Conventional Commits) → version bump + CHANGELOG + tag → `git push --follow-tags`. Never release from a feature branch — the version bump and tag must land on `main` so the tag points at the merge commit and the changelog stays linear. `npm publish` only after explicit user approval.
+
+Pushing the tag triggers [`.github/workflows/release-notes.yml`](../.github/workflows/release-notes.yml): it cuts the tag's section out of `CHANGELOG.md` (via `scripts/changelog-section.ts`) and publishes the GitHub Release with those notes. Nothing to do by hand; re-running the workflow updates the existing release instead of duplicating it.

@@ -1,0 +1,42 @@
+name: Release Notes
+
+# `npm run release` (commit-and-tag-version) writes CHANGELOG.md, bumps the
+# version and tags. Pushing that tag lands here, and the GitHub Release is cut
+# from the CHANGELOG section — no manual step in the release flow.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-notes-${{ github.ref }}
+
+jobs:
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          TAG: ${{ github.ref_name }}
+        run: npx tsx scripts/changelog-section.ts "$TAG" > "$RUNNER_TEMP/release-notes.md"
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists — updating its notes."
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+          else
+            gh release create "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
