@@ -168,6 +168,28 @@ describe('buildOperationsTools', () => {
     }
   });
 
+  it('query_notes description steers an in-vault agent away from scanning files by hand', () => {
+    const tools = buildOperationsTools(noopDeps);
+    const queryNotes = tools.find((t) => t.name === 'query_notes')!;
+    expect(queryNotes.spec.description).toMatch(/filesystem access/i);
+    expect(queryNotes.spec.description).toMatch(/instead of grepping or scanning files/i);
+    expect(queryNotes.spec.description).toMatch(/search_notes/);
+  });
+
+  it('enumerates the registered vault names in every multi-vault description', () => {
+    const tools = buildOperationsTools({ registry: multiRegistry });
+    for (const tool of tools) {
+      expect(tool.spec.description, tool.name).toMatch(/Registered vaults: "test", "other"\./);
+    }
+  });
+
+  it('leaks no vault-name enumeration in single-vault mode', () => {
+    const tools = buildOperationsTools(noopDeps);
+    for (const tool of tools) {
+      expect(tool.spec.description, tool.name).not.toMatch(/Registered vaults:/);
+    }
+  });
+
   it('names failed_vaults on every fan-out tool description', () => {
     const tools = buildOperationsTools({ registry: multiRegistry });
     for (const name of ['query_notes', 'list_tags', 'list_properties', 'get_vault_overview']) {

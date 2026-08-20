@@ -27,9 +27,19 @@ export function vaultParamShape(
  * always concatenate:
  *
  *   description: 'Base description.' + describeMultiVault(registry, 'Pass `vault:` to...'),
+ *
+ * Every suffix is prefixed with the registered vault names. `vaultParamShape`
+ * contributes a bare optional string with no enum, so this is the only place a
+ * model learns which names are valid — without it the names are discoverable
+ * only reactively, by fanning out or by eating a `VAULT_REQUIRED` error.
  */
 export function describeMultiVault(registry: IVaultRegistry, suffix: string): string {
-  return registry.isMulti() ? ' ' + suffix : '';
+  if (!registry.isMulti()) return '';
+  const names = registry
+    .names()
+    .map((n) => `"${n}"`)
+    .join(', ');
+  return ` Registered vaults: ${names}. ${suffix}`;
 }
 
 /**

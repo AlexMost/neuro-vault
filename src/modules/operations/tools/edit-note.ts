@@ -44,7 +44,7 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: str
       '\n\n' +
       'Without `replace`: the entire body is overwritten with `content`. Use this for whole-body rewrites; pre-fetch the body with `read_notes` if you need to preserve parts of it. Use `\\n` for newlines in either mode.' +
       '\n\n' +
-      'Writes land in the vault directory directly on disk — Obsidian does not need to be installed or running. Editing while a live Obsidian session has the vault open is safe; the last writer wins per file.' +
+      'Writes land in the vault directory directly on disk — Obsidian does not need to be installed or running. Editing while a live Obsidian session has the vault open is permitted, but the last writer wins per file — a concurrent Obsidian save can silently overwrite this edit, and vice versa.' +
       describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
     inputSchema,
     handler: async (input) => {

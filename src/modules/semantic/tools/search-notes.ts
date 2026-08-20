@@ -562,7 +562,10 @@ export function buildSearchNotesTool(
           '',
           'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `failed_vaults: [...]` (per-vault runtime errors) — one failing vault never aborts the call. A vault without a semantic index still contributes lexically-sourced matches; none are skipped.',
           '',
-          'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+          `Registered vaults: ${registry
+            .names()
+            .map((n) => `"${n}"`)
+            .join(', ')}. Pass \`vault: "<name>"\` to target a specific one.`,
         ]
       : []),
   ].join('\n');
