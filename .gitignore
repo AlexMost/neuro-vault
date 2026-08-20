@@ -15,3 +15,11 @@ coverage/
 
 # Implementation plans are local working artifacts; specs are the canonical record.
 docs/superpowers/plans/
+
+# subagent-driven-development scratch (ledger, task briefs, implementer reports,
+# review diffs), written to the root of whichever checkout an apply run happens
+# in and deleted when it finishes. The skill drops its own `*` .gitignore inside
+# .superpowers/sdd/, so git already ignores the contents; this entry states the
+# intent at the repo level rather than relying on a vendored skill's behaviour,
+# and covers anything written to .superpowers/ outside sdd/.
+.superpowers/

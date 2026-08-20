@@ -11,6 +11,9 @@ export default [
       '.worktrees/**',
       'package-lock.json',
       '.claude/worktrees/**',
+      // subagent-driven-development scratch (ledger, task briefs, review
+      // diffs) — throwaway, deleted at the end of each apply run.
+      '.superpowers/**',
     ],
   },
   js.configs.recommended,

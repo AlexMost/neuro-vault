@@ -1,6 +1,10 @@
 node_modules/
 dist/
 
+# subagent-driven-development scratch (ledger, task briefs, implementer
+# reports, review diffs) — throwaway, deleted at the end of each apply run.
+.superpowers/
+
 # Vendored OpenSpec schema bundle (superpowers-bridge) — upstream-maintained,
 # upgraded via rm -rf + cp -R; reformatting would diverge from upstream.
 openspec/schemas/
