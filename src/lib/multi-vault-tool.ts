@@ -38,8 +38,14 @@ export interface IMultiVaultToolSpec<
   description: string;
   /** Optional domain sentence appended after the shared fan-out suffix. */
   multiVaultNote?: string;
-  /** Domain params. `vault` is contributed by the builder, never here. */
-  inputShape: z.ZodRawShape;
+  /**
+   * Domain params. `vault` is contributed by the builder, never here — enforced
+   * at the type level by excluding a `vault` key (`vault?: never`), so a spec
+   * that declares one fails `npm run typecheck` rather than silently
+   * overriding, or in single-vault mode single-handedly reintroducing, the
+   * builder's own `vault` param.
+   */
+  inputShape: z.ZodRawShape & { vault?: never };
   runForEntry: (entry: IVaultEntry, input: TInput) => Promise<TPayload>;
   /** `withVaultName` or `payloadOnly` — required, so the choice is explicit. */
   single: (entry: IVaultEntry, payload: TPayload) => TSingle;

@@ -104,4 +104,26 @@ describe('buildMultiVaultTool', () => {
       tool.description.indexOf('still contribute lexically'),
     );
   });
+
+  it('rejects an inputShape that declares vault at the type level', () => {
+    // Type-only assertion, never invoked at runtime: a domain `inputShape`
+    // declaring its own `vault` key must fail `npm run typecheck`, which is
+    // this repo's authoritative gate — vitest does not type-check test
+    // bodies, so the guard is pinned here and enforced there.
+    function _typeGuard(registry: IVaultRegistry) {
+      return buildMultiVaultTool<Input, { results: string[] }, unknown>(registry, {
+        name: 'list_tags',
+        title: 'List Tags',
+        description: 'Domain prose.',
+        inputShape: {
+          n: z.number().optional(),
+          // @ts-expect-error - vault is contributed by the builder; declaring it in inputShape must be a type error.
+          vault: z.string(),
+        },
+        runForEntry: async (entry) => ({ results: [entry.name] }),
+        single: withVaultName,
+      });
+    }
+    expect(typeof _typeGuard).toBe('function');
+  });
 });
