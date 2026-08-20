@@ -16,6 +16,7 @@ function makeEntry(overrides: Partial<IVaultEntry> = {}): IVaultEntry {
     provider: makeProvider(),
     graph: makeGraph(),
     listMatchingPaths: async () => new Set<string>(),
+    readConventions: async () => null,
     semanticAvailable: true,
     ...overrides,
   } as IVaultEntry;

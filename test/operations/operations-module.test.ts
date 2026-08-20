@@ -43,6 +43,7 @@ describe('createOperationsModule', () => {
       provider: fakeProvider,
       graph: fakeGraph,
       listMatchingPaths: vi.fn(),
+      readConventions: async () => null,
       semanticAvailable: false,
     };
 

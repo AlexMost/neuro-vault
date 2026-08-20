@@ -91,6 +91,7 @@ describe('corpus refresh through semantic tools', () => {
       provider: {} as VaultProvider,
       graph,
       listMatchingPaths,
+      readConventions: async () => null,
       corpus,
       semanticAvailable: true,
     };

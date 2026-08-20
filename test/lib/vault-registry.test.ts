@@ -30,6 +30,7 @@ function fakeDeps(): IVaultEntryDeps {
       ({ vaultName, vaultRoot, reader }) as never,
     corpusFactory: async () =>
       ({ snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) }) as never,
+    conventionsReaderFactory: () => async () => null,
   };
 }
 
@@ -209,5 +210,32 @@ describe('createVaultRegistry', () => {
     const [entry] = registry.list();
     expect(entry.writer).toBeDefined();
     expect(entry.provider).toBeDefined();
+  });
+
+  it('gives each entry a conventions reader bound to its own vault path', async () => {
+    const seen: string[] = [];
+    const registry = await VaultRegistry.create(
+      {
+        vaults: [
+          { name: 'a', path: '/vaults/a', smartEnvPath: '/vaults/a/.smart-env/multi' },
+          { name: 'b', path: '/vaults/b', smartEnvPath: '/vaults/b/.smart-env/multi' },
+        ],
+        semanticEnabled: false,
+        modelKey: 'm',
+      },
+      {
+        ...fakeDeps(),
+        conventionsReaderFactory:
+          ({ vaultRoot }) =>
+          async () => {
+            seen.push(vaultRoot);
+            return `conventions for ${vaultRoot}`;
+          },
+      },
+    );
+
+    expect(await registry.require('a').readConventions()).toBe('conventions for /vaults/a');
+    expect(await registry.require('b').readConventions()).toBe('conventions for /vaults/b');
+    expect(seen).toEqual(['/vaults/a', '/vaults/b']);
   });
 });

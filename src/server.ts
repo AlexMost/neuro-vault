@@ -137,7 +137,7 @@ export async function buildServerInstructions(registry: IVaultRegistry): Promise
   }
 
   for (const entry of registry.list()) {
-    const extra = await readVaultConventions(entry.path);
+    const extra = await entry.readConventions();
     if (extra !== null && extra !== '') {
       const heading = registry.isMulti()
         ? `## Vault-specific conventions — ${entry.name}`
@@ -165,6 +165,10 @@ function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): I
     providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
     corpusFactory: ({ smartEnvPath, modelKey }) =>
       createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey }),
+    conventionsReaderFactory:
+      ({ vaultRoot }) =>
+      () =>
+        readVaultConventions(vaultRoot),
     ...overrides,
   };
 }

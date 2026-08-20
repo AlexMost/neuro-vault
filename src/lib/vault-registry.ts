@@ -16,6 +16,14 @@ export interface IVaultEntry {
   provider: VaultProvider;
   graph: WikilinkGraphIndex;
   listMatchingPaths: ListMatchingPaths;
+  /**
+   * Best-effort read of this vault's `.neuro-vault/for-external-agents.md`,
+   * bound to this entry's path. Both delivery channels — composed MCP
+   * `instructions` and the `get_vault_overview` response — call this one
+   * function, so they cannot disagree about the path, the trim, or what
+   * "absent" means.
+   */
+  readConventions: () => Promise<string | null>;
   corpus?: SmartConnectionsCorpusIndex;
   semanticAvailable: boolean;
   semanticUnavailableReason?: string;
@@ -38,6 +46,7 @@ export interface IVaultEntryDeps {
     smartEnvPath: string;
     modelKey: string;
   }) => Promise<SmartConnectionsCorpusIndex>;
+  conventionsReaderFactory: (opts: { vaultRoot: string }) => () => Promise<string | null>;
 }
 
 export interface IVaultRegistryConfig {
@@ -87,6 +96,7 @@ export class VaultRegistry implements IVaultRegistry {
         vaultRoot: v.path,
         reader,
       });
+      const readConventions = deps.conventionsReaderFactory({ vaultRoot: v.path });
 
       let corpus: SmartConnectionsCorpusIndex | undefined;
       let semanticAvailable = false;
@@ -119,6 +129,7 @@ export class VaultRegistry implements IVaultRegistry {
         provider,
         graph,
         listMatchingPaths,
+        readConventions,
         corpus,
         semanticAvailable,
         semanticUnavailableReason,

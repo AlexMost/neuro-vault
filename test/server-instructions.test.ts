@@ -5,6 +5,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildServerInstructions } from '../src/server.js';
+import { readVaultConventions } from '../src/lib/obsidian/vault-conventions.js';
 import type { IVaultRegistry } from '../src/lib/vault-registry.js';
 
 async function makeTempVault(): Promise<string> {
@@ -21,6 +22,7 @@ function makeRegistry(vaultPath: string, multi = false): IVaultRegistry {
     provider: {} as never,
     graph: {} as never,
     listMatchingPaths: vi.fn(),
+    readConventions: () => readVaultConventions(vaultPath),
     semanticAvailable: false,
   };
   const entries = multi
@@ -31,6 +33,7 @@ function makeRegistry(vaultPath: string, multi = false): IVaultRegistry {
           name: 'vault2',
           path: vaultPath + '2',
           smartEnvPath: vaultPath + '2/.smart-env/multi',
+          readConventions: () => readVaultConventions(vaultPath + '2'),
         },
       ]
     : [entry];
@@ -175,6 +178,7 @@ describe('buildServerInstructions', () => {
           provider: {} as never,
           graph: {} as never,
           listMatchingPaths: vi.fn(),
+          readConventions: () => readVaultConventions(a),
           semanticAvailable: false,
         },
         {
@@ -186,6 +190,7 @@ describe('buildServerInstructions', () => {
           provider: {} as never,
           graph: {} as never,
           listMatchingPaths: vi.fn(),
+          readConventions: () => readVaultConventions(b),
           semanticAvailable: false,
         },
       ];
