@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildGetVaultOverviewTool } from '../../../src/modules/operations/tools/get-vault-overview.js';
 import type { VaultOverview } from '../../../src/lib/obsidian/vault-overview.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import { makeGraph, makeProvider, makeReader } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
@@ -124,5 +125,57 @@ describe('operations.getVaultOverview tool', () => {
     expect(result.vault).toBe('solo');
     expect(result.total_notes).toBe(2);
     expect((result as unknown as Record<string, unknown>).results_by_vault).toBeUndefined();
+  });
+
+  it('carries the vault conventions in single-vault mode', async () => {
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        reader: makeReader(),
+        provider: makeProvider(),
+        graph: makeGraph(),
+        readConventions: async () => '# House rules',
+      },
+    ]);
+    const result = (await buildGetVaultOverviewTool({ registry }).handler({})) as SingleOverview;
+    expect(result.conventions).toBe('# House rules');
+  });
+
+  it('gives each fanned-out vault its own conventions', async () => {
+    const registry = makeTestRegistry([
+      {
+        name: 'vault-a',
+        reader: makeReader(),
+        provider: makeProvider(),
+        graph: makeGraph(),
+        readConventions: async () => 'rules A',
+      },
+      {
+        name: 'vault-b',
+        reader: makeReader(),
+        provider: makeProvider(),
+        graph: makeGraph(),
+        readConventions: async () => null,
+      },
+    ]);
+
+    const result = (await buildGetVaultOverviewTool({ registry }).handler({})) as {
+      results_by_vault: SingleOverview[];
+      failed_vaults: Array<{ vault: string }>;
+    };
+
+    const byName = new Map(result.results_by_vault.map((r) => [r.vault, r]));
+    expect(byName.get('vault-a')!.conventions).toBe('rules A');
+    expect(byName.get('vault-b')!).not.toHaveProperty('conventions');
+    expect(result.failed_vaults).toEqual([]);
+  });
+
+  it('advertises the conventions field in its description', () => {
+    const registry = makeTestRegistry([
+      { name: 'v', reader: makeReader(), provider: makeProvider(), graph: makeGraph() },
+    ]);
+    const description = registerTool(buildGetVaultOverviewTool({ registry })).spec.description;
+    expect(description).toMatch(/conventions/i);
+    expect(description).toMatch(/follow/i);
   });
 });

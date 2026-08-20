@@ -43,4 +43,16 @@ describe('capConventions', () => {
     expect(result.content.length).toBeLessThanOrEqual(CONVENTIONS_CHAR_CAP + 1);
     expect(result.content.endsWith('…')).toBe(true);
   });
+
+  it('hard-cuts at the cap instead of collapsing to near-empty when the only nearby whitespace is far from the cap', () => {
+    // A single leading space followed by a 9000-char unbroken run: the naive
+    // word-boundary search finds that leading space as the "last" whitespace
+    // inside the cap window and cuts there, discarding almost the entire
+    // budget. The fix must recognize that boundary is too far from the cap
+    // and hard-cut at CONVENTIONS_CHAR_CAP instead.
+    const result = capConventions(' ' + 'y'.repeat(9000));
+    expect(result.truncated).toBe(true);
+    expect(result.content.length).toBeGreaterThan(CONVENTIONS_CHAR_CAP - 250);
+    expect(result.content.length).toBeLessThanOrEqual(CONVENTIONS_CHAR_CAP + 1);
+  });
 });

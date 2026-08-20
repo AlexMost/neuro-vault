@@ -59,6 +59,15 @@ describe('operations.vaultOverview resource', () => {
     expect(payload.total_notes).toBe(1);
     expect(payload.top_tags).toEqual([{ name: 'x', count: 1 }]);
   });
+
+  it('carries the same conventions field as the tool', async () => {
+    const res = buildVaultOverviewResource({
+      uri: 'vault://overview',
+      entry: makeEntry({ readConventions: async () => '# House rules' }),
+    });
+    const payload = await res.handler(new URL('vault://overview'));
+    expect(payload.conventions).toBe('# House rules');
+  });
 });
 
 describe('buildOperationsResources', () => {

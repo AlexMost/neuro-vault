@@ -23,6 +23,7 @@ export function buildVaultOverviewResource(
         reader: entry.reader,
         provider: entry.provider,
         graph: entry.graph,
+        readConventions: entry.readConventions,
       }),
   };
 }

@@ -2,6 +2,7 @@ import type { VaultReader } from './vault-reader.js';
 import type { VaultProvider } from './vault-provider.js';
 import type { WikilinkGraphIndex } from './wikilink-graph.js';
 import { topByBacklinks, type TopBacklinkedNote } from './top-by-backlinks.js';
+import { capConventions } from './vault-conventions.js';
 
 export interface VaultOverviewFolder {
   path: string;
@@ -26,12 +27,17 @@ export interface VaultOverview {
   top_tags: VaultOverviewTag[];
   properties: VaultOverviewProperty[];
   top_by_backlinks: VaultOverviewTopNote[];
+  /** Raw `.neuro-vault/for-external-agents.md`; absent when the vault has none. */
+  conventions?: string;
+  /** Present only when `conventions` was trimmed at CONVENTIONS_CHAR_CAP. */
+  conventions_truncated?: true;
 }
 
 export interface ComputeVaultOverviewDeps {
   reader: VaultReader;
   provider: VaultProvider;
   graph: WikilinkGraphIndex;
+  readConventions: () => Promise<string | null>;
 }
 
 export const TOP_TAGS_LIMIT = 30;
@@ -39,12 +45,34 @@ export const TOP_PROPERTIES_LIMIT = 30;
 export const TOP_BACKLINKS_LIMIT = 10;
 const ROOT_FOLDER_SENTINEL = '/';
 
+// The conventions file is optional decoration on a structural snapshot: a
+// rejection here must never cost the caller the snapshot itself.
+async function conventionsFields(
+  readConventions: () => Promise<string | null>,
+): Promise<Pick<VaultOverview, 'conventions' | 'conventions_truncated'>> {
+  let raw: string | null;
+  try {
+    raw = await readConventions();
+  } catch {
+    return {};
+  }
+  if (raw === null || raw === '') return {};
+  const { content, truncated } = capConventions(raw);
+  return truncated
+    ? { conventions: content, conventions_truncated: true }
+    : { conventions: content };
+}
+
 export async function computeVaultOverview(deps: ComputeVaultOverviewDeps): Promise<VaultOverview> {
-  const { reader, provider, graph } = deps;
+  const { reader, provider, graph, readConventions } = deps;
   await graph.ensureFresh();
 
   const paths = await reader.scan();
-  const [tags, props] = await Promise.all([provider.listTags(), provider.listProperties()]);
+  const [tags, props, conventions] = await Promise.all([
+    provider.listTags(),
+    provider.listProperties(),
+    conventionsFields(readConventions),
+  ]);
 
   if (paths.length === 0) {
     return {
@@ -53,6 +81,7 @@ export async function computeVaultOverview(deps: ComputeVaultOverviewDeps): Prom
       top_tags: tags.slice(0, TOP_TAGS_LIMIT),
       properties: props.slice(0, TOP_PROPERTIES_LIMIT),
       top_by_backlinks: [],
+      ...conventions,
     };
   }
 
@@ -68,6 +97,7 @@ export async function computeVaultOverview(deps: ComputeVaultOverviewDeps): Prom
     top_tags: tags.slice(0, TOP_TAGS_LIMIT),
     properties: props.slice(0, TOP_PROPERTIES_LIMIT),
     top_by_backlinks: topByBacklinks({ paths, graph, limit: TOP_BACKLINKS_LIMIT }),
+    ...conventions,
   };
 }
 

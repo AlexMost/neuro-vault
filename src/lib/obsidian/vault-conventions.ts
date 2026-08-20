@@ -14,6 +14,19 @@ export const CONVENTIONS_CHAR_CAP = 8000;
 
 const TRUNCATION_MARKER = '…';
 
+/**
+ * How far back from the cap a whitespace boundary may sit before it's still
+ * honored as the cut point. Conventions files are markdown: a fenced code
+ * block, a long URL, or a wide table row can produce thousands of unbroken
+ * characters. If the nearest whitespace inside the cap window happens to sit
+ * near the *start* of the string (e.g. a single leading space before a long
+ * run), snapping to it would collapse an 8000-char budget to almost nothing.
+ * 200 chars is generous relative to typical markdown line/word lengths —
+ * enough to land on a real word boundary near the cap — without risking a
+ * silent, drastic under-fill when no such boundary exists nearby.
+ */
+const WORD_BOUNDARY_LOOKBACK_WINDOW = 200;
+
 export type ConventionsReadFile = (p: string, enc: 'utf8') => Promise<string>;
 
 /**
@@ -45,6 +58,7 @@ export function capConventions(raw: string): { content: string; truncated: boole
   }
   const segment = raw.slice(0, CONVENTIONS_CHAR_CAP + 1);
   const lastWs = Math.max(segment.lastIndexOf(' '), segment.lastIndexOf('\n'));
-  const cutAt = lastWs !== -1 ? lastWs : CONVENTIONS_CHAR_CAP;
+  const withinLookback = lastWs >= CONVENTIONS_CHAR_CAP - WORD_BOUNDARY_LOOKBACK_WINDOW;
+  const cutAt = lastWs !== -1 && withinLookback ? lastWs : CONVENTIONS_CHAR_CAP;
   return { content: raw.slice(0, cutAt).trimEnd() + TRUNCATION_MARKER, truncated: true };
 }
