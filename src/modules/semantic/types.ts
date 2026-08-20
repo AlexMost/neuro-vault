@@ -37,12 +37,12 @@ export interface RelatedNote {
 export interface NoteResultNode {
   path: string;
   similarity: number;
+  // Always populated. For a single-query call this is `[query]` — arity is a
+  // surfacing concern in the tool layer, not a retrieval one. Whether it
+  // reaches the MCP response is decided by `isMulti` in `assembleUnified`.
+  matched_queries: string[];
   blocks: BlockMatch[];
   related: RelatedNote[];
-}
-
-export interface MultiNoteResultNode extends NoteResultNode {
-  matched_queries: string[];
 }
 
 export interface SimilarNoteResult {
