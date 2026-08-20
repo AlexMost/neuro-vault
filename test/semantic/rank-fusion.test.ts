@@ -15,6 +15,8 @@ describe('flattenExpansion', () => {
   const seed = (path: string, related: Array<[string, number]>) => ({
     path,
     similarity: 0.9,
+    // Always populated post-fold; flattenExpansion ignores it.
+    matched_queries: ['q'],
     blocks: [],
     related: related.map(([p, s]) => ({ path: p, expansion_similarity: s })),
   });
