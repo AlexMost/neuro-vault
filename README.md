@@ -7,6 +7,7 @@
 [![npm version](https://img.shields.io/npm/v/neuro-vault-mcp)](https://www.npmjs.com/package/neuro-vault-mcp)
 [![Node.js](https://img.shields.io/node/v/neuro-vault-mcp)](https://nodejs.org)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](LICENSE)
+[![Changelog](https://img.shields.io/badge/Changelog-CHANGELOG.md-orange.svg)](./CHANGELOG.md)
 
 Your second brain stops being a folder you open between contexts and becomes a first-class participant in every project. Agents can recall the right notes, inspect the evidence, and write back through vault-aware operations — without grepping the whole folder or flooding the context window.
 
@@ -170,6 +171,8 @@ User guide lives in [`docs/guide/`](./docs/guide/README.md):
 
 Architecture / internals: [`docs/architecture/`](./docs/architecture/).
 
+📝 What changed between versions — including every `⚠ BREAKING CHANGES` block — lives in [`CHANGELOG.md`](./CHANGELOG.md) (shipped inside the npm package too). The same notes are published per version on [GitHub Releases](https://github.com/AlexMost/neuro-vault/releases).
+
 ---
 
 ### Vault-specific conventions for external agents
@@ -182,4 +185,4 @@ When the server starts, it looks for `<vault>/.neuro-vault/for-external-agents.m
 
 ISC — see [LICENSE](LICENSE).
 
-Changelog: [Releases](https://github.com/AlexMost/neuro-vault/releases)
+Changelog: [CHANGELOG.md](./CHANGELOG.md) · [GitHub Releases](https://github.com/AlexMost/neuro-vault/releases)
