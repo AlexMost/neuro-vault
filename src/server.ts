@@ -12,6 +12,7 @@ import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
 import { FsVaultProvider } from './modules/operations/fs-vault-provider.js';
 import { createSmartConnectionsCorpusIndex } from './lib/obsidian/smart-connections-corpus-index.js';
+import { createExistingPathFilter } from './lib/obsidian/existing-paths.js';
 import { readVaultConventions } from './lib/obsidian/vault-conventions.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ResourceRegistration } from './lib/resource-registration.js';
@@ -89,6 +90,7 @@ function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): I
       ({ vaultRoot }) =>
       () =>
         readVaultConventions(vaultRoot),
+    existingPathFilterFactory: ({ vaultRoot }) => createExistingPathFilter({ vaultRoot }),
     ...overrides,
   };
 }

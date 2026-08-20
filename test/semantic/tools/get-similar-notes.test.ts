@@ -540,6 +540,23 @@ describe('getSimilarNotes — graph signals', () => {
     }
   });
 
+  it('drops a candidate that is both excluded and missing, without raising', async () => {
+    const { tool, cleanup } = await buildToolWithVault({
+      absentPaths: ['Folder/B.md'],
+    });
+    try {
+      const results = await tool.handler({
+        path: 'Folder/A.md',
+        threshold: 0,
+        exclude_folders: ['Folder/B.md'],
+      });
+      expect(results.map((r) => r.path)).not.toContain('Folder/B.md');
+      expect(results.map((r) => r.path)).toContain('Folder/C.md');
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('respects pathExists filter on linked targets too', async () => {
     // Folder/B.md is absent from disk, so it should be filtered out despite being linked
     const { tool, cleanup } = await buildToolWithVault({

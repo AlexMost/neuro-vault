@@ -4,18 +4,6 @@ import path from 'node:path';
 import { ToolHandlerError } from '../../lib/tool-response.js';
 import type { IVaultEntry } from '../../lib/vault-registry.js';
 
-export async function pathExistsForEntry(
-  entry: IVaultEntry,
-  vaultRelativePath: string,
-): Promise<boolean> {
-  try {
-    await fs.access(path.join(entry.path, vaultRelativePath));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function readNoteContentForEntry(
   entry: IVaultEntry,
   vaultRelativePath: string,

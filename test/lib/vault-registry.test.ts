@@ -31,6 +31,7 @@ function fakeDeps(): IVaultEntryDeps {
     corpusFactory: async () =>
       ({ snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) }) as never,
     conventionsReaderFactory: () => async () => null,
+    existingPathFilterFactory: () => async (paths) => new Set(paths),
   };
 }
 
@@ -236,6 +237,34 @@ describe('createVaultRegistry', () => {
 
     expect(await registry.require('a').readConventions()).toBe('conventions for /vaults/a');
     expect(await registry.require('b').readConventions()).toBe('conventions for /vaults/b');
+    expect(seen).toEqual(['/vaults/a', '/vaults/b']);
+  });
+
+  it('binds one existing-path filter per vault root', async () => {
+    const seen: string[] = [];
+    const registry = await VaultRegistry.create(
+      {
+        vaults: [
+          { name: 'a', path: '/vaults/a', smartEnvPath: '/vaults/a/.smart-env/multi' },
+          { name: 'b', path: '/vaults/b', smartEnvPath: '/vaults/b/.smart-env/multi' },
+        ],
+        semanticEnabled: false,
+        modelKey: 'm',
+      },
+      {
+        ...fakeDeps(),
+        existingPathFilterFactory:
+          ({ vaultRoot }) =>
+          async (paths) => {
+            seen.push(vaultRoot);
+            // Only vault "a" holds the note.
+            return vaultRoot === '/vaults/a' ? new Set(paths) : new Set<string>();
+          },
+      },
+    );
+
+    expect(await registry.require('a').filterExisting(['n.md'])).toEqual(new Set(['n.md']));
+    expect(await registry.require('b').filterExisting(['n.md'])).toEqual(new Set());
     expect(seen).toEqual(['/vaults/a', '/vaults/b']);
   });
 });

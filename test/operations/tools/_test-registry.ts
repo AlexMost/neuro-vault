@@ -1,3 +1,4 @@
+import { createExistingPathFilter } from '../../../src/lib/obsidian/existing-paths.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import type { VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../src/lib/vault-registry.js';
@@ -21,6 +22,11 @@ export function makeTestRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistr
         semanticAvailable: true,
         reader: emptyReader,
         readConventions: noConventions,
+        // Most rigs provision a real temp vault and expect real staleness
+        // semantics, so the default is the production filter bound to this
+        // entry's root. A suite that wants specific paths to count as missing
+        // passes its own `filterExisting` instead — no temp files needed.
+        filterExisting: createExistingPathFilter({ vaultRoot: e.path ?? '' }),
         ...e,
       }) as IVaultEntry,
   );

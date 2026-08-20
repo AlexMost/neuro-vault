@@ -97,7 +97,7 @@ export function makeFakeCorpusIndex(
  *
  * Creates a temporary vault directory on disk and populates it with empty
  * files for each path in `sources` (minus any listed in `absentPaths`), so
- * that `pathExistsForEntry` returns true/false as the test expects.
+ * that `entry.filterExisting` keeps/drops them as the test expects.
  *
  * Returns the deps and a `cleanup` function that removes the temp directory.
  */

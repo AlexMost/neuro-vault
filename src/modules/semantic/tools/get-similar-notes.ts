@@ -5,12 +5,7 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
-import {
-  pathExistsForEntry,
-  readNoteContentForEntry,
-  readPositiveInteger,
-  readThreshold,
-} from '../tool-helpers.js';
+import { readNoteContentForEntry, readPositiveInteger, readThreshold } from '../tool-helpers.js';
 import type { EmbeddingProvider, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
 import {
@@ -130,14 +125,13 @@ async function filterCandidates(args: {
   excludePrefixes: readonly string[];
   entry: IVaultEntry;
 }): Promise<Candidate[]> {
+  // Two unrelated filters: `exclude_folders` is a caller preference, staleness
+  // is a corpus invariant. Exclusion runs first so the disk check only sees
+  // candidates that could still be returned.
   const afterExclude = [...args.candidates].filter(
     (c) => !isExcluded(c.path, args.excludePrefixes),
   );
-  const uniquePaths = new Set(afterExclude.map((c) => c.path));
-  const checks = await Promise.all(
-    [...uniquePaths].map(async (p) => [p, await pathExistsForEntry(args.entry, p)] as const),
-  );
-  const existing = new Set(checks.filter(([, ok]) => ok).map(([p]) => p));
+  const existing = await args.entry.filterExisting(afterExclude.map((c) => c.path));
   return afterExclude.filter((c) => existing.has(c.path));
 }
 
