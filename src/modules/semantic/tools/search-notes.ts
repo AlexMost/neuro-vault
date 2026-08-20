@@ -546,7 +546,6 @@ export function buildSearchNotesTool(
     '  - path_prefix / exclude_path_prefix: scope to / drop folder subtrees (string or array).',
     '  - tags: notes with ANY of these tags (no leading "#").',
     '  - frontmatter: sift filter on frontmatter keys, same operator allow-list as query_notes.',
-    '',
   ].join('\n');
 
   return buildMultiVaultTool(registry, {

@@ -1064,22 +1064,32 @@ describe('search_notes advertised description', () => {
     expect(single.description).not.toContain('Registered vaults:');
   });
 
+  const PRE_FILTER_FRONTMATTER_LINE =
+    '  - frontmatter: sift filter on frontmatter keys, same operator allow-list as query_notes.';
+
+  it('ends the single-vault description exactly at the PRE-FILTER block, no trailing newline or multi-vault text', () => {
+    const tool = buildSearchNotesTool(depsFor('only'));
+    expect(tool.description.endsWith(PRE_FILTER_FRONTMATTER_LINE)).toBe(true);
+    expect(tool.description.endsWith('\n')).toBe(false);
+    expect(tool.description).not.toContain('Registered vaults:');
+  });
+
+  it('separates the multi-vault block from the PRE-FILTER block with a blank line at column 0', () => {
+    const tool = buildSearchNotesTool(depsFor('alpha', 'beta'));
+    const boundary =
+      PRE_FILTER_FRONTMATTER_LINE +
+      '\n\n' +
+      'Registered vaults: "alpha", "beta". ' +
+      FAN_OUT_SUFFIX +
+      ' A vault without a semantic index still contributes lexically-sourced matches; none are skipped.';
+    expect(tool.description.endsWith(boundary)).toBe(true);
+  });
+
+  // Reuses `depsFor` above — same registry/deps construction, just wrapped
+  // through `registerTool` for callers that want the server-advertised
+  // `spec.description` rather than the tool's own `.description`.
   function describeWith(vaultNames: string[]): string {
-    const registry = makeTestRegistry(
-      vaultNames.map((name) => ({
-        name,
-        path: `/vaults/${name}`,
-        smartEnvPath: `/vaults/${name}/.smart-env`,
-        graph: makeFakeGraph(),
-        listMatchingPaths: async () => new Set<string>(),
-      })),
-    );
-    const tool = buildSearchNotesTool({
-      registry,
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
-      searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-      modelKey: MODEL_KEY,
-    });
+    const tool = buildSearchNotesTool(depsFor(...vaultNames));
     return registerTool(tool).spec.description!;
   }
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { buildMultiVaultTool, payloadOnly, withVaultName } from '../../src/lib/multi-vault-tool.js';
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
+import { FAN_OUT_SUFFIX } from '../../src/lib/vault-param.js';
 import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.js';
 
 function registryOf(...names: string[]): IVaultRegistry {
@@ -103,6 +104,32 @@ describe('buildMultiVaultTool', () => {
     expect(tool.description.indexOf('results_by_vault')).toBeLessThan(
       tool.description.indexOf('still contribute lexically'),
     );
+  });
+
+  it('separates the multi-vault block with a blank line at column 0 for a multi-line description', () => {
+    const tool = buildMultiVaultTool<Input, { results: string[] }, unknown>(registryOf('a', 'b'), {
+      name: 'list_tags',
+      title: 'List Tags',
+      description: 'Line one.\nLine two.',
+      inputShape: { n: z.number().optional() },
+      runForEntry: async (entry) => ({ results: [entry.name] }),
+      single: withVaultName,
+    });
+    expect(tool.description).toBe(
+      `Line one.\nLine two.\n\nRegistered vaults: "a", "b". ${FAN_OUT_SUFFIX}`,
+    );
+  });
+
+  it('keeps the single leading-space separator for a single-paragraph description', () => {
+    const tool = buildMultiVaultTool<Input, { results: string[] }, unknown>(registryOf('a', 'b'), {
+      name: 'list_tags',
+      title: 'List Tags',
+      description: 'Domain prose.',
+      inputShape: { n: z.number().optional() },
+      runForEntry: async (entry) => ({ results: [entry.name] }),
+      single: withVaultName,
+    });
+    expect(tool.description).toBe(`Domain prose. Registered vaults: "a", "b". ${FAN_OUT_SUFFIX}`);
   });
 
   it('rejects an inputShape that declares vault at the type level', () => {

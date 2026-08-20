@@ -71,10 +71,20 @@ export function buildMultiVaultTool<
 ): ITool<TInput, TSingle | IFanOutResult<TPayload>> {
   const suffix =
     spec.multiVaultNote === undefined ? FAN_OUT_SUFFIX : `${FAN_OUT_SUFFIX} ${spec.multiVaultNote}`;
+  const multiVaultBlock = describeMultiVault(registry, suffix);
+  // `describeMultiVault` returns its block with a single leading space, built
+  // for concatenating onto the end of one flowing paragraph — correct for the
+  // four single-paragraph tools. A newline-joined block description (e.g.
+  // `search_notes`, with its PARAMETERS/RESPONSE SHAPE/... sections) instead
+  // gets the multi-vault block on its own paragraph, starting at column 0.
+  const separator =
+    multiVaultBlock !== '' && spec.description.includes('\n')
+      ? `\n\n${multiVaultBlock.trimStart()}`
+      : multiVaultBlock;
   return {
     name: spec.name,
     title: spec.title,
-    description: spec.description + describeMultiVault(registry, suffix),
+    description: spec.description + separator,
     inputSchema: z.object({ ...vaultParamShape(registry), ...spec.inputShape }),
     handler: async (input) => {
       if (input.vault === undefined && registry.isMulti()) {
