@@ -41,13 +41,10 @@ export interface QueryNotesResultWithVault {
   truncated: boolean;
 }
 
-// Type alias that satisfies the FanOut constraint while preserving the shape
-type QueryNotesResultRecord = QueryNotesResultWithVault & Record<string, unknown>;
-
 async function runQueryForEntry(
   entry: IVaultEntry,
   input: QueryNotesToolInput & { vault?: string },
-): Promise<QueryNotesResultRecord> {
+): Promise<QueryNotesResultWithVault> {
   const raw = await runQueryNotes(input, entry.reader, entry.graph);
   const results: QueryNotesResultItemWithVault[] = raw.results.map((item) => ({
     vault: entry.name,
@@ -63,7 +60,7 @@ const QUERY_NOTES_DESCRIPTION =
 
 export function buildQueryNotesTool(
   deps: QueryNotesDeps,
-): ITool<Input, QueryNotesResultWithVault | IFanOutResult<QueryNotesResultRecord>> {
+): ITool<Input, QueryNotesResultWithVault | IFanOutResult<QueryNotesResultWithVault>> {
   return buildMultiVaultTool(deps.registry, {
     name: 'query_notes',
     title: 'Query Notes',

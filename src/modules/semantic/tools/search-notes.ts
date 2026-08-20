@@ -76,9 +76,6 @@ export interface UnifiedMatch {
   matched_queries?: string[];
 }
 
-// A type alias (not `interface`) so it picks up TS's implicit index
-// signature for object literal types — required for `IFanOutResult<T extends
-// Record<string, unknown>>` in the multi-vault fan-out path below.
 export type SearchNotesOutput = {
   matches: UnifiedMatch[];
   truncated: boolean;

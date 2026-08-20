@@ -9,7 +9,7 @@ interface Input {
 
 type TagEntry = { name: string; count: number };
 type FlatOutput = { vault: string; results: TagEntry[] };
-type FanOutPayload = { results: TagEntry[] } & Record<string, unknown>;
+type FanOutPayload = { results: TagEntry[] };
 
 export interface ListTagsDeps {
   registry: IVaultRegistry;

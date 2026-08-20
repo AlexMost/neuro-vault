@@ -9,7 +9,7 @@ interface Input {
 
 type PropertyEntry = { name: string; count: number };
 type FlatOutput = { vault: string; results: PropertyEntry[] };
-type FanOutPayload = { results: PropertyEntry[] } & Record<string, unknown>;
+type FanOutPayload = { results: PropertyEntry[] };
 
 export interface ListPropertiesDeps {
   registry: IVaultRegistry;

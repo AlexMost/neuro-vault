@@ -11,7 +11,7 @@ import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
  * Single-vault shape for a payload that has no vault identity of its own —
  * `list_tags`, `list_properties`, `get_vault_overview`.
  */
-export function withVaultName<T extends Record<string, unknown>>(
+export function withVaultName<T extends object>(
   entry: IVaultEntry,
   payload: T,
 ): { vault: string } & T {
@@ -23,13 +23,13 @@ export function withVaultName<T extends Record<string, unknown>>(
  * own `vault` — `query_notes`, `search_notes`. Adding a top-level `vault` here
  * would state the same fact twice at two different granularities.
  */
-export function payloadOnly<T extends Record<string, unknown>>(_entry: IVaultEntry, payload: T): T {
+export function payloadOnly<T extends object>(_entry: IVaultEntry, payload: T): T {
   return payload;
 }
 
 export interface IMultiVaultToolSpec<
   TInput extends { vault?: string },
-  TPayload extends Record<string, unknown>,
+  TPayload extends object,
   TSingle,
 > {
   name: ToolName;
@@ -63,7 +63,7 @@ export interface IMultiVaultToolSpec<
  */
 export function buildMultiVaultTool<
   TInput extends { vault?: string },
-  TPayload extends Record<string, unknown>,
+  TPayload extends object,
   TSingle,
 >(
   registry: IVaultRegistry,

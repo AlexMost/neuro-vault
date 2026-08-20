@@ -15,7 +15,7 @@ export interface IFailedVault {
   };
 }
 
-export interface IFanOutResult<T extends Record<string, unknown>> {
+export interface IFanOutResult<T extends object> {
   results_by_vault: Array<{ vault: string } & T>;
   skipped_vaults: ISkippedVault[];
   failed_vaults: IFailedVault[];
@@ -70,7 +70,7 @@ function mapRejectionToFailedVault(vault: string, reason: unknown): IFailedVault
  * fatal-class code (see `FATAL_TOOL_ERROR_CODES` in tool-response.ts): those
  * apply uniformly across vaults and are re-thrown as a single fatal error.
  */
-export async function runFanOut<T extends Record<string, unknown>>(
+export async function runFanOut<T extends object>(
   registry: IVaultRegistry,
   fn: (entry: IVaultEntry) => Promise<T>,
 ): Promise<IFanOutResult<T>> {

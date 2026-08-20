@@ -12,22 +12,18 @@ export interface GetVaultOverviewDeps {
   registry: IVaultRegistry;
 }
 
-// VaultOverview & Record<string, unknown> satisfies the FanOut constraint
-type VaultOverviewRecord = VaultOverview & Record<string, unknown>;
-
-async function runOverviewForEntry(entry: IVaultEntry): Promise<VaultOverviewRecord> {
-  const overview = await computeVaultOverview({
+async function runOverviewForEntry(entry: IVaultEntry): Promise<VaultOverview> {
+  return computeVaultOverview({
     reader: entry.reader,
     provider: entry.provider,
     graph: entry.graph,
     readConventions: entry.readConventions,
   });
-  return overview as VaultOverviewRecord;
 }
 
 export function buildGetVaultOverviewTool(
   deps: GetVaultOverviewDeps,
-): ITool<Input, ({ vault: string } & VaultOverview) | IFanOutResult<VaultOverviewRecord>> {
+): ITool<Input, ({ vault: string } & VaultOverview) | IFanOutResult<VaultOverview>> {
   return buildMultiVaultTool(deps.registry, {
     name: 'get_vault_overview',
     title: 'Get Vault Overview',
