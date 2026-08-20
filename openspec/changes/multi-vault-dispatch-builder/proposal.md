@@ -2,10 +2,11 @@
 
 Five tools — `list_tags`, `list_properties`, `query_notes`, `get_vault_overview`,
 `search_notes` — each hand-maintain the same glue around `runFanOut`: an
-identical dispatch branch, the fan-out prose, and an `& Record<string, unknown>`
-type contortion. The prose has already drifted into three variants, two of which
-advertise `skipped_vaults` semantics `runFanOut` cannot deliver — it hard-codes
-`[]`. Under ADR-0010 a tool description is a delivery channel, so that drift is a
+identical dispatch branch, the fan-out prose, and a type workaround to satisfy
+`IFanOutResult`. The prose has already drifted into three variants, one of them
+— carried by `query_notes` and `get_vault_overview` — advertising
+`skipped_vaults` semantics `runFanOut` cannot deliver — it hard-codes `[]`.
+Under ADR-0010 a tool description is a delivery channel, so that drift is a
 behaviour bug reaching every agent, not cosmetic debt. Giving the contract one
 owner fixes it at all five sites at once and makes recurrence testable rather
 than review-dependent.

@@ -55,11 +55,11 @@ export interface IMultiVaultToolSpec<
  * The one owner of the multi-vault dispatch contract.
  *
  * Five tools previously carried private copies of three things: this branch,
- * the fan-out description prose, and the `& Record<string, unknown>` bound
- * needed to satisfy `IFanOutResult`. The prose copies had already drifted into
- * three variants, two of them describing `skipped_vaults` semantics no code
- * path delivers. Under ADR-0010 a tool description is a delivery channel, so
- * that drift was a behaviour bug, not cosmetic debt.
+ * the fan-out description prose, and a type workaround needed to satisfy
+ * `IFanOutResult`. The prose copies had already drifted into three variants,
+ * one of them — carried by two tools — describing `skipped_vaults` semantics
+ * no code path delivers. Under ADR-0010 a tool description is a delivery
+ * channel, so that drift was a behaviour bug, not cosmetic debt.
  */
 export function buildMultiVaultTool<
   TInput extends { vault?: string },
