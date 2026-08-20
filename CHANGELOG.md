@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [15.2.0](https://github.com/AlexMost/neuro-vault/compare/v15.1.0...v15.2.0) (2026-08-20)
+
+
+### Features
+
+* **conventions:** expose readConventions per vault entry ([5440bf1](https://github.com/AlexMost/neuro-vault/commit/5440bf1c1bf3681019370baa277a9f63f0de61a2))
+* **overview:** deliver vault conventions through get_vault_overview ([ac9b81d](https://github.com/AlexMost/neuro-vault/commit/ac9b81dc877dfef1c4931ab159c56bb9132b3ead))
+
+
+### Bug Fixes
+
+* **instructions:** deliver vault conventions within the client truncation budget ([f0e25dc](https://github.com/AlexMost/neuro-vault/commit/f0e25dc0394c815896fc4b10c6984917fdd6347a))
+* **overview:** scope the conventions directive to vault organisation ([16921cf](https://github.com/AlexMost/neuro-vault/commit/16921cf25da46e96037bbaea7c340405861bc15c))
+* **tools:** rehome in-vault scan guidance and enumerate registered vaults ([699f86e](https://github.com/AlexMost/neuro-vault/commit/699f86e8984c6c3690fce6ddbd88aedcf89a88e6))
+
 ## [15.1.0](https://github.com/AlexMost/neuro-vault/compare/v15.0.0...v15.1.0) (2026-08-10)
 
 
