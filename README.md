@@ -159,7 +159,7 @@ For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./
 
 ## 📚 Documentation
 
-> **Every tool accepts an optional `vault` parameter.** In multi-vault mode, `search_notes`, `query_notes`, and `get_vault_overview` fan out across all registered vaults when `vault` is omitted.
+> **Every tool accepts an optional `vault` parameter.** In multi-vault mode, `search_notes`, `query_notes`, `get_vault_overview`, `list_tags`, and `list_properties` fan out across all registered vaults when `vault` is omitted.
 
 User guide lives in [`docs/guide/`](./docs/guide/README.md):
 
