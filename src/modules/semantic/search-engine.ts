@@ -45,8 +45,8 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   let magnitudeB = 0;
 
   for (let index = 0; index < a.length; index += 1) {
-    const left = a[index]!;
-    const right = b[index]!;
+    const left = a[index];
+    const right = b[index];
     dotProduct += left * right;
     magnitudeA += left * left;
     magnitudeB += right * right;
@@ -167,17 +167,17 @@ export function findDuplicates({
   const sourceList = [...sources];
 
   for (let index = 0; index < sourceList.length; index += 1) {
-    const source = sourceList[index]!;
+    const source = sourceList[index];
     validateVector(source.embedding, `Source vector for ${source.path}`);
   }
 
   const duplicates: DuplicatePair[] = [];
 
   for (let leftIndex = 0; leftIndex < sourceList.length; leftIndex += 1) {
-    const left = sourceList[leftIndex]!;
+    const left = sourceList[leftIndex];
 
     for (let rightIndex = leftIndex + 1; rightIndex < sourceList.length; rightIndex += 1) {
-      const right = sourceList[rightIndex]!;
+      const right = sourceList[rightIndex];
 
       ensureSameDimensions(
         left.embedding,

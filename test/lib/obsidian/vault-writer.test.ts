@@ -12,7 +12,7 @@ function fakeFs(initial: Record<string, string>) {
       err.code = 'ENOENT';
       throw err;
     }
-    return files[absPath]!;
+    return files[absPath];
   });
   const writeFile = vi.fn(async (absPath: string, data: string, encoding: 'utf8') => {
     expect(encoding).toBe('utf8');

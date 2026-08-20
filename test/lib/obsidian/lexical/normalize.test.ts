@@ -49,7 +49,7 @@ describe('normalizeWithMap', () => {
     // norm[0] 'о' came from raw[0] 'О'
     expect(map[0]).toBe(0);
     // norm index of 'x' maps to raw index of 'X'
-    expect(raw[map[norm.indexOf('x')]!]).toBe('X');
+    expect(raw[map[norm.indexOf('x')]]).toBe('X');
   });
 });
 

@@ -57,7 +57,7 @@ export function applyReplace(body: string, find: string, replacement: string): A
     return { error: 'AMBIGUOUS_MATCH', lines: positions.map((p) => lineNumberAt(body, p)) };
   }
 
-  const at = positions[0]!;
+  const at = positions[0];
   return { body: body.slice(0, at) + replacement + body.slice(at + find.length) };
 }
 

@@ -202,7 +202,7 @@ describe('split thresholds on the calibration fixture', () => {
     });
     for (const r of output.results) {
       expect(r.blocks.length).toBeGreaterThan(0);
-      expect(r.blocks[0]!.similarity).toBeGreaterThan(0.35);
+      expect(r.blocks[0].similarity).toBeGreaterThan(0.35);
     }
   });
 });

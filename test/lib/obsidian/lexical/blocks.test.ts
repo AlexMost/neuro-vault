@@ -33,16 +33,16 @@ describe('parseNote', () => {
     const body = 'векторний\nпошук у vault\n';
     const parsed = parseNote({ path: 'n.md', body, lineOffset: 0 });
     expect(parsed.units).toHaveLength(1);
-    expect(parsed.units[0]!.norm).toContain('векторнии пошук'); // й→и per normalize
-    expect(parsed.units[0]!.lines).toEqual([1, 2]);
+    expect(parsed.units[0].norm).toContain('векторнии пошук'); // й→и per normalize
+    expect(parsed.units[0].lines).toEqual([1, 2]);
   });
 
   it('treats fenced code as body, never heading', () => {
     const body = '```\n# не заголовок\n```\n';
     const parsed = parseNote({ path: 'n.md', body, lineOffset: 0 });
     expect(parsed.units).toHaveLength(1);
-    expect(parsed.units[0]!.kind).toBe('body');
-    expect(parsed.units[0]!.raw).toContain('# не заголовок');
+    expect(parsed.units[0].kind).toBe('body');
+    expect(parsed.units[0].raw).toContain('# не заголовок');
   });
 
   it('collects list items and blockquote paragraphs as body units', () => {
@@ -54,6 +54,6 @@ describe('parseNote', () => {
 
   it('shifts line numbers by lineOffset (frontmatter)', () => {
     const parsed = parseNote({ path: 'n.md', body: 'абзац\n', lineOffset: 4 });
-    expect(parsed.units[0]!.lines).toEqual([5, 5]);
+    expect(parsed.units[0].lines).toEqual([5, 5]);
   });
 });

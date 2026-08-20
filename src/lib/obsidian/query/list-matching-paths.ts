@@ -51,9 +51,9 @@ export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchi
     if (!hasTags && !hasFrontmatter) {
       const collected = new Set<string>();
       if (hasInclude) {
-        const total = includePrefixes!.length;
+        const total = includePrefixes.length;
         const scans = await Promise.all(
-          includePrefixes!.map((p, i) =>
+          includePrefixes.map((p, i) =>
             deps.reader
               .scan({ pathPrefix: p })
               .catch((err: unknown) => rethrowPathNotFoundWithIndex(err, p, i, total)),
@@ -65,7 +65,7 @@ export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchi
       }
       if (hasExclude) {
         for (const p of [...collected]) {
-          if (matchesAnyPrefix(p, excludePrefixes!)) collected.delete(p);
+          if (matchesAnyPrefix(p, excludePrefixes)) collected.delete(p);
         }
       }
       return collected;
@@ -73,14 +73,12 @@ export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchi
 
     // General path — validate frontmatter operators before sift compiles.
     if (hasFrontmatter) {
-      validateFilter(frontmatter!);
+      validateFilter(frontmatter);
     }
     const internalFilter = compileFilter({ tags, frontmatter });
     const effectiveFilter = applyDefaultRegexOptions(internalFilter);
 
-    const scanPrefixes: Array<string | undefined> = hasInclude
-      ? [...includePrefixes!]
-      : [undefined];
+    const scanPrefixes: Array<string | undefined> = hasInclude ? [...includePrefixes] : [undefined];
     const totalIncludes = scanPrefixes.length;
     const batched = await Promise.all(
       scanPrefixes.map((prefix, i) => {
@@ -122,6 +120,6 @@ function compileFilter(parts: {
       clauses.push({ [`frontmatter.${key}`]: value });
     }
   }
-  if (clauses.length === 1) return clauses[0]!;
+  if (clauses.length === 1) return clauses[0];
   return { $and: clauses };
 }

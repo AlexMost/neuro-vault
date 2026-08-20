@@ -60,7 +60,7 @@ describe('search_notes — filter', () => {
         'Resources/a.md',
         'Resources/b.md',
       ]);
-      const passedSources = [...findNeighbors.mock.calls[0]![0].sources];
+      const passedSources = [...findNeighbors.mock.calls[0][0].sources];
       expect(passedSources.map((s) => s.path).sort()).toEqual(['Resources/a.md', 'Resources/b.md']);
     } finally {
       await cleanup();
@@ -249,7 +249,7 @@ describe('search_notes — filter', () => {
       });
 
       expect(findBlockNeighbors).toHaveBeenCalled();
-      const passedToBlock = [...findBlockNeighbors.mock.calls[0]![0].sources];
+      const passedToBlock = [...findBlockNeighbors.mock.calls[0][0].sources];
       expect(passedToBlock.map((s) => s.path).sort()).toEqual(['Resources/a.md']);
     } finally {
       await cleanup();

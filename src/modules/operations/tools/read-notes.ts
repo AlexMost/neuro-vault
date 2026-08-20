@@ -104,7 +104,7 @@ export function buildReadNotesTool(
       let projectedIdx = 0;
       const results: ReadNotesResultItem[] = slots.map((slot) => {
         if (slot.kind === 'invalid') return slot.item;
-        return projected[projectedIdx++]!;
+        return projected[projectedIdx++];
       });
 
       const errors = results.reduce((n, r) => n + ('error' in r ? 1 : 0), 0);

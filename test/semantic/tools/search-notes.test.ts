@@ -10,7 +10,6 @@ import {
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
-import type { SmartConnectionsCorpusIndex } from '../../../src/lib/obsidian/smart-connections-corpus-index.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import {
   MODEL_KEY,
@@ -126,8 +125,8 @@ describe('searchNotes', () => {
           'Folder/note-b.md',
           'Folder/note-c.md',
         ]);
-        expect(result.matches[0]!.similarity).toBeGreaterThan(result.matches[1]!.similarity!);
-        expect(result.matches[1]!.similarity).toBeGreaterThan(result.matches[2]!.similarity!);
+        expect(result.matches[0].similarity).toBeGreaterThan(result.matches[1].similarity!);
+        expect(result.matches[1].similarity).toBeGreaterThan(result.matches[2].similarity!);
       } finally {
         await cleanup();
       }
@@ -438,7 +437,7 @@ describe('searchNotes', () => {
       const output = (await tool.handler({ query: ['single'], threshold: 0 })) as SearchNotesOutput;
 
       expect(output.matches).toHaveLength(1);
-      expect(output.matches[0]!.matched_queries).toEqual(['single']);
+      expect(output.matches[0].matched_queries).toEqual(['single']);
       expect(output.truncated).toBe(false);
     } finally {
       await cleanup();
@@ -616,8 +615,8 @@ describe('searchNotes', () => {
       // (max) similarity.
       const shared = output.matches.filter((r) => r.path === 'shared.md');
       expect(shared).toHaveLength(1);
-      expect(shared[0]!.expansion_similarity).toBe(0.85);
-      expect(shared[0]!.similarity).toBeUndefined();
+      expect(shared[0].expansion_similarity).toBe(0.85);
+      expect(shared[0].similarity).toBeUndefined();
     } finally {
       await cleanup();
     }
@@ -821,8 +820,8 @@ describe('searchNotes', () => {
         const byVault = new Map(result.results_by_vault.map((g) => [g.vault, g]));
         expect(byVault.has('v1')).toBe(true);
         expect(byVault.has('v2')).toBe(true);
-        expect(byVault.get('v1')!.matches[0]!.path).toBe('note-a.md');
-        expect(byVault.get('v2')!.matches[0]!.path).toBe('note-b.md');
+        expect(byVault.get('v1')!.matches[0].path).toBe('note-a.md');
+        expect(byVault.get('v2')!.matches[0].path).toBe('note-b.md');
       } finally {
         await fs2.rm(vaultRoot1, { recursive: true, force: true });
         await fs2.rm(vaultRoot2, { recursive: true, force: true });
@@ -873,7 +872,7 @@ describe('searchNotes', () => {
             name: 'v2',
             path: vaultRoot2,
             smartEnvPath,
-            corpus: corpusIndex2 as SmartConnectionsCorpusIndex,
+            corpus: corpusIndex2,
             semanticAvailable: true,
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
@@ -900,9 +899,9 @@ describe('searchNotes', () => {
           },
         ]);
         expect(result.results_by_vault).toHaveLength(1);
-        const v1Entry = result.results_by_vault[0]!;
+        const v1Entry = result.results_by_vault[0];
         expect(v1Entry.vault).toBe('v1');
-        expect(v1Entry.matches[0]!.path).toBe('note-a.md');
+        expect(v1Entry.matches[0].path).toBe('note-a.md');
       } finally {
         await fs2.rm(vaultRoot1, { recursive: true, force: true });
         await fs2.rm(vaultRoot2, { recursive: true, force: true });
@@ -973,8 +972,8 @@ describe('searchNotes', () => {
         expect(result.results_by_vault).toHaveLength(2);
         expect(result.skipped_vaults).toEqual([]);
         const byVault = new Map(result.results_by_vault.map((g) => [g.vault, g]));
-        expect(byVault.get('v1')!.matches[0]!.path).toBe('note-a.md');
-        expect(byVault.get('v1')!.matches[0]!.found_in).toEqual(['semantic']);
+        expect(byVault.get('v1')!.matches[0].path).toBe('note-a.md');
+        expect(byVault.get('v1')!.matches[0].found_in).toEqual(['semantic']);
         // v2 has no semantic corpus — hybrid falls back to lexical-only rather
         // than skipping the vault entirely. No matching notes here, so empty.
         expect(byVault.get('v2')!.matches).toEqual([]);

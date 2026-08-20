@@ -117,7 +117,7 @@ describe('operations.getVaultOverview tool', () => {
       },
     ]);
     expect(result.results_by_vault).toHaveLength(1);
-    const vaultA = result.results_by_vault[0]!;
+    const vaultA = result.results_by_vault[0];
     expect(vaultA.vault).toBe('vault-a');
     expect(vaultA.total_notes).toBe(1);
     expect(vaultA.top_tags).toEqual([{ name: 'alpha', count: 1 }]);

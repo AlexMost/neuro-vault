@@ -99,7 +99,7 @@ describe('operations.setProperty handler', () => {
       tool.handler({
         path: 'a.md',
         key: 'due',
-        value: 12345 as unknown as string,
+        value: 12345,
         type: 'date',
       }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
@@ -164,7 +164,7 @@ describe('operations.setProperty handler', () => {
     const provider = makeProvider();
     const registry = makeTestRegistry([{ name: 'v', provider }]);
     const tool = buildSetPropertyTool({ registry });
-    await expect(tool.handler({ key: 'x', value: 'y' } as never)).rejects.toMatchObject({
+    await expect(tool.handler({ key: 'x', value: 'y' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
   });

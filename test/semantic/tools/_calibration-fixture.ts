@@ -46,7 +46,7 @@ function neighbourNote(index: number, seedSim: number): SmartSource {
   // Anchored to the top band note's angle; sits "past" the band so its
   // query-similarity (~0.5) clears the deep default 0.35 but always ranks
   // below all 8 band notes — it can only surface via expansion.
-  const a = angleFor(BAND_SIMS[0]!) + angleFor(seedSim);
+  const a = angleFor(BAND_SIMS[0]) + angleFor(seedSim);
   return {
     path: `neighbour-${index}.md`,
     embedding: vec(a),

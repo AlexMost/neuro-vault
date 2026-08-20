@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 import { fromMarkdown } from 'mdast-util-from-markdown';
-import type { Heading, Nodes, Parent, RootContent } from 'mdast';
+import type { Nodes, Parent, RootContent } from 'mdast';
 
 import { normalizeWithMap } from './normalize.js';
 
@@ -46,7 +46,7 @@ export function parseNote(opts: { path: string; body: string; lineOffset: number
   const visit = (nodes: RootContent[]): void => {
     for (const node of nodes) {
       if (node.type === 'heading') {
-        const raw = nodeText(node as Heading).trim();
+        const raw = nodeText(node).trim();
         if (raw.length > 0) {
           const { norm, map } = normalizeWithMap(raw);
           units.push({ kind: 'heading', raw, norm, map, lines: linesOf(node, opts.lineOffset) });
@@ -55,7 +55,7 @@ export function parseNote(opts: { path: string; body: string; lineOffset: number
         continue;
       }
       if (CONTAINER_TYPES.has(node.type) && 'children' in node) {
-        visit((node as Parent).children as RootContent[]);
+        visit((node as Parent).children);
         continue;
       }
       if (node.type === 'paragraph' || node.type === 'code' || node.type === 'table') {

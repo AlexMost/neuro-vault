@@ -58,8 +58,8 @@ describe('validateFilter', () => {
 
   it('rejects a top-level non-object filter', () => {
     expect(() => validateFilter([])).toThrow(ToolHandlerError);
-    expect(() => validateFilter(null as unknown)).toThrow(ToolHandlerError);
-    expect(() => validateFilter('string' as unknown)).toThrow(ToolHandlerError);
+    expect(() => validateFilter(null)).toThrow(ToolHandlerError);
+    expect(() => validateFilter('string')).toThrow(ToolHandlerError);
   });
 
   it('does not flag plain field names that happen to look weird', () => {

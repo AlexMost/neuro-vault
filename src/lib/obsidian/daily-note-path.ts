@@ -12,7 +12,7 @@ export function formatDailyDate(format: string, date: Date): string {
   let out = '';
   let i = 0;
   while (i < format.length) {
-    const ch = format[i]!;
+    const ch = format[i];
     if (ch === '[') {
       const close = format.indexOf(']', i + 1);
       if (close === -1) throw unsupported(format, '[');

@@ -42,10 +42,10 @@ describe('parseAjsonContent', () => {
     const entries = parseAjsonContent(content);
 
     expect(entries).toHaveLength(2);
-    expect(entries[0]!.key).toBe('smart_sources:note.md');
-    expect(entries[0]!.value).toEqual({ path: 'note.md' });
-    expect(entries[1]!.key).toBe('smart_blocks:note.md#heading');
-    expect(entries[1]!.value).toEqual({ key: 'note.md#heading' });
+    expect(entries[0].key).toBe('smart_sources:note.md');
+    expect(entries[0].value).toEqual({ path: 'note.md' });
+    expect(entries[1].key).toBe('smart_blocks:note.md#heading');
+    expect(entries[1].value).toEqual({ key: 'note.md#heading' });
   });
 
   it('parses entries across multiple lines', () => {
@@ -70,8 +70,8 @@ describe('parseAjsonContent', () => {
     const entries = parseAjsonContent(content);
 
     expect(entries).toHaveLength(2);
-    expect(entries[0]!.key).toBe('smart_sources:note.md');
-    expect(entries[1]!.key).toBe('smart_blocks:note.md#other');
+    expect(entries[0].key).toBe('smart_sources:note.md');
+    expect(entries[1].key).toBe('smart_blocks:note.md#other');
   });
 });
 

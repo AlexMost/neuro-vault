@@ -9,7 +9,7 @@ type SiftMatcher = (record: unknown) => boolean;
 type SiftFactory = (filter: unknown) => SiftMatcher;
 const sift: SiftFactory =
   typeof siftModule === 'function'
-    ? (siftModule as unknown as SiftFactory)
+    ? siftModule
     : (siftModule as unknown as { default: SiftFactory }).default;
 import { ScanPathNotFoundError, type VaultReader } from '../vault-reader.js';
 import type { WikilinkGraphIndex } from '../wikilink-graph.js';
@@ -89,7 +89,7 @@ export async function collectMatchingPaths(
 
   let matcher: (record: NoteRecord) => boolean;
   try {
-    matcher = sift(filter) as unknown as (record: NoteRecord) => boolean;
+    matcher = sift(filter);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new ToolHandlerError('INVALID_FILTER', `filter rejected by sift: ${message}`);
@@ -263,7 +263,7 @@ function validateInput(input: QueryNotesToolInput): ValidatedInput {
   }
 
   return {
-    filter: input.filter as Record<string, unknown>,
+    filter: input.filter,
     includePrefixes,
     excludePrefixes,
     sort,
@@ -332,7 +332,12 @@ function compare(a: unknown, b: unknown): number {
   if (typeof a === 'boolean' && typeof b === 'boolean') {
     return a === b ? 0 : a ? 1 : -1;
   }
+  // Deliberate: non-primitive values fall back to default stringification and
+  // tie with each other — sort order for objects/arrays is not part of the
+  // query contract (only missing-last and primitive ordering are).
+  // eslint-disable-next-line @typescript-eslint/no-base-to-string
   const sa = String(a);
+  // eslint-disable-next-line @typescript-eslint/no-base-to-string
   const sb = String(b);
   return sa < sb ? -1 : sa > sb ? 1 : 0;
 }

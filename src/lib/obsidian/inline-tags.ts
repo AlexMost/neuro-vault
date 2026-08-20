@@ -27,7 +27,7 @@ export function extractInlineTags(body: string): string[] {
     if (SKIPPED_TYPES.has(node.type)) return;
     if (node.type === 'text') {
       for (const match of node.value.matchAll(TAG_PATTERN)) {
-        const tag = match[1] as string;
+        const tag = match[1];
         if (!NON_NUMERIC.test(tag)) continue;
 
         // Check preceding character: must be start-of-text or whitespace
@@ -52,7 +52,7 @@ export function extractInlineTags(body: string): string[] {
       return;
     }
     if ('children' in node) {
-      for (const child of (node as Parent).children) visit(child as Nodes);
+      for (const child of (node as Parent).children) visit(child);
     }
   };
   visit(fromMarkdown(body));

@@ -73,9 +73,7 @@ describe('buildServerInstructions', () => {
 
     const registry = makeRegistry('/vaults/obsidian');
     const [base] = registry.list();
-    registry.list = vi.fn(() => [
-      { ...base, readConventions: async () => conventions },
-    ]) as typeof registry.list;
+    registry.list = vi.fn(() => [{ ...base, readConventions: async () => conventions }]);
 
     const result = await buildServerInstructions(registry);
     const visible = result.slice(0, CLIENT_INSTRUCTIONS_CAP);
@@ -90,9 +88,7 @@ describe('buildServerInstructions', () => {
   it('places the conventions block before any server-authored prose', async () => {
     const registry = makeRegistry('/vaults/obsidian');
     const [base] = registry.list();
-    registry.list = vi.fn(() => [
-      { ...base, readConventions: async () => '# House rules' },
-    ]) as typeof registry.list;
+    registry.list = vi.fn(() => [{ ...base, readConventions: async () => '# House rules' }]);
 
     const result = await buildServerInstructions(registry);
     expect(result.indexOf('# House rules')).toBeLessThan(result.indexOf('second brain'));
@@ -188,7 +184,7 @@ describe('buildServerInstructions', () => {
     registry.list = vi.fn(() => [
       { ...entries[0], name: 'alpha', readConventions: async () => 'alpha rules' },
       { ...entries[1], name: 'beta', readConventions: async () => 'beta rules' },
-    ]) as typeof registry.list;
+    ]);
 
     const result = await buildServerInstructions(registry);
     expect(result).toMatch(/## Vault-specific conventions — alpha/);

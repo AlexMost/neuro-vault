@@ -30,7 +30,7 @@ export function makeTestRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistr
         ...e,
       }) as IVaultEntry,
   );
-  const byName = new Map(list.map((e) => [e.name!, e]));
+  const byName = new Map(list.map((e) => [e.name, e]));
   return {
     get: (n) => byName.get(n),
     require: (n) => {
@@ -39,7 +39,7 @@ export function makeTestRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistr
       return e;
     },
     list: () => list,
-    names: () => list.map((e) => e.name!),
+    names: () => list.map((e) => e.name),
     isMulti: () => list.length > 1,
   };
 }
