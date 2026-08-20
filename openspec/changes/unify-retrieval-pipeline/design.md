@@ -43,9 +43,42 @@ cleanly to the single case" was checked against source rather than taken from
 the review. Seed ordering is preserved because `mergeNoteResults`' comparator
 (`similarity desc, path asc`) is character-identical to `compareSearchResults`
 in `search-engine.ts:26`, which already orders `findNeighbors` output. At n=1
-the merge is therefore a stable no-op. `truncated`, block dedup, and backfill
-reduce to the single-query values at n=1 — the full table is in
+the merge is therefore a no-op. `truncated`, block dedup, and backfill reduce
+to the single-query values at n=1 — the full table is in
 [`brainstorm.md`](brainstorm.md).
+
+**The load-bearing invariant.** That equivalence is not self-contained: it
+rests on `findNeighbors` returning results already sorted by the comparator
+`mergeNoteResults` re-applies. Spelled out:
+
+- `toSearchResults` ends with `results.sort(compareSearchResults)`
+  (`search-engine.ts:89`), and `findNeighbors` only slices to `limit` after
+  that (`search-engine.ts:108-110`).
+- `compareSearchResults` is `right.similarity - left.similarity ||
+  compareStrings(left.path, right.path)` (`:26-28`), and `compareStrings` is
+  `left.localeCompare(right)` (`:22-24`).
+- `mergeNoteResults` sorts by `b.similarity - a.similarity ||
+  a.path.localeCompare(b.path)` — the same total order.
+- Paths are unique (they are `Map` keys over vault sources), so the
+  comparator never returns 0 for two distinct entries. It is therefore a
+  *strict* total order: the sorted arrangement is unique, and re-sorting an
+  already-sorted array is idempotent regardless of sort stability.
+
+The invariant is already pinned by a committed test —
+`test/semantic/search-engine.test.ts:61` ("breaks ties deterministically")
+feeds sources in the order `zeta, beta, alpha` and asserts `findNeighbors`
+returns `['alpha.md', 'zeta.md']`. If a future change makes `findNeighbors`
+order-preserving instead of sorting, that test fails first, and this
+refactor's premise fails with it. The dependency is recorded here so the
+connection is visible from both ends.
+
+This was not theoretical: the differential harness (D6) initially fed its
+tie-break case a mock `findNeighbors` returning `[note-c, note-a, note-b]`
+all at similarity 0.7, and the two implementations disagreed — legacy
+preserved the mock's order, unified normalized it. The mock, not the code,
+was wrong: the real engine cannot return that order. The case now feeds
+engine-ordered input, and this section documents why that is the correct
+fixture rather than a weakened assertion.
 
 ## Goals / Non-Goals
 

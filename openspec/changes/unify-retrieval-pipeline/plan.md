@@ -170,12 +170,20 @@ const cases: Case[] = [
     threshold: 0.95,
   },
   {
-    name: 'tie on similarity resolves by path',
+    // Ties must be fed in ENGINE order, i.e. already sorted by path asc.
+    // The real findNeighbors sorts before returning (search-engine.ts:89)
+    // using `similarity desc, path asc` — the same total order
+    // mergeNoteResults re-applies — and that invariant is pinned by
+    // test/semantic/search-engine.test.ts:61. A mock returning ties in any
+    // other order describes an engine that cannot exist, and the two
+    // implementations would then disagree for a reason production never
+    // reaches: legacy preserves engine order, unified normalizes it.
+    name: 'tie on similarity, fed in engine order',
     mode: 'quick',
     neighbors: [
-      { path: 'note-c.md', similarity: 0.7 },
       { path: 'note-a.md', similarity: 0.7 },
       { path: 'note-b.md', similarity: 0.7 },
+      { path: 'note-c.md', similarity: 0.7 },
     ],
   },
   {
