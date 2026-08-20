@@ -55,7 +55,28 @@ echo "test/semantic/__scratch__/" >> .git/info/exclude
 
 - [ ] **Step 2: Copy the current single-query implementation verbatim**
 
-Create `test/semantic/__scratch__/legacy-retrieval.ts`. Copy lines 1–209 of the **current** `src/modules/semantic/retrieval-policy.ts` (the imports, the four constants, `ModeConfig`, `MODE_DEFAULTS`, `RetrievalInput`, `RetrievalOutput`, `computeRelatedPerSeed`, and `executeRetrieval`) with exactly two edits: fix the import path to `'../../../src/modules/semantic/types.js'`, and rename the exported function to `legacyExecuteRetrieval`. Change nothing else — no formatting cleanup, no comment edits. This is a reference implementation; any edit weakens the proof.
+Create `test/semantic/__scratch__/legacy-retrieval.ts`. Copy lines 1–209 of the **current** `src/modules/semantic/retrieval-policy.ts` (the imports, the four constants, `ModeConfig`, `MODE_DEFAULTS`, `RetrievalInput`, `RetrievalOutput`, `computeRelatedPerSeed`, and `executeRetrieval`) with exactly three edits, and no others — no formatting cleanup, no comment edits. This is a reference implementation; any further edit weakens the proof.
+
+1. Fix the import path to `'../../../src/modules/semantic/types.js'`.
+2. Rename the exported function to `legacyExecuteRetrieval`.
+3. **Do not import `NoteResultNode`.** Task 2 widens that interface with a required `matched_queries`, which the legacy body never sets — and `tsconfig.json` includes `test`, so an imported `NoteResultNode` would break `tsc --noEmit` here from Task 2 onward. Declare a local structural copy instead, and annotate the legacy body's assembly step and its output with it:
+
+```ts
+interface LegacyNoteResultNode {
+  path: string;
+  similarity: number;
+  blocks: BlockMatch[];
+  related: RelatedNote[];
+}
+
+export interface RetrievalOutput {
+  results: LegacyNoteResultNode[];
+  truncated: boolean;
+  fallback: boolean;
+}
+```
+
+This keeps the scratch harness insulated from every type change in Tasks 2–3, so it can keep running as the reference implementation right up to its deletion.
 
 - [ ] **Step 3: Write the differential test**
 
@@ -274,6 +295,8 @@ export interface NoteResultNode {
 Run: `npx tsc --noEmit`
 Expected: FAIL, with errors confined to `src/modules/semantic/retrieval-policy.ts` and `src/modules/semantic/tools/search-notes.ts`.
 
+`test/semantic/__scratch__/` must NOT appear in the errors — Task 1 Step 2 gave it a local node type precisely so it stays insulated. If it does error, the scratch copy imported `NoteResultNode` after all; fix the scratch copy, not the widened interface.
+
 If any *other* file errors, `MultiNoteResultNode` had a consumer the design did not account for. Stop and note it before proceeding.
 
 - [ ] **Step 3: Do not commit yet**
@@ -435,7 +458,7 @@ to:
 
 and simplify the two reads inside (:183, :186) from `semanticPerQueryHits?.[q] ?? 0` to `semanticPerQueryHits[q] ?? 0`, and from `semanticPerQueryFallback?.[q]` to `semanticPerQueryFallback[q]`.
 
-Keep the `semanticRan` parameter — the lexical-only path (:363), the no-corpus path, and the empty-filter early return (:335) still pass `false`. Update those three call sites to pass `{}` instead of `undefined` for the two records.
+Keep the `semanticRan` parameter. There are exactly three call sites (`:335`, `:364`, `:457`); the two that pass `semanticRan: false` — the empty-filter early return (`:335`) and the combined lexical-only / no-corpus path (`:364`) — currently pass `undefined, undefined` for the two records. Only `:335` already passes `{}, {}` for the lexical pair, so mirror that: both of these call sites must pass `{}, {}` for the semantic pair too. The third (`:457`) already passes real records and needs no change.
 
 - [ ] **Step 5: Remove the now-stale import**
 
@@ -564,7 +587,7 @@ A failure on "arity changes only which fields surface" means `matched_queries` i
 
 - [ ] **Step 3: Commit the caller collapse and its contract tests**
 
-The suite is still red in `retrieval-policy.test.ts` (Task 6 fixes that), so hold the commit until Task 6 Step 4. Note here what will go in it.
+The suite is still red in `retrieval-policy.test.ts` (Task 6 fixes that), so hold the commit until **Task 6 Step 7**, which commits the source collapse and these contract tests together. Nothing to commit in this task.
 
 ---
 
