@@ -1,10 +1,7 @@
-import { z } from 'zod';
-
+import type { IFanOutResult } from '../../../lib/fan-out.js';
+import { buildMultiVaultTool, withVaultName } from '../../../lib/multi-vault-tool.js';
 import type { ITool } from '../../../lib/tool-registry.js';
-import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
-import { runFanOut, type IFanOutResult } from '../../../lib/fan-out.js';
-import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
 
 interface Input {
   vault?: string;
@@ -26,25 +23,13 @@ async function runForEntry(entry: IVaultEntry): Promise<FanOutPayload> {
 export function buildListTagsTool(
   deps: ListTagsDeps,
 ): ITool<Input, FlatOutput | IFanOutResult<FanOutPayload>> {
-  const { registry } = deps;
-  const inputSchema = z.object({ ...vaultParamShape(registry) });
-  return {
+  return buildMultiVaultTool(deps.registry, {
     name: 'list_tags',
     title: 'List Tags',
     description:
-      'List all tags used across the vault, sorted by occurrence count desc. Returns `{ vault, results: [{name, count}] }`. Counts aggregate frontmatter `tags:` values and inline body `#tags` (Obsidian grammar), deduplicated per note — each distinct tag counts once per note. Note: the `tags` filter of `query_notes`/`search_notes` matches frontmatter tags only, so a tag that exists only inline is reported here but not filterable there.' +
-      describeMultiVault(
-        registry,
-        'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `failed_vaults: [...]` (per-vault runtime errors) — one failing vault never aborts the call. Pass `vault: "<name>"` to target a specific vault.',
-      ),
-    inputSchema,
-    handler: async (input) => {
-      if (input.vault === undefined && registry.isMulti()) {
-        return await runFanOut(registry, runForEntry);
-      }
-      const entry = resolveVault(input, registry, { tool: 'list_tags' });
-      const { results } = await runForEntry(entry);
-      return { vault: entry.name, results };
-    },
-  };
+      'List all tags used across the vault, sorted by occurrence count desc. Returns `{ vault, results: [{name, count}] }`. Counts aggregate frontmatter `tags:` values and inline body `#tags` (Obsidian grammar), deduplicated per note — each distinct tag counts once per note. Note: the `tags` filter of `query_notes`/`search_notes` matches frontmatter tags only, so a tag that exists only inline is reported here but not filterable there.',
+    inputShape: {},
+    runForEntry,
+    single: withVaultName,
+  });
 }
