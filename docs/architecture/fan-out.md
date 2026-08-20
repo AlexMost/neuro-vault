@@ -12,8 +12,11 @@ Tools do not call `runFanOut` directly. `src/lib/multi-vault-tool.ts` exports
 `buildMultiVaultTool`, which owns the whole dispatch contract: it contributes the
 `vault` parameter via `vaultParamShape`, appends the shared `FAN_OUT_SUFFIX`
 through `describeMultiVault`, and chooses between `runFanOut` and `resolveVault`.
-A tool supplies only `runForEntry`, its domain description, and which
-single-vault shape it follows.
+A tool supplies its own `name`, `title`, domain `description`, `inputShape`,
+`runForEntry`, and which single-vault shape it follows via `single` — its
+domain specifics. The builder alone owns everything about the dispatch
+contract: the `vault` parameter, the shared suffix, and the branch between
+`runFanOut` and `resolveVault`.
 
 Two single-vault shapes exist, and each tool names its own — there is no default:
 
@@ -25,6 +28,17 @@ Two single-vault shapes exist, and each tool names its own — there is no defau
 `search_notes` additionally passes a `multiVaultNote` — one domain sentence
 appended after the shared suffix — and keeps its own `- vault: ...` line inside
 its mid-description `PARAMETERS:` block, which a generic builder cannot place.
+
+The builder also picks the separator in front of the multi-vault block, based
+on the shape of the tool's own `description`: when it contains a newline (a
+multi-section description), the block is joined with a blank line and starts
+at column 0; when it is one flowing paragraph, the pre-existing single leading
+space is kept. `search_notes` is the only multi-line description today — the
+other four are single paragraphs, so they all take the leading-space form.
+This rule lives in `buildMultiVaultTool` itself, not in `describeMultiVault`:
+`describeMultiVault` always emits its block with a single leading space,
+because the nine non-fan-out tools consume it the same way through
+`EXPLICIT_VAULT_SUFFIX` and have no multi-section descriptions to worry about.
 
 Before the builder, all five tools carried private copies of the dispatch
 branch, the prose, and the `IFanOutResult` type bound; the prose copies had
