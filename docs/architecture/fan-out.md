@@ -6,6 +6,31 @@ How multi-vault tools spread a single call across every registered vault and ass
 
 `src/lib/fan-out.ts` provides one helper — `runFanOut` — that takes a `VaultRegistry` and a per-vault async function and produces a uniform response shape: `{ results_by_vault, skipped_vaults, failed_vaults }`. Tools that need to answer for "all vaults" (when the caller omits the `vault:` parameter in multi-vault mode) call this helper; tools that target a single named vault call `resolveVault` / `resolveSemanticVault` directly and never touch fan-out.
 
+## The builder
+
+Tools do not call `runFanOut` directly. `src/lib/multi-vault-tool.ts` exports
+`buildMultiVaultTool`, which owns the whole dispatch contract: it contributes the
+`vault` parameter via `vaultParamShape`, appends the shared `FAN_OUT_SUFFIX`
+through `describeMultiVault`, and chooses between `runFanOut` and `resolveVault`.
+A tool supplies only `runForEntry`, its domain description, and which
+single-vault shape it follows.
+
+Two single-vault shapes exist, and each tool names its own — there is no default:
+
+| shape           | tools                                                | why                                           |
+| --------------- | ----------------------------------------------------- | ---------------------------------------------- |
+| `withVaultName` | `list_tags`, `list_properties`, `get_vault_overview` | the payload has no vault identity of its own   |
+| `payloadOnly`   | `query_notes`, `search_notes`                        | each result item already carries `vault`       |
+
+`search_notes` additionally passes a `multiVaultNote` — one domain sentence
+appended after the shared suffix — and keeps its own `- vault: ...` line inside
+its mid-description `PARAMETERS:` block, which a generic builder cannot place.
+
+Before the builder, all five tools carried private copies of the dispatch
+branch, the prose, and the `IFanOutResult` type bound; the prose copies had
+drifted into three variants. `test/lib/fan-out-prose.test.ts` now asserts all
+five carry `FAN_OUT_SUFFIX` byte for byte, so the drift cannot recur.
+
 ## Why it exists
 
 Without a shared helper, every multi-vault tool would repeat the same loop: iterate the registry, run the per-vault op, decide what to do with rejections. The helper centralizes that pattern and — more importantly — owns the contract for how per-vault failures surface to the agent.
@@ -71,7 +96,7 @@ interface IFailedVault {
 
 The two are intentionally separate. Skipped is "expected, deterministic, startup-time"; failed is "unexpected, runtime, recoverable on retry". Merging them would erase that signal.
 
-There used to be a second helper, `runSemanticFanOut`, that skipped vaults with `semanticAvailable: false` and listed them in `skipped_vaults`. When `search_notes` became hybrid it switched to `runFanOut` over **all** vaults — a vault without a semantic corpus still contributes matches, fused from its lexical leg alone (see [`rank-fusion.md`](./rank-fusion.md#degradation-modes)) — which left the semantic variant with no callers, and it was removed. `skipped_vaults` is therefore always `[]` today; the field stays in the response shape both for contract stability (always-present fields are discoverable for agents) and as the designated slot for a future fan-out tool that must pre-filter vaults.
+There used to be a second helper, `runSemanticFanOut`, that skipped vaults with `semanticAvailable: false` and listed them in `skipped_vaults`. When `search_notes` became hybrid it switched to `runFanOut` over **all** vaults — a vault without a semantic corpus still contributes matches, fused from its lexical leg alone (see [`rank-fusion.md`](./rank-fusion.md#degradation-modes)) — which left the semantic variant with no callers, and it was removed. `skipped_vaults` is therefore always `[]` today; the field stays in the response shape both for contract stability (always-present fields are discoverable for agents) and as the designated slot for a future fan-out tool that must pre-filter vaults. No tool description advertises the field, precisely because nothing populates it; `FAN_OUT_SUFFIX` describes `results_by_vault` and `failed_vaults` only.
 
 ## Rejection mapping
 
