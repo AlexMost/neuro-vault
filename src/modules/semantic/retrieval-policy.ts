@@ -1,7 +1,6 @@
 import type {
   BlockMatch,
   EmbeddingProvider,
-  MultiNoteResultNode,
   NoteResultNode,
   RelatedNote,
   SearchEngine,
@@ -29,32 +28,6 @@ const MODE_DEFAULTS: Record<SearchMode, ModeConfig> = {
   quick: { limit: 3, threshold: 0.5, expansion: false, expansionLimit: 0 },
   deep: { limit: 8, threshold: 0.35, expansion: true, expansionLimit: 3 },
 };
-
-export interface RetrievalInput {
-  query: string;
-  mode: SearchMode;
-  limit?: number;
-  threshold?: number;
-  expansion?: boolean;
-  expansionLimit?: number;
-  expansionFloor?: number;
-  sources: Map<string, SmartSource>;
-  embeddingProvider: EmbeddingProvider;
-  searchEngine: SearchEngine;
-}
-
-export interface RetrievalOutput {
-  results: NoteResultNode[];
-  // True when the semantic leg's vector search returned more candidates than
-  // `limit` — i.e. the leg's own pool cap dropped hits, independent of any
-  // caller-side merge cap. Observable via a `limit + 1` over-fetch (see
-  // Step 1/2 below); `seeds` still bounds the output to exactly `limit`.
-  truncated: boolean;
-  // True when the semantic hits came from the default-threshold retry at
-  // FALLBACK_THRESHOLD. Never true when the caller passed threshold
-  // explicitly — an explicit threshold is a hard filter with no rescue.
-  fallback: boolean;
-}
 
 // Per-seed expansion. Each seed gets its own sorted, capped list of neighbours.
 // No global dedup — the same path may appear in multiple seeds' related lists
@@ -91,134 +64,25 @@ function computeRelatedPerSeed(args: {
   return out;
 }
 
-export async function executeRetrieval(input: RetrievalInput): Promise<RetrievalOutput> {
-  const { query, mode, sources, embeddingProvider, searchEngine } = input;
-
-  const modeConfig = MODE_DEFAULTS[mode];
-  const explicitThreshold = input.threshold !== undefined;
-  const threshold = input.threshold ?? modeConfig.threshold;
-  const expansion = input.expansion ?? modeConfig.expansion;
-  const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
-  const expansionFloor = input.expansionFloor ?? DEFAULT_EXPANSION_FLOOR;
-  const limit = input.limit ?? modeConfig.limit;
-
-  // Step 1: embed + vector search. Request one extra hit beyond `limit` so
-  // an actual pool overflow is observable (Step 3 still bounds `seeds` to
-  // exactly `limit` — the +1 is only ever used to detect truncation).
-  const queryVector = await embeddingProvider.embed(query);
-  let vectorResults: SearchResult[] = searchEngine.findNeighbors({
-    queryVector,
-    sources: sources.values(),
-    threshold,
-    limit: limit + 1,
-  });
-
-  // Step 2: fallback threshold — default thresholds only. An explicit
-  // threshold that filters everything returns an honest zero. The
-  // `threshold > FALLBACK_THRESHOLD` guard is defensive: with
-  // `!explicitThreshold`, `threshold` is always a mode default (0.5 quick /
-  // 0.35 deep), both already > FALLBACK_THRESHOLD (0.3).
-  let fallback = false;
-  if (vectorResults.length === 0 && !explicitThreshold && threshold > FALLBACK_THRESHOLD) {
-    vectorResults = searchEngine.findNeighbors({
-      queryVector,
-      sources: sources.values(),
-      threshold: FALLBACK_THRESHOLD,
-      limit: limit + 1,
-    });
-    fallback = vectorResults.length > 0;
-  }
-
-  const truncated = vectorResults.length > limit;
-
-  // Step 3: cap seeds to `limit`
-  const seeds = vectorResults.slice(0, limit);
-  const seedPaths = seeds.map((s) => s.path);
-  const seedPathSet = new Set(seedPaths);
-
-  // Step 4: block search, always scoped to seed notes (orphan blocks dropped)
-  const blocksByPath = new Map<string, BlockMatch[]>();
-  if (seeds.length > 0) {
-    const seedSources = [...sources.values()].filter((s) => seedPathSet.has(s.path));
-    const rawBlocks =
-      mode === 'deep'
-        ? searchEngine.findBlockNeighbors({
-            queryVector,
-            sources: seedSources,
-            threshold: MODE_DEFAULTS.deep.threshold,
-            limit,
-          })
-        : searchEngine.findBlockNeighbors({
-            queryVector,
-            sources: seedSources,
-            threshold: 0,
-            limit: QUICK_BLOCK_LIMIT,
-          });
-    for (const block of rawBlocks) {
-      if (!seedPathSet.has(block.path)) continue;
-      const bucket = blocksByPath.get(block.path) ?? [];
-      bucket.push({ heading: block.heading, lines: block.lines, similarity: block.similarity });
-      blocksByPath.set(block.path, bucket);
-    }
-    for (const bucket of blocksByPath.values()) {
-      bucket.sort((a, b) => b.similarity - a.similarity || a.lines[0] - b.lines[0]);
-    }
-
-    // Step 4b: per-seed backfill. The shared pass above can starve a seed
-    // (quick: global top-N went to other seeds; deep: all its blocks fell
-    // below threshold). Every starved seed gets its own best block at
-    // threshold 0 — evidence is only ever absent when the note has no block
-    // embeddings at all.
-    for (const seedPath of seedPaths) {
-      if (blocksByPath.get(seedPath)?.length) continue;
-      const source = sources.get(seedPath);
-      if (!source) continue;
-      const best = searchEngine
-        .findBlockNeighbors({ queryVector, sources: [source], threshold: 0, limit: 1 })
-        .filter((b) => b.path === seedPath);
-      if (best.length > 0) {
-        const block = best[0];
-        blocksByPath.set(seedPath, [
-          { heading: block.heading, lines: block.lines, similarity: block.similarity },
-        ]);
-      }
-    }
-  }
-
-  // Step 5: per-seed expansion (deep only)
-  let relatedByPath = new Map<string, RelatedNote[]>();
-  if (expansion && expansionLimit > 0 && seeds.length > 0) {
-    relatedByPath = computeRelatedPerSeed({
-      seedPaths,
-      sources,
-      searchEngine,
-      floor: expansionFloor,
-      perSeedLimit: expansionLimit,
-    });
-  }
-
-  // Step 6: assemble tree
-  const results: NoteResultNode[] = seeds.map((seed) => ({
-    path: seed.path,
-    similarity: seed.similarity,
-    blocks: blocksByPath.get(seed.path) ?? [],
-    related: relatedByPath.get(seed.path) ?? [],
-  }));
-
-  return { results, truncated, fallback };
-}
-
-export interface MultiRetrievalInput extends Omit<RetrievalInput, 'query'> {
+export interface RetrievalInput {
   queries: string[];
+  mode: SearchMode;
   limit?: number;
+  threshold?: number;
+  expansion?: boolean;
+  expansionLimit?: number;
+  expansionFloor?: number;
+  sources: Map<string, SmartSource>;
+  embeddingProvider: EmbeddingProvider;
+  searchEngine: SearchEngine;
 }
 
-export interface MultiRetrievalOutput {
-  results: MultiNoteResultNode[];
+export interface RetrievalOutput {
+  results: NoteResultNode[];
   // True when candidates were dropped either by the cross-query merge cap
-  // (`limit`) or by any single query's own per-query pool cap — i.e. a
-  // `limit + 1` over-fetch on at least one query (see Step 1's `overflow`
-  // below); `seeds` still bounds the output to exactly `limit`.
+  // (`limit`) or by any single query's own per-query pool cap. For one query
+  // the merge cap can never bind — `neighbors` was already sliced to `limit`
+  // — so this reduces exactly to that query's pool overflow.
   truncated: boolean;
   per_query_hits: Record<string, number>;
   per_query_fallback: Record<string, boolean>;
@@ -258,9 +122,7 @@ function mergeNoteResults(
   );
 }
 
-export async function executeMultiRetrieval(
-  input: MultiRetrievalInput,
-): Promise<MultiRetrievalOutput> {
+export async function executeRetrieval(input: RetrievalInput): Promise<RetrievalOutput> {
   const { queries, mode, sources, embeddingProvider, searchEngine } = input;
 
   const modeConfig = MODE_DEFAULTS[mode];
@@ -287,8 +149,7 @@ export async function executeMultiRetrieval(
         limit: limit + 1,
       });
       // Step 2 (per query): fallback threshold — default thresholds only. An
-      // explicit threshold that filters everything returns an honest zero,
-      // same rule as the single-query path above.
+      // explicit threshold that filters everything returns an honest zero.
       let fallback = false;
       if (neighbors.length === 0 && !explicitThreshold && threshold > FALLBACK_THRESHOLD) {
         neighbors = searchEngine.findNeighbors({
@@ -376,8 +237,8 @@ export async function executeMultiRetrieval(
     }
 
     // Step 4b: per-seed backfill across query vectors — keep the single best
-    // block over all queries for each starved seed. Same guarantee as the
-    // single-query path: empty only when the note has no block embeddings.
+    // block over all queries for each starved seed. Blocks are empty only
+    // when the note has no block embeddings at all.
     for (const seedPath of seedPaths) {
       if (blocksByPath.get(seedPath)?.length) continue;
       const source = sources.get(seedPath);
@@ -395,7 +256,7 @@ export async function executeMultiRetrieval(
     }
   }
 
-  // Step 5: per-seed expansion (deep only) — reuses the same helper as executeRetrieval.
+  // Step 5: per-seed expansion (deep only)
   let relatedByPath = new Map<string, RelatedNote[]>();
   if (expansion && expansionLimit > 0 && seeds.length > 0) {
     relatedByPath = computeRelatedPerSeed({
@@ -408,7 +269,7 @@ export async function executeMultiRetrieval(
   }
 
   // Step 6: assemble tree
-  const results: MultiNoteResultNode[] = seeds.map((seed) => ({
+  const results: NoteResultNode[] = seeds.map((seed) => ({
     path: seed.path,
     similarity: seed.similarity,
     matched_queries: seed.matched_queries,

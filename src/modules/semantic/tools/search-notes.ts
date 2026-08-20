@@ -4,7 +4,7 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import type { IFanOutResult } from '../../../lib/fan-out.js';
 import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.js';
-import { executeMultiRetrieval, executeRetrieval } from '../retrieval-policy.js';
+import { executeRetrieval } from '../retrieval-policy.js';
 import { fuseRanks, flattenExpansion } from '../rank-fusion.js';
 import {
   normalizeQuery,
@@ -18,7 +18,6 @@ import type {
   EmbeddingProvider,
   NoteFilter,
   NoteResultNode,
-  MultiNoteResultNode,
   SearchChannelMode,
   SearchEffort,
   SearchEngine,
@@ -147,10 +146,6 @@ function narrowSources(
   return out;
 }
 
-function isMultiNode(node: NoteResultNode | MultiNoteResultNode): node is MultiNoteResultNode {
-  return 'matched_queries' in node;
-}
-
 // Pre-cap per-query hit counts for array queries. `semantic` is `null` when
 // the semantic leg never executed (lexical mode, no corpus, empty-filter
 // early return) — a number always means the leg ran and counted (0 = ran,
@@ -165,8 +160,8 @@ function buildQueryStats(
   queries: string[],
   lexicalPerQueryCounts: Record<string, number>,
   lexicalPerQueryTokenCounts: Record<string, Record<string, number>>,
-  semanticPerQueryHits: Record<string, number> | undefined,
-  semanticPerQueryFallback: Record<string, boolean> | undefined,
+  semanticPerQueryHits: Record<string, number>,
+  semanticPerQueryFallback: Record<string, boolean>,
   semanticRan: boolean,
 ): SearchNotesOutput['query_stats'] {
   if (!isMulti) return undefined;
@@ -176,10 +171,10 @@ function buildQueryStats(
       return [
         q,
         {
-          semantic: semanticRan ? (semanticPerQueryHits?.[q] ?? 0) : null,
+          semantic: semanticRan ? (semanticPerQueryHits[q] ?? 0) : null,
           lexical: lexicalPerQueryCounts[q] ?? 0,
           ...(tokenCounts !== undefined ? { lexical_tokens: tokenCounts } : {}),
-          ...(semanticRan && semanticPerQueryFallback?.[q]
+          ...(semanticRan && semanticPerQueryFallback[q]
             ? { semantic_fallback: true as const }
             : {}),
         },
@@ -194,7 +189,7 @@ function buildQueryStats(
 // its `related[]`) — lexical notes are existence-safe by construction since
 // they were read from disk this request.
 function assembleUnified(args: {
-  semanticNodes: (NoteResultNode | MultiNoteResultNode)[];
+  semanticNodes: NoteResultNode[];
   lexicalNotes: RankedNote[];
   entry: IVaultEntry;
   totalNotes: number;
@@ -235,12 +230,7 @@ function assembleUnified(args: {
       ...(exp ? ['expansion'] : []),
     ];
     const matchedQueries = isMulti
-      ? [
-          ...new Set([
-            ...(sem && isMultiNode(sem) ? sem.matched_queries : []),
-            ...(lex?.matchedQueries ?? []),
-          ]),
-        ]
+      ? [...new Set([...(sem?.matched_queries ?? []), ...(lex?.matchedQueries ?? [])])]
       : undefined;
     return {
       path: c.path,
@@ -328,7 +318,7 @@ async function runSearchForEntry(
     }
 
     if (allowed.size === 0) {
-      const query_stats = buildQueryStats(isMulti, queries, {}, {}, undefined, undefined, false);
+      const query_stats = buildQueryStats(isMulti, queries, {}, {}, {}, {}, false);
       return {
         matches: [],
         truncated: false,
@@ -362,8 +352,8 @@ async function runSearchForEntry(
       queries,
       lexical.perQueryCounts,
       lexical.perQueryTokenCounts,
-      undefined,
-      undefined,
+      {},
+      {},
       false,
     );
     return {
@@ -396,41 +386,19 @@ async function runSearchForEntry(
   try {
     // `limit` is deliberately NOT forwarded here — it bounds only the final
     // fused list (via `cap` below), never either leg's internal pool size.
-    // Both `executeRetrieval` and `executeMultiRetrieval` surface their own
-    // `truncated` (a leg-level pool-cap overflow, independent of `cap`) —
-    // captured below as `semanticLegTruncated` and folded into `legTruncated`
-    // so every leg's pool overflow is surfaced, not just lexical's.
-    let rawSemanticNodes: (NoteResultNode | MultiNoteResultNode)[];
-    let semanticLegTruncated: boolean;
-    let semanticPerQueryHits: Record<string, number> | undefined;
-    let semanticPerQueryFallback: Record<string, boolean> | undefined;
-    if (isMulti) {
-      const output = await executeMultiRetrieval({
-        queries,
-        mode: effort,
-        threshold,
-        expansionFloor,
-        sources: effectiveSources,
-        embeddingProvider,
-        searchEngine,
-      });
-      rawSemanticNodes = output.results;
-      semanticLegTruncated = output.truncated;
-      semanticPerQueryHits = output.per_query_hits;
-      semanticPerQueryFallback = output.per_query_fallback;
-    } else {
-      const output = await executeRetrieval({
-        query: queries[0],
-        mode: effort,
-        threshold,
-        expansionFloor,
-        sources: effectiveSources,
-        embeddingProvider,
-        searchEngine,
-      });
-      rawSemanticNodes = output.results;
-      semanticLegTruncated = output.truncated;
-    }
+    // `executeRetrieval` surfaces its own `truncated` (a leg-level pool-cap
+    // overflow, independent of `cap`), folded into `legTruncated` below so
+    // every leg's pool overflow is surfaced, not just lexical's.
+    const semantic = await executeRetrieval({
+      queries,
+      mode: effort,
+      threshold,
+      expansionFloor,
+      sources: effectiveSources,
+      embeddingProvider,
+      searchEngine,
+    });
+    const rawSemanticNodes = semantic.results;
 
     // Existence check covers semantic seeds AND their flattened expansion
     // targets before fusion — lexical notes are existence-safe by
@@ -455,8 +423,8 @@ async function runSearchForEntry(
       queries,
       lexical.perQueryCounts,
       lexical.perQueryTokenCounts,
-      semanticPerQueryHits,
-      semanticPerQueryFallback,
+      semantic.per_query_hits,
+      semantic.per_query_fallback,
       true,
     );
     return {
@@ -467,7 +435,7 @@ async function runSearchForEntry(
         totalNotes: lexical.totalNotes,
         cap,
         isMulti,
-        legTruncated: lexical.truncated || semanticLegTruncated,
+        legTruncated: lexical.truncated || semantic.truncated,
       }),
       ...(query_stats !== undefined ? { query_stats } : {}),
     };
