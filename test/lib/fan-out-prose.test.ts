@@ -4,10 +4,11 @@ import { z } from 'zod';
 import { buildOperationsTools } from '../../src/modules/operations/tools/index.js';
 import { buildSemanticTools } from '../../src/modules/semantic/tools/index.js';
 import { FAN_OUT_SUFFIX } from '../../src/lib/vault-param.js';
+import type { ToolName } from '../../src/lib/tool-names.js';
 import { makeTestRegistry } from '../operations/tools/_test-registry.js';
 import { makeFakeGraph } from '../semantic/tools/_helpers.js';
 
-const FAN_OUT_TOOLS = [
+const FAN_OUT_TOOLS: ToolName[] = [
   'list_tags',
   'list_properties',
   'query_notes',
@@ -41,7 +42,7 @@ function allTools(...names: string[]) {
   ];
 }
 
-describe('fan-out prose has exactly one copy', () => {
+describe('fan-out prose carries the shared FAN_OUT_SUFFIX, not a private copy', () => {
   it('every fan-out tool carries FAN_OUT_SUFFIX byte for byte', () => {
     const tools = allTools('alpha', 'beta');
     for (const name of FAN_OUT_TOOLS) {
@@ -58,8 +59,9 @@ describe('fan-out prose has exactly one copy', () => {
   });
 
   it('but the fan-out response still carries the field', async () => {
-    const listTags = allTools('alpha', 'beta').find((t) => t.name === 'list_tags')!;
-    const out = await listTags.handler({});
+    const listTags = allTools('alpha', 'beta').find((t) => t.name === 'list_tags');
+    expect(listTags, 'list_tags is not registered').toBeDefined();
+    const out = await listTags!.handler({});
     const block = out.content[0] as { type: 'text'; text: string };
     const payload = JSON.parse(block.text) as { skipped_vaults: unknown[] };
     expect(payload.skipped_vaults).toEqual([]);
@@ -70,8 +72,9 @@ describe('fan-out prose has exactly one copy', () => {
   it('every fan-out tool advertises vault in multi-vault mode', () => {
     const tools = allTools('alpha', 'beta');
     for (const name of FAN_OUT_TOOLS) {
-      const schema = tools.find((t) => t.name === name)!.spec
-        .inputSchema as z.ZodObject<z.ZodRawShape>;
+      const tool = tools.find((t) => t.name === name);
+      expect(tool, `${name} is not registered`).toBeDefined();
+      const schema = tool!.spec.inputSchema as z.ZodObject<z.ZodRawShape>;
       expect(Object.keys(schema.shape), `${name} schema`).toContain('vault');
     }
   });
@@ -79,10 +82,28 @@ describe('fan-out prose has exactly one copy', () => {
   it('no fan-out tool advertises vault or the fan-out prose in single-vault mode', () => {
     const tools = allTools('only');
     for (const name of FAN_OUT_TOOLS) {
-      const tool = tools.find((t) => t.name === name)!;
-      const schema = tool.spec.inputSchema as z.ZodObject<z.ZodRawShape>;
+      const tool = tools.find((t) => t.name === name);
+      expect(tool, `${name} is not registered`).toBeDefined();
+      const schema = tool!.spec.inputSchema as z.ZodObject<z.ZodRawShape>;
       expect(Object.keys(schema.shape), `${name} schema`).not.toContain('vault');
-      expect(tool.spec.description, `${name} description`).not.toContain(FAN_OUT_SUFFIX);
+      expect(tool!.spec.description, `${name} description`).not.toContain(FAN_OUT_SUFFIX);
+    }
+  });
+
+  it('any tool describing the fan-out response envelope must use the shared suffix verbatim', () => {
+    // Does not depend on the hand-maintained FAN_OUT_TOOLS list: a future sixth
+    // fan-out tool cannot describe its response shape (`results_by_vault` /
+    // `failed_vaults`) without also naming FAN_OUT_SUFFIX verbatim, catching a
+    // hand-written private copy even if nobody remembers to update the list
+    // above.
+    const tools = allTools('alpha', 'beta');
+    for (const tool of tools) {
+      const description = tool.spec.description ?? '';
+      const describesFanOutEnvelope =
+        description.includes('results_by_vault') || description.includes('failed_vaults');
+      if (describesFanOutEnvelope) {
+        expect(description, `${tool.name} description`).toContain(FAN_OUT_SUFFIX);
+      }
     }
   });
 });
