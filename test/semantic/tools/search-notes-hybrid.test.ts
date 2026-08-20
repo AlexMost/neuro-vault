@@ -777,3 +777,111 @@ describe('expansion_floor wiring', () => {
     }
   });
 });
+
+describe('arity invariance (SDK gate)', () => {
+  // Spec: "Semantic retrieval is arity-invariant" — a string query and a
+  // one-element array query differ only in which fields surface.
+  // These are characterization tests: they pass on the two-pipeline code
+  // and must keep passing once the pipelines are folded into one.
+  async function makeArityVault() {
+    const notePath = 'Projects/alpha.md';
+    return makeLexicalVault(
+      { [notePath]: '# Alpha\n\nalpha beta gamma\n' },
+      {
+        sources: sourcesWithEmbeddingFor(notePath),
+        engine: engineReturning([{ path: notePath, similarity: 0.82 }]),
+      },
+    );
+  }
+
+  it('a one-element array produces the same matches as the equivalent string', async () => {
+    const { deps, cleanup } = await makeArityVault();
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const asString = (await tool.handler({ query: 'alpha' })) as SearchNotesOutput;
+      const asArray = (await tool.handler({ query: ['alpha'] })) as SearchNotesOutput;
+
+      expect(asArray.matches.map((m) => m.path)).toEqual(asString.matches.map((m) => m.path));
+      expect(asArray.truncated).toBe(asString.truncated);
+      expect(asArray.matches.map((m) => m.similarity)).toEqual(
+        asString.matches.map((m) => m.similarity),
+      );
+      expect(asArray.matches.map((m) => m.blocks)).toEqual(asString.matches.map((m) => m.blocks));
+      expect(asArray.matches.map((m) => m.expansion_similarity)).toEqual(
+        asString.matches.map((m) => m.expansion_similarity),
+      );
+      // Precondition: the comparison is not vacuous.
+      expect(asString.matches.length).toBeGreaterThan(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('arity changes only which fields surface', async () => {
+    const { deps, cleanup } = await makeArityVault();
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const asString = (await tool.handler({ query: 'alpha' })) as SearchNotesOutput;
+      const asArray = (await tool.handler({ query: ['alpha'] })) as SearchNotesOutput;
+
+      // String: neither array-only field is present.
+      expect(asString.query_stats).toBeUndefined();
+      for (const match of asString.matches) {
+        expect(match).not.toHaveProperty('matched_queries');
+      }
+
+      // Array of one: both present, and matched_queries names the one query.
+      expect(Object.keys(asArray.query_stats!)).toEqual(['alpha']);
+      for (const match of asArray.matches) {
+        expect(match.matched_queries).toEqual(['alpha']);
+      }
+
+      // Nothing else differs: strip the two array-only fields and compare.
+      const strip = (o: SearchNotesOutput) => ({
+        truncated: o.truncated,
+        matches: o.matches.map(({ matched_queries: _mq, ...rest }) => rest),
+      });
+      expect(strip(asArray)).toEqual(strip(asString));
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('the semantic fallback fires identically at both arities', async () => {
+    const notePath = 'Projects/alpha.md';
+    // First call (mode default) finds nothing; the 0.3 retry rescues it.
+    const engine = {
+      findNeighbors: vi
+        .fn()
+        .mockReturnValueOnce([])
+        .mockReturnValue([{ path: notePath, similarity: 0.34 }]),
+      findBlockNeighbors: vi.fn().mockReturnValue([]),
+      findDuplicates: vi.fn().mockReturnValue([]),
+    };
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: '# Alpha\n\nalpha beta gamma\n' },
+      { sources: sourcesWithEmbeddingFor(notePath), engine },
+    );
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const asArray = (await tool.handler({ query: ['alpha'] })) as SearchNotesOutput;
+      // Precondition: the retry actually fired and rescued the hit.
+      expect(asArray.query_stats!['alpha'].semantic_fallback).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('the schema advertises both arities and the gate accepts them', async () => {
+    const { deps, cleanup } = await makeArityVault();
+    try {
+      const reg = registerTool(buildSearchNotesTool(deps));
+      const inputSchema = reg.spec.inputSchema as z.ZodTypeAny;
+      expect(inputSchema.safeParse({ query: 'alpha' }).success).toBe(true);
+      expect(inputSchema.safeParse({ query: ['alpha'] }).success).toBe(true);
+      expect(inputSchema.safeParse({ query: ['alpha', 'beta'] }).success).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+});
