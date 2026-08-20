@@ -1120,6 +1120,59 @@ describe('per-seed block backfill', () => {
     expect(noteB.blocks).toEqual([{ heading: '#block', lines: [1, 3], similarity: 0.3 }]);
   });
 
+  // The test above shares one vector across both queries, so the max-keeping
+  // comparison in Step 4b is unobservable there. Here each query embeds to a
+  // genuinely different vector and the scoped backfill lookup answers with a
+  // different block similarity per vector: the starved seed must end up with
+  // the higher of the two, whichever order the queries arrive in.
+  it.each([
+    { label: 'higher-similarity query last', queries: ['q-low', 'q-high'] },
+    { label: 'higher-similarity query first', queries: ['q-high', 'q-low'] },
+  ])(
+    'keeps the highest-similarity block across differing query vectors ($label)',
+    async ({ queries }) => {
+      const embeddingProvider: EmbeddingProvider = {
+        initialize: vi.fn(),
+        embed: vi
+          .fn()
+          .mockImplementation((query: string) =>
+            Promise.resolve(query === 'q-high' ? [0, 1] : [1, 0]),
+          ),
+      };
+      const findBlockNeighbors = vi.fn().mockImplementation(({ sources: scoped, queryVector }) => {
+        // shared pass (all seed sources): everything lands on note-a, starving note-b
+        if (!Array.isArray(scoped) || scoped.length !== 1) {
+          return [makeBlockResult('note-a.md', 0.9)];
+        }
+        // backfill lookup: the [0, 1] vector finds a strictly better block
+        const isHighVector = (queryVector as number[])[1] === 1;
+        return [makeBlockResult('note-b.md', isHighVector ? 0.7 : 0.3)];
+      });
+      const searchEngine = makeSearchEngine({
+        findNeighbors: vi
+          .fn()
+          .mockReturnValue([
+            makeSearchResult('note-a.md', 0.9),
+            makeSearchResult('note-b.md', 0.8),
+          ]),
+        findBlockNeighbors,
+      });
+
+      const output = await executeMultiRetrieval({
+        queries: [...queries],
+        mode: 'quick',
+        sources,
+        embeddingProvider,
+        searchEngine,
+      });
+
+      const noteB = output.results.find((r) => r.path === 'note-b.md')!;
+      expect(noteB.blocks).toEqual([{ heading: '#block', lines: [1, 3], similarity: 0.7 }]);
+      // both vectors were actually probed: 2 shared-pass calls + 2 backfill lookups
+      expect(findBlockNeighbors).toHaveBeenCalledTimes(4);
+    },
+  );
+
   it('ignores foreign-path results from a backfill lookup', async () => {
     // Defensive: a (mis)behaving engine returning another note's block for a
     // scoped lookup must not attach evidence to the wrong seed.
