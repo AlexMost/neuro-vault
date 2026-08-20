@@ -23,6 +23,7 @@ async function runOverviewForEntry(entry: IVaultEntry): Promise<VaultOverviewRec
     reader: entry.reader,
     provider: entry.provider,
     graph: entry.graph,
+    readConventions: entry.readConventions,
   });
   return overview as VaultOverviewRecord;
 }
@@ -37,9 +38,10 @@ export function buildGetVaultOverviewTool(
     title: 'Get Vault Overview',
     description:
       'Returns a single snapshot of vault structure: top-level folders with note counts, top tags, frontmatter properties (top entries only — use `list_properties` for the full inventory), total note count, and the top 10 notes by inbound wikilinks. Call this once at the start of a session to orient yourself before reaching for `list_tags`, `list_properties`, or exploratory `query_notes`.' +
+      " When the vault owner has written conventions for external agents, the response carries them in `conventions` — the vault owner's rules for how this vault is organised. Follow them when reading, writing, or organising notes here." +
       describeMultiVault(
         registry,
-        'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `skipped_vaults: [...]`. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
+        'In multi-vault mode, omit `vault:` to fan out across all registered vaults — the response shape switches to `results_by_vault: [...]` with `skipped_vaults: [...]` (pre-filtered out) and `failed_vaults: [...]` (per-vault runtime errors) — one failing vault never aborts the call. Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
       ),
     inputSchema,
     handler: async (input) => {

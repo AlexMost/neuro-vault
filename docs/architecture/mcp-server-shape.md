@@ -24,14 +24,9 @@ async (args) => invokeTool(() => handlers.foo(args))
                  └─ anything else    → { message }
 ```
 
-`server.ts` is also where the server's `instructions` text lives — the long string that documents tool routing for the LLM. The description on each individual tool covers what that one tool does; the server-level instructions cover when to reach for vault tooling at all.
+`server.ts` is also where the server's `instructions` text lives, and where `buildServerInstructions(registry)` composes it at startup. It is deliberately short. Claude Code truncates `instructions` at 2048 characters and hands sub-agents none of it, whereas every tool `description` reaches every client in full — so anything a tool can say about itself (parameters, result shape, multi-vault behaviour) belongs on that tool, not here. That principle is recorded in [ADR-0010](../adr/0010-context-delivery-channels.md).
 
-The instructions are no longer static. `buildServerInstructions(registry)` composes them at startup from several layers:
-
-1. A fixed base — routing rules, role description, tool guidance.
-2. An always-on orientation hint pointing at `get_vault_overview` / `vault://overview`.
-3. When `registry.isMulti()` returns `true`, an additional `## Multi-vault mode` section listing every registered vault name and explaining the fan-out vs. `VAULT_REQUIRED` contract.
-4. Per-vault vault-specific conventions — the content of `<vaultPath>/.neuro-vault/for-external-agents.md` when present. In single-vault mode the heading is `## Vault-specific conventions`; in multi-vault mode each vault gets its own heading, `## Vault-specific conventions — <vault-name>`. Missing or unreadable files fall back gracefully; the block is simply omitted.
+What the composed string actually contains — the per-vault conventions blocks that lead it, the character budget the `STATIC_SERVER_INSTRUCTIONS` preamble is sized against, and the parallel delivery of the same text through the `conventions` field on `get_vault_overview` — is owned by [vault-conventions.md](./vault-conventions.md).
 
 Resources are registered through the same module aggregation as tools. Each module returns `{ tools, resources }`; the server iterates both lists and calls `server.registerTool` / `server.registerResource` respectively. The resource scaffolding lives in `src/lib/resource-registration.ts` and `src/lib/resource-registry.ts`, mirroring the tool primitives.
 

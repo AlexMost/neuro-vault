@@ -4,8 +4,17 @@ import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildServerInstructions, readExternalAgentInstructions } from '../src/server.js';
+import { buildServerInstructions } from '../src/server.js';
+import { readVaultConventions } from '../src/lib/obsidian/vault-conventions.js';
 import type { IVaultRegistry } from '../src/lib/vault-registry.js';
+
+/**
+ * Claude Code truncates the MCP `instructions` string at exactly this many
+ * characters (and hands sub-agents none of it). Everything this suite asserts
+ * about ordering exists to keep the owner-authored conventions block — the one
+ * piece of content no tool description can supply — inside that window.
+ */
+const CLIENT_INSTRUCTIONS_CAP = 2048;
 
 async function makeTempVault(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'neuro-vault-instructions-'));
@@ -21,6 +30,7 @@ function makeRegistry(vaultPath: string, multi = false): IVaultRegistry {
     provider: {} as never,
     graph: {} as never,
     listMatchingPaths: vi.fn(),
+    readConventions: () => readVaultConventions(vaultPath),
     semanticAvailable: false,
   };
   const entries = multi
@@ -31,6 +41,7 @@ function makeRegistry(vaultPath: string, multi = false): IVaultRegistry {
           name: 'vault2',
           path: vaultPath + '2',
           smartEnvPath: vaultPath + '2/.smart-env/multi',
+          readConventions: () => readVaultConventions(vaultPath + '2'),
         },
       ]
     : [entry];
@@ -43,90 +54,76 @@ function makeRegistry(vaultPath: string, multi = false): IVaultRegistry {
   };
 }
 
-describe('readExternalAgentInstructions', () => {
-  it('returns null when the file is missing', async () => {
-    const vault = await makeTempVault();
-    try {
-      const result = await readExternalAgentInstructions(vault);
-      expect(result).toBeNull();
-    } finally {
-      await fs.rm(vault, { recursive: true, force: true });
-    }
-  });
-
-  it('returns the trimmed file content when the file is present', async () => {
-    const vault = await makeTempVault();
-    try {
-      const dir = path.join(vault, '.neuro-vault');
-      await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(
-        path.join(dir, 'for-external-agents.md'),
-        '\n\n# Conventions\n- Do not write into Resources/\n\n',
-        'utf8',
-      );
-
-      const result = await readExternalAgentInstructions(vault);
-      expect(result).toBe('# Conventions\n- Do not write into Resources/');
-    } finally {
-      await fs.rm(vault, { recursive: true, force: true });
-    }
-  });
-
-  it('returns null when the path is unreadable (e.g. a directory)', async () => {
-    const vault = await makeTempVault();
-    try {
-      const dir = path.join(vault, '.neuro-vault');
-      await fs.mkdir(dir, { recursive: true });
-      // Make the path a directory so readFile fails with EISDIR.
-      await fs.mkdir(path.join(dir, 'for-external-agents.md'));
-
-      const result = await readExternalAgentInstructions(vault);
-      expect(result).toBeNull();
-    } finally {
-      await fs.rm(vault, { recursive: true, force: true });
-    }
-  });
-});
+/**
+ * A representative real-world conventions file: a note-type vocabulary plus a
+ * couple of folder rules lands around 1,200 characters.
+ */
+function representativeConventions(): string {
+  const body = '- Notes carry a closed `type`: project | task | idea | reflection.\n';
+  return '# Vault conventions\n\n' + body.repeat(18);
+}
 
 describe('buildServerInstructions', () => {
-  it('appends the get_vault_overview hint regardless of whether the file exists', async () => {
+  it('keeps a representative conventions block and the whole preamble inside the client cap', async () => {
+    const conventions = representativeConventions();
+    expect(conventions.length).toBeGreaterThan(1_000);
+    expect(conventions.length).toBeLessThan(1_400);
+
+    const registry = makeRegistry('/vaults/obsidian');
+    const [base] = registry.list();
+    registry.list = vi.fn(() => [
+      { ...base, readConventions: async () => conventions },
+    ]) as typeof registry.list;
+
+    const result = await buildServerInstructions(registry);
+    const visible = result.slice(0, CLIENT_INSTRUCTIONS_CAP);
+
+    // The contract is what a truncating client actually sees, not the total
+    // length: the vault block whole, and the preamble whole, inside the slice.
+    expect(visible).toContain(conventions);
+    expect(visible).toContain('second brain');
+    expect(visible).toContain('ask the user');
+  });
+
+  it('places the conventions block before any server-authored prose', async () => {
+    const registry = makeRegistry('/vaults/obsidian');
+    const [base] = registry.list();
+    registry.list = vi.fn(() => [
+      { ...base, readConventions: async () => '# House rules' },
+    ]) as typeof registry.list;
+
+    const result = await buildServerInstructions(registry);
+    expect(result.indexOf('# House rules')).toBeLessThan(result.indexOf('second brain'));
+  });
+
+  it('emits the preamble alone, well under the cap, when a vault has no conventions', async () => {
     const vault = await makeTempVault();
     try {
       const result = await buildServerInstructions(makeRegistry(vault));
-      expect(result).toMatch(/get_vault_overview/);
-      expect(result).toMatch(/vault:\/\/overview/);
+      expect(result).not.toMatch(/Vault-specific conventions/);
+      expect(result).toContain('second brain');
+      expect(result.length).toBeLessThan(CLIENT_INSTRUCTIONS_CAP);
     } finally {
       await fs.rm(vault, { recursive: true, force: true });
     }
   });
 
-  it('describes disk-direct runtime requirements and drops the old CLI-availability section', async () => {
+  it('names the project-scoping probe order: overview, then search, then the user', async () => {
     const vault = await makeTempVault();
     try {
       const result = await buildServerInstructions(makeRegistry(vault));
-      expect(result).toMatch(/### Runtime requirements/);
-      expect(result).toMatch(/directly on disk/);
-      expect(result).not.toMatch(/### CLI availability/);
-      expect(result).not.toMatch(/CLI_NOT_FOUND/);
-      expect(result).not.toMatch(/CLI_UNAVAILABLE/);
-    } finally {
-      await fs.rm(vault, { recursive: true, force: true });
-    }
-  });
-
-  it('recommends get_vault_overview as the first probe step (not the old list_tags / list_properties chain)', async () => {
-    const vault = await makeTempVault();
-    try {
-      const result = await buildServerInstructions(makeRegistry(vault));
-      const probeStep = result.match(/1\.\s+\*\*Probe the vault structure\*\*[^\n]*/);
+      const probeStep = result.match(/Find out in this order:[^\n]*/);
       expect(probeStep).not.toBeNull();
-      expect(probeStep![0]).toMatch(/get_vault_overview/);
+      const step = probeStep![0];
+      expect(step.indexOf('get_vault_overview')).toBeGreaterThanOrEqual(0);
+      expect(step.indexOf('get_vault_overview')).toBeLessThan(step.indexOf('search_notes'));
+      expect(step.indexOf('search_notes')).toBeLessThan(step.indexOf('ask the user'));
     } finally {
       await fs.rm(vault, { recursive: true, force: true });
     }
   });
 
-  it('appends the vault-specific conventions section when the file exists', async () => {
+  it('emits the vault-specific conventions section when the file exists', async () => {
     const vault = await makeTempVault();
     try {
       const dir = path.join(vault, '.neuro-vault');
@@ -164,36 +161,38 @@ describe('buildServerInstructions', () => {
 
       const result = await buildServerInstructions(makeRegistry(vault));
       expect(result).not.toMatch(/## Vault-specific conventions/);
-      // The always-on hint still appears.
-      expect(result).toMatch(/get_vault_overview/);
+      // The preamble still appears.
+      expect(result).toContain('second brain');
     } finally {
       await fs.rm(vault, { recursive: true, force: true });
     }
   });
 
-  it('does not include the multi-vault block in single-vault mode', async () => {
+  it('never emits a multi-vault prose section — that contract lives on each tool description', async () => {
     const vault = await makeTempVault();
     try {
-      const result = await buildServerInstructions(makeRegistry(vault));
-      expect(result).not.toMatch(/Multi-vault mode/);
+      expect(await buildServerInstructions(makeRegistry(vault))).not.toMatch(/Multi-vault mode/);
+      expect(await buildServerInstructions(makeRegistry(vault, true))).not.toMatch(
+        /Multi-vault mode/,
+      );
     } finally {
       await fs.rm(vault, { recursive: true, force: true });
     }
   });
 
-  it('includes the multi-vault block listing every registered vault name when more than one is registered', async () => {
-    const vault = await makeTempVault();
-    try {
-      const result = await buildServerInstructions(makeRegistry(vault, true));
-      expect(result).toMatch(/## Multi-vault mode/);
-      // The mock registry produces names from path.basename(vault) and "vault2".
-      expect(result).toMatch(/"vault2"/);
-      // Mentions the fan-out tools and the VAULT_REQUIRED contract.
-      expect(result).toMatch(/search_notes/);
-      expect(result).toMatch(/VAULT_REQUIRED/);
-    } finally {
-      await fs.rm(vault, { recursive: true, force: true });
-    }
+  it('emits one attributed conventions block per vault in multi-vault mode', async () => {
+    const registry = makeRegistry('/vaults/obsidian', true);
+    const entries = registry.list();
+    registry.list = vi.fn(() => [
+      { ...entries[0], name: 'alpha', readConventions: async () => 'alpha rules' },
+      { ...entries[1], name: 'beta', readConventions: async () => 'beta rules' },
+    ]) as typeof registry.list;
+
+    const result = await buildServerInstructions(registry);
+    expect(result).toMatch(/## Vault-specific conventions — alpha/);
+    expect(result).toMatch(/## Vault-specific conventions — beta/);
+    expect(result).toContain('alpha rules');
+    expect(result).toContain('beta rules');
   });
 
   it('emits per-vault conventions sections labelled with the vault name when only one of multiple vaults has the file', async () => {
@@ -220,6 +219,7 @@ describe('buildServerInstructions', () => {
           provider: {} as never,
           graph: {} as never,
           listMatchingPaths: vi.fn(),
+          readConventions: () => readVaultConventions(a),
           semanticAvailable: false,
         },
         {
@@ -231,6 +231,7 @@ describe('buildServerInstructions', () => {
           provider: {} as never,
           graph: {} as never,
           listMatchingPaths: vi.fn(),
+          readConventions: () => readVaultConventions(b),
           semanticAvailable: false,
         },
       ];

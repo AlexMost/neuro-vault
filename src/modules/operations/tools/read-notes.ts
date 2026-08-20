@@ -8,7 +8,11 @@ import { normalizePath, validateReadNotesInput } from '../tool-helpers.js';
 import type { ContentMode, ReadNotesResult, ReadNotesResultItem } from '../types.js';
 import { previewBody } from '../preview-body.js';
 import type { ReadNotesField } from '../../../lib/obsidian/vault-reader.js';
-import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
+import {
+  describeMultiVault,
+  EXPLICIT_VAULT_SUFFIX,
+  vaultParamShape,
+} from '../../../lib/vault-param.js';
 
 interface Input {
   vault?: string;
@@ -34,10 +38,7 @@ export function buildReadNotesTool(
     title: 'Read Notes',
     description:
       "Read one or more notes in one call. `paths` is a vault-relative POSIX path string or an array of 1–50 such paths; duplicates are de-duplicated and results returned in input order. `content` controls how much of each note's body comes back: `full` returns the complete body, `preview` returns a bounded slice plus a `truncated` flag, `frontmatter` returns no body at all. Frontmatter is always returned. The default is derived from the number of distinct paths: one path → `full`, two or more → `preview`; passing `content` explicitly overrides this. Re-read a previewed note with `content: 'full'` before citing or editing it. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running." +
-      describeMultiVault(
-        registry,
-        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
-      ),
+      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'read_notes' });

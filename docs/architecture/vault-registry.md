@@ -54,7 +54,7 @@ VaultRegistry
       │
       ├─── createSemanticModule(registry, ...)   ──► semantic tools (search_notes, get_similar_notes, ...)
       ├─── createOperationsModule(registry, ...) ──► operations tools + vault://overview resources
-      └─── buildServerInstructions(registry)     ──► MCP instructions block (multi-vault section)
+      └─── buildServerInstructions(registry)     ──► MCP instructions (per-vault conventions blocks)
 ```
 
 `server.ts` is the only caller of `VaultRegistry.create`. Both module factories receive the whole registry rather than individual entries so they can fan out without knowing vault count at compile time.

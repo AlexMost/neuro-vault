@@ -4,7 +4,11 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
-import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
+import {
+  describeMultiVault,
+  EXPLICIT_VAULT_SUFFIX,
+  vaultParamShape,
+} from '../../../lib/vault-param.js';
 
 const NOTES_TODAY_CAP = 200;
 const DAILY_BASENAME_RE = /(\d{4}-\d{2}-\d{2})\.md$/;
@@ -41,10 +45,8 @@ export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyH
     title: 'Read Daily',
     description:
       'Read today\'s daily note. Returns `{ vault, path, frontmatter, content, notes_today }` where `frontmatter` is the parsed YAML object (or `null` if absent/malformed), `content` is the body without the YAML block, and `notes_today` lists vault notes created today (matched by `frontmatter.created`) excluding daily notes themselves — metadata only, sorted by path ascending, capped at 200 entries. Each `notes_today` item carries `vault`. Useful for "what\'s on my agenda?" / "what happened today?" questions without a separate `query_notes` call. Fails with DAILY_NOTES_NOT_CONFIGURED if the vault has no Daily Notes plugin configured (missing or empty `.obsidian/daily-notes.json`).' +
-      describeMultiVault(
-        registry,
-        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
-      ),
+      " To add to today's daily, merge your addition into the `content` this returns and write it back with `edit_note` (omit `replace` for a full-body rewrite); if the note does not exist yet the call fails with NOT_FOUND naming the path — create it there with `create_note`." +
+      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'read_daily' });

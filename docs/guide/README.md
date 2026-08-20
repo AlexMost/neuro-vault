@@ -8,7 +8,7 @@ User documentation for the Neuro Vault MCP server. Start here if you want to kno
 - **[Finding Notes](./finding-notes.md)** — `search_notes` (hybrid semantic + lexical), `query_notes`, `get_similar_notes`, `find_duplicates`, `get_note_links`. Axes, parameters, multi-query, output examples, threshold tuning.
 - **[Reading & Modifying](./reading-and-modifying.md)** — `read_notes`, `read_daily`, `create_note`, `edit_note`, frontmatter properties, tags. Parameter reference and edge cases.
 - **[Routing Between Tools](./routing.md)** — when to reach for `search_notes` (and which mode), `query_notes`, or a direct read. Patterns the assistant should follow.
-- **[Configuration](./configuration.md)** — CLI arguments, startup behavior, AGENTS.md / CLAUDE.md snippet, troubleshooting, limitations, development commands.
+- **[Configuration](./configuration.md)** — CLI arguments, startup behavior, AGENTS.md / CLAUDE.md snippet, vault conventions for external agents, troubleshooting, limitations, development commands.
 
 ## Architecture
 

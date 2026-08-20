@@ -6,7 +6,7 @@ import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.j
 import type { SmartConnectionsCorpusIndex } from '../../src/lib/obsidian/smart-connections-corpus-index.js';
 
 function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
-  const list = entries.map((e) => ({ ...e }) as IVaultEntry);
+  const list = entries.map((e) => ({ readConventions: async () => null, ...e }) as IVaultEntry);
   const byName = new Map(list.map((e) => [e.name!, e]));
   return {
     get: (n) => byName.get(n),

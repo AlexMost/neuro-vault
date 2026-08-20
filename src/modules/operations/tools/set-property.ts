@@ -5,7 +5,11 @@ import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { inferTypeAndValidate, invalidArgument, resolveIdentifier } from '../tool-helpers.js';
 import type { SetPropertyToolInput } from '../types.js';
-import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
+import {
+  describeMultiVault,
+  EXPLICIT_VAULT_SUFFIX,
+  vaultParamShape,
+} from '../../../lib/vault-param.js';
 
 interface Input {
   vault?: string;
@@ -37,10 +41,7 @@ export function buildSetPropertyTool(
     title: 'Set Property',
     description:
       'Set a frontmatter property on a note. Provide either `name` (wikilink-style) or `path` (vault-relative). `key` is the frontmatter property name (e.g. `status`, `due`). `value` may be string/number/boolean/array — `type` is inferred from the JS type unless given. For `date`/`datetime` you MUST pass `type` explicitly AND use ISO format (`YYYY-MM-DD` for date, `YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]` for datetime) — non-ISO values are rejected up front. List items must not contain commas. Existing properties are overwritten. Returns `{ vault, ok: true }`.' +
-      describeMultiVault(
-        registry,
-        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
-      ),
+      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
     inputSchema,
     handler: async (input: SetPropertyToolInput & { vault?: string }) => {
       const entry = resolveVault(input, registry, { tool: 'set_property' });

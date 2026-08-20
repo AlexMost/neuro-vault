@@ -4,6 +4,8 @@ import { computeVaultOverview } from '../../../src/lib/obsidian/vault-overview.j
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import { makeMockGraph, makeProvider, makeVault } from './_helpers.js';
 
+const noConventions = async (): Promise<string | null> => null;
+
 // FsVaultProvider feeds the tags/properties sections of get_vault_overview.
 // Before the migration these went through the Obsidian CLI; these tests prove
 // the overview is fully populated straight from disk with no CLI involved.
@@ -13,7 +15,12 @@ describe('FsVaultProvider → get_vault_overview (disk integration)', () => {
     const reader = new FsVaultReader({ vaultRoot: root });
     const provider = makeProvider(root);
 
-    const overview = await computeVaultOverview({ reader, provider, graph: makeMockGraph() });
+    const overview = await computeVaultOverview({
+      reader,
+      provider,
+      graph: makeMockGraph(),
+      readConventions: noConventions,
+    });
 
     expect(overview.top_tags).toEqual([{ name: 'alpha', count: 1 }]);
     expect(overview.properties).toEqual([
@@ -33,6 +40,7 @@ describe('FsVaultProvider → get_vault_overview (disk integration)', () => {
       reader,
       provider: makeProvider(root),
       graph: makeMockGraph(),
+      readConventions: noConventions,
     });
 
     expect(overview.top_tags).toEqual([
@@ -55,6 +63,7 @@ describe('FsVaultProvider → get_vault_overview (disk integration)', () => {
       reader,
       provider: makeProvider(root),
       graph: makeMockGraph(),
+      readConventions: noConventions,
     });
 
     expect(overview.top_tags).toEqual([]);
@@ -69,7 +78,12 @@ describe('FsVaultProvider → get_vault_overview (disk integration)', () => {
     const reader = new FsVaultReader({ vaultRoot: root });
     const provider = makeProvider(root);
 
-    const overview = await computeVaultOverview({ reader, provider, graph: makeMockGraph() });
+    const overview = await computeVaultOverview({
+      reader,
+      provider,
+      graph: makeMockGraph(),
+      readConventions: noConventions,
+    });
 
     expect(overview.top_tags).toEqual([
       { name: 'inlineonly', count: 2 },

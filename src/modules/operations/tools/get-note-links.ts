@@ -6,7 +6,11 @@ import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument } from '../tool-helpers.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
-import { describeMultiVault, vaultParamShape } from '../../../lib/vault-param.js';
+import {
+  describeMultiVault,
+  EXPLICIT_VAULT_SUFFIX,
+  vaultParamShape,
+} from '../../../lib/vault-param.js';
 
 interface Input {
   vault?: string;
@@ -33,10 +37,7 @@ export function buildGetNoteLinksTool(
     'Backed by an in-memory index that rebuilds lazily on query when older than 3 minutes — no background timers, no watchers. The first call after a stale window pays the rebuild cost.',
     '',
     'Use `search_notes` / `query_notes` to find a starting note, then call `get_note_links` to traverse the graph around it.' +
-      describeMultiVault(
-        registry,
-        'Pass `vault: "<name>"` to target a specific vault when multiple are registered.',
-      ),
+      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
   ].join('\n');
   return {
     name: 'get_note_links',

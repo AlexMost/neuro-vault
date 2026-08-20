@@ -5,7 +5,9 @@ import { FATAL_TOOL_ERROR_CODES, ToolHandlerError } from '../../src/lib/tool-res
 import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.js';
 
 function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
-  const list = entries.map((e) => ({ semanticAvailable: true, ...e }) as IVaultEntry);
+  const list = entries.map(
+    (e) => ({ semanticAvailable: true, readConventions: async () => null, ...e }) as IVaultEntry,
+  );
   return {
     get: (n) => list.find((e) => e.name === n),
     require: () => list[0],

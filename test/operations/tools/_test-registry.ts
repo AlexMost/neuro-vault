@@ -12,9 +12,17 @@ const emptyReader: VaultReader = {
   readNotes: async () => [],
 };
 
+const noConventions = async (): Promise<string | null> => null;
+
 export function makeTestRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
   const list = entries.map(
-    (e) => ({ semanticAvailable: true, reader: emptyReader, ...e }) as IVaultEntry,
+    (e) =>
+      ({
+        semanticAvailable: true,
+        reader: emptyReader,
+        readConventions: noConventions,
+        ...e,
+      }) as IVaultEntry,
   );
   const byName = new Map(list.map((e) => [e.name!, e]));
   return {
