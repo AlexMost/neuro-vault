@@ -39,7 +39,7 @@ export interface NeuroVaultStartupDependencies {
  * owner-authored conventions block that `buildServerInstructions` emits ahead
  * of it. Everything a tool can say about itself — parameters, result shape,
  * multi-vault behaviour — belongs in that tool's `description`, which every
- * client receives in full. See docs/architecture/mcp-server-shape.md.
+ * client receives in full. See docs/architecture/vault-conventions.md.
  */
 const STATIC_SERVER_INSTRUCTIONS = `\
 ## About this vault server

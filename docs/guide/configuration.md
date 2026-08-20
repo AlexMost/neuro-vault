@@ -33,7 +33,7 @@ Spell the routing rule out rather than pointing at the server's MCP `instruction
 
 An optional `<vault>/.neuro-vault/for-external-agents.md` carries your rules for how *your* vault is organised — closed sets of frontmatter `type` values, folders that are off-limits for writes, how you scope notes to a project. The server picks it up with no configuration.
 
-It reaches the agent through the `conventions` field of every `get_vault_overview` response (and the `vault://overview` resource), read fresh on each call — edit the file and the next call sees it, with no server restart. The same text is also placed at the front of the MCP `instructions`, best-effort, for clients that render them.
+It reaches the agent through the `conventions` field of every `get_vault_overview` response (and the `vault://overview` resource, `vault://<vault-name>/overview` when several vaults are registered), read fresh on each call — edit the file and the next call sees it, with no server restart. The same text is also placed at the front of the MCP `instructions`, best-effort, for clients that render them — but that copy is composed once at server startup, so only the `get_vault_overview` channel reflects later edits.
 
 Keep it under **8,000 characters**: beyond that the field carries a trimmed slice and sets `conventions_truncated: true`. The call still succeeds; the tail is simply gone. In multi-vault mode each vault carries its own file.
 

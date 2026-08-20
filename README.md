@@ -181,7 +181,7 @@ Drop a `<vault>/.neuro-vault/for-external-agents.md` into your vault to teach ex
 
 It is delivered two ways:
 
-- 📦 **In every `get_vault_overview` response**, as a `conventions` field — and in the `vault://overview` resource. This is the channel to rely on: it is read at call time (so edits take effect on the next call, **no server restart**), it reaches sub-agents, and no client truncates it. The field is simply absent when you have no such file.
+- 📦 **In every `get_vault_overview` response**, as a `conventions` field — and in the `vault://overview` resource (`vault://<vault-name>/overview` when several vaults are registered). This is the channel to rely on: it is read at call time (so edits take effect on the next call, **no server restart**), it reaches sub-agents, and no client we have measured truncates it. The field is simply absent when you have no such file.
 - 📨 **At the front of the MCP `instructions`**, under a `## Vault-specific conventions` heading, for clients that render them. Treat this one as best-effort — Claude Code cuts `instructions` at exactly 2048 characters and gives sub-agents none of it, and other clients may differ. The conventions are placed first precisely so they survive that cut.
 
 Keep the file under **8,000 characters**. Past that the `conventions` field carries a trimmed slice and sets `conventions_truncated: true` — you never lose the call, but you do lose the tail, so compact rules beat exhaustive ones.

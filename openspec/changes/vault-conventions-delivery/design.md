@@ -85,9 +85,15 @@ via `runFanOut` and the resource is registered once per vault at
   sections and the `## Multi-vault mode` section.
 - **Rationale:** those sections restate content that already arrives in full —
   the `query_notes` section repeats that tool's operator list, result shape and
-  `limit` semantics; the multi-vault section repeats what `describeMultiVault`
-  (`src/lib/vault-param.ts:31`) already appends to every multi-vault-aware
-  description. Duplication that never renders costs the vault block its space.
+  `limit` semantics; the multi-vault section repeats contracts each tool's own
+  description already carries — the five fan-out tools describe the
+  `results_by_vault` / `failed_vaults` shape themselves, and the nine that
+  cannot fan out carry `EXPLICIT_VAULT_SUFFIX`'s `VAULT_REQUIRED` contract.
+  Thirteen of the fourteen route through the shared `describeMultiVault`
+  wrapper (`src/lib/vault-param.ts`), which only prefixes the registered vault
+  names and concatenates a caller-supplied suffix; `search_notes` composes its
+  multi-vault text inline. Duplication that never renders costs the vault block
+  its space.
 - **Guard:** deletion is only legitimate where a tool description already
   carries the content. Anything cut without such a home **moves into the
   relevant description** instead — descriptions are the channel that works.

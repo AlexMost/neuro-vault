@@ -12,7 +12,7 @@ Every vault may carry an optional file at `<vaultPath>/.neuro-vault/for-external
 
 The content is delivered twice, over two channels with different guarantees.
 
-**The overview channel — the one to rely on.** `computeVaultOverview` puts the text in a `conventions` field, which both surfaces inherit: the `get_vault_overview` tool response and the `vault://overview` resource. Tool responses arrive intact everywhere, sub-agents included, and are not size-capped by the client.
+**The overview channel — the one to rely on.** `computeVaultOverview` puts the text in a `conventions` field, which both surfaces inherit: the `get_vault_overview` tool response and the `vault://overview` resource. Tool responses arrive intact in every client we have measured, sub-agents included, and are not subject to the `instructions` cap. (Claude Code does apply a much larger, configurable cap to tool output.)
 
 **The `instructions` channel — best-effort.** `buildServerInstructions` composes the same text into the MCP `instructions` string at startup. This channel is unreliable and we do not depend on it: Claude Code truncates `instructions` at exactly 2048 characters and hands sub-agents none of it at all; Cursor and Windsurf are untested and may differ again. It is still worth populating, because a client that renders `instructions` in full gets the conventions without a tool call.
 
