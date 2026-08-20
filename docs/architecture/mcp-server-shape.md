@@ -24,14 +24,9 @@ async (args) => invokeTool(() => handlers.foo(args))
                  └─ anything else    → { message }
 ```
 
-`server.ts` is also where the server's `instructions` text lives. It is deliberately short. Claude Code truncates `instructions` at 2048 characters and hands sub-agents none of it, whereas every tool `description` reaches every client in full — so anything a tool can say about itself (parameters, result shape, multi-vault behaviour) belongs on that tool, not here.
+`server.ts` is also where the server's `instructions` text lives, and where `buildServerInstructions(registry)` composes it at startup. It is deliberately short. Claude Code truncates `instructions` at 2048 characters and hands sub-agents none of it, whereas every tool `description` reaches every client in full — so anything a tool can say about itself (parameters, result shape, multi-vault behaviour) belongs on that tool, not here. That principle is recorded in [ADR-0010](../adr/0010-context-delivery-channels.md).
 
-`buildServerInstructions(registry)` composes the string at startup, conventions first:
-
-1. Per-vault vault-specific conventions — the content of `<vaultPath>/.neuro-vault/for-external-agents.md` when present. This is the only content no tool description can supply, so it leads. In single-vault mode the heading is `## Vault-specific conventions`; in multi-vault mode each vault gets its own heading, `## Vault-specific conventions — <vault-name>`. Missing, empty, or unreadable files fall back gracefully; the block is simply omitted.
-2. `STATIC_SERVER_INSTRUCTIONS` — a ~700-character preamble covering only what no single tool can: the vault's role as a second brain, the operations-vs-semantic routing rule, and the project-scoping probe order. Sized so a representative (~1,200-character) conventions file and the whole preamble both survive the 2048-character truncation.
-
-The same conventions text is also delivered through the reliable channel — the `conventions` field on `get_vault_overview` and the `vault://overview` resource — which no client truncates.
+What the composed string actually contains — the per-vault conventions blocks that lead it, the character budget the `STATIC_SERVER_INSTRUCTIONS` preamble is sized against, and the parallel delivery of the same text through the `conventions` field on `get_vault_overview` — is owned by [vault-conventions.md](./vault-conventions.md).
 
 Resources are registered through the same module aggregation as tools. Each module returns `{ tools, resources }`; the server iterates both lists and calls `server.registerTool` / `server.registerResource` respectively. The resource scaffolding lives in `src/lib/resource-registration.ts` and `src/lib/resource-registry.ts`, mirroring the tool primitives.
 

@@ -17,3 +17,4 @@ Template: [0000-template.md](0000-template.md).
 | 0007 | [obsidian-cli as the vault write path; reads from disk](0007-obsidian-cli-write-path.md)              | Superseded by [0009](0009-disk-direct-vault-operations.md) |
 | 0008 | [`docs/architecture/` as living per-concept documentation](0008-architecture-living-docs.md)          | Accepted |
 | 0009 | [Vault operations go direct to disk](0009-disk-direct-vault-operations.md)                            | Accepted |
+| 0010 | [Context reaches agents through tool descriptions and responses](0010-context-delivery-channels.md)   | Accepted |
