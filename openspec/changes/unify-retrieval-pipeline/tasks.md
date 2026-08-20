@@ -1,62 +1,72 @@
-## 1. Differential safety net (sequential — everything else depends on it)
+## 1. Differential safety net (sequential — everything depends on it)
 
-Establishes the equivalence harness before any behaviour moves. Per D6 in
-[`design.md`](design.md), this harness is a scratch scaffold: it is deleted in
-group 5 and never committed.
+Proves the equivalence premise against fixtures before any production code moves.
+Scratch scaffolding: git-excluded, never committed, deleted in group 3.
 
-- [ ] 1.1 Copy the current `executeRetrieval` body verbatim into `test/semantic/__scratch__/legacy-retrieval.ts` as `legacyExecuteRetrieval`, exporting the unchanged `RetrievalOutput` shape. No edits — this is the reference implementation.
-- [ ] 1.2 Write `test/semantic/__scratch__/differential.test.ts`: for each fixture corpus already used in `retrieval-policy.test.ts`, run `legacyExecuteRetrieval({ query: q })` and `executeMultiRetrieval({ queries: [q] })` over the same inputs and assert the results agree — same paths in the same order, same `similarity`, same `blocks[]` (heading, lines, similarity), same `related[]`, and `legacy.truncated === multi.truncated`. Ignore `matched_queries`, `per_query_hits`, and `per_query_fallback` for now.
-- [ ] 1.3 Run the differential test against the current, unmodified source. It MUST pass before any production code is touched — a red result here means the equivalence premise is wrong and the design needs revisiting, not the test.
-- [ ] 1.4 Extend the differential fixtures to cover the cases the two suites currently assert at only one arity: fallback-threshold rescue, explicit-threshold hard filter, leg-level pool truncation (`limit + 1` overflow), per-seed block backfill for a starved seed, a seed with no block embeddings, and deep-mode expansion with a custom `expansion_floor`. Confirm still green.
+- [x] 1.1 Copy the current single-query `executeRetrieval` body into `test/semantic/__scratch__/legacy-retrieval.ts` as `legacyExecuteRetrieval`, with a local node type so the later widening of `NoteResultNode` cannot break it.
+- [x] 1.2 Write `test/semantic/__scratch__/differential.test.ts` comparing it against the multi pipeline at one query — same paths in the same order, same `similarity`, `blocks[]`, `related[]`, and `truncated`.
+- [x] 1.3 Run against unmodified source. A red result means the design premise is wrong and needs revisiting, not the test.
+- [x] 1.4 Give the mock engine a faithful `threshold`/`sort`/`limit`/`sources` contract, and give every case a positive precondition proving its branch genuinely ran — a case asserting `[] == []` is coverage theater.
+- [x] 1.5 Mutation-check the gate: break something in the surviving pipeline, confirm RED, revert, confirm GREEN. A gate that cannot fail is not a gate.
 
-## 2. Collapse the policy layer (sequential — 2.1 → 2.2 → 2.3)
+## 2. Characterization tests for arity invariance (sequential, after group 1)
 
-- [ ] 2.1 Widen `NoteResultNode` in `src/modules/semantic/types.ts` with a required `matched_queries: string[]`, and delete `MultiNoteResultNode`. Typecheck will break at the two consumers — that is the intended signal, fixed in 2.2 and 3.1.
-- [ ] 2.2 In `src/modules/semantic/retrieval-policy.ts`, rename `executeMultiRetrieval` → `executeRetrieval` and `MultiRetrievalInput`/`MultiRetrievalOutput` → `RetrievalInput`/`RetrievalOutput`, with `queries: string[]`. Drop the scalar `fallback` field per D2. Rename the old single-query function to `legacyExecuteRetrievalInSitu` temporarily so both still compile side by side; point the differential test at the renamed pair and confirm green.
-- [ ] 2.3 Confirm `mergeNoteResults`, the block-key dedup, and the per-seed backfill all reduce correctly at n=1 by re-running the group 1 fixtures. Do not delete anything yet.
+Written against the **current, unmodified** two-pipeline code and committed before
+the fold, so the contract guard exists in history independent of the change it guards.
 
-## 3. Collapse the caller (sequential, depends on group 2)
+- [ ] 2.1 Add an SDK-gate `describe` to `test/semantic/tools/search-notes-hybrid.test.ts` asserting a one-element array produces the same `matches[]` ordering, `similarity`, `blocks`, and `truncated` as the equivalent string query.
+- [ ] 2.2 Assert arity changes only which fields surface: a string query carries neither `matched_queries` nor `query_stats`; a one-element array carries both, and nothing else differs.
+- [ ] 2.3 Assert the semantic fallback fires identically at both arities, with a precondition proving the 0.3 retry actually rescued the hit.
+- [ ] 2.4 Assert the schema advertises and accepts both arities via `reg.spec.inputSchema`.
+- [ ] 2.5 Run against unmodified code — they must pass. A failure is a finding: the contract already differs by arity and the refactor's premise is false. Report, do not amend the test.
+- [ ] 2.6 Full suite green, then commit.
 
-- [ ] 3.1 In `src/modules/semantic/tools/search-notes.ts`, replace the `isMulti` branch at the retrieval call site (currently four `let`s across `search-notes.ts:407-437`) with a single `executeRetrieval({ queries, … })` call destructured into `const`s.
-- [ ] 3.2 Delete the `isMultiNode` type guard (`search-notes.ts:154`) and simplify the `matchedQueries` computation in `assembleUnified` to read `sem.matched_queries` directly. Per D4, the `isMulti` gate around whether `matched_queries` is emitted at all stays exactly where it is.
-- [ ] 3.3 Simplify `buildQueryStats`: `semanticPerQueryHits` and `semanticPerQueryFallback` are no longer `| undefined` when the semantic leg ran, since the unified pipeline always produces them. Keep the `semanticRan` parameter — the lexical-only and no-corpus paths still pass `false`.
-- [ ] 3.4 Update the stale comment block at `search-notes.ts:401-406` that names both `executeRetrieval` and `executeMultiRetrieval`.
+## 3. The fold (sequential, after group 2)
 
-## 4. Lock the MCP contract (depends on group 3; parallel-safe with group 5)
+One atomic change. Widening a shared type, collapsing the policy layer, and
+collapsing the caller are one edit — a task that cannot compile partway through
+cannot be tested or reviewed, so they land together and end green.
 
-- [ ] 4.1 Add an SDK-gate assertion in the `search_notes` tool-surface tests that a single string `query` yields matches with no `matched_queries` key and a response with no `query_stats` key. Assert against `reg.spec.inputSchema` and the registered handler, not the raw handler — the repo's testing rule.
-- [ ] 4.2 Add the mirror assertion: a one-element array `query` yields `matched_queries: [q]` on every match plus a `query_stats` object with exactly one key. This is the spec's "arity changes only which fields surface" scenario.
-- [ ] 4.3 Add an SDK-gate test asserting the spec's arity-invariance scenario end to end: the same query as a string and as a one-element array produce identical `matches[]` ordering, `similarity`, `blocks`, and `truncated`.
+- [ ] 3.1 Widen `NoteResultNode` with a required `matched_queries: string[]`; delete `MultiNoteResultNode`.
+- [ ] 3.2 Delete the single-query `executeRetrieval`; rename `executeMultiRetrieval` → `executeRetrieval` and its input/output types, spelling out `RetrievalInput` in full. Drop the scalar `fallback` — no caller ever read it.
+- [ ] 3.3 Re-point the differential harness at the renamed function and confirm 8/8 still pass. If it goes red, the rename was not a pure rename.
+- [ ] 3.4 Delete the `isMultiNode` type guard; read `sem.matched_queries` directly. The `isMulti` gate around whether the field is emitted stays exactly where it is — that line is what keeps the MCP contract still.
+- [ ] 3.5 Replace the four-`let` dispatch branch at the retrieval call site with one `executeRetrieval({ queries, … })` call.
+- [ ] 3.6 Tighten `buildQueryStats`: the two records stop being `| undefined`; the two `semanticRan: false` call sites pass `{}, {}`.
+- [ ] 3.7 Update the stale comment naming both functions.
+- [ ] 3.8 Typecheck clean, and run group 2's arity tests — passing now is the evidence the contract did not move. A failure means fix the source, not the test.
+- [ ] 3.9 Reorganize `test/semantic/retrieval-policy.test.ts`: each invariant asserted once, parameterized over `[single query, query array]`.
+- [ ] 3.10 Keep genuinely arity-specific assertions separate: cross-query seed merging, `matched_queries` union, per-query fallback independence, cross-query block-key dedup.
+- [ ] 3.11 Walk the old `describe`/`it` names as a checklist against the new ones; put it in the report. An invariant that silently vanishes during a "no behaviour change" refactor is the failure mode this catches.
+- [ ] 3.12 Delete `test/semantic/__scratch__/`.
+- [ ] 3.13 Full green — `npm test`, `npx tsc --noEmit`, `npm run lint` — then commit.
 
-## 5. Delete and reorganize (sequential, depends on group 4)
+## 4. Documentation sweep (after group 3; parallel-safe with nothing else outstanding)
 
-- [ ] 5.1 Delete `legacyExecuteRetrievalInSitu` from `retrieval-policy.ts` and remove the entire `test/semantic/__scratch__/` directory. Confirm `git status` shows no scratch files staged.
-- [ ] 5.2 Reorganize `test/semantic/retrieval-policy.test.ts`: replace the two top-level `describe('executeRetrieval')` / `describe('executeMultiRetrieval')` blocks with invariant-named blocks, each parameterized over `[['single', [q]], ['multi', [q1, q2]]]` via `describe.each`. Every invariant currently asserted twice must end up asserted once and exercised at both arities.
-- [ ] 5.3 Keep as genuinely arity-specific only the assertions that are: cross-query seed merging, `matched_queries` union across queries, per-query fallback independence, and cross-query block-key dedup. Everything else goes in the parameterized table.
-- [ ] 5.4 Confirm the reorganized file preserves coverage of every invariant the old file asserted — walk the old `describe` names as a checklist against the new ones.
+Sweeps all of `docs/`, not only `docs/architecture/` — an architecture-scoped grep
+misses the model-facing guide layer.
 
-## 6. Documentation sweep (parallel-safe with group 5)
+- [ ] 4.1 Rewrite `docs/architecture/retrieval-policy.md` to describe one pipeline. Line 9 already claims the module exports a single function — false today; the rewrite makes it true rather than changing its meaning.
+- [ ] 4.2 Record the load-bearing invariant: the fold is sound *because* `findNeighbors` returns results already sorted by the comparator `mergeNoteResults` re-applies, pinned by `test/semantic/search-engine.test.ts:61`.
+- [ ] 4.3 Fix `docs/architecture/rank-fusion.md:68`; verify `lexical-search.md:127` and `docs/guide/finding-notes.md` (both expected to need no change — they are written at the contract level).
+- [ ] 4.4 Verify every code claim written by grepping the symbol against shipped source. A claim carried from the design doc is not evidence.
+- [ ] 4.5 Commit.
 
-Per the repo convention, sweep all of `docs/`, not just `docs/architecture/` —
-an architecture-scoped grep misses the model-facing guide layer.
+## 5. Acceptance and PR (sequential, last)
 
-- [ ] 6.1 Rewrite `docs/architecture/retrieval-policy.md` to describe one pipeline. Remove the two-entry-point framing; state that the single query is the degenerate case and that `matched_queries` is always computed but conditionally surfaced.
-- [ ] 6.2 Sweep `docs/guide/finding-notes.md` and `docs/architecture/rank-fusion.md` for stale two-pipeline references and fix them.
-- [ ] 6.3 Grep all of `docs/` for `executeMultiRetrieval`, `MultiNoteResultNode`, and `MultiRetrievalOutput`. Any hit outside `docs/superpowers/` (frozen pre-OpenSpec record — do not edit) must be updated.
-- [ ] 6.4 Verify each code claim before asserting it in the rewritten architecture doc — grep the symbol rather than trusting the design doc's description of it.
-
-## 7. Acceptance (sequential, last)
-
-- [ ] 7.1 Run `npm test` — all green.
-- [ ] 7.2 Run `npm run lint` — clean.
-- [ ] 7.3 Run `npx tsc --noEmit` — clean. Authoritative per ADR-0002; a `tsup` build alone is not sufficient because of `isolatedModules`.
-- [ ] 7.4 Run `openspec validate --all` — clean.
-- [ ] 7.5 Confirm the line-count claim: `retrieval-policy.ts` should lose roughly 150–180 lines. A materially smaller delta means the fold did not actually collapse the duplication and is worth investigating before opening the PR.
-- [ ] 7.6 Open the PR against `main` with `gh pr create` — never push directly to `main`.
+- [ ] 5.1 `npm test`, `npm run lint`, `npx tsc --noEmit` — all clean.
+- [ ] 5.2 `openspec validate --all` — clean.
+- [ ] 5.3 Confirm `retrieval-policy.ts` lost ~150–180 lines. A materially smaller delta means the duplication was not collapsed.
+- [ ] 5.4 Confirm no `SearchNotesOutput` / `inputSchema` / zod change leaked into `search-notes.ts`.
+- [ ] 5.5 Confirm no `__scratch__` path appears in any commit on the branch.
+- [ ] 5.6 Push and open the PR against `main` with `gh pr create`. Never push directly to `main`.
 
 ## Parallelism
 
-- Groups 1, 2, 3 are **sequential**. Each depends on the previous one compiling and the differential harness staying green.
-- Groups 4 and 6 are **parallel-safe with each other** once group 3 lands — group 4 touches only tool-surface tests, group 6 touches only `docs/`.
-- Group 5 is **parallel-safe with group 6** but must follow group 4, since deleting the legacy body should happen only after the contract assertions are pinned.
-- Group 7 is **sequential and last**.
+Groups 1 → 2 → 3 → 4 → 5 are **strictly sequential**. Every group after the first
+consumes the previous group's committed state, and groups 2 and 3 are a
+guard-then-change pair whose order is the whole point.
+
+An earlier draft split the fold across four groups (widen type / collapse policy /
+collapse caller / delete legacy). Each left the tree uncompilable, so none could be
+tested or reviewed on its own. They are merged into group 3.
