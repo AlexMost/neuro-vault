@@ -166,12 +166,19 @@ via `runFanOut` and the resource is registered once per vault at
 ### D9: Description sentence is part of the contract
 
 - **Choice:** add one sentence to `get_vault_overview`'s description saying the
-  response carries the vault owner's conventions and that they are to be
-  followed.
+  response carries the vault owner's conventions for how the vault is
+  organised, and that they are to be followed when reading, writing, or
+  organising notes there.
 - **Rationale:** the field is inert if the model does not know it is
   authoritative rather than decorative, and the description is the only channel
   guaranteed to reach every agent, sub-agents included. This is why D1's
-  "suspenders" actually holds.
+  "suspenders" actually holds. The directive is scoped to vault organisation
+  rather than left open-ended: `conventions` is read from a file the same
+  server can write (`edit_note`/`create_note`, via `normalizeNotePath`, have no
+  dot-directory guard), so an unconditional "follow them" would license
+  arbitrary instructions from self-writable, per-call-fresh content reaching
+  sub-agents. Scoping the sentence to the file's actual purpose keeps the
+  feature's force without that opening.
 
 ### D10: Documentation
 

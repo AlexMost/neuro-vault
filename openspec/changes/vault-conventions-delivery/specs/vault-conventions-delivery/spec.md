@@ -53,9 +53,10 @@ The vault overview payload SHALL include a `conventions` field holding the raw c
 vault's `.neuro-vault/for-external-agents.md`. The field SHALL be produced by the shared overview
 computation so that both surfaces — the `get_vault_overview` tool and the `vault://overview`
 resource — carry it from one implementation and keep one response shape. The tool's description
-SHALL state that the response carries the vault owner's conventions and that they are to be
-followed, so that an agent reaching the field over the description channel knows it is
-authoritative rather than decorative.
+SHALL state that the response carries the vault owner's conventions for how the vault is organised
+and that they are to be followed when reading, writing, or organising notes there, so that an agent
+reaching the field over the description channel knows it is authoritative rather than decorative,
+scoped to vault organisation rather than an unconditional directive over arbitrary file content.
 
 #### Scenario: the tool returns the file's content
 
@@ -70,8 +71,8 @@ authoritative rather than decorative.
 #### Scenario: the description advertises the field
 
 - **WHEN** `get_vault_overview`'s advertised description is inspected
-- **THEN** it states that the response carries the vault owner's conventions and that they are to
-  be followed
+- **THEN** it states that the response carries the vault owner's conventions for how the vault is
+  organised, and that they are to be followed when reading, writing, or organising notes there
 
 ### Requirement: The conventions field is absent rather than empty
 
@@ -113,7 +114,8 @@ reading `conventions` without the flag MUST be able to treat it as the complete 
 #### Scenario: an oversized file is trimmed and flagged
 
 - **WHEN** the conventions file is longer than the cap
-- **THEN** `conventions` holds a slice no longer than the cap, and `conventions_truncated` is `true`
+- **THEN** `conventions` holds a slice bounded at the cap plus a single-character truncation
+  marker, and `conventions_truncated` is `true`
 
 #### Scenario: a normal file carries no flag
 

@@ -175,7 +175,8 @@ describe('operations.getVaultOverview tool', () => {
       { name: 'v', reader: makeReader(), provider: makeProvider(), graph: makeGraph() },
     ]);
     const description = registerTool(buildGetVaultOverviewTool({ registry })).spec.description;
-    expect(description).toMatch(/conventions/i);
-    expect(description).toMatch(/follow/i);
+    expect(description).toMatch(
+      /the response carries them in `conventions`.*Follow them when reading, writing, or organising notes here/,
+    );
   });
 });
