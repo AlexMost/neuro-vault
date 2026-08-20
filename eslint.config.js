@@ -1,8 +1,8 @@
+import { defineConfig } from 'eslint/config';
 import js from '@eslint/js';
-import tseslint from '@typescript-eslint/eslint-plugin';
-import tsParser from '@typescript-eslint/parser';
+import tseslint from 'typescript-eslint';
 
-export default [
+export default defineConfig(
   {
     ignores: [
       'dist/**',
@@ -17,23 +17,13 @@ export default [
     ],
   },
   js.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
   {
-    files: ['**/*.{js,mjs,cjs,ts,mts,cts}'],
     languageOptions: {
-      ecmaVersion: 'latest',
-      sourceType: 'module',
-      globals: {
-        console: 'readonly',
-        process: 'readonly',
-        URL: 'readonly',
-      },
-      parser: tsParser,
       parserOptions: {
-        project: false,
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
       },
-    },
-    plugins: {
-      '@typescript-eslint': tseslint,
     },
     rules: {
       'no-unused-vars': 'off',
@@ -47,4 +37,26 @@ export default [
       ],
     },
   },
-];
+  {
+    // Test-only relaxation: these rules false-positive on the mock/fixture
+    // idiom — async interface conformance without await, expect(mock.method),
+    // probing unknown payloads. Promise-safety rules (no-floating-promises,
+    // no-misused-promises) stay ON here deliberately: an un-awaited assertion
+    // is exactly the bug class tests must not have.
+    files: ['test/**'],
+    rules: {
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+    },
+  },
+  {
+    // JS config files (eslint.config.js, commitlint.config.js) sit outside
+    // tsconfig — no type info, so type-aware rules must not run on them.
+    files: ['**/*.{js,mjs,cjs}'],
+    ...tseslint.configs.disableTypeChecked,
+  },
+);
