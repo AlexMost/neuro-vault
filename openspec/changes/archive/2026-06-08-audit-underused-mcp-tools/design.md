@@ -2,7 +2,7 @@
 
 `neuro-vault-mcp` exposes 16 tools across two modules: `operations/` (12: note body, structured
 query, frontmatter properties, tags, overview) and `semantic/` (4: search, similar, duplicates,
-stats). The weekly tool-usage reports (`Inbox/neuro-vault-usage/`) track which tools the consuming
+stats). The private weekly tool-usage reports track which tools the consuming
 agent actually calls. W23 and W24 agreed on six low-signal tools: `find_duplicates`,
 `get_note_links`, `list_properties`, `remove_property` (zero calls, both weeks) and `get_stats`,
 `read_property` (rare, pointwise).

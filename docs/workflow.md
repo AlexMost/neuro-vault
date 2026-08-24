@@ -22,10 +22,10 @@ Use the `/opsx:*` commands so the schema's artifact instructions inject at each 
    Ordering between changes lives in GitHub `blocked_by` edges, not in a doc.
    Conventions: [`docs/agents/issue-tracker.md`](agents/issue-tracker.md).
 1. **Start.** `/opsx:new <slug> --schema superpowers-bridge` (or `/opsx:ff <slug>` to scaffold + run the planning artifacts in one go).
-2. **brainstorm.** `superpowers:brainstorming` runs; output is redirected into `openspec/changes/<slug>/brainstorm.md` (not `docs/superpowers/specs/`).
+2. **brainstorm.** `superpowers:brainstorming` runs; output is redirected into `openspec/changes/<slug>/brainstorm.md`.
 3. **proposal / design.** Why + what-changes + capabilities (`proposal.md`); structured decisions (`design.md`). A load-bearing decision proposes a new `docs/adr/NNNN-*.md` (ask first).
 4. **specs.** Delta spec per capability under `changes/<slug>/specs/<capability>/spec.md` (ADDED / MODIFIED / REMOVED / RENAMED, SHALL + `#### Scenario:`).
-5. **tasks / plan.** Coarse checkboxes (`tasks.md`) + TDD micro-steps via `superpowers:writing-plans` (`plan.md`, redirected — not `docs/superpowers/plans/`).
+5. **tasks / plan.** Coarse checkboxes (`tasks.md`) + TDD micro-steps via `superpowers:writing-plans` (`plan.md`, redirected into the change directory).
 6. **apply.** `/opsx:apply` → `superpowers:using-git-worktrees` + `superpowers:subagent-driven-development` (transitively TDD + per-task code review). See [`.claude/rules/openspec-apply.md`](../.claude/rules/openspec-apply.md).
 7. **verify.** `/opsx:verify` → `verify.md`. Gates that must pass: `npm test`, `npm run lint`, `npx tsc --noEmit`.
 8. **retrospective.** `retrospective.md`, written BEFORE the PR (hot context, same PR diff).

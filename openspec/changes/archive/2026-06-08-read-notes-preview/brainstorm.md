@@ -2,8 +2,8 @@
 Raw capture of the brainstorming for this change.
 
 The creative exploration was already done outside this session and recorded in the
-vault task note `Tasks/neuro-vault/Preview-режим тіла для read_notes` (itself distilled
-from the W17→W24 tool-usage reports under `Inbox/neuro-vault-usage/`). The one design
+a private vault task note (itself distilled
+from the W17→W24 private weekly tool-usage reports). The one design
 fork left open — the parameter shape — was resolved live with the user via a single
 question. This file captures that completed brainstorming as a decision log; it does not
 re-run the brainstorming skill, because doing so would re-litigate decisions the user has

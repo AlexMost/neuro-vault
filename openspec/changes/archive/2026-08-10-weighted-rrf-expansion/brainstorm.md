@@ -1,6 +1,6 @@
 <!--
 Raw capture of superpowers:brainstorming output.
-Source material: vault note "Tasks/neuro-vault/Weighted RRF — вага expansion у злитому ранзі"
+Source material: a private vault task note on weighting the expansion leg in the fused rank
 (2026-08-10, project [[neuro-vault]]), which arrived as a near-complete brainstorm:
 scope locked, mechanics confirmed against code, out-of-scope stated. The in-chat
 session verified the note's claims against the live source and resolved the two
