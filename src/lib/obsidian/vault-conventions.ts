@@ -5,10 +5,10 @@ import path from 'node:path';
 export const CONVENTIONS_PATH = '.neuro-vault/for-external-agents.md';
 
 /**
- * Soft cap on the conventions text carried in a tool response. Unlike the MCP
- * `instructions` channel there is no client-imposed limit here; the cap exists
- * so one oversized file can't inflate every session start. Trimming is always
- * surfaced via the `truncated` flag — never silent.
+ * Soft cap on the conventions text carried in a tool response — this channel's
+ * own, not a client's. No client we have measured truncates a tool response;
+ * the cap exists so one oversized file can't inflate every overview call.
+ * Trimming is always surfaced via the `truncated` flag — never silent.
  */
 export const CONVENTIONS_CHAR_CAP = 8000;
 

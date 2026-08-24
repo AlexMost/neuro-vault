@@ -179,14 +179,13 @@ Architecture / internals: [`docs/architecture/`](./docs/architecture/).
 
 Drop a `<vault>/.neuro-vault/for-external-agents.md` into your vault to teach external agents the rules that cannot be derived from a structural snapshot — closed sets of frontmatter `type` values, folders that are off-limits for writes, how you scope notes to a project. The file is optional; without it the server still ships sane defaults plus a pointer to `get_vault_overview`.
 
-It is delivered two ways:
+It is delivered one way:
 
-- 📦 **In every `get_vault_overview` response**, as a `conventions` field — and in the `vault://overview` resource (`vault://<vault-name>/overview` when several vaults are registered). This is the channel to rely on: it is read at call time (so edits take effect on the next call, **no server restart**), it reaches sub-agents, and no client we have measured truncates it. The field is simply absent when you have no such file.
-- 📨 **At the front of the MCP `instructions`**, under a `## Vault-specific conventions` heading, for clients that render them. Treat this one as best-effort — Claude Code cuts `instructions` at exactly 2048 characters and gives sub-agents none of it, and other clients may differ. The conventions are placed first precisely so they survive that cut.
+- 📦 **In every `get_vault_overview` response**, as a `conventions` field — and in the `vault://overview` resource (`vault://<vault-name>/overview` when several vaults are registered). It is read at call time (so edits take effect on the next call, **no server restart**), it reaches sub-agents, and no client we have measured truncates it. The field is simply absent when you have no such file. The MCP `instructions` string carries only a pointer telling the agent to make that call — never a copy of your file ([ADR-0012](./docs/adr/0012-conventions-leave-the-instructions-channel.md)).
 
 Keep the file under **8,000 characters**. Past that the `conventions` field carries a trimmed slice and sets `conventions_truncated: true` — you never lose the call, but you do lose the tail, so compact rules beat exhaustive ones.
 
-With several vaults registered, each one carries its own file: every entry in a fanned-out `results_by_vault` gets its own vault's `conventions`, and the `instructions` get one clearly-labelled block per vault.
+With several vaults registered, each one carries its own file: every entry in a fanned-out `results_by_vault` gets its own vault's `conventions`.
 
 ---
 

@@ -24,9 +24,9 @@ async (args) => invokeTool(() => handlers.foo(args))
                  └─ anything else    → { message }
 ```
 
-`server.ts` is also where the server's `instructions` text lives, and where `buildServerInstructions(registry)` composes it at startup. It is deliberately short. Claude Code truncates `instructions` at 2048 characters and hands sub-agents none of it, whereas every tool `description` reaches every client in full — so anything a tool can say about itself (parameters, result shape, multi-vault behaviour) belongs on that tool, not here. That principle is recorded in [ADR-0010](../adr/0010-context-delivery-channels.md).
+`server.ts` is also where the server's `instructions` text lives, as the module constant `SERVER_INSTRUCTIONS`. It composes nothing at startup: it takes no registry, reads no file, and is byte-identical for every configuration. It is deliberately short. Claude Code truncates `instructions` at 2048 characters and hands sub-agents none of it, whereas every tool `description` reaches every client in full — so anything a tool can say about itself (parameters, result shape, multi-vault behaviour) belongs on that tool, not here. That principle is recorded in [ADR-0010](../adr/0010-context-delivery-channels.md); [ADR-0012](../adr/0012-conventions-leave-the-instructions-channel.md) is why the constant carries no vault content either.
 
-What the composed string actually contains — the per-vault conventions blocks that lead it, the character budget the `STATIC_SERVER_INSTRUCTIONS` preamble is sized against, and the parallel delivery of the same text through the `conventions` field on `get_vault_overview` — is owned by [vault-conventions.md](./vault-conventions.md).
+The constant's last paragraph points at `get_vault_overview` for a vault's owner-authored conventions. How that delivery actually works — the `conventions` field, its 8,000-character cap, its truncation flag, and its per-vault fan-out — is owned by [vault-conventions.md](./vault-conventions.md).
 
 Resources are registered through the same module aggregation as tools. Each module returns `{ tools, resources }`; the server iterates both lists and calls `server.registerTool` / `server.registerResource` respectively. The resource scaffolding lives in `src/lib/resource-registration.ts` and `src/lib/resource-registry.ts`, mirroring the tool primitives.
 

@@ -29,11 +29,13 @@ returns when reading, writing, or organising notes.
 
 Spell the routing rule out rather than pointing at the server's MCP `instructions`. Clients truncate that string (Claude Code cuts it at 2048 characters) and sub-agents may receive none of it, so a project file that only says "follow the server instructions" can end up pointing at nothing. Tool descriptions and tool responses always arrive — which is why the snippet routes through `get_vault_overview` for the vault's own conventions.
 
+> Verifying a change to the server's `instructions` needs a **fresh session**: in Claude Code, `/mcp reconnect` reconnects the server but does not rebuild the session's system prompt, so the old string stays in place and the change reads as a false negative.
+
 ## Vault conventions for external agents
 
 An optional `<vault>/.neuro-vault/for-external-agents.md` carries your rules for how *your* vault is organised — closed sets of frontmatter `type` values, folders that are off-limits for writes, how you scope notes to a project. The server picks it up with no configuration.
 
-It reaches the agent through the `conventions` field of every `get_vault_overview` response (and the `vault://overview` resource, `vault://<vault-name>/overview` when several vaults are registered), read fresh on each call — edit the file and the next call sees it, with no server restart. The same text is also placed at the front of the MCP `instructions`, best-effort, for clients that render them — but that copy is composed once at server startup, so only the `get_vault_overview` channel reflects later edits.
+It reaches the agent through the `conventions` field of every `get_vault_overview` response (and the `vault://overview` resource, `vault://<vault-name>/overview` when several vaults are registered), read fresh on each call — edit the file and the next call sees it, with no server restart. That is the only channel that carries the text: the MCP `instructions` string carries a pointer telling the agent to make the call, never a copy of your file ([ADR-0012](../adr/0012-conventions-leave-the-instructions-channel.md)).
 
 Keep it under **8,000 characters**: beyond that the field carries a trimmed slice and sets `conventions_truncated: true`. The call still succeeds; the tail is simply gone. In multi-vault mode each vault carries its own file.
 
