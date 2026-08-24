@@ -190,6 +190,14 @@ With several vaults registered, each one carries its own file: every entry in a 
 
 ---
 
+### 🙈 Keeping folders out of search
+
+Note discovery — the lexical leg of `search_notes`, `query_notes`, tag/property listings, `get_vault_overview` counts, backlinks, note-name resolution — skips dot-directories, `Templates/`, and every entry in the vault root's `.gitignore`. `read_notes` by explicit path still reads them.
+
+To exclude more, drop a `<vault>/.neuro-vault/config.json` with `{ "exclusions": ["Archive/**"] }`. Full rules, including the `.gitignore` subset that is honoured: [Configuration → Excluding paths from discovery](./docs/guide/configuration.md#excluding-paths-from-discovery).
+
+---
+
 ## 📄 License
 
 ISC — see [LICENSE](LICENSE).

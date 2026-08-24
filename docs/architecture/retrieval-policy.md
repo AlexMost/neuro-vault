@@ -186,7 +186,7 @@ When `search_notes` receives a `filter` parameter, the tool handler computes an 
 
 Empty allowed set short-circuits to an empty result without invoking `embeddingProvider.embed` or `searchEngine`. Errors from `listMatchingPaths` map as: `INVALID_FILTER` → `INVALID_ARGUMENT`; anything else → `DEPENDENCY_ERROR`.
 
-Path_prefix-only filters use a fast-path inside `listMatchingPaths` that calls `vaultReader.scan({ pathPrefix })` and skips frontmatter reads entirely.
+Path_prefix-only filters use a fast-path inside `listMatchingPaths` that calls `vaultReader.scan({ pathPrefix })` and skips frontmatter reads entirely. The paths that scan returns are already scope-filtered — every result runs through the vault's `VaultScope.isExcluded` predicate, prefixed scans included — so the fast-path needs no exclusion logic of its own. See [`vault-scope.md`](vault-scope.md).
 
 ## Boundaries
 

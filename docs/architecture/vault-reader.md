@@ -5,7 +5,7 @@ system, decoupled from the Obsidian app.
 
 ## What it is
 
-`src/modules/operations/vault-reader.ts` defines `VaultReader`:
+`src/lib/obsidian/vault-reader.ts` defines `VaultReader`:
 
 ```typescript
 interface VaultReader {

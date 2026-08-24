@@ -41,9 +41,19 @@ There is no re-include or negation mechanism at any layer: config cannot remove 
 - Comment lines (starting with `#`) are skipped.
 - Negation lines (starting with `!`) are skipped — they have no effect. A line `build/` followed by `!build/keep.md` still excludes `build/keep.md`; the negation is silently ignored.
 - Every remaining line is stripped of a leading `/` and a trailing `/`, then expanded to **two** patterns: the entry itself and `<entry>/**`. That pair excludes the named path *and* its entire subtree.
+- Matching is **case-sensitive**, including on a case-insensitive macOS volume. `Templates` (the built-in default) excludes `Templates/Daily.md` but not `templates/Daily.md`; a `.gitignore` line `Build/` does not exclude `build/`. Name the directory exactly as it appears on disk.
 - Every pattern is **anchored at the vault root**. This is the one place this subset diverges most visibly from real gitignore semantics: git matches a slash-less entry like `build` at *any* directory depth, but here `build` only ever means `<vaultRoot>/build`, never `<vaultRoot>/some/nested/build`.
 
 The anchoring choice trades fidelity for predictability (design D4): a vault owner reading their own `.gitignore` gets exactly the paths named, no depth-dependent surprises, at the cost of not matching git's own behavior for unanchored entries. If a vault's `.gitignore` relies on unanchored matching, only the root-level occurrence of that name is honored here.
+
+**Hazard — an allowlist-style `.gitignore` blanks the vault.** The common idiom
+
+```gitignore
+*
+!Notes/
+```
+
+does not work here. `*` is honoured (it compiles to `['*', '*/**']`, which matches every path at every depth) but the `!Notes/` line that would rescue the allowed subtree is a negation line, and negation lines are skipped. The result is a scope that excludes everything: discovery returns nothing at all. Since this is indistinguishable from an empty vault at the tool surface, `createVaultScope` emits one stderr warning when a root `.gitignore` line names the whole vault (`*`, `**`, or `/`). If your vault's `.gitignore` is allowlist-shaped, express the exclusions positively instead — list the folders you want out, or move them into `.neuro-vault/config.json`'s `"exclusions"`.
 
 **Accepted behaviour change:** the live vault's root `.gitignore` names `docs/superpowers/`, which now leaves lexical discovery entirely — that folder was already excluded from the Smart Connections corpus semantically, so this closes a pre-existing membership gap between the two legs rather than opening a new one.
 
@@ -64,19 +74,25 @@ Failure handling is deliberately asymmetric between "no config" and "broken conf
 | No `.neuro-vault/config.json` (`ENOENT`) | Silent fallback to built-in defaults. No warning — an unconfigured vault is the common case. |
 | File exists but unreadable (permissions, I/O error) | Fallback to defaults + a stderr warning naming the vault root. |
 | File exists but is not valid JSON | Fallback to defaults + a stderr warning naming the vault root. |
-| File exists, valid JSON, but `"exclusions"` is present and not a `string[]` | Fallback to defaults + a stderr warning naming the vault root. |
+| Valid JSON, but not a JSON object (`null`, `[…]`, `"glob"`, `42`) | Fallback to defaults + a distinct stderr "must be a JSON object with an `exclusions` array" warning. A bare array of globs is the natural mis-write of this format; it must not look like "no config". |
+| File exists, valid JSON object, but `"exclusions"` is present and not a `string[]` | Fallback to defaults + a stderr warning naming the vault root. |
+| `"exclusions"` is a `string[]` containing an empty entry or one starting with `!` | Those entries are dropped + a stderr warning naming them; the remaining valid entries still apply. |
 | File exists, valid JSON, `"exclusions"` key absent | Fallback to defaults, no warning (an empty/other-purposed config file is not an error). |
 
 The warning always goes to **stderr**, never stdout — stdout is the MCP transport and must stay clean (`LoadVaultScopeOptions.warn` defaults to `console.error`). A bad config in one vault never stops the server from starting or serves any other vault; this follows the `vault-conventions.ts` best-effort precedent (see [`vault-conventions.md`](./vault-conventions.md)), but adds the warning that precedent doesn't have — scope config changes *search membership*, so a typo silently collapsing to `null` would be invisible in a way a missing conventions file is not.
 
-`.gitignore` itself has no failure contract worth naming: a missing `.gitignore` (the common case for a non-git-tracked vault) simply means the built-in-defaults layer is just `Templates/` plus the dot-segment rule, with no warning.
+`.gitignore` follows the same asymmetry. A **missing** `.gitignore` (the common case for a non-git-tracked vault) simply means the built-in-defaults layer is just `Templates/` plus the dot-segment rule, silently. A `.gitignore` that exists but cannot be read (permissions, I/O error) gets a stderr warning like the config does: that failure silently *widens* scope, which is exactly the kind of invisible membership shift D5 exists to surface.
 
 ## Two views: prune vs. predicate
 
 `VaultScope` exposes the same compiled pattern list two ways, and they exist for different reasons:
 
 - **`ignorePatterns: string[]`** — the raw pattern list, fed to fast-glob's own `ignore` option during `FsVaultReader.scan`. This is a **traversal prune**: it lets fast-glob skip whole excluded subtrees during enumeration rather than walking them and discarding results afterward. It does not carry the dot-segment rule (fast-glob's `dot: false` already covers that at the enumeration level).
-- **`isExcluded(relPath): boolean`** — a picomatch-compiled predicate (`dot: true`) plus the dot-segment check, and it is the **authoritative** membership test. Every path `scan` produces is filtered through it regardless of whether `ignorePatterns` was also passed to fast-glob, so the two views agree on the final result by construction even though only one of them does any of the traversal-time pruning.
+- **`isExcluded(relPath): boolean`** — a picomatch-compiled predicate (`dot: true`) plus the dot-segment check, and it is the **authoritative** membership test. Every path `scan` produces is filtered through it regardless of whether `ignorePatterns` was also passed to fast-glob.
+
+The two views are **not** the same matcher: `ignorePatterns` goes to fast-glob's own `ignore`, which resolves through `micromatch`'s nested picomatch copy at a different major version than the direct `picomatch` dependency the predicate is compiled with. What makes them agree on the final result is the ordering, not a shared engine — the predicate post-filter runs **last** over everything the glob returned, and `ignorePatterns` is never *stronger* than `isExcluded` (it is the same list minus the dot rule, which enumeration covers via `dot: false`). So `ignorePatterns` can only ever remove paths the predicate would have removed anyway; it is a traversal-cost optimisation, and the predicate decides membership. That is also why the pattern list is frozen and typed `readonly string[]`: mutating it would break the "never stronger" invariant the agreement rests on.
+
+This is also why a pattern starting with `!` can never enter the list. picomatch treats a leading `!` as its own negation operator — a single `"!Keep/**"` entry would invert the entire predicate — while fast-glob's `ignore` reads the same string the other way round. Such entries are rejected at the config parse boundary (with a warning naming the entry) and again inside `createVaultScope`, along with empty entries, which make picomatch throw outright. `createVaultScope` never throws: a bad entry in one vault's config must not take a multi-vault server down.
 
 **Why prefixed scans rely on the predicate alone.** `FsVaultReader.scan({ pathPrefix })` moves fast-glob's `cwd` into the prefix directory before globbing, so the paths fast-glob sees during matching are relative to the prefix, not the vault root. Root-anchored patterns like `Templates/**` cannot match against those prefix-relative paths — `Templates/` fifteen levels up from `cwd` doesn't look like `Templates/` to a matcher rooted at `cwd`. So `scan` passes `ignore` to fast-glob **only on unprefixed scans** (`!prefix && this.scope ? this.scope.ignorePatterns : []`); a prefixed scan skips the glob-time prune entirely and instead re-prefixes each match back to a vault-relative path (`${prefix}/${match}`) before running it through `scope.isExcluded`. No pattern rewriting is needed — the predicate simply gets paths in the coordinate system it was compiled for.
 
@@ -88,11 +104,13 @@ Every discovery surface routes through `FsVaultReader.scan`, so all of them inhe
 - `query_notes` — see [`query.md`](./query.md).
 - Path listing (`listMatchingPaths`, the structural pre-filter shared by `search_notes` and `query_notes`) — see [`retrieval-policy.md`](./retrieval-policy.md).
 - Tag and property aggregation (`list_tags` / `list_properties` on `FsVaultProvider`) — see [`vault-provider.md`](./vault-provider.md).
-- Vault overview (`get_vault_overview` / `vault://overview`, `total_notes` and folder counts) — see [`vault-conventions.md`](./vault-conventions.md).
+- Vault overview (`get_vault_overview` / `vault://overview`, `total_notes` and folder counts) — no dedicated concept doc; the counts come straight from the scoped scan (`src/lib/obsidian/vault-overview.ts`).
 - The wikilink graph (`WikilinkGraphIndex.rebuild`, backlink counts) — see [`wikilink-graph.md`](./wikilink-graph.md).
 - Note-name resolution (`buildBasenameIndex`, `kind: 'name'` identifiers) — see [`vault-provider.md`](./vault-provider.md).
 
-**From the next slice on:** the own-corpus semantic indexer (queue slice `own-corpus-indexer`) will consult the same `VaultScope` for embedding membership, so the semantic and lexical legs stop being able to diverge on "which notes exist" the way the Smart Connections corpus and the lexical scan could before this change. That work has not shipped yet — this doc names it so the governed-surfaces list stays accurate once it does.
+**Not governed yet — the semantic leg.** Everything that reads `entry.corpus` (the Smart Connections AJSON) is *outside* this list: the semantic leg of `search_notes`, `get_similar_notes`, and `find_duplicates`. Scope has no say over their membership in this slice, so a `Templates/` note that Smart Connections happened to embed still comes back under `semantic_matches` even though the same note is absent from `lexical_matches`, tag counts, and `total_notes`. Membership for those tools is whatever the Smart Connections plugin's own `file_exclusions` config produced when it wrote the corpus.
+
+**From the next slice on:** the own-corpus semantic indexer (queue slice `own-corpus-indexer`) will consult the same `VaultScope` for embedding membership, closing exactly that gap — the semantic and lexical legs stop being able to diverge on "which notes exist" the way the Smart Connections corpus and the lexical scan can today. That work has not shipped yet; this doc names it so the governed-surfaces list stays accurate once it does.
 
 A consequence stated deliberately (design D6): backlink counts, basename→path name resolution, `total_notes`/folder counts, and rank-fusion's adaptive `k` (`N` = the scoped scan length, see [`rank-fusion.md`](./rank-fusion.md)) all shift wherever scope shrinks the visible set. That is the point of one shared definition, not a side effect to work around. A link *to* an excluded note becomes an unresolved wikilink target, exactly like a link to any other non-existent note; an excluded note itself contributes no outgoing edges, because it is never scanned in the first place.
 
