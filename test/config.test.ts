@@ -2,8 +2,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { packageMeta } from '../src/package-meta.js';
 import { parseConfig } from '../src/config.js';
 
 describe('parseConfig', () => {
@@ -28,8 +29,9 @@ describe('parseConfig', () => {
   });
 
   it('registers a single vault with name = basename(path)', async () => {
-    const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
-    expect(config.vaults).toEqual([
+    const parsed = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
+    if (parsed.kind !== 'run') throw new Error('expected a run configuration');
+    expect(parsed.config.vaults).toEqual([
       {
         name: 'Sandbox',
         path: vaultPath,
@@ -39,12 +41,13 @@ describe('parseConfig', () => {
   });
 
   it('strips trailing slash before deriving basename', async () => {
-    const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath + '/']);
-    expect(config.vaults[0].name).toBe('Sandbox');
+    const parsed = await parseConfig(['node', 'cli.js', '--vault', vaultPath + '/']);
+    if (parsed.kind !== 'run') throw new Error('expected a run configuration');
+    expect(parsed.config.vaults[0].name).toBe('Sandbox');
   });
 
   it('registers multiple vaults — basenames become aliases', async () => {
-    const config = await parseConfig([
+    const parsed = await parseConfig([
       'node',
       'cli.js',
       '--vault',
@@ -52,8 +55,9 @@ describe('parseConfig', () => {
       '--vault',
       secondVaultPath,
     ]);
-    expect(config.vaults.map((v) => v.name)).toEqual(['Sandbox', 'Other']);
-    expect(config.vaults.map((v) => v.path)).toEqual([vaultPath, secondVaultPath]);
+    if (parsed.kind !== 'run') throw new Error('expected a run configuration');
+    expect(parsed.config.vaults.map((v) => v.name)).toEqual(['Sandbox', 'Other']);
+    expect(parsed.config.vaults.map((v) => v.path)).toEqual([vaultPath, secondVaultPath]);
   });
 
   it('rejects two vaults sharing the same basename with an actionable error', async () => {
@@ -129,7 +133,38 @@ describe('parseConfig', () => {
   });
 
   it('returns semantic enabled by default', async () => {
-    const config = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
-    expect(config.semantic.enabled).toBe(true);
+    const parsed = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
+    if (parsed.kind !== 'run') throw new Error('expected a run configuration');
+    expect(parsed.config.semantic.enabled).toBe(true);
+  });
+
+  it('--version prints the bare version and needs no --vault', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const parsed = await parseConfig(['node', 'cli.js', '--version']);
+
+      expect(parsed).toEqual({ kind: 'handled' });
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith(packageMeta.version);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('--help exits cleanly instead of falling through to the --vault error', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const parsed = await parseConfig(['node', 'cli.js', '--help']);
+
+      expect(parsed).toEqual({ kind: 'handled' });
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(String(log.mock.calls[0][0])).toContain('--vault');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('still rejects a run invocation with no --vault', async () => {
+    await expect(parseConfig(['node', 'cli.js', '--semantic'])).rejects.toThrow(/--vault/);
   });
 });

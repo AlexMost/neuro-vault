@@ -5,6 +5,7 @@ import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 
 import type { ServerConfig, IVaultConfig } from './types.js';
+import { packageMeta } from './package-meta.js';
 
 const DEFAULT_MODEL_KEY = 'bge-micro-v2';
 const DEFAULT_MODEL_ID = 'TaylorAI/bge-micro-v2';
@@ -13,6 +14,15 @@ const VAULT_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 function basenameNoTrailingSlash(p: string): string {
   return path.basename(p.replace(/\/+$/, ''));
 }
+
+/**
+ * The two ways argument parsing can end.
+ *
+ * `handled` means yargs itself satisfied the invocation — it printed help or
+ * the version and, because of `.exitProcess(false)`, returned instead of
+ * exiting. There is no config to produce and nothing left to validate.
+ */
+export type ParsedCli = { kind: 'run'; config: ServerConfig } | { kind: 'handled' };
 
 function buildVaultConfig(rawPath: string): IVaultConfig {
   if (!path.isAbsolute(rawPath)) {
@@ -47,7 +57,7 @@ function buildVaultConfig(rawPath: string): IVaultConfig {
   };
 }
 
-export async function parseConfig(argv: string[]): Promise<ServerConfig> {
+export async function parseConfig(argv: string[]): Promise<ParsedCli> {
   const args = await yargs(hideBin(argv))
     .scriptName('neuro-vault-mcp')
     .usage('$0 --vault <path> [--vault <path> ...]\n\nMCP server for one or more Obsidian vaults.')
@@ -64,9 +74,17 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
     })
     .strict()
     .help()
-    .version(false)
+    .version(packageMeta.version)
     .exitProcess(false)
     .parse();
+
+  // yargs already satisfied this invocation by printing help or the version.
+  // `.exitProcess(false)` means it did not exit for us, so stop here — running
+  // the --vault guard below would print a spurious error after the help text
+  // and exit non-zero.
+  if (args.help === true || args.version === true) {
+    return { kind: 'handled' };
+  }
 
   const rawVaults = args.vault ?? [];
   if (rawVaults.length === 0) {
@@ -91,11 +109,14 @@ export async function parseConfig(argv: string[]): Promise<ServerConfig> {
   }
 
   return {
-    vaults,
-    semantic: {
-      enabled: args.semantic,
-      modelKey: DEFAULT_MODEL_KEY,
-      modelId: DEFAULT_MODEL_ID,
+    kind: 'run',
+    config: {
+      vaults,
+      semantic: {
+        enabled: args.semantic,
+        modelKey: DEFAULT_MODEL_KEY,
+        modelId: DEFAULT_MODEL_ID,
+      },
     },
   };
 }
