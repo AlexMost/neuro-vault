@@ -15,7 +15,7 @@ design.md 從本檔萃取並重新整理為結構化設計文件。
 
 ## Background
 
-Source: vault task note `Tasks/neuro-vault/Inline #tags у listTags-скані` (project [[neuro-vault]], created 2026-07-17).
+Source: a private vault task note on inline `#tags` in the listTags scan (created 2026-07-17).
 
 After the headless fs-migration (`migrate-off-obsidian-cli`), `FsVaultProvider.listTags` counts **frontmatter tags only**. The old obsidian-cli backend counted frontmatter + inline `#tags` in note bodies, so counts diverged after the migration. Smoke test that surfaced it: a note with frontmatter tag `ttag` and inline `#fsprovider-smoke` in the body — `ttag` counted, `#fsprovider-smoke` absent from `list_tags` entirely.
 

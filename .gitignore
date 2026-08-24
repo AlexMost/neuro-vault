@@ -13,9 +13,6 @@ coverage/
 !.claude/commands/
 !.claude/rules/
 
-# Implementation plans are local working artifacts; specs are the canonical record.
-docs/superpowers/plans/
-
 # subagent-driven-development scratch (ledger, task briefs, implementer reports,
 # review diffs), written to the root of whichever checkout an apply run happens
 # in and deleted when it finishes. The skill drops its own `*` .gitignore inside

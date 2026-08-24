@@ -6,7 +6,7 @@ This repo uses [`superpowers-bridge`](https://github.com/JiangWay/openspec-schem
 
 | Trigger                                                          | What to do                                                                                                                                                            |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| User starts a narrative "design discussion / let's brainstorm"   | Run verbal `superpowers:brainstorming` in-chat. Do NOT write to `docs/superpowers/specs/` (frozen). Once the 5 promotion criteria below hold, suggest `/opsx:propose` |
+| User starts a narrative "design discussion / let's brainstorm"   | Run verbal `superpowers:brainstorming` in-chat; the output belongs in `openspec/changes/<name>/brainstorm.md`. Once the 5 promotion criteria below hold, suggest `/opsx:propose` |
 | User invokes `/opsx:new` / `/opsx:ff` / `/opsx:propose` directly | Follow the schema's flow; artifact instructions inject at each step                                                                                                   |
 | User explicitly says bug fix / typo / config tweak / doc update  | Direct PR — do NOT open an opsx change                                                                                                                                |
 | User is mid-change                                               | Advance with `/opsx:continue`, `/opsx:apply`, `/opsx:verify`, `/opsx:archive`                                                                                         |
@@ -34,8 +34,7 @@ When all 5 hold → proactively suggest "ready to `/opsx:propose`?" — wait for
 
 ## Front-door anti-patterns
 
-- Letting brainstorming write to `docs/superpowers/specs/` — that directory is frozen; output belongs in `openspec/changes/<name>/brainstorm.md`
-- Letting writing-plans write to `docs/superpowers/plans/` — output belongs in `openspec/changes/<name>/plan.md`
+- Letting brainstorming or writing-plans write anywhere but the change directory — output belongs in `openspec/changes/<name>/brainstorm.md` and `plan.md`
 - Promoting to opsx with unresolved blocking TBDs
 - Opening an opsx change for bug fix / typo / config tweak / tooling setup
 

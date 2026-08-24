@@ -1,7 +1,7 @@
 <!--
 Raw capture of the explore-mode brainstorm (session 2026-07-10) that converged
 on this change. Source task: Obsidian vault
-`Tasks/neuro-vault/Якісний і компактний контракт MCP-відповідей.md`.
+a private vault task note on a compact MCP response contract.
 -->
 
 # Brainstorm — compact tool response contract (P1 + P2)

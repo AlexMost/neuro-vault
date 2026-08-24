@@ -10,7 +10,6 @@ Each answers one question, so they don't overlap:
 - [`architecture/`](architecture/README.md) — **HOW**: one file per concept, describing the **current** state (living, not historical). A reader should understand any one concept by reading exactly one file.
 - `../openspec/specs/<capability>/` — **WHAT (current)**: the living, normative contract per capability (SHALL + scenarios). Updated on `openspec archive`.
 - `../openspec/changes/<name>/` — **WHAT (proposed)**: a change in flight — spec delta + brainstorm/design/tasks/plan/verify/retrospective.
-- [`superpowers/specs/`](superpowers/specs/README.md) (committed) + `superpowers/plans/` (gitignored) — **FROZEN** pre-OpenSpec record. Readable, not migrated; nothing new is added.
 
 ## Also in `docs/`
 

@@ -40,4 +40,4 @@ Bro v0 deploys neuro-vault on a headless VPS, where six vault-operation tools (`
 - **Server instructions**: the "CLI availability" section (`src/server.ts`) is rewritten at the final step; it is already stale today (understates the disk-direct tool set).
 - **Docs**: ADR-0007 ("vault writes go through obsidian-cli") is superseded — mint a new ADR at the final step; update `docs/architecture/` provider notes.
 - **Release**: intermediate steps are regular minor/patch releases; the final removal is a major version.
-- **External**: planning notes in the user's vault (`Tasks/neuro-vault/FsVaultProvider.md` + three leg notes) mirror this change 1:1.
+- **External**: planning notes in a private vault (an FsVaultProvider note + three leg notes) mirror this change 1:1.

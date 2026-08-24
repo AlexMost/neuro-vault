@@ -75,7 +75,7 @@ bd72db4 docs(openspec): mark final quality-gate tasks complete
 
 - **`superpowers:brainstorming`** (skill tool not invoked; output captured manually)
   - **What was skipped**: invoking the brainstorming Skill during `/opsx:propose`. The decision log was authored directly into `brainstorm.md` instead.
-  - **Why this cycle**: per `.claude/rules/opsx-routing.md`, a direct `/opsx:propose` invocation follows the schema's flow; the exploration already existed in the vault task note `Tasks/neuro-vault/Аудит перекриття малозадіяних MCP-тулів`, and the three open product forks were resolved live via AskUserQuestion. The brainstorm artifact instruction explicitly permits manual authoring when exploration is already done (re-running would re-litigate decided choices) — same pattern as the prior `read-notes-preview` change.
+  - **Why this cycle**: per `.claude/rules/opsx-routing.md`, a direct `/opsx:propose` invocation follows the schema's flow; the exploration already existed in a private vault task note, and the three open product forks were resolved live via AskUserQuestion. The brainstorm artifact instruction explicitly permits manual authoring when exploration is already done (re-running would re-litigate decided choices) — same pattern as the prior `read-notes-preview` change.
   - **How to prevent recurrence**: `one-off — schema boundary case`. This is the sanctioned `/opsx:propose` path (exploration done upstream), not an unplanned skip; no prevention needed.
 - **`superpowers:writing-plans`** (skill tool not invoked; plan authored manually)
   - **What was skipped**: invoking the writing-plans Skill; `plan.md` was decomposed by hand from `tasks.md` + `design.md`.
@@ -95,6 +95,6 @@ bd72db4 docs(openspec): mark final quality-gate tasks complete
 - [ ] 🟡 **Format OpenSpec change artifacts with prettier at propose time — this repo's pre-commit hook checks `openspec/changes/**`.** → **Promote to project CLAUDE.md / AGENTS.md\*\* (neuro-vault)
   > **Why**: artifacts authored during `/opsx:propose` weren't prettier-clean, so the first apply-phase commit had to use `--no-verify` (then was fixed in `3c6a18d`). `.prettierignore` exempts `openspec/schemas/` but not `openspec/changes/`.
   > **How to apply**: at the end of `/opsx:propose` (and before any commit touching change artifacts), run `npx prettier --write openspec/changes/<name>/` so downstream commits never need a bypass.
-- [ ] 📌 **The "verify overlap on a real example before removing" audit method is reusable for tool-surface cleanups.** → **One-off** (note; relevant to the sibling task `Tasks/neuro-vault/Прибрати рідковживані тули з neuro-vault MCP`)
+- [ ] 📌 **The "verify overlap on a real example before removing" audit method is reusable for tool-surface cleanups.** → **One-off** (note; relevant to a sibling task tracked in a private vault note)
   > **Why**: it cleanly separated "covered" (3) from "unique" (3) with evidence, and produced an honest record where the user overrode the evidence (`get_stats`).
   > **How to apply**: future "remove rarely-used X" tasks — read source + run a live equivalence check per candidate before proposing removal.

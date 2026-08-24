@@ -23,7 +23,7 @@ one RRF-ranked `matches[]` list with per-entry `found_in` provenance and
 live `hybrid-search` spec all agree on `matches[]` — and found four documentation
 tails that still describe the old contract or point at paths that no longer
 exist. The source of record for this change is the vault task note
-`Tasks/neuro-vault/Синхронізувати документацію з fused-контрактом.md`.
+a private vault task note on syncing the docs with the fused contract.
 
 This brainstorm was not an open design exploration: the vault note arrived with
 scope, exact file locations, and exact fixes already converged (it is itself the

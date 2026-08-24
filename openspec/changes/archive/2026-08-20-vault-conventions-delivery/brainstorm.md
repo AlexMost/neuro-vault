@@ -1,9 +1,9 @@
 <!--
 Raw capture of superpowers:brainstorming output.
 Conducted verbally in-chat over an external field report (2026-08-20), then
-re-verified against source before promotion. Source task: vault note
-"Tasks/neuro-vault/for-external-agents крізь ліміт 2048 — реордер instructions
-і канал через overview".
+re-verified against source before promotion. Source: a private vault task note on
+delivering `for-external-agents` past the 2048-character limit — reordering
+`instructions` and adding a channel through `get_vault_overview`.
 Three remaining open questions were closed by explicit user decisions at
 promotion time (Q4-Q6 below).
 -->

@@ -18,7 +18,7 @@ whole vault per request — per-request freshness with zero invalidation is an
 accepted envelope in this codebase.
 
 Full decision log: `brainstorm.md` (Q1–Q12). Origin: vault task note
-`Tasks/neuro-vault/Add lexical leg to search_notes (hybrid)`.
+a private vault task note on adding a lexical leg to `search_notes`.
 
 ## Goals / Non-Goals
 

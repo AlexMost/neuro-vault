@@ -8,7 +8,7 @@ Template: [0000-template.md](0000-template.md).
 
 | #    | Title                                                                                                 | Status   |
 | ---- | ----------------------------------------------------------------------------------------------------- | -------- |
-| 0001 | [Spec workflow: OpenSpec + superpowers-bridge](0001-spec-workflow-openspec-superpowers.md)            | Accepted |
+| 0001 | [Spec workflow: OpenSpec + superpowers-bridge](0001-spec-workflow-openspec-superpowers.md)            | Accepted; doc-altitude map superseded in part by [0011](0011-retire-frozen-doc-layer.md) |
 | 0002 | [ESM + TypeScript strict; `tsc --noEmit` is the build source of truth](0002-esm-typescript-strict.md) | Accepted |
 | 0003 | [Structured tool errors via `ToolHandlerError`](0003-structured-errors-toolhandlererror.md)           | Accepted |
 | 0004 | [External processes via `execFile`, never a shell string](0004-execfile-no-shell.md)                  | Accepted |
@@ -18,3 +18,4 @@ Template: [0000-template.md](0000-template.md).
 | 0008 | [`docs/architecture/` as living per-concept documentation](0008-architecture-living-docs.md)          | Accepted |
 | 0009 | [Vault operations go direct to disk](0009-disk-direct-vault-operations.md)                            | Accepted |
 | 0010 | [Context reaches agents through tool descriptions and responses](0010-context-delivery-channels.md)   | Accepted |
+| 0011 | [Four doc altitudes; the frozen pre-OpenSpec record is retired](0011-retire-frozen-doc-layer.md)       | Accepted |

@@ -1,6 +1,6 @@
 ## Why
 
-After the headless fs-migration (`migrate-off-obsidian-cli`), `list_tags` counts frontmatter tags only; inline `#tags` in note bodies are ignored. The obsidian-cli backend counted both, so tag counts silently diverged from what the vault actually contains — a note tagged only inline is invisible to `list_tags` and to `get_vault_overview.top_tags`. The gap was accepted as a documented trade-off in the parent change (ADR-0009 §Consequences (a)); the vault task note `Tasks/neuro-vault/Inline #tags у listTags-скані` now closes it so tag listings reflect the real tagging picture.
+After the headless fs-migration (`migrate-off-obsidian-cli`), `list_tags` counts frontmatter tags only; inline `#tags` in note bodies are ignored. The obsidian-cli backend counted both, so tag counts silently diverged from what the vault actually contains — a note tagged only inline is invisible to `list_tags` and to `get_vault_overview.top_tags`. The gap was accepted as a documented trade-off in the parent change (ADR-0009 §Consequences (a)); a private vault task note now closes it so tag listings reflect the real tagging picture.
 
 ## What Changes
 

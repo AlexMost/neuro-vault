@@ -22,23 +22,42 @@ parameter-dictionary row.
 - **WHEN** a caller needs one frontmatter key of a note and calls `read_notes({ paths: [<path>], fields: ['frontmatter'] })`
 - **THEN** the returned item's `frontmatter` contains that key with the same value `read_property` would have returned
 
-### Requirement: Frontmatter property enumeration is served by get_vault_overview
+### Requirement: Full frontmatter property enumeration is served by list_properties
 
-The server SHALL NOT expose a `list_properties` tool. The vault's frontmatter property list
-(`{ name, type, count }`) SHALL be served by `get_vault_overview`, which returns the properties
-ranked by count and capped at the top 30. Enumeration of the rare/zero-count tail beyond that cap is
-intentionally not provided via MCP. The underlying `provider.listProperties()` SHALL remain, because
-`get_vault_overview` depends on it.
+The server SHALL expose a `list_properties` tool that returns the complete, untruncated inventory
+of frontmatter properties in use across the vault as `{ name, count }` entries sorted by count
+descending. `list_properties` SHALL appear in the canonical tool-name list (`TOOL_NAMES`) and in
+the operations module's registered tools, positioned directly after its sibling `list_tags`. In
+multi-vault mode the tool SHALL fan out across all registered vaults when `vault` is omitted
+(response shape `results_by_vault`), and SHALL accept `vault: "<name>"` to target one vault,
+mirroring `list_tags` exactly.
 
-#### Scenario: list_properties is not registered
+`get_vault_overview` SHALL keep returning the property list capped at the top 30 by count as part
+of its orientation snapshot; the two tools split by use case — orientation (top-N snapshot) versus
+audit (complete inventory). The tool descriptions of both `list_properties` and
+`get_vault_overview` SHALL state this distinction so callers route correctly: `list_properties`
+names the complete inventory and the property-consistency audit use case; `get_vault_overview`
+marks its property list as top entries only and points at `list_properties` for the full inventory.
+
+#### Scenario: list_properties is registered
 
 - **WHEN** the server's registered tool names are enumerated
-- **THEN** `list_properties` is absent from the operations module and from `TOOL_NAMES`
+- **THEN** `list_properties` is present in the operations module and in `TOOL_NAMES`
 
-#### Scenario: get_vault_overview still returns the property list
+#### Scenario: the full inventory is returned without truncation
+
+- **WHEN** `list_properties` is called on a vault whose provider reports more than 30 distinct property names
+- **THEN** the response contains every reported property as `{ name, count }`, sorted by count descending, with no cap applied
+
+#### Scenario: multi-vault fan-out mirrors list_tags
+
+- **WHEN** `list_properties` is called without `vault` while multiple vaults are registered
+- **THEN** the response fans out with `results_by_vault` entries, exactly like `list_tags`
+
+#### Scenario: get_vault_overview keeps the top-30 snapshot and points to list_properties
 
 - **WHEN** `get_vault_overview` is called
-- **THEN** it returns a `properties` array of `{ name, type, count }` (top 30 by count), unchanged by this change
+- **THEN** its `properties` array remains capped at the top 30 by count, and its tool description directs callers to `list_properties` for the full inventory
 
 ### Requirement: Embedding-corpus statistics are not exposed via MCP
 

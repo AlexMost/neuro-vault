@@ -1,7 +1,7 @@
 <!--
 Raw capture of the verbal brainstorm (two /opsx:explore sessions, 2026-07-05).
 Per opsx-routing.md the brainstorm ran in-chat; this file is its decision log.
-Source task note: vault `Tasks/neuro-vault/Add lexical leg to search_notes (hybrid)`.
+Source: a private vault task note on adding a lexical leg to `search_notes`.
 -->
 
 # Brainstorm — hybrid-search-notes
