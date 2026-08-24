@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [15.5.0](https://github.com/AlexMost/neuro-vault/compare/v15.4.0...v15.5.0) (2026-08-24)
+
+
+### Features
+
+* **cli:** add --version and fix the --help fall-through ([#95](https://github.com/AlexMost/neuro-vault/issues/95)) ([3808e07](https://github.com/AlexMost/neuro-vault/commit/3808e076b58e98a5d4cf289a8af8dc928dfb7a19)), closes [#92](https://github.com/AlexMost/neuro-vault/issues/92)
+* **instructions:** keep vault conventions on get_vault_overview only ([#94](https://github.com/AlexMost/neuro-vault/issues/94)) ([d3fd341](https://github.com/AlexMost/neuro-vault/commit/d3fd3414379046aca6ab30e184d5a6657458475c)), closes [#93](https://github.com/AlexMost/neuro-vault/issues/93) [#93](https://github.com/AlexMost/neuro-vault/issues/93) [#93](https://github.com/AlexMost/neuro-vault/issues/93) [#93](https://github.com/AlexMost/neuro-vault/issues/93) [#93](https://github.com/AlexMost/neuro-vault/issues/93) [#93](https://github.com/AlexMost/neuro-vault/issues/93)
+
 ## [15.4.0](https://github.com/AlexMost/neuro-vault/compare/v15.3.0...v15.4.0) (2026-08-24)
 
 
