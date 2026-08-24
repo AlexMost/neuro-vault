@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [15.4.0](https://github.com/AlexMost/neuro-vault/compare/v15.3.0...v15.4.0) (2026-08-24)
+
+
+### Features
+
+* **lint:** enable type-aware linting via typescript-eslint recommendedTypeChecked ([a81e6ff](https://github.com/AlexMost/neuro-vault/commit/a81e6ffb0d4b692261b1de52f599c4b03a1c4aac))
+* **vault-scope:** one scope definition governs vault discovery ([#90](https://github.com/AlexMost/neuro-vault/issues/90)) ([96080a0](https://github.com/AlexMost/neuro-vault/commit/96080a038628563eaa4debdb210d5300a08482fc)), closes [#81](https://github.com/AlexMost/neuro-vault/issues/81)
+
+
+### Bug Fixes
+
+* **lint:** clear the type-aware backlog (redundant assertions, base-to-string, empty interface) ([5a3c421](https://github.com/AlexMost/neuro-vault/commit/5a3c421eb1339af135894cc2cbd1a353efb6ca83))
+
 ## [15.3.0](https://github.com/AlexMost/neuro-vault/compare/v15.2.0...v15.3.0) (2026-08-20)
 
 
