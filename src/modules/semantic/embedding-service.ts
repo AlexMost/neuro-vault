@@ -4,6 +4,19 @@ import type { EmbeddingProvider } from './types.js';
 
 const DEFAULT_MODEL_KEY = 'bge-micro-v2';
 const EMBEDDING_TASK = 'feature-extraction';
+const MODEL_MAX_TOKENS = 512;
+
+type CappableTokenizer = { model_max_length?: number };
+
+function capTokenizer(embeddingPipeline: unknown): void {
+  const tokenizer = (embeddingPipeline as { tokenizer?: CappableTokenizer } | null)?.tokenizer;
+  if (tokenizer && typeof tokenizer.model_max_length === 'number') {
+    // The shipped tokenizer config declares an effectively unbounded length,
+    // which disables the pipeline's own truncation and makes any input over
+    // the real window throw inside ONNX.
+    tokenizer.model_max_length = MODEL_MAX_TOKENS;
+  }
+}
 
 type RawPipeline = (
   text: string,
@@ -57,6 +70,7 @@ export class EmbeddingService implements EmbeddingProvider {
     if (!this.initialization) {
       this.initialization = this.pipelineFactory(EMBEDDING_TASK, this.modelKey)
         .then((embeddingPipeline) => {
+          capTokenizer(embeddingPipeline);
           this.pipeline = embeddingPipeline;
         })
         .catch((error: unknown) => {

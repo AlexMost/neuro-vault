@@ -72,3 +72,23 @@ describe('EmbeddingService', () => {
     expect(pipelineFactory).toHaveBeenCalledTimes(1);
   });
 });
+
+function fakePipeline() {
+  const pipe = vi.fn(async () => ({ data: new Float32Array(384) }));
+  return Object.assign(pipe, { tokenizer: { model_max_length: 1e15 } });
+}
+
+describe('EmbeddingService tokenizer cap', () => {
+  it('caps the tokenizer at the model window after initialization', async () => {
+    const pipe = fakePipeline();
+    const service = new EmbeddingService({ pipelineFactory: async () => pipe });
+    await service.embed('hello');
+    expect(pipe.tokenizer.model_max_length).toBe(512);
+  });
+
+  it('does not throw when the pipeline exposes no tokenizer', async () => {
+    const pipe = vi.fn(async () => ({ data: new Float32Array(384) }));
+    const service = new EmbeddingService({ pipelineFactory: async () => pipe });
+    await expect(service.embed('hello')).resolves.toHaveLength(384);
+  });
+});
