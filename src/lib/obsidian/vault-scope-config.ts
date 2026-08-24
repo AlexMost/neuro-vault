@@ -53,16 +53,23 @@ function parseExclusions(
   vaultRoot: string,
   warn: (message: string) => void,
 ): string[] | undefined {
+  const warnInvalidJson = () =>
+    warn(
+      `neuro-vault: invalid JSON in ${SCOPE_CONFIG_PATH} for vault at ${vaultRoot}; using default scope`,
+    );
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    warn(
-      `neuro-vault: invalid JSON in ${SCOPE_CONFIG_PATH} for vault at ${vaultRoot}; using default scope`,
-    );
+    warnInvalidJson();
     return undefined;
   }
-  const exclusions = (parsed as { exclusions?: unknown } | null)?.exclusions;
+  if (parsed === null) {
+    warnInvalidJson();
+    return undefined;
+  }
+  const exclusions = (parsed as { exclusions?: unknown }).exclusions;
   if (exclusions === undefined) return undefined;
   if (!Array.isArray(exclusions) || !exclusions.every((e) => typeof e === 'string')) {
     warn(
