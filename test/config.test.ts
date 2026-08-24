@@ -140,14 +140,17 @@ describe('parseConfig', () => {
 
   it('--version prints the bare version and needs no --vault', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const parsed = await parseConfig(['node', 'cli.js', '--version']);
 
       expect(parsed).toEqual({ kind: 'handled' });
       expect(log).toHaveBeenCalledTimes(1);
       expect(log).toHaveBeenCalledWith(packageMeta.version);
+      expect(errorLog).not.toHaveBeenCalled();
     } finally {
       log.mockRestore();
+      errorLog.mockRestore();
     }
   });
 

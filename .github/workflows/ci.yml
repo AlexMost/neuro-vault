@@ -29,6 +29,10 @@ jobs:
         run: npm run typecheck
       - name: Build
         run: npm run build
+      - name: Smoke the built binary
+        run: |
+          test "$(node dist/cli.js --version)" = "$(node -p "require('./package.json').version")"
+          node dist/cli.js --help > /dev/null
       - name: Test
         run: npm test
 

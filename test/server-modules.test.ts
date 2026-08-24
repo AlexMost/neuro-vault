@@ -292,7 +292,6 @@ describe('informational flags', () => {
 
         expect(serverFactory).not.toHaveBeenCalled();
         expect(transportFactory).not.toHaveBeenCalled();
-        expect(process.exitCode).toBeUndefined();
       } finally {
         log.mockRestore();
       }
