@@ -1,7 +1,19 @@
+import { fromMarkdown } from 'mdast-util-from-markdown';
+
 import type { ChunkedBlock } from './types.js';
 
-const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
-const FENCE_RE = /^\s*(```|~~~)/;
+/** The leading `#` run of an ATX heading plus the one whitespace that closes it. */
+const ATX_PREFIX_RE = /^ {0,3}#{1,6}(?:\s|$)/;
+
+/** A heading the AST recognised as a block boundary. */
+interface HeadingHit {
+  /** 1-based line of the heading's first source line. */
+  line: number;
+  /** 1..6, from `heading.depth`. */
+  level: number;
+  /** The heading's text as the source writes it. */
+  title: string;
+}
 
 interface OpenSection {
   level: number;
@@ -39,22 +51,42 @@ function splitContentChunks(lines: string[], start: number, end: number): Conten
 }
 
 /**
- * Marks every line from `from` on that cannot open a heading: a fence delimiter
- * itself, or any line inside a fence. Computed once so the preamble scan and the
- * heading loop can never disagree about where a fence is.
+ * The heading's title as the *source* writes it, never as CommonMark renders it:
+ * `# **Bold** title` renders "Bold title" and `# Title ###` renders "Title" (the
+ * closing hash run is eaten), either of which would move the block key of a note
+ * whose key is already correct. A setext heading has no `#` prefix, so its raw line
+ * trimmed is the title.
  */
-function fencedLines(lines: string[], from: number): boolean[] {
-  const fenced = new Array<boolean>(lines.length).fill(false);
-  let inFence = false;
-  for (let i = from; i < lines.length; i += 1) {
-    if (FENCE_RE.test(lines[i] ?? '')) {
-      fenced[i] = true;
-      inFence = !inFence;
-      continue;
-    }
-    fenced[i] = inFence;
+function titleFromRawLine(raw: string): string {
+  const prefix = ATX_PREFIX_RE.exec(raw);
+  return (prefix ? raw.slice(prefix[0].length) : raw).trim();
+}
+
+/**
+ * Every heading that opens a block, in source order. The AST decides where a heading
+ * is and what level it is; a line scanner cannot, because fence nesting, fences of
+ * four or more backticks, indented code and setext headings are all beyond a regex —
+ * and each one it gets wrong loses content silently, into no block at all.
+ *
+ * Only root-level headings count. A heading inside a blockquote or a list item is a
+ * `heading` node to CommonMark, but a `> # quoted` line opening a corpus block would
+ * be surprising, so containers are not recursed into.
+ */
+function scanHeadings(lines: string[], fmEnd: number): HeadingHit[] {
+  // Parse the body only: there is no frontmatter extension here, so an unstripped
+  // `---` would parse as a thematic break — or, after a paragraph, a setext heading.
+  const root = fromMarkdown(lines.slice(fmEnd).join('\n'));
+  const hits: HeadingHit[] = [];
+  for (const node of root.children) {
+    if (node.type !== 'heading') continue;
+    const line = (node.position?.start.line ?? 1) + fmEnd;
+    const title = titleFromRawLine(lines[line - 1] ?? '');
+    // `#` alone is a heading with empty text; keyed, it would mint "#", which is
+    // the preamble block's key.
+    if (title === '') continue;
+    hits.push({ line, level: node.depth, title });
   }
-  return fenced;
+  return hits;
 }
 
 function frontmatterEnd(lines: string[]): number {
@@ -108,11 +140,8 @@ export function chunkNote(content: string): ChunkedBlock[] {
       text: lines.slice(0, fmEnd).join('\n'),
     });
   }
-  const fenced = fencedLines(lines, fmEnd);
-  const firstHeading = lines.findIndex(
-    (l, idx) => idx >= fmEnd && !fenced[idx] && HEADING_RE.test(l),
-  );
-  const preambleEnd = firstHeading === -1 ? lines.length : firstHeading;
+  const headings = scanHeadings(lines, fmEnd);
+  const preambleEnd = headings.length === 0 ? lines.length : headings[0].line - 1;
   if (preambleEnd > fmEnd && lines.slice(fmEnd, preambleEnd).join('').trim() !== '') {
     blocks.push({
       key: '#',
@@ -122,19 +151,15 @@ export function chunkNote(content: string): ChunkedBlock[] {
     });
   }
 
-  for (let i = fmEnd; i < lines.length; i += 1) {
-    if (fenced[i]) continue;
-    const match = HEADING_RE.exec(lines[i] ?? '');
-    if (!match) continue;
-
-    const level = match[1].length;
-    let title = match[2];
+  for (const hit of headings) {
+    const { level, line } = hit;
+    let title = hit.title;
     while (open.length > 0 && open[open.length - 1].level >= level) {
-      close(open.pop()!, i);
+      close(open.pop()!, line - 1);
     }
     const parent = open[open.length - 1];
     if (parent && parent.firstChildStart === undefined) {
-      parent.firstChildStart = i + 1;
+      parent.firstChildStart = line;
     }
     const scopeKey = `${parent ? parent.key : ''}\u0000${title}`;
     const seen = (headingCounts.get(scopeKey) ?? 0) + 1;
@@ -145,7 +170,7 @@ export function chunkNote(content: string): ChunkedBlock[] {
       level,
       key: `${parent ? parent.key : ''}${separator}${title}`,
       title,
-      start: i + 1,
+      start: line,
     });
   }
   while (open.length > 0) close(open.pop()!, lines.length);

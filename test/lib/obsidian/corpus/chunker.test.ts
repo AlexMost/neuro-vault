@@ -177,3 +177,90 @@ describe('chunkNote', () => {
     `);
   });
 });
+
+// Block detection comes from the CommonMark AST, not line regexes. These are the cases a
+// line scanner gets wrong: every one of them silently loses content (lines land in no
+// block, so they are never embedded and nothing reports it).
+describe('chunkNote block detection (CommonMark)', () => {
+  it('reads a ``` line inside a ~~~ fence as fence content', () => {
+    const content = ['# A', '~~~', '```', '# fake', '~~~', '# B', 'body'].join('\n');
+    expect(keys(content)).toEqual(['#A', '#B']);
+    expect(byKey(content, '#A')?.lines).toEqual([1, 5]);
+    expect(byKey(content, '#B')?.lines).toEqual([6, 7]);
+  });
+
+  it('closes a four-backtick fence only on four backticks', () => {
+    const content = ['# A', '````', '```', '# fake', '````', '# B', 'body'].join('\n');
+    expect(keys(content)).toEqual(['#A', '#B']);
+    expect(byKey(content, '#A')?.lines).toEqual([1, 5]);
+    expect(byKey(content, '#B')?.lines).toEqual([6, 7]);
+  });
+
+  it('reads four-space-indented code as content, fence-looking lines included', () => {
+    const content = ['# A', '    ```', '    # not a heading', 'tail', '# B', 'body'].join('\n');
+    expect(keys(content)).toEqual(['#A', '#B']);
+    expect(byKey(content, '#A')?.lines).toEqual([1, 4]);
+    expect(byKey(content, '#B')?.lines).toEqual([5, 6]);
+  });
+
+  it('opens a block on a setext heading', () => {
+    const content = ['Title', '=====', 'body', '# Real', 'x'].join('\n');
+    expect(keys(content)).toEqual(['#Title', '#Real']);
+    expect(byKey(content, '#Title')?.heading).toBe('Title');
+    expect(byKey(content, '#Title')?.lines).toEqual([1, 3]);
+    expect(byKey(content, '#Real')?.lines).toEqual([4, 5]);
+  });
+
+  it('gives a "---" setext heading level 2', () => {
+    const content = ['# Top', 'Sub', '---', 'body'].join('\n');
+    expect(keys(content)).toEqual(['#Top', '#Top#Sub']);
+    expect(byKey(content, '#Top')?.lines).toEqual([1, 4]);
+    expect(byKey(content, '#Top#Sub')?.lines).toEqual([2, 4]);
+    expect(byKey(content, '#Top#Sub')?.heading).toBe('Sub');
+  });
+
+  it('opens a block on an ATX heading indented up to three spaces', () => {
+    const content = ['# A', '   # Three spaces', 'body'].join('\n');
+    expect(keys(content)).toEqual(['#A', '#Three spaces']);
+    expect(byKey(content, '#A')?.lines).toEqual([1, 1]);
+    expect(byKey(content, '#Three spaces')?.lines).toEqual([2, 3]);
+    expect(byKey(content, '#Three spaces')?.heading).toBe('Three spaces');
+  });
+
+  it('does not open a block for a "#" line inside an HTML block', () => {
+    const content = ['# A', '<div>', '# X', '</div>', 'tail'].join('\n');
+    expect(keys(content)).toEqual(['#A']);
+    expect(byKey(content, '#A')?.lines).toEqual([1, 5]);
+  });
+
+  it('does not open a block for a heading inside a blockquote or a list item', () => {
+    const content = ['# A', '> # Quoted', '- item', '  # In list', 'tail'].join('\n');
+    expect(keys(content)).toEqual(['#A']);
+    expect(byKey(content, '#A')?.lines).toEqual([1, 5]);
+  });
+
+  it('does not open a block for a "#tag" at line start', () => {
+    const content = ['# A', '#tag not a heading', 'body'].join('\n');
+    expect(keys(content)).toEqual(['#A']);
+    expect(byKey(content, '#A')?.lines).toEqual([1, 3]);
+  });
+
+  it('does not open a block for an empty ATX heading', () => {
+    // "#" alone is a heading to CommonMark; letting it through would mint the key "#",
+    // which is the preamble block's key.
+    const content = ['# A', '#', 'body'].join('\n');
+    expect(keys(content)).toEqual(['#A']);
+    expect(byKey(content, '#A')?.lines).toEqual([1, 3]);
+  });
+
+  it('keys a heading by its raw source line, not its rendered inline text', () => {
+    // nodeText() would render "#Bold title" and eat the closing hash run of "# Title ###";
+    // both would change the key of a note the line scanner already handled correctly.
+    expect(keys(['# **Bold** title', 'body'].join('\n'))).toEqual(['#**Bold** title']);
+    expect(byKey(['# **Bold** title', 'body'].join('\n'), '#**Bold** title')?.heading).toBe(
+      '**Bold** title',
+    );
+    expect(keys(['# Title ###', 'body'].join('\n'))).toEqual(['#Title ###']);
+    expect(byKey(['# Title ###', 'body'].join('\n'), '#Title ###')?.heading).toBe('Title ###');
+  });
+});
