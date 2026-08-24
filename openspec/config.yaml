@@ -37,6 +37,9 @@ context: |
   - `openspec/specs/` — WHAT now (capability contracts). `openspec/changes/` —
     WHAT proposed. `docs/superpowers/specs/` + `plans/` — FROZEN pre-OpenSpec
     record (do not add to it).
+  - GitHub Issues — WHAT tracked: one issue per opsx change, `effort` epics group
+    a multi-change effort, native `blocked_by` edges carry ordering. An issue links
+    to its change by slug, never by path. See docs/agents/issue-tracker.md.
 
   ## Release
 
@@ -44,6 +47,9 @@ context: |
   only, after the PR merges. Never release from a feature branch.
 
 rules:
+  proposal:
+    - 'Every opsx change is tracked by a GitHub issue. If none exists yet, create it (`gh issue create`) before writing proposal.md, then put `Tracked by: #<n>` on its first line. Refer to the change by its slug, never by a path — `openspec archive` moves the change directory before the PR is opened, so a recorded path is dead on arrival.'
+    - 'Never name private vault paths or note titles in any artifact — this repo is public. Describe provenance neutrally, e.g. "source: private vault task note".'
   design:
     - 'If the change captures a load-bearing architectural decision (new runtime/library dependency, change to a core invariant from a prior ADR, a close call between competing approaches), propose creating a numbered `docs/adr/NNNN-<slug>.md` entry alongside design.md. Number = next available in `docs/adr/`. Ask the user before writing.'
     - 'If the change adds or alters an architectural concept, create/update the matching `docs/architecture/<concept>.md` in the same change — a reader must be able to understand any one concept by reading exactly one file.'
