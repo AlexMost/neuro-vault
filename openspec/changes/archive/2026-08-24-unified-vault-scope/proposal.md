@@ -1,3 +1,5 @@
+Tracked by: #81
+
 ## Why
 
 "Which vault files are visible" has two independent answers today. The lexical leg scans with `dot: false` + `**/*.md` and no other exclusion mechanism (`vault-reader.ts:103`); the semantic leg inherits whatever Smart Connections chose to embed — SC's exclusion config is applied by the plugin before the AJSON is written and the server never reads it. The own-corpus indexer (next slice of the own-embedding-pipeline queue) would need a third answer unless a shared one exists first — and divergent membership already surfaces as unprincipled `found_in` combinations in `search_notes`. This slice builds the single scope module both legs consult and establishes the `.neuro-vault/` per-vault config convention that later slices (corpus storage, eval golden set) build on. It contains no embedding code, so it ships first and alone.

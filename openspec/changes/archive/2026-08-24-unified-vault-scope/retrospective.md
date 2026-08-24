@@ -1,6 +1,7 @@
 # Retrospective: unified-vault-scope
 
 > Written: 2026-08-24 (after verify passed)
+> **Update 2026-08-24**: §5's "`docs/superpowers/` is the change's own test case" is superseded by [ADR-0011](../../../../docs/adr/0011-retire-frozen-doc-layer.md) (#91), which deleted that directory and its `.gitignore` entry before this PR merged. The observation was true when written and is now historical only; the live docs and the `vault-scope` spec scenario were re-worded to a neutral example rather than a directory that no longer exists.
 > Commit range: `40ba2b0..0145118`
 > Worktree: `/Users/amostovenko/git/neuro-vault/.claude/worktrees/unified-vault-scope` (branch `worktree-unified-vault-scope`, unpushed at write time)
 

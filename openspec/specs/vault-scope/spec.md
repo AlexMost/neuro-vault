@@ -32,8 +32,8 @@ The scope SHALL exclude `Templates/` and the entries of the vault root's `.gitig
 
 #### Scenario: A gitignored folder leaves discovery
 
-- **WHEN** the vault root's `.gitignore` contains the line `docs/superpowers/`
-- **THEN** every note under `docs/superpowers/` is excluded from scope
+- **WHEN** the vault root's `.gitignore` contains the line `drafts/scratch/`
+- **THEN** every note under `drafts/scratch/` is excluded from scope
 
 #### Scenario: Negation lines are ignored
 

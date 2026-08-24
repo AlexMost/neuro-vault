@@ -55,7 +55,7 @@ The anchoring choice trades fidelity for predictability (design D4): a vault own
 
 does not work here. `*` is honoured (it compiles to `['*', '*/**']`, which matches every path at every depth) but the `!Notes/` line that would rescue the allowed subtree is a negation line, and negation lines are skipped. The result is a scope that excludes everything: discovery returns nothing at all. Since this is indistinguishable from an empty vault at the tool surface, `createVaultScope` emits one stderr warning when a root `.gitignore` line names the whole vault (`*`, `**`, or `/`). If your vault's `.gitignore` is allowlist-shaped, express the exclusions positively instead — list the folders you want out, or move them into `.neuro-vault/config.json`'s `"exclusions"`.
 
-**Accepted behaviour change:** the live vault's root `.gitignore` names `docs/superpowers/`, which now leaves lexical discovery entirely — that folder was already excluded from the Smart Connections corpus semantically, so this closes a pre-existing membership gap between the two legs rather than opening a new one.
+**Accepted behaviour change:** any folder a vault's root `.gitignore` already names now leaves lexical discovery entirely. In practice such folders were already outside the Smart Connections corpus, so this closes a pre-existing membership gap between the two legs rather than opening a new one — but a vault that gitignores content it still expects to search will see that content disappear from search, `query_notes`, tag and property listings, overview counts, backlink counts, and name resolution. `read_notes` by explicit path is unaffected.
 
 ## Config contract and failure behaviour
 
