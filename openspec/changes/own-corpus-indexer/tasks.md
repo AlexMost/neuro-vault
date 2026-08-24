@@ -8,46 +8,48 @@ other groups at the same marker and can be dispatched concurrently.
 
 ## 1. Corpus types and ports — PR 1 [sequential, do first]
 
-- [ ] 1.1 Add `src/lib/obsidian/corpus/types.ts`: `CorpusBlock` (`key`, `heading`, `lines`, `embedding`), `CorpusShard` (`path`, `content_hash`, `mtime`, `size`, `embedding: string | null`, `blocks`), `CorpusManifest` (`embed_version`, `model_key`, `dims`, `strategy`, `created`), and the narrow `EmbedFn = (text: string) => Promise<number[]>` port. No imports from `src/modules/` (design D1).
-- [ ] 1.2 Add the extraction-side types: `ExtractedBlock` (key, heading, lines, text, size) and `ExtractedNote` (path, note embed text or null, blocks marked for embedding). Assert with a type-level test or a compiling fixture that `src/lib/obsidian/corpus/` imports nothing from `src/modules/`.
-- [ ] 1.3 Define the strategy constant (`SC_PARITY_STRATEGY = 'sc-parity-v1'`), `EMBED_VERSION`, and the model-derived character budget (`max_tokens × 3.7`) in one place both extraction and the manifest read from.
+- [x] 1.1 Add `src/lib/obsidian/corpus/types.ts`: `CorpusBlock` (`key`, `heading`, `lines`, `embedding`), `CorpusShard` (`path`, `content_hash`, `mtime`, `size`, `embedding: string | null`, `blocks`), `CorpusManifest` (`embed_version`, `model_key`, `dims`, `strategy`, `created`), and the narrow `EmbedFn = (text: string) => Promise<number[]>` port. No imports from `src/modules/` (design D1).
+- [x] 1.2 Add the extraction-side types: `ExtractedBlock` (key, heading, lines, text, size) and `ExtractedNote` (path, note embed text or null, blocks marked for embedding). Assert with a type-level test or a compiling fixture that `src/lib/obsidian/corpus/` imports nothing from `src/modules/`.
+- [x] 1.3 Define the strategy constant (`SC_PARITY_STRATEGY = 'sc-parity-v1'`), `EMBED_VERSION`, and the model-derived character budget (`max_tokens × 3.7`) in one place both extraction and the manifest read from.
+
+> Delivered as `ChunkedBlock` and `NoteEmbedInputs` — plan.md carries the compiling definitions under those names and every downstream task's Interfaces block references them. `EmbedInput`, listed in plan.md's Task 1, was dropped: nothing in either PR consumes it.
 
 ## 2. Markdown chunker — PR 1 [parallel-safe with 3, 4, 5]
 
-- [ ] 2.1 Failing test → implementation: split a note at ATX headings levels 1–6, emitting 1-based inclusive line spans where a heading block's span covers its whole section including nested subsections (spec: "A note is chunked into keyed blocks by its headings").
-- [ ] 2.2 Failing test → implementation: headings inside fenced code blocks do not start a block, and the enclosing section's span stays unbroken.
-- [ ] 2.3 Failing test → implementation: hierarchical block keys `#H1#H2` where separator repetition encodes the child's real level, so a skipped level is visible in the key.
-- [ ] 2.4 Failing test → implementation: frontmatter becomes `#---frontmatter---` with the fence delimiters inside its span; pre-heading text becomes `#`; content chunks under a heading take `#{n}`; a repeated top-level heading takes the `[2]`-style suffix.
-- [ ] 2.5 Failing test → implementation: block keys are unique within a note — a heading repeated among siblings at any level takes an occurrence suffix, not just a repeated top-level heading (design D2, divergence 5).
-- [ ] 2.6 Fixture test: one representative note (frontmatter + preamble + nested headings + a code fence containing a `#` line) asserted whole — keys and spans together — as the chunker's golden output.
+- [x] 2.1 Failing test → implementation: split a note at ATX headings levels 1–6, emitting 1-based inclusive line spans where a heading block's span covers its whole section including nested subsections (spec: "A note is chunked into keyed blocks by its headings").
+- [x] 2.2 Failing test → implementation: headings inside fenced code blocks do not start a block, and the enclosing section's span stays unbroken.
+- [x] 2.3 Failing test → implementation: hierarchical block keys `#H1#H2` where separator repetition encodes the child's real level, so a skipped level is visible in the key.
+- [x] 2.4 Failing test → implementation: frontmatter becomes `#---frontmatter---` with the fence delimiters inside its span; pre-heading text becomes `#`; content chunks under a heading take `#{n}`; a repeated top-level heading takes the `[2]`-style suffix.
+- [x] 2.5 Failing test → implementation: block keys are unique within a note — a heading repeated among siblings at any level takes an occurrence suffix, not just a repeated top-level heading (design D2, divergence 5).
+- [x] 2.6 Fixture test: one representative note (frontmatter + preamble + nested headings + a code fence containing a `#` line) asserted whole — keys and spans together — as the chunker's golden output.
 
 ## 3. Embed text and the size gate — PR 1 [parallel-safe with 2, 4, 5]
 
-- [ ] 3.1 Failing test → implementation: block embed text = breadcrumbs (`/` → ` > `, final heading segment dropped, trailing `.md` removed) + `\n` + block text.
-- [ ] 3.2 Failing test → implementation: note embed text = path breadcrumbs + `:\n` + full text, truncated to the character budget from 1.3 (1894 for the 512-token default), cut without regard to word boundaries.
-- [ ] 3.3 Failing test → implementation: the 200-character gate for notes and blocks, plus the rule that a block entirely covered by sub-blocks which are themselves marked for embedding is skipped, while a parent holding text of its own outside them stays marked.
-- [ ] 3.4 Failing test → implementation: a note below the gate yields no note-level embed text but still yields its qualifying blocks.
-- [ ] 3.5 Test: extraction is deterministic and path-dependent — the same (path, content) yields byte-identical output twice, and the same content at a different path yields different note-level and block embed texts (spec: "Extraction is deterministic", "Moving a note changes its embed text").
+- [x] 3.1 Failing test → implementation: block embed text = breadcrumbs (`/` → ` > `, final heading segment dropped, trailing `.md` removed) + `\n` + block text.
+- [x] 3.2 Failing test → implementation: note embed text = path breadcrumbs + `:\n` + full text, truncated to the character budget from 1.3 (1894 for the 512-token default), cut without regard to word boundaries.
+- [x] 3.3 Failing test → implementation: the 200-character gate for notes and blocks, plus the rule that a block entirely covered by sub-blocks which are themselves marked for embedding is skipped, while a parent holding text of its own outside them stays marked.
+- [x] 3.4 Failing test → implementation: a note below the gate yields no note-level embed text but still yields its qualifying blocks.
+- [x] 3.5 Test: extraction is deterministic and path-dependent — the same (path, content) yields byte-identical output twice, and the same content at a different path yields different note-level and block embed texts (spec: "Extraction is deterministic", "Moving a note changes its embed text").
 
 ## 4. Tokenizer cap in the embedding service — PR 1 [parallel-safe with 2, 3, 5]
 
-- [ ] 4.1 Failing test → implementation: `EmbeddingService` caps the tokenizer at the model's real maximum sequence length after pipeline creation, guarded so a pipeline without a reachable tokenizer property does not throw (design D3).
-- [ ] 4.2 Test: an input whose tokenization exceeds the window returns a vector of the model's dimension instead of raising. Use a fake pipeline for the unit test; add one integration-style test behind the real model only if the suite already tolerates loading it.
+- [x] 4.1 Failing test → implementation: `EmbeddingService` caps the tokenizer at the model's real maximum sequence length after pipeline creation, guarded so a pipeline without a reachable tokenizer property does not throw (design D3).
+- [x] 4.2 Test: an input whose tokenization exceeds the window returns a vector of the model's dimension instead of raising. Use a fake pipeline for the unit test; add one integration-style test behind the real model only if the suite already tolerates loading it.
 
 ## 5. Shard store and manifest — PR 1 [parallel-safe with 2, 3, 4]
 
-- [ ] 5.1 Add `write-file-atomic` as a runtime dependency; record in the PR description that it is ISC and pure JS (no native build, Node floor unchanged).
-- [ ] 5.2 Failing test → implementation: base64 ↔ `Float32Array` codec, bit-exact round-trip, decoding through an explicit `byteOffset`/length view (never a bare `.buffer`), with a guard rejecting a non-little-endian host.
-- [ ] 5.3 Failing test → implementation: shard path derivation — `notes/<sha256(path) truncated to 32 hex>.json` — and shard write/read through `write-file-atomic`.
-- [ ] 5.4 Failing test → implementation: a shard that fails to parse, fails validation, or carries a `path` inconsistent with its filename reads as absent, never throws (spec: "Every corpus write is atomic and corruption is recoverable").
-- [ ] 5.5 Failing test → implementation: a shard holding a vector whose length differs from the manifest's `dims` reads as absent (parity checklist item 8 — the replaced loader throws on mixed dimensions; ours repairs instead).
-- [ ] 5.6 Failing test → implementation: `listShards()` reads every shard into a `Map<path, shard>` for reconcile, skipping unreadable ones.
-- [ ] 5.7 Failing test → implementation: manifest read/write and the compatibility predicate over `embed_version`, `model_key`, `dims`, `strategy`; manifest written only when those values change; missing-or-unreadable manifest with shards present reads as incompatible.
-- [ ] 5.8 Failing test → implementation: best-effort `.gitignore` append — one `.neuro-vault/corpus/` entry, only when the root `.gitignore` exists and does not already ignore the corpus, other lines untouched, idempotent across runs, failure warns on stderr and never throws (design D6).
+- [x] 5.1 Add `write-file-atomic` as a runtime dependency; record in the PR description that it is ISC and pure JS (no native build, Node floor unchanged).
+- [x] 5.2 Failing test → implementation: base64 ↔ `Float32Array` codec, bit-exact round-trip, decoding through an explicit `byteOffset`/length view (never a bare `.buffer`), with a guard rejecting a non-little-endian host.
+- [x] 5.3 Failing test → implementation: shard path derivation — `notes/<sha256(path) truncated to 32 hex>.json` — and shard write/read through `write-file-atomic`.
+- [x] 5.4 Failing test → implementation: a shard that fails to parse, fails validation, or carries a `path` inconsistent with its filename reads as absent, never throws (spec: "Every corpus write is atomic and corruption is recoverable").
+- [x] 5.5 Failing test → implementation: a shard holding a vector whose length differs from the manifest's `dims` reads as absent (parity checklist item 8 — the replaced loader throws on mixed dimensions; ours repairs instead).
+- [x] 5.6 Failing test → implementation: `listShards()` reads every shard into a `Map<path, shard>` for reconcile, skipping unreadable ones.
+- [x] 5.7 Failing test → implementation: manifest read/write and the compatibility predicate over `embed_version`, `model_key`, `dims`, `strategy`; manifest written only when those values change; missing-or-unreadable manifest with shards present reads as incompatible.
+- [x] 5.8 Failing test → implementation: best-effort `.gitignore` append — one `.neuro-vault/corpus/` entry, only when the root `.gitignore` exists and does not already ignore the corpus, other lines untouched, idempotent across runs, failure warns on stderr and never throws (design D6).
 
 ## 6. PR 1 gates and delivery [sequential]
 
-- [ ] 6.1 `npm test`, `npm run lint`, `npm run typecheck`, `npx openspec validate --all` all green; paste the output in the PR body.
+- [x] 6.1 `npm test`, `npm run lint`, `npm run typecheck`, `npx openspec validate --all` all green; paste the output in the PR body.
 - [ ] 6.2 Open PR 1 (`Refs #82`) covering groups 1–5 and stop. Do not start group 7 before it is merged.
 
 ## 7. Reconcile core — PR 2 [sequential, needs 1–5 merged]
