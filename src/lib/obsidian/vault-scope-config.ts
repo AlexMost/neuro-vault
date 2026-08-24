@@ -1,7 +1,7 @@
 import { readFile as fsReadFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { createVaultScope, type VaultScope } from './vault-scope.js';
+import { createVaultScope, isUsableExclusionPattern, type VaultScope } from './vault-scope.js';
 
 /** Vault-relative location of the per-vault scope config. */
 export const SCOPE_CONFIG_PATH = '.neuro-vault/config.json';
@@ -29,8 +29,14 @@ export async function loadVaultScope(
   let gitignoreLines: string[] | undefined;
   try {
     gitignoreLines = (await readFile(path.join(vaultRoot, '.gitignore'), 'utf8')).split(/\r?\n/);
-  } catch {
+  } catch (err) {
     gitignoreLines = undefined;
+    // A missing .gitignore is the common case and stays silent; anything else
+    // (EACCES, EIO) silently *widens* scope, so it gets the same visibility
+    // the config failures get (design D5).
+    if ((err as { code?: string }).code !== 'ENOENT') {
+      warn(`neuro-vault: cannot read .gitignore for vault at ${vaultRoot}; using default scope`);
+    }
   }
 
   let configExclusions: string[] | undefined;
@@ -45,7 +51,7 @@ export async function loadVaultScope(
     }
   }
 
-  return createVaultScope({ gitignoreLines, configExclusions });
+  return createVaultScope({ gitignoreLines, configExclusions, warn });
 }
 
 function parseExclusions(
@@ -65,8 +71,14 @@ function parseExclusions(
     warnInvalidJson();
     return undefined;
   }
-  if (parsed === null) {
-    warnInvalidJson();
+  // Valid JSON of the wrong shape (`null`, `[...]`, `"glob"`, `42`) would
+  // otherwise yield `undefined` from the `.exclusions` lookup and be
+  // indistinguishable from "valid object, no exclusions key" — a bare array of
+  // globs is the natural mis-write of this format and must not be silent (D5).
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    warn(
+      `neuro-vault: ${SCOPE_CONFIG_PATH} must be a JSON object with an "exclusions" array (vault at ${vaultRoot}); using default scope`,
+    );
     return undefined;
   }
   const exclusions = (parsed as { exclusions?: unknown }).exclusions;
@@ -77,5 +89,14 @@ function parseExclusions(
     );
     return undefined;
   }
-  return exclusions;
+  // An empty entry makes picomatch throw and a `!`-prefixed one inverts the
+  // predicate; drop them here so the user sees which entry was rejected.
+  const rejected = exclusions.filter((e) => !isUsableExclusionPattern(e));
+  if (rejected.length > 0) {
+    warn(
+      `neuro-vault: ignoring unusable "exclusions" entries in ${SCOPE_CONFIG_PATH} (vault at ${vaultRoot}): ` +
+        `${rejected.map((e) => JSON.stringify(e)).join(', ')} — an entry must be non-empty and must not start with "!" (exclusions only add, never re-include)`,
+    );
+  }
+  return exclusions.filter(isUsableExclusionPattern);
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   createVaultScope,
@@ -46,6 +46,42 @@ describe('createVaultScope', () => {
     const scope = createVaultScope({ configExclusions: ['Archive/**'] });
     expect(scope.isExcluded('Archive/old.md')).toBe(true);
     expect(scope.isExcluded('Templates/Daily.md')).toBe(true); // default survives
+  });
+
+  it('never throws on an empty config exclusion, and ignores it', () => {
+    // picomatch throws "Expected pattern to be a non-empty string" on '';
+    // the throw would escape loadVaultScope and reject VaultRegistry.create.
+    const scope = createVaultScope({ configExclusions: ['', '   ', 'Archive/**'] });
+    expect(scope.isExcluded('Archive/old.md')).toBe(true);
+    expect(scope.isExcluded('Projects/a.md')).toBe(false);
+    expect(scope.ignorePatterns).not.toContain('');
+  });
+
+  it('drops negated config exclusions instead of inverting membership', () => {
+    // picomatch reads a leading '!' as its own negation operator, which would
+    // flip the whole predicate; union-only is the contract (design D2).
+    const scope = createVaultScope({ configExclusions: ['!Keep/**'] });
+    expect(scope.isExcluded('Projects/a.md')).toBe(false);
+    expect(scope.isExcluded('Keep/a.md')).toBe(false);
+    expect(scope.isExcluded('Templates/Daily.md')).toBe(true); // defaults survive
+  });
+
+  it('warns when a gitignore entry compiles to a catch-all', () => {
+    const warn = vi.fn();
+    const scope = createVaultScope({ gitignoreLines: ['*', '!Notes/'], warn });
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0][0]).toContain('*');
+    expect(scope.isExcluded('Notes/a.md')).toBe(true); // documented hazard, not fixed
+  });
+
+  it('does not warn for an ordinary gitignore', () => {
+    const warn = vi.fn();
+    createVaultScope({ gitignoreLines: ['docs/superpowers/', '# comment', ''], warn });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('is usable without a warn callback when a catch-all is present', () => {
+    expect(() => createVaultScope({ gitignoreLines: ['**'] })).not.toThrow();
   });
 
   it('exposes the same membership via ignorePatterns', () => {

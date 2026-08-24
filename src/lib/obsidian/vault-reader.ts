@@ -56,7 +56,7 @@ export type FsGlob = (
     onlyFiles: boolean;
     dot: boolean;
     followSymbolicLinks: boolean;
-    ignore: string[];
+    ignore: readonly string[];
   },
 ) => Promise<string[]>;
 
@@ -80,7 +80,9 @@ export class FsVaultReader implements VaultReader {
     this.scope = opts.scope;
     this.readFile = opts.readFile ?? ((p, enc) => fsReadFile(p, enc));
     this.stat = opts.stat ?? ((p) => fsStat(p));
-    this.glob = opts.glob ?? ((pattern, options) => fastGlob(pattern, { ...options }));
+    this.glob =
+      opts.glob ??
+      ((pattern, options) => fastGlob(pattern, { ...options, ignore: [...options.ignore] }));
   }
 
   async readNotes(input: ReadNotesInput): Promise<ReadNotesItem[]> {
