@@ -6,6 +6,8 @@ const FENCE_RE = /^\s*(```|~~~)/;
 interface OpenSection {
   level: number;
   key: string;
+  /** The heading's own text, disambiguated the same way the key's last segment is. */
+  title: string;
   start: number;
   /** 1-based line of this section's first child heading, if any. */
   firstChildStart?: number;
@@ -36,6 +38,25 @@ function splitContentChunks(lines: string[], start: number, end: number): Conten
   return chunks;
 }
 
+/**
+ * Marks every line from `from` on that cannot open a heading: a fence delimiter
+ * itself, or any line inside a fence. Computed once so the preamble scan and the
+ * heading loop can never disagree about where a fence is.
+ */
+function fencedLines(lines: string[], from: number): boolean[] {
+  const fenced = new Array<boolean>(lines.length).fill(false);
+  let inFence = false;
+  for (let i = from; i < lines.length; i += 1) {
+    if (FENCE_RE.test(lines[i] ?? '')) {
+      fenced[i] = true;
+      inFence = !inFence;
+      continue;
+    }
+    fenced[i] = inFence;
+  }
+  return fenced;
+}
+
 function frontmatterEnd(lines: string[]): number {
   if ((lines[0] ?? '').trim() !== '---') return 0;
   for (let i = 1; i < lines.length; i += 1) {
@@ -50,12 +71,11 @@ export function chunkNote(content: string): ChunkedBlock[] {
   const open: OpenSection[] = [];
   /** (parent key + title) -> occurrences, so a repeat is disambiguated at any level. */
   const headingCounts = new Map<string, number>();
-  let inFence = false;
 
   const close = (section: OpenSection, endLine: number) => {
     blocks.push({
       key: section.key,
-      heading: section.key.split('#').filter(Boolean).slice(-1)[0] ?? '',
+      heading: section.title,
       lines: [section.start, endLine],
       text: lines.slice(section.start - 1, endLine).join('\n'),
     });
@@ -88,7 +108,10 @@ export function chunkNote(content: string): ChunkedBlock[] {
       text: lines.slice(0, fmEnd).join('\n'),
     });
   }
-  const firstHeading = lines.findIndex((l, idx) => idx >= fmEnd && HEADING_RE.test(l));
+  const fenced = fencedLines(lines, fmEnd);
+  const firstHeading = lines.findIndex(
+    (l, idx) => idx >= fmEnd && !fenced[idx] && HEADING_RE.test(l),
+  );
   const preambleEnd = firstHeading === -1 ? lines.length : firstHeading;
   if (preambleEnd > fmEnd && lines.slice(fmEnd, preambleEnd).join('').trim() !== '') {
     blocks.push({
@@ -100,13 +123,8 @@ export function chunkNote(content: string): ChunkedBlock[] {
   }
 
   for (let i = fmEnd; i < lines.length; i += 1) {
-    const line = lines[i] ?? '';
-    if (FENCE_RE.test(line)) {
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) continue;
-    const match = HEADING_RE.exec(line);
+    if (fenced[i]) continue;
+    const match = HEADING_RE.exec(lines[i] ?? '');
     if (!match) continue;
 
     const level = match[1].length;
@@ -126,6 +144,7 @@ export function chunkNote(content: string): ChunkedBlock[] {
     open.push({
       level,
       key: `${parent ? parent.key : ''}${separator}${title}`,
+      title,
       start: i + 1,
     });
   }

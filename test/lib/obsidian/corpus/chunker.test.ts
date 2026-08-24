@@ -25,6 +25,43 @@ describe('chunkNote', () => {
     expect(byKey(content, '#Top')?.lines).toEqual([1, 5]);
   });
 
+  it('does not let a fenced "#" in the preamble end the preamble early', () => {
+    // The preamble scan and the heading loop must agree about fences: if only the
+    // loop knows, the lines between the fence and the real heading fall in no block.
+    const content = [
+      '---',
+      'a: 1',
+      '---',
+      'Intro paragraph',
+      '```',
+      '# not a heading',
+      '```',
+      '# Real Heading',
+      'body',
+    ].join('\n');
+    expect(keys(content)).toEqual(['#---frontmatter---', '#', '#Real Heading']);
+    expect(byKey(content, '#')?.lines).toEqual([4, 7]);
+    expect(byKey(content, '#Real Heading')?.lines).toEqual([8, 9]);
+    // Every line 1..9 is covered by some block.
+    const covered = new Set<number>();
+    for (const b of chunkNote(content)) {
+      for (let n = b.lines[0]; n <= b.lines[1]; n += 1) covered.add(n);
+    }
+    expect([...covered].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+  });
+
+  it('keeps a section unbroken when a fence between two headings contains "#"', () => {
+    const content = ['# A', '```', '# fake', '```', '# B', 'body'].join('\n');
+    expect(keys(content)).toEqual(['#A', '#B']);
+    expect(byKey(content, '#A')?.lines).toEqual([1, 4]);
+    expect(byKey(content, '#B')?.lines).toEqual([5, 6]);
+  });
+
+  it('takes heading from the heading text, not by splitting the key on "#"', () => {
+    const content = ['# C# notes', 'body'].join('\n');
+    expect(byKey(content, '#C# notes')?.heading).toBe('C# notes');
+  });
+
   it('encodes a skipped heading level in the separator', () => {
     const content = ['# Top', '### Deep', 'x'].join('\n');
     expect(keys(content)).toContain('#Top##Deep');

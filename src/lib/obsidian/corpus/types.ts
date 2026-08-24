@@ -3,7 +3,9 @@ export interface ChunkedBlock {
   /** Heading path within the note, e.g. "#Top#Inner". Never includes the note path. */
   key: string;
   /**
-   * The last heading segment of `key` ("Inner"). The frontmatter block carries
+   * The block's own heading text as written ("Inner"), carrying the same `[n]`
+   * repeat suffix the key's last segment carries. Never re-derived from `key`,
+   * which a heading containing "#" would corrupt. The frontmatter block carries
    * "---frontmatter---"; the preamble block and numbered content chunks carry "".
    */
   heading: string;
