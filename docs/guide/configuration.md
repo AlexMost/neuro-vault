@@ -39,6 +39,20 @@ Keep it under **8,000 characters**: beyond that the field carries a trimmed slic
 
 Full behaviour: [`docs/architecture/vault-conventions.md`](../architecture/vault-conventions.md).
 
+## Excluding paths from discovery
+
+By default, every note the server discovers — for `search_notes`, `query_notes`, tag/property listings, `get_vault_overview` counts, backlinks, and note-name resolution — excludes dot-directories (`.obsidian/`, `.git/`, `.neuro-vault/`, …), `Templates/`, and every entry named in the vault root's `.gitignore`, if one exists. `read_notes` with an explicit path is unaffected by any of this — it is a direct read, not a discovery call.
+
+To exclude additional paths, add an optional `<vault>/.neuro-vault/config.json`:
+
+```json
+{ "exclusions": ["Archive/**", "Scratch/**"] }
+```
+
+Each entry is a glob, anchored at the vault root, added on top of the built-in defaults — this list can only exclude more, not re-include something the defaults already exclude. The file is read once, when the server starts; edit it and restart the server to pick up the change. A missing file means the built-in defaults only, silently. An unreadable file, invalid JSON, or an `"exclusions"` value that isn't a string array falls back to the defaults and logs a warning to stderr — the server keeps running.
+
+Full behaviour, including the exact `.gitignore` subset that's honoured: [`docs/architecture/vault-scope.md`](../architecture/vault-scope.md).
+
 ## Troubleshooting
 
 **"Smart Connections directory does not exist"** — make sure the Smart Connections plugin has run and generated embeddings. Open Obsidian, let Smart Connections finish indexing, then restart the MCP server.

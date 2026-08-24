@@ -4,6 +4,8 @@ Everything for locating notes: fuzzy recall over meaning, exact text matching, s
 
 For the retrieval internals behind each tool, see [`docs/architecture/`](../architecture/): [`retrieval-policy.md`](../architecture/retrieval-policy.md) (semantic leg), [`lexical-search.md`](../architecture/lexical-search.md) (lexical leg), [`query.md`](../architecture/query.md) (`query_notes`).
 
+Some vault paths are never searchable, on any of the tools below: dot-directories (`.obsidian/`, `.git/`, `.neuro-vault/`, …), `Templates/`, entries in the vault root's `.gitignore`, and anything an optional `.neuro-vault/config.json` names. This applies to `search_notes`, `query_notes`, tag/property listings, `get_vault_overview` counts, and backlink counts alike — see [`docs/architecture/vault-scope.md`](../architecture/vault-scope.md). `read_notes` with an explicit path is the one exception: it reads regardless.
+
 ## One search entry point
 
 ### `search_notes`
