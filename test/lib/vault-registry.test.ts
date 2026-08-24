@@ -8,6 +8,7 @@ import {
 } from '../../src/lib/vault-registry.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import { createVaultScope } from '../../src/lib/obsidian/vault-scope.js';
+import { loadVaultScope } from '../../src/lib/obsidian/vault-scope-config.js';
 import type { IVaultConfig } from '../../src/types.js';
 
 // Type-level guard: writer and provider must be required on IVaultEntry.
@@ -281,5 +282,34 @@ describe('createVaultRegistry', () => {
     expect(scopeFactory).toHaveBeenCalledWith({ vaultRoot: '/a' });
     expect(readerFactory).toHaveBeenCalledWith({ vaultRoot: '/a', scope });
     expect(registry.require('A').scope).toBe(scope);
+  });
+
+  it('still builds every entry when one vault has an unusable exclusions entry', async () => {
+    // A `""` entry used to make picomatch throw out of createVaultScope, past
+    // loadVaultScope's try/catch blocks, and reject VaultRegistry.create — one
+    // typo in one optional config stopped the whole multi-vault server.
+    const warn = vi.fn();
+    const readFile = vi.fn(async (absPath: string) => {
+      if (absPath === '/bad/.neuro-vault/config.json') return JSON.stringify({ exclusions: [''] });
+      const err = new Error('ENOENT') as Error & { code?: string };
+      err.code = 'ENOENT';
+      throw err;
+    });
+    const registry = await VaultRegistry.create(
+      {
+        vaults: [vault('good', '/good'), vault('bad', '/bad')],
+        semanticEnabled: false,
+        modelKey: 'k',
+      },
+      {
+        ...fakeDeps(),
+        scopeFactory: ({ vaultRoot }) => loadVaultScope(vaultRoot, { readFile, warn }),
+      },
+    );
+    expect(registry.list().map((e) => e.name)).toEqual(['good', 'bad']);
+    // Defaults still apply for the vault with the bad entry, and it was flagged.
+    expect(registry.require('bad').scope.isExcluded('Templates/Daily.md')).toBe(true);
+    expect(registry.require('bad').scope.isExcluded('Projects/a.md')).toBe(false);
+    expect(warn).toHaveBeenCalledOnce();
   });
 });
