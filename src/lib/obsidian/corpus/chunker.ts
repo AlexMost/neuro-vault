@@ -85,7 +85,11 @@ function scanHeadings(lines: string[], fmEnd: number): HeadingHit[] {
   const hits: HeadingHit[] = [];
   for (const node of root.children) {
     if (node.type !== 'heading') continue;
-    const line = (node.position?.start.line ?? 1) + fmEnd;
+    // `fromMarkdown` always populates `position`; skipping rather than defaulting keeps
+    // a hypothetical gap from aiming the title read at an unrelated real line, which
+    // would mint a heading block in the wrong place.
+    if (!node.position) continue;
+    const line = node.position.start.line + fmEnd;
     const title = atxTitleFromRawLine(lines[line - 1] ?? '');
     // Not an ATX heading, i.e. a setext one: the spec splits at ATX headings only.
     if (title === null) continue;

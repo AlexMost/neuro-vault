@@ -246,6 +246,22 @@ describe('chunkNote block detection (CommonMark)', () => {
     expect(byKey(content, '#A')?.lines).toEqual([1, 5]);
   });
 
+  it('folds a section into the block above when an HTML block runs on to it', () => {
+    // The likeliest real-vault surprise of the AST swap: an HTML block ends at a blank
+    // line, not at its closing tag, so a `## Section` with no blank line above it is
+    // HTML content and opens no block. Content is not lost - the enclosing section's
+    // span still covers it - but the block count drops.
+    const content = ['# Top', '<table>', '<tr><td>x</td></tr>', '</table>', '## Section', 'body'];
+    expect(keys(content.join('\n'))).toEqual(['#Top']);
+    expect(byKey(content.join('\n'), '#Top')?.lines).toEqual([1, 6]);
+
+    // One blank line before the heading ends the HTML block and restores the boundary.
+    const spaced = ['# Top', '<div>', '<p>x</p>', '', '## Section', 'body'].join('\n');
+    expect(keys(spaced)).toEqual(['#Top', '#Top#Section']);
+    expect(byKey(spaced, '#Top')?.lines).toEqual([1, 6]);
+    expect(byKey(spaced, '#Top#Section')?.lines).toEqual([5, 6]);
+  });
+
   it('does not open a block for a heading inside a blockquote or a list item', () => {
     const content = ['# A', '> # Quoted', '- item', '  # In list', 'tail'].join('\n');
     expect(keys(content)).toEqual(['#A']);
