@@ -203,20 +203,22 @@ describe('chunkNote block detection (CommonMark)', () => {
     expect(byKey(content, '#B')?.lines).toEqual([5, 6]);
   });
 
-  it('opens a block on a setext heading', () => {
+  // Setext headings were considered and deliberately rejected: extraction splits at ATX
+  // headings of levels 1-6, and the AST is used to locate those, not to widen what counts
+  // as a heading. These two tests pin that decision.
+  it('does not open a block on a setext heading', () => {
     const content = ['Title', '=====', 'body', '# Real', 'x'].join('\n');
-    expect(keys(content)).toEqual(['#Title', '#Real']);
-    expect(byKey(content, '#Title')?.heading).toBe('Title');
-    expect(byKey(content, '#Title')?.lines).toEqual([1, 3]);
+    expect(keys(content)).toEqual(['#', '#Real']);
+    expect(byKey(content, '#')?.lines).toEqual([1, 3]);
     expect(byKey(content, '#Real')?.lines).toEqual([4, 5]);
   });
 
-  it('gives a "---" setext heading level 2', () => {
+  it('does not let a paragraph above a "---" separator open a block', () => {
+    // A paragraph directly above `---` is a setext H2 to CommonMark, and writing a
+    // separator with no blank line above it is common; the section must stay unbroken.
     const content = ['# Top', 'Sub', '---', 'body'].join('\n');
-    expect(keys(content)).toEqual(['#Top', '#Top#Sub']);
+    expect(keys(content)).toEqual(['#Top']);
     expect(byKey(content, '#Top')?.lines).toEqual([1, 4]);
-    expect(byKey(content, '#Top#Sub')?.lines).toEqual([2, 4]);
-    expect(byKey(content, '#Top#Sub')?.heading).toBe('Sub');
   });
 
   it('opens a block on an ATX heading indented up to three spaces', () => {
@@ -225,6 +227,17 @@ describe('chunkNote block detection (CommonMark)', () => {
     expect(byKey(content, '#A')?.lines).toEqual([1, 1]);
     expect(byKey(content, '#Three spaces')?.lines).toEqual([2, 3]);
     expect(byKey(content, '#Three spaces')?.heading).toBe('Three spaces');
+  });
+
+  it('does not open a block for a "#" comment inside frontmatter', () => {
+    // Frontmatter is stripped before parsing; parsed as Markdown, its YAML comment
+    // would be a heading.
+    const content = ['---', '# yaml comment', 'type: note', '---', 'intro', '# Real', 'x'].join(
+      '\n',
+    );
+    expect(keys(content)).toEqual(['#---frontmatter---', '#', '#Real']);
+    expect(byKey(content, '#---frontmatter---')?.lines).toEqual([1, 4]);
+    expect(byKey(content, '#Real')?.lines).toEqual([6, 7]);
   });
 
   it('does not open a block for a "#" line inside an HTML block', () => {

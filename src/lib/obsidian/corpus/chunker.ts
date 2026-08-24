@@ -51,38 +51,46 @@ function splitContentChunks(lines: string[], start: number, end: number): Conten
 }
 
 /**
- * The heading's title as the *source* writes it, never as CommonMark renders it:
+ * The ATX heading's title as the *source* writes it, never as CommonMark renders it:
  * `# **Bold** title` renders "Bold title" and `# Title ###` renders "Title" (the
  * closing hash run is eaten), either of which would move the block key of a note
- * whose key is already correct. A setext heading has no `#` prefix, so its raw line
- * trimmed is the title.
+ * whose key is already correct.
+ *
+ * Returns null when the line is not an ATX heading, which is how a setext heading is
+ * rejected: the spec splits notes "at ATX headings of levels 1-6", and a paragraph
+ * sitting directly above a `---` separator is a setext H2 to CommonMark, so honouring
+ * setext would mint a block whose title is a whole sentence.
  */
-function titleFromRawLine(raw: string): string {
+function atxTitleFromRawLine(raw: string): string | null {
   const prefix = ATX_PREFIX_RE.exec(raw);
-  return (prefix ? raw.slice(prefix[0].length) : raw).trim();
+  if (!prefix) return null;
+  return raw.slice(prefix[0].length).trim();
 }
 
 /**
  * Every heading that opens a block, in source order. The AST decides where a heading
  * is and what level it is; a line scanner cannot, because fence nesting, fences of
- * four or more backticks, indented code and setext headings are all beyond a regex —
- * and each one it gets wrong loses content silently, into no block at all.
+ * four or more backticks, indented code and HTML blocks are all beyond a regex — and
+ * each one it gets wrong loses content silently, into no block at all.
  *
  * Only root-level headings count. A heading inside a blockquote or a list item is a
  * `heading` node to CommonMark, but a `> # quoted` line opening a corpus block would
  * be surprising, so containers are not recursed into.
  */
 function scanHeadings(lines: string[], fmEnd: number): HeadingHit[] {
-  // Parse the body only: there is no frontmatter extension here, so an unstripped
-  // `---` would parse as a thematic break — or, after a paragraph, a setext heading.
+  // Parse the body only: there is no frontmatter extension here, so unstripped
+  // frontmatter would be parsed as Markdown, and a `# comment` line in the YAML
+  // would open a block. Line numbers are restored with the `fmEnd` offset.
   const root = fromMarkdown(lines.slice(fmEnd).join('\n'));
   const hits: HeadingHit[] = [];
   for (const node of root.children) {
     if (node.type !== 'heading') continue;
     const line = (node.position?.start.line ?? 1) + fmEnd;
-    const title = titleFromRawLine(lines[line - 1] ?? '');
-    // `#` alone is a heading with empty text; keyed, it would mint "#", which is
-    // the preamble block's key.
+    const title = atxTitleFromRawLine(lines[line - 1] ?? '');
+    // Not an ATX heading, i.e. a setext one: the spec splits at ATX headings only.
+    if (title === null) continue;
+    // `#` alone is an ATX heading with empty text. Its key would be "#", which is the
+    // preamble block's key, and block keys are required to be unique within a note.
     if (title === '') continue;
     hits.push({ line, level: node.depth, title });
   }
