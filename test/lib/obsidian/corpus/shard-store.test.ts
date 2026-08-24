@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, mkdir, readFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -179,14 +179,19 @@ describe('CorpusStore', () => {
     expect([...(await store.listShards()).keys()]).toEqual(['N.md']);
   });
 
-  it('lists shards concurrently, in a stable order', async () => {
+  it('reads shards concurrently, in a stable order', async () => {
     const root = await tempVault();
     const store = new CorpusStore(root);
     for (const p of ['C.md', 'A.md', 'B.md']) await store.writeShard(shard(p));
+    const entries = await readdir(path.join(root, '.neuro-vault/corpus/notes'));
+    const started: string[] = [];
     let inFlight = 0;
     let peak = 0;
     const traced = new CorpusStore(root, {
+      // Reversed, so a stable read order can only come from listShards sorting.
+      readdir: async () => [...entries].sort().reverse(),
       readFile: async (p) => {
+        started.push(path.basename(p));
         inFlight += 1;
         peak = Math.max(peak, inFlight);
         await new Promise((r) => setTimeout(r, 5));
@@ -196,6 +201,7 @@ describe('CorpusStore', () => {
     });
     expect(new Set((await traced.listShards()).keys())).toEqual(new Set(['A.md', 'B.md', 'C.md']));
     expect(peak).toBeGreaterThan(1);
+    expect(started).toEqual([...entries].sort());
   });
 
   it('clears every shard when the manifest is incompatible', async () => {
