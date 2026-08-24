@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import fastGlob from 'fast-glob';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
@@ -32,7 +33,33 @@ describe('vault scope end-to-end (real temp-dir vault)', () => {
   it('scan sees only the in-scope note: glob view and predicate agree on a real tree', async () => {
     const scope = await loadVaultScope(vaultRoot);
     const reader = new FsVaultReader({ vaultRoot, scope });
-    expect(await reader.scan()).toEqual(['Projects/alpha.md']);
+    const scanned = await reader.scan();
+    expect(scanned).toEqual(['Projects/alpha.md']);
+
+    // Spec vault-scope R1, scenario "Predicate and glob views agree": enumerate
+    // the same tree independently — no `ignore`, so nothing is pruned at
+    // traversal time — and filter with the predicate alone. `dot: false`
+    // mirrors what the scan enumerates with; the predicate's dot rule is the
+    // same restriction expressed the other way.
+    const everything = await fastGlob('**/*.md', {
+      cwd: vaultRoot,
+      onlyFiles: true,
+      dot: false,
+      followSymbolicLinks: false,
+    });
+    const predicateOnly = everything.filter((p) => !scope.isExcluded(p)).sort();
+    expect(predicateOnly).toEqual(scanned);
+  });
+
+  it('a prefixed scan over a real tree still honours the scope predicate', async () => {
+    // The riskiest branch: fast-glob's cwd moves into the prefix, so the
+    // root-anchored ignore patterns are deliberately not passed and the
+    // post-filter is the only thing keeping `docs/superpowers/` (gitignored)
+    // out of the result.
+    const scope = await loadVaultScope(vaultRoot);
+    const reader = new FsVaultReader({ vaultRoot, scope });
+    expect(await reader.scan({ pathPrefix: 'docs' })).toEqual([]);
+    expect(await reader.scan({ pathPrefix: 'Projects' })).toEqual(['Projects/alpha.md']);
   });
 
   it('tag listings skip excluded notes (Templates, gitignored, config-excluded)', async () => {
