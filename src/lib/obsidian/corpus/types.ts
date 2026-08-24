@@ -2,7 +2,10 @@
 export interface ChunkedBlock {
   /** Heading path within the note, e.g. "#Top#Inner". Never includes the note path. */
   key: string;
-  /** The last heading segment of `key` ("Inner"), or "" for the root/frontmatter blocks. */
+  /**
+   * The last heading segment of `key` ("Inner"). The frontmatter block carries
+   * "---frontmatter---"; the preamble block and numbered content chunks carry "".
+   */
   heading: string;
   /** 1-based inclusive line span within the note. */
   lines: [number, number];

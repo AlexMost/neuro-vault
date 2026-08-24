@@ -13,6 +13,10 @@ describe('chunkNote', () => {
     expect(keys(content)).toEqual(expect.arrayContaining(['#Top', '#Top#Inner']));
     expect(byKey(content, '#Top')?.lines).toEqual([1, 4]);
     expect(byKey(content, '#Top#Inner')?.lines).toEqual([3, 4]);
+    expect(byKey(content, '#Top')?.heading).toBe('Top');
+    expect(byKey(content, '#Top')?.text).toBe(content);
+    expect(byKey(content, '#Top#Inner')?.heading).toBe('Inner');
+    expect(byKey(content, '#Top#Inner')?.text).toBe('## Inner\nbeta');
   });
 
   it('ignores headings inside code fences', () => {
@@ -45,6 +49,11 @@ describe('chunkNote', () => {
     expect(keys(content)).toEqual(['#---frontmatter---', '#', '#Top']);
     expect(byKey(content, '#---frontmatter---')?.lines).toEqual([1, 3]);
     expect(byKey(content, '#')?.lines).toEqual([4, 4]);
+    // heading contract (see ChunkedBlock in types.ts): the frontmatter block carries
+    // "---frontmatter---"; the preamble block carries "".
+    expect(byKey(content, '#---frontmatter---')?.heading).toBe('---frontmatter---');
+    expect(byKey(content, '#')?.heading).toBe('');
+    expect(byKey(content, '#---frontmatter---')?.text).toBe('---\ntype: note\n---');
   });
 
   it('emits no preamble block when a heading opens the note', () => {
@@ -60,9 +69,11 @@ describe('chunkNote', () => {
 
   it('matches the golden chunking of the sample note', () => {
     const content = readFileSync(new URL('./fixtures/sample-note.md', import.meta.url), 'utf8');
-    expect(chunkNote(content).map((b) => ({ key: b.key, lines: b.lines }))).toMatchInlineSnapshot(`
+    expect(chunkNote(content).map((b) => ({ key: b.key, heading: b.heading, lines: b.lines })))
+      .toMatchInlineSnapshot(`
       [
         {
+          "heading": "---frontmatter---",
           "key": "#---frontmatter---",
           "lines": [
             1,
@@ -70,6 +81,7 @@ describe('chunkNote', () => {
           ],
         },
         {
+          "heading": "",
           "key": "#",
           "lines": [
             4,
@@ -77,6 +89,7 @@ describe('chunkNote', () => {
           ],
         },
         {
+          "heading": "Top",
           "key": "#Top",
           "lines": [
             6,
@@ -84,6 +97,7 @@ describe('chunkNote', () => {
           ],
         },
         {
+          "heading": "",
           "key": "#Top#{1}",
           "lines": [
             8,
@@ -91,6 +105,7 @@ describe('chunkNote', () => {
           ],
         },
         {
+          "heading": "",
           "key": "#Top#{2}",
           "lines": [
             10,
@@ -98,6 +113,7 @@ describe('chunkNote', () => {
           ],
         },
         {
+          "heading": "Inner",
           "key": "#Top#Inner",
           "lines": [
             12,
@@ -105,6 +121,7 @@ describe('chunkNote', () => {
           ],
         },
         {
+          "heading": "",
           "key": "#Top#Inner#{1}",
           "lines": [
             14,
@@ -112,6 +129,7 @@ describe('chunkNote', () => {
           ],
         },
         {
+          "heading": "",
           "key": "#Top#Inner#{2}",
           "lines": [
             18,
