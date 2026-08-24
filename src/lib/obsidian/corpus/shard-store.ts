@@ -97,10 +97,13 @@ export class CorpusStore {
   }
 
   /**
-   * Reads and validates a shard file. A corrupt shard is a missing shard: parse
-   * failure, schema failure, a `path` that doesn't hash back to the filename it
-   * was found under, or a vector whose base64 byte length disagrees with
-   * `dims * 4` all read as `null` rather than throwing.
+   * Reads and validates a shard file. Any failure to read, parse, or validate
+   * it — including an I/O or permission error, not just the spec-named
+   * corruption cases (parse failure, schema failure, a `path` that doesn't
+   * hash back to the filename it was found under, or a vector whose base64
+   * byte length disagrees with `dims * 4`) — reads as `null` rather than
+   * throwing, and emits a warning. The note is simply re-embedded on the next
+   * pass: no corpus or filesystem problem is fatal to the process.
    */
   private async readShardFile(file: string): Promise<CorpusShard | null> {
     let raw: string;
