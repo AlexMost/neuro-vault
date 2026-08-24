@@ -6,8 +6,8 @@ These are living documents. Update the relevant file in the same change that alt
 
 ## Concepts
 
-- [mcp-server-shape.md](./mcp-server-shape.md) — how MCP tools are registered, response/error wrappers, resource URIs, and where the `instructions` string is composed
-- [vault-conventions.md](./vault-conventions.md) — how `.neuro-vault/for-external-agents.md` reaches an agent: the `conventions` field on `get_vault_overview`, the `instructions` ordering and 2048-character budget, the 8,000-character cap and its truncation flag
+- [mcp-server-shape.md](./mcp-server-shape.md) — how MCP tools are registered, response/error wrappers, resource URIs, and where the `instructions` constant lives
+- [vault-conventions.md](./vault-conventions.md) — how `.neuro-vault/for-external-agents.md` reaches an agent: the `conventions` field on `get_vault_overview`, the 8,000-character cap and its truncation flag, and the pointer that is all `instructions` carries
 - [tool-response-envelope.md](./tool-response-envelope.md) — the `toToolResponse`/`toToolErrorResponse` choke point: minified success text, `CODE: message` error text, client-behavior rationale
 - [mcp-parameter-dictionary.md](./mcp-parameter-dictionary.md) — the cross-tool parameter naming contract (one concept = one name)
 - [smart-connections-corpus.md](./smart-connections-corpus.md) — `.ajson` loader, in-memory model, no watchers
