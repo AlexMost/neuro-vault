@@ -96,7 +96,7 @@ After the migration completes, the operations module SHALL NOT invoke any extern
 
 ### Requirement: Tag and property listings aggregate from the vault scan
 
-`listTags` and `listProperties` SHALL return `{ name, count }` entries aggregated from the same disk scan that powers `query_notes`; property counting SHALL include frontmatter keys only, and tag counting SHALL include the per-note union of frontmatter `tags:` values and inline body `#tags`, counting each distinct tag at most once per note. Inline tags SHALL follow the Obsidian-documented grammar — `#` preceded by start-of-text or whitespace, tag characters `[A-Za-z0-9_/-]`, at least one non-numeric character, nested tags counted verbatim — and SHALL NOT be extracted from code fences, inline code, URL fragments, or markdown heading markers. The `tags` filter of `query_notes` and `search_notes` remains frontmatter-only; `list_tags` MAY therefore report tags that a `tags` filter cannot match, and both tool descriptions SHALL state this asymmetry.
+`listTags` and `listProperties` SHALL return `{ name, count }` entries aggregated from the same scoped disk scan that powers `query_notes` — notes excluded by the vault's scope (see the `vault-scope` capability) contribute to neither listing; property counting SHALL include frontmatter keys only, and tag counting SHALL include the per-note union of frontmatter `tags:` values and inline body `#tags`, counting each distinct tag at most once per note. Inline tags SHALL follow the Obsidian-documented grammar — `#` preceded by start-of-text or whitespace, tag characters `[A-Za-z0-9_/-]`, at least one non-numeric character, nested tags counted verbatim — and SHALL NOT be extracted from code fences, inline code, URL fragments, or markdown heading markers. The `tags` filter of `query_notes` and `search_notes` remains frontmatter-only; `list_tags` MAY therefore report tags that a `tags` filter cannot match, and both tool descriptions SHALL state this asymmetry.
 
 #### Scenario: Frontmatter tags are counted
 
@@ -137,4 +137,9 @@ After the migration completes, the operations module SHALL NOT invoke any extern
 
 - **WHEN** a frontmatter key `status` appears in five notes
 - **THEN** `list_properties` reports `{ name: "status", count: 5 }`
+
+#### Scenario: An out-of-scope note contributes no tags or properties
+
+- **WHEN** a note under a scope-excluded folder (e.g. `Templates/`) carries frontmatter `tags: [delta]` and a `status` property
+- **THEN** `delta` does not appear in `list_tags` and that note contributes nothing to `list_properties`
 
