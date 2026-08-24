@@ -62,7 +62,7 @@ Both reads go through the same module rather than each calling `createRequire` i
 
 ## Boundaries
 
-This file owns argv parsing and the decision to start the server or exit early — nothing past that line. Once `startNeuroVaultServer` builds the `McpServer` and connects its transport, [`mcp-server-shape.md`](./mcp-server-shape.md) takes over: tool/resource registration, the response/error envelope, and how `instructions` is composed. This file does not describe:
+This file owns argv parsing and the decision to start the server or exit early — nothing past that line. Once `startNeuroVaultServer` builds the `McpServer` and connects its transport, [`mcp-server-shape.md`](./mcp-server-shape.md) takes over: tool/resource registration, the response/error envelope, and where the `instructions` constant lives. This file does not describe:
 
 - Vault path validation details (`buildVaultConfig`'s absolute-path check, basename-as-alias rule, multi-vault duplicate detection) beyond what's needed to explain the `ParsedCli` union — those are `config.ts` implementation details, not startup-flow architecture.
 - Anything about the `ServerConfig` shape once it's handed to `startNeuroVaultServer`, or how the semantic/operations modules consume it.

@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 import { createSemanticModule, type ISemanticModuleDeps } from './modules/semantic/index.js';
 import { createOperationsModule } from './modules/operations/index.js';
-import { VaultRegistry, type IVaultEntryDeps, type IVaultRegistry } from './lib/vault-registry.js';
+import { VaultRegistry, type IVaultEntryDeps } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { FsVaultWriter } from './lib/obsidian/vault-writer.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
@@ -30,40 +30,32 @@ export interface NeuroVaultStartupDependencies {
 }
 
 /**
- * The server-authored half of the MCP `instructions` string, kept deliberately
- * tiny. Claude Code truncates `instructions` at 2048 characters and gives
- * sub-agents none of it, so this preamble has to leave room for the
- * owner-authored conventions block that `buildServerInstructions` emits ahead
- * of it. Everything a tool can say about itself — parameters, result shape,
- * multi-vault behaviour — belongs in that tool's `description`, which every
- * client receives in full. See docs/architecture/vault-conventions.md.
+ * The MCP `instructions` string. A constant: identical for every registry,
+ * independent of how many vaults are configured, what they are named, and
+ * whether any of them has a conventions file.
+ *
+ * It carries no vault content by design. Claude Code truncates `instructions`
+ * at 2048 characters *per server, not per vault*, and gives sub-agents none of
+ * it — so an owner's `for-external-agents.md` composed in here reached the
+ * first vault only, and above ~1,316 characters deleted this preamble instead.
+ * Conventions travel on the `get_vault_overview` response, which is uncapped,
+ * read fresh per call, and reaches sub-agents; all this string carries is the
+ * pointer to it. See ADR-0012 and docs/architecture/vault-conventions.md.
+ *
+ * The freed budget is headroom, not an allowance: anything a tool can say
+ * about itself belongs in that tool's `description` (ADR-0010), so do not grow
+ * this to fill 2048.
  */
-const STATIC_SERVER_INSTRUCTIONS = `\
+export const SERVER_INSTRUCTIONS = `\
 ## About this vault server
 
 This vault is the user's second brain — planning notes, decisions, reflections — and it usually outlives the project in front of you. Before brainstorming, writing a retrospective, or answering "why did we decide X", look here first; the answer often lives nowhere else.
 
 Exact anchor (path, daily note, tag, frontmatter field) → vault operations. Fuzzy recall or a conceptual question → \`search_notes\`. Each tool's own description carries the rest — parameters, result shape, multi-vault behaviour.
 
-You do not know how the user scopes notes to this project. Find out in this order: \`get_vault_overview\`, then \`search_notes\` on the project name, then ask the user.`;
+You do not know how the user scopes notes to this project. Find out in this order: \`get_vault_overview\`, then \`search_notes\` on the project name, then ask the user.
 
-export async function buildServerInstructions(registry: IVaultRegistry): Promise<string> {
-  // Conventions first, deliberately: the client truncates this string and the
-  // owner-authored block is the only part no tool description can substitute
-  // for. The preamble behind it is sized to fit in what is left.
-  const blocks: string[] = [];
-  for (const entry of registry.list()) {
-    const conventions = await entry.readConventions();
-    if (conventions !== null && conventions !== '') {
-      const heading = registry.isMulti()
-        ? `## Vault-specific conventions — ${entry.name}`
-        : '## Vault-specific conventions';
-      blocks.push(`${heading}\n\n${conventions}`);
-    }
-  }
-  blocks.push(STATIC_SERVER_INSTRUCTIONS);
-  return blocks.join('\n\n');
-}
+This server's vaults may carry owner-authored conventions — how notes are organised, which folders are off-limits, what \`type\` values exist. They arrive on the \`get_vault_overview\` response, not here; call it before reading or writing notes.`;
 
 function defaultServerFactory(instructions: string): ToolServer {
   return new McpServer({ name: SERVER_NAME, version: SERVER_VERSION }, { instructions });
@@ -105,10 +97,9 @@ export async function startNeuroVaultServer(
     buildDefaultVaultEntryDeps(deps.vaultEntryDeps),
   );
 
-  const instructions = await buildServerInstructions(registry);
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
   const transportFactory = deps.transportFactory ?? defaultTransportFactory;
-  const server = serverFactory(instructions);
+  const server = serverFactory(SERVER_INSTRUCTIONS);
 
   const toolRegistrations: ToolRegistration[] = [];
   const resourceRegistrations: ResourceRegistration[] = [];
