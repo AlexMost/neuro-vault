@@ -50,7 +50,7 @@ other groups at the same marker and can be dispatched concurrently.
 ## 6. PR 1 gates and delivery [sequential]
 
 - [x] 6.1 `npm test`, `npm run lint`, `npm run typecheck`, `npx openspec validate --all` all green; paste the output in the PR body.
-- [ ] 6.2 Open PR 1 (`Refs #82`) covering groups 1–5 and stop. Do not start group 7 before it is merged.
+- [x] 6.2 Open PR 1 (`Refs #82`) covering groups 1–5 and stop. Do not start group 7 before it is merged.
 
 ## 7. Reconcile core — PR 2 [sequential, needs 1–5 merged]
 
