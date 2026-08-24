@@ -12,7 +12,8 @@ A `VaultEntry` bundles everything a module or tool handler needs to reach one va
 | --------------------------- | ---------------------------------------- | ------------------------------------------------------------------------- |
 | `name`                      | always                                   | Unique identifier (left side of `--vault name:path`, or `path.basename`)  |
 | `path`                      | always                                   | Absolute path to the vault root                                           |
-| `reader`                    | always                                   | `FsVaultReader` — direct disk reads                                       |
+| `scope`                     | always                                   | `VaultScope` — which files are discoverable; see [`vault-scope.md`](./vault-scope.md) |
+| `reader`                    | always                                   | `FsVaultReader` — direct disk reads, filtered through `scope`             |
 | `writer`                    | always                                   | `FsVaultWriter` — direct disk writes for in-place edits                   |
 | `provider`                  | always                                   | `FsVaultProvider` — direct disk creates, daily notes, properties, tags   |
 | `graph`                     | always                                   | `WikilinkGraphIndex` — lazy wikilink adjacency                            |
@@ -22,6 +23,8 @@ A `VaultEntry` bundles everything a module or tool handler needs to reach one va
 | `corpus`                    | `--semantic` enabled AND corpus loadable | `SmartConnectionsCorpusIndex` wrapping the `.smart-env/multi/` data       |
 | `semanticAvailable`         | always                                   | `true` only when `corpus` is set                                          |
 | `semanticUnavailableReason` | when `semanticAvailable === false`       | Human-readable explanation (missing directory, empty corpus, parse error) |
+
+`scope` is built before anything else in entry construction: `VaultRegistry.create` calls `deps.scopeFactory({ vaultRoot: v.path })` first and passes the result into `readerFactory`, since `reader` needs it to filter `scan`. Production wires `scopeFactory` to `loadVaultScope`, which reads that vault's root `.gitignore` and `.neuro-vault/config.json` (see [`vault-scope.md`](./vault-scope.md) for the exclusion layers and the config failure contract) — so per-vault scope config loading, like the Smart Connections corpus probe, happens at registry-build time, not per call.
 
 `readConventions` and `filterExisting` are *per-vault capabilities*: small closures pre-bound to one vault's root, built by `conventionsReaderFactory` and `existingPathFilterFactory` in `IVaultEntryDeps` the same way `reader`, `writer`, and `provider` are. A consumer holding an entry gets the behaviour without threading `entry.path` anywhere, and a test substitutes it by passing its own function — no files on disk required. `filterExisting` exists because a Smart Connections path is a claim about the index and not a promise about the filesystem; [smart-connections-corpus](smart-connections-corpus.md#stale-paths) explains the obligation and lists which tools discharge it.
 

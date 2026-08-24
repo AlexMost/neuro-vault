@@ -7,6 +7,7 @@ import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import { createExistingPathFilter } from '../../src/lib/obsidian/existing-paths.js';
+import { createVaultScope } from '../../src/lib/obsidian/vault-scope.js';
 
 describe('createOperationsModule', () => {
   it('builds tools and resources from the first registry entry', () => {
@@ -39,6 +40,7 @@ describe('createOperationsModule', () => {
       name: 'MyVault',
       path: '/tmp/MyVault',
       smartEnvPath: '/tmp/MyVault/.smart-env/multi',
+      scope: createVaultScope(),
       reader: fakeReader,
       writer: fakeWriter,
       provider: fakeProvider,

@@ -19,7 +19,7 @@ interface VaultProvider {
 
 Note-body **batch reads** and **in-place edits** are not `VaultProvider` concerns: `read_notes`/`query_notes` go through `VaultReader` (`FsVaultReader`, see [`./vault-reader.md`](./vault-reader.md)) and `edit_note` goes through `VaultWriter` (`FsVaultWriter`). `VaultProvider` covers the remaining note-body and metadata operations that do not fit either of those: creating a note, resolving/reading the daily note, and frontmatter properties/tags.
 
-The sole implementation, `FsVaultProvider` (`src/modules/operations/fs-vault-provider.ts`), operates directly on the vault directory via `node:fs/promises` — no external process. It takes a `vaultRoot` and a `VaultReader` (used to resolve `name`-style identifiers and to scan frontmatter for `listTags`/`listProperties`).
+The sole implementation, `FsVaultProvider` (`src/modules/operations/fs-vault-provider.ts`), operates directly on the vault directory via `node:fs/promises` — no external process. It takes a `vaultRoot` and a `VaultReader` (used to resolve `name`-style identifiers and to scan frontmatter for `listTags`/`listProperties`) — both `scan`-backed, so both inherit the vault's scope (see [`vault-scope.md`](./vault-scope.md)): an excluded note is neither a `list_tags`/`list_properties` candidate nor a `kind: 'name'` resolution target.
 
 ## Why it exists
 
@@ -39,7 +39,7 @@ See [ADR-0009](../adr/0009-disk-direct-vault-operations.md) for why the implemen
 type NoteIdentifier = { kind: 'name'; value: string } | { kind: 'path'; value: string };
 ```
 
-`kind: 'name'` resolves like a wikilink (via `buildBasenameIndex` over a vault scan); `kind: 'path'` is exact. Encoding the choice in the type forces every call site to be explicit instead of relying on a runtime XOR check.
+`kind: 'name'` resolves like a wikilink (via `buildBasenameIndex` over a scoped vault scan — a note excluded by [vault scope](./vault-scope.md) has no basename entry and cannot be resolved by name); `kind: 'path'` is exact and bypasses scope entirely, same as `read_notes` (see [vault-scope.md's discovery-vs-ACL section](./vault-scope.md#discovery-not-access-control)). Encoding the choice in the type forces every call site to be explicit instead of relying on a runtime XOR check.
 
 ## What it deliberately does not do
 

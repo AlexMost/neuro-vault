@@ -39,6 +39,24 @@ Keep it under **8,000 characters**: beyond that the field carries a trimmed slic
 
 Full behaviour: [`docs/architecture/vault-conventions.md`](../architecture/vault-conventions.md).
 
+## Excluding paths from discovery
+
+By default, every note the server discovers — for the lexical leg of `search_notes`, `query_notes`, tag/property listings, `get_vault_overview` counts, backlinks, and note-name resolution — excludes dot-directories (`.obsidian/`, `.git/`, `.neuro-vault/`, …), `Templates/`, and every entry named in the vault root's `.gitignore`, if one exists. Two surfaces are unaffected: `read_notes` with an explicit path (a direct read, not a discovery call), and semantic matches, which come from the Smart Connections corpus and follow Smart Connections' own exclusion settings until the server's own embedding indexer lands.
+
+To exclude additional paths, add an optional `<vault>/.neuro-vault/config.json`:
+
+```json
+{ "exclusions": ["Archive/**", "Scratch/**"] }
+```
+
+Each entry is a glob, anchored at the vault root, added on top of the built-in defaults — this list can only exclude more, not re-include something the defaults already exclude. Matching is case-sensitive, even on macOS: `Archive/**` does not exclude `archive/`. The file is read once, when the server starts; edit it and restart the server to pick up the change.
+
+A missing file means the built-in defaults only, silently. Everything else that can go wrong falls back to the defaults and logs a warning to **stderr** while the server keeps running: an unreadable file, invalid JSON, a top-level value that isn't a JSON object (a bare `["Archive/**"]` array is the easy mistake), or an `"exclusions"` value that isn't a string array. Individual entries that are empty or start with `!` are dropped with a warning naming them — `!` cannot re-include a path here, and an empty entry would otherwise match nothing useful.
+
+**Don't use an allowlist-style `.gitignore`.** Negation lines are not honoured, so a `.gitignore` that starts with `*` and re-includes with `!Notes/` excludes your entire vault from discovery — searches return nothing. The server warns on stderr when it sees such a line, but the fix is to list what you want *out* rather than what you want in.
+
+Full behaviour, including the exact `.gitignore` subset that's honoured: [`docs/architecture/vault-scope.md`](../architecture/vault-scope.md).
+
 ## Troubleshooting
 
 **"Smart Connections directory does not exist"** — make sure the Smart Connections plugin has run and generated embeddings. Open Obsidian, let Smart Connections finish indexing, then restart the MCP server.

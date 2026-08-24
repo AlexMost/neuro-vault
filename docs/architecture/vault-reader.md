@@ -5,7 +5,7 @@ system, decoupled from the Obsidian app.
 
 ## What it is
 
-`src/modules/operations/vault-reader.ts` defines `VaultReader`:
+`src/lib/obsidian/vault-reader.ts` defines `VaultReader`:
 
 ```typescript
 interface VaultReader {
@@ -17,13 +17,20 @@ interface VaultReader {
 The default implementation, `FsVaultReader`, reads files from the vault root via
 `node:fs/promises.readFile` and parses YAML frontmatter via the shared
 `splitFrontmatter`. The vault root comes from the existing `--vault` startup
-flag.
+flag. `FsVaultReader` also takes an optional `scope: VaultScope` (see
+[`vault-scope.md`](./vault-scope.md)) — production always supplies one.
 
 `scan` enumerates `.md` paths under the vault (or under an optional vault-relative
-`pathPrefix`) using `fast-glob`. It returns vault-relative POSIX paths, sorted.
-A missing `pathPrefix` directory throws `ScanPathNotFoundError`; an existing
-prefix with no `.md` files returns an empty array (not an error). The handler
-layer catches `ScanPathNotFoundError` and translates it to a `PATH_NOT_FOUND`
+`pathPrefix`) using `fast-glob`, then filters the result through the vault's
+scope: `scope.isExcluded` is the authoritative membership test for every
+result, and `scope.ignorePatterns` additionally prunes fast-glob's traversal
+on unprefixed scans (root-anchored patterns can't match once `cwd` moves into
+a `pathPrefix`, so prefixed scans rely on the predicate alone — see
+[`vault-scope.md`](./vault-scope.md#two-views-prune-vs-predicate)). It returns
+vault-relative POSIX paths, sorted. A missing `pathPrefix` directory throws
+`ScanPathNotFoundError`; an existing prefix with no visible `.md` files
+returns an empty array (not an error). The handler layer catches
+`ScanPathNotFoundError` and translates it to a `PATH_NOT_FOUND`
 `ToolHandlerError`. Like `readNotes`, `scan` does not cache; a caching reader is
 deferred to a future `VaultIndex`-style implementation.
 

@@ -14,6 +14,7 @@ import { FsVaultProvider } from './modules/operations/fs-vault-provider.js';
 import { createSmartConnectionsCorpusIndex } from './lib/obsidian/smart-connections-corpus-index.js';
 import { createExistingPathFilter } from './lib/obsidian/existing-paths.js';
 import { readVaultConventions } from './lib/obsidian/vault-conventions.js';
+import { loadVaultScope } from './lib/obsidian/vault-scope-config.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ResourceRegistration } from './lib/resource-registration.js';
 import type { ServerConfig } from './types.js';
@@ -79,7 +80,8 @@ function defaultTransportFactory(): StdioServerTransport {
 
 function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): IVaultEntryDeps {
   return {
-    readerFactory: ({ vaultRoot }) => new FsVaultReader({ vaultRoot }),
+    readerFactory: ({ vaultRoot, scope }) => new FsVaultReader({ vaultRoot, scope }),
+    scopeFactory: ({ vaultRoot }) => loadVaultScope(vaultRoot),
     writerFactory: ({ vaultRoot }) => new FsVaultWriter({ vaultRoot }),
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),

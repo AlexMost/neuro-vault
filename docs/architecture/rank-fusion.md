@@ -32,7 +32,7 @@ const K_MAX = 60;
 adaptiveK(N) = clamp(round(sqrt(N)), K_MIN, K_MAX)
 ```
 
-`N` is `totalNotes` — the vault's total note count from the lexical leg's scan (`LexicalIndex.search`'s `totalNotes`, i.e. `reader.scan().length`), taken **pre-filter**: a `filter` parameter narrows candidates, not `N`, so `k` stays stable regardless of how narrow a given call's `filter` is.
+`N` is `totalNotes` — the vault's total note count from the lexical leg's scan (`LexicalIndex.search`'s `totalNotes`, i.e. `reader.scan().length`), which is the vault's **scoped** note count: paths excluded by the vault's scope (dot-paths, `Templates/`, root `.gitignore`, `.neuro-vault/config.json` — see [`vault-scope.md`](./vault-scope.md)) never enter the count. Taken **pre-filter**: a `filter` parameter narrows candidates, not `N`, so `k` stays stable regardless of how narrow a given call's `filter` is.
 
 **Why not the canonical k=60 always:** the textbook RRF constant is tuned for lists hundreds of items long, where `1/(60+rank)` still discriminates between rank 1 and rank 50. This tool's source lists are tiny — quick effort tops out around 3-5 items per source, deep around 8-10 — and at that length `k=60` makes every reciprocal rank in a list nearly indistinguishable (`1/61` vs `1/68` vs `1/70`), which collapses fusion into pure source-count voting and throws away each leg's own internal ordering.
 

@@ -14,6 +14,7 @@ import type { IVaultRegistry, IVaultEntry } from '../../src/lib/vault-registry.j
 import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
 import { createExistingPathFilter } from '../../src/lib/obsidian/existing-paths.js';
+import { createVaultScope } from '../../src/lib/obsidian/vault-scope.js';
 
 const MODEL_KEY = 'bge-micro-v2';
 
@@ -79,7 +80,10 @@ describe('corpus refresh through semantic tools', () => {
     // Build the corpus directly (the registry normally does this at startup).
     const corpus = await createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey: MODEL_KEY });
 
-    const reader = new FsVaultReader({ vaultRoot: vaultPath });
+    // One scope object, shared by the entry and the reader it holds — the
+    // divergence this change abolishes must not live on in the fixture.
+    const scope = createVaultScope();
+    const reader = new FsVaultReader({ vaultRoot: vaultPath, scope });
     const graph = new WikilinkGraphIndex({ reader });
     const listMatchingPaths = createListMatchingPaths({ reader, graph });
 
@@ -87,6 +91,7 @@ describe('corpus refresh through semantic tools', () => {
       name: 'vault',
       path: vaultPath,
       smartEnvPath,
+      scope,
       reader,
       writer: {} as VaultWriter,
       provider: {} as VaultProvider,

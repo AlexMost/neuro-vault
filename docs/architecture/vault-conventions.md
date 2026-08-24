@@ -6,6 +6,8 @@ How a vault owner's `for-external-agents.md` reaches an agent: the two delivery 
 
 Every vault may carry an optional file at `<vaultPath>/.neuro-vault/for-external-agents.md` — the vault owner's own guidance to an external agent about how *this* vault is organised. Note-type vocabulary, project-scoping convention, folder semantics, folders that are off-limits for writes. It is the one piece of context no tool description can supply, because tool descriptions describe the server, not the vault.
 
+`.neuro-vault/` is also the home of `config.json`, an unrelated per-vault file read by a different subsystem: it names extra exclusion globs consumed when building the vault's discovery scope. See [`vault-scope.md`](./vault-scope.md) rather than this file for that contract — the two `.neuro-vault/` files share a directory but not a reader, a schema, or a failure model. (`.neuro-vault/` itself is always excluded from discovery, alongside every other dot-segment path, regardless of either file's presence.)
+
 `src/lib/obsidian/vault-conventions.ts` owns the file: `CONVENTIONS_PATH` (the vault-relative location), `readVaultConventions(vaultPath)` (the best-effort read), `CONVENTIONS_CHAR_CAP` (the response-side size cap) and `capConventions(raw)` (the bounded slice). Every vault entry exposes the reader as `IVaultEntry.readConventions()`, built by `conventionsReaderFactory` in `IVaultEntryDeps` like every other per-entry dependency. One reader, so both channels agree by construction on where the file lives, what counts as empty, and what a failed read means.
 
 ## Why it exists

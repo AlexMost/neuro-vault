@@ -20,19 +20,19 @@ class LexicalIndex {
     truncated: boolean; // pool-cap overflow: candidates.length > noteCap, pre-slice
     perQueryCounts: Record<string, number>; // pre-noteCap hits per input query
     perQueryTokenCounts: Record<string, Record<string, number>>; // failure-path only, see below
-    totalNotes: number; // full scan().length, pre-`filter` — feeds rank-fusion's adaptive k
+    totalNotes: number; // scoped scan().length, pre-`filter` — feeds rank-fusion's adaptive k
   }>;
 }
 ```
 
 One `LexicalIndex` instance is created lazily per vault name (a module-level `Map` inside `buildSearchNotesTool`) and lives for the server process's lifetime — so its mtime cache persists across calls, not just within one request.
 
-`notes[]` (the ranked, capped, per-note-grouped result set) is one of the three ordered rank sources `search_notes` fuses into `matches[]` — see [`rank-fusion.md`](./rank-fusion.md). The other fields feed the tool boundary directly rather than the fusion math: `truncated` folds into the tool's top-level `truncated` (leg-level pool overflow, see [rank-fusion.md's truncated-observability section](./rank-fusion.md#truncated-observability-the-1-over-fetch)); `perQueryCounts` is the lexical half of `query_stats` (see [`docs/guide/finding-notes.md`](../guide/finding-notes.md)); `perQueryTokenCounts` is a failure-path diagnostic layered on top of `perQueryCounts` (see [Per-token diagnostic for AND-killed queries](#per-token-diagnostic-for-and-killed-queries) below); `totalNotes` is `N` in rank-fusion's adaptive-`k` formula — the full `scan().length`, taken before `allowed` narrows the search, so `k` does not shrink under a `filter`.
+`notes[]` (the ranked, capped, per-note-grouped result set) is one of the three ordered rank sources `search_notes` fuses into `matches[]` — see [`rank-fusion.md`](./rank-fusion.md). The other fields feed the tool boundary directly rather than the fusion math: `truncated` folds into the tool's top-level `truncated` (leg-level pool overflow, see [rank-fusion.md's truncated-observability section](./rank-fusion.md#truncated-observability-the-1-over-fetch)); `perQueryCounts` is the lexical half of `query_stats` (see [`docs/guide/finding-notes.md`](../guide/finding-notes.md)); `perQueryTokenCounts` is a failure-path diagnostic layered on top of `perQueryCounts` (see [Per-token diagnostic for AND-killed queries](#per-token-diagnostic-for-and-killed-queries) below); `totalNotes` is `N` in rank-fusion's adaptive-`k` formula — the scoped `scan().length` (vault-scope-excluded paths never counted, see [`vault-scope.md`](./vault-scope.md)), taken before `allowed` narrows the search, so `k` does not shrink under a `filter`.
 
 ## Pipeline
 
 ```
-VaultReader.scan()  ──► scoped paths (optionally narrowed by `filter`'s allowed set)
+VaultReader.scan()  ──► vault-scope-filtered paths (optionally further narrowed by `filter`'s allowed set)
    │
    ▼
 mtime cache (refresh) ──► stat every scoped file; re-parse only changed ones
@@ -58,11 +58,11 @@ snippet extraction (snippet.ts) ──► grapheme-safe window, raw-text coordin
 
 ### 1. Scan and scope
 
-`reader.scan()` returns every vault-relative path. When `search_notes` received a `filter`, the tool handler has already computed an `allowed` path set via `listMatchingPaths` (the same pre-filter step the semantic leg uses) and passes it through; `LexicalIndex.search` intersects it with the scan before anything else runs. This is why `filter` behaves identically on both legs — same allowed-set, evaluated twice.
+`reader.scan()` returns every vault-relative path **visible under the vault's scope** — see [`vault-scope.md`](./vault-scope.md) for the exclusion layers (dot-paths, `Templates/`, root `.gitignore`, `.neuro-vault/config.json`); a path excluded there never reaches this leg. When `search_notes` received a `filter`, the tool handler has already computed an `allowed` path set via `listMatchingPaths` (the same pre-filter step the semantic leg uses) and passes it through; `LexicalIndex.search` intersects it with the scan before anything else runs. This is why `filter` behaves identically on both legs — same allowed-set, evaluated twice.
 
 ### 2. mtime cache
 
-`refresh()` stats every scoped file (`Promise.all`), drops cache entries for paths no longer in scope (deletions, or notes that fell outside `allowed` on a scoped call), and re-parses only files whose `mtimeMs` differs from the cached value. A file that vanishes between `scan()` and `stat()`, or between `stat()` and `readFile()`, is dropped from the cache rather than surfaced as an error — the same "scan↔read race" tolerance `query_notes` uses.
+`refresh()` stats every scan-visible file (`Promise.all`), drops cache entries for paths no longer visible (deletions, vault-scope exclusion, or notes that fell outside `allowed` on a scoped call), and re-parses only files whose `mtimeMs` differs from the cached value. A file that vanishes between `scan()` and `stat()`, or between `stat()` and `readFile()`, is dropped from the cache rather than surfaced as an error — the same "scan↔read race" tolerance `query_notes` uses.
 
 ### 3. mdast block extraction
 

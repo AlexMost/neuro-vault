@@ -1,5 +1,6 @@
 import { ToolHandlerError } from './tool-response.js';
 import type { VaultReader } from './obsidian/vault-reader.js';
+import type { VaultScope } from './obsidian/vault-scope.js';
 import type { VaultWriter } from './obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from './obsidian/wikilink-graph.js';
 import type { ListMatchingPaths } from './obsidian/query/index.js';
@@ -14,6 +15,11 @@ export interface IVaultEntry {
   name: string;
   path: string;
   smartEnvPath: string;
+  /**
+   * This vault's discovery scope (capability vault-scope): the single
+   * definition of which files are visible to scan-derived surfaces.
+   */
+  scope: VaultScope;
   reader: VaultReader;
   writer: VaultWriter;
   provider: VaultProvider;
@@ -42,7 +48,8 @@ export interface IVaultEntry {
 }
 
 export interface IVaultEntryDeps {
-  readerFactory: (opts: { vaultRoot: string }) => VaultReader;
+  readerFactory: (opts: { vaultRoot: string; scope: VaultScope }) => VaultReader;
+  scopeFactory: (opts: { vaultRoot: string }) => Promise<VaultScope>;
   writerFactory: (opts: { vaultRoot: string }) => VaultWriter;
   graphFactory: (opts: { reader: VaultReader }) => WikilinkGraphIndex;
   listMatchingPathsFactory: (opts: {
@@ -100,7 +107,8 @@ export class VaultRegistry implements IVaultRegistry {
   static async create(config: IVaultRegistryConfig, deps: IVaultEntryDeps): Promise<VaultRegistry> {
     const entries: IVaultEntry[] = [];
     for (const v of config.vaults) {
-      const reader = deps.readerFactory({ vaultRoot: v.path });
+      const scope = await deps.scopeFactory({ vaultRoot: v.path });
+      const reader = deps.readerFactory({ vaultRoot: v.path, scope });
       const graph = deps.graphFactory({ reader });
       const listMatchingPaths = deps.listMatchingPathsFactory({ reader, graph });
       const writer = deps.writerFactory({ vaultRoot: v.path });
@@ -138,6 +146,7 @@ export class VaultRegistry implements IVaultRegistry {
         name: v.name,
         path: v.path,
         smartEnvPath: v.smartEnvPath,
+        scope,
         reader,
         writer,
         provider,

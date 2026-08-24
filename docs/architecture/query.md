@@ -26,7 +26,7 @@ leading `#` stripped and blanks dropped.
 
 1. Validates input shape (`limit` cap, `path_prefix` / `exclude_path_prefix` normalization via `path-prefix-set.ts`, `sort` field/order). Multi-prefix include disables the scan-order early-exit because each prefix scan is independently ordered; single-prefix (with or without exclude) keeps it, because exclude is applied inside the per-item loop and `matched.length` therefore tracks post-exclude matches.
 2. Validates the filter against the operator allow-list.
-3. Calls `VaultReader.scan({ pathPrefix })` to get paths (lexicographic order).
+3. Calls `VaultReader.scan({ pathPrefix })` to get paths (lexicographic order) — already filtered to the vault's scope (dot-paths, `Templates/`, root `.gitignore`, `.neuro-vault/config.json`; see [`vault-scope.md`](./vault-scope.md)), so an excluded note never enters the pipeline below.
 4. Iterates paths in **bounded batches of 32** through `VaultReader.readNotes`.
    `fields` is `['frontmatter']` by default and `['frontmatter', 'content']`
    only when `include_content: true`. Each batch is filtered immediately;

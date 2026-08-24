@@ -10,7 +10,7 @@ Three independent surfaces all need link knowledge that is otherwise expensive o
 - **`backlink_count` enrichment** on `search_notes` and `query_notes` results — lets the model rank by "how much the rest of the vault points at this".
 - **`backlink_count` filter / sort** in `query_notes` — answers "notes with at least N backlinks" or "top-linked notes" without N+1 reads.
 
-Without a shared index, each of these would scan the vault on every call. With it, scanning happens at most once per 3-minute window.
+Without a shared index, each of these would scan the vault on every call. With it, scanning happens at most once per 3-minute window. Like every scan-derived surface, the graph only sees notes visible under the vault's scope (see [`vault-scope.md`](./vault-scope.md)) — an excluded note contributes no edges, and a link to one resolves as `unresolved`, the same as a link to any other non-existent note.
 
 ## Boundaries
 
@@ -50,7 +50,7 @@ interface IncomingLink {
 
 `rebuild()` is straightforward:
 
-1. `reader.scan()` produces the full path list.
+1. `reader.scan()` produces the vault-scope-filtered path list (see [`vault-scope.md`](./vault-scope.md)).
 2. `buildBasenameIndex(paths)` is computed once for the whole rebuild.
 3. Notes are read in batches of 32 via `VaultReader.readNotes({ fields: ['frontmatter', 'content'] })`.
 4. For each note, `parseWikilinks(content)` + `extractWikilinksFromFrontmatter(frontmatter)` produce raw targets; `normalizeWikilinkTarget` strips display text and section anchors; `basenameIndex.resolve` maps to a vault path or marks unresolved.

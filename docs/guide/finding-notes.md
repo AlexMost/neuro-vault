@@ -4,6 +4,10 @@ Everything for locating notes: fuzzy recall over meaning, exact text matching, s
 
 For the retrieval internals behind each tool, see [`docs/architecture/`](../architecture/): [`retrieval-policy.md`](../architecture/retrieval-policy.md) (semantic leg), [`lexical-search.md`](../architecture/lexical-search.md) (lexical leg), [`query.md`](../architecture/query.md) (`query_notes`).
 
+Some vault paths are excluded from note **discovery**: dot-directories (`.obsidian/`, `.git/`, `.neuro-vault/`, …), `Templates/`, entries in the vault root's `.gitignore`, and anything an optional `.neuro-vault/config.json` names. That covers the **lexical** leg of `search_notes`, `query_notes`, tag/property listings, `get_vault_overview` counts, backlink counts, and note-name resolution (`kind: "name"` identifiers) — see [`docs/architecture/vault-scope.md`](../architecture/vault-scope.md).
+
+Two things it does **not** cover, both deliberate. `read_notes` with an explicit path reads regardless — it is a direct read, not a discovery call. And the **semantic** matches (`search_notes`' semantic leg, `get_similar_notes`, `find_duplicates`) come from the Smart Connections corpus, whose membership is Smart Connections' own until the server's own embedding indexer lands — so an excluded note that Smart Connections embedded can still appear there.
+
 ## One search entry point
 
 ### `search_notes`
