@@ -95,4 +95,21 @@ describe('EmbeddingService tokenizer cap', () => {
     const service = new EmbeddingService({ pipelineFactory: async () => pipe });
     await expect(service.embed('hello')).resolves.toHaveLength(384);
   });
+
+  it('never raises a genuine window smaller than the cap', async () => {
+    const pipe = vi.fn(async () => ({ data: new Float32Array(384) }));
+    const capped = Object.assign(pipe, { tokenizer: { model_max_length: 128 } });
+    const service = new EmbeddingService({ pipelineFactory: async () => capped });
+    await service.embed('hello');
+    expect(capped.tokenizer.model_max_length).toBe(128);
+  });
+
+  it('installs the cap when the tokenizer config omits the window entirely', async () => {
+    const pipe = vi.fn(async () => ({ data: new Float32Array(384) }));
+    const tokenizer: { model_max_length?: number } = {};
+    const bare = Object.assign(pipe, { tokenizer });
+    const service = new EmbeddingService({ pipelineFactory: async () => bare });
+    await service.embed('hello');
+    expect(bare.tokenizer.model_max_length).toBe(MAX_TOKENS);
+  });
 });

@@ -81,6 +81,25 @@ describe('chunkNote', () => {
     expect(new Set(all).size).toBe(all.length);
   });
 
+  it('keeps the repeat suffix clear of a sibling literally titled with it', () => {
+    const content = ['# A', 'x', '# A[2]', 'y', '# A', 'z'].join('\n');
+    const all = keys(content);
+    expect(all).toEqual(['#A', '#A[2]', '#A[3]']);
+  });
+
+  it('keeps numbered chunk keys clear of a heading literally titled "{n}"', () => {
+    const content = ['# Top', 'aaa', '', 'bbb', '## {1}', 'x'].join('\n');
+    const all = keys(content);
+    expect(all).toEqual(['#Top', '#Top#{2}', '#Top#{3}', '#Top#{1}']);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('encodes the real level of a root-level heading in the separator', () => {
+    // "### Deep" with no ancestors must not key identically to "# Deep".
+    expect(keys(['### Deep', 'x'].join('\n'))).toEqual(['###Deep']);
+    expect(keys(['# Deep', 'x'].join('\n'))).toEqual(['#Deep']);
+  });
+
   it('emits frontmatter and preamble blocks', () => {
     const content = ['---', 'type: note', '---', 'intro text', '# Top', 'body'].join('\n');
     expect(keys(content)).toEqual(['#---frontmatter---', '#', '#Top']);
@@ -95,6 +114,16 @@ describe('chunkNote', () => {
 
   it('emits no preamble block when a heading opens the note', () => {
     expect(keys('# Top\nbody')).toEqual(['#Top']);
+  });
+
+  it('treats an indented leading "---" as body, matching the canonical grammar', () => {
+    // splitRawFrontmatter (and Obsidian) anchor the opening fence at column 0; an
+    // indented thematic break must not open a false frontmatter region that
+    // swallows the headings after it.
+    const content = ['   ---', '# Real Heading', 'text', '---', 'more'].join('\n');
+    const all = keys(content);
+    expect(all).not.toContain('#---frontmatter---');
+    expect(all).toContain('#Real Heading');
   });
 
   it('numbers content chunks under a heading', () => {

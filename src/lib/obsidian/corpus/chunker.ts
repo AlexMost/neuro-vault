@@ -1,5 +1,7 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
 
+import { splitRawFrontmatter } from '../in-place-edit.js';
+
 import type { ChunkedBlock } from './types.js';
 
 /** The leading `#` run of an ATX heading plus the one whitespace that closes it. */
@@ -101,12 +103,17 @@ function scanHeadings(lines: string[], fmEnd: number): HeadingHit[] {
   return hits;
 }
 
-function frontmatterEnd(lines: string[]): number {
-  if ((lines[0] ?? '').trim() !== '---') return 0;
-  for (let i = 1; i < lines.length; i += 1) {
-    if ((lines[i] ?? '').trim() === '---') return i + 1; // 1-based inclusive end
-  }
-  return 0; // unterminated fence: not frontmatter
+/**
+ * 1-based inclusive line of the closing frontmatter fence, or 0 when the note has
+ * none. Delegates to the canonical grammar in in-place-edit.ts so the corpus never
+ * disagrees with `set_property`/`edit_note`/the lexical index about where
+ * frontmatter ends — to them an indented `---` is body, so it must be body here too.
+ */
+function frontmatterEnd(content: string): number {
+  const { prefix } = splitRawFrontmatter(content);
+  if (prefix === '') return 0;
+  const newlines = prefix.split('\n').length - 1;
+  return prefix.endsWith('\n') ? newlines : newlines + 1;
 }
 
 export function chunkNote(content: string): ChunkedBlock[] {
@@ -115,6 +122,8 @@ export function chunkNote(content: string): ChunkedBlock[] {
   const open: OpenSection[] = [];
   /** (parent key + title) -> occurrences, so a repeat is disambiguated at any level. */
   const headingCounts = new Map<string, number>();
+  /** Every key minted so far: uniqueness is required across all block kinds. */
+  const usedKeys = new Set<string>();
 
   const close = (section: OpenSection, endLine: number) => {
     blocks.push({
@@ -131,9 +140,18 @@ export function chunkNote(content: string): ChunkedBlock[] {
       // A single own-content paragraph is already covered by the heading block above;
       // only disambiguate when a heading directly owns more than one paragraph.
       if (chunks.length > 1) {
-        chunks.forEach((chunk, idx) => {
+        // A child heading literally titled "{n}" may already own `#{n}` under this
+        // key; numbering skips past any taken key so no two blocks ever share one.
+        let n = 0;
+        chunks.forEach((chunk) => {
+          let key: string;
+          do {
+            n += 1;
+            key = `${section.key}#{${n}}`;
+          } while (usedKeys.has(key));
+          usedKeys.add(key);
           blocks.push({
-            key: `${section.key}#{${idx + 1}}`,
+            key,
             heading: '',
             lines: [chunk.start, chunk.end],
             text: chunk.text,
@@ -143,8 +161,9 @@ export function chunkNote(content: string): ChunkedBlock[] {
     }
   };
 
-  const fmEnd = frontmatterEnd(lines);
+  const fmEnd = frontmatterEnd(content);
   if (fmEnd > 0) {
+    usedKeys.add('#---frontmatter---');
     blocks.push({
       key: '#---frontmatter---',
       heading: '---frontmatter---',
@@ -174,13 +193,24 @@ export function chunkNote(content: string): ChunkedBlock[] {
       parent.firstChildStart = line;
     }
     const scopeKey = `${parent ? parent.key : ''}\u0000${title}`;
-    const seen = (headingCounts.get(scopeKey) ?? 0) + 1;
-    headingCounts.set(scopeKey, seen);
+    // At root the document is the parent at level 0, so the separator still
+    // encodes the heading's real level: a preamble-only H3 keys as "###Deep".
+    const separator = '#'.repeat(parent ? level - parent.level : level);
+    let seen = (headingCounts.get(scopeKey) ?? 0) + 1;
     if (seen > 1) title = `${title}[${seen}]`;
-    const separator = '#'.repeat(parent ? level - parent.level : 1);
+    let key = `${parent ? parent.key : ''}${separator}${title}`;
+    // A sibling literally titled with the suffix ("A[2]") may already own the
+    // suffixed key; keep counting until the key is free.
+    while (usedKeys.has(key)) {
+      seen += 1;
+      title = `${hit.title}[${seen}]`;
+      key = `${parent ? parent.key : ''}${separator}${title}`;
+    }
+    headingCounts.set(scopeKey, seen);
+    usedKeys.add(key);
     open.push({
       level,
-      key: `${parent ? parent.key : ''}${separator}${title}`,
+      key,
       title,
       start: line,
     });

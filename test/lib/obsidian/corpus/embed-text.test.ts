@@ -44,6 +44,31 @@ describe('buildEmbedInputs', () => {
     expect(keys).toContain('#Top');
   });
 
+  it('keeps a parent whose own uncovered content is fenced "#" lines', () => {
+    // A fenced `# ...` line is content, not a heading; excusing it would drop the
+    // parent and the fenced lines would land in no embedded block.
+    const content = [
+      '## Parent',
+      '```',
+      long(250),
+      '',
+      '# fake heading inside fence',
+      '',
+      long(250),
+      '```',
+    ].join('\n');
+    const keys = buildEmbedInputs('N.md', content).blocks.map((b) => b.key);
+    expect(keys).toContain('##Parent');
+  });
+
+  it('drops a parent fully covered by children under an indented heading', () => {
+    // The chunker honours an ATX heading indented 1-3 spaces; the coverage gate
+    // must not count that heading line as uncovered parent content.
+    const content = ['  ## Indented', '### A', long(250), '### B', long(250)].join('\n');
+    const keys = buildEmbedInputs('N.md', content).blocks.map((b) => b.key);
+    expect(keys).toEqual(['##Indented#A', '##Indented#B']);
+  });
+
   it('is deterministic', () => {
     const content = ['# Top', long(250)].join('\n');
     expect(buildEmbedInputs('A/N.md', content)).toEqual(buildEmbedInputs('A/N.md', content));

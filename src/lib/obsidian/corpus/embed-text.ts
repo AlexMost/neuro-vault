@@ -16,8 +16,12 @@ function blockBreadcrumbs(notePath: string, blockKey: string): string {
 
 /**
  * True when `block`'s line span is entirely accounted for by the union of the spans
- * of other kept blocks strictly nested inside it, ignoring blank lines and heading
- * lines (a heading line alone is not content of the parent's own).
+ * of other kept blocks strictly nested inside it, ignoring blank lines and the
+ * block's own heading line — its first line, which no child span can cover. Any
+ * other uncovered non-blank line is the block's own content: second-guessing it
+ * with a heading regex would re-introduce the line-scanner failure modes the
+ * chunker's AST pass exists to avoid (a fenced `# ...` line is content, and a
+ * child heading line is already inside that child's span).
  */
 function isFullyCovered(block: ChunkedBlock, others: ChunkedBlock[]): boolean {
   const children = others.filter(
@@ -28,10 +32,12 @@ function isFullyCovered(block: ChunkedBlock, others: ChunkedBlock[]): boolean {
   for (const child of children) {
     for (let l = child.lines[0]; l <= child.lines[1]; l += 1) covered.add(l);
   }
+  const textLines = block.text.split('\n');
   for (let l = block.lines[0]; l <= block.lines[1]; l += 1) {
     if (covered.has(l)) continue;
-    const line = block.text.split('\n')[l - block.lines[0]] ?? '';
-    if (line.trim() !== '' && !/^#{1,6}\s/.test(line)) return false;
+    if (l === block.lines[0] && block.heading !== '') continue;
+    const line = textLines[l - block.lines[0]] ?? '';
+    if (line.trim() !== '') return false;
   }
   return true;
 }

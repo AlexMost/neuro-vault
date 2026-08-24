@@ -15,6 +15,13 @@ import type { CorpusBlock, CorpusManifest, CorpusShard } from './types.js';
 /** Corpus root, relative to the vault root. */
 export const CORPUS_DIR = '.neuro-vault/corpus';
 
+/**
+ * Max shard files held open at once during a cold load. An unbounded fan-out
+ * holds every file open together, and under a capped hard fd limit (containers,
+ * systemd LimitNOFILE) the resulting EMFILEs would read the corpus as empty.
+ */
+const SHARD_READ_CONCURRENCY = 64;
+
 export interface CorpusStoreDeps {
   /** Defaults to write-file-atomic (temp + rename). */
   writeFile?: (p: string, data: string) => Promise<void>;
@@ -94,11 +101,20 @@ export class CorpusStore {
       throw err;
     }
     // A cold load is I/O-bound, so the files are read concurrently (design D4's
-    // 68 ms at 2 500 shards is measured with Promise.all). Sorted first so two
-    // files claiming the same note path resolve to the same winner on every run.
+    // 68 ms at 2 500 shards), bounded by SHARD_READ_CONCURRENCY. Sorted first so
+    // two files claiming the same note path resolve to the same winner every run.
     const files = entries.filter((entry) => entry.endsWith('.json')).sort();
-    const shards = await Promise.all(
-      files.map((entry) => this.readShardFile(path.join(this.notesDir, entry))),
+    const shards: Array<CorpusShard | null> = new Array<CorpusShard | null>(files.length);
+    let nextIndex = 0;
+    const worker = async (): Promise<void> => {
+      while (nextIndex < files.length) {
+        const i = nextIndex;
+        nextIndex += 1;
+        shards[i] = await this.readShardFile(path.join(this.notesDir, files[i]));
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(SHARD_READ_CONCURRENCY, files.length) }, () => worker()),
     );
     for (const shard of shards) {
       if (shard) result.set(shard.path, shard);
@@ -148,15 +164,18 @@ export class CorpusStore {
       if (isEnoent(err)) return;
       throw err;
     }
-    for (const entry of entries) {
-      if (!entry.endsWith('.json')) continue;
-      try {
-        await this.unlink(path.join(this.notesDir, entry));
-      } catch (err) {
-        if (isEnoent(err)) continue;
-        throw err;
-      }
-    }
+    await Promise.all(
+      entries
+        .filter((entry) => entry.endsWith('.json'))
+        .map(async (entry) => {
+          try {
+            await this.unlink(path.join(this.notesDir, entry));
+          } catch (err) {
+            if (isEnoent(err)) return;
+            throw err;
+          }
+        }),
+    );
   }
 
   /**

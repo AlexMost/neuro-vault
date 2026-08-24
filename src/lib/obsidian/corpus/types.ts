@@ -56,6 +56,8 @@ export const MIN_CHARS = 200;
 export const MAX_TOKENS = 512;
 /** Note embed text is cut here — max_tokens x 3.7, the parity formula. */
 export const EMBED_CHAR_BUDGET = Math.floor(MAX_TOKENS * 3.7);
+/** The embedding model's corpus identity, as the manifest's `model_key` records it. */
+export const MODEL_KEY = 'bge-micro-v2';
 export const MODEL_DIMS = 384;
 export const SC_PARITY_STRATEGY = 'sc-parity-v1';
 export const EMBED_VERSION = 1;
