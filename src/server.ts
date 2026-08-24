@@ -1,5 +1,3 @@
-import { createRequire } from 'node:module';
-
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
@@ -18,12 +16,9 @@ import { loadVaultScope } from './lib/obsidian/vault-scope-config.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ResourceRegistration } from './lib/resource-registration.js';
 import type { ServerConfig } from './types.js';
+import { packageMeta } from './package-meta.js';
 
-const require = createRequire(import.meta.url);
-const { name: SERVER_NAME, version: SERVER_VERSION } = require('../package.json') as {
-  name: string;
-  version: string;
-};
+const { name: SERVER_NAME, version: SERVER_VERSION } = packageMeta;
 
 type ToolServer = Pick<McpServer, 'registerTool' | 'registerResource' | 'connect'>;
 
