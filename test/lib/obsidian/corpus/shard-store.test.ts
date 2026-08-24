@@ -1,10 +1,11 @@
-import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, mkdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   CorpusStore,
+  ensureCorpusGitignored,
   isManifestCompatible,
 } from '../../../../src/lib/obsidian/corpus/shard-store.js';
 import { MODEL_DIMS } from '../../../../src/lib/obsidian/corpus/types.js';
@@ -169,5 +170,55 @@ describe('isManifestCompatible', () => {
 
   it('accepts a missing manifest on an empty corpus', () => {
     expect(isManifestCompatible(null, expected, false)).toBe(true);
+  });
+});
+
+describe('ensureCorpusGitignored', () => {
+  it('appends one entry, preserving existing lines', async () => {
+    const root = await tempVault();
+    await writeFile(path.join(root, '.gitignore'), '.smart-env/\nnode_modules\n');
+    await ensureCorpusGitignored(root);
+    const after = await readFile(path.join(root, '.gitignore'), 'utf8');
+    expect(after).toContain('.smart-env/');
+    expect(after).toContain('node_modules');
+    expect(after.match(/\.neuro-vault\/corpus\//g)).toHaveLength(1);
+  });
+
+  it('is idempotent', async () => {
+    const root = await tempVault();
+    await writeFile(path.join(root, '.gitignore'), 'x\n');
+    await ensureCorpusGitignored(root);
+    await ensureCorpusGitignored(root);
+    const after = await readFile(path.join(root, '.gitignore'), 'utf8');
+    expect(after.match(/\.neuro-vault\/corpus\//g)).toHaveLength(1);
+  });
+
+  it('does not create a gitignore that does not exist', async () => {
+    const root = await tempVault();
+    await ensureCorpusGitignored(root);
+    await expect(readFile(path.join(root, '.gitignore'), 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('warns on stderr and never throws when the file cannot be written', async () => {
+    const warn = vi.fn();
+    await expect(
+      ensureCorpusGitignored(await tempVault(), {
+        readFile: async () => 'x\n',
+        writeFile: async () => {
+          throw new Error('EACCES');
+        },
+        warn,
+      }),
+    ).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a gitignore that already covers the corpus untouched', async () => {
+    const root = await tempVault();
+    await writeFile(path.join(root, '.gitignore'), '.neuro-vault/corpus/\n');
+    await ensureCorpusGitignored(root);
+    expect(await readFile(path.join(root, '.gitignore'), 'utf8')).toBe('.neuro-vault/corpus/\n');
   });
 });

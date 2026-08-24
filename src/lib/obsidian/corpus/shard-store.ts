@@ -296,6 +296,65 @@ function isValidManifest(value: unknown): value is CorpusManifest {
   );
 }
 
+/** Literal `.gitignore` lines (trimmed) that already cover the corpus directory. */
+const GITIGNORE_COVERING_LINES = new Set([
+  '.neuro-vault/corpus/',
+  '.neuro-vault/corpus',
+  '/.neuro-vault/corpus/',
+  '.neuro-vault/',
+  '.neuro-vault',
+]);
+
+export interface EnsureCorpusGitignoredDeps {
+  readFile?: (p: string) => Promise<string>;
+  writeFile?: (p: string, data: string) => Promise<void>;
+  /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
+  warn?: (message: string) => void;
+}
+
+/**
+ * Appends a single `.neuro-vault/corpus/` line to `<vaultRoot>/.gitignore` so
+ * a vault owner does not accidentally commit the embedding corpus. Never
+ * creates a `.gitignore` that doesn't exist, never rewrites any other line,
+ * and never ignores `.neuro-vault/` as a whole (a committed eval golden set
+ * lives elsewhere under that directory). A failure to update the file is
+ * reported via `warn` and never throws — this is a best-effort convenience,
+ * not something indexing should fail over.
+ */
+export async function ensureCorpusGitignored(
+  vaultRoot: string,
+  deps: EnsureCorpusGitignoredDeps = {},
+): Promise<void> {
+  const readFile = deps.readFile ?? ((p: string) => fsReadFile(p, 'utf8'));
+  const writeFile = deps.writeFile ?? ((p: string, data: string) => writeFileAtomic(p, data));
+  const warn = deps.warn ?? ((message: string) => console.error(message));
+
+  const gitignoreFile = path.join(vaultRoot, '.gitignore');
+
+  let existing: string;
+  try {
+    existing = await readFile(gitignoreFile);
+  } catch (err) {
+    if (isEnoent(err)) return;
+    warn(
+      `neuro-vault corpus: failed to read ${gitignoreFile} in vault ${vaultRoot}: ${String(err)}`,
+    );
+    return;
+  }
+
+  try {
+    const alreadyCovered = existing
+      .split('\n')
+      .some((line) => GITIGNORE_COVERING_LINES.has(line.trim()));
+    if (alreadyCovered) return;
+
+    const separator = existing.length === 0 || existing.endsWith('\n') ? '' : '\n';
+    await writeFile(gitignoreFile, `${existing}${separator}${CORPUS_DIR}/\n`);
+  } catch (err) {
+    warn(`neuro-vault corpus: failed to update .gitignore in vault ${vaultRoot}: ${String(err)}`);
+  }
+}
+
 function isEnoent(err: unknown): boolean {
   return (
     typeof err === 'object' &&
