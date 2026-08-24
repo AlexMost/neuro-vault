@@ -56,4 +56,12 @@ describe('buildEmbedInputs', () => {
     expect(after.note).not.toBe(before.note);
     expect(after.blocks[0]?.embedText).not.toBe(before.blocks[0]?.embedText);
   });
+
+  it('only drops the note path .md, not a literal ".md" inside an ancestor heading', () => {
+    const content = ['# Migrate config.md', long(250), '## Inner', long(250)].join('\n');
+    const { note, blocks } = buildEmbedInputs('Folder/Note.md', content);
+    const inner = blocks.find((b) => b.key === '#Migrate config.md#Inner');
+    expect(inner?.embedText.split('\n')[0]).toBe('Folder > Note > Migrate config.md');
+    expect(note?.startsWith('Folder > Note:\n')).toBe(true);
+  });
 });

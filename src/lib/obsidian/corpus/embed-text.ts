@@ -6,13 +6,12 @@ export function pathBreadcrumbs(notePath: string): string {
 }
 
 function blockBreadcrumbs(notePath: string, blockKey: string): string {
-  return `${notePath}${blockKey}`
+  return `${notePath.replace(/\.md$/, '')}${blockKey}`
     .split('/')
     .join(' > ')
     .split('#')
     .slice(0, -1)
-    .join(' > ')
-    .replace(/\.md/g, '');
+    .join(' > ');
 }
 
 /**
