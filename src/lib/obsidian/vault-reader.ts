@@ -5,6 +5,7 @@ import fastGlob from 'fast-glob';
 
 import { splitFrontmatter } from './frontmatter.js';
 import { normalizeScanPrefix, toPosixSlashes } from './paths.js';
+import type { VaultScope } from './vault-scope.js';
 
 export type ReadNotesField = 'frontmatter' | 'content';
 
@@ -50,11 +51,18 @@ export type FsReadFile = (absPath: string, encoding: 'utf8') => Promise<string>;
 export type FsStat = (absPath: string) => Promise<{ isDirectory(): boolean }>;
 export type FsGlob = (
   pattern: string,
-  options: { cwd: string; onlyFiles: boolean; dot: boolean; followSymbolicLinks: boolean },
+  options: {
+    cwd: string;
+    onlyFiles: boolean;
+    dot: boolean;
+    followSymbolicLinks: boolean;
+    ignore: string[];
+  },
 ) => Promise<string[]>;
 
 export interface FsVaultReaderOptions {
   vaultRoot: string;
+  scope?: VaultScope;
   readFile?: FsReadFile;
   stat?: FsStat;
   glob?: FsGlob;
@@ -62,12 +70,14 @@ export interface FsVaultReaderOptions {
 
 export class FsVaultReader implements VaultReader {
   private readonly vaultRoot: string;
+  private readonly scope?: VaultScope;
   private readonly readFile: FsReadFile;
   private readonly stat: FsStat;
   private readonly glob: FsGlob;
 
   constructor(opts: FsVaultReaderOptions) {
     this.vaultRoot = opts.vaultRoot;
+    this.scope = opts.scope;
     this.readFile = opts.readFile ?? ((p, enc) => fsReadFile(p, enc));
     this.stat = opts.stat ?? ((p) => fsStat(p));
     this.glob = opts.glob ?? ((pattern, options) => fastGlob(pattern, { ...options }));
@@ -99,16 +109,22 @@ export class FsVaultReader implements VaultReader {
     }
 
     const cwd = prefix ? path.join(this.vaultRoot, prefix) : this.vaultRoot;
+    // Root-anchored ignore globs only make sense when cwd IS the vault root;
+    // prefixed scans rely on the predicate post-filter below instead.
+    const ignore = !prefix && this.scope ? this.scope.ignorePatterns : [];
     const matches = await this.glob('**/*.md', {
       cwd,
       onlyFiles: true,
       dot: false,
       followSymbolicLinks: false,
+      ignore,
     });
-    if (!prefix) {
-      return matches.map(toPosixSlashes).sort();
-    }
-    return matches.map((m) => `${prefix}/${toPosixSlashes(m)}`).sort();
+    const rel = prefix
+      ? matches.map((m) => `${prefix}/${toPosixSlashes(m)}`)
+      : matches.map(toPosixSlashes);
+    const scope = this.scope;
+    const visible = scope ? rel.filter((p) => !scope.isExcluded(p)) : rel;
+    return visible.sort();
   }
 
   private async readOne(

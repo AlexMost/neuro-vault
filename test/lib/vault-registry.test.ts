@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 import {
@@ -7,6 +7,7 @@ import {
   type IVaultEntryDeps,
 } from '../../src/lib/vault-registry.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
+import { createVaultScope } from '../../src/lib/obsidian/vault-scope.js';
 import type { IVaultConfig } from '../../src/types.js';
 
 // Type-level guard: writer and provider must be required on IVaultEntry.
@@ -32,6 +33,7 @@ function fakeDeps(): IVaultEntryDeps {
       ({ snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) }) as never,
     conventionsReaderFactory: () => async () => null,
     existingPathFilterFactory: () => async (paths) => new Set(paths),
+    scopeFactory: async () => createVaultScope(),
   };
 }
 
@@ -266,5 +268,18 @@ describe('createVaultRegistry', () => {
     expect(await registry.require('a').filterExisting(['n.md'])).toEqual(new Set(['n.md']));
     expect(await registry.require('b').filterExisting(['n.md'])).toEqual(new Set());
     expect(seen).toEqual(['/vaults/a', '/vaults/b']);
+  });
+
+  it('builds a scope per entry and passes it to the reader factory', async () => {
+    const scope = createVaultScope({ configExclusions: ['Archive/**'] });
+    const scopeFactory = vi.fn(async () => scope);
+    const readerFactory = vi.fn(({ vaultRoot, scope: s }) => ({ vaultRoot, scope: s }) as never);
+    const registry = await VaultRegistry.create(
+      { vaults: [vault('A', '/a')], semanticEnabled: false, modelKey: 'k' },
+      { ...fakeDeps(), scopeFactory, readerFactory },
+    );
+    expect(scopeFactory).toHaveBeenCalledWith({ vaultRoot: '/a' });
+    expect(readerFactory).toHaveBeenCalledWith({ vaultRoot: '/a', scope });
+    expect(registry.require('A').scope).toBe(scope);
   });
 });

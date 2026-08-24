@@ -8,6 +8,7 @@ import { buildServerInstructions } from '../src/server.js';
 import { readVaultConventions } from '../src/lib/obsidian/vault-conventions.js';
 import type { IVaultRegistry } from '../src/lib/vault-registry.js';
 import { createExistingPathFilter } from '../src/lib/obsidian/existing-paths.js';
+import { createVaultScope } from '../src/lib/obsidian/vault-scope.js';
 
 /**
  * Claude Code truncates the MCP `instructions` string at exactly this many
@@ -26,6 +27,7 @@ function makeRegistry(vaultPath: string, multi = false): IVaultRegistry {
     name: path.basename(vaultPath),
     path: vaultPath,
     smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
+    scope: createVaultScope(),
     reader: {} as never,
     writer: {} as never,
     provider: {} as never,
@@ -212,6 +214,7 @@ describe('buildServerInstructions', () => {
           name: 'first',
           path: a,
           smartEnvPath: path.join(a, '.smart-env', 'multi'),
+          scope: createVaultScope(),
           reader: {} as never,
           writer: {} as never,
           provider: {} as never,
@@ -225,6 +228,7 @@ describe('buildServerInstructions', () => {
           name: 'second',
           path: b,
           smartEnvPath: path.join(b, '.smart-env', 'multi'),
+          scope: createVaultScope(),
           reader: {} as never,
           writer: {} as never,
           provider: {} as never,

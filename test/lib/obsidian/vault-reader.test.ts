@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { FsVaultReader, ScanPathNotFoundError } from '../../../src/lib/obsidian/vault-reader.js';
+import { createVaultScope } from '../../../src/lib/obsidian/vault-scope.js';
 
 function fakeReadFile(files: Record<string, string | { error: Error & { code?: string } }>) {
   return vi.fn(async (absPath: string, encoding: 'utf8') => {
@@ -160,6 +161,7 @@ describe('FsVaultReader.scan', () => {
       onlyFiles: true,
       dot: false,
       followSymbolicLinks: false,
+      ignore: [],
     });
   });
 
@@ -206,6 +208,7 @@ describe('FsVaultReader.scan', () => {
       onlyFiles: true,
       dot: false,
       followSymbolicLinks: false,
+      ignore: [],
     });
   });
 
@@ -217,5 +220,42 @@ describe('FsVaultReader.scan', () => {
     const out = await reader.scan({ pathPrefix: 'Projects' });
 
     expect(out).toEqual(['Projects/sub/y.md']);
+  });
+
+  it('filters scoped-out paths and passes ignore patterns on unprefixed scans', async () => {
+    const scope = createVaultScope({ configExclusions: ['Archive/**'] });
+    const glob = vi.fn(async () => ['a.md', 'Archive/old.md', 'Templates/t.md']);
+    const reader = new FsVaultReader({ vaultRoot: '/v', glob, scope });
+
+    const out = await reader.scan();
+
+    expect(out).toEqual(['a.md']);
+    expect(glob).toHaveBeenCalledWith('**/*.md', {
+      cwd: '/v',
+      onlyFiles: true,
+      dot: false,
+      followSymbolicLinks: false,
+      ignore: scope.ignorePatterns,
+    });
+  });
+
+  it('filters prefixed scans through the predicate without rewriting patterns', async () => {
+    // cwd moves to the prefix dir, so root-anchored ignore globs cannot be
+    // passed; the post-filter on re-prefixed paths is the authoritative check.
+    const scope = createVaultScope({ gitignoreLines: ['docs/superpowers/'] });
+    const stat = fakeStat(new Set(['/v/docs']));
+    const glob = vi.fn(async () => ['intro.md', 'superpowers/a.md']);
+    const reader = new FsVaultReader({ vaultRoot: '/v', stat, glob, scope });
+
+    const out = await reader.scan({ pathPrefix: 'docs' });
+
+    expect(out).toEqual(['docs/intro.md']);
+    expect(glob).toHaveBeenCalledWith('**/*.md', {
+      cwd: '/v/docs',
+      onlyFiles: true,
+      dot: false,
+      followSymbolicLinks: false,
+      ignore: [],
+    });
   });
 });
