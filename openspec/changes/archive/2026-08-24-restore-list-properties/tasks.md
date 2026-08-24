@@ -28,5 +28,5 @@ docs, and instructions) but were executed sequentially in one session.
 ## 4. Verify and release (sequential, after all groups)
 
 - [x] 4.1 Repo gates: `npx tsc --noEmit` clean, `npm run lint` clean, full vitest suite green (748/748, count did not drop)
-- [ ] 4.2 Commit as `feat(tools): restore list_properties` (Conventional Commits), PR to `main`
-- [ ] 4.3 After merge: `npm run release` on `main` → 12.1.0; notify the downstream consumer that the vault-health sweep is unblocked
+- [x] 4.2 Commit as `feat(tools): restore list_properties` (Conventional Commits), PR to `main`
+- [x] 4.3 After merge: `npm run release` on `main` → 12.1.0; notify the downstream consumer that the vault-health sweep is unblocked
