@@ -1,10 +1,13 @@
 import { pipeline } from '@xenova/transformers';
 
+// The corpus library owns the model's token window: EMBED_CHAR_BUDGET is derived
+// from the same constant, so the two must never drift apart.
+import { MAX_TOKENS } from '../../lib/obsidian/corpus/types.js';
+
 import type { EmbeddingProvider } from './types.js';
 
 const DEFAULT_MODEL_KEY = 'bge-micro-v2';
 const EMBEDDING_TASK = 'feature-extraction';
-const MODEL_MAX_TOKENS = 512;
 
 type CappableTokenizer = { model_max_length?: number };
 
@@ -14,7 +17,7 @@ function capTokenizer(embeddingPipeline: unknown): void {
     // The shipped tokenizer config declares an effectively unbounded length,
     // which disables the pipeline's own truncation and makes any input over
     // the real window throw inside ONNX.
-    tokenizer.model_max_length = MODEL_MAX_TOKENS;
+    tokenizer.model_max_length = MAX_TOKENS;
   }
 }
 

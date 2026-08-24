@@ -11,6 +11,7 @@ vi.mock('@xenova/transformers', () => ({
   pipeline: pipelineFactory,
 }));
 
+import { MAX_TOKENS } from '../../src/lib/obsidian/corpus/types.js';
 import { EmbeddingService } from '../../src/modules/semantic/embedding-service.js';
 
 describe('EmbeddingService', () => {
@@ -83,6 +84,9 @@ describe('EmbeddingService tokenizer cap', () => {
     const pipe = fakePipeline();
     const service = new EmbeddingService({ pipelineFactory: async () => pipe });
     await service.embed('hello');
+    // Asserted against the shared constant (the cap and EMBED_CHAR_BUDGET must
+    // stay the same number) *and* against its literal value (the real window).
+    expect(pipe.tokenizer.model_max_length).toBe(MAX_TOKENS);
     expect(pipe.tokenizer.model_max_length).toBe(512);
   });
 
