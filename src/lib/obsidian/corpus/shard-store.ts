@@ -61,6 +61,7 @@ export class CorpusStore {
   }
 
   async writeShard(shard: CorpusShard): Promise<void> {
+    this.assertShardVectors(shard);
     await this.mkdir(this.notesDir);
     await this.writeFile(
       path.join(this.notesDir, CorpusStore.shardFileName(shard.path)),
@@ -92,9 +93,14 @@ export class CorpusStore {
       if (isEnoent(err)) return result;
       throw err;
     }
-    for (const entry of entries) {
-      if (!entry.endsWith('.json')) continue;
-      const shard = await this.readShardFile(path.join(this.notesDir, entry));
+    // A cold load is I/O-bound, so the files are read concurrently (design D4's
+    // 68 ms at 2 500 shards is measured with Promise.all). Sorted first so two
+    // files claiming the same note path resolve to the same winner on every run.
+    const files = entries.filter((entry) => entry.endsWith('.json')).sort();
+    const shards = await Promise.all(
+      files.map((entry) => this.readShardFile(path.join(this.notesDir, entry))),
+    );
+    for (const shard of shards) {
       if (shard) result.set(shard.path, shard);
     }
     return result;
@@ -158,16 +164,20 @@ export class CorpusStore {
    * identity and rebuilds (discards every shard, writes a fresh manifest)
    * on any mismatch. Writes nothing when the stored manifest already
    * matches. Called first by reconcile.
+   *
+   * A fresh corpus (no manifest, no shards) is not a mismatch, but the manifest
+   * is still written: leaving it absent would make the very next pass read
+   * "no manifest + shards present" as incompatible and discard the whole first
+   * index. Shards are only cleared when there are shards to clear.
    */
   async ensureManifest(expected: Omit<CorpusManifest, 'created'>): Promise<{ rebuilt: boolean }> {
     const stored = await this.readManifest();
     const hasShards = await this.hasAnyShards();
-    if (isManifestCompatible(stored, expected, hasShards)) {
-      return { rebuilt: false };
-    }
-    await this.clearShards();
+    const compatible = isManifestCompatible(stored, expected, hasShards);
+    if (compatible && stored !== null) return { rebuilt: false };
+    if (!compatible && hasShards) await this.clearShards();
     await this.writeManifest({ ...expected, created: new Date().toISOString() });
-    return { rebuilt: true };
+    return { rebuilt: !compatible };
   }
 
   private async hasAnyShards(): Promise<boolean> {
@@ -253,14 +263,40 @@ export class CorpusStore {
   /** Validates by base64 byte length (`dims * 4`), never by decoding into floats. */
   private isValidVector(value: unknown): value is string {
     if (typeof value !== 'string') return false;
-    let byteLength: number;
-    try {
-      byteLength = Buffer.from(value, 'base64').length;
-    } catch {
-      return false;
-    }
-    return byteLength === this.dims * 4;
+    return Buffer.from(value, 'base64').length === this.dims * 4;
   }
+
+  /**
+   * Rejects a shard carrying a vector of the wrong dimension. Unlike a corrupt
+   * shard on disk — which reads as a missing shard so the note is simply
+   * re-embedded — this is a programming or configuration error: the manifest
+   * gate cannot catch it (`expected.dims` comes from the same constant), so a
+   * mismatched vector would be written, read back as `null`, and re-embedded on
+   * every pass forever. It throws; reconcile contains per-note failures.
+   */
+  private assertShardVectors(shard: CorpusShard): void {
+    const reject = (what: string, value: unknown): never => {
+      throw new Error(
+        `neuro-vault corpus: refusing to write shard "${shard.path}": ${what} is ` +
+          `${describeVector(value)}, expected ${this.dims} dims`,
+      );
+    };
+    if (shard.embedding !== null && !this.isValidVector(shard.embedding)) {
+      reject('the note vector', shard.embedding);
+    }
+    for (const block of shard.blocks) {
+      if (!this.isValidVector(block.embedding)) {
+        reject(`the vector for block "${block.key}"`, block.embedding);
+      }
+    }
+  }
+}
+
+/** Renders a vector's float32 length for an error message. */
+function describeVector(value: unknown): string {
+  if (typeof value !== 'string') return `not a string (${typeof value})`;
+  const bytes = Buffer.from(value, 'base64').length;
+  return bytes % 4 === 0 ? `${bytes / 4} dims` : `${bytes} bytes`;
 }
 
 /**

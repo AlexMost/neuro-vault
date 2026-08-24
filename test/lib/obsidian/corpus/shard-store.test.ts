@@ -81,9 +81,36 @@ describe('CorpusStore', () => {
     const warnings: string[] = [];
     const store = new CorpusStore(root, { warn: (m) => warnings.push(m) });
     const wrongSize = Buffer.alloc(4 * 8).toString('base64'); // 8 floats, not MODEL_DIMS
-    await store.writeShard({ ...shard('N.md'), embedding: wrongSize });
+    // Written past writeShard's own guard, as a corrupted file on disk would be.
+    const file = path.join(root, '.neuro-vault/corpus/notes', CorpusStore.shardFileName('N.md'));
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({ ...shard('N.md'), embedding: wrongSize }));
     expect(await store.readShard('N.md')).toBeNull();
     expect(warnings).toHaveLength(1);
+  });
+
+  it('refuses to write a shard whose note vector has the wrong dimension', async () => {
+    const store = new CorpusStore(await tempVault());
+    const wrongSize = Buffer.alloc(4 * 8).toString('base64');
+    await expect(store.writeShard({ ...shard('N.md'), embedding: wrongSize })).rejects.toThrow(
+      /note vector is 8 dims, expected 384/,
+    );
+    expect(await store.readShard('N.md')).toBeNull();
+  });
+
+  it('refuses to write a shard whose block vector has the wrong dimension', async () => {
+    const store = new CorpusStore(await tempVault());
+    const wrongSize = Buffer.alloc(4 * 8).toString('base64');
+    const bad = shard('N.md');
+    await expect(
+      store.writeShard({ ...bad, blocks: [{ ...bad.blocks[0], embedding: wrongSize }] }),
+    ).rejects.toThrow(/vector for block "#Top" is 8 dims, expected 384/);
+  });
+
+  it('writes a shard with no note vector (a note below the size gate)', async () => {
+    const store = new CorpusStore(await tempVault());
+    await store.writeShard({ ...shard('N.md'), embedding: null });
+    expect((await store.readShard('N.md'))?.embedding).toBeNull();
   });
 
   it('skips unreadable shards when listing', async () => {
@@ -134,6 +161,41 @@ describe('CorpusStore', () => {
     });
     await store.ensureManifest(expected);
     expect(writes).toHaveLength(0);
+  });
+
+  it('writes a manifest on a fresh corpus so the next pass has one to compare', async () => {
+    const store = new CorpusStore(await tempVault());
+    const result = await store.ensureManifest(expected);
+    expect(result.rebuilt).toBe(false);
+    expect(await store.readManifest()).toMatchObject(expected);
+  });
+
+  it('does not discard the first index written after a fresh ensureManifest', async () => {
+    const store = new CorpusStore(await tempVault());
+    await store.ensureManifest(expected);
+    await store.writeShard(shard('N.md'));
+    const second = await store.ensureManifest(expected);
+    expect(second.rebuilt).toBe(false);
+    expect([...(await store.listShards()).keys()]).toEqual(['N.md']);
+  });
+
+  it('lists shards concurrently, in a stable order', async () => {
+    const root = await tempVault();
+    const store = new CorpusStore(root);
+    for (const p of ['C.md', 'A.md', 'B.md']) await store.writeShard(shard(p));
+    let inFlight = 0;
+    let peak = 0;
+    const traced = new CorpusStore(root, {
+      readFile: async (p) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight -= 1;
+        return readFile(p, 'utf8');
+      },
+    });
+    expect(new Set((await traced.listShards()).keys())).toEqual(new Set(['A.md', 'B.md', 'C.md']));
+    expect(peak).toBeGreaterThan(1);
   });
 
   it('clears every shard when the manifest is incompatible', async () => {
