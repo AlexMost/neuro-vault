@@ -21,6 +21,19 @@ These tools are kept because each is the sole path to its capability; reach for 
 - `find_duplicates` — vault-wide all-pairs near-duplicate sweep (corpus hygiene; high embedding similarity).
 - `remove_property` — the only way to _delete_ a frontmatter key (`set_property` only sets; `edit_note` preserves frontmatter).
 
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues (`gh`). **Every opsx change is tracked by an issue**; a direct PR gets
+one only when the work was planned ahead (typo / dep bump / lint tweak: no issue).
+An issue links to its change by **slug**, never by a path — `openspec archive` moves
+the change directory before the PR exists. PRs carry `Closes #<n>` in a change's
+**last** PR and `Refs #<n>` in earlier ones. A multi-change effort gets an `effort`
+epic with the changes as sub-issues; ordering lives in native `blocked_by` edges.
+Issues, PRs and repo docs never name private vault paths or note titles.
+See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
+
 ## Workflow
 
 - Capability change → an OpenSpec opsx change; smaller work → a direct PR. Which one: [`.claude/rules/opsx-routing.md`](.claude/rules/opsx-routing.md). Full flow: [`docs/workflow.md`](docs/workflow.md).

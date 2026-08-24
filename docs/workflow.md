@@ -16,6 +16,11 @@ Process ceremony scales with risk. Routing detail: [`.claude/rules/opsx-routing.
 
 Use the `/opsx:*` commands so the schema's artifact instructions inject at each step.
 
+0. **Issue.** Every opsx change is tracked by a GitHub issue — create it first
+   if it does not exist yet. `proposal.md` records `Tracked by: #<n>`; the issue
+   names the change by **slug**, never by a path (step 9 moves the directory).
+   Ordering between changes lives in GitHub `blocked_by` edges, not in a doc.
+   Conventions: [`docs/agents/issue-tracker.md`](agents/issue-tracker.md).
 1. **Start.** `/opsx:new <slug> --schema superpowers-bridge` (or `/opsx:ff <slug>` to scaffold + run the planning artifacts in one go).
 2. **brainstorm.** `superpowers:brainstorming` runs; output is redirected into `openspec/changes/<slug>/brainstorm.md` (not `docs/superpowers/specs/`).
 3. **proposal / design.** Why + what-changes + capabilities (`proposal.md`); structured decisions (`design.md`). A load-bearing decision proposes a new `docs/adr/NNNN-*.md` (ask first).
@@ -25,7 +30,7 @@ Use the `/opsx:*` commands so the schema's artifact instructions inject at each 
 7. **verify.** `/opsx:verify` → `verify.md`. Gates that must pass: `npm test`, `npm run lint`, `npx tsc --noEmit`.
 8. **retrospective.** `retrospective.md`, written BEFORE the PR (hot context, same PR diff).
 9. **archive.** `npx openspec archive -y` — syncs the delta into `openspec/specs/<capability>/` and moves the change under `openspec/changes/archive/`.
-10. **PR.** `superpowers:finishing-a-development-branch` — the LAST step. Open a PR to `main`; never push directly (the release flow expects a merge commit).
+10. **PR.** `superpowers:finishing-a-development-branch` — the LAST step. Open a PR to `main`; never push directly (the release flow expects a merge commit). Write `Closes #<n>` when this is the change's **last** PR, `Refs #<n>` otherwise — a change may span two PRs, and closing early breaks the epic's progress bar.
 
 ## After merge: release
 
