@@ -35,8 +35,7 @@ context: |
   - `docs/adr/` — WHY (decisions, immutable). `docs/architecture/` — HOW
     (mechanism, living).
   - `openspec/specs/` — WHAT now (capability contracts). `openspec/changes/` —
-    WHAT proposed. `docs/superpowers/specs/` + `plans/` — FROZEN pre-OpenSpec
-    record (do not add to it).
+    WHAT proposed.
   - GitHub Issues — WHAT tracked: one issue per opsx change, `effort` epics group
     a multi-change effort, native `blocked_by` edges carry ordering. An issue links
     to its change by slug, never by path. See docs/agents/issue-tracker.md.

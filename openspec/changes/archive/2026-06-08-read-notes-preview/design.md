@@ -5,7 +5,7 @@
 fields. The handler calls `entry.reader.readNotes({ paths, fields })`; the reader returns full
 frontmatter + content, and the handler slices.
 
-Six consecutive weekly usage reports (W17→W24, `Inbox/neuro-vault-usage/`) flag `read_notes` as
+Six consecutive private weekly usage reports (W17→W24) flag `read_notes` as
 the heaviest knowledge tool: ~12–15 KB/call, peak ~33 KB. The cost is structural, not incidental
 — on the `search_notes`/`query_notes` → `read_notes` path the agent reads the **full** body of
 every candidate (~5) to triage them, then keeps only 1–2. The `fields` toggle could mitigate this

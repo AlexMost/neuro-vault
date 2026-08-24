@@ -15,7 +15,7 @@ design.md 從本檔萃取並重新整理為結構化設計文件。
 
 ## Background
 
-Source: vault task `Tasks/neuro-vault/Дошліфувати контракт fused-відповіді.md` —
+Source: a private vault task note on polishing the fused response contract —
 a collection of small contract burrs from the 2026-08-10 field report against
 release 14.0.0 (`search-notes-unified-rank`). Explicitly NOT about ranking —
 about honesty of the response fields.

@@ -71,7 +71,7 @@ d06483a (origin/main base)
 
 - **`superpowers:brainstorming`**
   - **What was skipped**: the interactive brainstorming skill; `brainstorm.md` was authored as a decision-log capture instead.
-  - **Why this cycle**: the source task `Tasks/neuro-vault/Preview-режим тіла для read_notes` already encoded locked scope / out-of-scope / Definition-of-Done, itself distilled from six weekly usage reports (W17→W24). The single open design fork (parameter shape) was resolved live via the AskUserQuestion tool ("backward compat not required"; then "smart default by path count"). Re-running the interactive skill would have re-litigated decisions the user had already made.
+  - **Why this cycle**: the source task note in the private vault already encoded locked scope / out-of-scope / Definition-of-Done, itself distilled from six weekly usage reports (W17→W24). The single open design fork (parameter shape) was resolved live via the AskUserQuestion tool ("backward compat not required"; then "smart default by path count"). Re-running the interactive skill would have re-litigated decisions the user had already made.
   - **How to prevent recurrence**: `one-off — schema boundary case`. The brainstorm artifact PRECHECK explicitly permits manual authoring "when the exploration is already complete"; this cycle met that condition (a fully-formed upstream spec + a live fork resolution). It is a boundary the schema already sanctions, not a gap to close.
 
 - **`superpowers:writing-plans`**

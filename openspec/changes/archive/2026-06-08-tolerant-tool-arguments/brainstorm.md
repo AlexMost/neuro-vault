@@ -8,7 +8,7 @@ design.md reorganizes this into structured sections; do not copy verbatim.
 
 ## Background
 
-Source task: `Tasks/neuro-vault/Толерантність аргументів query_notes` (vault, type
+Source task: a private vault task note (type
 `task`, priority 4). `query_notes` silently hard-fails when an agent guesses the
 parameter contract, and the agent does not pivot — the session dead-ends.
 
@@ -16,7 +16,7 @@ Documented case — W23, `conv-1780003210445` ("Review svadlenka tasks"): a
 `query_notes` call used the key `filters` (schema wants `filter`) and a stringified
 JSON value (`"[…]"`) where a real array was expected → `status: error`, session
 ended with no retry. This is a recurring class of dead-end in the tool-usage reports
-(`Inbox/neuro-vault-usage/2026-W23`).
+(private weekly usage report, 2026-W23).
 
 Goal: make the call **forgiving** — accept the common alias, and when a value can't be
 recovered, return an error that _names the expected shape_ instead of a bare fail.
@@ -117,5 +117,5 @@ name is unchanged, so no major version bump (ADR-0005).
 
 ## Connections
 
-- `Inbox/neuro-vault-usage/2026-W23` — case source.
-- `Tasks/neuro-vault/Preview-режим тіла для read_notes` — adjacent MCP optimization.
+- Private weekly usage report, 2026-W23 — case source.
+- A private vault task note on read_notes preview mode — adjacent MCP optimization.

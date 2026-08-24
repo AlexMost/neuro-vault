@@ -3,7 +3,7 @@ Raw capture of superpowers:brainstorming output.
 Conducted verbally in-chat (opsx:explore session, 2026-08-10): code-verified
 diagnosis of the threshold wiring, then three design forks resolved via
 explicit user decisions. Source task: vault note
-"Tasks/neuro-vault/Розділити пороги легів — threshold семантиці, floor expansion'у".
+a private vault task note on splitting the per-leg thresholds.
 -->
 
 # Brainstorm — split-leg-thresholds

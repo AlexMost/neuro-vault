@@ -3,8 +3,8 @@ Raw capture of the brainstorming for this change.
 
 The creative exploration was already done outside this session: the framing, candidate
 list, overlap hypotheses, and audit method live in the vault task note
-`Tasks/neuro-vault/Аудит перекриття малозадіяних MCP-тулів` (itself distilled from the
-W23 + W24 tool-usage reports under `Inbox/neuro-vault-usage/`). The audit proper — reading
+a private vault task note (itself distilled from the
+W23 + W24 private weekly tool-usage reports). The audit proper — reading
 each tool's source and verifying overlap against the live vault — was run in this session,
 and the three remaining product forks (the disposition of `read_property`, `list_properties`,
 and `get_stats`) were resolved live with the user via AskUserQuestion. This file captures that

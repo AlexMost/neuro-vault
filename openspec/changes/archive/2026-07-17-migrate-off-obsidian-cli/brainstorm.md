@@ -16,7 +16,7 @@ design.md 從本檔萃取並重新整理為結構化設計文件。
 > Verbal brainstorming ran in-chat during an `/opsx:explore` session on
 > 2026-07-16 (per `.claude/rules/opsx-routing.md` entry routing). This file is
 > the raw decision-log capture of that session. Vault-side planning notes:
-> `Tasks/neuro-vault/FsVaultProvider.md` + three blocked leg notes.
+> a private vault task note on FsVaultProvider + three blocked leg notes.
 
 ## Background
 
