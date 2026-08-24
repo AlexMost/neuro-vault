@@ -3,41 +3,37 @@
 ## Purpose
 TBD - created by archiving change vault-conventions-delivery. Update Purpose after archive.
 ## Requirements
-### Requirement: A vault's conventions survive the instructions truncation budget
-
-Composed MCP `instructions` SHALL place every per-vault conventions block — the contents of
-`<vaultPath>/.neuro-vault/for-external-agents.md` — ahead of all server-authored prose, so that
-the blocks occupy the beginning of the string. The server-authored preamble that follows SHALL be
-small enough that a representative conventions file of roughly 1,200 characters appears in full,
-together with the complete preamble, within the first 2048 characters of the composed output.
-Ordering is normative: a client that renders only a leading slice of `instructions` MUST receive
-the vault-specific content, because it is the only content no tool description can supply.
-
-#### Scenario: a representative vault block is intact inside the budget
-
-- **WHEN** instructions are composed for a vault whose `for-external-agents.md` is ~1,200 characters
-- **THEN** the first 2048 characters of the result contain that file's content in full, and also
-  contain the server-authored preamble in full
-
-#### Scenario: conventions precede server prose
-
-- **WHEN** instructions are composed for a vault that has a conventions file
-- **THEN** the conventions block starts at a lower character offset than any server-authored section
-
-#### Scenario: no conventions file leaves the preamble alone
-
-- **WHEN** instructions are composed for a vault with no `for-external-agents.md`
-- **THEN** the result is the server-authored preamble with no conventions heading and no empty block
-
 ### Requirement: Composed instructions do not restate tool descriptions
 
-The server-authored portion of `instructions` SHALL carry only guidance that no tool description
-carries: the vault's role as a second brain, the routing heuristic between vault operations and
-semantic search, and the order in which to discover the current project's scope. Per-tool usage
-sections and the multi-vault fan-out section SHALL NOT appear in `instructions`, because tool
-descriptions already deliver that content over a channel that is neither truncated nor withheld
-from sub-agents. Guidance removed from `instructions` that is not already present in a tool
-description MUST be moved into the relevant description rather than dropped.
+Composed MCP `instructions` SHALL be a constant that is independent of vault configuration, and
+SHALL carry only guidance that no tool description carries: the vault's role as a second brain, the
+routing heuristic between vault operations and semantic search, the order in which to discover the
+current project's scope, and the pointer to `get_vault_overview` for that vault's conventions. The
+composed string MUST NOT contain the content of any vault's `.neuro-vault/for-external-agents.md`,
+in whole or in part, and MUST NOT vary with the number of registered vaults, their names, their
+order, or the presence, absence, or size of any file on disk. Its length SHALL be under 2048
+characters unconditionally, so that no vault owner's action can push server-authored guidance past
+a truncating client's cap. Per-tool usage sections and the multi-vault fan-out section SHALL NOT
+appear, because tool descriptions already deliver that content over a channel that is neither
+truncated nor withheld from sub-agents. Guidance removed from `instructions` that is not already
+present in a tool description MUST be moved into the relevant description rather than dropped.
+
+#### Scenario: no vault content reaches the instructions string
+
+- **WHEN** instructions are composed for a vault whose `for-external-agents.md` has distinctive
+  content
+- **THEN** no part of that file appears anywhere in the composed string
+
+#### Scenario: the string does not vary with the registry
+
+- **WHEN** instructions are composed for a single-vault registry and for a multi-vault registry
+  whose vaults have conventions files of differing sizes
+- **THEN** both results are byte-identical
+
+#### Scenario: the budget holds unconditionally
+
+- **WHEN** the composed `instructions` string is measured for any registry
+- **THEN** its length is under 2048 characters
 
 #### Scenario: multi-vault prose is not duplicated into instructions
 
@@ -45,10 +41,7 @@ description MUST be moved into the relevant description rather than dropped.
 - **THEN** the output contains no multi-vault fan-out section, and the fan-out contract remains
   described by each multi-vault-aware tool's own description
 
-#### Scenario: the preamble stays within its budget
-
-- **WHEN** the server-authored preamble is measured
-- **THEN** its length leaves room for a representative conventions block inside 2048 characters
+---
 
 ### Requirement: get_vault_overview carries the vault's conventions
 
@@ -98,14 +91,23 @@ vault without the feature returns exactly the payload it returned before this ca
 
 The conventions file SHALL be read when the overview is computed, not cached from server startup,
 so that an edit to `for-external-agents.md` is reflected in the next overview call without
-restarting the MCP server. This freshness guarantee applies to the overview channel only; the
-`instructions` channel is composed once at startup and MUST NOT be expected to reflect later edits.
+restarting the MCP server. The overview channel is the only channel that carries conventions, so
+this freshness guarantee covers every delivery of them: there is no second, staler copy composed at
+startup that a consumer might read instead.
 
 #### Scenario: an edit between two calls is visible
 
 - **WHEN** `get_vault_overview` is called, the conventions file is then modified, and the tool is
   called again — with no server restart in between
 - **THEN** the second response's `conventions` reflects the modified content
+
+#### Scenario: no startup-composed copy competes with it
+
+- **WHEN** a vault's conventions file is modified after the server starts
+- **THEN** no server-held string composed at startup carries the stale content, because none carries
+  conventions at all
+
+---
 
 ### Requirement: Oversized conventions are truncated visibly
 
@@ -131,8 +133,7 @@ In multi-vault mode every per-vault result SHALL carry its own vault's conventio
 `get_vault_overview` fans out, each entry in `results_by_vault` SHALL carry the `conventions` of
 the vault named by that entry, following the same present/absent and truncation rules as the
 single-vault path. Each per-vault `vault://<vault-name>/overview` resource SHALL likewise carry
-only its own vault's conventions. Composed `instructions` SHALL emit one conventions block per
-vault, each attributed to its vault by name.
+only its own vault's conventions.
 
 #### Scenario: fan-out entries carry their own conventions
 
@@ -145,12 +146,19 @@ vault, each attributed to its vault by name.
 - **WHEN** one of two registered vaults has no conventions file
 - **THEN** that vault's entry omits `conventions` and the other vault's entry still carries its own
 
+#### Scenario: registration order does not decide who gets conventions
+
+- **WHEN** several vaults with conventions files are registered in any order
+- **THEN** every vault's own conventions reach the caller through that vault's overview result, with
+  no vault's delivery depending on how many vaults precede it
+
+---
+
 ### Requirement: An unreadable conventions file never fails a call
 
-Reading the conventions file SHALL be best-effort on both channels. A missing, unreadable, or
-permission-denied `for-external-agents.md` SHALL be treated as absent: `get_vault_overview` MUST
-still return its full structural snapshot, and instructions composition MUST still produce the
-server-authored preamble. An optional conventions file MUST NOT be able to turn a working overview
+Reading the conventions file SHALL be best-effort. A missing, unreadable, or permission-denied
+`for-external-agents.md` SHALL be treated as absent: `get_vault_overview` MUST still return its
+full structural snapshot. An optional conventions file MUST NOT be able to turn a working overview
 call into an error or a failed vault.
 
 #### Scenario: an unreadable file degrades to absent
@@ -164,4 +172,34 @@ call into an error or a failed vault.
 - **WHEN** one vault of several has an unreadable conventions file during a fan-out
 - **THEN** that vault appears in `results_by_vault` with its snapshot and without `conventions`,
   and is not reported in `failed_vaults`
+
+#### Scenario: server startup does not depend on the file
+
+- **WHEN** the server starts against a vault whose conventions file is unreadable
+- **THEN** startup composes its `instructions` and registers its tools without consulting that file
+
+---
+
+### Requirement: Instructions point at the overview channel for conventions
+
+Composed MCP `instructions` SHALL carry a pointer stating that a vault's owner-authored conventions
+are delivered on the `get_vault_overview` response rather than in `instructions`, and that the tool
+is to be called before reading, writing, or organising notes in the vault. The pointer SHALL name
+`get_vault_overview` explicitly, so that an agent reading only `instructions` learns both that
+conventions exist for this vault and which single call retrieves them. The pointer is a reference,
+not a copy: it MUST NOT reproduce any part of a vault's conventions file.
+
+#### Scenario: the pointer names the tool
+
+- **WHEN** the composed `instructions` string is inspected
+- **THEN** it contains the literal tool name `get_vault_overview` in a statement that the vault's
+  conventions are delivered there
+
+#### Scenario: the pointer is present with no conventions file anywhere
+
+- **WHEN** instructions are composed for a registry in which no vault has a conventions file
+- **THEN** the pointer is still present and unchanged, because it describes where conventions would
+  arrive rather than reporting whether any exist
+
+---
 
