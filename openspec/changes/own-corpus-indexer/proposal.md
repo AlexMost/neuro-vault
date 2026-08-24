@@ -18,7 +18,7 @@ Semantic search reads a corpus the server does not own: a third-party Obsidian p
 - From: no extraction code — embed inputs arrive pre-computed inside the plugin's corpus.
 - To: header-based chunking (levels 1–6) with hierarchical block keys, 1-based inclusive line spans, both embed-text formulas reproduced (block = breadcrumbs without the last heading segment + text; note = path breadcrumbs + full text truncated to `max_tokens × 3.7` characters), and the `min_chars: 200` gate including the "skip a block fully covered by embedded sub-blocks" rule.
 - Reason: parity is a diagnostic anchor, not an aesthetic goal — the parity run (#87) compares backends on one golden set, so v1 must change the storage without changing the text. Improvements land later behind an `embed_version` bump.
-- Impact: non-breaking. Accepted divergences: `excluded_headings` is not implemented (unused in practice), `.md` only, and membership comes from the vault scope rather than the plugin's exclusion quirks.
+- Impact: non-breaking. Accepted divergences: `excluded_headings` is not implemented (unused in practice), `.md` only, membership comes from the vault scope rather than the plugin's exclusion quirks, and block boundaries come from parsing the note as CommonMark rather than reproducing the plugin's line-regex fence/indentation/HTML-block quirks.
 
 **Corpus storage (new)**
 

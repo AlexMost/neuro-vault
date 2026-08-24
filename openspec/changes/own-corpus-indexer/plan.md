@@ -202,6 +202,15 @@ git commit -m "feat(corpus): add corpus types, parity constants and embed port"
 
 ### Task 2: Markdown chunker
 
+> **Superseded after review — kept as the historical record.** The step-by-step below builds
+> block detection from `HEADING_RE`/`FENCE_RE` line regexes and a fence-toggle loop. The
+> shipped implementation scans the CommonMark AST (`mdast-util-from-markdown`) instead; the
+> regex scanner's failure mode was silent content loss, and a package distributed via `npx`
+> into vaults nobody has seen cannot rely on that risk staying dormant. See design.md D2,
+> divergence 6, for the reasoning and the accepted behaviour changes. Everything else in this
+> task — the key grammar, spans, frontmatter/preamble handling, content-chunk numbering — is
+> unchanged and still describes the shipped code.
+
 **Files:**
 - Create: `src/lib/obsidian/corpus/chunker.ts`
 - Test: `test/lib/obsidian/corpus/chunker.test.ts`

@@ -115,6 +115,35 @@ The constraints that shape every decision below:
      keyed maps, so a collision silently drops a block. We apply the suffix at
      every level. Uniqueness is an invariant the corpus depends on, and the
      ambiguity is not worth reproducing.
+  6. Block scanning is CommonMark-correct via the AST
+     (`mdast-util-from-markdown`, already a runtime dependency and already how
+     the lexical leg parses notes in `src/lib/obsidian/lexical/blocks.ts`),
+     not a reproduction of the plugin's line-regex quirks. The regex's failure
+     mode was silent content loss — a line it mis-attributed landed in no
+     block at all, never embedded, nothing reporting it — and it had four
+     known holes: a ` ``` ` line inside a `~~~` fence flipped the toggle,
+     fences of four or more backticks went unrecognised, four-space-indented
+     code was invisible to it, and its fence regex's `^\s*` mis-fired on
+     indented content. Parity with the corpus being replaced has a shelf life
+     of exactly one measurement run (#87), after which the plugin is removed
+     (slice #6); correctness ships permanently to strangers who install via
+     `npx` into vaults nobody here has seen, which is the wrong side of that
+     trade. No corpus exists on any user's disk yet, so this was also the
+     cheapest moment the swap will ever be — after the backend integration
+     slice it would cost every user an `embed_version` rebuild. The AST
+     decides *where* a heading is and its level; the raw source line still
+     decides the title text, so `# **Bold** title` and `# Title ###` keep the
+     keys they had. Two behaviour changes are accepted as CommonMark-correct:
+     an ATX heading indented one to three spaces now opens a block (the regex
+     required column 0), and a `#` line inside an HTML block no longer does —
+     an HTML block that runs on absorbs following headings until a blank line
+     ends it. Setext headings (`Title` over `====` or `----`) still do not
+     open blocks, since the spec is ATX-only and a paragraph sitting directly
+     above a `---` is common enough that minting a heading keyed on a whole
+     sentence would be a nasty surprise in someone else's vault; a heading
+     with an empty title (`#` alone) still does not open one either, since its
+     key would collide with the preamble block's `#` and block keys must be
+     unique within a note (divergence 5).
 - **Alternatives considered**: leaf-only blocks (3× smaller corpus, ~2× faster
   index) — rejected, it would make the parity run compare two different
   chunkings, so a worse-than-baseline number would be unattributable;

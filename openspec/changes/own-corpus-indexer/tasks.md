@@ -23,6 +23,11 @@ other groups at the same marker and can be dispatched concurrently.
 - [x] 2.5 Failing test → implementation: block keys are unique within a note — a heading repeated among siblings at any level takes an occurrence suffix, not just a repeated top-level heading (design D2, divergence 5).
 - [x] 2.6 Fixture test: one representative note (frontmatter + preamble + nested headings + a code fence containing a `#` line) asserted whole — keys and spans together — as the chunker's golden output.
 
+> After review, block scanning moved from hand-rolled line regexes to the CommonMark AST
+> (`mdast-util-from-markdown`), because the regex scanner's failure mode was silent content
+> loss and a package shipped via `npx` into unseen vaults cannot rely on that risk staying
+> dormant — see design.md D2, divergence 6.
+
 ## 3. Embed text and the size gate — PR 1 [parallel-safe with 2, 4, 5]
 
 - [x] 3.1 Failing test → implementation: block embed text = breadcrumbs (`/` → ` > `, final heading segment dropped, trailing `.md` removed) + `\n` + block text.
