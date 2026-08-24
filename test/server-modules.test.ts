@@ -278,3 +278,23 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 });
+
+describe('informational flags', () => {
+  it.each([['--version'], ['--help']])(
+    '%s never constructs a server or opens the transport',
+    async (flag) => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const serverFactory = vi.fn(() => createFakeServer());
+      const transportFactory = vi.fn(() => ({}) as never);
+
+      try {
+        await main(['node', 'cli.js', flag], { serverFactory, transportFactory });
+
+        expect(serverFactory).not.toHaveBeenCalled();
+        expect(transportFactory).not.toHaveBeenCalled();
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
+});

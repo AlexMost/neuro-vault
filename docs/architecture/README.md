@@ -6,6 +6,7 @@ These are living documents. Update the relevant file in the same change that alt
 
 ## Concepts
 
+- [cli-startup.md](./cli-startup.md) — the command-line entry point: informational flags (`--version`, `--help`), why parsing never exits the process itself, and the single `package.json` read behind the version string and the MCP server identity
 - [mcp-server-shape.md](./mcp-server-shape.md) — how MCP tools are registered, response/error wrappers, resource URIs, and where the `instructions` constant lives
 - [vault-conventions.md](./vault-conventions.md) — how `.neuro-vault/for-external-agents.md` reaches an agent: the `conventions` field on `get_vault_overview`, the 8,000-character cap and its truncation flag, and the pointer that is all `instructions` carries
 - [tool-response-envelope.md](./tool-response-envelope.md) — the `toToolResponse`/`toToolErrorResponse` choke point: minified success text, `CODE: message` error text, client-behavior rationale

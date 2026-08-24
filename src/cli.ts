@@ -10,8 +10,12 @@ export async function main(
   argv: string[] = process.argv,
   deps: NeuroVaultStartupDependencies = {},
 ): Promise<void> {
-  const config = await parseConfig(argv);
-  await startNeuroVaultServer(config, deps);
+  const parsed = await parseConfig(argv);
+  // yargs already satisfied this invocation (--help or --version); stop here.
+  if (parsed.kind === 'handled') {
+    return;
+  }
+  await startNeuroVaultServer(parsed.config, deps);
 }
 
 async function run(): Promise<void> {
