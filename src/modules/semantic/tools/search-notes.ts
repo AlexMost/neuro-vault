@@ -371,12 +371,17 @@ async function runSearchForEntry(
   // `mode: "lexical"` never touches the backend. A vault without a ready
   // semantic backend (absent, indexing, disabled, unavailable) also falls
   // back to lexical-only rather than throwing — a ready backend that errors
-  // mid-search still throws DEPENDENCY_ERROR below, unchanged.
-  if (
-    channel === 'lexical' ||
-    entry.backend === undefined ||
-    entry.backend.status().state !== 'ready'
-  ) {
+  // mid-search still throws DEPENDENCY_ERROR below, unchanged. Branches on
+  // the `semantic_status` captured once above, NOT a fresh `status()` call —
+  // `status()` reads a mutable value a background pass can flip (e.g.
+  // indexing -> ready) across the `await`s above (graph.ensureFresh, lexical
+  // search); re-reading here could let the semantic leg run below while this
+  // check still saw the old state, producing a payload whose `semantic_status`
+  // contradicts which leg actually ran. `entry.backend === undefined` stays
+  // as its own disjunct because TS needs it to narrow `entry.backend` for the
+  // `.snapshot()` call further down, independent of what `semantic_status`
+  // says.
+  if (channel === 'lexical' || entry.backend === undefined || semantic_status.state !== 'ready') {
     const query_stats = buildQueryStats(
       isMulti,
       queries,

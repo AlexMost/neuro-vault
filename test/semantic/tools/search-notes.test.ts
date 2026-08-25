@@ -25,6 +25,7 @@ import {
   toBackend,
   runSearch,
 } from './_helpers.js';
+import { engineReturning, makeLexicalVault, sourcesWithEmbeddingFor } from './_hybrid-helpers.js';
 
 // Lightweight helpers for mock-only tests (no real corpus needed)
 function makeMockSource(p: string, embedding: number[] = [1, 0]): SmartSource {
@@ -1014,14 +1015,27 @@ describe('semantic_status', () => {
   });
 
   it('reports progress while indexing and still returns lexical matches', async () => {
-    const result = await runSearch({
-      backendStatus: { state: 'indexing', indexed: 3, total: 9 },
-      input: { query: 'пошук' },
-    });
-    expect(result.semantic_status).toEqual({ state: 'indexing', indexed: 3, total: 9 });
-    expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
-      true,
+    // `makeLexicalVault` writes a real on-disk body and wires a real
+    // `FsVaultReader` (unlike `runSearch`'s fixture, which always writes an
+    // empty body under the registry's default no-op reader) — the body
+    // actually contains the query term, so the "still returns lexical
+    // matches" claim in the test name is load-bearing, not a vacuous
+    // `every()` over an empty `matches[]`.
+    const { deps, cleanup } = await makeLexicalVault(
+      { 'Notes/a.md': 'нотатка про пошук' },
+      { backendStatus: { state: 'indexing', indexed: 3, total: 9 } },
     );
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+      expect(result.semantic_status).toEqual({ state: 'indexing', indexed: 3, total: 9 });
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+        true,
+      );
+    } finally {
+      await cleanup();
+    }
   });
 
   it('reports the state in lexical mode without reading a snapshot', async () => {
@@ -1078,6 +1092,44 @@ describe('semantic_status', () => {
       input: { query: 'x' },
     });
     expect(result.matches.map((m) => m.path)).not.toContain('Notes/gone.md');
+  });
+
+  it('pins semantic_status to the value captured up front, even if status() flips indexing -> ready mid-request', async () => {
+    // The mock engine returns a semantic hit for ANY query. If the leg
+    // decision below re-read `status()` after a mid-request indexing ->
+    // ready flip (the transition a warming vault makes), the semantic leg
+    // would run and this hit would surface (found_in: ["semantic"]) even
+    // though `semantic_status` still (correctly) reports "indexing" — a
+    // direct contradiction the fix must prevent. Asserting `status` was
+    // called exactly once pins that only the up-front capture is read.
+    const notePath = 'Notes/a.md';
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      {
+        backendStatus: { state: 'indexing', indexed: 3, total: 9 },
+        sources: sourcesWithEmbeddingFor(notePath, [1, 0]),
+        engine: engineReturning([{ path: notePath, similarity: 0.9 }]),
+      },
+    );
+    try {
+      const entry = deps.registry.list()[0];
+      const status = vi
+        .fn()
+        .mockReturnValueOnce({ state: 'indexing', indexed: 3, total: 9 })
+        .mockReturnValue({ state: 'ready' });
+      entry.backend = { ...entry.backend!, status };
+
+      const tool = buildSearchNotesTool(deps);
+      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+
+      expect(status).toHaveBeenCalledTimes(1);
+      expect(result.semantic_status).toEqual({ state: 'indexing', indexed: 3, total: 9 });
+      expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+        true,
+      );
+    } finally {
+      await cleanup();
+    }
   });
 });
 

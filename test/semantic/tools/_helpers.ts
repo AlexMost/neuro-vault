@@ -196,7 +196,11 @@ export function makeSyntheticSource(
  * `search_notes` once with `input`. `allowed`, when given, becomes the
  * vault's `listMatchingPaths` result (for filter tests); `snapshot`, when
  * given, is used as the corpus's `snapshot` spy so a test can assert it was
- * (not) called.
+ * (not) called. This helper's disk fixture always writes empty bodies (see
+ * `makeSearchDeps`, which defaults to the registry's `emptyReader` — content
+ * written to disk is invisible to the lexical leg regardless); a test that
+ * needs a real lexical match should use `makeLexicalVault` from
+ * `_hybrid-helpers.ts` instead, which wires a real `FsVaultReader`.
  */
 export async function runSearch(opts: {
   backendStatus?: BackendStatus;
@@ -215,6 +219,7 @@ export async function runSearch(opts: {
   const existingPaths = opts.existingPaths ?? snapshotPaths;
   const absentPaths = new Set(snapshotPaths.filter((p) => !existingPaths.includes(p)));
 
+  const allowed = opts.allowed;
   const { deps, cleanup } = await makeSearchDeps({
     sources,
     embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0, 0]) },
@@ -223,7 +228,7 @@ export async function runSearch(opts: {
     absentPaths,
     corpus: { snapshot: snapshotFn },
     backendStatus: opts.backendStatus,
-    ...(opts.allowed !== undefined ? { listMatchingPaths: async () => opts.allowed! } : {}),
+    ...(allowed !== undefined ? { listMatchingPaths: async () => allowed } : {}),
   });
 
   try {
