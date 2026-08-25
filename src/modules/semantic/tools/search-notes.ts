@@ -28,6 +28,7 @@ import {
   type LexicalMatch,
   type RankedNote,
 } from '../../../lib/obsidian/lexical/index.js';
+import type { BackendState, BackendStatus } from '../../../lib/obsidian/semantic-backend.js';
 
 const prefixSchema = z.union([z.string(), z.array(z.string()).min(1)]);
 
@@ -38,7 +39,7 @@ const filterSchema = z.object({
   frontmatter: z.record(z.string(), z.unknown()).optional(),
 });
 
-interface SearchNotesInput {
+export interface SearchNotesInput {
   vault?: string;
   query: string | string[];
   mode?: SearchChannelMode;
@@ -74,9 +75,25 @@ export interface UnifiedMatch {
   matched_queries?: string[];
 }
 
+/**
+ * Describes the vault's semantic INDEX, not this request — required on every
+ * `search_notes` payload (design D5), including `mode: "lexical"` and the
+ * empty-filter early return, so a client never has to read an omitted field
+ * as "healthy". `indexed`/`total` ride along only while `state ===
+ * "indexing"`. `reason` (present on `BackendStatus` for `unavailable`) is
+ * deliberately NOT exposed here — it belongs on error payloads, not on a
+ * successful search result.
+ */
+export interface SemanticStatusField {
+  state: BackendState;
+  indexed?: number;
+  total?: number;
+}
+
 export type SearchNotesOutput = {
   matches: UnifiedMatch[];
   truncated: boolean;
+  semantic_status: SemanticStatusField;
   query_stats?: Record<
     string,
     {
@@ -87,6 +104,22 @@ export type SearchNotesOutput = {
     }
   >;
 };
+
+// An absent backend means the semantic module is globally off for this
+// server; it is reported as `unavailable` (same branch `resolveSemanticVault`
+// uses for a backend that reports its own failure reason), just without the
+// `reason` string — that detail belongs on error payloads, not here.
+function toStatusField(status: BackendStatus | undefined): SemanticStatusField {
+  if (status === undefined) {
+    return { state: 'unavailable' };
+  }
+  return {
+    state: status.state,
+    ...(status.state === 'indexing'
+      ? { indexed: status.indexed ?? 0, total: status.total ?? 0 }
+      : {}),
+  };
+}
 
 export interface SearchNotesDeps {
   registry: IVaultRegistry;
@@ -187,7 +220,7 @@ function assembleUnified(args: {
   // isn't hit — e.g. lexical mode with more matches than `lexCap` but fewer
   // than the merged cap.
   legTruncated: boolean;
-}): SearchNotesOutput {
+}): Pick<SearchNotesOutput, 'matches' | 'truncated'> {
   const { semanticNodes, lexicalNotes, entry, totalNotes, cap, isMulti, legTruncated } = args;
   const expansion = flattenExpansion(semanticNodes);
   const semanticByPath = new Map(semanticNodes.map((n) => [n.path, n]));
@@ -246,6 +279,12 @@ async function runSearchForEntry(
 ): Promise<SearchNotesOutput> {
   const { graph, listMatchingPaths } = entry;
   const { embeddingProvider, searchEngine, modelKey, lexicalFor } = deps;
+
+  // Read once, up front — it describes the vault's index, not this
+  // request, so every return path below (including the empty-filter early
+  // return and `mode: "lexical"`, which never touch the backend otherwise)
+  // carries the same value (design D5).
+  const semantic_status = toStatusField(entry.backend?.status());
 
   // `channel` picks which retrieval leg(s) run. `effort` maps onto the
   // internal quick|deep retrieval-policy vocabulary. `threshold` is
@@ -308,6 +347,7 @@ async function runSearchForEntry(
       return {
         matches: [],
         truncated: false,
+        semantic_status,
         ...(query_stats !== undefined ? { query_stats } : {}),
       };
     }
@@ -356,6 +396,7 @@ async function runSearchForEntry(
         isMulti,
         legTruncated: lexical.truncated,
       }),
+      semantic_status,
       ...(query_stats !== undefined ? { query_stats } : {}),
     };
   }
@@ -426,6 +467,7 @@ async function runSearchForEntry(
         isMulti,
         legTruncated: lexical.truncated || semantic.truncated,
       }),
+      semantic_status,
       ...(query_stats !== undefined ? { query_stats } : {}),
     };
   } catch (error) {
@@ -481,6 +523,7 @@ export function buildSearchNotesTool(
     'RESPONSE SHAPE:',
     '- `matches[]` — one fused, ranked list. Each entry: `path`, `vault`, `backlink_count`, `found_in` (which source(s) surfaced it: "semantic", "lexical:title"|"lexical:heading"|"lexical:body", "expansion" — always non-empty), plus evidence fields present only for the sources that hit: `similarity` (semantic; `blocks[]` accompanies it whenever the note has block-level evidence — non-empty when present, absent for a note without block embeddings), `lexical[]` (snippet matches, max ~3, `{ matched_in, snippet, lines?, heading? }`), `expansion_similarity` (expansion).',
     '- `truncated` — top-level, always present; true when candidates were dropped by the merged cap or the semantic or lexical leg\'s internal pool cap. The two causes need different fixes: merged-cap truncation is recovered by raising `limit`; the semantic or lexical leg\'s pool-cap truncation is NOT — raise `effort` to "deep" (or narrow `query`/`filter`) instead.',
+    '- `semantic_status` — top-level, always present in every mode, including "lexical" and an empty-filter result: `{ state, indexed?, total? }` describing the VAULT\'s semantic index, not this request. `state` is one of "ready" (semantic leg ran normally), "indexing" (still building — this response is lexical-only even in hybrid mode; `indexed`/`total` note counts ride along), "disabled" (semantics turned off for this vault), or "unavailable" (no usable index — absent, broken, or the semantic module is off server-wide). Only "ready" means the semantic leg actually ran; the other three states explain why a hybrid-mode response degraded to lexical-only.',
     '- `query_stats` — array queries only (omitted for a single string `query`): `{ [query]: { semantic, lexical } }`, PRE-cap hit counts (before cross-query merging and before the `matches[]` cap) per input query. `semantic` is `null` when the semantic leg did not run (mode "lexical", no corpus, empty filter set) — a number always means the leg ran; `{ semantic: 0, lexical: 0 }` marks a dead variant worth rephrasing or dropping. When the lexical leg ran and `lexical` is 0 for a multi-word query, `lexical_tokens` maps each token to the count of notes it matches alone — a zero names the token that killed the AND match; drop or replace that token. If every token is non-zero, the tokens exist but never co-occur within one title/heading/paragraph — split the query into an array so each token can match independently. (Omitted when the leg never ran, e.g. a filter matching zero notes.) `semantic_fallback: true` marks a query whose semantic hits came from the default-threshold 0.3 retry (absent otherwise, and never present with an explicit `threshold`).',
     '',
     'LEXICAL MATCHING: case-, accent-, and apostrophe-variant-insensitive substring; multiword query = ALL tokens must appear (AND), contiguous phrase ranks higher. A note surfaced by multiple legs ranks higher via rank fusion — that is the strongest relevance signal.',

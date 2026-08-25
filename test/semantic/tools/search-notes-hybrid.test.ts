@@ -437,6 +437,28 @@ describe('multi-query and fan-out', () => {
       await b.cleanup();
     }
   });
+
+  it('carries a per-vault semantic_status in each fan-out entry', async () => {
+    // a: ready semantic backend. b: semantic module off for this vault
+    // entirely (no backend) — a vault without a backend still reports
+    // `unavailable` rather than omitting the field.
+    const a = await makeLexicalVault({ 'пошук a.md': '' }, { backendStatus: { state: 'ready' } });
+    const b = await makeLexicalVault({ 'пошук b.md': '' }, { semantic: false });
+    const registry = makeTestRegistry([...a.deps.registry.list(), ...b.deps.registry.list()]);
+    registry.list()[1].name = 'w';
+    try {
+      const tool = buildSearchNotesTool({ ...a.deps, registry });
+      const out = (await tool.handler({ query: 'пошук' })) as IFanOutResult<SearchNotesOutput>;
+      const byVault = Object.fromEntries(
+        out.results_by_vault.map((r) => [r.vault, r.semantic_status]),
+      );
+      expect(byVault.v).toEqual({ state: 'ready' });
+      expect(byVault.w).toEqual({ state: 'unavailable' });
+    } finally {
+      await a.cleanup();
+      await b.cleanup();
+    }
+  });
 });
 
 describe('query_stats', () => {

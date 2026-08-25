@@ -5,6 +5,7 @@ import path from 'node:path';
 import { vi } from 'vitest';
 
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
+import type { BackendStatus } from '../../../src/lib/obsidian/semantic-backend.js';
 import type {
   ListMatchingPaths,
   SearchEngine,
@@ -50,6 +51,7 @@ export async function makeLexicalVault(
     sources?: Map<string, SmartSource>;
     engine?: SearchEngine;
     listMatchingPaths?: ListMatchingPaths;
+    backendStatus?: BackendStatus;
   } = {},
 ) {
   const semantic = opts.semantic ?? true;
@@ -65,7 +67,9 @@ export async function makeLexicalVault(
       path: vaultRoot,
       smartEnvPath: path.join(vaultRoot, '.smart-env'),
       reader: new FsVaultReader({ vaultRoot }),
-      backend: semantic ? toBackend(makeFakeCorpusIndex(opts.sources ?? new Map())) : undefined,
+      backend: semantic
+        ? toBackend(makeFakeCorpusIndex(opts.sources ?? new Map()), opts.backendStatus)
+        : undefined,
       graph: makeFakeGraph(),
       listMatchingPaths: opts.listMatchingPaths ?? (async () => new Set(Object.keys(files))),
     },

@@ -23,6 +23,7 @@ import {
   makeTestRegistry,
   makeFakeCorpusIndex,
   toBackend,
+  runSearch,
 } from './_helpers.js';
 
 // Lightweight helpers for mock-only tests (no real corpus needed)
@@ -1003,6 +1004,80 @@ describe('searchNotes', () => {
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('semantic_status', () => {
+  it('reports a ready backend with no counters', async () => {
+    const result = await runSearch({ backendStatus: { state: 'ready' }, input: { query: 'x' } });
+    expect(result.semantic_status).toEqual({ state: 'ready' });
+  });
+
+  it('reports progress while indexing and still returns lexical matches', async () => {
+    const result = await runSearch({
+      backendStatus: { state: 'indexing', indexed: 3, total: 9 },
+      input: { query: 'пошук' },
+    });
+    expect(result.semantic_status).toEqual({ state: 'indexing', indexed: 3, total: 9 });
+    expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+      true,
+    );
+  });
+
+  it('reports the state in lexical mode without reading a snapshot', async () => {
+    const snapshot = vi.fn();
+    const result = await runSearch({
+      backendStatus: { state: 'ready' },
+      snapshot,
+      input: { query: 'x', mode: 'lexical' },
+    });
+    expect(result.semantic_status).toEqual({ state: 'ready' });
+    expect(snapshot).not.toHaveBeenCalled();
+  });
+
+  it('reports the state on the empty-filter early return', async () => {
+    const result = await runSearch({
+      backendStatus: { state: 'disabled' },
+      allowed: new Set<string>(),
+      input: { query: 'x', filter: { path_prefix: 'Nope/' } },
+    });
+    expect(result.matches).toEqual([]);
+    expect(result.semantic_status).toEqual({ state: 'disabled' });
+  });
+
+  it('reports unavailable when the semantic module is globally off (no backend)', async () => {
+    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    try {
+      const registry = makeTestRegistry([
+        {
+          name: 'v',
+          path: tempRoot,
+          smartEnvPath,
+          graph: makeFakeGraph(),
+          listMatchingPaths: async () => new Set(),
+        },
+      ]);
+      const tool = buildSearchNotesTool({
+        registry,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+      const result = (await tool.handler({ vault: 'v', query: 'x' })) as SearchNotesOutput;
+      expect(result.semantic_status).toEqual({ state: 'unavailable' });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('drops a corpus path whose note is gone before the next reconcile', async () => {
+    const result = await runSearch({
+      backendStatus: { state: 'ready' },
+      snapshotPaths: ['Notes/gone.md', 'Notes/here.md'],
+      existingPaths: ['Notes/here.md'],
+      input: { query: 'x' },
+    });
+    expect(result.matches.map((m) => m.path)).not.toContain('Notes/gone.md');
   });
 });
 

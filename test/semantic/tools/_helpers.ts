@@ -11,6 +11,11 @@ import { loadSmartConnectionsCorpus } from '../../../src/lib/obsidian/smart-conn
 import type { BackendStatus, SemanticBackend } from '../../../src/lib/obsidian/semantic-backend.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 import {
+  buildSearchNotesTool,
+  type SearchNotesInput,
+  type SearchNotesOutput,
+} from '../../../src/modules/semantic/tools/search-notes.js';
+import {
   findBlockNeighbors,
   findDuplicates,
   findNeighbors,
@@ -129,6 +134,7 @@ export async function makeSearchDeps(opts: {
   corpus?: SmartConnectionsCorpusIndex;
   graph?: WikilinkGraphIndex;
   listMatchingPaths?: ListMatchingPaths;
+  backendStatus?: BackendStatus;
 }): Promise<{
   deps: {
     registry: ReturnType<typeof makeTestRegistry>;
@@ -154,7 +160,7 @@ export async function makeSearchDeps(opts: {
       name: 'v',
       path: vaultRoot,
       smartEnvPath: path.join(vaultRoot, '.smart-env'),
-      backend: toBackend(corpus),
+      backend: toBackend(corpus, opts.backendStatus),
       graph: opts.graph ?? makeFakeGraph(),
       listMatchingPaths: opts.listMatchingPaths ?? (async () => new Set()),
     },
@@ -180,6 +186,52 @@ export function makeSyntheticSource(
     embedding,
     blocks: [],
   };
+}
+
+/**
+ * Thin single-vault wrapper over `makeSearchDeps` for `semantic_status`
+ * tests: build a synthetic corpus from `snapshotPaths` (default: one note),
+ * a disk fixture where only `existingPaths` (default: all of them) actually
+ * exist, wire `backendStatus` onto the vault's backend, and run
+ * `search_notes` once with `input`. `allowed`, when given, becomes the
+ * vault's `listMatchingPaths` result (for filter tests); `snapshot`, when
+ * given, is used as the corpus's `snapshot` spy so a test can assert it was
+ * (not) called.
+ */
+export async function runSearch(opts: {
+  backendStatus?: BackendStatus;
+  input: SearchNotesInput;
+  snapshotPaths?: string[];
+  existingPaths?: string[];
+  allowed?: Set<string>;
+  snapshot?: ReturnType<typeof vi.fn>;
+}): Promise<SearchNotesOutput> {
+  const snapshotPaths = opts.snapshotPaths ?? ['Notes/a.md'];
+  const sources = new Map(snapshotPaths.map((p) => [p, makeSyntheticSource(p)]));
+  const basenameIndex = buildBasenameIndex(sources.keys());
+  const snapshotFn = opts.snapshot ?? vi.fn();
+  snapshotFn.mockResolvedValue({ sources, basenameIndex });
+
+  const existingPaths = opts.existingPaths ?? snapshotPaths;
+  const absentPaths = new Set(snapshotPaths.filter((p) => !existingPaths.includes(p)));
+
+  const { deps, cleanup } = await makeSearchDeps({
+    sources,
+    embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0, 0]) },
+    searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+    modelKey: MODEL_KEY,
+    absentPaths,
+    corpus: { snapshot: snapshotFn },
+    backendStatus: opts.backendStatus,
+    ...(opts.allowed !== undefined ? { listMatchingPaths: async () => opts.allowed! } : {}),
+  });
+
+  try {
+    const tool = buildSearchNotesTool(deps);
+    return (await tool.handler(opts.input)) as SearchNotesOutput;
+  } finally {
+    await cleanup();
+  }
 }
 
 export { makeTestRegistry };
