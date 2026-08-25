@@ -126,6 +126,8 @@ export interface SearchNotesDeps {
   embeddingProvider: EmbeddingProvider;
   searchEngine: SearchEngine;
   modelKey: string;
+  /** Defaults to console.error — diagnostics must never touch stdout (the MCP transport). */
+  warn?: (message: string) => void;
 }
 
 function wrapDependencyError(
@@ -275,10 +277,11 @@ async function runSearchForEntry(
   input: SearchNotesInput,
   deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'searchEngine' | 'modelKey'> & {
     lexicalFor: (entry: IVaultEntry) => LexicalIndex;
+    warn: (message: string) => void;
   },
 ): Promise<SearchNotesOutput> {
   const { graph, listMatchingPaths } = entry;
-  const { embeddingProvider, searchEngine, modelKey, lexicalFor } = deps;
+  const { embeddingProvider, searchEngine, modelKey, lexicalFor, warn } = deps;
 
   // Read once, up front — it describes the vault's index, not this
   // request, so every return path below (including the empty-filter early
@@ -368,20 +371,13 @@ async function runSearchForEntry(
     getBacklinkCount: (p) => graph.getBacklinkCount(p),
   });
 
-  // `mode: "lexical"` never touches the backend. A vault without a ready
-  // semantic backend (absent, indexing, disabled, unavailable) also falls
-  // back to lexical-only rather than throwing — a ready backend that errors
-  // mid-search still throws DEPENDENCY_ERROR below, unchanged. Branches on
-  // the `semantic_status` captured once above, NOT a fresh `status()` call —
-  // `status()` reads a mutable value a background pass can flip (e.g.
-  // indexing -> ready) across the `await`s above (graph.ensureFresh, lexical
-  // search); re-reading here could let the semantic leg run below while this
-  // check still saw the old state, producing a payload whose `semantic_status`
-  // contradicts which leg actually ran. `entry.backend === undefined` stays
-  // as its own disjunct because TS needs it to narrow `entry.backend` for the
-  // `.snapshot()` call further down, independent of what `semantic_status`
-  // says.
-  if (channel === 'lexical' || entry.backend === undefined || semantic_status.state !== 'ready') {
+  /**
+   * The lexical-only payload, under whatever `semantic_status` describes the
+   * response being built. Shared by the three ways a search ends up here: the
+   * `mode: "lexical"` request, the not-`ready` backend, and the semantic leg
+   * that failed after the lexical matches were already in hand.
+   */
+  const lexicalOnly = (status: SemanticStatusField): SearchNotesOutput => {
     const query_stats = buildQueryStats(
       isMulti,
       queries,
@@ -401,24 +397,31 @@ async function runSearchForEntry(
         isMulti,
         legTruncated: lexical.truncated,
       }),
-      semantic_status,
+      semantic_status: status,
       ...(query_stats !== undefined ? { query_stats } : {}),
     };
+  };
+
+  // `mode: "lexical"` never touches the backend. A vault without a ready
+  // semantic backend (absent, indexing, disabled, unavailable) also falls
+  // back to lexical-only rather than throwing. Branches on
+  // the `semantic_status` captured once above, NOT a fresh `status()` call —
+  // `status()` reads a mutable value a background pass can flip (e.g.
+  // indexing -> ready) across the `await`s above (graph.ensureFresh, lexical
+  // search); re-reading here could let the semantic leg run below while this
+  // check still saw the old state, producing a payload whose `semantic_status`
+  // contradicts which leg actually ran. `entry.backend === undefined` stays
+  // as its own disjunct because TS needs it to narrow `entry.backend` for the
+  // semantic leg below, independent of what `semantic_status` says.
+  if (channel === 'lexical' || entry.backend === undefined || semantic_status.state !== 'ready') {
+    return lexicalOnly(semantic_status);
   }
 
-  let sources: Map<string, SmartSource>;
-  try {
-    ({ sources } = await entry.backend.snapshot());
-  } catch (error) {
-    throw wrapDependencyError(error, 'Failed to search notes', {
-      modelKey,
-      operation: 'search_notes',
-    });
-  }
-
-  const effectiveSources = allowed !== undefined ? narrowSources(sources, allowed) : sources;
+  const backend = entry.backend;
 
   try {
+    const { sources } = await backend.snapshot();
+    const effectiveSources = allowed !== undefined ? narrowSources(sources, allowed) : sources;
     // `limit` is deliberately NOT forwarded here — it bounds only the final
     // fused list (via `cap` below), never either leg's internal pool size.
     // `executeRetrieval` surfaces its own `truncated` (a leg-level pool-cap
@@ -476,10 +479,23 @@ async function runSearchForEntry(
       ...(query_stats !== undefined ? { query_stats } : {}),
     };
   } catch (error) {
-    throw wrapDependencyError(error, 'Failed to search notes', {
-      modelKey,
-      operation: 'search_notes',
-    });
+    // The semantic leg is the only thing inside this `try`, and the lexical
+    // matches above are already computed — so a failure here degrades rather
+    // than throwing them away. The spec is explicit: the lexical leg works
+    // whatever state the corpus is in, "absent, still building, disabled, or
+    // unreadable", and semantic-leg failure SHALL NOT fail it. This is the
+    // path a rejected query embedding takes (no model on disk, an unwritable
+    // cache, an ONNX load failure) on a backend that reported `ready`.
+    //
+    // The reported state is `unavailable`, not the pinned `ready`: the field
+    // has to describe the response the client is holding, and a lexical-only
+    // payload labelled `ready` is exactly the contradiction the pinning above
+    // exists to prevent. The failure itself goes to stderr — degrading is not
+    // swallowing, and stdout is the MCP transport.
+    warn(
+      `neuro-vault semantic: search_notes fell back to its lexical leg for vault "${entry.name}": ${String(error)}`,
+    );
+    return lexicalOnly({ state: 'unavailable' });
   }
 }
 
@@ -487,6 +503,7 @@ export function buildSearchNotesTool(
   deps: SearchNotesDeps,
 ): ITool<SearchNotesInput, SearchNotesOutput | IFanOutResult<SearchNotesOutput>> {
   const { registry, embeddingProvider, searchEngine, modelKey } = deps;
+  const warn = deps.warn ?? ((message: string) => console.error(message));
 
   // Per-vault lexical indexes, created lazily; the Map lives for the tool's
   // lifetime. Never touches the embedding corpus — it's a read-through
@@ -501,7 +518,7 @@ export function buildSearchNotesTool(
     return idx;
   };
 
-  const entryDeps = { embeddingProvider, searchEngine, modelKey, lexicalFor };
+  const entryDeps = { embeddingProvider, searchEngine, modelKey, lexicalFor, warn };
   const SEARCH_NOTES_DESCRIPTION = [
     'Hybrid search over notes: fuses a semantic leg (embedding similarity — fuzzy recall, topic exploration, cross-language), a lexical leg (exact text matches over note titles, headings, and body — names, codes, terms), and (deep effort) an expansion leg (neighbours of the semantic hits) into ONE reciprocal-rank-fused list. Pass short keyword queries (1-4 words), not sentences.',
     '',

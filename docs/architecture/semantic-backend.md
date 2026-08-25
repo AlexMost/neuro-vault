@@ -42,6 +42,7 @@ interface SemanticBackend {
 | Stored manifest is compatible with the running model/strategy identity, and shards exist | Snapshot decoded immediately, state `ready`; a reconcile still runs in the background to catch up on anything since the last write. |
 | No compatible manifest, or no shards | State `indexing`; a reconcile builds the corpus from scratch, promoting to `ready` when it finishes. |
 | A reconcile pass throws | State `unavailable`, with `reason` set from the error. The vault keeps whatever snapshot it already had — an empty one if it never had any. |
+| A reconcile pass returns, having left nothing rankable to serve | State `unavailable`, with a `reason` naming the counts. `reconcileCorpus` is per-note tolerant — a rejected `embed` is counted in `summary.failed` and the pass returns normally — so a cold vault with no reachable embedding model would otherwise be promoted to `ready` over an empty corpus. The guard is exactly three clauses: the decoded snapshot is empty _and_ `total > 0` _and_ `failed > 0`. An empty vault has no `total`; a healthy vault whose notes are all below the size gate has no `failed`; a healthy incremental pass that lost one note has a non-empty snapshot, because a failed note keeps the shard it already had. Note the guard deliberately does _not_ require `embedded === 0`: a below-gate note calls `embed` zero times and still counts as `embedded`, so one stub note would otherwise mask a wholly failed pass — durably, since the stub is `reused` from the next pass on. |
 
 `unavailable` is not terminal. It is not a decision frozen at startup the way the corpus that preceded this design (`semanticAvailable: false`, decided once and never revisited) used to be — the next pass, whether from the watcher or an explicit request, re-runs the same reconcile and promotes back to `ready` on success.
 
@@ -71,13 +72,15 @@ The pump always drains the query lane first. A query issued while a vault is col
 Three tools, two different postures:
 
 - **`search_notes`** never fails on backend state. It reads `status()` once per call into a `semantic_status: { state, indexed?, total? }` field that rides on every response, in every mode, including `mode: "lexical"` and the empty-filter early return — the field describes the vault's index, not whether this particular request touched it. Anything other than `ready` (`indexing`, `disabled`, `unavailable`, or an absent backend) makes the call degrade to its lexical leg rather than error.
+
+  Degradation also covers the leg failing on a backend that _reported_ `ready` — a rejected query embedding (no model on disk, an unwritable cache, an ONNX load failure) or an unreadable snapshot. The lexical matches are already computed by then, so the call returns them instead of discarding them for a `DEPENDENCY_ERROR`, writes the cause to stderr, and reports `semantic_status: { state: "unavailable" }`: the payload has to describe the response the client is holding, and a lexical-only result labelled `ready` would contradict itself. A failure _outside_ the semantic leg (the wikilink graph, the filter set) still errors as before.
 - **`get_similar_notes`** and **`find_duplicates`** have no non-semantic leg, so they fail structurally instead. Both resolve their vault through `resolveSemanticVault` (`src/lib/resolve-vault.ts`), which maps `status()` to one of three `ToolHandlerError` codes:
 
   | `status().state` | Error code | `details` |
   | --- | --- | --- |
   | `indexing` | `SEMANTIC_INDEX_BUILDING` | `{ vault, indexed, total }` |
   | `disabled` | `SEMANTIC_DISABLED` | `{ vault, hint }` naming the config key |
-  | `unavailable`, or `entry.backend` absent | `SEMANTIC_INDEX_NOT_FOUND` | `{ vault, hint }` naming `neuro-vault-mcp index --vault <path>` |
+  | `unavailable`, or `entry.backend` absent | `SEMANTIC_INDEX_NOT_FOUND` | `{ vault, reason, hint }` — the backend's reason, and a hint naming `neuro-vault-mcp index --vault <path>` |
   | `ready` | — call proceeds | — |
 
   An absent backend (semantic module off server-wide) is folded into the same `unavailable` branch with a fixed reason, rather than a fourth code — from a caller's point of view "no backend" and "a backend that never became usable" need the same response.

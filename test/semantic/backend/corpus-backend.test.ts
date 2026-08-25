@@ -1,10 +1,19 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { createCorpusBackend } from '../../../src/modules/semantic/backend/corpus-backend.js';
 import { buildBasenameIndex } from '../../../src/lib/obsidian/link-resolver.js';
 import type { CorpusSnapshot } from '../../../src/lib/obsidian/semantic-backend.js';
-import type { CorpusStore } from '../../../src/lib/obsidian/corpus/shard-store.js';
-import type { ReconcileSummary } from '../../../src/lib/obsidian/corpus/reconcile.js';
+import { CorpusStore } from '../../../src/lib/obsidian/corpus/shard-store.js';
+import {
+  reconcileCorpus,
+  type ReconcileSummary,
+} from '../../../src/lib/obsidian/corpus/reconcile.js';
+import { loadCorpusSnapshot } from '../../../src/lib/obsidian/corpus/snapshot.js';
+import { MODEL_DIMS, type EmbedFn } from '../../../src/lib/obsidian/corpus/types.js';
 
 const EMPTY: CorpusSnapshot = { sources: new Map(), basenameIndex: buildBasenameIndex([]) };
 
@@ -298,5 +307,179 @@ describe('createCorpusBackend', () => {
     backend.requestReconcile();
     await backend.whenSettled();
     expect(reconcile).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * `reconcileCorpus` is deliberately per-note tolerant: a rejected `embed` is
+ * counted in `summary.failed`, warned about, and the pass returns normally.
+ * "The pass did not throw" is therefore not the same as "the index is good",
+ * so these tests drive the real reconcile against a real store and the real
+ * snapshot loader rather than asserting through a hand-set status.
+ */
+describe('createCorpusBackend over a real reconcile', () => {
+  const body = (marker: string) => `# ${marker}\n${'x'.repeat(400)}\n`;
+
+  /** A cold vault on disk, wired to the production reconcile/store/loader. */
+  async function coldVault(files: Record<string, string>) {
+    const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-'));
+    const store = new CorpusStore(root);
+    // Swapped per pass, so a vault that recovers can be exercised too.
+    let embed: EmbedFn = () => {
+      throw new Error('ONNX model failed to load');
+    };
+    // Two separate mocks on purpose: reconcile's per-note warnings would
+    // otherwise satisfy an assertion meant for the backend's own.
+    const reconcileWarn = vi.fn();
+    const backendWarn = vi.fn();
+    const backend = createCorpusBackend({
+      vaultRoot: root,
+      vaultName: 'v',
+      enabled: true,
+      store,
+      loadSnapshot: loadCorpusSnapshot,
+      reconcile: (opts) =>
+        reconcileCorpus(
+          {
+            vaultRoot: root,
+            scan: async () => Object.keys(files).sort(),
+            stat: async (p) => ({ mtime: 1, size: files[p].length }),
+            readNote: async (p) => ({ content: files[p], mtime: 1, size: files[p].length }),
+            embed: (text) => embed(text),
+            store,
+            warn: reconcileWarn,
+          },
+          opts,
+        ),
+      warn: backendWarn,
+    });
+    return {
+      backend,
+      backendWarn,
+      reconcileWarn,
+      repairEmbed: () => {
+        embed = async () => new Array<number>(MODEL_DIMS).fill(0.1);
+      },
+      cleanup: () => rm(root, { recursive: true, force: true }),
+    };
+  }
+
+  it('reports unavailable when every note of a cold vault fails to embed', async () => {
+    const { backend, backendWarn, cleanup } = await coldVault({
+      'a.md': body('a'),
+      'b.md': body('b'),
+    });
+    try {
+      await backend.whenSettled();
+      // Not `ready`: the pass wrote no shard, so there is nothing to serve —
+      // and not `disabled`, which is reserved for a deliberate opt-out.
+      expect(backend.status().state).toBe('unavailable');
+      expect(backend.status().reason).toBeTruthy();
+      expect((await backend.snapshot()).sources.size).toBe(0);
+      // The backend's own warning, on its own mock — reconcile's per-note
+      // warnings go to `reconcileWarn` and cannot satisfy this.
+      expect(backendWarn).toHaveBeenCalledWith(
+        expect.stringContaining('corpus unavailable for vault "v"'),
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('stays unavailable when the only note that indexed is below the size gate', async () => {
+    // `stub.md` is under MIN_CHARS: `buildEmbedInputs` gives it no note vector
+    // and no qualifying block, so `embedNote` calls `embed` zero times, writes
+    // a shard with `embedding: null`, and still counts as `embedded` — while
+    // contributing no source to the decoded snapshot. A guard that required
+    // `embedded === 0` would stay silent on this routine vault shape.
+    const { backend, cleanup } = await coldVault({
+      'stub.md': '# stub\n',
+      'a.md': body('a'),
+      'b.md': body('b'),
+    });
+    try {
+      await backend.whenSettled();
+      expect(backend.status().state).toBe('unavailable');
+      expect((await backend.snapshot()).sources.size).toBe(0);
+
+      // Durability is half the defect: the next pass reuses the stub and
+      // reports no change at all, so a latched `snapshotLoaded` would skip the
+      // load branch and report `ready` over the empty corpus until something
+      // in the vault happened to change.
+      backend.requestReconcile();
+      await backend.whenSettled();
+      expect(backend.status().state).toBe('unavailable');
+      expect((await backend.snapshot()).sources.size).toBe(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('promotes to ready once a later pass can embed again', async () => {
+    const { backend, repairEmbed, cleanup } = await coldVault({
+      'a.md': body('a'),
+      'b.md': body('b'),
+    });
+    try {
+      await backend.whenSettled();
+      expect(backend.status().state).toBe('unavailable');
+
+      repairEmbed();
+      backend.requestReconcile();
+      await backend.whenSettled();
+
+      expect(backend.status()).toEqual({ state: 'ready' });
+      expect([...(await backend.snapshot()).sources.keys()].sort()).toEqual(['a.md', 'b.md']);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reports ready for an empty vault, which has nothing to fail at', async () => {
+    const { backend, cleanup } = await coldVault({});
+    try {
+      await backend.whenSettled();
+      expect(backend.status()).toEqual({ state: 'ready' });
+      expect((await backend.snapshot()).sources.size).toBe(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reports ready when only some notes fail and the rest are served', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-partial-'));
+    try {
+      const store = new CorpusStore(root);
+      const files: Record<string, string> = { 'good.md': body('good'), 'bad.md': body('bad') };
+      const backend = createCorpusBackend({
+        vaultRoot: root,
+        vaultName: 'v',
+        enabled: true,
+        store,
+        loadSnapshot: loadCorpusSnapshot,
+        reconcile: (opts) =>
+          reconcileCorpus(
+            {
+              vaultRoot: root,
+              scan: async () => Object.keys(files).sort(),
+              stat: async (p) => ({ mtime: 1, size: files[p].length }),
+              readNote: async (p) => {
+                if (p === 'bad.md') throw new Error('EACCES');
+                return { content: files[p], mtime: 1, size: files[p].length };
+              },
+              embed: async () => new Array<number>(MODEL_DIMS).fill(0.1),
+              store,
+              warn: vi.fn(),
+            },
+            opts,
+          ),
+        warn: vi.fn(),
+      });
+      await backend.whenSettled();
+      expect(backend.status()).toEqual({ state: 'ready' });
+      expect([...(await backend.snapshot()).sources.keys()]).toEqual(['good.md']);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

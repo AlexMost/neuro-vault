@@ -137,7 +137,7 @@ Each note appears **at most once** in `matches[]`, even when multiple legs surfa
 | `ready` | The semantic leg ran normally this call (in every mode that runs it). | absent |
 | `indexing` | The vault's index is still building — this response is lexical-only even under `mode: "hybrid"`. | present — note counts so far / total |
 | `disabled` | The vault opted out (`"semantic": false` in its `.neuro-vault/config.json`), or `--no-semantic` is set server-wide. | absent |
-| `unavailable` | No usable index — absent or broken, and no build is in flight. | absent |
+| `unavailable` | No usable semantic answer for this call: the index is absent or broken with no build in flight, **or** the semantic leg failed mid-call (the query could not be embedded, the corpus could not be read) and this response fell back to its lexical leg. | absent |
 
 Only `ready` means the semantic leg actually contributed to `matches[]`; the other three states explain why a hybrid-mode call degraded to lexical-only for that vault. `indexed`/`total` ride along only while `state === "indexing"` — check `state` before reading them, since they're omitted in every other state, including `ready`.
 
@@ -337,7 +337,7 @@ Reference frontmatter keys with the dotted prefix `frontmatter.<key>`. Reference
 | --- | --- | --- |
 | `SEMANTIC_INDEX_BUILDING` | The vault's index is still building (details: `{ vault, indexed, total }`). | Wait and retry, or route through `search_notes` in the meantime — it still answers from its lexical leg and reports the same `indexed`/`total` via `semantic_status`. |
 | `SEMANTIC_DISABLED` | The vault opted out (`"semantic": false`, or `--no-semantic` server-wide). | Nothing to retry — use the lexical leg (`search_notes({ mode: "lexical" })`, `query_notes`) instead, or re-enable semantic search for that vault. |
-| `SEMANTIC_INDEX_NOT_FOUND` | No usable index and no build in flight — a genuinely unavailable corpus. | Build it: `neuro-vault-mcp index --vault <path>` (the error's `details.hint` names the exact command), then retry. |
+| `SEMANTIC_INDEX_NOT_FOUND` | No usable index and no build in flight — a genuinely unavailable corpus (details: `{ vault, reason, hint }`, where `reason` says what went wrong). | Build it: `neuro-vault-mcp index --vault <path>` (the error's `details.hint` names the exact command), then retry. |
 
 ### `get_similar_notes`
 

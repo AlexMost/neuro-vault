@@ -47,6 +47,11 @@ The lexical leg SHALL function whatever state the vault's embedding corpus is in
 - **WHEN** a vault is indexing and `search_notes` is called with `{ query: "пошук" }`
 - **THEN** the call succeeds with lexical matches and reports `semantic_status: { state: "indexing", indexed, total }`
 
+#### Scenario: a semantic leg that throws keeps the lexical matches
+
+- **WHEN** the semantic leg fails mid-search on a vault whose backend reported `ready` — the query embedding rejects, or the corpus snapshot cannot be read
+- **THEN** the call succeeds with the lexical matches it already computed, reports `semantic_status: { state: "unavailable" }` rather than the `ready` it started from, and writes the cause to stderr
+
 ---
 
 ### Requirement: Single-source degradation preserves source order

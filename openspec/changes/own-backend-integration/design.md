@@ -99,7 +99,8 @@ Constraints this design works under:
      → load the snapshot, state `ready`, and run a reconcile in the background.
   3. Otherwise → state `indexing`, run the reconcile in the background,
      promote to `ready` when it finishes.
-  4. A reconcile that throws → `unavailable` with the reason; the vault keeps
+  4. A reconcile that throws — or one that returns having failed at least one
+     note and left nothing rankable to serve — → `unavailable` with the reason; the vault keeps
      whatever snapshot it had. This is not terminal: the next pass — a watcher
      tick, or an explicit request — re-runs it and promotes to `ready` on
      success. The flag it replaces (`semanticAvailable: false`) was decided once
@@ -139,6 +140,14 @@ Constraints this design works under:
   have to read silence as health (user's call, 2026-08-25).
 - **Alternatives**: emit only when not `ready`, per the compact-response
   convention — rejected by the user for exactly the ambiguity above.
+- **Refinement** (final review): "describes the vault's index, not the request"
+  governs _presence_ — the field is never omitted, and never conditional on
+  which leg ran. It does not license a payload that contradicts itself. When
+  the semantic leg fails mid-search on a backend that reported `ready` (a
+  rejected query embedding, an unreadable snapshot), `search_notes` degrades to
+  its lexical leg and reports `unavailable`, because that is what the client is
+  actually holding — and, at that moment, what the vault's semantic capability
+  actually is.
 
 ### D6: Freshness is a debounced whole-vault reconcile, driven by a watcher
 

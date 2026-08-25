@@ -67,16 +67,22 @@ export function resolveSemanticVault(
           },
         },
       );
-    default:
+    default: {
+      // The reason belongs in `details` as its own field, not only
+      // interpolated into the message: a client reads `details`
+      // structurally, and prose is not a channel it can parse.
+      const reason = status.reason ?? 'unknown reason';
       throw new ToolHandlerError(
         'SEMANTIC_INDEX_NOT_FOUND',
-        `Semantic index for vault "${entry.name}" is unavailable: ${status.reason ?? 'unknown reason'}`,
+        `Semantic index for vault "${entry.name}" is unavailable: ${reason}`,
         {
           details: {
             vault: entry.name,
+            reason,
             hint: `build it with: neuro-vault-mcp index --vault ${entry.path}`,
           },
         },
       );
+    }
   }
 }

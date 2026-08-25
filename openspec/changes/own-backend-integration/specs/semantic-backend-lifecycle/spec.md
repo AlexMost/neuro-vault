@@ -35,6 +35,11 @@ A backend's status SHALL report `state` as exactly one of `ready`, `indexing`, `
 - **WHEN** a vault has begun indexing but has not yet finished listing its in-scope notes
 - **THEN** its status is `{ state: "indexing", indexed: 0, total: 0 }` rather than omitting the counters
 
+#### Scenario: an index pass that produced nothing is not ready
+
+- **WHEN** a cold vault's pass finishes having failed every note it tried — no embedding model could be reached — so the corpus it would serve is empty
+- **THEN** its state is `unavailable` with a reason, never `ready` over the empty corpus
+
 #### Scenario: a failure is never reported as disabled
 
 - **WHEN** a vault's corpus cannot be read or reconciled because of a filesystem error

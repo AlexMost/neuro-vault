@@ -165,32 +165,98 @@ describe('searchNotes', () => {
     }
   });
 
-  it('surfaces embedding-provider failures as structured tool errors', async () => {
-    const { tempRoot, sources } = await makeVaultFixture([
-      'note-a.ajson',
-      'note-b.ajson',
-      'note-c.ajson',
-    ]);
-
+  // "Semantic-leg failure or emptiness SHALL NOT fail the lexical leg", and
+  // the lexical leg has already produced its matches by the time the semantic
+  // leg runs — failing the whole call would throw them away. The vault below
+  // carries a real body under a real reader, so the surviving matches are
+  // load-bearing rather than a vacuous `every()` over an empty list.
+  it('degrades to the lexical leg when the query embedding fails', async () => {
+    const notePath = 'Notes/a.md';
+    const warn = vi.fn();
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      {
+        sources: sourcesWithEmbeddingFor(notePath, [1, 0]),
+        engine: engineReturning([{ path: notePath, similarity: 0.9 }]),
+      },
+    );
     try {
       const embed = vi.fn().mockRejectedValue(new Error('model unavailable'));
-      const { deps, cleanup } = await makeSearchDeps({
-        sources,
+      const tool = buildSearchNotesTool({
+        ...deps,
         embeddingProvider: { initialize: vi.fn(), embed },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-        modelKey: 'bge-micro-v2',
+        warn,
       });
-      const tool = buildSearchNotesTool(deps);
 
-      try {
-        const searchPromise = tool.handler({ query: 'semantic query' });
-        await expect(searchPromise).rejects.toMatchObject({ code: 'DEPENDENCY_ERROR' });
-        await expect(searchPromise).rejects.toBeInstanceOf(ToolHandlerError);
-      } finally {
-        await cleanup();
-      }
+      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+
+      expect(embed).toHaveBeenCalled();
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+        true,
+      );
+      // The field must describe the response the client is holding: a
+      // lexical-only payload labelled `ready` would be a lie of the same
+      // class the pinning above exists to prevent.
+      expect(result.semantic_status).toEqual({ state: 'unavailable' });
+      // Degrading is not swallowing — the cause goes to stderr.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('model unavailable'));
     } finally {
-      await fs.rm(tempRoot, { recursive: true, force: true });
+      await cleanup();
+    }
+  });
+
+  it('degrades to the lexical leg when the corpus snapshot cannot be read', async () => {
+    const notePath = 'Notes/a.md';
+    const warn = vi.fn();
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      {
+        sources: sourcesWithEmbeddingFor(notePath, [1, 0]),
+        engine: engineReturning([{ path: notePath, similarity: 0.9 }]),
+      },
+    );
+    try {
+      const entry = deps.registry.list()[0];
+      entry.backend = {
+        ...entry.backend!,
+        snapshot: vi.fn().mockRejectedValue(new Error('corpus shard a.json is not valid JSON')),
+      };
+      const tool = buildSearchNotesTool({ ...deps, warn });
+
+      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+        true,
+      );
+      expect(result.semantic_status).toEqual({ state: 'unavailable' });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('not valid JSON'));
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('writes the degradation warning to stderr by default', async () => {
+    const notePath = 'Notes/a.md';
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      { sources: sourcesWithEmbeddingFor(notePath, [1, 0]) },
+    );
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const tool = buildSearchNotesTool({
+        ...deps,
+        embeddingProvider: {
+          initialize: vi.fn(),
+          embed: vi.fn().mockRejectedValue(new Error('model unavailable')),
+        },
+      });
+      await tool.handler({ query: 'пошук' });
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining('model unavailable'));
+    } finally {
+      stderr.mockRestore();
+      await cleanup();
     }
   });
 
@@ -819,19 +885,26 @@ describe('searchNotes', () => {
     }
   });
 
-  it('returns failed_vaults when one vault semantic search rejects', async () => {
+  it('returns failed_vaults when one vault rejects outside its semantic leg', async () => {
     const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
         ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
       ]);
       const corpusIndex1 = makeFakeCorpusIndex(sources1);
-      // vault b's corpus throws on snapshot — runSearchForEntry wraps it as DEPENDENCY_ERROR
-      const corpusIndex2 = {
-        snapshot: vi
+      const corpusIndex2 = makeFakeCorpusIndex(new Map());
+      // Vault b fails before either leg runs — its wikilink graph cannot be
+      // refreshed. A *semantic-leg* failure would no longer land here: that
+      // degrades to the lexical leg per vault (see the degradation tests
+      // above), which is what keeps one vault's broken corpus from costing
+      // the envelope its lexical answers. This vault's failure is outside
+      // that boundary, so it still lands in `failed_vaults`.
+      const brokenGraph = {
+        ...makeFakeGraph(),
+        ensureFresh: vi
           .fn()
           .mockRejectedValue(new ToolHandlerError('DEPENDENCY_ERROR', 'embedding lookup failed')),
-      };
+      } as unknown as ReturnType<typeof makeFakeGraph>;
 
       const fs2 = await import('node:fs/promises');
       const os2 = await import('node:os');
@@ -858,7 +931,7 @@ describe('searchNotes', () => {
             name: 'v2',
             path: vaultRoot2,
             backend: toBackend(corpusIndex2),
-            graph: makeFakeGraph(),
+            graph: brokenGraph,
             listMatchingPaths: async () => new Set(),
           },
         ]);

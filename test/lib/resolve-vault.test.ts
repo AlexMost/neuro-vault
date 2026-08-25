@@ -178,4 +178,30 @@ describe('resolveSemanticVault', () => {
     expect(text).toContain('index');
     expect(text).not.toMatch(/Obsidian|plugin/i);
   });
+
+  // The spec scenario is literal: "the reason is present in the details".
+  // A reason interpolated into the message only is not machine-readable —
+  // a client parsing `details` cannot recover it from prose.
+  it('carries the unavailable reason in details, not only in the message', () => {
+    const registry = registryWithBackend({
+      state: 'unavailable',
+      reason: 'corpus shard notes/a.json is not valid JSON',
+    });
+    const error = catchError(() => resolveSemanticVault({}, registry, { tool: 'find_duplicates' }));
+    expect(error.code).toBe('SEMANTIC_INDEX_NOT_FOUND');
+    expect(error.details).toMatchObject({
+      vault: 'v',
+      reason: 'corpus shard notes/a.json is not valid JSON',
+    });
+  });
+
+  it('carries a reason in details when the semantic module is off server-wide', () => {
+    const reg = makeRegistry([{ name: 'only' }]);
+    const error = catchError(() => resolveSemanticVault({}, reg, { tool: 'find_duplicates' }));
+    expect(error.code).toBe('SEMANTIC_INDEX_NOT_FOUND');
+    expect(error.details).toMatchObject({
+      vault: 'only',
+      reason: expect.stringContaining('semantic module is disabled'),
+    });
+  });
 });

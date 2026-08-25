@@ -261,13 +261,19 @@ describe('Neuro Vault MCP server bootstrap', () => {
       const findDuplicates = server.toolHandlers.get('find_duplicates');
       expect(findDuplicates).toBeDefined();
       const result = await findDuplicates!({});
-      // The reason travels from the backend into the tool error, so an owner
-      // sees *why* the corpus is unusable rather than a bare code.
+      // The reason travels from the backend into the tool error — in the
+      // details as its own field, not prose alone — so an owner (and a
+      // client parsing `details`) sees *why* the corpus is unusable rather
+      // than a bare code.
       expect(result).toMatchObject({
         isError: true,
         structuredContent: {
           code: 'SEMANTIC_INDEX_NOT_FOUND',
           message: expect.stringContaining('corpus shard notes/a.json is not valid JSON'),
+          details: {
+            reason: 'corpus shard notes/a.json is not valid JSON',
+            hint: expect.stringContaining('neuro-vault-mcp index'),
+          },
         },
       });
     } finally {

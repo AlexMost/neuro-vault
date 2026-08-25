@@ -68,8 +68,10 @@ function emptySnapshot(): CorpusSnapshot {
  * reference keeps ranking against a coherent snapshot.
  *
  * A pass that throws reports `unavailable` with the reason and keeps whatever
- * snapshot the vault already had. That is not terminal: the next pass overwrites
- * the state, so a vault that recovers reports `ready` again without a restart.
+ * snapshot the vault already had — as does a pass that returns normally having
+ * failed every note it tried, which leaves nothing to serve. That is not
+ * terminal: the next pass overwrites the state, so a vault that recovers
+ * reports `ready` again without a restart.
  *
  * `enabled === false` is absolute: the vault reports `disabled` and no pass ever
  * runs, so nothing is read from or written under `.neuro-vault/corpus/`.
@@ -95,10 +97,13 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
   let dirty = false;
   let disposed = false;
 
-  function fail(err: unknown): void {
-    const reason = String(err);
+  function unavailable(reason: string): void {
     status = { state: 'unavailable', reason };
     warn(`neuro-vault semantic: corpus unavailable for vault "${deps.vaultName}": ${reason}`);
+  }
+
+  function fail(err: unknown): void {
+    unavailable(String(err));
   }
 
   async function runPass(): Promise<void> {
@@ -115,7 +120,42 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
       // report `ready` over the empty placeholder, with the very pass that
       // should repair it declining because it changed nothing.
       if (!snapshotLoaded || summary.embedded + summary.renamed + summary.deleted > 0) {
-        snapshot = await deps.loadSnapshot(deps.store);
+        const loaded = await deps.loadSnapshot(deps.store);
+        // A pass that returns is not a pass that worked. `reconcileCorpus` is
+        // per-note tolerant by design: a rejected `embed` — an offline first
+        // run, an unwritable model cache, an ONNX load failure — is counted in
+        // `summary.failed` and the pass returns normally. When every note went
+        // that way there is no shard to decode, so serving the empty result
+        // behind `ready` would report a broken index as a healthy empty one.
+        //
+        // All three clauses are load-bearing, and none alone is the guard:
+        // `sources.size === 0` also describes an empty vault (`total > 0`
+        // rules that out) and a healthy vault whose notes are all below the
+        // size gate, which index fine and contribute no source (`failed > 0`
+        // rules that out — nothing failed there); `failed > 0` alone also
+        // describes a healthy incremental pass that lost one note, whose
+        // decoded corpus is not empty, because a failed note keeps the shard
+        // it already had.
+        //
+        // Deliberately NOT also requiring `embedded === 0`: a note under
+        // `MIN_CHARS` gets no note vector and no qualifying block, so
+        // `embedNote` calls `embed` zero times, writes a shard that carries no
+        // embedding, and still counts as `embedded`. One stub note in a cold
+        // vault would therefore have kept this guard silent while every real
+        // note failed — and, because the stub is `reused` from then on, the
+        // load branch would never run again and the vault would sit at `ready`
+        // over an empty corpus until something in it changed.
+        if (loaded.sources.size === 0 && summary.total > 0 && summary.failed > 0) {
+          // `snapshot`/`snapshotLoaded` are left untouched: the vault keeps
+          // whatever it had, and the next pass reloads unconditionally rather
+          // than trusting a decode that produced nothing. Not terminal — a
+          // later pass that embeds anything overwrites this state with `ready`.
+          unavailable(
+            `indexing produced no usable corpus: ${summary.failed} of ${summary.total} notes failed and the decoded corpus is empty (see the per-note warnings above)`,
+          );
+          return;
+        }
+        snapshot = loaded;
         snapshotLoaded = true;
       }
       status = { state: 'ready' };
