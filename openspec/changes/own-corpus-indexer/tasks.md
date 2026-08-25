@@ -78,7 +78,9 @@ other groups at the same marker and can be dispatched concurrently.
 - [x] 9.1 Failing test → implementation: the index function accepts a progress callback receiving `{ indexed, total }` counted in notes, with the final report having both equal.
 - [x] 9.2 Failing test → implementation: the run returns a summary of `embedded` / `reused` / `renamed` / `deleted` / `failed`.
 - [x] 9.3 Failing test → implementation: a read, embed or store failure for one note is recorded in `failed`, leaves that note's previous shard untouched, and does not abort the run.
-- [ ] 9.4 Sanity check against the real vault outside the test suite: run a full index and an immediate second reconcile through a scratch script, and record wall-clock, vector count and the second run's summary in the PR body. Do not add the script to the repo — the CLI is slice #3.
+- [x] 9.4 Sanity check against the real vault outside the test suite: run a full index and an immediate second reconcile through a scratch script, and record wall-clock, vector count and the second run's summary in the PR body. Do not add the script to the repo — the CLI is slice #3.
+
+> The sanity run surfaced one defect outside the task list and fixed it here: `EmbeddingService`'s default `modelKey` was `MODEL_KEY` (`bge-micro-v2`), the corpus's record of which model made its vectors — not a loadable transformers.js repo id, so a service constructed without options 404s on Hugging Face. Production always passed the id explicitly, so nothing shipped broken, but slices #3 and #5 construct this service. `MODEL_ID` now names the repo id beside `MODEL_KEY`, `config.ts` reads it, and a regression test asserts the two stay distinct.
 
 ## 10. Documentation — PR 2 [parallel-safe among 10.1–10.4, after 8 and 9 land]
 

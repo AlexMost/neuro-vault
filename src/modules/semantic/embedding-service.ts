@@ -2,7 +2,7 @@ import { pipeline } from '@xenova/transformers';
 
 // The corpus library owns the model's identity: EMBED_CHAR_BUDGET is derived
 // from the same token window, so the two must never drift apart.
-import { MAX_TOKENS, MODEL_KEY } from '../../lib/obsidian/corpus/types.js';
+import { MAX_TOKENS, MODEL_ID } from '../../lib/obsidian/corpus/types.js';
 
 import type { EmbeddingProvider } from './types.js';
 
@@ -47,7 +47,7 @@ export class EmbeddingService implements EmbeddingProvider {
   private initialization: Promise<void> | null = null;
 
   constructor(options: EmbeddingServiceOptions = {}) {
-    this.modelKey = options.modelKey ?? MODEL_KEY;
+    this.modelKey = options.modelKey ?? MODEL_ID;
     this.pipelineFactory = options.pipelineFactory ?? (pipeline as unknown as PipelineFactory);
   }
 

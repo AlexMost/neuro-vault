@@ -11,7 +11,7 @@ vi.mock('@xenova/transformers', () => ({
   pipeline: pipelineFactory,
 }));
 
-import { MAX_TOKENS } from '../../src/lib/obsidian/corpus/types.js';
+import { MAX_TOKENS, MODEL_ID, MODEL_KEY } from '../../src/lib/obsidian/corpus/types.js';
 import { EmbeddingService } from '../../src/modules/semantic/embedding-service.js';
 
 describe('EmbeddingService', () => {
@@ -19,6 +19,21 @@ describe('EmbeddingService', () => {
     pipelineFactory.mockClear();
     mockPipeline.mockClear();
     pipelineFactory.mockResolvedValue(mockPipeline);
+  });
+
+  it('defaults to the model repo id, not the corpus model key', async () => {
+    // MODEL_KEY is the corpus's record of which model produced its vectors;
+    // loading it as a transformers.js repo id 404s on Hugging Face. A default
+    // that cannot load would strand every caller that constructs the service
+    // without options (the indexer CLI, slice #5's wiring).
+    mockPipeline.mockResolvedValue({ data: new Float32Array([0.5]) });
+    const service = new EmbeddingService({ pipelineFactory });
+
+    await service.embed('text');
+
+    expect(pipelineFactory).toHaveBeenCalledWith('feature-extraction', MODEL_ID);
+    expect(MODEL_ID).not.toBe(MODEL_KEY);
+    expect(MODEL_ID).toContain('/');
   });
 
   it('exposes initialize() and embed(text)', () => {
@@ -45,7 +60,7 @@ describe('EmbeddingService', () => {
     const embedding = await service.embed('semantic query');
 
     expect(pipelineFactory).toHaveBeenCalledTimes(1);
-    expect(pipelineFactory).toHaveBeenCalledWith('feature-extraction', 'bge-micro-v2');
+    expect(pipelineFactory).toHaveBeenCalledWith('feature-extraction', MODEL_ID);
     expect(mockPipeline).toHaveBeenCalledTimes(1);
     expect(mockPipeline).toHaveBeenCalledWith('semantic query', {
       pooling: 'mean',
