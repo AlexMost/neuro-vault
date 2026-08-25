@@ -134,12 +134,12 @@ Each note appears **at most once** in `matches[]`, even when multiple legs surfa
 
 | `state` | Meaning | `indexed` / `total` |
 | --- | --- | --- |
-| `ready` | The semantic leg ran normally this call (in every mode that runs it). | absent |
+| `ready` | The vault's index is usable, so the semantic leg runs in every mode that calls for it. Not a claim about *this* call — under `mode: "lexical"` and on the empty-filter early return the leg never runs, and the state is still `ready`. | absent |
 | `indexing` | The vault's index is still building — this response is lexical-only even under `mode: "hybrid"`. | present — note counts so far / total |
 | `disabled` | The vault opted out (`"semantic": false` in its `.neuro-vault/config.json`), or `--no-semantic` is set server-wide. | absent |
 | `unavailable` | No usable semantic answer for this call: the index is absent or broken with no build in flight, **or** the semantic leg failed mid-call (the query could not be embedded, the corpus could not be read) and this response fell back to its lexical leg. | absent |
 
-Only `ready` means the semantic leg actually contributed to `matches[]`; the other three states explain why a hybrid-mode call degraded to lexical-only for that vault. `indexed`/`total` ride along only while `state === "indexing"` — check `state` before reading them, since they're omitted in every other state, including `ready`.
+Anything other than `ready` explains why a hybrid-mode call degraded to lexical-only for that vault. `ready` is a necessary condition for the semantic leg, not a report that it ran — to know whether it contributed to `matches[]`, read `mode` and (for array queries) `query_stats.semantic`, which is `null` exactly when the leg did not run. `indexed`/`total` ride along only while `state === "indexing"` — check `state` before reading them, since they're omitted in every other state, including `ready`.
 
 ### `query_stats` (array queries only)
 
