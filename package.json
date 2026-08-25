@@ -38,6 +38,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsx src/cli.ts",
+    "eval": "tsx eval/run.ts",
     "spec": "openspec",
     "prepare": "git config core.hooksPath .githooks",
     "lint": "eslint .",
