@@ -35,7 +35,7 @@ Created:
 - `src/lib/obsidian/corpus/reconcile.ts` — `reconcileCorpus(deps, opts)`: the diff, the embed loop, progress and the summary.
 - `src/lib/obsidian/corpus/index.ts` — the package's public surface (re-exports only).
 - `test/lib/obsidian/corpus/*.test.ts` — one test file per source file above.
-- `docs/adr/0012-own-embedding-corpus.md`, `docs/architecture/own-corpus.md`.
+- `docs/adr/0013-own-embedding-corpus.md`, `docs/architecture/own-corpus.md`.
 
 Modified:
 
@@ -1762,10 +1762,10 @@ git commit -m "feat(corpus): report indexing progress and contain per-note failu
 ### Task 13: Documentation
 
 **Files:**
-- Create: `docs/adr/0012-own-embedding-corpus.md`, `docs/architecture/own-corpus.md`
+- Create: `docs/adr/0013-own-embedding-corpus.md`, `docs/architecture/own-corpus.md`
 - Modify: `docs/adr/0006-smart-connections-corpus.md`, `docs/adr/INDEX.md`, `docs/architecture/vault-scope.md`
 
-- [ ] **Step 1: Write ADR-0012**
+- [ ] **Step 1: Write ADR-0013**
 
 Follow `docs/adr/0000-template.md`. Status `Accepted`, dated the day it is written. Context: the ADR-0006 premise (a plugin's corpus is free) against what changed — the model is already loaded for queries, indexing measures ~1.5–3.3 min cold and ~90 ms per changed note, and the inherited corpus is stale and unreconcilable with the lexical leg's membership. Decision: the server builds and owns an embedding corpus under `<vault>/.neuro-vault/corpus/`, superseding ADR-0006's "the server never writes embeddings". Consequences: a new write path inside the vault, a `write-file-atomic` dependency, corpus freshness becomes ours to maintain, and the `embed_version` + rebuild mechanism becomes the migration lever. Alternatives: the plugin's AJSON format, LanceDB, hnswlib-node, sqlite in both forms — each with the one fact that disqualified it (design D4).
 
@@ -1774,12 +1774,12 @@ Follow `docs/adr/0000-template.md`. Status `Accepted`, dated the day it is writt
 Add under its Status line:
 
 ```markdown
-- **Superseded in part by**: [ADR-0012](0012-own-embedding-corpus.md) — the
+- **Superseded in part by**: [ADR-0013](0013-own-embedding-corpus.md) — the
   "server never writes embeddings" decision is reversed; the read-only
   consumption record stands as history.
 ```
 
-Add the ADR-0012 row to `docs/adr/INDEX.md` in the existing table's format.
+Add the ADR-0013 row to `docs/adr/INDEX.md` in the existing table's format.
 
 - [ ] **Step 3: Write `docs/architecture/own-corpus.md`**
 
@@ -1800,7 +1800,7 @@ For each hit, decide: still true (a tool still serves from the SC corpus in this
 - [ ] **Step 6: Verify links resolve**
 
 ```bash
-grep -oE '\]\([^)#]+\.md' docs/architecture/own-corpus.md docs/adr/0012-own-embedding-corpus.md | cut -d'(' -f2 | while read -r f; do test -e "docs/$(dirname "")/$f" || echo "check: $f"; done
+grep -oE '\]\([^)#]+\.md' docs/architecture/own-corpus.md docs/adr/0013-own-embedding-corpus.md | cut -d'(' -f2 | while read -r f; do test -e "docs/$(dirname "")/$f" || echo "check: $f"; done
 ```
 
 Simpler and sufficient: open each new file and click through every relative link once.
@@ -1843,7 +1843,7 @@ Closes #82
 - Incremental reconcile: mtime/size pre-check, content hash as truth, orphan deletion
 - A rename re-embeds — vectors are a function of (path, content, strategy), since both parity embed-text formulas carry path breadcrumbs. This corrects an upstream decision that assumed path-independent vectors; see design.md D9.
 - Progress callback and run summary, per-note failure contained
-- ADR-0012 superseding ADR-0006's "server never writes embeddings"; docs/architecture/own-corpus.md; vault-scope doc updated
+- ADR-0013 superseding ADR-0006's "server never writes embeddings"; docs/architecture/own-corpus.md; vault-scope doc updated
 
 Still internal: no tool contract change, no wiring, no watcher, no CLI.
 

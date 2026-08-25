@@ -80,8 +80,8 @@ other groups at the same marker and can be dispatched concurrently.
 
 ## 10. Documentation — PR 2 [parallel-safe among 10.1–10.4, after 8 and 9 land]
 
-- [ ] 10.1 Add `docs/adr/0012-own-embedding-corpus.md`: the server now builds and owns an embedding corpus, superseding ADR-0006's "the server never writes embeddings" decision; record the alternatives from design.md §D4 and the distribution constraint that decided them.
-- [ ] 10.2 Add a status/supersession note to `docs/adr/0006-smart-connections-corpus.md` pointing forward to ADR-0012, and add the new entry to `docs/adr/INDEX.md`.
+- [ ] 10.1 Add `docs/adr/0013-own-embedding-corpus.md`: the server now builds and owns an embedding corpus, superseding ADR-0006's "the server never writes embeddings" decision; record the alternatives from design.md §D4 and the distribution constraint that decided them.
+- [ ] 10.2 Add a status/supersession note to `docs/adr/0006-smart-connections-corpus.md` pointing forward to ADR-0013, and add the new entry to `docs/adr/INDEX.md`.
 - [ ] 10.3 Add `docs/architecture/own-corpus.md`: extraction rules and their named divergences, shard/manifest schema, atomic-write and recovery guarantees, the reconcile algorithm, and the "vector = f(path, content, strategy)" invariant with why a rename re-embeds. One concept, one file.
 - [ ] 10.4 Update `docs/architecture/vault-scope.md` — the "Not governed yet — the semantic leg" paragraph and the forward reference to this slice — plus any `docs/guide/` statement about where embeddings come from. Sweep all of `docs/`, not just `docs/architecture/`.
 

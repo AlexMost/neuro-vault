@@ -353,7 +353,7 @@ The constraints that shape every decision below:
 
 ### D13 — A new ADR supersedes half of ADR-0006
 
-- **Choice**: add `docs/adr/0012-own-embedding-corpus.md`, recording that the
+- **Choice**: add `docs/adr/0013-own-embedding-corpus.md`, recording that the
   server now builds and owns an embedding corpus, superseding ADR-0006's "the
   server never writes embeddings" decision while leaving its
   read-only-consumption record intact as history. ADR-0006 gets a status note
@@ -412,7 +412,7 @@ Delivery is **two PRs** with a pause between them (one change ≠ one bundled PR
    fixtures. `Refs #82`.
 2. **PR 2 — reconcile + docs.** Reconcile with the `mtime`/`size` pre-check,
    hash truth, rename handling and per-note failure containment; the summary and
-   progress callback; ADR-0012 superseding ADR-0006; `docs/architecture/own-corpus.md`;
+   progress callback; ADR-0013 superseding ADR-0006; `docs/architecture/own-corpus.md`;
    the `vault-scope.md` update. `Closes #82`.
 
 Acceptance for each PR: `npm test`, `npm run lint`, `npm run typecheck` green,
