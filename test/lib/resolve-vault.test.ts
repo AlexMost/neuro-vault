@@ -126,14 +126,14 @@ describe('resolveSemanticVault', () => {
   });
 
   it('single-vault, backend unavailable → throws SEMANTIC_INDEX_NOT_FOUND with the backend reason', () => {
-    const reg = makeRegistry([{ name: 'only', backend: unavailableBackend('no .smart-env/') }]);
+    const reg = makeRegistry([{ name: 'only', backend: unavailableBackend('no corpus') }]);
     try {
       resolveSemanticVault({}, reg, { tool: 'search_notes' });
       throw new Error('expected throw');
     } catch (err) {
       expect(err).toBeInstanceOf(ToolHandlerError);
       expect((err as ToolHandlerError).code).toBe('SEMANTIC_INDEX_NOT_FOUND');
-      expect((err as ToolHandlerError).message).toMatch(/no \.smart-env\//);
+      expect((err as ToolHandlerError).message).toMatch(/no corpus/);
     }
   });
 
@@ -176,6 +176,6 @@ describe('resolveSemanticVault', () => {
     const text = `${error.message} ${JSON.stringify(error.details)}`;
     expect(text).toContain('EACCES');
     expect(text).toContain('index');
-    expect(text).not.toMatch(/Obsidian|Smart Connections/i);
+    expect(text).not.toMatch(/Obsidian|plugin/i);
   });
 });

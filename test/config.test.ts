@@ -35,7 +35,6 @@ describe('parseConfig', () => {
       {
         name: 'Sandbox',
         path: vaultPath,
-        smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
       },
     ]);
   });

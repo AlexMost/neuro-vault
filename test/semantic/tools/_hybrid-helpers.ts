@@ -65,7 +65,6 @@ export async function makeLexicalVault(
     {
       name: 'v',
       path: vaultRoot,
-      smartEnvPath: path.join(vaultRoot, '.smart-env'),
       reader: new FsVaultReader({ vaultRoot }),
       backend: semantic
         ? toBackend(makeFakeCorpusIndex(opts.sources ?? new Map()), opts.backendStatus)

@@ -1,6 +1,6 @@
 import { buildBasenameIndex } from '../link-resolver.js';
 import type { CorpusSnapshot } from '../semantic-backend.js';
-import type { SmartSource } from '../smart-connections-types.js';
+import type { SmartSource } from './types.js';
 import type { CorpusStore } from './shard-store.js';
 import { decodeVector } from './vector-codec.js';
 

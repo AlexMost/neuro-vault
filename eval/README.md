@@ -5,11 +5,9 @@ a hand-curated golden set. It runs as a plain script — no MCP client, no
 running server — by importing the production ranking modules directly
 (`executeRetrieval`, `LexicalIndex.search`, `flattenExpansion`, `fuseRanks`)
 and calling them the way `search_notes` does. It exists to replace "judge a
-ranking change by hand-running a few queries" with a repeatable number: the
-own-embedding effort needs to show the own corpus is at least not worse than
-Smart Connections before the Smart Connections code is deleted, and every RRF
-weight (`EXPANSION_WEIGHT`, pool sizes, adaptive `k`) was hand-picked and can
-only be re-tuned against measured data.
+ranking change by hand-running a few queries" with a repeatable number: every
+RRF weight (`EXPANSION_WEIGHT`, pool sizes, adaptive `k`) was hand-picked and
+can only be re-tuned against measured data.
 
 ## Golden set
 
@@ -68,25 +66,18 @@ re-run.
 ## Running
 
 ```sh
-npm run eval -- --vault <path> --pipeline semantic|fused --backend sc|own
+npm run eval -- --vault <path> --pipeline semantic|fused
 ```
 
-`--pipeline` defaults to `semantic`, `--backend` to `own`. An unrecognized
-flag, a missing value, or an unknown `--pipeline`/`--backend` value fails
-immediately with the supported values.
+`--pipeline` defaults to `semantic`. An unrecognized flag, a missing value, or
+an unknown `--pipeline` value fails immediately with the supported values.
 
-- `--backend own` reads `<vault>/.neuro-vault/corpus/` — the shard store this
-  server owns and reconciles. It must already exist:
-  run `neuro-vault-mcp index --vault <path>` first, or the run fails naming
-  that command.
-- `--backend sc` reads the vault's Smart Connections corpus at
-  `<vault>/.smart-env/multi`. It must already exist: open the vault in
-  Obsidian with Smart Connections installed so it builds its embeddings, or
-  the run fails naming the missing/empty corpus.
+The run reads `<vault>/.neuro-vault/corpus/` — the shard store this server
+owns and reconciles. It must already exist: run
+`neuro-vault-mcp index --vault <path>` first, or the run fails naming that
+command.
 
-## Axes: pipeline × backend
-
-Two independent axes, both recorded in every report:
+## Axis: pipeline
 
 - **`--pipeline`** — the ranking method.
   - `semantic` — embed the query, rank by pure embedding similarity
@@ -102,17 +93,6 @@ Two independent axes, both recorded in every report:
     `test/eval/production-fusion-pin.test.ts` ranks one query both ways over a
     fixture vault and asserts the two path orders are identical, so a change
     to production's fusion that the harness doesn't follow fails the suite.
-- **`--backend`** — the vector source: `sc` (Smart Connections) or `own`
-  (this server's own corpus). Both produce the same in-memory snapshot shape,
-  so the same pipeline code runs unchanged over either.
-
-Keeping these orthogonal is what makes a parity run meaningful: a
-`--backend sc` vs `--backend own` comparison at the same `--pipeline` isolates
-"did the vectors change", separate from "did the ranking method change".
-
-`--backend` (and the `sc` value along with it) is temporary — it's removed
-together with Smart Connections itself once that migration lands (#88), at
-which point every run is implicitly `own`.
 
 ## Scoring
 
@@ -120,8 +100,8 @@ Every query is scored against its pipeline's **top-10** ranked paths, computed
 at **query-side similarity threshold 0** — positions only, no score filtering.
 Production's query↔note thresholds (0.5/0.35 plus the 0.3 fallback) are
 calibrated to one embedding model's similarity scale, so they're not
-meaningful across models or backends; the harness zeroes them rather than let
-threshold tuning masquerade as ranking quality.
+meaningful across models; the harness zeroes them rather than let threshold
+tuning masquerade as ranking quality.
 
 The expansion leg's floor is the deliberate exception: **`expansion_floor`
 stays at the production value 0.35**. It is a similarity threshold too, but on
@@ -137,8 +117,8 @@ point of that pipeline. The cost is a caveat, worth stating plainly:
 > actually in effect is always recorded as `config.expansion_floor`, so a
 > report never hides which value produced its numbers.
 
-Within one model — the `sc` vs `own` parity run, or an RRF re-tuning — the
-floor is a constant on both sides and the caveat doesn't apply.
+Within one model — an RRF re-tuning, for instance — the floor is a constant
+across runs and the caveat doesn't apply.
 
 From that top-10, three metrics are computed, each over three slices
 (`overall`, `ua`, `en`):
@@ -153,13 +133,13 @@ From that top-10, three metrics are computed, each over three slices
 
 Each run writes one JSON file to `eval/results/` (gitignored — reports are
 machine-generated and tied to a code SHA, not durable artifacts), named
-`<yyyy-mm-ddThh-mm-ss>-<pipeline>-<backend>.json`. It carries:
+`<yyyy-mm-ddThh-mm-ss>-<pipeline>.json`. It carries:
 
 - `code_sha`, `vault_sha` — `git rev-parse HEAD` in this repo and in the
   vault, respectively, with a `-dirty` suffix when the working tree has
   uncommitted changes. Either is `null` when that directory isn't a git
   repository, or git was unavailable — never a fabricated value.
-- `model_id`, `pipeline`, `backend` — which combination produced this report.
+- `model_id`, `pipeline` — which combination produced this report.
 - `config` — every knob in effect (pool sizes, thresholds, fusion weight, the
   adaptive-`k` policy), so a run with different knobs is distinguishable at a
   glance.
@@ -181,20 +161,16 @@ check `search_notes` runs to drop corpus paths that no longer exist on disk
 before fusing them into the result). A stale corpus can therefore still rank
 a note that was deleted from the vault. Matching `vault_sha` guarantees the
 *golden set's* paths were valid at run time — it does not by itself guarantee
-the *corpus* is fresh. A comparison across backends or pipelines — the
-`sc` vs `own` parity run in particular — is only valid when both corpora were
-freshly built or reconciled against that same vault state; a comparison
-against a stale `own` corpus can look artificially better or worse than it
-should.
+the *corpus* is fresh. A comparison across pipelines is only valid when the
+corpus was freshly built or reconciled against that same vault state; a
+comparison against a stale corpus can look artificially better or worse than
+it should.
 
 Since reports are gitignored and local, there's no built-in history. Durable
 baseline numbers are meant to be transcribed by hand into wherever they need
-to live for the long term — a vault task note, the SC-removal change — rather
-than kept as a growing pile of JSON files.
+to live for the long term — a vault task note — rather than kept as a growing
+pile of JSON files.
 
 ## Pointers
 
 - Golden-set curation (writing the real entries): #86.
-- The `sc` vs `own` diagnostic parity run, ahead of the Smart Connections
-  removal: #87.
-- Smart Connections removal, which also retires `--backend`: #88.

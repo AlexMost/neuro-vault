@@ -36,7 +36,6 @@ const noopWriter = {
 const noopEntry = {
   name: 'test',
   path: '/tmp/vault',
-  smartEnvPath: '/tmp/smart',
   reader: noopReader,
   writer: noopWriter,
   provider: noopProvider,

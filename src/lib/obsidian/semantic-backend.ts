@@ -1,5 +1,5 @@
 import type { BasenameIndex } from './link-resolver.js';
-import type { SmartSource } from './smart-connections-types.js';
+import type { SmartSource } from './corpus/types.js';
 
 /** What every semantic tool ranks against: notes keyed by vault-relative path. */
 export interface CorpusSnapshot {

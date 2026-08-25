@@ -21,7 +21,6 @@ function allTools(...names: string[]) {
     names.map((name) => ({
       name,
       path: `/vaults/${name}`,
-      smartEnvPath: `/vaults/${name}/.smart-env`,
       graph: makeFakeGraph(),
       listMatchingPaths: async () => new Set<string>(),
       provider: { listTags: async () => [], listProperties: async () => [] } as never,

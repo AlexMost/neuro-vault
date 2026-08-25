@@ -489,7 +489,7 @@ export function buildSearchNotesTool(
   const { registry, embeddingProvider, searchEngine, modelKey } = deps;
 
   // Per-vault lexical indexes, created lazily; the Map lives for the tool's
-  // lifetime. Never touches the Smart Connections corpus — it's a read-through
+  // lifetime. Never touches the embedding corpus — it's a read-through
   // cache over the filesystem via `entry.reader`.
   const lexicalIndexes = new Map<string, LexicalIndex>();
   const lexicalFor = (entry: IVaultEntry): LexicalIndex => {

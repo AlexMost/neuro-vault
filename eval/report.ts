@@ -3,7 +3,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
-import type { BackendId } from './backends.js';
 import type { Metrics, QueryScore } from './metrics.js';
 import type { PipelineId } from './pipelines.js';
 
@@ -16,7 +15,6 @@ export interface EvalReport {
   vault_sha: string | null;
   model_id: string;
   pipeline: PipelineId;
-  backend: BackendId;
   config: Record<string, unknown>;
   golden: { path: string; count: number };
   metrics: Metrics;
@@ -41,7 +39,7 @@ export async function writeReport(
 ): Promise<string> {
   await mkdir(resultsDir, { recursive: true });
   const stamp = now.toISOString().slice(0, 19).replaceAll(':', '-');
-  const file = path.join(resultsDir, `${stamp}-${report.pipeline}-${report.backend}.json`);
+  const file = path.join(resultsDir, `${stamp}-${report.pipeline}.json`);
   await writeFile(file, `${JSON.stringify(report, null, 2)}\n`);
   return file;
 }

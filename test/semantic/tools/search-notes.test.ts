@@ -19,7 +19,6 @@ import {
   findNeighbors,
   findDuplicates,
   findBlockNeighbors,
-  loadSmartConnectionsCorpus,
   makeTestRegistry,
   makeFakeCorpusIndex,
   toBackend,
@@ -57,18 +56,17 @@ function makeMockSearchEngine(
 
 describe('searchNotes', () => {
   it('filters out search results whose paths no longer exist on disk', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       // note-b is absent from disk
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -98,17 +96,16 @@ describe('searchNotes', () => {
   });
 
   it('returns ranked search results for a query', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -139,17 +136,16 @@ describe('searchNotes', () => {
   });
 
   it('rejects an empty query before embedding', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn();
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -170,17 +166,16 @@ describe('searchNotes', () => {
   });
 
   it('surfaces embedding-provider failures as structured tool errors', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockRejectedValue(new Error('model unavailable'));
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -200,16 +195,15 @@ describe('searchNotes', () => {
   });
 
   it('rejects thresholds below 0 and above 1', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -232,20 +226,19 @@ describe('searchNotes', () => {
   });
 
   it('accepts a query array and returns matched_queries on each result', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi
         .fn()
         .mockResolvedValueOnce([0.7, 0.2, 0.1])
         .mockResolvedValueOnce([0.1, 0.2, 0.7]);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -275,11 +268,10 @@ describe('searchNotes', () => {
   });
 
   it('rejects an empty query array', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -298,11 +290,10 @@ describe('searchNotes', () => {
   });
 
   it('rejects a query array longer than 8', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -321,16 +312,15 @@ describe('searchNotes', () => {
   });
 
   it('dedupes duplicate queries before embedding', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -350,16 +340,15 @@ describe('searchNotes', () => {
   });
 
   it('keeps single-string output shape unchanged (no matched_queries, blocks omitted when the note has no block embeddings)', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -754,7 +743,7 @@ describe('searchNotes', () => {
   });
 
   it('fans out across two semantically-available vaults when vault: is omitted in multi-vault mode', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
         ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
@@ -790,7 +779,6 @@ describe('searchNotes', () => {
           {
             name: 'v1',
             path: vaultRoot1,
-            smartEnvPath,
             backend: toBackend(corpusIndex1),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
@@ -798,7 +786,6 @@ describe('searchNotes', () => {
           {
             name: 'v2',
             path: vaultRoot2,
-            smartEnvPath,
             backend: toBackend(corpusIndex2),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
@@ -833,7 +820,7 @@ describe('searchNotes', () => {
   });
 
   it('returns failed_vaults when one vault semantic search rejects', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
         ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
@@ -863,7 +850,6 @@ describe('searchNotes', () => {
           {
             name: 'v1',
             path: vaultRoot1,
-            smartEnvPath,
             backend: toBackend(corpusIndex1),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
@@ -871,7 +857,6 @@ describe('searchNotes', () => {
           {
             name: 'v2',
             path: vaultRoot2,
-            smartEnvPath,
             backend: toBackend(corpusIndex2),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
@@ -911,7 +896,7 @@ describe('searchNotes', () => {
   });
 
   it('fan-out includes a vault without a semantic index, contributing lexically-sourced matches only', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
         ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
@@ -932,7 +917,6 @@ describe('searchNotes', () => {
           {
             name: 'v1',
             path: vaultRoot1,
-            smartEnvPath,
             backend: toBackend(corpusIndex1),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
@@ -940,7 +924,6 @@ describe('searchNotes', () => {
           {
             name: 'v2',
             path: tempRoot,
-            smartEnvPath,
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
@@ -981,13 +964,12 @@ describe('searchNotes', () => {
   });
 
   it('returns lexical-only matches (no throw) when vault has no semantic backend', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: tempRoot,
-          smartEnvPath,
           graph: makeFakeGraph(),
           listMatchingPaths: async () => new Set(),
         },
@@ -1060,13 +1042,12 @@ describe('semantic_status', () => {
   });
 
   it('reports unavailable when the semantic module is globally off (no backend)', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: tempRoot,
-          smartEnvPath,
           graph: makeFakeGraph(),
           listMatchingPaths: async () => new Set(),
         },
@@ -1143,7 +1124,6 @@ describe('search_notes advertised description', () => {
       names.map((name) => ({
         name,
         path: `/vaults/${name}`,
-        smartEnvPath: `/vaults/${name}/.smart-env`,
         graph: makeFakeGraph(),
         listMatchingPaths: async () => new Set<string>(),
       })),

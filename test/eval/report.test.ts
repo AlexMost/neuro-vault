@@ -41,7 +41,6 @@ describe('writeReport', () => {
       vault_sha: null,
       model_id: 'TaylorAI/bge-micro-v2',
       pipeline: 'semantic',
-      backend: 'own',
       config: { top_k: 10 },
       golden: { path: '/v/.neuro-vault/eval/golden.yaml', count: 2 },
       metrics: {
@@ -52,7 +51,7 @@ describe('writeReport', () => {
       per_query: [],
     };
     const file = await writeReport(report, dir, new Date('2026-08-25T10:20:30Z'));
-    expect(path.basename(file)).toBe('2026-08-25T10-20-30-semantic-own.json');
+    expect(path.basename(file)).toBe('2026-08-25T10-20-30-semantic.json');
     const parsed = JSON.parse(await readFile(file, 'utf8')) as EvalReport;
     expect(parsed).toEqual(report);
   });

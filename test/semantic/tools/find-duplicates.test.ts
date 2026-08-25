@@ -13,28 +13,27 @@ import {
   findNeighbors,
   findDuplicates,
   findBlockNeighbors,
-  loadSmartConnectionsCorpus,
   toBackend,
 } from './_helpers.js';
 
 describe('findDuplicates', () => {
   it('drops duplicate pairs whose paths no longer exist on disk', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      // Use real tempRoot so entry.filterExisting checks an actual directory
-      // The test expects 'Folder/note-d.md' to NOT exist (it doesn't in tempRoot)
-      const corpusIndex = makeFakeCorpusIndex(createDuplicateCorpus(corpus).sources);
+      // Use real tempRoot so entry.filterExisting checks an actual directory.
+      // None of the fixture's note paths (nor the synthetic note-d/note-e)
+      // exist on disk in tempRoot, so every pair is filtered out — this test
+      // validates the filtering mechanism, not the ranking.
+      const corpusIndex = makeFakeCorpusIndex(createDuplicateCorpus(sources).sources);
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: tempRoot,
-          smartEnvPath,
           backend: toBackend(corpusIndex),
         },
       ]);
@@ -46,15 +45,6 @@ describe('findDuplicates', () => {
 
       const results = await tool.handler({ threshold: 0.95 });
 
-      // note-d and note-e don't exist on disk in tempRoot, so pairs including them are dropped
-      // Only Folder/note-a.md and Folder/note-e.md... wait note-e also doesn't exist
-      // All synthetic notes (note-d, note-e) are absent from disk in tempRoot
-      // So all pairs involving note-d or note-e should be dropped
-      // Original note-a,b,c.md exist on disk in tempRoot/Folder? Actually no:
-      // makeVaultFixture creates the smartEnvPath inside tempRoot/vault but the .md files
-      // are not created on disk. entry.filterExisting joins each path to entry.path.
-      // All note paths like 'Folder/note-a.md' won't exist in tempRoot.
-      // So all pairs will be filtered out. This test validates the filtering mechanism.
       expect(results.map((r) => [r.note_a, r.note_b])).toEqual([]);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
@@ -62,24 +52,19 @@ describe('findDuplicates', () => {
   });
 
   it('drops duplicate pairs whose paths no longer exist on disk (partially populated vault)', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const duplicateSources = createDuplicateCorpus(corpus).sources;
+      const duplicateSources = createDuplicateCorpus(sources).sources;
       // Create a corpus that returns all sources including synthetic note-d/note-e
       const corpusIndex = makeFakeCorpusIndex(duplicateSources);
 
       // Create actual vault directory with only specific notes present
-      const vaultRoot = await fs.mkdtemp(
-        (await import('node:os')).default.tmpdir()
-          ? `${(await import('node:os')).default.tmpdir()}/find-dup-`
-          : '/tmp/find-dup-',
-      );
+      const vaultRoot = await fs.mkdtemp(`${os.tmpdir()}/find-dup-`);
       await fs.mkdir(`${vaultRoot}/Folder`, { recursive: true });
       // Create note-a and note-e (but not note-d) so the pair (a,d) is dropped
       await fs.writeFile(`${vaultRoot}/Folder/note-a.md`, '# A\n');
@@ -90,7 +75,6 @@ describe('findDuplicates', () => {
           {
             name: 'v',
             path: vaultRoot,
-            smartEnvPath,
             backend: toBackend(corpusIndex),
           },
         ]);
@@ -102,11 +86,9 @@ describe('findDuplicates', () => {
 
         const results = await tool.handler({ threshold: 0.95 });
 
-        // note-d doesn't exist on disk; pairs involving note-d are dropped
-        // note-a and note-e both exist, so (a,e) stays
-        // note-b and note-c exist on disk (they were copied to smartEnvPath, but smartEnvPath
-        // is inside tempRoot not vaultRoot). Actually note-b.md & note-c.md are NOT in vaultRoot.
-        // So only pairs where both notes exist: (a,e)
+        // note-d doesn't exist on disk; pairs involving note-d are dropped.
+        // note-a and note-e both exist, so (a,e) stays; note-b and note-c
+        // (the fixture's real notes) don't exist in vaultRoot either.
         expect(results.map((r) => [r.note_a, r.note_b])).toEqual([
           ['Folder/note-a.md', 'Folder/note-e.md'],
         ]);
@@ -120,15 +102,14 @@ describe('findDuplicates', () => {
   });
 
   it('returns matching duplicate pairs with vault stamp', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const duplicateSources = createDuplicateCorpus(corpus).sources;
+      const duplicateSources = createDuplicateCorpus(sources).sources;
 
       // Create vault with all required notes so nothing is filtered
       const vaultRoot = await fs.mkdtemp(`${os.tmpdir()}/find-dup2-`);
@@ -143,7 +124,6 @@ describe('findDuplicates', () => {
           {
             name: 'v',
             path: vaultRoot,
-            smartEnvPath,
             backend: toBackend(corpusIndex),
           },
         ]);
@@ -171,14 +151,13 @@ describe('findDuplicates', () => {
   });
 
   it('throws VAULT_REQUIRED in multi-vault mode when vault: is omitted', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const corpusIndex = makeFakeCorpusIndex(sources);
       const registry = makeTestRegistry([
-        { name: 'v1', path: tempRoot, smartEnvPath, backend: toBackend(corpusIndex) },
-        { name: 'v2', path: tempRoot, smartEnvPath, backend: toBackend(corpusIndex) },
+        { name: 'v1', path: tempRoot, backend: toBackend(corpusIndex) },
+        { name: 'v2', path: tempRoot, backend: toBackend(corpusIndex) },
       ]);
       const tool = buildFindDuplicatesTool({
         registry,
@@ -193,14 +172,13 @@ describe('findDuplicates', () => {
   });
 
   it('throws SEMANTIC_INDEX_NOT_FOUND when vault has no semantic backend', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
 
     try {
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: tempRoot,
-          smartEnvPath,
         },
       ]);
       const tool = buildFindDuplicatesTool({
@@ -227,7 +205,6 @@ describe('findDuplicates', () => {
       {
         name: 'v',
         path: '/nonexistent',
-        smartEnvPath: '/nonexistent/.smart-env',
         backend: toBackend(corpus),
         // Everything the corpus names is declared present — no temp dir.
         filterExisting: async (paths) => new Set(paths),

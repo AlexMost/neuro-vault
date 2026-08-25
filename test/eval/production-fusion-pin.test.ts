@@ -90,7 +90,6 @@ async function productionOrder(
     {
       name: 'v',
       path: vaultRoot,
-      smartEnvPath: path.join(vaultRoot, '.smart-env'),
       reader,
       backend: toBackend(makeFakeCorpusIndex(sources)),
       graph: new WikilinkGraphIndex({ reader }),

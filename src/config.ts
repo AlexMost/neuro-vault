@@ -61,7 +61,6 @@ function buildVaultConfig(rawPath: string): IVaultConfig {
   return {
     name,
     path: normalizedPath,
-    smartEnvPath: path.join(normalizedPath, '.smart-env', 'multi'),
   };
 }
 
@@ -105,7 +104,7 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
       y.option('vault', VAULT_OPTION).option('semantic', {
         type: 'boolean',
         default: true,
-        describe: 'Enable semantic search module (Smart Connections embeddings)',
+        describe: 'Enable semantic search module (embedding-based search)',
       }),
     )
     .command('index', 'Build or refresh the embedding corpus for each vault, then exit', (y) =>

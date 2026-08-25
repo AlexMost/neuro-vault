@@ -7,9 +7,8 @@ export type PathAccess = (absolutePath: string) => Promise<void>;
 /**
  * Build this vault's stale-path filter.
  *
- * The Smart Connections corpus is read-only and unwatched (ADR-0006), so it
- * can still name a note that was deleted since the plugin last wrote its
- * index. Every consumer of corpus-derived paths must therefore check disk
+ * The corpus can still name a note that was deleted since the last reconcile
+ * pass. Every consumer of corpus-derived paths must therefore check disk
  * before answering. That check lives here and nowhere else: the returned
  * closure is bound to one vault root and exposed as
  * `IVaultEntry.filterExisting`.

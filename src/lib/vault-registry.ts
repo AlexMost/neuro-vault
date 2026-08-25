@@ -15,7 +15,6 @@ export type FilterExistingPaths = (paths: Iterable<string>) => Promise<Set<strin
 export interface IVaultEntry {
   name: string;
   path: string;
-  smartEnvPath: string;
   /**
    * This vault's discovery scope (capability vault-scope): the single
    * definition of which files are visible to scan-derived surfaces.
@@ -83,7 +82,6 @@ export interface IVaultEntryDeps {
 export interface IVaultRegistryConfig {
   vaults: IVaultConfig[];
   semanticEnabled: boolean;
-  modelKey: string;
 }
 
 /**
@@ -150,7 +148,6 @@ export class VaultRegistry implements IVaultRegistry {
       entries.push({
         name: v.name,
         path: v.path,
-        smartEnvPath: v.smartEnvPath,
         scope,
         reader,
         writer,

@@ -39,7 +39,6 @@ describe('createOperationsModule', () => {
     const fakeEntry: IVaultEntry = {
       name: 'MyVault',
       path: '/tmp/MyVault',
-      smartEnvPath: '/tmp/MyVault/.smart-env/multi',
       scope: createVaultScope(),
       reader: fakeReader,
       writer: fakeWriter,

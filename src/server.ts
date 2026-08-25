@@ -111,7 +111,6 @@ export async function startNeuroVaultServer(
     {
       vaults: config.vaults,
       semanticEnabled: config.semantic.enabled,
-      modelKey: config.semantic.modelKey,
     },
     buildDefaultVaultEntryDeps(embedder, deps.vaultEntryDeps),
   );

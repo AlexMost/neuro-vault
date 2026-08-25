@@ -18,12 +18,10 @@ function fakeStream(isTTY: boolean): FakeStream {
 const vaultA = {
   name: 'VaultA',
   path: '/abs/VaultA',
-  smartEnvPath: '/abs/VaultA/.smart-env/multi',
 };
 const vaultB = {
   name: 'VaultB',
   path: '/abs/VaultB',
-  smartEnvPath: '/abs/VaultB/.smart-env/multi',
 };
 
 function okSummary(overrides = {}) {

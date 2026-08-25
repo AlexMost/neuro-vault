@@ -245,10 +245,10 @@ describe('isManifestCompatible', () => {
 describe('ensureCorpusGitignored', () => {
   it('appends one entry, preserving existing lines', async () => {
     const root = await tempVault();
-    await writeFile(path.join(root, '.gitignore'), '.smart-env/\nnode_modules\n');
+    await writeFile(path.join(root, '.gitignore'), '.obsidian/\nnode_modules\n');
     await ensureCorpusGitignored(root);
     const after = await readFile(path.join(root, '.gitignore'), 'utf8');
-    expect(after).toContain('.smart-env/');
+    expect(after).toContain('.obsidian/');
     expect(after).toContain('node_modules');
     expect(after.match(/\.neuro-vault\/corpus\//g)).toHaveLength(1);
   });

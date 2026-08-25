@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { SmartSource } from '../../src/lib/obsidian/smart-connections-types.js';
+import type { SmartSource } from '../../src/lib/obsidian/corpus/types.js';
 import { EVAL_CONFIG, EVAL_TOP_K, createFusedContext, rankQuery } from '../../eval/pipelines.js';
 
 // 3-dim vectors are fine here: pipelines never touch CorpusStore's dims guard.

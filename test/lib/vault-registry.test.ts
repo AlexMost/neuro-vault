@@ -44,7 +44,7 @@ function fakeDeps(): IVaultEntryDeps {
 }
 
 function vault(name: string, path: string): IVaultConfig {
-  return { name, path, smartEnvPath: `${path}/.smart-env/multi` };
+  return { name, path };
 }
 
 describe('createVaultRegistry', () => {
@@ -53,7 +53,6 @@ describe('createVaultRegistry', () => {
       {
         vaults: [vault('a', '/v/a'), vault('b', '/v/b')],
         semanticEnabled: true,
-        modelKey: 'm',
       },
       fakeDeps(),
     );
@@ -65,7 +64,6 @@ describe('createVaultRegistry', () => {
       {
         vaults: [vault('a', '/v/a')],
         semanticEnabled: false,
-        modelKey: 'm',
       },
       fakeDeps(),
     );
@@ -77,7 +75,6 @@ describe('createVaultRegistry', () => {
       {
         vaults: [vault('Obsidian', '/v/Obsidian')],
         semanticEnabled: false,
-        modelKey: 'm',
       },
       fakeDeps(),
     );
@@ -92,7 +89,6 @@ describe('createVaultRegistry', () => {
       {
         vaults: [vault('Obsidian', '/v/Obsidian')],
         semanticEnabled: false,
-        modelKey: 'm',
       },
       fakeDeps(),
     );
@@ -113,7 +109,6 @@ describe('createVaultRegistry', () => {
       {
         vaults: [vault('a', '/v/a')],
         semanticEnabled: false,
-        modelKey: 'm',
       },
       fakeDeps(),
     );
@@ -135,7 +130,6 @@ describe('createVaultRegistry', () => {
       {
         vaults: [vault('a', '/v/a')],
         semanticEnabled: false,
-        modelKey: 'm',
       },
       fakeDeps(),
     );
@@ -145,7 +139,6 @@ describe('createVaultRegistry', () => {
       {
         vaults: [vault('a', '/v/a'), vault('b', '/v/b')],
         semanticEnabled: false,
-        modelKey: 'm',
       },
       fakeDeps(),
     );
@@ -154,7 +147,7 @@ describe('createVaultRegistry', () => {
 
   it('gives every vault a backend when the module is enabled', async () => {
     const registry = await VaultRegistry.create(
-      { vaults: [vault('a', '/v/a')], semanticEnabled: true, modelKey: 'm' },
+      { vaults: [vault('a', '/v/a')], semanticEnabled: true },
       fakeDeps(),
     );
     expect(registry.list()[0].backend?.status()).toEqual({ state: 'ready' });
@@ -162,7 +155,7 @@ describe('createVaultRegistry', () => {
 
   it('leaves the backend absent when semantic is globally off', async () => {
     const registry = await VaultRegistry.create(
-      { vaults: [vault('a', '/v/a')], semanticEnabled: false, modelKey: 'm' },
+      { vaults: [vault('a', '/v/a')], semanticEnabled: false },
       fakeDeps(),
     );
     expect(registry.list()[0].backend).toBeUndefined();
@@ -180,10 +173,7 @@ describe('createVaultRegistry', () => {
         dispose: async () => {},
       };
     };
-    await VaultRegistry.create(
-      { vaults: [vault('a', '/v/a')], semanticEnabled: true, modelKey: 'm' },
-      deps,
-    );
+    await VaultRegistry.create({ vaults: [vault('a', '/v/a')], semanticEnabled: true }, deps);
     expect(seen).toEqual([false]);
   });
 
@@ -200,7 +190,6 @@ describe('createVaultRegistry', () => {
       {
         vaults: [vault('a', '/v/a')],
         semanticEnabled: false,
-        modelKey: 'm',
       },
       deps,
     );
@@ -213,7 +202,6 @@ describe('createVaultRegistry', () => {
       {
         vaults: [vault('v', '/tmp/v')],
         semanticEnabled: false,
-        modelKey: 'bge-micro-v2',
       },
       fakeDeps(),
     );
@@ -227,11 +215,10 @@ describe('createVaultRegistry', () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [
-          { name: 'a', path: '/vaults/a', smartEnvPath: '/vaults/a/.smart-env/multi' },
-          { name: 'b', path: '/vaults/b', smartEnvPath: '/vaults/b/.smart-env/multi' },
+          { name: 'a', path: '/vaults/a' },
+          { name: 'b', path: '/vaults/b' },
         ],
         semanticEnabled: false,
-        modelKey: 'm',
       },
       {
         ...fakeDeps(),
@@ -254,11 +241,10 @@ describe('createVaultRegistry', () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [
-          { name: 'a', path: '/vaults/a', smartEnvPath: '/vaults/a/.smart-env/multi' },
-          { name: 'b', path: '/vaults/b', smartEnvPath: '/vaults/b/.smart-env/multi' },
+          { name: 'a', path: '/vaults/a' },
+          { name: 'b', path: '/vaults/b' },
         ],
         semanticEnabled: false,
-        modelKey: 'm',
       },
       {
         ...fakeDeps(),
@@ -282,7 +268,7 @@ describe('createVaultRegistry', () => {
     const scopeFactory = vi.fn(async () => scope);
     const readerFactory = vi.fn(({ vaultRoot, scope: s }) => ({ vaultRoot, scope: s }) as never);
     const registry = await VaultRegistry.create(
-      { vaults: [vault('A', '/a')], semanticEnabled: false, modelKey: 'k' },
+      { vaults: [vault('A', '/a')], semanticEnabled: false },
       { ...fakeDeps(), scopeFactory, readerFactory },
     );
     expect(scopeFactory).toHaveBeenCalledWith({ vaultRoot: '/a', config: {} });
@@ -305,7 +291,6 @@ describe('createVaultRegistry', () => {
       {
         vaults: [vault('good', '/good'), vault('bad', '/bad')],
         semanticEnabled: false,
-        modelKey: 'k',
       },
       {
         ...fakeDeps(),

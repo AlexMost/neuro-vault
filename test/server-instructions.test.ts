@@ -38,7 +38,6 @@ describe('SERVER_INSTRUCTIONS', () => {
             {
               name: path.basename(vault),
               path: vault,
-              smartEnvPath: path.join(vault, '.smart-env', 'multi'),
             },
           ],
           semantic: { enabled: false, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },

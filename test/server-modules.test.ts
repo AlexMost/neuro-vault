@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildBasenameIndex } from '../src/lib/obsidian/index.js';
 import type { BackendStatus } from '../src/lib/obsidian/semantic-backend.js';
-import type { SmartConnectionsCorpusIndex } from '../src/lib/obsidian/smart-connections-corpus-index.js';
 import { main } from '../src/cli.js';
 import { startNeuroVaultServer } from '../src/server.js';
 
@@ -55,9 +54,7 @@ const fakeSources = new Map([
   ],
 ]);
 
-function makeFakeCorpusIndex(
-  sources: typeof fakeSources = fakeSources,
-): SmartConnectionsCorpusIndex {
+function makeFakeCorpusIndex(sources: typeof fakeSources = fakeSources) {
   const basenameIndex = buildBasenameIndex(sources.keys());
   return {
     snapshot: vi.fn().mockResolvedValue({ sources, basenameIndex }),
@@ -82,7 +79,6 @@ async function startWithBackendStatus(
         {
           name: path.basename(vaultPath),
           path: vaultPath,
-          smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
         },
       ],
       semantic: { enabled: true, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
@@ -138,7 +134,6 @@ async function startForShutdown(opts: {
       vaults: opts.vaultPaths.map((vaultPath) => ({
         name: path.basename(vaultPath),
         path: vaultPath,
-        smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
       })),
       semantic: { enabled: true, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
     },
@@ -361,7 +356,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
   it('registers fourteen tools (3 semantic + 11 operations) when both modules are enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
-    await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
+    await fs.mkdir(vaultPath, { recursive: true });
 
     const server = createFakeServer();
     const fakeProvider = {

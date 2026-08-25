@@ -1,5 +1,5 @@
 import { LexicalIndex } from '../src/lib/obsidian/lexical/index.js';
-import type { SmartSource } from '../src/lib/obsidian/smart-connections-types.js';
+import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
 import { FsVaultReader } from '../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../src/lib/obsidian/vault-scope-config.js';
 import { WikilinkGraphIndex } from '../src/lib/obsidian/wikilink-graph.js';
