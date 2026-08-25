@@ -1,14 +1,4 @@
-## RENAMED Requirements
-
-- FROM: `### Requirement: Orthogonal run axes`
-- TO: `### Requirement: The pipeline axis selects the ranking method`
-
-- FROM: `### Requirement: Backend corpus loading`
-- TO: `### Requirement: Corpus loading`
-
----
-
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: The pipeline axis selects the ranking method
 
@@ -35,7 +25,7 @@ The runner SHALL accept one axis, `--pipeline`, with values `semantic` (pure emb
 
 The runner SHALL load its snapshot from the vault's `.neuro-vault/corpus/` shard store, through the same loader the server uses, so the harness and the server can never rank against differently-built snapshots. When the corpus is missing or empty, the runner MUST exit non-zero with an error stating which corpus is missing and how to produce it (`neuro-vault-mcp index`).
 
-#### Scenario: Own corpus absent
+#### Scenario: Corpus absent
 
 - **WHEN** `<vault>/.neuro-vault/corpus/` contains no shards
 - **THEN** the runner exits non-zero and the error mentions `neuro-vault-mcp index`
@@ -46,6 +36,8 @@ The runner SHALL load its snapshot from the vault's `.neuro-vault/corpus/` shard
 - **THEN** the decoded snapshot feeds the ranking functions with notes lacking a note-level vector absent from note ranking
 
 ---
+
+## MODIFIED Requirements
 
 ### Requirement: Comparable JSON reports
 
@@ -60,3 +52,19 @@ Each run SHALL write one JSON report into the repo's gitignored `eval/results/` 
 
 - **WHEN** the vault directory is not a git repository
 - **THEN** the run still completes and the report records `vault_sha: null`
+
+---
+
+## REMOVED Requirements
+
+### Requirement: Orthogonal run axes
+
+**Reason**: The harness carried two orthogonal axes, `--pipeline` and `--backend`, so that the corpus the server inherited from the Smart Connections plugin could be ranked against the corpus the server builds itself. This change deletes the plugin reader, leaving one corpus and therefore one axis. Its scenario "Same pipeline across two backends" describes a comparison that can no longer be run — the `sc` loader cannot read a current plugin corpus either, since the plugin migrated its storage layout. Replaced wholesale rather than modified because OpenSpec's MODIFIED apply intentionally refuses to drop a scenario, and this change deliberately retires that one.
+
+**Migration**: Superseded by the ADDED requirement "The pipeline axis selects the ranking method" above. `--pipeline` is unchanged; `--backend` is now rejected with a non-zero exit rather than silently ignored, and reports no longer carry a `backend` field.
+
+### Requirement: Backend corpus loading
+
+**Reason**: The requirement named a backend because there were two of them to choose between. With one corpus its name and its scenario title ("Own shards ranked identically to their vectors") both describe a distinction that no longer exists. Replaced wholesale for the same reason as above — the scenario is renamed, and MODIFIED cannot rename a scenario without appearing to drop it.
+
+**Migration**: Superseded by the ADDED requirement "Corpus loading" above. The loading behaviour is unchanged in substance: the harness reads `.neuro-vault/corpus/` through the same loader the server uses, and still exits non-zero naming `neuro-vault-mcp index` when the corpus is missing or empty.
