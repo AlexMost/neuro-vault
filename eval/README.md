@@ -92,7 +92,8 @@ Two independent axes, both recorded in every report:
   - `semantic` — embed the query, rank by pure embedding similarity
     (`findNeighbors`, threshold 0, top 10).
   - `fused` — the production RRF pipeline, run at deep effort: `executeRetrieval`
-    (semantic leg, pool 8, expansion on, floor 0.35) + `LexicalIndex.search`
+    (semantic leg at threshold 0, pool 8; expansion leg on, per-seed limit 3,
+    expansion floor 0.35) + `LexicalIndex.search`
     (note cap 10, per-note cap 3, real wikilink-graph backlink tie-break) +
     `flattenExpansion` + `fuseRanks` (expansion weight 0.85). This is the same
     sequence `search_notes` calls internally to assemble its unified list,
@@ -116,11 +117,28 @@ which point every run is implicitly `own`.
 ## Scoring
 
 Every query is scored against its pipeline's **top-10** ranked paths, computed
-at **similarity threshold 0** — positions only, no score filtering. Production
-similarity thresholds (0.5/0.35 plus fallback) are calibrated to one
-embedding model's similarity scale, so they're not meaningful across models or
-backends; the harness deliberately ignores them rather than let threshold
-tuning masquerade as ranking quality.
+at **query-side similarity threshold 0** — positions only, no score filtering.
+Production's query↔note thresholds (0.5/0.35 plus the 0.3 fallback) are
+calibrated to one embedding model's similarity scale, so they're not
+meaningful across models or backends; the harness zeroes them rather than let
+threshold tuning masquerade as ranking quality.
+
+The expansion leg's floor is the deliberate exception: **`expansion_floor`
+stays at the production value 0.35**. It is a similarity threshold too, but on
+the seed↔note scale rather than the query↔note one, and zeroing it would stop
+the `fused` pipeline from being the production pipeline — which is the whole
+point of that pipeline. The cost is a caveat, worth stating plainly:
+
+> A cross-model comparison of `fused` is not clean. Under a model upgrade the
+> expansion leg's membership shifts with the new model's similarity
+> distribution while the semantic leg's (threshold 0) does not, so part of a
+> `fused` metric delta can come from the floor rather than from ranking
+> quality. **`--pipeline semantic` is the clean cross-model read.** The floor
+> actually in effect is always recorded as `config.expansion_floor`, so a
+> report never hides which value produced its numbers.
+
+Within one model — the `sc` vs `own` parity run, or an RRF re-tuning — the
+floor is a constant on both sides and the caveat doesn't apply.
 
 From that top-10, three metrics are computed, each over three slices
 (`overall`, `ua`, `en`):
