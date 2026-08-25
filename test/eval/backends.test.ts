@@ -37,7 +37,7 @@ describe('own backend snapshot', () => {
       blocks: [],
     });
 
-    const sources = await loadSnapshot('own', vaultRoot);
+    const sources = await loadSnapshot(vaultRoot);
     expect([...sources.keys()]).toEqual(['Notes/a.md']);
     const a = sources.get('Notes/a.md')!;
     expect(a.embedding[0]).toBe(1);
@@ -48,25 +48,8 @@ describe('own backend snapshot', () => {
 
   it('fails an empty corpus pointing at the index command', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-own-empty-'));
-    const err = await loadSnapshot('own', vaultRoot).catch((e: unknown) => e);
+    const err = await loadSnapshot(vaultRoot).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BackendError);
     expect((err as Error).message).toContain('neuro-vault-mcp index');
-  });
-});
-
-describe('sc backend snapshot', () => {
-  // The SC loader throws for a missing directory AND for a corpus with no
-  // usable notes, so the wrapped `catch` message is the ONLY message a real
-  // `sc` failure ever prints. The spec requires it to name the corpus and say
-  // how to produce it, so the remedy has to live on this reachable path.
-  it('fails a vault without a Smart Connections corpus, naming the corpus and the remedy', async () => {
-    const vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-sc-'));
-    const err = await loadSnapshot('sc', vaultRoot).catch((e: unknown) => e);
-    await rm(vaultRoot, { recursive: true, force: true });
-    expect(err).toBeInstanceOf(BackendError);
-    const message = (err as Error).message;
-    expect(message).toMatch(/smart connections/i);
-    expect(message).toContain(path.join(vaultRoot, '.smart-env', 'multi'));
-    expect(message).toMatch(/open the vault in Obsidian with Smart Connections installed/i);
   });
 });

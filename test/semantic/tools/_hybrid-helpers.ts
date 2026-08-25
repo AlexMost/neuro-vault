@@ -5,12 +5,13 @@ import path from 'node:path';
 import { vi } from 'vitest';
 
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
+import type { BackendStatus } from '../../../src/lib/obsidian/semantic-backend.js';
 import type {
   ListMatchingPaths,
   SearchEngine,
   SmartSource,
 } from '../../../src/modules/semantic/types.js';
-import { makeTestRegistry, makeFakeGraph, makeFakeCorpusIndex } from './_helpers.js';
+import { makeTestRegistry, makeFakeGraph, makeFakeCorpusIndex, toBackend } from './_helpers.js';
 
 // Shared fixtures for the hybrid search_notes tests (mode/effort axes,
 // lexical+semantic orchestration, and the end-to-end sanity fixture). Lives
@@ -50,6 +51,7 @@ export async function makeLexicalVault(
     sources?: Map<string, SmartSource>;
     engine?: SearchEngine;
     listMatchingPaths?: ListMatchingPaths;
+    backendStatus?: BackendStatus;
   } = {},
 ) {
   const semantic = opts.semantic ?? true;
@@ -63,12 +65,12 @@ export async function makeLexicalVault(
     {
       name: 'v',
       path: vaultRoot,
-      smartEnvPath: path.join(vaultRoot, '.smart-env'),
       reader: new FsVaultReader({ vaultRoot }),
-      corpus: semantic ? makeFakeCorpusIndex(opts.sources ?? new Map()) : undefined,
+      backend: semantic
+        ? toBackend(makeFakeCorpusIndex(opts.sources ?? new Map()), opts.backendStatus)
+        : undefined,
       graph: makeFakeGraph(),
       listMatchingPaths: opts.listMatchingPaths ?? (async () => new Set(Object.keys(files))),
-      semanticAvailable: semantic,
     },
   ]);
   const deps = {

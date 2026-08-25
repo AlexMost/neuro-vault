@@ -18,7 +18,6 @@ export type {
 export interface IVaultConfig {
   name: string;
   path: string; // absolute, normalized
-  smartEnvPath: string; // <path>/.smart-env/multi
 }
 
 export interface ServerConfig {

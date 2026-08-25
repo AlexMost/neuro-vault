@@ -3,10 +3,9 @@
 ## Requirements
 
 - Node.js 20+
-- Obsidian vault with the [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) plugin (embeddings must be generated)
-- Smart Connections data at `<vault>/.smart-env/multi/*.ajson`
+- An Obsidian vault (a directory of Markdown notes) — no plugin required
 
-Vault operations (`create_note`, `read_daily`, `edit_note`, properties, tags) read and write the vault directory directly on disk — no Obsidian installation or running instance is required. The server runs headless.
+Vault operations (`create_note`, `read_daily`, `edit_note`, properties, tags) read and write the vault directory directly on disk — no Obsidian installation or running instance is required. The server runs headless. The embedding index the semantic leg searches is one the server builds itself from your notes; see [First-run behavior](#first-run-behavior) below.
 
 ## Install
 
@@ -101,6 +100,16 @@ Ask your assistant:
 
 ## First-run behavior
 
-- Smart Connections `.ajson` files are loaded into memory once at startup.
 - The embedding model (`TaylorAI/bge-micro-v2`, ~40 MB) is downloaded on first run and cached by `@xenova/transformers`. Subsequent starts are fast.
-- If the vault path is missing or Smart Connections data is absent, the server exits immediately with an error.
+- A vault with no embedding index yet starts indexing in the background as soon as the server boots — it does not block startup. While that first pass runs, `search_notes` still answers immediately from its lexical leg alone and reports `semantic_status: { state: "indexing", indexed, total }`; the embeddings-only tools (`get_similar_notes`, `find_duplicates`) return `SEMANTIC_INDEX_BUILDING` for that vault until the pass finishes. No restart is needed — the vault is promoted to `ready` live.
+- If the `--vault` directory itself does not exist, the server exits immediately with an error before starting.
+
+### Optional: warm the index first
+
+To skip that degraded first window — useful before a demo, or for a large vault — build the index ahead of time and exit:
+
+```bash
+neuro-vault-mcp index --vault /absolute/path/to/your/vault
+```
+
+Repeat `--vault` to warm several vaults in one run. It prints per-vault progress and a summary (`indexed`, `embedded`, `reused`, `renamed`, `deleted`, `failed`), and exits non-zero if any note failed to embed. Re-running it later is cheap: an unchanged vault reconciles in well under a second, since only notes that changed since the last pass are re-embedded.

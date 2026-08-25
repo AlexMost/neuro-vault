@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { MODEL_ID } from '../src/lib/obsidian/corpus/types.js';
 import { EmbeddingService } from '../src/modules/semantic/embedding-service.js';
-import { BackendError, loadSnapshot, type BackendId } from './backends.js';
+import { BackendError, loadSnapshot } from './backends.js';
 import { GoldenSetError, goldenSetPath, loadGoldenSet } from './golden.js';
 import { aggregate, scoreQuery, type QueryScore } from './metrics.js';
 import {
@@ -22,18 +22,16 @@ export class UsageError extends Error {}
 export interface EvalArgs {
   vault: string;
   pipeline: PipelineId;
-  backend: BackendId;
 }
 
-const USAGE =
-  'usage: npm run eval -- --vault <path> --pipeline <semantic|fused> --backend <sc|own>';
+const USAGE = 'usage: npm run eval -- --vault <path> --pipeline <semantic|fused>';
 
 export function parseEvalArgs(argv: string[]): EvalArgs {
   const values = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i];
     const value = argv[i + 1];
-    if (!['--vault', '--pipeline', '--backend'].includes(flag)) {
+    if (!['--vault', '--pipeline'].includes(flag)) {
       throw new UsageError(`unknown argument "${flag}"\n${USAGE}`);
     }
     // A value token that is itself a recognized flag means the real value was
@@ -49,11 +47,7 @@ export function parseEvalArgs(argv: string[]): EvalArgs {
   if (pipeline !== 'semantic' && pipeline !== 'fused') {
     throw new UsageError(`unknown pipeline "${pipeline}" — supported: semantic, fused`);
   }
-  const backend = values.get('--backend') ?? 'own';
-  if (backend !== 'sc' && backend !== 'own') {
-    throw new UsageError(`unknown backend "${backend}" — supported: sc, own`);
-  }
-  return { vault, pipeline, backend };
+  return { vault, pipeline };
 }
 
 // "This repo" is the checkout the harness code came from — not the cwd the
@@ -71,7 +65,7 @@ export async function runEval(
   // Validation gates the run: golden set first (its failures must precede any
   // model/corpus work), then the backend snapshot.
   const entries = await loadGoldenSet(vaultRoot);
-  const sources = await loadSnapshot(args.backend, vaultRoot);
+  const sources = await loadSnapshot(vaultRoot);
   const embed =
     deps.embed ??
     (() => {
@@ -98,7 +92,6 @@ export async function runEval(
     vault_sha: await gitSha(vaultRoot),
     model_id: deps.modelId ?? MODEL_ID,
     pipeline: args.pipeline,
-    backend: args.backend,
     config: { ...EVAL_CONFIG },
     golden: { path: goldenSetPath(vaultRoot), count: entries.length },
     metrics: aggregate(per_query),
@@ -116,7 +109,7 @@ async function main(): Promise<void> {
   try {
     const args = parseEvalArgs(process.argv.slice(2));
     const { report, reportFile } = await runEval(args);
-    console.log(`pipeline=${report.pipeline} backend=${report.backend}`);
+    console.log(`pipeline=${report.pipeline}`);
     console.log(`code_sha=${report.code_sha ?? 'n/a'} vault_sha=${report.vault_sha ?? 'n/a'}`);
     console.log(formatSlice('overall', report.metrics.overall));
     console.log(formatSlice('ua', report.metrics.ua));

@@ -16,7 +16,7 @@ Without a shared index, each of these would scan the vault on every call. With i
 
 The index is intentionally thin:
 
-- **No watchers.** Smart Connections corpus stays the source of truth for embeddings; the wikilink graph follows the same "lazy + TTL" model used elsewhere.
+- **No watcher of its own.** Unlike the embedding corpus, which is watched (see [`semantic-backend.md`](./semantic-backend.md)), the wikilink graph follows a lazy + TTL model: rebuilt on demand, not kept warm in the background.
 - **No persistence.** Rebuilt from disk on first query and after the TTL expires.
 - **Resolves edges through `BasenameIndex`** — uses the same wikilink resolver as `get_similar_notes` so behaviour stays consistent.
 - **Embeds count as wikilinks.** `![[X]]` produces an outgoing edge to `X`, exactly like `[[X]]`.

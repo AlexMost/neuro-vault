@@ -10,14 +10,12 @@ function makeEntry(overrides: Partial<IVaultEntry> = {}): IVaultEntry {
   return {
     name: 'v',
     path: '/v',
-    smartEnvPath: '/v/.smart-env/multi',
     reader: makeReader(),
     writer: makeWriter(),
     provider: makeProvider(),
     graph: makeGraph(),
     listMatchingPaths: async () => new Set<string>(),
     readConventions: async () => null,
-    semanticAvailable: true,
     ...overrides,
   } as IVaultEntry;
 }
@@ -80,7 +78,7 @@ describe('buildOperationsResources', () => {
   it('multi-vault registry emits one namespaced resource per vault', () => {
     const registry = makeTestRegistry([
       makeEntry({ name: 'a' }),
-      makeEntry({ name: 'b', path: '/b', smartEnvPath: '/b/.smart-env/multi' }),
+      makeEntry({ name: 'b', path: '/b' }),
     ]);
     const resources = buildOperationsResources({ registry });
     expect(resources.map((r) => r.uri).sort()).toEqual([

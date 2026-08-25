@@ -6,16 +6,16 @@ How the server is split into pluggable modules and how they are wired together a
 
 The codebase is organized into two modules under `src/modules/`:
 
-- `semantic/` — search and similarity over the vault — 3 tools. Hosts hybrid `search_notes` (a semantic leg over a Smart Connections corpus via in-memory cosine search, plus a lexical leg via `src/lib/obsidian/lexical/` that reads notes from disk and needs no embeddings — see [`lexical-search.md`](./lexical-search.md)), `get_similar_notes`, and `find_duplicates`
+- `semantic/` — search and similarity over the vault — 3 tools. Hosts hybrid `search_notes` (a semantic leg over the vault's own corpus via in-memory cosine search — see [`semantic-backend.md`](./semantic-backend.md) — plus a lexical leg via `src/lib/obsidian/lexical/` that reads notes from disk and needs no embeddings — see [`lexical-search.md`](./lexical-search.md)), `get_similar_notes`, and `find_duplicates`
 - `operations/` — direct vault operations — 10 tools, grouped as note body (`read_notes`, `create_note`, `edit_note`, `read_daily`), structured queries (`query_notes`), frontmatter properties (`set_property`, `remove_property`), tags (`list_tags`), and vault overview (`get_vault_overview`)
 
 Each module exports `createXModule(config, deps) → { tools: ToolRegistration[], resources: ResourceRegistration[], warmup? }`. `src/server.ts` aggregates registrations from enabled modules and registers them with the underlying `McpServer`. Modules also expose `resources: ResourceRegistration[]`. Operations exposes one — `vault://overview`, a JSON snapshot of vault structure backed by the same `computeVaultOverview` function that powers the `get_vault_overview` tool. Semantic exposes no resources today. A module with no resources returns an empty array.
 
 ## Why it exists
 
-Different users want different things. Some have Smart Connections set up and want semantic search; some just want vault operations from their AI assistant; some want both. Splitting along this axis means:
+Different users want different things. Some want semantic search and are fine with the background indexing it costs; some just want vault operations from their AI assistant; some want both. Splitting along this axis means:
 
-- Users can disable the semantic module (`--no-semantic`) to avoid the startup cost of the embedding-model load and corpus parse. Note this unregisters `search_notes` entirely — including its lexical leg, even though that leg does not need embeddings. Operations tools are always registered — they are pure-object factories with no startup cost and no external runtime dependency.
+- Users can disable the semantic module (`--no-semantic`) so no vault gets a semantic backend at all — no embedding-model load, no corpus reconcile, ever. Note this unregisters `search_notes` entirely — including its lexical leg, even though that leg does not need embeddings. Operations tools are always registered — they are pure-object factories with no startup cost and no external runtime dependency.
 - Each module is independently testable and reasonable in isolation.
 - Adding a third module later (e.g. structural search) is a localized change — the server-level wiring is uniform.
 
@@ -32,8 +32,8 @@ parseConfig(argv) → ServerConfig
    │
    ▼
 VaultRegistry.create(config, deps) → VaultRegistry
-   │  (one IVaultEntry per --vault name:path; per-vault corpus errors
-   │   are caught and stored as semanticAvailable:false, not thrown)
+   │  (one IVaultEntry per --vault name:path; each vault's semantic
+   │   backend decides its own readiness live, never throws)
    ▼
 startNeuroVaultServer(config, deps)
    │
@@ -59,6 +59,7 @@ flowchart LR
         Registry[VaultRegistry<br/>one IVaultEntry per vault]
         subgraph Semantic[Semantic module]
             direction TB
+            Backend[Corpus backend<br/>watcher + reconcile]
             Retrieval[Retrieval policy<br/>effort: quick / deep]
             Embed[Embedding service<br/>bge-micro-v2]
             Search[Search engine<br/>cosine similarity]
@@ -77,15 +78,15 @@ flowchart LR
         Retrieval --> Embed
         Retrieval --> Search
     end
-    Vault[(Obsidian vault<br/>.smart-env/multi/*.ajson<br/>+ note files on disk)]
+    Vault[(Obsidian vault<br/>.neuro-vault/corpus/ shards + manifest<br/>+ note files on disk)]
     Client <-->|stdio / MCP| Core
-    Search -. reads at startup .-> Vault
+    Backend -. reads/writes, watches for changes .-> Vault
     Lexical -. reads per call .-> Vault
     Provider -. fs read/write .-> Vault
     Writer -. fs read/write .-> Vault
     Reader -. fs read .-> Vault
 ```
 
-The `VaultRegistry` is built once at startup from the list of vaults declared via `--vault` flags (repeatable). Each entry bundles a reader, writer, provider, wikilink graph, and — when the vault's `.smart-env/multi/` is loadable — a corpus index. When a vault's corpus cannot be loaded (missing directory, empty index, parse error), the entry's `semanticAvailable` field is `false` and the reason is recorded as a string; startup does not fail. The failure surfaces at semantic-tool-call time.
+The `VaultRegistry` is built once at startup from the list of vaults declared via `--vault` flags (repeatable). Each entry bundles a reader, writer, provider, wikilink graph, and — when the semantic module is enabled server-wide — a `backend` over that vault's own corpus. A backend never fails startup: it decides its own readiness live, reported through `status()`, so a vault whose corpus is missing, incompatible, or fails to build simply reports `unavailable` with a reason rather than aborting the process. See [`vault-registry.md`](./vault-registry.md) and [`semantic-backend.md`](./semantic-backend.md).
 
-The semantic module loads `.smart-env/multi/*.ajson` into memory once at startup and keeps it there; the lexical leg of `search_notes` instead reads note files from disk at call time behind an mtime cache. The operations module reads and writes the vault directory directly — `FsVaultReader` for batch reads (`read_notes`, `query_notes`), `FsVaultWriter` for in-place edits (`edit_note`), and `FsVaultProvider` for everything else (`create_note`, `read_daily`, properties, tags) — with no external process anywhere in the path (see [ADR-0009](../adr/0009-disk-direct-vault-operations.md)). The semantic module can be disabled via `--no-semantic`; operations tools are always registered.
+Each vault's semantic backend keeps a decoded corpus snapshot in memory, built from that vault's own `.neuro-vault/corpus/` shards and kept fresh by a debounced in-process watcher rather than loaded once at startup and left static (see [`semantic-backend.md`](./semantic-backend.md)); the lexical leg of `search_notes` instead reads note files from disk at call time behind an mtime cache. The operations module reads and writes the vault directory directly — `FsVaultReader` for batch reads (`read_notes`, `query_notes`), `FsVaultWriter` for in-place edits (`edit_note`), and `FsVaultProvider` for everything else (`create_note`, `read_daily`, properties, tags) — with no external process anywhere in the path (see [ADR-0009](../adr/0009-disk-direct-vault-operations.md)). The semantic module can be disabled via `--no-semantic`; operations tools are always registered.

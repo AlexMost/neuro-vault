@@ -19,10 +19,12 @@ import {
   findNeighbors,
   findDuplicates,
   findBlockNeighbors,
-  loadSmartConnectionsCorpus,
   makeTestRegistry,
   makeFakeCorpusIndex,
+  toBackend,
+  runSearch,
 } from './_helpers.js';
+import { engineReturning, makeLexicalVault, sourcesWithEmbeddingFor } from './_hybrid-helpers.js';
 
 // Lightweight helpers for mock-only tests (no real corpus needed)
 function makeMockSource(p: string, embedding: number[] = [1, 0]): SmartSource {
@@ -54,18 +56,17 @@ function makeMockSearchEngine(
 
 describe('searchNotes', () => {
   it('filters out search results whose paths no longer exist on disk', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       // note-b is absent from disk
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -95,17 +96,16 @@ describe('searchNotes', () => {
   });
 
   it('returns ranked search results for a query', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -136,17 +136,16 @@ describe('searchNotes', () => {
   });
 
   it('rejects an empty query before embedding', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn();
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -166,47 +165,117 @@ describe('searchNotes', () => {
     }
   });
 
-  it('surfaces embedding-provider failures as structured tool errors', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
-      'note-a.ajson',
-      'note-b.ajson',
-      'note-c.ajson',
-    ]);
-
+  // "Semantic-leg failure or emptiness SHALL NOT fail the lexical leg", and
+  // the lexical leg has already produced its matches by the time the semantic
+  // leg runs — failing the whole call would throw them away. The vault below
+  // carries a real body under a real reader, so the surviving matches are
+  // load-bearing rather than a vacuous `every()` over an empty list.
+  it('degrades to the lexical leg when the query embedding fails', async () => {
+    const notePath = 'Notes/a.md';
+    const warn = vi.fn();
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      {
+        sources: sourcesWithEmbeddingFor(notePath, [1, 0]),
+        engine: engineReturning([{ path: notePath, similarity: 0.9 }]),
+      },
+    );
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockRejectedValue(new Error('model unavailable'));
-      const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+      const tool = buildSearchNotesTool({
+        ...deps,
         embeddingProvider: { initialize: vi.fn(), embed },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
-        modelKey: 'bge-micro-v2',
+        warn,
       });
-      const tool = buildSearchNotesTool(deps);
 
-      try {
-        const searchPromise = tool.handler({ query: 'semantic query' });
-        await expect(searchPromise).rejects.toMatchObject({ code: 'DEPENDENCY_ERROR' });
-        await expect(searchPromise).rejects.toBeInstanceOf(ToolHandlerError);
-      } finally {
-        await cleanup();
-      }
+      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+
+      expect(embed).toHaveBeenCalled();
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+        true,
+      );
+      // The field must describe the response the client is holding: a
+      // lexical-only payload labelled `ready` would be a lie of the same
+      // class the pinning above exists to prevent.
+      expect(result.semantic_status).toEqual({
+        state: 'unavailable',
+        note: expect.stringContaining('lexical-only'),
+      });
+      // Degrading is not swallowing — the cause goes to stderr.
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('model unavailable'));
     } finally {
-      await fs.rm(tempRoot, { recursive: true, force: true });
+      await cleanup();
+    }
+  });
+
+  it('degrades to the lexical leg when the corpus snapshot cannot be read', async () => {
+    const notePath = 'Notes/a.md';
+    const warn = vi.fn();
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      {
+        sources: sourcesWithEmbeddingFor(notePath, [1, 0]),
+        engine: engineReturning([{ path: notePath, similarity: 0.9 }]),
+      },
+    );
+    try {
+      const entry = deps.registry.list()[0];
+      entry.backend = {
+        ...entry.backend!,
+        snapshot: vi.fn().mockRejectedValue(new Error('corpus shard a.json is not valid JSON')),
+      };
+      const tool = buildSearchNotesTool({ ...deps, warn });
+
+      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+        true,
+      );
+      expect(result.semantic_status).toEqual({
+        state: 'unavailable',
+        note: expect.stringContaining('lexical-only'),
+      });
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('not valid JSON'));
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('writes the degradation warning to stderr by default', async () => {
+    const notePath = 'Notes/a.md';
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      { sources: sourcesWithEmbeddingFor(notePath, [1, 0]) },
+    );
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const tool = buildSearchNotesTool({
+        ...deps,
+        embeddingProvider: {
+          initialize: vi.fn(),
+          embed: vi.fn().mockRejectedValue(new Error('model unavailable')),
+        },
+      });
+      await tool.handler({ query: 'пошук' });
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining('model unavailable'));
+    } finally {
+      stderr.mockRestore();
+      await cleanup();
     }
   });
 
   it('rejects thresholds below 0 and above 1', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
@@ -229,20 +298,19 @@ describe('searchNotes', () => {
   });
 
   it('accepts a query array and returns matched_queries on each result', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi
         .fn()
         .mockResolvedValueOnce([0.7, 0.2, 0.1])
         .mockResolvedValueOnce([0.1, 0.2, 0.7]);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -272,11 +340,10 @@ describe('searchNotes', () => {
   });
 
   it('rejects an empty query array', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -295,11 +362,10 @@ describe('searchNotes', () => {
   });
 
   it('rejects a query array longer than 8', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -318,16 +384,15 @@ describe('searchNotes', () => {
   });
 
   it('dedupes duplicate queries before embedding', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -347,16 +412,15 @@ describe('searchNotes', () => {
   });
 
   it('keeps single-string output shape unchanged (no matched_queries, blocks omitted when the note has no block embeddings)', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const { deps, cleanup } = await makeSearchDeps({
-        sources: corpus.sources,
+        sources,
         embeddingProvider: { initialize: vi.fn(), embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
@@ -751,7 +815,7 @@ describe('searchNotes', () => {
   });
 
   it('fans out across two semantically-available vaults when vault: is omitted in multi-vault mode', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
         ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
@@ -787,18 +851,14 @@ describe('searchNotes', () => {
           {
             name: 'v1',
             path: vaultRoot1,
-            smartEnvPath,
-            corpus: corpusIndex1,
-            semanticAvailable: true,
+            backend: toBackend(corpusIndex1),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
           {
             name: 'v2',
             path: vaultRoot2,
-            smartEnvPath,
-            corpus: corpusIndex2,
-            semanticAvailable: true,
+            backend: toBackend(corpusIndex2),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
@@ -831,19 +891,26 @@ describe('searchNotes', () => {
     }
   });
 
-  it('returns failed_vaults when one vault semantic search rejects', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+  it('returns failed_vaults when one vault rejects outside its semantic leg', async () => {
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
         ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
       ]);
       const corpusIndex1 = makeFakeCorpusIndex(sources1);
-      // vault b's corpus throws on snapshot — runSearchForEntry wraps it as DEPENDENCY_ERROR
-      const corpusIndex2 = {
-        snapshot: vi
+      const corpusIndex2 = makeFakeCorpusIndex(new Map());
+      // Vault b fails before either leg runs — its wikilink graph cannot be
+      // refreshed. A *semantic-leg* failure would no longer land here: that
+      // degrades to the lexical leg per vault (see the degradation tests
+      // above), which is what keeps one vault's broken corpus from costing
+      // the envelope its lexical answers. This vault's failure is outside
+      // that boundary, so it still lands in `failed_vaults`.
+      const brokenGraph = {
+        ...makeFakeGraph(),
+        ensureFresh: vi
           .fn()
           .mockRejectedValue(new ToolHandlerError('DEPENDENCY_ERROR', 'embedding lookup failed')),
-      };
+      } as unknown as ReturnType<typeof makeFakeGraph>;
 
       const fs2 = await import('node:fs/promises');
       const os2 = await import('node:os');
@@ -862,19 +929,15 @@ describe('searchNotes', () => {
           {
             name: 'v1',
             path: vaultRoot1,
-            smartEnvPath,
-            corpus: corpusIndex1,
-            semanticAvailable: true,
+            backend: toBackend(corpusIndex1),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
           {
             name: 'v2',
             path: vaultRoot2,
-            smartEnvPath,
-            corpus: corpusIndex2,
-            semanticAvailable: true,
-            graph: makeFakeGraph(),
+            backend: toBackend(corpusIndex2),
+            graph: brokenGraph,
             listMatchingPaths: async () => new Set(),
           },
         ]);
@@ -912,7 +975,7 @@ describe('searchNotes', () => {
   });
 
   it('fan-out includes a vault without a semantic index, contributing lexically-sourced matches only', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
         ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
@@ -933,19 +996,13 @@ describe('searchNotes', () => {
           {
             name: 'v1',
             path: vaultRoot1,
-            smartEnvPath,
-            corpus: corpusIndex1,
-            semanticAvailable: true,
+            backend: toBackend(corpusIndex1),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
           {
             name: 'v2',
             path: tempRoot,
-            smartEnvPath,
-            corpus: undefined,
-            semanticAvailable: false,
-            semanticUnavailableReason: 'no index',
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
@@ -985,17 +1042,13 @@ describe('searchNotes', () => {
     }
   });
 
-  it('returns lexical-only matches (no throw) when vault has semanticAvailable: false', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+  it('returns lexical-only matches (no throw) when vault has no semantic backend', async () => {
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: tempRoot,
-          smartEnvPath,
-          corpus: undefined,
-          semanticAvailable: false,
-          semanticUnavailableReason: 'no corpus',
           graph: makeFakeGraph(),
           listMatchingPaths: async () => new Set(),
         },
@@ -1016,6 +1069,160 @@ describe('searchNotes', () => {
   });
 });
 
+describe('semantic_status', () => {
+  it('reports a ready backend with no counters', async () => {
+    const result = await runSearch({ backendStatus: { state: 'ready' }, input: { query: 'x' } });
+    expect(result.semantic_status).toEqual({ state: 'ready' });
+  });
+
+  it('carries no note when the backend is ready', async () => {
+    const result = await runSearch({ backendStatus: { state: 'ready' }, input: { query: 'x' } });
+    expect(result.semantic_status).not.toHaveProperty('note');
+  });
+
+  it.each(['disabled', 'unavailable'] as const)(
+    'explains a %s state on the response itself',
+    async (state) => {
+      const result = await runSearch({ backendStatus: { state }, input: { query: 'x' } });
+      expect(result.semantic_status.note).toMatch(/semantic leg did not run/i);
+      expect(result.semantic_status.note).toMatch(/lexical-only/i);
+    },
+  );
+
+  it('reports progress while indexing and still returns lexical matches', async () => {
+    // `makeLexicalVault` writes a real on-disk body and wires a real
+    // `FsVaultReader` (unlike `runSearch`'s fixture, which always writes an
+    // empty body under the registry's default no-op reader) — the body
+    // actually contains the query term, so the "still returns lexical
+    // matches" claim in the test name is load-bearing, not a vacuous
+    // `every()` over an empty `matches[]`.
+    const { deps, cleanup } = await makeLexicalVault(
+      { 'Notes/a.md': 'нотатка про пошук' },
+      { backendStatus: { state: 'indexing', indexed: 3, total: 9 } },
+    );
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+      expect(result.semantic_status).toEqual({
+        state: 'indexing',
+        indexed: 3,
+        total: 9,
+        note: expect.stringContaining('lexical-only'),
+      });
+      expect(result.matches.length).toBeGreaterThan(0);
+      expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+        true,
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reports the state in lexical mode without reading a snapshot', async () => {
+    const snapshot = vi.fn();
+    const result = await runSearch({
+      backendStatus: { state: 'ready' },
+      snapshot,
+      input: { query: 'x', mode: 'lexical' },
+    });
+    expect(result.semantic_status).toEqual({ state: 'ready' });
+    expect(snapshot).not.toHaveBeenCalled();
+  });
+
+  it('reports the state on the empty-filter early return', async () => {
+    const result = await runSearch({
+      backendStatus: { state: 'disabled' },
+      allowed: new Set<string>(),
+      input: { query: 'x', filter: { path_prefix: 'Nope/' } },
+    });
+    expect(result.matches).toEqual([]);
+    expect(result.semantic_status).toEqual({
+      state: 'disabled',
+      note: expect.stringContaining('lexical-only'),
+    });
+  });
+
+  it('reports unavailable when the semantic module is globally off (no backend)', async () => {
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
+    try {
+      const registry = makeTestRegistry([
+        {
+          name: 'v',
+          path: tempRoot,
+          graph: makeFakeGraph(),
+          listMatchingPaths: async () => new Set(),
+        },
+      ]);
+      const tool = buildSearchNotesTool({
+        registry,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+      const result = (await tool.handler({ vault: 'v', query: 'x' })) as SearchNotesOutput;
+      expect(result.semantic_status).toEqual({
+        state: 'unavailable',
+        note: expect.stringContaining('lexical-only'),
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('drops a corpus path whose note is gone before the next reconcile', async () => {
+    const result = await runSearch({
+      backendStatus: { state: 'ready' },
+      snapshotPaths: ['Notes/gone.md', 'Notes/here.md'],
+      existingPaths: ['Notes/here.md'],
+      input: { query: 'x' },
+    });
+    expect(result.matches.map((m) => m.path)).not.toContain('Notes/gone.md');
+  });
+
+  it('pins semantic_status to the value captured up front, even if status() flips indexing -> ready mid-request', async () => {
+    // The mock engine returns a semantic hit for ANY query. If the leg
+    // decision below re-read `status()` after a mid-request indexing ->
+    // ready flip (the transition a warming vault makes), the semantic leg
+    // would run and this hit would surface (found_in: ["semantic"]) even
+    // though `semantic_status` still (correctly) reports "indexing" — a
+    // direct contradiction the fix must prevent. Asserting `status` was
+    // called exactly once pins that only the up-front capture is read.
+    const notePath = 'Notes/a.md';
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      {
+        backendStatus: { state: 'indexing', indexed: 3, total: 9 },
+        sources: sourcesWithEmbeddingFor(notePath, [1, 0]),
+        engine: engineReturning([{ path: notePath, similarity: 0.9 }]),
+      },
+    );
+    try {
+      const entry = deps.registry.list()[0];
+      const status = vi
+        .fn()
+        .mockReturnValueOnce({ state: 'indexing', indexed: 3, total: 9 })
+        .mockReturnValue({ state: 'ready' });
+      entry.backend = { ...entry.backend!, status };
+
+      const tool = buildSearchNotesTool(deps);
+      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+
+      expect(status).toHaveBeenCalledTimes(1);
+      expect(result.semantic_status).toEqual({
+        state: 'indexing',
+        indexed: 3,
+        total: 9,
+        note: expect.stringContaining('lexical-only'),
+      });
+      expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+        true,
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
 // The advertised `description` is the only channel every client (sub-agents
 // included) receives in full — the server `instructions` string is truncated.
 // These guard the query-writing recipe and the multi-vault contract that used
@@ -1026,7 +1233,6 @@ describe('search_notes advertised description', () => {
       names.map((name) => ({
         name,
         path: `/vaults/${name}`,
-        smartEnvPath: `/vaults/${name}/.smart-env`,
         graph: makeFakeGraph(),
         listMatchingPaths: async () => new Set<string>(),
       })),
@@ -1064,7 +1270,10 @@ describe('search_notes advertised description', () => {
   });
 
   const PRE_FILTER_FRONTMATTER_LINE =
-    '  - frontmatter: sift filter on frontmatter keys, same operator allow-list as query_notes.';
+    'PRE-FILTER (`filter`) — applies to every leg identically; at least one field required. ' +
+    '`path_prefix`/`exclude_path_prefix` scope to / drop folder subtrees (string or array); ' +
+    '`tags` matches ANY listed tag (no leading "#"); `frontmatter` is a sift filter, same ' +
+    'operator allow-list as query_notes.';
 
   it('ends the single-vault description exactly at the PRE-FILTER block, no trailing newline or multi-vault text', () => {
     const tool = buildSearchNotesTool(depsFor('only'));
@@ -1104,5 +1313,74 @@ describe('search_notes advertised description', () => {
   it('names failed_vaults in the multi-vault fan-out contract', () => {
     expect(describeWith(['a', 'b'])).toMatch(/failed_vaults/);
     expect(describeWith(['v'])).not.toMatch(/failed_vaults/);
+  });
+
+  /**
+   * The description ships on every `tools/list`, in every session, to every
+   * sub-agent — the always-paid channel ADR-0010 chose precisely because it
+   * always arrives. The budget is what keeps it spent on guidance a caller
+   * needs *before* a call; anything only useful for reading a response
+   * already in hand belongs on that response instead.
+   *
+   * 3,800 is the floor this string can reach while `truncated` still
+   * explains its two recovery paths here. That prose is the same kind of
+   * post-hoc reading aid `semantic_status` and `query_stats` shed onto their
+   * own payloads; `truncated` keeps it only because turning the boolean into
+   * `{ by, fix }` would break a field released in 15.5.0. Doing that is the
+   * next cut — do NOT lower this number by compressing `QUERY WRITING` or
+   * `EXAMPLES` instead, which are the only sections that change how a model
+   * writes a query, and the only ones no harness here can regression-test.
+   */
+  const DESCRIPTION_BUDGET = 3800;
+
+  it('stays inside its always-paid budget', () => {
+    // The multi-vault variant is the longer of the two.
+    expect(describeWith(['alpha', 'beta']).length).toBeLessThanOrEqual(DESCRIPTION_BUDGET);
+  });
+
+  it('does not spend the budget listing which fields are absent', () => {
+    const description = describeWith(['v']);
+    expect(description).not.toMatch(/INVARIANTS/);
+    expect(description).not.toMatch(/appears ONLY when/i);
+  });
+
+  it('names semantic_status without explaining what each state does to a response', () => {
+    const description = describeWith(['v']);
+    expect(description).toMatch(/`semantic_status`/);
+    // Per-state meaning rides on the response's own `note`, so it is paid for
+    // only on the responses it applies to.
+    expect(description).not.toMatch(/still building/i);
+    expect(description).not.toMatch(/semantics turned off/i);
+  });
+
+  it('keeps the one semantic_status caveat a ready response cannot carry itself', () => {
+    // `note` is absent when the state is `ready`, so "ready describes the
+    // index, not this call" has nowhere else to live.
+    expect(describeWith(['v'])).toMatch(/mode: "lexical"/);
+  });
+
+  it('leaves per-field diagnostics to the fields themselves', () => {
+    const description = describeWith(['v']);
+    // `semantic_fallback` and the AND-killed-token diagnosis are read only
+    // when they happen, so they live on `query_stats` entries and in the
+    // input schema — not in prose every session pays for.
+    expect(description).not.toMatch(/semantic_fallback/);
+    expect(description).not.toMatch(/lexical_tokens/);
+  });
+
+  it('leaves the expert similarity knobs to the input schema', () => {
+    const description = describeWith(['v']);
+    // Still callable and still validated — just not documented in the
+    // always-paid channel, where their prose was mostly a warning against
+    // using them.
+    expect(description).not.toMatch(/expansion_floor/);
+    expect(description).not.toMatch(/- threshold:/);
+  });
+
+  it('still advertises the expert knobs on the input schema', () => {
+    const spec = registerTool(buildSearchNotesTool(depsFor('v'))).spec;
+    const shape = JSON.stringify(spec.inputSchema);
+    expect(shape).toMatch(/threshold/);
+    expect(shape).toMatch(/expansion_floor/);
   });
 });

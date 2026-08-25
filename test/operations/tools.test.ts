@@ -36,13 +36,11 @@ const noopWriter = {
 const noopEntry = {
   name: 'test',
   path: '/tmp/vault',
-  smartEnvPath: '/tmp/smart',
   reader: noopReader,
   writer: noopWriter,
   provider: noopProvider,
   graph: noopGraph,
   listMatchingPaths: vi.fn(),
-  semanticAvailable: false,
 };
 
 const noopRegistry = {

@@ -5,7 +5,8 @@ import type { VaultWriter } from './obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from './obsidian/wikilink-graph.js';
 import type { ListMatchingPaths } from './obsidian/query/index.js';
 import type { VaultProvider } from './obsidian/vault-provider.js';
-import type { SmartConnectionsCorpusIndex } from './obsidian/smart-connections-corpus-index.js';
+import type { SemanticBackend } from './obsidian/semantic-backend.js';
+import type { VaultConfigFile } from './obsidian/vault-config.js';
 import type { IVaultConfig } from '../types.js';
 
 /** Filter vault-relative note paths down to those present on disk. */
@@ -14,7 +15,6 @@ export type FilterExistingPaths = (paths: Iterable<string>) => Promise<Set<strin
 export interface IVaultEntry {
   name: string;
   path: string;
-  smartEnvPath: string;
   /**
    * This vault's discovery scope (capability vault-scope): the single
    * definition of which files are visible to scan-derived surfaces.
@@ -35,21 +35,29 @@ export interface IVaultEntry {
   readConventions: () => Promise<string | null>;
   /**
    * Filter vault-relative note paths down to those still present on this
-   * vault's disk. The Smart Connections corpus is read-only and unwatched
-   * (ADR-0006), so it can name notes deleted since the plugin last indexed;
-   * every tool returning corpus-derived paths runs them through here first.
-   * One implementation, so no consumer can disagree about what "exists" means
-   * or forget the check entirely.
+   * vault's disk. The corpus this server owns is watched, but only after a
+   * debounce (design D6) and only while a reconcile pass is not already in
+   * flight, so a snapshot can still name a note deleted seconds ago; every
+   * tool returning corpus-derived paths runs them through here first. One
+   * implementation, so no consumer can disagree about what "exists" means or
+   * forget the check entirely.
    */
   filterExisting: FilterExistingPaths;
-  corpus?: SmartConnectionsCorpusIndex;
-  semanticAvailable: boolean;
-  semanticUnavailableReason?: string;
+  /**
+   * This vault's semantic backend (design D9). Live: `status()` reflects the
+   * backend's current state rather than a decision frozen at startup, so a
+   * vault that was cold when the server booted can still be promoted to
+   * `ready` without a restart. Absent only when the semantic module is
+   * globally off (`semanticEnabled: false`) — a per-vault `semantic: false`
+   * config still gets a backend, just one built `enabled: false`.
+   */
+  backend?: SemanticBackend;
 }
 
 export interface IVaultEntryDeps {
   readerFactory: (opts: { vaultRoot: string; scope: VaultScope }) => VaultReader;
-  scopeFactory: (opts: { vaultRoot: string }) => Promise<VaultScope>;
+  vaultConfigFactory: (opts: { vaultRoot: string }) => Promise<VaultConfigFile>;
+  scopeFactory: (opts: { vaultRoot: string; config: VaultConfigFile }) => Promise<VaultScope>;
   writerFactory: (opts: { vaultRoot: string }) => VaultWriter;
   graphFactory: (opts: { reader: VaultReader }) => WikilinkGraphIndex;
   listMatchingPathsFactory: (opts: {
@@ -61,10 +69,13 @@ export interface IVaultEntryDeps {
     vaultRoot: string;
     reader: VaultReader;
   }) => VaultProvider;
-  corpusFactory: (opts: {
-    smartEnvPath: string;
-    modelKey: string;
-  }) => Promise<SmartConnectionsCorpusIndex>;
+  semanticBackendFactory: (opts: {
+    vaultRoot: string;
+    vaultName: string;
+    reader: VaultReader;
+    scope: VaultScope;
+    enabled: boolean;
+  }) => SemanticBackend;
   conventionsReaderFactory: (opts: { vaultRoot: string }) => () => Promise<string | null>;
   existingPathFilterFactory: (opts: { vaultRoot: string }) => FilterExistingPaths;
 }
@@ -72,7 +83,6 @@ export interface IVaultEntryDeps {
 export interface IVaultRegistryConfig {
   vaults: IVaultConfig[];
   semanticEnabled: boolean;
-  modelKey: string;
 }
 
 /**
@@ -90,8 +100,10 @@ export interface IVaultRegistry {
 
 /**
  * Default registry implementation. Construct via the static async {@link create}
- * factory — building entries is async because per-vault Smart Connections
- * corpus loading involves disk I/O.
+ * factory — building entries is async because scope and config loading
+ * involve disk I/O. The semantic backend itself is never awaited here: it
+ * decides its own readiness live (design D9), so startup returns as soon as
+ * every backend has been constructed, not once each is ready.
  */
 export class VaultRegistry implements IVaultRegistry {
   // Lowercased-name lookup. Entry names preserve original casing for display
@@ -107,7 +119,8 @@ export class VaultRegistry implements IVaultRegistry {
   static async create(config: IVaultRegistryConfig, deps: IVaultEntryDeps): Promise<VaultRegistry> {
     const entries: IVaultEntry[] = [];
     for (const v of config.vaults) {
-      const scope = await deps.scopeFactory({ vaultRoot: v.path });
+      const vaultConfig = await deps.vaultConfigFactory({ vaultRoot: v.path });
+      const scope = await deps.scopeFactory({ vaultRoot: v.path, config: vaultConfig });
       const reader = deps.readerFactory({ vaultRoot: v.path, scope });
       const graph = deps.graphFactory({ reader });
       const listMatchingPaths = deps.listMatchingPathsFactory({ reader, graph });
@@ -120,32 +133,23 @@ export class VaultRegistry implements IVaultRegistry {
       const readConventions = deps.conventionsReaderFactory({ vaultRoot: v.path });
       const filterExisting = deps.existingPathFilterFactory({ vaultRoot: v.path });
 
-      let corpus: SmartConnectionsCorpusIndex | undefined;
-      let semanticAvailable = false;
-      let semanticUnavailableReason: string | undefined;
-      if (config.semanticEnabled) {
-        try {
-          corpus = await deps.corpusFactory({
-            smartEnvPath: v.smartEnvPath,
-            modelKey: config.modelKey,
-          });
-          const snap = await corpus.snapshot();
-          if (snap.sources.size === 0) {
-            semanticUnavailableReason = 'Smart Connections corpus is empty';
-            corpus = undefined;
-          } else {
-            semanticAvailable = true;
-          }
-        } catch (err) {
-          semanticUnavailableReason = err instanceof Error ? err.message : String(err);
-          corpus = undefined;
-        }
-      }
+      // The module-level flag decides whether a vault gets a backend at all;
+      // the vault-level `semantic` flag (default true) only decides whether
+      // that backend is built enabled or disabled. Startup does not await any
+      // backend work — a backend decides its own readiness live (design D9).
+      const backend = config.semanticEnabled
+        ? deps.semanticBackendFactory({
+            vaultRoot: v.path,
+            vaultName: v.name,
+            reader,
+            scope,
+            enabled: vaultConfig.semantic !== false,
+          })
+        : undefined;
 
       entries.push({
         name: v.name,
         path: v.path,
-        smartEnvPath: v.smartEnvPath,
         scope,
         reader,
         writer,
@@ -154,9 +158,7 @@ export class VaultRegistry implements IVaultRegistry {
         listMatchingPaths,
         readConventions,
         filterExisting,
-        corpus,
-        semanticAvailable,
-        semanticUnavailableReason,
+        backend,
       });
     }
     return new VaultRegistry(entries);

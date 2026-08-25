@@ -9,27 +9,30 @@ import { GoldenSetError } from '../../eval/golden.js';
 import { UsageError, parseEvalArgs, runEval } from '../../eval/run.js';
 
 describe('parseEvalArgs', () => {
-  it('parses the three flags', () => {
-    expect(parseEvalArgs(['--vault', '/v', '--pipeline', 'fused', '--backend', 'own'])).toEqual({
+  it('parses the two flags', () => {
+    expect(parseEvalArgs(['--vault', '/v', '--pipeline', 'fused'])).toEqual({
       vault: '/v',
       pipeline: 'fused',
-      backend: 'own',
     });
   });
 
   it.each([
-    [['--pipeline', 'semantic', '--backend', 'own'], /--vault/],
-    [['--vault', '/v', '--pipeline', 'reranked', '--backend', 'own'], /semantic.*fused/s],
-    [['--vault', '/v', '--pipeline', 'semantic', '--backend', 'foo'], /sc.*own/s],
-    [['--vault', '/v', '--pipeline', 'semantic', '--backend', 'own', '--bogus'], /--bogus/],
-    [['--vault', '--pipeline', '--backend', 'own'], /--vault/],
+    [['--pipeline', 'semantic'], /--vault/],
+    [['--vault', '/v', '--pipeline', 'reranked'], /semantic.*fused/s],
+    [['--vault', '/v', '--pipeline', 'semantic', '--bogus'], /--bogus/],
+    [['--vault', '--pipeline'], /--vault/],
   ])('rejects %j naming what is supported', (argv, pattern) => {
     expect(() => parseEvalArgs(argv)).toThrow(UsageError);
     expect(() => parseEvalArgs(argv)).toThrow(pattern);
   });
+
+  it('rejects the retired backend axis', () => {
+    expect(() => parseEvalArgs(['--vault', '/v', '--backend', 'sc'])).toThrow(UsageError);
+    expect(() => parseEvalArgs(['--vault', '/v', '--backend', 'sc'])).toThrow(/backend/i);
+  });
 });
 
-describe('runEval end-to-end (own backend, stub embedder)', () => {
+describe('runEval end-to-end (stub embedder)', () => {
   let vaultRoot: string;
   let resultsDir: string;
   afterEach(async () => {
@@ -82,15 +85,14 @@ describe('runEval end-to-end (own backend, stub embedder)', () => {
     - Notes/target.md
 `;
 
-  it('runs semantic × own and writes a correct report', async () => {
+  it('runs semantic and writes a correct report', async () => {
     await makeVault(GOLDEN);
     const { report, reportFile } = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', backend: 'own' },
+      { vault: vaultRoot, pipeline: 'semantic' },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
-    expect(reportFile).toContain('semantic-own');
+    expect(reportFile).toContain('semantic');
     expect(report.pipeline).toBe('semantic');
-    expect(report.backend).toBe('own');
     expect(report.vault_sha).toBeNull(); // temp vault is not a git repo
     expect(report.golden.count).toBe(1);
     expect(report.metrics.overall).toMatchObject({ n: 1, mrr: 1, hit_at_3: 1 });
@@ -110,7 +112,7 @@ describe('runEval end-to-end (own backend, stub embedder)', () => {
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(outside);
     try {
       const { report } = await runEval(
-        { vault: vaultRoot, pipeline: 'semantic', backend: 'own' },
+        { vault: vaultRoot, pipeline: 'semantic' },
         { embed: () => Promise.resolve(unitVec(0)), resultsDir },
       );
       expect(report.code_sha).not.toBeNull();
@@ -124,17 +126,17 @@ describe('runEval end-to-end (own backend, stub embedder)', () => {
     await makeVault(`${GOLDEN}- id: q002\n  query: x\n  lang: en\n  relevant: [Gone/nope.md]\n`);
     await expect(
       runEval(
-        { vault: vaultRoot, pipeline: 'semantic', backend: 'own' },
+        { vault: vaultRoot, pipeline: 'semantic' },
         { embed: () => Promise.reject(new Error('embed must not run')), resultsDir },
       ),
     ).rejects.toThrow(GoldenSetError);
     await expect(readdir(resultsDir)).resolves.toEqual([]);
   });
 
-  it('fused × own also completes on the fixture', async () => {
+  it('fused also completes on the fixture', async () => {
     await makeVault(GOLDEN);
     const { report } = await runEval(
-      { vault: vaultRoot, pipeline: 'fused', backend: 'own' },
+      { vault: vaultRoot, pipeline: 'fused' },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     expect(report.metrics.overall.n).toBe(1);

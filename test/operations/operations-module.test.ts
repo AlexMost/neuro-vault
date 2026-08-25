@@ -39,7 +39,6 @@ describe('createOperationsModule', () => {
     const fakeEntry: IVaultEntry = {
       name: 'MyVault',
       path: '/tmp/MyVault',
-      smartEnvPath: '/tmp/MyVault/.smart-env/multi',
       scope: createVaultScope(),
       reader: fakeReader,
       writer: fakeWriter,
@@ -48,7 +47,6 @@ describe('createOperationsModule', () => {
       listMatchingPaths: vi.fn(),
       readConventions: async () => null,
       filterExisting: createExistingPathFilter({ vaultRoot: '/tmp/MyVault' }),
-      semanticAvailable: false,
     };
 
     const fakeRegistry: IVaultRegistry = {

@@ -1,3 +1,16 @@
+export interface SmartBlock {
+  key: string;
+  heading: string;
+  lines: [number, number];
+  embedding: number[];
+}
+
+export interface SmartSource {
+  path: string;
+  embedding: number[];
+  blocks: SmartBlock[];
+}
+
 /** A block as the chunker produces it: identity + span + its own text. */
 export interface ChunkedBlock {
   /** Heading path within the note, e.g. "#Top#Inner". Never includes the note path. */

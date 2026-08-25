@@ -1,6 +1,6 @@
 import { ToolHandlerError } from './tool-response.js';
 import type { ToolName } from './tool-names.js';
-import type { SmartConnectionsCorpusIndex } from './obsidian/smart-connections-corpus-index.js';
+import type { SemanticBackend } from './obsidian/semantic-backend.js';
 import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
 
 export interface IResolveVaultOpts {
@@ -29,23 +29,60 @@ export function resolveSemanticVault(
   input: { vault?: string },
   registry: IVaultRegistry,
   opts: IResolveVaultOpts,
-): IVaultEntry & { corpus: SmartConnectionsCorpusIndex } {
+): IVaultEntry & { backend: SemanticBackend } {
   const entry = resolveVault(input, registry, opts);
-  if (!entry.semanticAvailable) {
-    throw new ToolHandlerError(
-      'SEMANTIC_INDEX_NOT_FOUND',
-      `Semantic index for vault "${entry.name}" is unavailable: ` +
-        `${entry.semanticUnavailableReason ?? 'unknown reason'}`,
-      {
-        details: {
-          vault: entry.name,
-          hint: `open vault "${entry.name}" in Obsidian with Smart Connections installed`,
+  // An absent backend means the semantic module is globally off for this
+  // server; it is reported through the same `unavailable` branch as a
+  // backend that reports its own failure reason.
+  const status = entry.backend?.status() ?? {
+    state: 'unavailable' as const,
+    reason: 'the semantic module is disabled for this server',
+  };
+  switch (status.state) {
+    case 'ready':
+      // The switch above proves `entry.backend` is defined and ready; the
+      // cast bridges what TS cannot narrow through the optional-chained
+      // `.status()` call used to compute `status`.
+      return entry as IVaultEntry & { backend: SemanticBackend };
+    case 'indexing':
+      throw new ToolHandlerError(
+        'SEMANTIC_INDEX_BUILDING',
+        `Semantic index for vault "${entry.name}" is still building`,
+        {
+          details: {
+            vault: entry.name,
+            indexed: status.indexed ?? 0,
+            total: status.total ?? 0,
+          },
         },
-      },
-    );
+      );
+    case 'disabled':
+      throw new ToolHandlerError(
+        'SEMANTIC_DISABLED',
+        `Semantic search is disabled for vault "${entry.name}"`,
+        {
+          details: {
+            vault: entry.name,
+            hint: 'set "semantic": true in the vault\'s .neuro-vault/config.json',
+          },
+        },
+      );
+    default: {
+      // The reason belongs in `details` as its own field, not only
+      // interpolated into the message: a client reads `details`
+      // structurally, and prose is not a channel it can parse.
+      const reason = status.reason ?? 'unknown reason';
+      throw new ToolHandlerError(
+        'SEMANTIC_INDEX_NOT_FOUND',
+        `Semantic index for vault "${entry.name}" is unavailable: ${reason}`,
+        {
+          details: {
+            vault: entry.name,
+            reason,
+            hint: `build it with: neuro-vault-mcp index --vault ${entry.path}`,
+          },
+        },
+      );
+    }
   }
-  // `semanticAvailable === true` is set in VaultRegistry.create only after a
-  // successful corpus snapshot, so corpus is defined at this point. The cast
-  // bridges what TS cannot prove (the flag and field are independent decls).
-  return entry as IVaultEntry & { corpus: SmartConnectionsCorpusIndex };
 }

@@ -16,7 +16,7 @@ import {
   findNeighbors,
   findDuplicates,
   findBlockNeighbors,
-  loadSmartConnectionsCorpus,
+  toBackend,
 } from './_helpers.js';
 import type { SmartSource } from './_helpers.js';
 
@@ -36,7 +36,7 @@ async function makeTempVault(
 
 describe('getSimilarNotes', () => {
   it('filters stale paths from get_similar_notes results', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -49,15 +49,12 @@ describe('getSimilarNotes', () => {
     });
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const corpusIndex = makeFakeCorpusIndex(sources);
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: vaultRoot,
-          smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -80,7 +77,7 @@ describe('getSimilarNotes', () => {
   });
 
   it('auto-appends .md to a path without an extension', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -91,15 +88,12 @@ describe('getSimilarNotes', () => {
     });
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const corpusIndex = makeFakeCorpusIndex(sources);
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: vaultRoot,
-          smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -124,22 +118,19 @@ describe('getSimilarNotes', () => {
   });
 
   it('rejects an unknown note path for similar-note lookup', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const corpusIndex = makeFakeCorpusIndex(sources);
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: tempRoot,
-          smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -158,7 +149,7 @@ describe('getSimilarNotes', () => {
   });
 
   it('excludes the source note from similar-note results', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -171,15 +162,12 @@ describe('getSimilarNotes', () => {
     });
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const corpusIndex = makeFakeCorpusIndex(sources);
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: vaultRoot,
-          smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -206,7 +194,7 @@ describe('getSimilarNotes', () => {
   });
 
   it('normalizes safe relative note paths', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
@@ -219,15 +207,12 @@ describe('getSimilarNotes', () => {
     });
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const corpusIndex = makeFakeCorpusIndex(sources);
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: vaultRoot,
-          smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -253,22 +238,19 @@ describe('getSimilarNotes', () => {
   });
 
   it('rejects note path traversal attempts', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const corpusIndex = makeFakeCorpusIndex(sources);
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: tempRoot,
-          smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -287,22 +269,19 @@ describe('getSimilarNotes', () => {
   });
 
   it('rejects Windows-style absolute note paths', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture([
+    const { tempRoot, sources } = await makeVaultFixture([
       'note-a.ajson',
       'note-b.ajson',
       'note-c.ajson',
     ]);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const corpusIndex = makeFakeCorpusIndex(sources);
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: tempRoot,
-          smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -321,14 +300,13 @@ describe('getSimilarNotes', () => {
   });
 
   it('throws VAULT_REQUIRED in multi-vault mode when vault: is omitted', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+    const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
 
     try {
-      const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
-      const corpusIndex = makeFakeCorpusIndex(corpus.sources);
+      const corpusIndex = makeFakeCorpusIndex(sources);
       const registry = makeTestRegistry([
-        { name: 'v1', path: tempRoot, smartEnvPath, corpus: corpusIndex, semanticAvailable: true },
-        { name: 'v2', path: tempRoot, smartEnvPath, corpus: corpusIndex, semanticAvailable: true },
+        { name: 'v1', path: tempRoot, backend: toBackend(corpusIndex) },
+        { name: 'v2', path: tempRoot, backend: toBackend(corpusIndex) },
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
@@ -345,18 +323,14 @@ describe('getSimilarNotes', () => {
     }
   });
 
-  it('throws SEMANTIC_INDEX_NOT_FOUND when vault has semanticAvailable: false', async () => {
-    const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
+  it('throws SEMANTIC_INDEX_NOT_FOUND when vault has no semantic backend', async () => {
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
 
     try {
       const registry = makeTestRegistry([
         {
           name: 'v',
           path: tempRoot,
-          smartEnvPath,
-          corpus: undefined,
-          semanticAvailable: false,
-          semanticUnavailableReason: 'no corpus',
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -420,9 +394,7 @@ describe('getSimilarNotes — graph signals', () => {
       {
         name: 'v',
         path: vaultRoot,
-        smartEnvPath: path.join(vaultRoot, '.smart-env'),
-        corpus: corpusIndex,
-        semanticAvailable: true,
+        backend: toBackend(corpusIndex),
       },
     ]);
     const tool = buildGetSimilarNotesTool({

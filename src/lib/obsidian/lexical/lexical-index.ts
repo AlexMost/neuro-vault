@@ -21,7 +21,7 @@ interface CacheEntry {
  * the files whose mtime changed since the last call. Vanished files are
  * dropped from the cache and from the result set. This is a read-through
  * cache over the filesystem, not a persisted index — it never touches the
- * Smart Connections embedding corpus.
+ * embedding corpus.
  */
 export class LexicalIndex {
   private readonly vaultRoot: string;

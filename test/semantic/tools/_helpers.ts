@@ -1,14 +1,21 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { vi } from 'vitest';
 
 import { buildBasenameIndex, type BasenameIndex } from '../../../src/lib/obsidian/index.js';
-import type { SmartConnectionsCorpusIndex } from '../../../src/lib/obsidian/smart-connections-corpus-index.js';
-import { loadSmartConnectionsCorpus } from '../../../src/lib/obsidian/smart-connections-loader.js';
+import type {
+  BackendStatus,
+  CorpusSnapshot,
+  SemanticBackend,
+} from '../../../src/lib/obsidian/semantic-backend.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
+import {
+  buildSearchNotesTool,
+  type SearchNotesInput,
+  type SearchNotesOutput,
+} from '../../../src/modules/semantic/tools/search-notes.js';
 import {
   findBlockNeighbors,
   findDuplicates,
@@ -22,31 +29,89 @@ import type {
 } from '../../../src/modules/semantic/types.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 
-const testDir = path.dirname(fileURLToPath(import.meta.url));
-const fixturesRoot = path.resolve(testDir, '../fixtures/vault/.smart-env/multi');
-
 export const MODEL_KEY = 'bge-micro-v2';
 
-export async function makeVaultFixture(fileNames: string[]) {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tool-handlers-'));
-  const vaultPath = path.join(tempRoot, 'vault');
-  const smartEnvPath = path.join(vaultPath, '.smart-env', 'multi');
-
-  await fs.mkdir(smartEnvPath, { recursive: true });
-
-  for (const fileName of fileNames) {
-    await fs.copyFile(path.join(fixturesRoot, fileName), path.join(smartEnvPath, fileName));
-  }
-
-  return { tempRoot, smartEnvPath };
+/** A minimal `SemanticBackend`-shaped corpus, snapshot-only. Tests build fakes against this. */
+export interface CorpusLike {
+  snapshot(): Promise<CorpusSnapshot>;
 }
 
-export function createDuplicateCorpus(
-  corpus: Awaited<ReturnType<typeof loadSmartConnectionsCorpus>>,
-) {
-  const sources = new Map(corpus.sources);
+// Three fixed notes/blocks, one per fixture "name" — what the old Smart
+// Connections `.ajson` fixtures (note-a/b/c) used to decode to. Kept as plain
+// data now that nothing parses that format any more.
+const ABC_SOURCES: Record<'note-a' | 'note-b' | 'note-c', [string, SmartSource]> = {
+  'note-a': [
+    'Folder/note-a.md',
+    {
+      path: 'Folder/note-a.md',
+      embedding: [1, 0, 0],
+      blocks: [
+        {
+          key: 'Folder/note-a.md#alpha concept',
+          heading: '#alpha concept',
+          lines: [1, 3],
+          embedding: [],
+        },
+      ],
+    },
+  ],
+  'note-b': [
+    'Folder/note-b.md',
+    {
+      path: 'Folder/note-b.md',
+      embedding: [0, 1, 0],
+      blocks: [
+        {
+          key: 'Folder/note-b.md#beta concept',
+          heading: '#beta concept',
+          lines: [1, 3],
+          embedding: [],
+        },
+      ],
+    },
+  ],
+  'note-c': [
+    'Folder/note-c.md',
+    {
+      path: 'Folder/note-c.md',
+      embedding: [0, 0, 1],
+      blocks: [
+        {
+          key: 'Folder/note-c.md#gamma concept',
+          heading: '#gamma concept',
+          lines: [1, 3],
+          embedding: [],
+        },
+      ],
+    },
+  ],
+};
 
-  sources.set('Folder/note-d.md', {
+/**
+ * Build a temp vault root (empty on disk — nothing reads it directly) and a
+ * `Map<string, SmartSource>` for the requested fixture names, e.g.
+ * `['note-a.ajson', 'note-b.ajson']`. The `.ajson` suffix is accepted for
+ * call-site continuity with the fixture names' original source format.
+ */
+export async function makeVaultFixture(
+  fileNames: string[],
+): Promise<{ tempRoot: string; sources: Map<string, SmartSource> }> {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'tool-handlers-'));
+  const sources = new Map(
+    fileNames.map((fileName) => {
+      const key = fileName.replace(/\.ajson$/, '') as keyof typeof ABC_SOURCES;
+      const entry = ABC_SOURCES[key];
+      if (!entry) throw new Error(`makeVaultFixture: unknown fixture "${fileName}"`);
+      return entry;
+    }),
+  );
+  return { tempRoot, sources };
+}
+
+export function createDuplicateCorpus(sources: Map<string, SmartSource>) {
+  const merged = new Map(sources);
+
+  merged.set('Folder/note-d.md', {
     path: 'Folder/note-d.md',
     embedding: [1, 0, 0],
     blocks: [
@@ -59,7 +124,7 @@ export function createDuplicateCorpus(
     ],
   });
 
-  sources.set('Folder/note-e.md', {
+  merged.set('Folder/note-e.md', {
     path: 'Folder/note-e.md',
     embedding: [1, 0, 0],
     blocks: [
@@ -72,7 +137,7 @@ export function createDuplicateCorpus(
     ],
   });
 
-  return { sources };
+  return { sources: merged };
 }
 
 export function makeFakeGraph(counts: Record<string, number> = {}): WikilinkGraphIndex {
@@ -83,12 +148,27 @@ export function makeFakeGraph(counts: Record<string, number> = {}): WikilinkGrap
   } as unknown as WikilinkGraphIndex;
 }
 
-export function makeFakeCorpusIndex(
-  sources: Map<string, SmartSource>,
-): SmartConnectionsCorpusIndex {
+export function makeFakeCorpusIndex(sources: Map<string, SmartSource>): CorpusLike {
   const basenameIndex = buildBasenameIndex(sources.keys());
   return {
     snapshot: vi.fn().mockResolvedValue({ sources, basenameIndex }),
+  };
+}
+
+/**
+ * Wrap a snapshot-only fake (`makeFakeCorpusIndex`, or any object with a
+ * `snapshot()`) as a `SemanticBackend` for `entry.backend`. `snapshot` is the
+ * same function reference as `corpus.snapshot` — a caller holding onto
+ * `corpus` can still assert on its mock's call count via `backend.snapshot`.
+ */
+export function toBackend(
+  corpus: Pick<CorpusLike, 'snapshot'>,
+  status: BackendStatus = { state: 'ready' },
+): SemanticBackend {
+  return {
+    snapshot: corpus.snapshot,
+    status: () => status,
+    dispose: async () => {},
   };
 }
 
@@ -107,9 +187,10 @@ export async function makeSearchDeps(opts: {
   searchEngine: SearchEngine;
   modelKey: string;
   absentPaths?: Set<string>;
-  corpus?: SmartConnectionsCorpusIndex;
+  corpus?: CorpusLike;
   graph?: WikilinkGraphIndex;
   listMatchingPaths?: ListMatchingPaths;
+  backendStatus?: BackendStatus;
 }): Promise<{
   deps: {
     registry: ReturnType<typeof makeTestRegistry>;
@@ -134,11 +215,9 @@ export async function makeSearchDeps(opts: {
     {
       name: 'v',
       path: vaultRoot,
-      smartEnvPath: path.join(vaultRoot, '.smart-env'),
-      corpus,
+      backend: toBackend(corpus, opts.backendStatus),
       graph: opts.graph ?? makeFakeGraph(),
       listMatchingPaths: opts.listMatchingPaths ?? (async () => new Set()),
-      semanticAvailable: true,
     },
   ]);
 
@@ -164,20 +243,58 @@ export function makeSyntheticSource(
   };
 }
 
+/**
+ * Thin single-vault wrapper over `makeSearchDeps` for `semantic_status`
+ * tests: build a synthetic corpus from `snapshotPaths` (default: one note),
+ * a disk fixture where only `existingPaths` (default: all of them) actually
+ * exist, wire `backendStatus` onto the vault's backend, and run
+ * `search_notes` once with `input`. `allowed`, when given, becomes the
+ * vault's `listMatchingPaths` result (for filter tests); `snapshot`, when
+ * given, is used as the corpus's `snapshot` spy so a test can assert it was
+ * (not) called. This helper's disk fixture always writes empty bodies (see
+ * `makeSearchDeps`, which defaults to the registry's `emptyReader` — content
+ * written to disk is invisible to the lexical leg regardless); a test that
+ * needs a real lexical match should use `makeLexicalVault` from
+ * `_hybrid-helpers.ts` instead, which wires a real `FsVaultReader`.
+ */
+export async function runSearch(opts: {
+  backendStatus?: BackendStatus;
+  input: SearchNotesInput;
+  snapshotPaths?: string[];
+  existingPaths?: string[];
+  allowed?: Set<string>;
+  snapshot?: ReturnType<typeof vi.fn>;
+}): Promise<SearchNotesOutput> {
+  const snapshotPaths = opts.snapshotPaths ?? ['Notes/a.md'];
+  const sources = new Map(snapshotPaths.map((p) => [p, makeSyntheticSource(p)]));
+  const basenameIndex = buildBasenameIndex(sources.keys());
+  const snapshotFn = opts.snapshot ?? vi.fn();
+  snapshotFn.mockResolvedValue({ sources, basenameIndex });
+
+  const existingPaths = opts.existingPaths ?? snapshotPaths;
+  const absentPaths = new Set(snapshotPaths.filter((p) => !existingPaths.includes(p)));
+
+  const allowed = opts.allowed;
+  const { deps, cleanup } = await makeSearchDeps({
+    sources,
+    embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0, 0]) },
+    searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+    modelKey: MODEL_KEY,
+    absentPaths,
+    corpus: { snapshot: snapshotFn },
+    backendStatus: opts.backendStatus,
+    ...(allowed !== undefined ? { listMatchingPaths: async () => allowed } : {}),
+  });
+
+  try {
+    const tool = buildSearchNotesTool(deps);
+    return (await tool.handler(opts.input)) as SearchNotesOutput;
+  } finally {
+    await cleanup();
+  }
+}
+
 export { makeTestRegistry };
 
-export {
-  loadSmartConnectionsCorpus,
-  findNeighbors,
-  findDuplicates,
-  findBlockNeighbors,
-  buildBasenameIndex,
-};
-export type {
-  EmbeddingProvider,
-  ListMatchingPaths,
-  SearchEngine,
-  SmartSource,
-  BasenameIndex,
-  SmartConnectionsCorpusIndex,
-};
+export { findNeighbors, findDuplicates, findBlockNeighbors, buildBasenameIndex };
+export type { EmbeddingProvider, ListMatchingPaths, SearchEngine, SmartSource, BasenameIndex };

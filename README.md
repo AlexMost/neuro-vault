@@ -17,13 +17,13 @@ Your second brain stops being a folder you open between contexts and becomes a f
 
 ## ✨ Why Neuro Vault?
 
-- 🧠 **Hybrid search that already knows your vault** — a semantic leg reuses [Smart Connections](https://github.com/brianpetro/obsidian-smart-connections) embeddings (no re-indexing, no API keys), and a lexical leg catches exact names, codes, and terms embeddings miss. One call, both answers; a note hit by both is the strongest relevance signal.
+- 🧠 **Hybrid search that already knows your vault** — a semantic leg runs on an embedding index the server builds and owns from your notes (no plugin, no API keys — the first run indexes in the background), and a lexical leg catches exact names, codes, and terms embeddings miss. One call, both answers; a note hit by both is the strongest relevance signal.
 - 🎯 **Quick or deep, your call** — `effort: "quick"` for fast direct lookups, `effort: "deep"` for exploration with related-note expansion; `mode: "lexical"` when you want exact text matching only (works even without embeddings).
 - 🧾 **Context with provenance, not mystery memory** — results come back with paths, matched queries, block-level snippets, and backlink counts so the assistant can show where an answer came from.
 - 🧭 **A real navigation toolkit for your agent** — instead of grepping files and opening notes one by one, your assistant walks the vault like a database: filter by tags and properties, batch-read metadata, traverse the wikilink graph, discover the structure, jump to semantic neighbours.
 - 🔎 **Ask structured questions in plain language** — _"active projects tagged #ai"_, _"todo tasks with a deadline this week"_, _"meeting notes from `Work/` newest first"_ — one call, ranked answer, no chains of reads.
 - ✍️ **Full write surface for your notes** — create, in-place replace, or rewrite the whole body; manage frontmatter, tags, and daily notes. Every write goes directly to disk — no Obsidian installation or running instance required; if you have Obsidian open, its own file watcher picks up the change on its usual cadence.
-- ⚡ **Zero infrastructure** — local stdio MCP server, in-memory index, no database, no background processes, no watchers.
+- ⚡ **Zero infrastructure** — local stdio MCP server, no database, no external processes, no API keys. The server keeps its own index fresh with an in-process watcher — nothing to run, nothing to babysit.
 - 🔌 **Drop-in for any MCP client** — Claude Code, Cursor, Windsurf — configuration is a single JSON block.
 
 ---
@@ -36,7 +36,7 @@ Most "vault MCP" servers give you one or the other. Neuro Vault gives you both, 
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | **What it does** | Finds notes by meaning _and_ by exact wording — semantic + lexical legs in one response. Surfaces neighbours and duplicates.       | Reads, writes, edits notes (in-place replace and full-body rewrite); manages frontmatter, tags, daily notes. |
 | **Best for**     | _"What did I think about X?"_, fuzzy recall, exploratory research — and exact names, codes, terms the embeddings don't know.      | Structured queries, capturing decisions, updating tasks, batch reads.                                        |
-| **Powered by**   | Smart Connections embeddings (already in your vault) + direct text matching over titles, headings, and bodies (no index needed). | Direct reads and writes against the vault directory on disk — no Obsidian install or running instance needed. |
+| **Powered by**   | Embeddings the server builds and owns from your vault + direct text matching over titles, headings, and bodies. | Direct reads and writes against the vault directory on disk — no Obsidian install or running instance needed. |
 
 The two work together: hybrid search finds the right region of the vault, vault operations let the assistant actually _do something_ with what it found.
 
@@ -86,7 +86,7 @@ flowchart LR
     NV <--> Vault[(Obsidian vault)]
 ```
 
-You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — the semantic leg uses embeddings already in `.smart-env/`, the lexical leg reads notes straight from disk, and vault operations read and write the vault directory directly on disk too. No database, no background processes, no Obsidian install required.
+You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — the semantic leg ranks against an embedding index the server builds and keeps in `<vault>/.neuro-vault/corpus/`, the lexical leg reads notes straight from disk, and vault operations read and write the vault directory directly on disk too. No database, no external process, no Obsidian install required — an in-process watcher reconciles the index after ~10 seconds of quiet, so it never falls far behind what's on disk.
 
 For module wiring and internal data flow, see [docs/architecture/module-structure.md](./docs/architecture/module-structure.md).
 
@@ -145,7 +145,7 @@ With multiple vaults registered:
 - **Every tool** accepts an optional `vault: "<name>"` parameter to target a specific vault.
 - **`search_notes`, `query_notes`, `get_vault_overview`, `list_tags`, and `list_properties`** fan out across all registered vaults when `vault` is omitted. The response shape switches to `results_by_vault: [...]` (one entry per vault) plus `failed_vaults: [...]` for per-vault runtime errors (`{ vault, error: { code, message, details? } }`) — a single failed vault does not abort the whole call. The envelope also always includes `skipped_vaults: [...]`, reserved for a future fan-out tool that pre-filters vaults; today it's always empty, since nothing skips a vault.
 - **All other tools** (writes, reads of specific paths, single-vault diagnostics) require an explicit `vault` in multi-vault mode. Omitting it returns `VAULT_REQUIRED`.
-- **A vault without a Smart Connections `.smart-env/multi/` index still participates** in `search_notes` fan-out — it contributes `matches[]` fused from its lexical leg alone; no vault is skipped. Targeting such a vault explicitly with the embeddings-only tools (`get_similar_notes`, `find_duplicates`) returns `SEMANTIC_INDEX_NOT_FOUND`.
+- **A vault whose semantic index is still building (or disabled) still participates** in `search_notes` fan-out — it contributes `matches[]` fused from its lexical leg alone and reports `semantic_status` so the caller knows why; no vault is skipped. Targeting such a vault explicitly with the embeddings-only tools (`get_similar_notes`, `find_duplicates`) returns `SEMANTIC_INDEX_BUILDING` while indexing, `SEMANTIC_DISABLED` if the vault opted out, or `SEMANTIC_INDEX_NOT_FOUND` if the index is genuinely unavailable.
 
 Then ask your assistant:
 

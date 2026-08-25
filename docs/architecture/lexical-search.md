@@ -1,6 +1,6 @@
 # Lexical Search
 
-The lexical leg of `search_notes` (`mode: "hybrid"`, the default, or `mode: "lexical"`) — a hand-rolled, deterministic exact/substring matcher over note titles, headings, and body, fully independent of the Smart Connections embedding corpus (it never touches the corpus loader and works on a cold or absent index).
+The lexical leg of `search_notes` (`mode: "hybrid"`, the default, or `mode: "lexical"`) — a hand-rolled, deterministic exact/substring matcher over note titles, headings, and body, fully independent of the embedding corpus (it never touches the corpus loader and works on a cold or absent index).
 
 ## What it is
 
@@ -136,7 +136,7 @@ Same precedent as [`query_notes`](./query.md): **no watcher, no background timer
 
 ## What it deliberately does not do
 
-- Never touches the Smart Connections corpus loader or the embedding provider — the lexical leg works identically whether the corpus is warm, cold, or entirely absent.
+- Never touches the corpus loader or the embedding provider — the lexical leg works identically whether the corpus is warm, cold, or entirely absent.
 - No numeric score in the response (design decisions D3/D10) — ordinal position and `matched_in` are considered sufficient signal for an LLM consumer, and it keeps the `similarity`-is-semantic invariant intact.
 - No word-boundary, regex, or fuzzy matching — pure normalized-substring AND, chosen deliberately for recall over Ukrainian declensions (see the normalize chain above). `mode: "semantic"`-style fuzzy tolerance is out of scope for this leg by design.
 - No BM25 or other opaque scoring — ranking is six ordinal tiers plus a density tie-break, chosen for determinism (design decision D7).

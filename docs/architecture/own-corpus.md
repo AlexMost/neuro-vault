@@ -2,6 +2,8 @@
 
 The embedding corpus the server builds and owns: how a note becomes model inputs, where the vectors live, and how the corpus is kept in agreement with the vault. The decision behind it is [ADR-0013](../adr/0013-own-embedding-corpus.md), which supersedes the "the server never writes embeddings" half of [ADR-0006](../adr/0006-smart-connections-corpus.md).
 
+Keeping this corpus fresh once the server is running — the per-vault watcher, its debounce, and who calls `reconcileCorpus` — is not this file's concern. See [`semantic-backend.md`](./semantic-backend.md) and [ADR-0014](../adr/0014-background-corpus-freshness.md).
+
 ## What it is
 
 Four pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any import from `src/modules/` — the indexer sees the embedding model only through a one-function port, `EmbedFn = (text: string) => Promise<number[]>`:
@@ -50,7 +52,7 @@ The gate and the truncation are **content** rules: they decide what text of an i
 
 ### Named divergences from the corpus being replaced
 
-Extraction reproduces the Smart Connections corpus 1:1 so that the one diagnostic run comparing the two backends is interpretable. Six divergences are accepted on purpose:
+Extraction reproduces the replaced corpus 1:1 so that the one diagnostic run comparing the two backends is interpretable. Six divergences are accepted on purpose:
 
 1. `excluded_headings` is not implemented.
 2. Membership comes from vault scope, not the plugin's anchored-prefix exclusion quirks.
@@ -131,4 +133,4 @@ A cold index is minutes, so it can never block server startup; an incremental pa
 
 ## Boundaries
 
-This is an indexing library, not a runtime. It has no caller in the server yet, and deliberately does not: no file watcher, no startup reconcile, no live promotion of a finished corpus, no CLI, and nothing serving search results from these vectors — semantic search still reads the [Smart Connections corpus](smart-connections-corpus.md). Those belong to the `cli-index-command` and `own-backend-integration` slices. Cross-process locking is deferred with them: concurrent indexers are structurally safe (atomic per-shard writes, self-correcting on the next pass) but duplicate work.
+This is an indexing library, not a runtime — `reconcileCorpus` takes ports and returns a summary; it starts nothing on its own and knows nothing about watchers, servers, or CLIs. Both of its callers live elsewhere: the `neuro-vault-mcp index` CLI runs it once per invocation, and the per-vault semantic backend runs it at startup and again on every debounced watcher tick — see [`semantic-backend.md`](./semantic-backend.md). Cross-process locking is still out of scope: concurrent indexers (two server processes, or a server and a concurrent `index` run) are structurally safe — atomic per-shard writes, self-correcting on the next pass — but do duplicate work.

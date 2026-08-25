@@ -19,7 +19,6 @@ export function makeTestRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistr
   const list = entries.map(
     (e) =>
       ({
-        semanticAvailable: true,
         reader: emptyReader,
         readConventions: noConventions,
         // Most rigs provision a real temp vault and expect real staleness

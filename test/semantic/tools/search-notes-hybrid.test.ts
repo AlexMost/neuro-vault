@@ -268,8 +268,8 @@ describe('lexical leg orchestration', () => {
       })) as SearchNotesOutput;
       expect(out.matches).toHaveLength(1);
       expect(out.matches[0].found_in).toEqual(['lexical:title']);
-      const corpus = deps.registry.list()[0].corpus!;
-      expect(corpus.snapshot).not.toHaveBeenCalled();
+      const backend = deps.registry.list()[0].backend!;
+      expect(backend.snapshot).not.toHaveBeenCalled();
     } finally {
       await cleanup();
     }
@@ -437,6 +437,31 @@ describe('multi-query and fan-out', () => {
       await b.cleanup();
     }
   });
+
+  it('carries a per-vault semantic_status in each fan-out entry', async () => {
+    // a: ready semantic backend. b: semantic module off for this vault
+    // entirely (no backend) — a vault without a backend still reports
+    // `unavailable` rather than omitting the field.
+    const a = await makeLexicalVault({ 'пошук a.md': '' }, { backendStatus: { state: 'ready' } });
+    const b = await makeLexicalVault({ 'пошук b.md': '' }, { semantic: false });
+    const registry = makeTestRegistry([...a.deps.registry.list(), ...b.deps.registry.list()]);
+    registry.list()[1].name = 'w';
+    try {
+      const tool = buildSearchNotesTool({ ...a.deps, registry });
+      const out = (await tool.handler({ query: 'пошук' })) as IFanOutResult<SearchNotesOutput>;
+      const byVault = Object.fromEntries(
+        out.results_by_vault.map((r) => [r.vault, r.semantic_status]),
+      );
+      expect(byVault.v).toEqual({ state: 'ready' });
+      expect(byVault.w).toEqual({
+        state: 'unavailable',
+        note: expect.stringContaining('lexical-only'),
+      });
+    } finally {
+      await a.cleanup();
+      await b.cleanup();
+    }
+  });
 });
 
 describe('query_stats', () => {
@@ -461,8 +486,11 @@ describe('query_stats', () => {
       const out = (await tool.handler({ query: ['пошук', 'Мобі'] })) as SearchNotesOutput;
       expect(out.query_stats).toEqual({
         пошук: { semantic: 1, lexical: 1 },
-        Мобі: { semantic: 0, lexical: 0 },
+        // A variant that hit nothing in either executed leg says so on the
+        // entry itself — the tool description no longer explains this case.
+        Мобі: { semantic: 0, lexical: 0, note: expect.stringMatching(/rephrase or drop/i) },
       });
+      expect(out.query_stats!['пошук']).not.toHaveProperty('note');
     } finally {
       await cleanup();
     }
@@ -584,7 +612,13 @@ describe('query_stats', () => {
       })) as SearchNotesOutput;
       expect(out.query_stats).toEqual({
         пошук: { semantic: null, lexical: 1 },
-        нема: { semantic: null, lexical: 0 },
+        // Nothing in the one leg that ran — dead for this call, and the entry
+        // says so rather than leaving the caller to infer it from the zeros.
+        нема: {
+          semantic: null,
+          lexical: 0,
+          note: expect.stringMatching(/rephrase or drop/i),
+        },
       });
     } finally {
       await cleanup();
@@ -600,7 +634,13 @@ describe('query_stats', () => {
       })) as SearchNotesOutput;
       expect(out.query_stats).toEqual({
         пошук: { semantic: null, lexical: 1 },
-        нема: { semantic: null, lexical: 0 },
+        // Nothing in the one leg that ran — dead for this call, and the entry
+        // says so rather than leaving the caller to infer it from the zeros.
+        нема: {
+          semantic: null,
+          lexical: 0,
+          note: expect.stringMatching(/rephrase or drop/i),
+        },
       });
     } finally {
       await cleanup();
@@ -643,7 +683,56 @@ describe('query_stats', () => {
         semantic: null,
         lexical: 0,
         lexical_tokens: { ретеншн: 0, алертів: 1 },
+        // The diagnosis names the offending token rather than leaving the
+        // caller to read the zero out of the map.
+        note: expect.stringContaining('ретеншн'),
       });
+      expect(out.query_stats!['ретеншн алертів'].note).toMatch(/drop or replace/i);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('tells an all-tokens-present query to split into an array', async () => {
+    // Both tokens exist in the vault, but never inside one title, heading or
+    // paragraph — so the AND match fails for a reason no single token explains.
+    const { deps, cleanup } = await makeLexicalVault({
+      'a.md': 'перший абзац про ретеншн\n\nдругий абзац про алертів',
+    });
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({
+        query: ['ретеншн алертів'],
+        mode: 'lexical',
+      })) as SearchNotesOutput;
+      const stats = out.query_stats!['ретеншн алертів'];
+      expect(stats.lexical).toBe(0);
+      expect(Object.values(stats.lexical_tokens!).every((n) => n > 0)).toBe(true);
+      expect(stats.note).toMatch(/split/i);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('marks semantic hits rescued by the fallback retry on the entry', async () => {
+    // Every note scores below the quick default (0.5) but above the 0.3
+    // fallback, so the leg's hits exist only because the retry ran.
+    const sources = sourcesWithEmbeddingFor('note.md', [1, 0]);
+    const engine: SearchEngine = {
+      findNeighbors: vi.fn(({ threshold }: { threshold: number }) =>
+        threshold <= 0.3 ? [{ path: 'note.md', similarity: 0.35 }] : [],
+      ),
+      findBlockNeighbors: vi.fn().mockReturnValue([]),
+      findDuplicates: vi.fn().mockReturnValue([]),
+    };
+    const { deps, cleanup } = await makeLexicalVault({ 'note.md': 'зміст' }, { sources, engine });
+    deps.embeddingProvider.embed = vi.fn(async () => [1, 0]);
+    try {
+      const tool = buildSearchNotesTool(deps);
+      const out = (await tool.handler({ query: ['щось'] })) as SearchNotesOutput;
+      const stats = out.query_stats!['щось'];
+      expect(stats.semantic_fallback).toBe(true);
+      expect(stats.note).toMatch(/fallback|weak/i);
     } finally {
       await cleanup();
     }
@@ -659,7 +748,13 @@ describe('query_stats', () => {
         query: ['нема', 'пошук'],
         mode: 'lexical',
       })) as SearchNotesOutput;
-      expect(out.query_stats!['нема']).toEqual({ semantic: null, lexical: 0 });
+      expect(out.query_stats!['нема']).toEqual({
+        semantic: null,
+        lexical: 0,
+        note: expect.stringMatching(/rephrase or drop/i),
+      });
+      // Single-token: nothing to diagnose token-by-token, so no map rides along.
+      expect(out.query_stats!['нема'].lexical_tokens).toBeUndefined();
       expect(out.query_stats!['пошук'].lexical_tokens).toBeUndefined();
     } finally {
       await cleanup();
@@ -678,7 +773,10 @@ describe('expansion_floor input schema (SDK gate)', () => {
       expect(inputSchema.safeParse({ query: 'x', expansion_floor: '0.93' }).success).toBe(true);
       expect(inputSchema.safeParse({ query: 'x', expansion_floor: 1.5 }).success).toBe(false);
       expect(inputSchema.safeParse({ query: 'x', expansion_floor: -0.1 }).success).toBe(false);
-      expect(reg.spec.description).toContain('expansion_floor');
+      // The knob is advertised on the schema, next to the field being
+      // filled — not in the description, which every session pays for.
+      expect(JSON.stringify(reg.spec.inputSchema)).toContain('expansion_floor');
+      expect(reg.spec.description).not.toContain('expansion_floor');
     } finally {
       await cleanup();
     }

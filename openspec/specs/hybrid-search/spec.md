@@ -48,12 +48,24 @@ The lexical leg SHALL match against the note title (filename without `.md`), mar
 
 ### Requirement: Lexical leg is independent of the embedding corpus
 
-The lexical leg SHALL function with a cold, missing, or unreadable Smart Connections corpus, and `mode: "lexical"` SHALL NOT invoke the corpus loader at all. Semantic-leg failure or emptiness SHALL NOT fail the lexical leg.
+The lexical leg SHALL function whatever state the vault's embedding corpus is in — absent, still building, disabled, or unreadable — and `mode: "lexical"` SHALL NOT read a corpus snapshot at all. Semantic-leg failure or emptiness SHALL NOT fail the lexical leg.
 
 #### Scenario: lexical search works without a corpus
 
-- **WHEN** no Smart Connections corpus exists for the vault and `search_notes` is called with `{ query: "пошук", mode: "lexical" }`
+- **WHEN** a vault has no embedding corpus yet and `search_notes` is called with `{ query: "пошук", mode: "lexical" }`
 - **THEN** the call succeeds and `matches[]` contains lexically-sourced entries with title/heading/body evidence
+
+#### Scenario: lexical search works while the index builds
+
+- **WHEN** a vault is indexing and `search_notes` is called with `{ query: "пошук" }`
+- **THEN** the call succeeds with lexical matches and reports `semantic_status: { state: "indexing", indexed, total }`
+
+#### Scenario: a semantic leg that throws keeps the lexical matches
+
+- **WHEN** the semantic leg fails mid-search on a vault whose backend reported `ready` — the query embedding rejects, or the corpus snapshot cannot be read
+- **THEN** the call succeeds with the lexical matches it already computed, reports `semantic_status: { state: "unavailable", note }` rather than the `ready` it started from, and writes the cause to stderr
+
+---
 
 ### Requirement: Matching is normalized substring AND
 
@@ -260,10 +272,27 @@ An explicitly provided `threshold` SHALL be a hard filter on the semantic leg's 
 
 For an array `query`, the response SHALL include `query_stats` mapping every normalized input query (trimmed, de-duplicated) to `{ semantic, lexical }` hit counts taken before cross-query merging and before any result-list cap. `semantic` SHALL be the number of notes that query retrieved from the semantic leg (post-threshold) when the leg executed, and SHALL be `null` — never `0` — when the semantic leg did not execute for the request (`mode: "lexical"`, no semantic corpus available, or the empty-filter early return); a numeric `semantic` SHALL always mean the leg ran and counted. When a query's semantic hits were produced by the default-threshold fallback retry at 0.3 (see Requirement: threshold is a hard semantic filter with default-only fallback), that query's entry SHALL additionally carry `semantic_fallback: true`; the key SHALL be absent in every other case, including explicit-threshold requests (where no fallback exists). `lexical` SHALL be the number of notes the query matched before the lexical note cap, counted over the leg's candidate set (`0` over an empty filter set). When the lexical leg executed and a query's `lexical` count is `0` while the query has two or more normalized tokens, its entry SHALL additionally carry `lexical_tokens` mapping each normalized token to the number of notes that token alone matches under the same normalization rules and filter set; `lexical_tokens` SHALL be omitted in every other case, including the empty-filter early return where neither leg runs. A query with zero hits in both executed legs SHALL report `{ semantic: 0, lexical: 0 }`. `query_stats` SHALL be omitted for a single string `query`.
 
+An entry SHALL additionally carry `note` — one sentence naming what to do about it — exactly when at least one leg executed and the entry is worth acting on, so that the tool description does not have to teach how to read these numbers. `note` SHALL diagnose, in this order of precedence: a variant with no hits in any executed leg names the tokens whose zero killed the AND match when `lexical_tokens` identifies them, tells the caller to split the variant into separate array entries when every token matches alone but never co-occurs, and otherwise says to rephrase or drop the variant; failing that, an entry carrying `semantic_fallback` SHALL say its semantic hits are weaker for having come from the retry. `note` SHALL be absent when neither leg executed — a zero on the empty-filter early return describes the filter, not the query, and SHALL NOT be diagnosed as a dead variant.
+
 #### Scenario: a dead query variant is visible in one line
 
 - **WHEN** `search_notes` is called with `{ query: ["monetization research", "Мобі"] }` in hybrid mode with a corpus available and «Мобі» matches nothing in either leg
-- **THEN** `query_stats["Мобі"]` is `{ semantic: 0, lexical: 0 }` while the other query reports non-zero counts
+- **THEN** `query_stats["Мобі"]` is `{ semantic: 0, lexical: 0 }` with a `note` telling the caller to rephrase or drop it, while the other query reports non-zero counts and no `note`
+
+#### Scenario: the killer token is named, not left to be inferred
+
+- **WHEN** a multi-token query returns `lexical: 0` and one of its `lexical_tokens` counts is `0`
+- **THEN** the entry's `note` names that token and says to drop or replace it
+
+#### Scenario: co-occurrence failure is diagnosed as a split, not a rephrase
+
+- **WHEN** a multi-token query returns `lexical: 0` and every one of its `lexical_tokens` counts is above `0`
+- **THEN** the entry's `note` tells the caller to split the variant into separate array entries
+
+#### Scenario: an untried query is not called dead
+
+- **WHEN** a `filter` matches no notes, neither leg runs, and `query_stats` reports `{ semantic: null, lexical: 0 }` per query
+- **THEN** no entry carries a `note`, because the zero describes the filter rather than the query
 
 #### Scenario: merge-cap cuts do not zero a query's stats
 
@@ -312,14 +341,17 @@ For an array `query`, the response SHALL include `query_stats` mapping every nor
 
 ### Requirement: Single-source degradation preserves source order
 
-In `mode: "lexical"`, or when no semantic corpus is available, the merge SHALL degrade to the lexical source alone: `matches[]` SHALL preserve the lexical ordering, every `found_in` SHALL contain only `lexical:*` values, and semantic evidence fields SHALL be absent. The corpus loader SHALL NOT be invoked in `mode: "lexical"`.
+In `mode: "lexical"`, or whenever the vault's semantic backend is not `ready` (indexing, disabled, or unavailable), the merge SHALL degrade to the lexical source alone: `matches[]` SHALL preserve the lexical ordering, every `found_in` SHALL contain only `lexical:*` values, and semantic evidence fields SHALL be absent. No corpus snapshot SHALL be read in `mode: "lexical"`.
 
 #### Scenario: lexical mode yields a purely lexical merged list
 
 - **WHEN** `search_notes` is called with `{ query: "пошук", mode: "lexical" }`
 - **THEN** `matches[]` is ordered exactly as the lexical source and no entry carries `similarity`, `blocks`, or `expansion_similarity`
 
----
+#### Scenario: a non-ready backend degrades the same way
+
+- **WHEN** `search_notes` is called without `mode` against a vault whose backend is `indexing` or `disabled`
+- **THEN** `matches[]` carries only `lexical:*` provenance and the response reports the corresponding `semantic_status`
 
 ### Requirement: Semantic seeds carry backfilled block evidence
 
@@ -365,4 +397,71 @@ The semantic leg SHALL treat query arity as a surfacing concern, not a retrieval
 
 - **WHEN** the semantic leg's own pool cap drops candidates for a query issued once as a string and once as a one-element array
 - **THEN** both responses report the same top-level `truncated` value
+
+### Requirement: search_notes reports the vault's semantic index state
+
+Every per-vault `search_notes` payload SHALL carry `semantic_status: { state, indexed?, total?, note? }`, where `state` is one of `ready`, `indexing`, `disabled`, or `unavailable`, and `indexed`/`total` are present exactly when `state` is `indexing`. The field SHALL describe the vault's semantic backend, not the request: it SHALL be present in `mode: "lexical"`, on the empty-filter early return, and on every entry of a fan-out envelope. It SHALL NOT be omitted when the backend is `ready`. `note` SHALL be present exactly when `state` is not `ready` — including the mid-request degradation path that reports `unavailable` over a backend that was `ready` — and SHALL state the consequence for the response carrying it: that the semantic leg did not run and the matches are lexical-only. `note` SHALL NOT restate the backend's `reason`, which travels on error payloads and is not exposed on this field.
+
+#### Scenario: a ready vault says so
+
+- **WHEN** `search_notes` runs against a vault whose index is built
+- **THEN** the payload carries `semantic_status: { state: "ready" }` with no counters and no `note`
+
+#### Scenario: a building index is visible in the search response
+
+- **WHEN** `search_notes` runs against a vault that is still indexing
+- **THEN** the payload carries `semantic_status: { state: "indexing", indexed, total }` alongside the lexical matches it could produce, and its `note` says the matches are lexical-only
+
+#### Scenario: a degraded state explains itself on the response
+
+- **WHEN** `search_notes` runs in `mode: "hybrid"` against a vault whose backend is `disabled` or `unavailable`
+- **THEN** `semantic_status.note` states that the semantic leg did not run and the matches are lexical-only, so no prose in the tool description is needed to interpret the state
+
+#### Scenario: lexical mode still reports the index state
+
+- **WHEN** `search_notes` is called with `mode: "lexical"` against a `ready` vault
+- **THEN** the payload still carries `semantic_status: { state: "ready" }`, and no corpus snapshot is read to produce it
+
+#### Scenario: an empty filter set still reports the index state
+
+- **WHEN** a `filter` matches no notes and `search_notes` returns early with no matches
+- **THEN** the payload still carries `semantic_status`
+
+#### Scenario: fan-out reports state per vault
+
+- **WHEN** multiple vaults are registered, one indexing and one ready, and `search_notes` is called without `vault`
+- **THEN** each per-vault entry of the envelope carries its own `semantic_status`
+
+---
+
+### Requirement: The search_notes description carries call-time guidance only
+
+The `search_notes` tool description SHALL carry only what a caller needs before issuing a call — what the tool does, how to write the query, the axes, the everyday parameters, the pre-filter shape, and worked examples — and SHALL NOT carry prose whose only use is interpreting a response already in hand once that prose can travel on the response instead (`semantic_status.note`, `query_stats[].note`), per ADR-0010's response channel. Expert similarity floors (`threshold`, `expansion_floor`) SHALL be documented on the input schema, next to the field a caller fills, rather than in the description. The description SHALL NOT restate which fields are absent from a payload, SHALL NOT enumerate `matches[]` entry fields beyond `found_in`'s provenance meaning, and SHALL state any one fact once rather than under two headings. Its length SHALL NOT exceed 3,800 characters, measured on the longer multi-vault variant and asserted against the registered tool's advertised description so the budget fails CI rather than review.
+
+#### Scenario: the description stays inside its budget
+
+- **WHEN** the `search_notes` tool is registered against a multi-vault registry and its advertised `description` is measured
+- **THEN** it is at most 3,800 characters
+
+#### Scenario: expert knobs stay callable while leaving the description
+
+- **WHEN** the registered tool is inspected for `threshold` and `expansion_floor`
+- **THEN** both are advertised and validated by `inputSchema`, each carrying its own description there, and neither is documented in the tool description
+
+#### Scenario: semantic_status costs one line, not a section
+
+- **WHEN** the description is read for `semantic_status`
+- **THEN** it names the field and its four state values without explaining what each state does to a response, because the response's own `note` carries that
+
+#### Scenario: invariants are not addressed to the caller
+
+- **WHEN** the description is read
+- **THEN** it contains no section stating which evidence fields are absent for a given `found_in` value, since a caller reads the fields the payload contains
+
+#### Scenario: query-writing guidance is preserved
+
+- **WHEN** the description is read
+- **THEN** it still instructs the caller to build the query from the core nouns, to pass synonyms and translations as one array in a single call, and it still carries the worked examples
+
+---
 

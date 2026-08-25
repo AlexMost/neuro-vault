@@ -7,8 +7,9 @@ context: |
 
   An MCP server (`neuro-vault-mcp`, published to npm) that gives an AI assistant
   two capability sets over an Obsidian vault: **semantic search** (in-memory
-  cosine search over a Smart Connections embedding corpus) and **direct vault
-  operations** (notes, frontmatter properties, tags, structured queries).
+  cosine search over an embedding corpus the server builds and owns) and
+  **direct vault operations** (notes, frontmatter properties, tags, structured
+  queries).
   TypeScript, ESM, Node ≥ 20; consumed over stdio by MCP clients (Claude Code,
   Cursor, Windsurf). Two modules: `semantic/` (4 tools) and `operations/`
   (12 tools).
@@ -24,9 +25,10 @@ context: |
   - One concept = one parameter name across every tool (the MCP parameter
     dictionary, docs/architecture/mcp-parameter-dictionary.md). A rename costs a
     major version. See ADR-0005.
-  - Semantic search consumes a read-only Smart Connections corpus; the server
-    never writes embeddings (ADR-0006). Vault writes go through obsidian-cli;
-    batch note reads go straight to disk (ADR-0007).
+  - The server builds and owns its embedding corpus, kept fresh in the
+    background by an in-process per-vault watcher (ADR-0013, ADR-0014). Vault
+    writes go through obsidian-cli; batch note reads go straight to disk
+    (ADR-0007).
   - `docs/architecture/` is the living "how it works" record — one file per
     concept, current state (ADR-0008).
 

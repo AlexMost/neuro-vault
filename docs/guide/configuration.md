@@ -44,7 +44,7 @@ Full behaviour: [`docs/architecture/vault-conventions.md`](../architecture/vault
 
 ## Excluding paths from discovery
 
-By default, every note the server discovers — for the lexical leg of `search_notes`, `query_notes`, tag/property listings, `get_vault_overview` counts, backlinks, and note-name resolution — excludes dot-directories (`.obsidian/`, `.git/`, `.neuro-vault/`, …), `Templates/`, and every entry named in the vault root's `.gitignore`, if one exists. Two surfaces are unaffected: `read_notes` with an explicit path (a direct read, not a discovery call), and semantic matches, which come from the Smart Connections corpus and follow Smart Connections' own exclusion settings until the server's own corpus starts serving those tools.
+By default, every note the server discovers — for the lexical leg of `search_notes`, `query_notes`, tag/property listings, `get_vault_overview` counts, backlinks, and note-name resolution — excludes dot-directories (`.obsidian/`, `.git/`, `.neuro-vault/`, …), `Templates/`, and every entry named in the vault root's `.gitignore`, if one exists. One surface is unaffected: `read_notes` with an explicit path is a direct read, not a discovery call. Semantic matches are governed by the same rules — the server's own corpus is built from this same scoped scan, so an excluded note is never embedded either.
 
 To exclude additional paths, add an optional `<vault>/.neuro-vault/config.json`:
 
@@ -60,18 +60,29 @@ A missing file means the built-in defaults only, silently. Everything else that 
 
 Full behaviour, including the exact `.gitignore` subset that's honoured: [`docs/architecture/vault-scope.md`](../architecture/vault-scope.md).
 
+## Disabling semantic search per vault
+
+Add `"semantic": false` to that same `<vault>/.neuro-vault/config.json` to opt one vault out of embeddings entirely:
+
+```json
+{ "semantic": false }
+```
+
+With it set, the vault's semantic backend is built but reports `state: "disabled"` — `search_notes` still runs its lexical leg and reports `semantic_status: { state: "disabled" }` for that vault (fan-out is unaffected; no vault is skipped), and the embeddings-only tools (`get_similar_notes`, `find_duplicates`) return `SEMANTIC_DISABLED` when targeting it. No corpus and no watcher run for that vault — the embedding model itself may still load if another registered vault has semantic search enabled, since it's one process-wide model shared across vaults. The key is read once, at server startup.
+
+The global `--no-semantic` flag outranks this: it turns the semantic module off for every registered vault, and a vault's own `"semantic": true` cannot turn it back on. Use `--no-semantic` when you never want embeddings server-wide; use the per-vault key when only one vault (of several) should opt out.
+
 ## Troubleshooting
 
-**"Smart Connections directory does not exist"** — make sure the Smart Connections plugin has run and generated embeddings. Open Obsidian, let Smart Connections finish indexing, then restart the MCP server.
+**Semantic results are missing or thin right after startup** — a vault with no embedding index yet indexes in the background; check `semantic_status` on the `search_notes` response (`state: "indexing"` means it is still building, `indexed`/`total` show progress). Either wait for it to finish, or warm it ahead of time with `neuro-vault-mcp index --vault <path>` (see [Installation → First-run behavior](./installation.md#first-run-behavior)).
 
 **First startup is slow** — the embedding model (~40 MB) is downloading. Subsequent starts use the cached model.
 
-**Search returns nothing** — first try the call again *without* `threshold` at all: an omitted threshold gets the effort default (0.5 quick / 0.35 deep) plus an automatic one-shot retry at 0.3 if that finds nothing (flagged as `semantic_fallback: true` in `query_stats` for array queries). Passing `threshold` explicitly disables that retry — an explicit value is a hard filter with no rescue, so `threshold: 0.3` returns zero rather than falling back further. Also confirm the Smart Connections corpus path is configured and that `search_notes` returns results for a broad query like `search_notes({ query: "note" })`.
+**Search returns nothing** — first try the call again *without* `threshold` at all: an omitted threshold gets the effort default (0.5 quick / 0.35 deep) plus an automatic one-shot retry at 0.3 if that finds nothing (flagged as `semantic_fallback: true` in `query_stats` for array queries). Passing `threshold` explicitly disables that retry — an explicit value is a hard filter with no rescue, so `threshold: 0.3` returns zero rather than falling back further. Also check `semantic_status` — `"disabled"` or `"unavailable"` means the semantic leg isn't running for that vault at all — and confirm `search_notes` returns results for a broad query like `search_notes({ query: "note" })`.
 
 ## Limitations
 
-- Requires Smart Connections `.ajson` files already present in the vault.
-- In-memory search only — no persistent index, no background re-indexing.
+- In-memory search only — no persistent database; the on-disk corpus under `.neuro-vault/corpus/` is the persistence, reloaded into memory on startup and kept current by the per-vault watcher.
 - stdio transport only — not HTTP or SSE.
 - Local vault path only — no remote vaults.
 - Embedding model loaded at startup; first run can be slow.

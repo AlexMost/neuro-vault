@@ -2,6 +2,9 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createSemanticModule, type ISemanticModuleDeps } from './modules/semantic/index.js';
+import { createQueuedEmbedder, type QueuedEmbedder } from './modules/semantic/embed-queue.js';
+import { EmbeddingService } from './modules/semantic/embedding-service.js';
+import { createOwnCorpusBackendFactory } from './modules/semantic/backend/index.js';
 import { createOperationsModule } from './modules/operations/index.js';
 import { VaultRegistry, type IVaultEntryDeps } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
@@ -9,9 +12,9 @@ import { FsVaultWriter } from './lib/obsidian/vault-writer.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
 import { FsVaultProvider } from './modules/operations/fs-vault-provider.js';
-import { createSmartConnectionsCorpusIndex } from './lib/obsidian/smart-connections-corpus-index.js';
 import { createExistingPathFilter } from './lib/obsidian/existing-paths.js';
 import { readVaultConventions } from './lib/obsidian/vault-conventions.js';
+import { loadVaultConfig } from './lib/obsidian/vault-config.js';
 import { loadVaultScope } from './lib/obsidian/vault-scope-config.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ResourceRegistration } from './lib/resource-registration.js';
@@ -22,11 +25,26 @@ const { name: SERVER_NAME, version: SERVER_VERSION } = packageMeta;
 
 type ToolServer = Pick<McpServer, 'registerTool' | 'registerResource' | 'connect'>;
 
+/**
+ * Just enough of the transport's input stream to notice a client hanging up.
+ * Narrow on purpose: nothing here reads stdin — the transport owns that — this
+ * only observes the end of it.
+ */
+export interface StdinLike {
+  once(event: 'end' | 'close', listener: () => void): unknown;
+}
+
 export interface NeuroVaultStartupDependencies {
   semantic?: ISemanticModuleDeps;
   vaultEntryDeps?: Partial<IVaultEntryDeps>;
   serverFactory?: (instructions: string) => ToolServer;
   transportFactory?: () => StdioServerTransport;
+  /**
+   * The stream the transport reads; defaults to `process.stdin`. Injected so a
+   * test can hang up for real — by ending a pipe — instead of firing the close
+   * hook by hand. Pass the same stream the `transportFactory` transport reads.
+   */
+  stdin?: StdinLike;
 }
 
 /**
@@ -65,16 +83,19 @@ function defaultTransportFactory(): StdioServerTransport {
   return new StdioServerTransport();
 }
 
-function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): IVaultEntryDeps {
+function buildDefaultVaultEntryDeps(
+  embedder: QueuedEmbedder,
+  overrides: Partial<IVaultEntryDeps> = {},
+): IVaultEntryDeps {
   return {
     readerFactory: ({ vaultRoot, scope }) => new FsVaultReader({ vaultRoot, scope }),
-    scopeFactory: ({ vaultRoot }) => loadVaultScope(vaultRoot),
+    vaultConfigFactory: ({ vaultRoot }) => loadVaultConfig(vaultRoot),
+    scopeFactory: ({ vaultRoot, config }) => loadVaultScope(vaultRoot, { config }),
     writerFactory: ({ vaultRoot }) => new FsVaultWriter({ vaultRoot }),
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
     providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
-    corpusFactory: ({ smartEnvPath, modelKey }) =>
-      createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey }),
+    semanticBackendFactory: createOwnCorpusBackendFactory({ embedder }),
     conventionsReaderFactory:
       ({ vaultRoot }) =>
       () =>
@@ -84,17 +105,30 @@ function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): I
   };
 }
 
+/**
+ * Boots the server and returns a disposer that releases every vault's
+ * background resources. The disposer also runs on transport close, and
+ * end-of-input on stdin closes the transport — so a client that disconnects
+ * takes the watchers down with it. chokidar holds the event loop open, and
+ * without both halves of that wiring the process would outlive the client that
+ * started it (design D10). The return value exists for tests and for future
+ * callers that shut the server down themselves; `cli.ts` ignores it and lets
+ * the hang-up do the work.
+ */
 export async function startNeuroVaultServer(
   config: ServerConfig,
   deps: NeuroVaultStartupDependencies = {},
-): Promise<void> {
+): Promise<() => Promise<void>> {
+  // One model, one embed in flight process-wide (design D7): every vault's
+  // indexing and every query share this queue, with queries jumping ahead.
+  const embedder = createQueuedEmbedder(new EmbeddingService({ modelId: config.semantic.modelId }));
+
   const registry = await VaultRegistry.create(
     {
       vaults: config.vaults,
       semanticEnabled: config.semantic.enabled,
-      modelKey: config.semantic.modelKey,
     },
-    buildDefaultVaultEntryDeps(deps.vaultEntryDeps),
+    buildDefaultVaultEntryDeps(embedder, deps.vaultEntryDeps),
   );
 
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
@@ -109,7 +143,10 @@ export async function startNeuroVaultServer(
     const semantic = createSemanticModule(
       registry,
       { modelKey: config.semantic.modelKey, modelId: config.semantic.modelId },
-      deps.semantic,
+      // The retrieval path embeds through the same queue as indexing, on the
+      // query lane — so a search issued mid cold-index is not stuck behind
+      // thousands of queued note embeds (design D7).
+      { embeddingServiceFactory: () => embedder.asProvider(), ...deps.semantic },
     );
     toolRegistrations.push(...semantic.tools);
     warmup = semantic.warmup;
@@ -126,9 +163,92 @@ export async function startNeuroVaultServer(
     server.registerResource(resource.name, resource.uri, resource.metadata, resource.handler);
   }
 
-  await server.connect(transportFactory());
-  void warmup().catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`semantic warmup failed: ${message}\n`);
-  });
+  const transport = transportFactory();
+  await server.connect(transport);
+  // The module-level flag says the tools exist; it does not say any vault will
+  // ever embed. When every registered vault opted out with `"semantic": false`,
+  // no indexing pass and no query embed can run — warming the model would
+  // download and initialize ONNX for work that will never arrive. The tools
+  // stay registered either way: `search_notes` still answers from its lexical
+  // leg, and the embeddings-only tools still report `SEMANTIC_DISABLED`.
+  const anyVaultEmbeds = registry
+    .list()
+    .some((entry) => entry.backend !== undefined && entry.backend.status().state !== 'disabled');
+  if (anyVaultEmbeds) {
+    void warmup().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`semantic warmup failed: ${message}\n`);
+    });
+  }
+
+  /**
+   * Releases every vault's background resources. Never rejects: one vault's
+   * failure is reported to stderr and the others still get disposed. It is
+   * called from `onclose` as `void dispose()`, and an unhandled rejection
+   * there is `ERR_UNHANDLED_REJECTION` on Node ≥ 20 — a crash in place of the
+   * clean teardown this exists to produce.
+   */
+  const dispose = async (): Promise<void> => {
+    // `async` per entry so a backend whose `dispose()` throws synchronously
+    // becomes one settled rejection rather than blowing up the whole map.
+    const results = await Promise.allSettled(
+      registry.list().map(async (entry) => entry.backend?.dispose()),
+    );
+    for (const result of results) {
+      if (result.status !== 'rejected') continue;
+      const message =
+        result.reason instanceof Error ? result.reason.message : String(result.reason);
+      process.stderr.write(`semantic backend disposal failed: ${message}\n`);
+    }
+  };
+
+  // `server.connect()` installs the MCP SDK's own `onclose` (it aborts
+  // in-flight request handlers and rejects pending responses), so chain onto
+  // it rather than replacing it — a bare assignment here would silently
+  // disable the protocol's own teardown. `finally`, so a throw from the
+  // protocol's handler cannot skip disposal and leave the watchers holding
+  // the event loop open past the client that started us (design D10).
+  const protocolOnClose = transport.onclose;
+  transport.onclose = () => {
+    try {
+      protocolOnClose?.();
+    } finally {
+      void dispose();
+    }
+  };
+
+  /**
+   * End of input is how a stdio client hangs up, and nothing else reports it:
+   * `StdioServerTransport` registers only `'data'` and `'error'` on stdin, so
+   * its `onclose` fires from an explicit `close()` and from nothing else.
+   * Without this hookup the chain above is never pulled — a client that simply
+   * closes the pipe leaves the chokidar watchers holding the event loop open,
+   * and the server outlives it indefinitely (measured: still alive 60 s after
+   * stdin EOF). That is exactly the failure design D10 exists to prevent.
+   *
+   * `'close'` as well as `'end'`, because stdin destroyed without EOF — the fd
+   * closed under us — emits only the former, and that is a hang-up too. Both
+   * routes go through `transport.close()` rather than calling `dispose()`
+   * directly, so there stays exactly one teardown path and the SDK's own
+   * `onclose` (aborting in-flight handlers) runs as well as ours.
+   *
+   * Signals are deliberately not handled: `SIGINT`/`SIGTERM` already terminate
+   * the process by default, and installing handlers would replace that
+   * unstarvable default with teardown of our own that could hang. Corpus
+   * writes are atomic (temp + rename), so an abrupt signal cannot corrupt one.
+   */
+  let closing = false;
+  const handleHangUp = (): void => {
+    if (closing) return;
+    closing = true;
+    void transport.close().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`transport close failed: ${message}\n`);
+    });
+  };
+  const stdin = deps.stdin ?? process.stdin;
+  stdin.once('end', handleHangUp);
+  stdin.once('close', handleHangUp);
+
+  return dispose;
 }

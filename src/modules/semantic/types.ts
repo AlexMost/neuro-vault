@@ -1,10 +1,10 @@
-import type { SmartSource } from '../../lib/obsidian/smart-connections-types.js';
+import type { SmartSource } from '../../lib/obsidian/corpus/types.js';
 import type {
   ListMatchingPaths,
   NoteFilter,
 } from '../../lib/obsidian/query/list-matching-paths.js';
 
-export type { SmartBlock, SmartSource } from '../../lib/obsidian/smart-connections-types.js';
+export type { SmartBlock, SmartSource } from '../../lib/obsidian/corpus/types.js';
 export type { ListMatchingPaths, NoteFilter };
 
 // Engine-level result types — what SearchEngine.findNeighbors and friends return.
@@ -129,7 +129,9 @@ export type ToolHandlerErrorCode =
   | 'DEPENDENCY_ERROR'
   | 'VAULT_REQUIRED'
   | 'VAULT_NOT_FOUND'
-  | 'SEMANTIC_INDEX_NOT_FOUND';
+  | 'SEMANTIC_INDEX_NOT_FOUND'
+  | 'SEMANTIC_INDEX_BUILDING'
+  | 'SEMANTIC_DISABLED';
 
 export interface ToolHandlers {
   getSimilarNotes(input: GetSimilarNotesInput): Promise<SimilarNoteResult[]>;

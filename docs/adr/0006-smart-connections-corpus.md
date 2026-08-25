@@ -1,10 +1,7 @@
 # ADR-0006 — Smart Connections as the read-only embedding corpus
 
-- **Status**: Accepted
+- **Status**: Superseded by [ADR-0013](0013-own-embedding-corpus.md), [ADR-0014](0014-background-corpus-freshness.md)
 - **Date**: 2026-06-08
-- **Superseded in part by**: [ADR-0013](0013-own-embedding-corpus.md) — the
-  "server never writes embeddings" decision is reversed; the read-only
-  consumption record stands as history.
 
 ## Context
 

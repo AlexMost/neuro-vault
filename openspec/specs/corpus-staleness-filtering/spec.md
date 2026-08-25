@@ -2,14 +2,13 @@
 
 ## Purpose
 
-A path from the Smart Connections corpus is a claim about the embedding index, never a promise about the filesystem: the corpus is read-only and unwatched, so it can still name a note deleted since the plugin last wrote its index. This capability covers the guarantee that no such path reaches a client — which tools it binds, where the check sits relative to caller-supplied filtering, and the single per-vault adapter that delivers it.
+A path from the embedding corpus is a claim about the index, never a promise about the filesystem: the corpus the server owns is refreshed by a debounced reconcile rather than synchronously with the vault, so it can still name a note deleted since the last pass. This capability covers the guarantee that no such path reaches a client — which tools it binds, where the check sits relative to caller-supplied filtering, and the single per-vault adapter that delivers it.
 
-Mechanism lives in [docs/architecture/smart-connections-corpus.md](../../../docs/architecture/smart-connections-corpus.md#stale-paths); the read-only decision this compensates for is [ADR-0006](../../../docs/adr/0006-smart-connections-corpus.md).
-
+Mechanism lives in [docs/architecture/retrieval-policy.md](../../../docs/architecture/retrieval-policy.md#stale-path-filtering); the read-only inherited corpus this originally compensated for is [ADR-0006](../../../docs/adr/0006-smart-connections-corpus.md), since superseded by [ADR-0013](../../../docs/adr/0013-own-embedding-corpus.md) and [ADR-0014](../../../docs/adr/0014-background-corpus-freshness.md).
 ## Requirements
 ### Requirement: No corpus-derived path reaches a client unless it exists on disk
 
-Every tool that derives note paths from the Smart Connections corpus SHALL verify, at request time, that each path it is about to return still resolves to a file under the vault root, and SHALL drop those that do not. This binds `search_notes` (semantic seeds and their expansion targets), `find_duplicates` (both members of every pair), and `get_similar_notes` (every candidate, whether it arrived by embedding similarity or by forward link). The corpus is read-only and is not watched, so it can name notes deleted since the plugin last wrote its index; without this check a client receives paths it cannot open.
+Every tool that derives note paths from the embedding corpus SHALL verify, at request time, that each path it is about to return still resolves to a file under the vault root, and SHALL drop those that do not. This binds `search_notes` (semantic seeds and their expansion targets), `find_duplicates` (both members of every pair), and `get_similar_notes` (every candidate, whether it arrived by embedding similarity or by forward link). The corpus the server owns is kept fresh by a debounced reconcile, not synchronously with the filesystem, so between a deletion and the next pass it can still name a note that is gone; without this check a client receives paths it cannot open.
 
 #### Scenario: a deleted note is dropped from search results
 
@@ -36,7 +35,10 @@ Every tool that derives note paths from the Smart Connections corpus SHALL verif
 - **WHEN** `search_notes` runs its lexical leg, which reads note content from disk during the same request
 - **THEN** lexical-only matches are returned without a separate existence check, because reading them proved their existence
 
----
+#### Scenario: a note deleted inside the debounce window is still filtered
+
+- **WHEN** a note is deleted and a semantic call arrives before the next reconcile pass has removed its shard
+- **THEN** the note does not appear in the response
 
 ### Requirement: One per-vault adapter owns the existence check
 

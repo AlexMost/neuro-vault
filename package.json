@@ -1,7 +1,7 @@
 {
   "name": "neuro-vault-mcp",
   "version": "15.5.0",
-  "description": "MCP server for semantic search over Obsidian vaults with Smart Connections data.",
+  "description": "MCP server for semantic and lexical search over Obsidian vaults, with a self-built embedding index.",
   "homepage": "https://github.com/AlexMost/neuro-vault#readme",
   "bugs": {
     "url": "https://github.com/AlexMost/neuro-vault/issues"
@@ -14,7 +14,7 @@
   "keywords": [
     "mcp",
     "obsidian",
-    "smart-connections",
+    "embeddings",
     "semantic-search",
     "stdio",
     "transformers"
@@ -56,6 +56,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.1",
     "@xenova/transformers": "^2.17.2",
+    "chokidar": "^4.0.3",
     "fast-glob": "^3.3.3",
     "mdast-util-from-markdown": "^2.0.3",
     "picomatch": "^4.0.5",

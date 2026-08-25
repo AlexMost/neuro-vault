@@ -18,7 +18,6 @@ function registryOf(...names: string[]): IVaultRegistry {
     names.map((name) => ({
       name,
       path: `/vaults/${name}`,
-      smartEnvPath: `/vaults/${name}/.smart-env`,
       graph: makeFakeGraph(),
       listMatchingPaths: async () => new Set<string>(),
     })),
