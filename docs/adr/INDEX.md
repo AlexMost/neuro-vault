@@ -21,3 +21,4 @@ Template: [0000-template.md](0000-template.md).
 | 0011 | [Four doc altitudes; the frozen pre-OpenSpec record is retired](0011-retire-frozen-doc-layer.md)       | Accepted |
 | 0012 | [Vault conventions leave the `instructions` channel](0012-conventions-leave-the-instructions-channel.md) | Accepted |
 | 0013 | [The server builds and owns its embedding corpus](0013-own-embedding-corpus.md)                        | Accepted |
+| 0014 | [Background corpus freshness, and the removal it enabled](0014-background-corpus-freshness.md)         | Accepted |

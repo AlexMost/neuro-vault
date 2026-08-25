@@ -12,7 +12,8 @@ These are living documents. Update the relevant file in the same change that alt
 - [tool-response-envelope.md](./tool-response-envelope.md) — the `toToolResponse`/`toToolErrorResponse` choke point: minified success text, `CODE: message` error text, client-behavior rationale
 - [mcp-parameter-dictionary.md](./mcp-parameter-dictionary.md) — the cross-tool parameter naming contract (one concept = one name)
 - [smart-connections-corpus.md](./smart-connections-corpus.md) — `.ajson` loader, in-memory model, no watchers
-- [own-corpus.md](./own-corpus.md) — the embedding corpus the server builds and owns: block keys and embed-text formulas, the shard/manifest layout under `<vault>/.neuro-vault/corpus/`, atomic writes, and the hash-truthful reconcile (nothing serves from it yet)
+- [own-corpus.md](./own-corpus.md) — the embedding corpus the server builds and owns: block keys and embed-text formulas, the shard/manifest layout under `<vault>/.neuro-vault/corpus/`, atomic writes, and the hash-truthful reconcile
+- [semantic-backend.md](./semantic-backend.md) — the `SemanticBackend` contract: the four states, startup selection, live promotion, the in-process watcher and its debounce, the shared embed queue, and disposal at shutdown
 - [retrieval-policy.md](./retrieval-policy.md) — search modes, default-only threshold fallback, expansion with its own `expansion_floor` scale
 - [lexical-search.md](./lexical-search.md) — `search_notes`'s lexical leg: mdast block extraction, normalization, tiered ranking, mtime cache
 - [rank-fusion.md](./rank-fusion.md) — `search_notes`'s merge layer: RRF over semantic/lexical/expansion, adaptive k, tie-breaks, truncated observability

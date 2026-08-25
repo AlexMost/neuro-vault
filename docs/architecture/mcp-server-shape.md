@@ -41,6 +41,12 @@ The asymmetry is deliberate. Single-vault users who have already wired `vault://
 
 The selection logic lives in `src/modules/operations/resources/index.ts`; the per-vault resource builder is `src/modules/operations/resources/vault-overview.ts`.
 
+## Startup and shutdown own background work
+
+Registering tools is not the only thing `startNeuroVaultServer` does. Each vault entry's `backend` (`src/lib/vault-registry.ts`) may hold a live `chokidar` watcher — a handle that keeps the Node event loop open on its own — so the server must release it explicitly rather than let the process exit around it (see [`semantic-backend.md`](./semantic-backend.md) and [ADR-0014](../adr/0014-background-corpus-freshness.md)).
+
+`startNeuroVaultServer` builds a `dispose()` that calls every vault entry's `backend?.dispose()` via `Promise.allSettled`, so one vault's disposal failure is reported to stderr without blocking the others. It chains that disposer onto the MCP SDK's own `transport.onclose` — never replacing it, only wrapping it in a `finally` — so a client disconnecting still takes the watchers down with it. `startNeuroVaultServer` also returns `dispose` directly, for callers (tests, and any future caller that shuts the server down itself) that need to release these resources without waiting on a transport close; `cli.ts` ignores the return value and lets `onclose` do the work.
+
 ## Tool handler contract
 
 There is no central tool-handlers module. Each tool lives in its own file under `src/modules/<module>/tools/<name>.ts` and exports a `buildXTool(deps)` factory that returns an `ITool<I, O>` — name, title, description, zod input schema, and an async `handler`. Each handler:
