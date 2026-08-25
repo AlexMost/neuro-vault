@@ -196,6 +196,11 @@ describe('parseConfig', () => {
       ).rejects.toThrow();
     });
 
+    it('index --help short-circuits to handled without vault validation', async () => {
+      const parsed = await parseConfig(['node', 'cli.js', 'index', '--help']);
+      expect(parsed.kind).toBe('handled');
+    });
+
     it('a plain --vault invocation still resolves to the server variant', async () => {
       const parsed = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
       expect(parsed.kind).toBe('run');

@@ -114,6 +114,20 @@ describe('runIndexCommand', () => {
     expect(out).toMatch(/total=5 embedded=1 reused=2 renamed=1 deleted=3 failed=0/);
   });
 
+  it('terminates TTY progress line with newline before writing fatal error to stderr', async () => {
+    const reconcile = vi.fn(async (_deps: ReconcileDeps, opts?: ReconcileOptions) => {
+      opts?.onProgress?.({ indexed: 5, total: 10 });
+      throw new Error('storage corrupted');
+    });
+    const deps = makeDeps(reconcile, true);
+    const code = await runIndexCommand({ vaults: [vaultA] }, deps);
+    expect(code).toBe(1);
+    // Verify that a newline was written to stdout to terminate the progress line
+    expect(deps.stdout.chunks).toContain('\n');
+    // Verify the error went to stderr
+    expect(deps.stderr.chunks.join('')).toContain('storage corrupted');
+  });
+
   it('the index module never imports the server module', async () => {
     const source = await readFile(new URL('../src/cli-index.ts', import.meta.url), 'utf8');
     expect(source).not.toMatch(/from '\.\/server\.js'/);

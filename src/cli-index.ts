@@ -103,6 +103,7 @@ export async function runIndexCommand(
       if (summary.failed > 0) complete = false;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (stdout.isTTY) stdout.write('\n');
       stderr.write(`index ${vault.name}: ${message}\n`);
       complete = false;
     }
