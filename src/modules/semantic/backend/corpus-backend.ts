@@ -70,16 +70,27 @@ function emptySnapshot(): CorpusSnapshot {
  * A pass that throws reports `unavailable` with the reason and keeps whatever
  * snapshot the vault already had. That is not terminal: the next pass overwrites
  * the state, so a vault that recovers reports `ready` again without a restart.
+ *
+ * `enabled === false` is absolute: the vault reports `disabled` and no pass ever
+ * runs, so nothing is read from or written under `.neuro-vault/corpus/`.
  */
 export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
   const warn = deps.warn ?? ((message: string) => console.error(message));
 
   let snapshot: CorpusSnapshot = emptySnapshot();
+  /**
+   * Whether `snapshot` was ever decoded from the corpus, as opposed to being
+   * the empty placeholder the vault starts with. `ready` must never be reported
+   * over the placeholder.
+   */
+  let snapshotLoaded = false;
   let status: BackendStatus = deps.enabled
     ? { state: 'indexing', indexed: 0, total: 0 }
     : { state: 'disabled' };
   /** The pass in flight, or null when idle. */
   let currentPass: Promise<void> | null = null;
+  /** Whether any pass has begun — the startup selection defers to one that has. */
+  let passStarted = false;
   /** A request that arrived while a pass was running — one follow-up, however many arrived. */
   let dirty = false;
   let disposed = false;
@@ -99,8 +110,13 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
           status = { state: 'indexing', indexed: progress.indexed, total: progress.total };
         },
       });
-      if (summary.embedded + summary.renamed + summary.deleted > 0) {
+      // Reload when the corpus moved — and whenever nothing has ever been
+      // decoded, or a vault whose startup load failed or was abandoned would
+      // report `ready` over the empty placeholder, with the very pass that
+      // should repair it declining because it changed nothing.
+      if (!snapshotLoaded || summary.embedded + summary.renamed + summary.deleted > 0) {
         snapshot = await deps.loadSnapshot(deps.store);
+        snapshotLoaded = true;
       }
       status = { state: 'ready' };
     } catch (err) {
@@ -109,11 +125,14 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
   }
 
   function kick(): void {
-    if (disposed) return;
+    // A vault that opted out runs nothing, whoever asks — not at startup, and
+    // not for a `requestReconcile()` a watcher fans out across every vault.
+    if (!deps.enabled || disposed) return;
     if (currentPass) {
       dirty = true;
       return;
     }
+    passStarted = true;
     currentPass = runPass().finally(() => {
       currentPass = null;
       if (dirty) {
@@ -124,19 +143,36 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
   }
 
   /**
-   * Chooses the startup state from what is already on disk, then hands over to
-   * the background pass. Any failure here is reported, not thrown: an
-   * unreadable or corrupt corpus is something a reconcile can repair.
+   * The startup selection (design D3), as data: the snapshot to serve, or null
+   * when there is nothing compatible on disk to serve yet.
+   */
+  async function selectStartupSnapshot(): Promise<CorpusSnapshot | null> {
+    const [manifest, shards] = await Promise.all([
+      deps.store.readManifest(),
+      deps.store.listShards(),
+    ]);
+    const hasShards = shards.size > 0;
+    if (!hasShards || !isManifestCompatible(manifest, EXPECTED_IDENTITY, hasShards)) return null;
+    return deps.loadSnapshot(deps.store);
+  }
+
+  /**
+   * Applies the startup selection, then hands over to the background pass. Any
+   * failure here is reported, not thrown: an unreadable or corrupt corpus is
+   * something the pass that follows repairs, because `runPass` forces a load
+   * whenever no snapshot has ever been decoded.
    */
   async function initialize(): Promise<void> {
     try {
-      const [manifest, shards] = await Promise.all([
-        deps.store.readManifest(),
-        deps.store.listShards(),
-      ]);
-      const hasShards = shards.size > 0;
-      if (hasShards && isManifestCompatible(manifest, EXPECTED_IDENTITY, hasShards)) {
-        snapshot = await deps.loadSnapshot(deps.store);
+      const selected = await selectStartupSnapshot();
+      // A `requestReconcile()` arriving before the selection settles starts a
+      // pass beside it. That pass reconciles the corpus and decodes the result
+      // itself, so its snapshot is the fresher one — abandon the selection
+      // rather than race it, or stale content would be served behind `ready`
+      // until the next real vault change.
+      if (selected !== null && !passStarted) {
+        snapshot = selected;
+        snapshotLoaded = true;
         status = { state: 'ready' };
       }
     } catch (err) {

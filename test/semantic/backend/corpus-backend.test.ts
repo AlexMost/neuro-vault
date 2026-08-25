@@ -62,6 +62,23 @@ describe('createCorpusBackend', () => {
     expect((await backend.snapshot()).sources.size).toBe(0);
   });
 
+  it('stays disabled when a reconcile is requested for an opted-out vault', async () => {
+    const reconcile = vi.fn();
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: false,
+      store: fakeStore({ compatible: true, shards: 3 }),
+      loadSnapshot: async () => snapshotWith(['a.md']),
+      reconcile,
+    });
+    backend.requestReconcile();
+    await backend.whenSettled();
+    expect(backend.status()).toEqual({ state: 'disabled' });
+    expect(reconcile).not.toHaveBeenCalled();
+    expect((await backend.snapshot()).sources.size).toBe(0);
+  });
+
   it('serves a compatible corpus immediately and reconciles behind it', async () => {
     const reconcile = vi.fn(async () => summary());
     const backend = createCorpusBackend({
@@ -124,6 +141,76 @@ describe('createCorpusBackend', () => {
     });
     await backend.whenSettled();
     expect(loadSnapshot).toHaveBeenCalledTimes(1); // startup load only
+  });
+
+  it('never reports ready over a snapshot the startup read failed to load', async () => {
+    const warn = vi.fn();
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      store: {
+        readManifest: () => Promise.reject(new Error('EIO')),
+        listShards: () => Promise.reject(new Error('EIO')),
+      } as unknown as CorpusStore,
+      loadSnapshot: async () => snapshotWith(['a.md']),
+      // The repairing pass is exactly the one that finds nothing to do.
+      reconcile: async () => summary(),
+      warn,
+    });
+    await backend.whenSettled();
+    expect(backend.status()).toEqual({ state: 'ready' });
+    expect((await backend.snapshot()).sources.size).toBe(1);
+  });
+
+  it('does not let the startup selection clobber a snapshot a pass already loaded', async () => {
+    // Both no-ops until the corresponding step is reached — declared callable so
+    // control flow analysis cannot narrow them to `never` at the call sites.
+    let startupLoadReached: () => void = () => {};
+    let releaseStartupLoad: () => void = () => {};
+    const startupLoadBegun = new Promise<void>((resolve) => {
+      startupLoadReached = resolve;
+    });
+    const startupLoadGate = new Promise<void>((resolve) => {
+      releaseStartupLoad = resolve;
+    });
+
+    let loads = 0;
+    const loadSnapshot = async (): Promise<CorpusSnapshot> => {
+      loads += 1;
+      if (loads === 1) {
+        // The startup selection, decoded from the corpus as it was before the
+        // pass ran and held in flight until the pass has moved on.
+        startupLoadReached();
+        await startupLoadGate;
+        return snapshotWith(['stale.md']);
+      }
+      return snapshotWith(['fresh.md']);
+    };
+
+    let attempt = 0;
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      store: fakeStore({ compatible: true, shards: 1 }),
+      loadSnapshot,
+      // Only the first pass moves the corpus; the follow-up finds nothing to do
+      // and so declines to reload — which is what makes a clobber permanent.
+      reconcile: async () => {
+        attempt += 1;
+        return attempt === 1 ? summary({ embedded: 1 }) : summary();
+      },
+    });
+
+    await startupLoadBegun;
+    backend.requestReconcile(); // a watcher tick beating the startup selection
+    await backend.whenSettled();
+    expect([...(await backend.snapshot()).sources.keys()]).toEqual(['fresh.md']);
+
+    releaseStartupLoad();
+    await backend.whenSettled();
+    expect([...(await backend.snapshot()).sources.keys()]).toEqual(['fresh.md']);
   });
 
   it('reports unavailable with a reason when a pass throws', async () => {
@@ -190,9 +277,9 @@ describe('createCorpusBackend', () => {
     });
     backend.requestReconcile();
     backend.requestReconcile();
-    finishRunningPass(); // finish the startup pass
+    finishRunningPass(); // resolve the pass the first request started
     await backend.whenSettled();
-    expect(reconcile.mock.calls.length).toBeLessThanOrEqual(2); // startup + one coalesced pass
+    expect(reconcile.mock.calls.length).toBe(2); // the first request's pass + one coalesced follow-up
   });
 
   it('stops scheduling passes after dispose', async () => {
