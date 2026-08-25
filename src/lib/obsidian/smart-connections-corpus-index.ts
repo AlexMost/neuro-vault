@@ -6,7 +6,10 @@ import {
   loadSmartConnectionsCorpus as defaultLoadCorpus,
   type SmartConnectionsCorpus,
 } from './smart-connections-loader.js';
+import type { CorpusSnapshot } from './semantic-backend.js';
 import type { SmartSource } from './smart-connections-types.js';
+
+export type { CorpusSnapshot };
 
 export type LoadCorpusFn = (
   smartEnvPath: string,
@@ -17,11 +20,6 @@ export interface CreateSmartConnectionsCorpusIndexOptions {
   smartEnvPath: string;
   modelKey: string;
   loadCorpus?: LoadCorpusFn;
-}
-
-export interface CorpusSnapshot {
-  sources: Map<string, SmartSource>;
-  basenameIndex: BasenameIndex;
 }
 
 export interface SmartConnectionsCorpusIndex {
