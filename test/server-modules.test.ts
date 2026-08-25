@@ -113,6 +113,12 @@ describe('Neuro Vault MCP server bootstrap', () => {
   it('returns SEMANTIC_INDEX_NOT_FOUND when corpus is empty (startup tolerant)', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
+    // A real, existing, empty `.smart-env/multi` — no .ajson shards written
+    // into it — so the empty-corpus->unavailable mapping below runs through
+    // the production adapter's actual directory read (loadSmartConnectionsCorpus
+    // throws "No usable Smart Connections notes..." for zero sources; the
+    // adapter's catch turns that into `unavailable` with that message as the
+    // reason) instead of a fake that just states the conclusion.
     await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
 
     const server = createFakeServer();
@@ -135,13 +141,6 @@ describe('Neuro Vault MCP server bootstrap', () => {
           },
         },
         {
-          vaultEntryDeps: {
-            semanticBackendFactory: () => ({
-              snapshot: () => makeFakeCorpusIndex(new Map()).snapshot(),
-              status: () => ({ state: 'unavailable', reason: 'Smart Connections corpus is empty' }),
-              dispose: async () => {},
-            }),
-          },
           semantic: {
             embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
           },
@@ -154,10 +153,26 @@ describe('Neuro Vault MCP server bootstrap', () => {
       // returns a structured error (not a thrown exception — MCP wraps ToolHandlerError).
       const findDuplicates = server.toolHandlers.get('find_duplicates');
       expect(findDuplicates).toBeDefined();
-      const result = await findDuplicates!({});
-      expect(result).toMatchObject({
+
+      // The backend's directory read is background work now (design D9) —
+      // startup does not await it — so poll until it has actually settled
+      // onto `unavailable` with the real "no usable notes" reason, rather
+      // than asserting only the error code (which a still-`indexing` backend
+      // would also satisfy, and would not prove this specific mapping ran).
+      let result: { isError?: boolean; structuredContent?: { code?: string; message?: string } };
+      await vi.waitFor(async () => {
+        result = (await findDuplicates!({})) as typeof result;
+        expect(result.structuredContent?.message).toContain(
+          'No usable Smart Connections notes were found',
+        );
+      });
+
+      expect(result!).toMatchObject({
         isError: true,
-        structuredContent: { code: 'SEMANTIC_INDEX_NOT_FOUND' },
+        structuredContent: {
+          code: 'SEMANTIC_INDEX_NOT_FOUND',
+          message: expect.stringContaining('No usable Smart Connections notes were found'),
+        },
       });
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
