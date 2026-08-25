@@ -1,0 +1,172 @@
+import type { ReconcileOptions, ReconcileSummary } from '../../../lib/obsidian/corpus/reconcile.js';
+import {
+  isManifestCompatible,
+  type CorpusStore,
+} from '../../../lib/obsidian/corpus/shard-store.js';
+import {
+  EMBED_VERSION,
+  MODEL_DIMS,
+  MODEL_ID,
+  MODEL_KEY,
+  SC_PARITY_STRATEGY,
+} from '../../../lib/obsidian/corpus/types.js';
+import { buildBasenameIndex } from '../../../lib/obsidian/link-resolver.js';
+import type {
+  BackendStatus,
+  CorpusSnapshot,
+  SemanticBackend,
+} from '../../../lib/obsidian/semantic-backend.js';
+
+/** The corpus identity this build produces — what a stored manifest must match. */
+const EXPECTED_IDENTITY = {
+  embed_version: EMBED_VERSION,
+  model_key: MODEL_KEY,
+  model_id: MODEL_ID,
+  dims: MODEL_DIMS,
+  strategy: SC_PARITY_STRATEGY,
+};
+
+export interface CorpusBackendDeps {
+  vaultRoot: string;
+  vaultName: string;
+  /** Global `--semantic` AND the per-vault config, already resolved. */
+  enabled: boolean;
+  store: CorpusStore;
+  /** Shard → snapshot decode. Production: `loadCorpusSnapshot`. */
+  loadSnapshot: (store: CorpusStore) => Promise<CorpusSnapshot>;
+  /**
+   * Pre-bound per vault — this backend never assembles scan/stat/read/embed
+   * itself. Production: `reconcileCorpus` closed over the vault's deps.
+   */
+  reconcile: (opts: ReconcileOptions) => Promise<ReconcileSummary>;
+  /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
+  warn?: (message: string) => void;
+}
+
+export interface CorpusBackend extends SemanticBackend {
+  /** Resolves when the current background pass settles. Tests only. */
+  whenSettled(): Promise<void>;
+  /** Requests another reconcile; coalesces while one is running. */
+  requestReconcile(): void;
+}
+
+function emptySnapshot(): CorpusSnapshot {
+  return { sources: new Map(), basenameIndex: buildBasenameIndex([]) };
+}
+
+/**
+ * One vault's corpus lifecycle: the four states, and the background pass that
+ * moves between them (design D3).
+ *
+ * Startup never blocks — the constructor returns immediately and the selection
+ * plus the first reconcile run on their own. A compatible corpus is served the
+ * moment it is decoded, even while a catch-up pass runs behind it; an
+ * incompatible or absent one reports `indexing` until the pass that builds it
+ * finishes. Promotion is atomic by construction (design D2): the decoded
+ * snapshot lives in memory, `snapshot()` never touches disk, and a rebuild
+ * replaces the old object in a single assignment, so a caller already holding a
+ * reference keeps ranking against a coherent snapshot.
+ *
+ * A pass that throws reports `unavailable` with the reason and keeps whatever
+ * snapshot the vault already had. That is not terminal: the next pass overwrites
+ * the state, so a vault that recovers reports `ready` again without a restart.
+ */
+export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
+  const warn = deps.warn ?? ((message: string) => console.error(message));
+
+  let snapshot: CorpusSnapshot = emptySnapshot();
+  let status: BackendStatus = deps.enabled
+    ? { state: 'indexing', indexed: 0, total: 0 }
+    : { state: 'disabled' };
+  /** The pass in flight, or null when idle. */
+  let currentPass: Promise<void> | null = null;
+  /** A request that arrived while a pass was running — one follow-up, however many arrived. */
+  let dirty = false;
+  let disposed = false;
+
+  function fail(err: unknown): void {
+    const reason = String(err);
+    status = { state: 'unavailable', reason };
+    warn(`neuro-vault semantic: corpus unavailable for vault "${deps.vaultName}": ${reason}`);
+  }
+
+  async function runPass(): Promise<void> {
+    try {
+      const summary = await deps.reconcile({
+        onProgress: (progress) => {
+          // Counters are only meaningful while the corpus is still being built.
+          if (status.state !== 'indexing') return;
+          status = { state: 'indexing', indexed: progress.indexed, total: progress.total };
+        },
+      });
+      if (summary.embedded + summary.renamed + summary.deleted > 0) {
+        snapshot = await deps.loadSnapshot(deps.store);
+      }
+      status = { state: 'ready' };
+    } catch (err) {
+      fail(err);
+    }
+  }
+
+  function kick(): void {
+    if (disposed) return;
+    if (currentPass) {
+      dirty = true;
+      return;
+    }
+    currentPass = runPass().finally(() => {
+      currentPass = null;
+      if (dirty) {
+        dirty = false;
+        kick();
+      }
+    });
+  }
+
+  /**
+   * Chooses the startup state from what is already on disk, then hands over to
+   * the background pass. Any failure here is reported, not thrown: an
+   * unreadable or corrupt corpus is something a reconcile can repair.
+   */
+  async function initialize(): Promise<void> {
+    try {
+      const [manifest, shards] = await Promise.all([
+        deps.store.readManifest(),
+        deps.store.listShards(),
+      ]);
+      const hasShards = shards.size > 0;
+      if (hasShards && isManifestCompatible(manifest, EXPECTED_IDENTITY, hasShards)) {
+        snapshot = await deps.loadSnapshot(deps.store);
+        status = { state: 'ready' };
+      }
+    } catch (err) {
+      fail(err);
+    } finally {
+      kick();
+    }
+  }
+
+  const startup: Promise<void> = deps.enabled ? initialize() : Promise.resolve();
+
+  return {
+    snapshot: () => Promise.resolve(snapshot),
+    status: () => status,
+    dispose: () => {
+      disposed = true;
+      return Promise.resolve();
+    },
+    whenSettled: async () => {
+      // The pass in flight when the call was made — never a follow-up chained
+      // behind it, which may itself be waiting on work the caller has not
+      // released yet.
+      const inFlight = currentPass;
+      if (inFlight) {
+        await inFlight;
+        return;
+      }
+      await startup;
+      if (currentPass) await currentPass;
+    },
+    requestReconcile: kick,
+  };
+}
