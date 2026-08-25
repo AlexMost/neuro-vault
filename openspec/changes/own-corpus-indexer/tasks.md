@@ -59,23 +59,25 @@ other groups at the same marker and can be dispatched concurrently.
 
 ## 7. Reconcile core — PR 2 [sequential, needs 1–5 merged]
 
-- [ ] 7.1 Failing test → implementation: reconcile diffs the scoped path set (from a reader port satisfied by `FsVaultReader`) against `listShards()`; unchanged `mtime` **and** `size` skips the note without reading it (spec: "Reconcile is incremental and hash-truthful").
-- [ ] 7.2 Failing test → implementation: differing `mtime`/`size` but matching `content_hash` rewrites shard metadata only, reusing vectors; differing hash, or no shard, embeds.
-- [ ] 7.3 Failing test → implementation: a shard whose note left disk or left scope is unlinked, and nothing else is touched.
-- [ ] 7.4 Failing test → implementation: manifest incompatibility discards every shard and rebuilds; an exclusion-only change does not (spec: "The manifest records corpus identity and gates a rebuild").
-- [ ] 7.5 Test: reconcile over an untouched vault embeds nothing, deletes nothing, and is idempotent across repeated runs.
+- [x] 7.1 Failing test → implementation: reconcile diffs the scoped path set (from a reader port satisfied by `FsVaultReader`) against `listShards()`; unchanged `mtime` **and** `size` skips the note without reading it (spec: "Reconcile is incremental and hash-truthful").
+- [x] 7.2 Failing test → implementation: differing `mtime`/`size` but matching `content_hash` rewrites shard metadata only, reusing vectors; differing hash, or no shard, embeds.
+- [x] 7.3 Failing test → implementation: a shard whose note left disk or left scope is unlinked, and nothing else is touched.
+- [x] 7.4 Failing test → implementation: manifest incompatibility discards every shard and rebuilds; an exclusion-only change does not (spec: "The manifest records corpus identity and gates a rebuild").
+- [x] 7.5 Test: reconcile over an untouched vault embeds nothing, deletes nothing, and is idempotent across repeated runs.
+
+> `ReconcileDeps` carries a `stat` port alongside `readNote`, which plan.md's Task 10 interface block does not list. Without it "unchanged `mtime` and `size` skips the note **without reading it**" is unimplementable — the only metadata source would be the read itself. The test asserts the pre-check leaves `readNote` uncalled.
 
 ## 8. Rename handling and the reproducibility invariant — PR 2 [sequential, needs 7]
 
-- [ ] 8.1 Failing test → implementation: a note whose `content_hash` matches a shard at a vanished path is recognised as a rename — old shard unlinked, note re-embedded under its new breadcrumbs, new vectors differing from the stored ones (design D9).
-- [ ] 8.2 Failing test → implementation: two distinct notes with identical content do not share vectors.
-- [ ] 8.3 Property-style test: a vault reached by a sequence of incremental reconciles (edit, rename, delete, re-add, exclusion change) produces a corpus identical to a from-scratch index of the same final state, with a deterministic fake embedder making vectors a checkable function of (path, content).
+- [x] 8.1 Failing test → implementation: a note whose `content_hash` matches a shard at a vanished path is recognised as a rename — old shard unlinked, note re-embedded under its new breadcrumbs, new vectors differing from the stored ones (design D9).
+- [x] 8.2 Failing test → implementation: two distinct notes with identical content do not share vectors.
+- [x] 8.3 Property-style test: a vault reached by a sequence of incremental reconciles (edit, rename, delete, re-add, exclusion change) produces a corpus identical to a from-scratch index of the same final state, with a deterministic fake embedder making vectors a checkable function of (path, content).
 
 ## 9. Progress, summary and failure containment — PR 2 [sequential, needs 7]
 
-- [ ] 9.1 Failing test → implementation: the index function accepts a progress callback receiving `{ indexed, total }` counted in notes, with the final report having both equal.
-- [ ] 9.2 Failing test → implementation: the run returns a summary of `embedded` / `reused` / `renamed` / `deleted` / `failed`.
-- [ ] 9.3 Failing test → implementation: a read, embed or store failure for one note is recorded in `failed`, leaves that note's previous shard untouched, and does not abort the run.
+- [x] 9.1 Failing test → implementation: the index function accepts a progress callback receiving `{ indexed, total }` counted in notes, with the final report having both equal.
+- [x] 9.2 Failing test → implementation: the run returns a summary of `embedded` / `reused` / `renamed` / `deleted` / `failed`.
+- [x] 9.3 Failing test → implementation: a read, embed or store failure for one note is recorded in `failed`, leaves that note's previous shard untouched, and does not abort the run.
 - [ ] 9.4 Sanity check against the real vault outside the test suite: run a full index and an immediate second reconcile through a scratch script, and record wall-clock, vector count and the second run's summary in the PR body. Do not add the script to the repo — the CLI is slice #3.
 
 ## 10. Documentation — PR 2 [parallel-safe among 10.1–10.4, after 8 and 9 land]
