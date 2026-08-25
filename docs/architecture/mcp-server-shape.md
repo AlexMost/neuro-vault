@@ -47,6 +47,8 @@ Registering tools is not the only thing `startNeuroVaultServer` does. Each vault
 
 `startNeuroVaultServer` builds a `dispose()` that calls every vault entry's `backend?.dispose()` via `Promise.allSettled`, so one vault's disposal failure is reported to stderr without blocking the others. It chains that disposer onto the MCP SDK's own `transport.onclose` — never replacing it, only wrapping it in a `finally` — so a client disconnecting still takes the watchers down with it. `startNeuroVaultServer` also returns `dispose` directly, for callers (tests, and any future caller that shuts the server down itself) that need to release these resources without waiting on a transport close; `cli.ts` ignores the return value and lets `onclose` do the work.
 
+What *pulls* that chain is wired in `startNeuroVaultServer` too, and has to be: `StdioServerTransport` registers only `'data'` and `'error'` on stdin, so its `onclose` fires from an explicit `close()` and from nothing else. The server therefore listens for `'end'` and `'close'` on stdin — end of input is how a stdio client hangs up — and closes the transport once, which routes into the chain instead of around it. Signals are deliberately not handled: `SIGINT`/`SIGTERM` already terminate the process by default, and corpus writes are atomic (temp + rename), so an abrupt signal cannot corrupt one.
+
 ## Tool handler contract
 
 There is no central tool-handlers module. Each tool lives in its own file under `src/modules/<module>/tools/<name>.ts` and exports a `buildXTool(deps)` factory that returns an `ITool<I, O>` — name, title, description, zod input schema, and an async `handler`. Each handler:

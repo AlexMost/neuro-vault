@@ -25,11 +25,26 @@ const { name: SERVER_NAME, version: SERVER_VERSION } = packageMeta;
 
 type ToolServer = Pick<McpServer, 'registerTool' | 'registerResource' | 'connect'>;
 
+/**
+ * Just enough of the transport's input stream to notice a client hanging up.
+ * Narrow on purpose: nothing here reads stdin — the transport owns that — this
+ * only observes the end of it.
+ */
+export interface StdinLike {
+  once(event: 'end' | 'close', listener: () => void): unknown;
+}
+
 export interface NeuroVaultStartupDependencies {
   semantic?: ISemanticModuleDeps;
   vaultEntryDeps?: Partial<IVaultEntryDeps>;
   serverFactory?: (instructions: string) => ToolServer;
   transportFactory?: () => StdioServerTransport;
+  /**
+   * The stream the transport reads; defaults to `process.stdin`. Injected so a
+   * test can hang up for real — by ending a pipe — instead of firing the close
+   * hook by hand. Pass the same stream the `transportFactory` transport reads.
+   */
+  stdin?: StdinLike;
 }
 
 /**
@@ -92,12 +107,13 @@ function buildDefaultVaultEntryDeps(
 
 /**
  * Boots the server and returns a disposer that releases every vault's
- * background resources. The disposer is also wired to the transport's
- * `onclose`, so a client that disconnects takes the watchers down with it —
- * chokidar holds the event loop open, and without this the process would
- * outlive the client that started it (design D10). The return value exists for
- * tests and for future callers that shut the server down themselves; `cli.ts`
- * ignores it and lets `onclose` do the work.
+ * background resources. The disposer also runs on transport close, and
+ * end-of-input on stdin closes the transport — so a client that disconnects
+ * takes the watchers down with it. chokidar holds the event loop open, and
+ * without both halves of that wiring the process would outlive the client that
+ * started it (design D10). The return value exists for tests and for future
+ * callers that shut the server down themselves; `cli.ts` ignores it and lets
+ * the hang-up do the work.
  */
 export async function startNeuroVaultServer(
   config: ServerConfig,
@@ -189,5 +205,39 @@ export async function startNeuroVaultServer(
       void dispose();
     }
   };
+
+  /**
+   * End of input is how a stdio client hangs up, and nothing else reports it:
+   * `StdioServerTransport` registers only `'data'` and `'error'` on stdin, so
+   * its `onclose` fires from an explicit `close()` and from nothing else.
+   * Without this hookup the chain above is never pulled — a client that simply
+   * closes the pipe leaves the chokidar watchers holding the event loop open,
+   * and the server outlives it indefinitely (measured: still alive 60 s after
+   * stdin EOF). That is exactly the failure design D10 exists to prevent.
+   *
+   * `'close'` as well as `'end'`, because stdin destroyed without EOF — the fd
+   * closed under us — emits only the former, and that is a hang-up too. Both
+   * routes go through `transport.close()` rather than calling `dispose()`
+   * directly, so there stays exactly one teardown path and the SDK's own
+   * `onclose` (aborting in-flight handlers) runs as well as ours.
+   *
+   * Signals are deliberately not handled: `SIGINT`/`SIGTERM` already terminate
+   * the process by default, and installing handlers would replace that
+   * unstarvable default with teardown of our own that could hang. Corpus
+   * writes are atomic (temp + rename), so an abrupt signal cannot corrupt one.
+   */
+  let closing = false;
+  const handleHangUp = (): void => {
+    if (closing) return;
+    closing = true;
+    void transport.close().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`transport close failed: ${message}\n`);
+    });
+  };
+  const stdin = deps.stdin ?? process.stdin;
+  stdin.once('end', handleHangUp);
+  stdin.once('close', handleHangUp);
+
   return dispose;
 }

@@ -197,6 +197,11 @@ The server SHALL release every vault's background resources — file watchers an
 - **WHEN** the client disconnects from a running server that has watchers on two vaults
 - **THEN** the watchers are closed and no pending timer keeps the process alive
 
+#### Scenario: the client closes its end of the pipe
+
+- **WHEN** the client closes the server's stdin, sending neither a shutdown request nor a signal
+- **THEN** the server treats end of input as a disconnect, disposes every vault's backend, and the process exits
+
 #### Scenario: shutdown does not corrupt the corpus
 
 - **WHEN** shutdown happens while a reconcile pass is mid-flight

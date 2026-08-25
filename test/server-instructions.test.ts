@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { PassThrough } from 'node:stream';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -52,6 +53,7 @@ describe('SERVER_INSTRUCTIONS', () => {
             };
           },
           transportFactory: () => ({}) as never,
+          stdin: new PassThrough(),
         },
       );
 

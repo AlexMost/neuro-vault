@@ -1,7 +1,11 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { once as onceEvent } from 'node:events';
+import { PassThrough } from 'node:stream';
 
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildBasenameIndex } from '../src/lib/obsidian/index.js';
@@ -96,6 +100,9 @@ async function startWithBackendStatus(
       },
       serverFactory: (_instructions: string) => server,
       transportFactory: () => ({}) as never,
+      // The fake transport has no `close()`, so keep the hang-up wiring off
+      // the real `process.stdin` — this stream never ends.
+      stdin: new PassThrough(),
     },
   );
 }
@@ -143,6 +150,7 @@ async function startForShutdown(opts: {
       },
       serverFactory: () => server as never,
       transportFactory: () => transport as never,
+      stdin: new PassThrough(),
       vaultEntryDeps: {
         semanticBackendFactory: ({ vaultName }) => ({
           snapshot: async () => ({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
@@ -154,6 +162,57 @@ async function startForShutdown(opts: {
   );
 
   return { transport, protocolOnClose };
+}
+
+/**
+ * Boot the server the way production does — a real `McpServer`, a real
+ * `StdioServerTransport`, the real `onclose` chain — with stdin and stdout
+ * replaced by in-memory pipes. The only substitution is *which* streams the
+ * transport reads and writes, so a test can hang up the way a stdio client
+ * does: by closing the pipe. Nothing in the close path is faked, and
+ * critically the test cannot fire `onclose` itself — the server has to notice
+ * end-of-input on its own or the assertions fail.
+ */
+async function startOverPipedStdin(opts: {
+  vaultPath: string;
+  backendDispose: () => Promise<void>;
+}): Promise<{ stdin: PassThrough; protocolClosed: ReturnType<typeof vi.fn> }> {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  stdout.resume();
+  const protocolClosed = vi.fn();
+
+  await startNeuroVaultServer(
+    {
+      vaults: [{ name: path.basename(opts.vaultPath), path: opts.vaultPath }],
+      semantic: { enabled: true, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
+    },
+    {
+      semantic: {
+        embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
+      },
+      serverFactory: (instructions: string) => {
+        const mcp = new McpServer({ name: 'test', version: '0.0.0' }, { instructions });
+        // The protocol's own teardown — it aborts in-flight request handlers
+        // and rejects pending responses. Observed here so a fix that bypassed
+        // `transport.close()` (calling the disposer directly, say) and left
+        // the SDK's half of the teardown unrun fails this test.
+        mcp.server.onclose = protocolClosed;
+        return mcp;
+      },
+      transportFactory: () => new StdioServerTransport(stdin, stdout),
+      stdin,
+      vaultEntryDeps: {
+        semanticBackendFactory: () => ({
+          snapshot: async () => ({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
+          status: () => ({ state: 'ready' as const }),
+          dispose: opts.backendDispose,
+        }),
+      },
+    },
+  );
+
+  return { stdin, protocolClosed };
 }
 
 describe('Neuro Vault MCP server bootstrap', () => {
@@ -213,6 +272,56 @@ describe('Neuro Vault MCP server bootstrap', () => {
       });
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('disposes every vault backend when the client closes stdin', async () => {
+    const vaultPath = await createTempVaultPath();
+    const dispose = vi.fn(async () => {});
+
+    try {
+      const { stdin, protocolClosed } = await startOverPipedStdin({
+        vaultPath,
+        backendDispose: dispose,
+      });
+
+      // The hang-up a stdio client actually performs: EOF on the server's
+      // stdin. `StdioServerTransport` registers only 'data' and 'error' on
+      // stdin, so nothing in the SDK turns this into an `onclose` — the
+      // server must read end-of-input itself, or the watchers (and the
+      // process) outlive the client that started them (design D10).
+      stdin.end();
+      await onceEvent(stdin, 'end');
+      await settle();
+
+      // Exactly once, not merely at least once: a stream that ends also
+      // destroys itself, emitting 'close' right after 'end', and teardown is
+      // wired to both events — so both handlers have already run by here and
+      // these counts are also the idempotency assertion.
+      expect(dispose).toHaveBeenCalledTimes(1);
+      // …and the protocol's own teardown ran too, rather than being bypassed.
+      expect(protocolClosed).toHaveBeenCalledTimes(1);
+    } finally {
+      await fs.rm(vaultPath, { recursive: true, force: true });
+    }
+  });
+
+  it('disposes every vault backend when stdin is destroyed without reaching EOF', async () => {
+    const vaultPath = await createTempVaultPath();
+    const dispose = vi.fn(async () => {});
+
+    try {
+      const { stdin } = await startOverPipedStdin({ vaultPath, backendDispose: dispose });
+
+      // No 'end' here: the pipe is torn down under the server, which is what
+      // an abruptly killed host leaves behind. Only 'close' fires.
+      stdin.destroy();
+      await onceEvent(stdin, 'close');
+      await settle();
+
+      expect(dispose).toHaveBeenCalledTimes(1);
+    } finally {
+      await fs.rm(vaultPath, { recursive: true, force: true });
     }
   });
 
@@ -327,6 +436,10 @@ describe('Neuro Vault MCP server bootstrap', () => {
         },
         serverFactory: (_instructions: string) => server,
         transportFactory: () => ({}) as never,
+        // Same reason as the helpers above: with a fake transport that has
+        // no `close()`, the hang-up wiring must not land on the real
+        // `process.stdin`. This stream never ends.
+        stdin: new PassThrough(),
       });
 
       expect(server.registeredToolNames).toEqual([
@@ -390,6 +503,10 @@ describe('Neuro Vault MCP server bootstrap', () => {
         },
         serverFactory: (_instructions: string) => server,
         transportFactory: () => ({}) as never,
+        // Same reason as the helpers above: with a fake transport that has
+        // no `close()`, the hang-up wiring must not land on the real
+        // `process.stdin`. This stream never ends.
+        stdin: new PassThrough(),
       });
 
       expect(server.registeredToolNames).toEqual([
