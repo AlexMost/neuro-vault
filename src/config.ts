@@ -16,14 +16,21 @@ function basenameNoTrailingSlash(p: string): string {
   return path.basename(p.replace(/\/+$/, ''));
 }
 
+export interface IndexCliOptions {
+  vaults: IVaultConfig[];
+}
+
 /**
- * The two ways argument parsing can end.
+ * The three ways argument parsing can end.
  *
  * `handled` means yargs itself satisfied the invocation — it printed help or
  * the version and, because of `.exitProcess(false)`, returned instead of
  * exiting. There is no config to produce and nothing left to validate.
  */
-export type ParsedCli = { kind: 'run'; config: ServerConfig } | { kind: 'handled' };
+export type ParsedCli =
+  | { kind: 'run'; config: ServerConfig }
+  | { kind: 'index'; options: IndexCliOptions }
+  | { kind: 'handled' };
 
 function buildVaultConfig(rawPath: string): IVaultConfig {
   if (!path.isAbsolute(rawPath)) {
@@ -58,36 +65,7 @@ function buildVaultConfig(rawPath: string): IVaultConfig {
   };
 }
 
-export async function parseConfig(argv: string[]): Promise<ParsedCli> {
-  const args = await yargs(hideBin(argv))
-    .scriptName('neuro-vault-mcp')
-    .usage('$0 --vault <path> [--vault <path> ...]\n\nMCP server for one or more Obsidian vaults.')
-    .option('vault', {
-      type: 'string',
-      array: true,
-      describe:
-        'Absolute path to a vault directory. Repeat for multi-vault. The MCP-side alias is derived from the directory basename.',
-    })
-    .option('semantic', {
-      type: 'boolean',
-      default: true,
-      describe: 'Enable semantic search module (Smart Connections embeddings)',
-    })
-    .strict()
-    .help()
-    .version(packageMeta.version)
-    .exitProcess(false)
-    .parse();
-
-  // yargs already satisfied this invocation by printing help or the version.
-  // `.exitProcess(false)` means it did not exit for us, so stop here — running
-  // the --vault guard below would print a spurious error after the help text
-  // and exit non-zero.
-  if (args.help === true || args.version === true) {
-    return { kind: 'handled' };
-  }
-
-  const rawVaults = args.vault ?? [];
+function validateVaults(rawVaults: string[]): IVaultConfig[] {
   if (rawVaults.length === 0) {
     throw new Error('--vault is required: provide at least one vault with --vault <path>');
   }
@@ -109,12 +87,55 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
     seen.add(key);
   }
 
+  return vaults;
+}
+
+const VAULT_OPTION = {
+  type: 'string',
+  array: true,
+  describe:
+    'Absolute path to a vault directory. Repeat for multi-vault. The MCP-side alias is derived from the directory basename.',
+} as const;
+
+export async function parseConfig(argv: string[]): Promise<ParsedCli> {
+  const args = await yargs(hideBin(argv))
+    .scriptName('neuro-vault-mcp')
+    .usage('$0 --vault <path> [--vault <path> ...]\n\nMCP server for one or more Obsidian vaults.')
+    .command('$0', 'Run the MCP server over stdio (default)', (y) =>
+      y.option('vault', VAULT_OPTION).option('semantic', {
+        type: 'boolean',
+        default: true,
+        describe: 'Enable semantic search module (Smart Connections embeddings)',
+      }),
+    )
+    .command('index', 'Build or refresh the embedding corpus for each vault, then exit', (y) =>
+      y.option('vault', VAULT_OPTION),
+    )
+    .strict()
+    .help()
+    .version(packageMeta.version)
+    .exitProcess(false)
+    .parse();
+
+  // yargs already satisfied this invocation by printing help or the version.
+  // `.exitProcess(false)` means it did not exit for us, so stop here — running
+  // the --vault guard below would print a spurious error after the help text
+  // and exit non-zero.
+  if (args.help === true || args.version === true) {
+    return { kind: 'handled' };
+  }
+
+  const vaults = validateVaults((args.vault as string[] | undefined) ?? []);
+
+  if (args._[0] === 'index') {
+    return { kind: 'index', options: { vaults } };
+  }
   return {
     kind: 'run',
     config: {
       vaults,
       semantic: {
-        enabled: args.semantic,
+        enabled: (args.semantic as boolean | undefined) ?? true,
         modelKey: MODEL_KEY,
         modelId: DEFAULT_MODEL_ID,
       },
