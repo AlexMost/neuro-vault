@@ -11,7 +11,6 @@ These are living documents. Update the relevant file in the same change that alt
 - [vault-conventions.md](./vault-conventions.md) — how `.neuro-vault/for-external-agents.md` reaches an agent: the `conventions` field on `get_vault_overview`, the 8,000-character cap and its truncation flag, and the pointer that is all `instructions` carries
 - [tool-response-envelope.md](./tool-response-envelope.md) — the `toToolResponse`/`toToolErrorResponse` choke point: minified success text, `CODE: message` error text, client-behavior rationale
 - [mcp-parameter-dictionary.md](./mcp-parameter-dictionary.md) — the cross-tool parameter naming contract (one concept = one name)
-- [smart-connections-corpus.md](./smart-connections-corpus.md) — `.ajson` loader, in-memory model, no watchers
 - [own-corpus.md](./own-corpus.md) — the embedding corpus the server builds and owns: block keys and embed-text formulas, the shard/manifest layout under `<vault>/.neuro-vault/corpus/`, atomic writes, and the hash-truthful reconcile
 - [semantic-backend.md](./semantic-backend.md) — the `SemanticBackend` contract: the four states, startup selection, live promotion, the in-process watcher and its debounce, the shared embed queue, and disposal at shutdown
 - [retrieval-policy.md](./retrieval-policy.md) — search modes, default-only threshold fallback, expansion with its own `expansion_floor` scale
@@ -30,4 +29,4 @@ These are living documents. Update the relevant file in the same change that alt
 
 ## Reading order
 
-If you are new to the codebase, read in this order: `mcp-server-shape` → `smart-connections-corpus` → `embedding-pipeline` → `search-engine` → `retrieval-policy` → `rank-fusion`. The first four describe the building blocks; the last two describe how they are composed — `retrieval-policy` into the semantic leg, `rank-fusion` into the unified `matches[]` list `search_notes` returns. Read `vault-scope` alongside `vault-reader` — it governs *which* files every scan-derived surface sees, before any of the above ever runs.
+If you are new to the codebase, read in this order: `mcp-server-shape` → `own-corpus` → `embedding-pipeline` → `search-engine` → `retrieval-policy` → `rank-fusion`. The first four describe the building blocks; the last two describe how they are composed — `retrieval-policy` into the semantic leg, `rank-fusion` into the unified `matches[]` list `search_notes` returns. Read `vault-scope` alongside `vault-reader` — it governs *which* files every scan-derived surface sees, before any of the above ever runs.

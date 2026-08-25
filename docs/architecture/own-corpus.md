@@ -52,7 +52,7 @@ The gate and the truncation are **content** rules: they decide what text of an i
 
 ### Named divergences from the corpus being replaced
 
-Extraction reproduces the Smart Connections corpus 1:1 so that the one diagnostic run comparing the two backends is interpretable. Six divergences are accepted on purpose:
+Extraction reproduces the replaced corpus 1:1 so that the one diagnostic run comparing the two backends is interpretable. Six divergences are accepted on purpose:
 
 1. `excluded_headings` is not implemented.
 2. Membership comes from vault scope, not the plugin's anchored-prefix exclusion quirks.

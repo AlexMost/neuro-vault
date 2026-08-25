@@ -176,9 +176,15 @@ The final step (`retrieval-policy.ts:271-278`) maps each capped seed to a `NoteR
 
 ## Stale-path filtering
 
-The Smart Connections embeddings index is keyed by note path. When a file is moved (e.g. `Tasks/foo.md` → `Archive/foo.md`) Smart Connections may not evict the old entry, so `findNeighbors` can return a path that no longer exists on disk. The MCP `search_notes`, `get_similar_notes`, and `find_duplicates` handlers post-filter results through `entry.filterExisting(paths)` and drop entries (and duplicate pairs) whose paths are missing.
+The corpus is kept current by the per-vault watcher, but only after its debounce settles and only while no reconcile is already in flight (see [`own-corpus.md`](./own-corpus.md) and [`semantic-backend.md`](./semantic-backend.md)) — so a corpus-derived path is a claim about the index, not a promise about the filesystem. When a file is moved or deleted between reconciles, `findNeighbors` can still return a path that no longer exists on disk. The MCP `search_notes`, `get_similar_notes`, and `find_duplicates` handlers post-filter results through `entry.filterExisting(paths)` and drop entries (and duplicate pairs) whose paths are missing.
 
-That filter is one per-vault adapter (`src/lib/obsidian/existing-paths.ts`), bound to the vault root and reached from the entry the handler already holds; tests substitute it directly. See [smart-connections-corpus §Stale paths](smart-connections-corpus.md#stale-paths) for what each tool filters and why. The policy itself is unchanged — filtering happens at the handler boundary so the math layer stays pure.
+That filter is one per-vault adapter (`src/lib/obsidian/existing-paths.ts`), bound to the vault root and reached from the entry the handler already holds; tests substitute it directly. See [`vault-registry.md`](./vault-registry.md) for how it's wired. The policy itself is unchanged — filtering happens at the handler boundary so the math layer stays pure.
+
+| Tool | What it filters |
+| --- | --- |
+| `search_notes` | semantic seeds and their flattened expansion targets, against one set. Lexical-only matches skip the check — reading them from disk this request already proved they exist. |
+| `find_duplicates` | both members of every pair; a pair with one missing member is dropped whole. |
+| `get_similar_notes` | every candidate, semantic or forward-linked, after `exclude_folders` has been applied. |
 
 ## Pre-filter
 

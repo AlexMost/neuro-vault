@@ -35,7 +35,7 @@ sort by similarity DESC, then path ASC (stable, deterministic)
 slice to limit
 ```
 
-`findBlockNeighbors` runs the same loop one level deeper — over `source.blocks` instead of `sources`. Blocks with empty embeddings are skipped (some blocks are too small for Smart Connections to embed).
+`findBlockNeighbors` runs the same loop one level deeper — over `source.blocks` instead of `sources`. Blocks with empty embeddings are skipped (some blocks fall below the corpus builder's `MIN_CHARS` size gate — see [`own-corpus.md`](./own-corpus.md)).
 
 `findDuplicates` runs an `O(n²)` upper-triangular comparison over all pairs. The pair is sorted alphabetically (`note_a` ≤ `note_b`) so the same pair is never reported twice and the output is order-independent.
 

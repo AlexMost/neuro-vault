@@ -4,7 +4,7 @@ How the server turns a query string into a vector that can be compared against t
 
 ## What it is
 
-`src/embedding-service.ts` wraps a `@xenova/transformers` `pipeline('feature-extraction', modelKey)` call behind the `EmbeddingProvider` interface (`{ initialize(), embed(text) }`). The default model is `TaylorAI/bge-micro-v2`, chosen because Smart Connections uses the same model — query and corpus embeddings live in the same vector space without any conversion.
+`src/embedding-service.ts` wraps a `@xenova/transformers` `pipeline('feature-extraction', modelKey)` call behind the `EmbeddingProvider` interface (`{ initialize(), embed(text) }`). The default model is `TaylorAI/bge-micro-v2` (`bge-micro-v2`, the corpus's `MODEL_KEY`) — query and corpus embeddings live in the same vector space without any conversion. See [`own-corpus.md`](./own-corpus.md) for how a model change is migrated (`embed_version` bump, full rebuild).
 
 ## Why it exists
 
@@ -53,4 +53,4 @@ Different transformers versions return different shapes:
 ## Boundaries
 
 - The service does not store or cache embeddings. Caching would be wrong: queries are short-lived and the corpus already holds its own pre-computed embeddings.
-- The service does not pick the model. The caller passes `modelKey`, and the caller is responsible for matching it to whatever Smart Connections used.
+- The service does not pick the model. The caller passes `modelKey`, and the caller is responsible for matching it to whatever the corpus was built with — see [`own-corpus.md`](./own-corpus.md).

@@ -7,8 +7,9 @@ context: |
 
   An MCP server (`neuro-vault-mcp`, published to npm) that gives an AI assistant
   two capability sets over an Obsidian vault: **semantic search** (in-memory
-  cosine search over a Smart Connections embedding corpus) and **direct vault
-  operations** (notes, frontmatter properties, tags, structured queries).
+  cosine search over an embedding corpus the server builds and owns) and
+  **direct vault operations** (notes, frontmatter properties, tags, structured
+  queries).
   TypeScript, ESM, Node ≥ 20; consumed over stdio by MCP clients (Claude Code,
   Cursor, Windsurf). Two modules: `semantic/` (4 tools) and `operations/`
   (12 tools).

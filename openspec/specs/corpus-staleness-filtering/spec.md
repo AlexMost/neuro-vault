@@ -4,7 +4,7 @@
 
 A path from the Smart Connections corpus is a claim about the embedding index, never a promise about the filesystem: the corpus is read-only and unwatched, so it can still name a note deleted since the plugin last wrote its index. This capability covers the guarantee that no such path reaches a client — which tools it binds, where the check sits relative to caller-supplied filtering, and the single per-vault adapter that delivers it.
 
-Mechanism lives in [docs/architecture/smart-connections-corpus.md](../../../docs/architecture/smart-connections-corpus.md#stale-paths); the read-only decision this compensates for is [ADR-0006](../../../docs/adr/0006-smart-connections-corpus.md).
+Mechanism lives in [docs/architecture/retrieval-policy.md](../../../docs/architecture/retrieval-policy.md#stale-path-filtering); the read-only decision this originally compensated for is [ADR-0006](../../../docs/adr/0006-smart-connections-corpus.md), since superseded by [ADR-0013](../../../docs/adr/0013-own-embedding-corpus.md) and [ADR-0014](../../../docs/adr/0014-background-corpus-freshness.md).
 
 ## Requirements
 ### Requirement: No corpus-derived path reaches a client unless it exists on disk

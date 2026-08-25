@@ -7,7 +7,7 @@ Tool routing and retrieval policy are related, but not the same thing. Routing i
 `search_notes` is one hybrid entry point (semantic + lexical); route by what you know about the request:
 
 - **Fuzzy or unknown wording** — you don't know the exact term the note uses → `search_notes` (`mode: "hybrid"`, the default). Both legs run; a note hit by both is the strongest signal.
-- **Exact term, name, or code — or no embedding corpus available** → `search_notes({ mode: "lexical" })`. Substring matching over title/headings/body, independent of embeddings; works even on a cold or absent Smart Connections index.
+- **Exact term, name, or code — or no embedding corpus available** → `search_notes({ mode: "lexical" })`. Substring matching over title/headings/body, independent of embeddings; works even on a cold or absent index.
 - **You already know the structural key** (a frontmatter field, a tag, a folder) → `query_notes`.
 - **You know exactly which note** (a path, or a name you can resolve) → `read_notes`.
 - Use `get_similar_notes` after you already have a relevant note and want semantic + wikilink expansion.
