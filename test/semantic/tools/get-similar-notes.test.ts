@@ -17,6 +17,7 @@ import {
   findDuplicates,
   findBlockNeighbors,
   loadSmartConnectionsCorpus,
+  toBackend,
 } from './_helpers.js';
 import type { SmartSource } from './_helpers.js';
 
@@ -56,8 +57,7 @@ describe('getSimilarNotes', () => {
           name: 'v',
           path: vaultRoot,
           smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -98,8 +98,7 @@ describe('getSimilarNotes', () => {
           name: 'v',
           path: vaultRoot,
           smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -138,8 +137,7 @@ describe('getSimilarNotes', () => {
           name: 'v',
           path: tempRoot,
           smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -178,8 +176,7 @@ describe('getSimilarNotes', () => {
           name: 'v',
           path: vaultRoot,
           smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -226,8 +223,7 @@ describe('getSimilarNotes', () => {
           name: 'v',
           path: vaultRoot,
           smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -267,8 +263,7 @@ describe('getSimilarNotes', () => {
           name: 'v',
           path: tempRoot,
           smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -301,8 +296,7 @@ describe('getSimilarNotes', () => {
           name: 'v',
           path: tempRoot,
           smartEnvPath,
-          corpus: corpusIndex,
-          semanticAvailable: true,
+          backend: toBackend(corpusIndex),
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -327,8 +321,8 @@ describe('getSimilarNotes', () => {
       const corpus = await loadSmartConnectionsCorpus(smartEnvPath, MODEL_KEY);
       const corpusIndex = makeFakeCorpusIndex(corpus.sources);
       const registry = makeTestRegistry([
-        { name: 'v1', path: tempRoot, smartEnvPath, corpus: corpusIndex, semanticAvailable: true },
-        { name: 'v2', path: tempRoot, smartEnvPath, corpus: corpusIndex, semanticAvailable: true },
+        { name: 'v1', path: tempRoot, smartEnvPath, backend: toBackend(corpusIndex) },
+        { name: 'v2', path: tempRoot, smartEnvPath, backend: toBackend(corpusIndex) },
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
@@ -345,7 +339,7 @@ describe('getSimilarNotes', () => {
     }
   });
 
-  it('throws SEMANTIC_INDEX_NOT_FOUND when vault has semanticAvailable: false', async () => {
+  it('throws SEMANTIC_INDEX_NOT_FOUND when vault has no semantic backend', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
 
     try {
@@ -354,9 +348,6 @@ describe('getSimilarNotes', () => {
           name: 'v',
           path: tempRoot,
           smartEnvPath,
-          corpus: undefined,
-          semanticAvailable: false,
-          semanticUnavailableReason: 'no corpus',
         },
       ]);
       const tool = buildGetSimilarNotesTool({
@@ -421,8 +412,7 @@ describe('getSimilarNotes — graph signals', () => {
         name: 'v',
         path: vaultRoot,
         smartEnvPath: path.join(vaultRoot, '.smart-env'),
-        corpus: corpusIndex,
-        semanticAvailable: true,
+        backend: toBackend(corpusIndex),
       },
     ]);
     const tool = buildGetSimilarNotesTool({

@@ -110,7 +110,7 @@ describe('search_notes end-to-end sanity fixture', () => {
     }
   });
 
-  it('mode: "lexical" on a semanticAvailable: false vault returns full lexical results with no semantic fields', async () => {
+  it('mode: "lexical" on a vault with no semantic backend returns full lexical results with no semantic fields', async () => {
     const { deps, cleanup } = await makeLexicalVault(
       { 'Cold corpus note.md': 'холодний корпус і пошук без embedding\n' },
       { semantic: false },

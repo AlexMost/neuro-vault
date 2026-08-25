@@ -268,8 +268,8 @@ describe('lexical leg orchestration', () => {
       })) as SearchNotesOutput;
       expect(out.matches).toHaveLength(1);
       expect(out.matches[0].found_in).toEqual(['lexical:title']);
-      const corpus = deps.registry.list()[0].corpus!;
-      expect(corpus.snapshot).not.toHaveBeenCalled();
+      const backend = deps.registry.list()[0].backend!;
+      expect(backend.snapshot).not.toHaveBeenCalled();
     } finally {
       await cleanup();
     }

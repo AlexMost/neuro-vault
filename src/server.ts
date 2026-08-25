@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
@@ -10,8 +12,11 @@ import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
 import { FsVaultProvider } from './modules/operations/fs-vault-provider.js';
 import { createSmartConnectionsCorpusIndex } from './lib/obsidian/smart-connections-corpus-index.js';
+import { buildBasenameIndex } from './lib/obsidian/link-resolver.js';
+import type { BackendStatus, SemanticBackend } from './lib/obsidian/semantic-backend.js';
 import { createExistingPathFilter } from './lib/obsidian/existing-paths.js';
 import { readVaultConventions } from './lib/obsidian/vault-conventions.js';
+import { loadVaultConfig } from './lib/obsidian/vault-config.js';
 import { loadVaultScope } from './lib/obsidian/vault-scope-config.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ResourceRegistration } from './lib/resource-registration.js';
@@ -65,16 +70,82 @@ function defaultTransportFactory(): StdioServerTransport {
   return new StdioServerTransport();
 }
 
-function buildDefaultVaultEntryDeps(overrides: Partial<IVaultEntryDeps> = {}): IVaultEntryDeps {
+/**
+ * Interim adapter, Task 7 → Task 8 handoff. The vault registry (design D9)
+ * now takes its semantic backend from a synchronous per-vault factory rather
+ * than an awaited startup probe; this wraps today's read-only Smart
+ * Connections plugin corpus behind that seam so the server keeps serving
+ * exactly what it served before this branch, without redesigning what it
+ * serves. Task 8 replaces this wholesale with `createOwnCorpusBackendFactory`
+ * (the vault's own corpus, watched for live updates) — this function and its
+ * `createSmartConnectionsCorpusIndex` import go with it.
+ */
+function createSmartConnectionsBackend(opts: {
+  smartEnvPath: string;
+  modelKey: string;
+  enabled: boolean;
+}): SemanticBackend {
+  if (!opts.enabled) {
+    return {
+      snapshot: () =>
+        Promise.resolve({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
+      status: () => ({ state: 'disabled' }),
+      dispose: async () => {},
+    };
+  }
+
+  let status: BackendStatus = { state: 'indexing', indexed: 0, total: 0 };
+  const loaded = createSmartConnectionsCorpusIndex({
+    smartEnvPath: opts.smartEnvPath,
+    modelKey: opts.modelKey,
+  })
+    .then(async (corpus) => {
+      const snap = await corpus.snapshot();
+      if (snap.sources.size === 0) {
+        status = { state: 'unavailable', reason: 'Smart Connections corpus is empty' };
+        return undefined;
+      }
+      status = { state: 'ready' };
+      return corpus;
+    })
+    .catch((err: unknown) => {
+      status = { state: 'unavailable', reason: err instanceof Error ? err.message : String(err) };
+      return undefined;
+    });
+
+  return {
+    snapshot: async () => {
+      const corpus = await loaded;
+      if (!corpus) {
+        throw new Error(
+          status.state === 'unavailable' ? status.reason : 'semantic corpus unavailable',
+        );
+      }
+      return corpus.snapshot();
+    },
+    status: () => status,
+    dispose: async () => {},
+  };
+}
+
+function buildDefaultVaultEntryDeps(
+  modelKey: string,
+  overrides: Partial<IVaultEntryDeps> = {},
+): IVaultEntryDeps {
   return {
     readerFactory: ({ vaultRoot, scope }) => new FsVaultReader({ vaultRoot, scope }),
-    scopeFactory: ({ vaultRoot }) => loadVaultScope(vaultRoot),
+    vaultConfigFactory: ({ vaultRoot }) => loadVaultConfig(vaultRoot),
+    scopeFactory: ({ vaultRoot, config }) => loadVaultScope(vaultRoot, { config }),
     writerFactory: ({ vaultRoot }) => new FsVaultWriter({ vaultRoot }),
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
     providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
-    corpusFactory: ({ smartEnvPath, modelKey }) =>
-      createSmartConnectionsCorpusIndex({ smartEnvPath, modelKey }),
+    semanticBackendFactory: ({ vaultRoot, enabled }) =>
+      createSmartConnectionsBackend({
+        smartEnvPath: path.join(vaultRoot, '.smart-env', 'multi'),
+        modelKey,
+        enabled,
+      }),
     conventionsReaderFactory:
       ({ vaultRoot }) =>
       () =>
@@ -94,7 +165,7 @@ export async function startNeuroVaultServer(
       semanticEnabled: config.semantic.enabled,
       modelKey: config.semantic.modelKey,
     },
-    buildDefaultVaultEntryDeps(deps.vaultEntryDeps),
+    buildDefaultVaultEntryDeps(config.semantic.modelKey, deps.vaultEntryDeps),
   );
 
   const serverFactory = deps.serverFactory ?? defaultServerFactory;

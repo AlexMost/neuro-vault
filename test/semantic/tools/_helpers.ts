@@ -8,6 +8,7 @@ import { vi } from 'vitest';
 import { buildBasenameIndex, type BasenameIndex } from '../../../src/lib/obsidian/index.js';
 import type { SmartConnectionsCorpusIndex } from '../../../src/lib/obsidian/smart-connections-corpus-index.js';
 import { loadSmartConnectionsCorpus } from '../../../src/lib/obsidian/smart-connections-loader.js';
+import type { BackendStatus, SemanticBackend } from '../../../src/lib/obsidian/semantic-backend.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 import {
   findBlockNeighbors,
@@ -93,6 +94,24 @@ export function makeFakeCorpusIndex(
 }
 
 /**
+ * Wrap a snapshot-only fake (`makeFakeCorpusIndex`, a real
+ * `SmartConnectionsCorpusIndex`, or any object with a `snapshot()`) as a
+ * `SemanticBackend` for `entry.backend`. `snapshot` is the same function
+ * reference as `corpus.snapshot` — a caller holding onto `corpus` can still
+ * assert on its mock's call count via `backend.snapshot`.
+ */
+export function toBackend(
+  corpus: Pick<SmartConnectionsCorpusIndex, 'snapshot'>,
+  status: BackendStatus = { state: 'ready' },
+): SemanticBackend {
+  return {
+    snapshot: corpus.snapshot,
+    status: () => status,
+    dispose: async () => {},
+  };
+}
+
+/**
  * Build a registry-backed SearchNotesDeps for search_notes tests.
  *
  * Creates a temporary vault directory on disk and populates it with empty
@@ -135,10 +154,9 @@ export async function makeSearchDeps(opts: {
       name: 'v',
       path: vaultRoot,
       smartEnvPath: path.join(vaultRoot, '.smart-env'),
-      corpus,
+      backend: toBackend(corpus),
       graph: opts.graph ?? makeFakeGraph(),
       listMatchingPaths: opts.listMatchingPaths ?? (async () => new Set()),
-      semanticAvailable: true,
     },
   ]);
 

@@ -328,11 +328,15 @@ async function runSearchForEntry(
     getBacklinkCount: (p) => graph.getBacklinkCount(p),
   });
 
-  // `mode: "lexical"` never touches the corpus loader. A vault without an
-  // available semantic corpus (cold/absent) also falls back to lexical-only
-  // rather than throwing — an available corpus that errors mid-search still
-  // throws DEPENDENCY_ERROR below, unchanged.
-  if (channel === 'lexical' || !entry.semanticAvailable || entry.corpus === undefined) {
+  // `mode: "lexical"` never touches the backend. A vault without a ready
+  // semantic backend (absent, indexing, disabled, unavailable) also falls
+  // back to lexical-only rather than throwing — a ready backend that errors
+  // mid-search still throws DEPENDENCY_ERROR below, unchanged.
+  if (
+    channel === 'lexical' ||
+    entry.backend === undefined ||
+    entry.backend.status().state !== 'ready'
+  ) {
     const query_stats = buildQueryStats(
       isMulti,
       queries,
@@ -356,10 +360,9 @@ async function runSearchForEntry(
     };
   }
 
-  const corpus = entry.corpus;
   let sources: Map<string, SmartSource>;
   try {
-    ({ sources } = await corpus.snapshot());
+    ({ sources } = await entry.backend.snapshot());
   } catch (error) {
     throw wrapDependencyError(error, 'Failed to search notes', {
       modelKey,

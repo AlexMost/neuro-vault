@@ -5,9 +5,7 @@ import { FATAL_TOOL_ERROR_CODES, ToolHandlerError } from '../../src/lib/tool-res
 import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.js';
 
 function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
-  const list = entries.map(
-    (e) => ({ semanticAvailable: true, readConventions: async () => null, ...e }) as IVaultEntry,
-  );
+  const list = entries.map((e) => ({ readConventions: async () => null, ...e }) as IVaultEntry);
   return {
     get: (n) => list.find((e) => e.name === n),
     require: () => list[0],
@@ -29,10 +27,17 @@ describe('runFanOut', () => {
     expect(out.failed_vaults).toEqual([]);
   });
 
-  it('does not skip vaults regardless of semantic availability', async () => {
+  it('does not skip vaults regardless of semantic backend state', async () => {
     const reg = makeRegistry([
-      { name: 'a', semanticAvailable: true },
-      { name: 'b', semanticAvailable: false, semanticUnavailableReason: 'no corpus' },
+      {
+        name: 'a',
+        backend: {
+          snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) as never,
+          status: () => ({ state: 'ready' }),
+          dispose: async () => {},
+        },
+      },
+      { name: 'b' },
     ]);
     const out = await runFanOut(reg, async (entry) => ({ count: entry.name.length }));
     expect(out.results_by_vault.map((g) => g.vault)).toEqual(['a', 'b']);

@@ -42,7 +42,6 @@ const noopEntry = {
   provider: noopProvider,
   graph: noopGraph,
   listMatchingPaths: vi.fn(),
-  semanticAvailable: false,
 };
 
 const noopRegistry = {

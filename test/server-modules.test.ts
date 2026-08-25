@@ -136,7 +136,11 @@ describe('Neuro Vault MCP server bootstrap', () => {
         },
         {
           vaultEntryDeps: {
-            corpusFactory: () => Promise.resolve(makeFakeCorpusIndex(new Map())),
+            semanticBackendFactory: () => ({
+              snapshot: () => makeFakeCorpusIndex(new Map()).snapshot(),
+              status: () => ({ state: 'unavailable', reason: 'Smart Connections corpus is empty' }),
+              dispose: async () => {},
+            }),
           },
           semantic: {
             embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
@@ -230,7 +234,11 @@ describe('Neuro Vault MCP server bootstrap', () => {
     try {
       await main(['node', 'cli.js', '--vault', vaultPath], {
         vaultEntryDeps: {
-          corpusFactory: () => Promise.resolve(makeFakeCorpusIndex()),
+          semanticBackendFactory: () => ({
+            snapshot: () => makeFakeCorpusIndex().snapshot(),
+            status: () => ({ state: 'ready' }),
+            dispose: async () => {},
+          }),
           providerFactory: () => fakeProvider,
           readerFactory: () => ({
             readNotes: vi.fn().mockResolvedValue([]),

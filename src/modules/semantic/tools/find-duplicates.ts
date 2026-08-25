@@ -46,10 +46,10 @@ export function buildFindDuplicatesTool(
       const entry = resolveSemanticVault(input, registry, {
         tool: 'find_duplicates',
       });
-      const corpus = entry.corpus;
+      const backend = entry.backend;
       const threshold = readThreshold(input.threshold, DEFAULT_DUPLICATE_THRESHOLD, 'threshold');
       try {
-        const { sources } = await corpus.snapshot();
+        const { sources } = await backend.snapshot();
         const pairs = searchEngine.findDuplicates({
           sources: sources.values(),
           threshold,

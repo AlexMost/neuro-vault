@@ -180,7 +180,7 @@ export function buildGetSimilarNotesTool(
       const entry = resolveSemanticVault(input, registry, {
         tool: 'get_similar_notes',
       });
-      const corpus = entry.corpus;
+      const backend = entry.backend;
       let notePath: string;
       try {
         notePath = normalizeNotePath(input.path);
@@ -194,7 +194,7 @@ export function buildGetSimilarNotesTool(
       const excludePrefixes = (input.exclude_folders ?? []).map(normalizeExcludeEntry);
 
       try {
-        const { sources, basenameIndex } = await corpus.snapshot();
+        const { sources, basenameIndex } = await backend.snapshot();
 
         const source = sources.get(notePath);
         if (!source) {

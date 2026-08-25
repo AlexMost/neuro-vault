@@ -9,6 +9,7 @@ import {
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import { createVaultScope } from '../../src/lib/obsidian/vault-scope.js';
 import { loadVaultScope } from '../../src/lib/obsidian/vault-scope-config.js';
+import { buildBasenameIndex } from '../../src/lib/obsidian/link-resolver.js';
 import type { IVaultConfig } from '../../src/types.js';
 
 // Type-level guard: writer and provider must be required on IVaultEntry.
@@ -30,8 +31,12 @@ function fakeDeps(): IVaultEntryDeps {
     listMatchingPathsFactory: () => async () => new Set<string>(),
     providerFactory: ({ vaultName, vaultRoot, reader }) =>
       ({ vaultName, vaultRoot, reader }) as never,
-    corpusFactory: async () =>
-      ({ snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) }) as never,
+    vaultConfigFactory: async () => ({}),
+    semanticBackendFactory: () => ({
+      snapshot: async () => ({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
+      status: () => ({ state: 'ready' as const }),
+      dispose: async () => {},
+    }),
     conventionsReaderFactory: () => async () => null,
     existingPathFilterFactory: () => async (paths) => new Set(paths),
     scopeFactory: async () => createVaultScope(),
@@ -147,38 +152,39 @@ describe('createVaultRegistry', () => {
     expect(two.isMulti()).toBe(true);
   });
 
-  it('records semantic unavailability when corpus factory throws', async () => {
-    const deps = fakeDeps();
-    deps.corpusFactory = async () => {
-      throw new Error('ENOENT: .smart-env/multi missing');
-    };
+  it('gives every vault a backend when the module is enabled', async () => {
     const registry = await VaultRegistry.create(
-      {
-        vaults: [vault('a', '/v/a')],
-        semanticEnabled: true,
-        modelKey: 'm',
-      },
-      deps,
+      { vaults: [vault('a', '/v/a')], semanticEnabled: true, modelKey: 'm' },
+      fakeDeps(),
     );
-    const entry = registry.require('a');
-    expect(entry.semanticAvailable).toBe(false);
-    expect(entry.semanticUnavailableReason).toMatch(/ENOENT/);
-    expect(entry.corpus).toBeUndefined();
+    expect(registry.list()[0].backend?.status()).toEqual({ state: 'ready' });
   });
 
-  it('records semantic unavailability when initial snapshot is empty', async () => {
-    const deps = fakeDeps();
-    deps.corpusFactory = async () =>
-      ({ snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) }) as never;
+  it('leaves the backend absent when semantic is globally off', async () => {
     const registry = await VaultRegistry.create(
-      {
-        vaults: [vault('a', '/v/a')],
-        semanticEnabled: true,
-        modelKey: 'm',
-      },
+      { vaults: [vault('a', '/v/a')], semanticEnabled: false, modelKey: 'm' },
+      fakeDeps(),
+    );
+    expect(registry.list()[0].backend).toBeUndefined();
+  });
+
+  it('passes the per-vault semantic flag to the backend factory', async () => {
+    const deps = fakeDeps();
+    const seen: boolean[] = [];
+    deps.vaultConfigFactory = async () => ({ semantic: false });
+    deps.semanticBackendFactory = (opts) => {
+      seen.push(opts.enabled);
+      return {
+        snapshot: async () => ({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
+        status: () => ({ state: 'disabled' as const }),
+        dispose: async () => {},
+      };
+    };
+    await VaultRegistry.create(
+      { vaults: [vault('a', '/v/a')], semanticEnabled: true, modelKey: 'm' },
       deps,
     );
-    expect(registry.require('a').semanticAvailable).toBe(false);
+    expect(seen).toEqual([false]);
   });
 
   it('passes the vault reader to providerFactory', async () => {
@@ -279,7 +285,7 @@ describe('createVaultRegistry', () => {
       { vaults: [vault('A', '/a')], semanticEnabled: false, modelKey: 'k' },
       { ...fakeDeps(), scopeFactory, readerFactory },
     );
-    expect(scopeFactory).toHaveBeenCalledWith({ vaultRoot: '/a' });
+    expect(scopeFactory).toHaveBeenCalledWith({ vaultRoot: '/a', config: {} });
     expect(readerFactory).toHaveBeenCalledWith({ vaultRoot: '/a', scope });
     expect(registry.require('A').scope).toBe(scope);
   });

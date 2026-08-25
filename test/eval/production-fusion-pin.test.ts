@@ -17,7 +17,7 @@ import {
 } from '../../src/modules/semantic/tools/search-notes.js';
 import type { SmartSource } from '../../src/modules/semantic/types.js';
 import { EVAL_TOP_K, createFusedContext, rankQuery } from '../../eval/pipelines.js';
-import { makeFakeCorpusIndex, makeTestRegistry } from '../semantic/tools/_helpers.js';
+import { makeFakeCorpusIndex, makeTestRegistry, toBackend } from '../semantic/tools/_helpers.js';
 
 // The harness's central validity claim: a `fused` eval run measures the REAL
 // production ordering, not a reimplementation of it. Nothing else in the suite
@@ -92,9 +92,8 @@ async function productionOrder(
       path: vaultRoot,
       smartEnvPath: path.join(vaultRoot, '.smart-env'),
       reader,
-      corpus: makeFakeCorpusIndex(sources),
+      backend: toBackend(makeFakeCorpusIndex(sources)),
       graph: new WikilinkGraphIndex({ reader }),
-      semanticAvailable: true,
     },
   ]);
   const tool = buildSearchNotesTool({

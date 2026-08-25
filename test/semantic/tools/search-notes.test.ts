@@ -22,6 +22,7 @@ import {
   loadSmartConnectionsCorpus,
   makeTestRegistry,
   makeFakeCorpusIndex,
+  toBackend,
 } from './_helpers.js';
 
 // Lightweight helpers for mock-only tests (no real corpus needed)
@@ -788,8 +789,7 @@ describe('searchNotes', () => {
             name: 'v1',
             path: vaultRoot1,
             smartEnvPath,
-            corpus: corpusIndex1,
-            semanticAvailable: true,
+            backend: toBackend(corpusIndex1),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
@@ -797,8 +797,7 @@ describe('searchNotes', () => {
             name: 'v2',
             path: vaultRoot2,
             smartEnvPath,
-            corpus: corpusIndex2,
-            semanticAvailable: true,
+            backend: toBackend(corpusIndex2),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
@@ -863,8 +862,7 @@ describe('searchNotes', () => {
             name: 'v1',
             path: vaultRoot1,
             smartEnvPath,
-            corpus: corpusIndex1,
-            semanticAvailable: true,
+            backend: toBackend(corpusIndex1),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
@@ -872,8 +870,7 @@ describe('searchNotes', () => {
             name: 'v2',
             path: vaultRoot2,
             smartEnvPath,
-            corpus: corpusIndex2,
-            semanticAvailable: true,
+            backend: toBackend(corpusIndex2),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
@@ -934,8 +931,7 @@ describe('searchNotes', () => {
             name: 'v1',
             path: vaultRoot1,
             smartEnvPath,
-            corpus: corpusIndex1,
-            semanticAvailable: true,
+            backend: toBackend(corpusIndex1),
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
@@ -943,9 +939,6 @@ describe('searchNotes', () => {
             name: 'v2',
             path: tempRoot,
             smartEnvPath,
-            corpus: undefined,
-            semanticAvailable: false,
-            semanticUnavailableReason: 'no index',
             graph: makeFakeGraph(),
             listMatchingPaths: async () => new Set(),
           },
@@ -985,7 +978,7 @@ describe('searchNotes', () => {
     }
   });
 
-  it('returns lexical-only matches (no throw) when vault has semanticAvailable: false', async () => {
+  it('returns lexical-only matches (no throw) when vault has no semantic backend', async () => {
     const { tempRoot, smartEnvPath } = await makeVaultFixture(['note-a.ajson']);
     try {
       const registry = makeTestRegistry([
@@ -993,9 +986,6 @@ describe('searchNotes', () => {
           name: 'v',
           path: tempRoot,
           smartEnvPath,
-          corpus: undefined,
-          semanticAvailable: false,
-          semanticUnavailableReason: 'no corpus',
           graph: makeFakeGraph(),
           listMatchingPaths: async () => new Set(),
         },

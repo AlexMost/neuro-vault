@@ -1,6 +1,6 @@
 import { ToolHandlerError } from './tool-response.js';
 import type { ToolName } from './tool-names.js';
-import type { SmartConnectionsCorpusIndex } from './obsidian/smart-connections-corpus-index.js';
+import type { SemanticBackend } from './obsidian/semantic-backend.js';
 import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
 
 export interface IResolveVaultOpts {
@@ -29,13 +29,16 @@ export function resolveSemanticVault(
   input: { vault?: string },
   registry: IVaultRegistry,
   opts: IResolveVaultOpts,
-): IVaultEntry & { corpus: SmartConnectionsCorpusIndex } {
+): IVaultEntry & { backend: SemanticBackend } {
   const entry = resolveVault(input, registry, opts);
-  if (!entry.semanticAvailable) {
+  // Any non-`ready` state (absent backend, `indexing`, `disabled`,
+  // `unavailable`) reports the same SEMANTIC_INDEX_NOT_FOUND today; splitting
+  // those into their own error codes is a later change, not this one.
+  if (entry.backend === undefined || entry.backend.status().state !== 'ready') {
     throw new ToolHandlerError(
       'SEMANTIC_INDEX_NOT_FOUND',
       `Semantic index for vault "${entry.name}" is unavailable: ` +
-        `${entry.semanticUnavailableReason ?? 'unknown reason'}`,
+        `${entry.backend?.status().reason ?? 'unknown reason'}`,
       {
         details: {
           vault: entry.name,
@@ -44,8 +47,8 @@ export function resolveSemanticVault(
       },
     );
   }
-  // `semanticAvailable === true` is set in VaultRegistry.create only after a
-  // successful corpus snapshot, so corpus is defined at this point. The cast
-  // bridges what TS cannot prove (the flag and field are independent decls).
-  return entry as IVaultEntry & { corpus: SmartConnectionsCorpusIndex };
+  // The check above proves `entry.backend` is defined and ready; the cast
+  // bridges what TS cannot narrow through the optional-chained `.status()`
+  // call in the condition above.
+  return entry as IVaultEntry & { backend: SemanticBackend };
 }

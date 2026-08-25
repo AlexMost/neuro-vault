@@ -99,8 +99,11 @@ describe('corpus refresh through semantic tools', () => {
       listMatchingPaths,
       readConventions: async () => null,
       filterExisting: createExistingPathFilter({ vaultRoot: vaultPath }),
-      corpus,
-      semanticAvailable: true,
+      backend: {
+        snapshot: () => corpus.snapshot(),
+        status: () => ({ state: 'ready' }),
+        dispose: async () => {},
+      },
     };
 
     const registry = makeRegistryForEntry(entry);

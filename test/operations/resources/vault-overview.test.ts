@@ -17,7 +17,6 @@ function makeEntry(overrides: Partial<IVaultEntry> = {}): IVaultEntry {
     graph: makeGraph(),
     listMatchingPaths: async () => new Set<string>(),
     readConventions: async () => null,
-    semanticAvailable: true,
     ...overrides,
   } as IVaultEntry;
 }

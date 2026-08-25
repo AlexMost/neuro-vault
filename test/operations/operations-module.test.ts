@@ -48,7 +48,6 @@ describe('createOperationsModule', () => {
       listMatchingPaths: vi.fn(),
       readConventions: async () => null,
       filterExisting: createExistingPathFilter({ vaultRoot: '/tmp/MyVault' }),
-      semanticAvailable: false,
     };
 
     const fakeRegistry: IVaultRegistry = {
