@@ -20,3 +20,5 @@ coverage/
 # intent at the repo level rather than relying on a vendored skill's behaviour,
 # and covers anything written to .superpowers/ outside sdd/.
 .superpowers/
+
+eval/results/
