@@ -93,4 +93,4 @@ other groups at the same marker and can be dispatched concurrently.
 
 - [x] 11.1 `npm test`, `npm run lint`, `npm run typecheck`, `npx openspec validate --all` all green; paste the output in the PR body.
 - [x] 11.2 Confirm the slice stayed internal: no MCP tool contract change, no registry or server wiring, no watcher, no CLI, and Smart Connections still serves every semantic tool.
-- [ ] 11.3 Open PR 2 (`Closes #82`), then run `/opsx:verify` before archiving.
+- [x] 11.3 Open PR 2 (`Closes #82`), then run `/opsx:verify` before archiving.
