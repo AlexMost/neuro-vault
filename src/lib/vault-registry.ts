@@ -73,6 +73,7 @@ export interface IVaultEntryDeps {
     vaultRoot: string;
     vaultName: string;
     reader: VaultReader;
+    scope: VaultScope;
     enabled: boolean;
   }) => SemanticBackend;
   conventionsReaderFactory: (opts: { vaultRoot: string }) => () => Promise<string | null>;
@@ -141,6 +142,7 @@ export class VaultRegistry implements IVaultRegistry {
             vaultRoot: v.path,
             vaultName: v.name,
             reader,
+            scope,
             enabled: vaultConfig.semantic !== false,
           })
         : undefined;

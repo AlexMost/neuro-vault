@@ -4,6 +4,7 @@ import { CorpusStore } from '../../../lib/obsidian/corpus/shard-store.js';
 import { loadCorpusSnapshot } from '../../../lib/obsidian/corpus/snapshot.js';
 import type { SemanticBackend } from '../../../lib/obsidian/semantic-backend.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
+import type { VaultScope } from '../../../lib/obsidian/vault-scope.js';
 import type { QueuedEmbedder } from '../embed-queue.js';
 import {
   createCorpusBackend,
@@ -32,6 +33,14 @@ export interface OwnCorpusBackendOptions {
   vaultRoot: string;
   vaultName: string;
   reader: VaultReader;
+  /**
+   * The vault's discovery scope. Applied to every decoded snapshot, so a note
+   * excluded after the corpus was written is never rankable — the corpus only
+   * catches up when a reconcile sweeps it, and until then the semantic leg
+   * would otherwise expose what the lexical leg (which reads through the
+   * scoped reader) already hides.
+   */
+  scope: VaultScope;
   /** Global `--semantic` AND the per-vault `semantic` key, already resolved. */
   enabled: boolean;
 }
@@ -61,7 +70,7 @@ export function createOwnCorpusBackendFactory(
 
   const createBackend = deps.createBackend ?? createCorpusBackend;
 
-  return ({ vaultRoot, vaultName, reader, enabled }): SemanticBackend => {
+  return ({ vaultRoot, vaultName, reader, scope, enabled }): SemanticBackend => {
     const store = new CorpusStore(vaultRoot, { warn });
     const fsDeps = buildReconcileFsDeps({ vaultRoot, reader });
     const embed = deps.embedder.asIndexEmbedFn();
@@ -71,7 +80,11 @@ export function createOwnCorpusBackendFactory(
       vaultName,
       enabled,
       store,
-      loadSnapshot: loadCorpusSnapshot,
+      loadSnapshot: (s, opts) =>
+        loadCorpusSnapshot(s, {
+          shards: opts?.shards,
+          isExcluded: (relPath) => scope.isExcluded(relPath),
+        }),
       reconcile: (opts) => reconcileCorpus({ ...fsDeps, embed, store, warn }, opts),
       warn,
     });

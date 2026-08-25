@@ -9,6 +9,7 @@ import {
   MODEL_ID,
   MODEL_KEY,
   SC_PARITY_STRATEGY,
+  type CorpusShard,
 } from '../../../lib/obsidian/corpus/types.js';
 import { buildBasenameIndex } from '../../../lib/obsidian/link-resolver.js';
 import type {
@@ -26,14 +27,31 @@ const EXPECTED_IDENTITY = {
   strategy: SC_PARITY_STRATEGY,
 };
 
+/**
+ * Backoff for the self-retry after a pass leaves the vault `unavailable`: the
+ * first retry waits this long, each further failure doubles it up to
+ * {@link RETRY_MAX_MS}. Without it a vault nobody edits has no way back — the
+ * watcher is the only other thing that ever asks for a pass.
+ */
+export const RETRY_BASE_MS = 30_000;
+export const RETRY_MAX_MS = 900_000;
+
 export interface CorpusBackendDeps {
   vaultRoot: string;
   vaultName: string;
   /** Global `--semantic` AND the per-vault config, already resolved. */
   enabled: boolean;
   store: CorpusStore;
-  /** Shard → snapshot decode. Production: `loadCorpusSnapshot`. */
-  loadSnapshot: (store: CorpusStore) => Promise<CorpusSnapshot>;
+  /**
+   * Shard → snapshot decode, already bound to this vault's scope. Production:
+   * `loadCorpusSnapshot`. `shards`, when given, is a listing the caller has
+   * already read — passing it is what keeps the startup selection from reading
+   * and parsing the whole corpus twice.
+   */
+  loadSnapshot: (
+    store: CorpusStore,
+    opts?: { shards?: Map<string, CorpusShard> },
+  ) => Promise<CorpusSnapshot>;
   /**
    * Pre-bound per vault — this backend never assembles scan/stat/read/embed
    * itself. Production: `reconcileCorpus` closed over the vault's deps.
@@ -41,6 +59,11 @@ export interface CorpusBackendDeps {
   reconcile: (opts: ReconcileOptions) => Promise<ReconcileSummary>;
   /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
   warn?: (message: string) => void;
+  /** Injected by tests; production uses {@link RETRY_BASE_MS}/{@link RETRY_MAX_MS}. */
+  retryBaseMs?: number;
+  retryMaxMs?: number;
+  setTimer?: typeof setTimeout;
+  clearTimer?: typeof clearTimeout;
 }
 
 export interface CorpusBackend extends SemanticBackend {
@@ -70,14 +93,21 @@ function emptySnapshot(): CorpusSnapshot {
  * A pass that throws reports `unavailable` with the reason and keeps whatever
  * snapshot the vault already had — as does a pass that returns normally having
  * failed every note it tried, which leaves nothing to serve. That is not
- * terminal: the next pass overwrites the state, so a vault that recovers
- * reports `ready` again without a restart.
+ * terminal: the backend re-arms itself on a doubling backoff
+ * ({@link RETRY_BASE_MS}..{@link RETRY_MAX_MS}) and reports `indexing` again
+ * while the retry runs, so a vault that recovers reports `ready` again without
+ * a restart — and without needing someone to edit a note first, which the
+ * watcher-only wiring used to require.
  *
  * `enabled === false` is absolute: the vault reports `disabled` and no pass ever
  * runs, so nothing is read from or written under `.neuro-vault/corpus/`.
  */
 export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
   const warn = deps.warn ?? ((message: string) => console.error(message));
+  const retryBaseMs = deps.retryBaseMs ?? RETRY_BASE_MS;
+  const retryMaxMs = deps.retryMaxMs ?? RETRY_MAX_MS;
+  const setTimer = deps.setTimer ?? setTimeout;
+  const clearTimer = deps.clearTimer ?? clearTimeout;
 
   let snapshot: CorpusSnapshot = emptySnapshot();
   /**
@@ -96,6 +126,37 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
   /** A request that arrived while a pass was running — one follow-up, however many arrived. */
   let dirty = false;
   let disposed = false;
+  /** Aborts the reconcile in flight, so `dispose()` does not wait out a cold index. */
+  let passAbort: AbortController | null = null;
+  /** The pending self-retry after a failed pass, and its current backoff. */
+  let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  let retryDelay = retryBaseMs;
+
+  function clearRetry(): void {
+    if (retryTimer === undefined) return;
+    clearTimer(retryTimer);
+    retryTimer = undefined;
+  }
+
+  /**
+   * Re-arms the vault after a pass left it `unavailable`. The watcher is the
+   * only other thing that ever calls `kick()`, so a vault nobody edits — a
+   * read-only reference vault, or one whose watcher failed to start — would
+   * otherwise stay broken until the process restarts, even once the cause (an
+   * absent model, a full disk, a lost network) has cleared.
+   */
+  function scheduleRetry(): void {
+    if (disposed || retryTimer !== undefined) return;
+    const delay = retryDelay;
+    retryDelay = Math.min(retryDelay * 2, retryMaxMs);
+    retryTimer = setTimer(() => {
+      retryTimer = undefined;
+      kick();
+    }, delay);
+    // A pending retry must never be the reason the process stays alive: nobody
+    // is waiting on it, and a client that hung up should still exit (design D10).
+    (retryTimer as { unref?: () => void }).unref?.();
+  }
 
   function unavailable(reason: string): void {
     status = { state: 'unavailable', reason };
@@ -107,14 +168,29 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
   }
 
   async function runPass(): Promise<void> {
+    // A pass that follows a failure IS a build in flight, so say so. Without
+    // this the vault would keep reporting `unavailable` for the whole rebuild —
+    // no counters, and `get_similar_notes` telling the caller to run a second,
+    // competing `neuro-vault-mcp index` against the corpus this pass is
+    // already writing. `ready` is deliberately left alone: a reconcile behind a
+    // corpus that is already serving must not take it off the air.
+    if (status.state === 'unavailable') {
+      status = { state: 'indexing', indexed: 0, total: 0 };
+    }
+    const abort = new AbortController();
+    passAbort = abort;
     try {
       const summary = await deps.reconcile({
+        signal: abort.signal,
         onProgress: (progress) => {
           // Counters are only meaningful while the corpus is still being built.
           if (status.state !== 'indexing') return;
           status = { state: 'indexing', indexed: progress.indexed, total: progress.total };
         },
       });
+      // An aborted pass is a shutdown, not a result: its summary is partial, so
+      // decoding or promoting anything from it would be reporting half a run.
+      if (disposed) return;
       // Reload when the corpus moved — and whenever nothing has ever been
       // decoded, or a vault whose startup load failed or was abandoned would
       // report `ready` over the empty placeholder, with the very pass that
@@ -161,6 +237,8 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
       status = { state: 'ready' };
     } catch (err) {
       fail(err);
+    } finally {
+      passAbort = null;
     }
   }
 
@@ -168,6 +246,9 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
     // A vault that opted out runs nothing, whoever asks — not at startup, and
     // not for a `requestReconcile()` a watcher fans out across every vault.
     if (!deps.enabled || disposed) return;
+    // Whoever asked supersedes the pending self-retry — the pass about to run
+    // (or the one already running) is the retry.
+    clearRetry();
     if (currentPass) {
       dirty = true;
       return;
@@ -178,7 +259,12 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
       if (dirty) {
         dirty = false;
         kick();
+        return;
       }
+      // A pass that ended `unavailable` re-arms itself; any other outcome means
+      // the vault recovered, so the backoff starts over.
+      if (status.state === 'unavailable') scheduleRetry();
+      else retryDelay = retryBaseMs;
     });
   }
 
@@ -193,7 +279,10 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
     ]);
     const hasShards = shards.size > 0;
     if (!hasShards || !isManifestCompatible(manifest, EXPECTED_IDENTITY, hasShards)) return null;
-    return deps.loadSnapshot(deps.store);
+    // Hand the listing on rather than letting the decode re-read it: `shards`
+    // already holds every shard file, parsed. Re-listing here would read and
+    // `JSON.parse` the whole corpus a second time on every startup.
+    return deps.loadSnapshot(deps.store, { shards });
   }
 
   /**
@@ -229,6 +318,13 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
     status: () => status,
     dispose: () => {
       disposed = true;
+      clearRetry();
+      // Not just a flag: a cold index is thousands of reads and embeds, and
+      // every one of them is an active libuv request holding the event loop
+      // open. Flagging alone would leave the process running out the whole
+      // index after the client that started it hung up (design D10).
+      passAbort?.abort();
+      passAbort = null;
       return Promise.resolve();
     },
     whenSettled: async () => {

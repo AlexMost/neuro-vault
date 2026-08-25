@@ -165,10 +165,21 @@ export async function startNeuroVaultServer(
 
   const transport = transportFactory();
   await server.connect(transport);
-  void warmup().catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`semantic warmup failed: ${message}\n`);
-  });
+  // The module-level flag says the tools exist; it does not say any vault will
+  // ever embed. When every registered vault opted out with `"semantic": false`,
+  // no indexing pass and no query embed can run — warming the model would
+  // download and initialize ONNX for work that will never arrive. The tools
+  // stay registered either way: `search_notes` still answers from its lexical
+  // leg, and the embeddings-only tools still report `SEMANTIC_DISABLED`.
+  const anyVaultEmbeds = registry
+    .list()
+    .some((entry) => entry.backend !== undefined && entry.backend.status().state !== 'disabled');
+  if (anyVaultEmbeds) {
+    void warmup().catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`semantic warmup failed: ${message}\n`);
+    });
+  }
 
   /**
    * Releases every vault's background resources. Never rejects: one vault's

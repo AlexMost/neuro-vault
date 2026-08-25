@@ -44,6 +44,14 @@ export interface ReconcileDeps {
 
 export interface ReconcileOptions {
   onProgress?: (progress: { indexed: number; total: number }) => void;
+  /**
+   * Stops the run at the next note boundary. A pass is thousands of reads and
+   * embeds, each an active libuv request, so a server whose client hung up
+   * mid-index needs a way to stop rather than outlive it (design D10). The
+   * summary returned after an abort is partial by construction — the caller
+   * that aborted is expected to discard it.
+   */
+  signal?: AbortSignal;
 }
 
 export interface ReconcileSummary {
@@ -81,6 +89,14 @@ export async function reconcileCorpus(
 ): Promise<ReconcileSummary> {
   const { vaultRoot, scan, stat, readNote, embed, store } = deps;
   const warn = deps.warn ?? ((message: string) => console.error(message));
+
+  // Before any I/O. The setup below — a manifest write, a full scan, a full
+  // shard listing — is itself seconds of disk work on a large corpus, and a
+  // pass kicked off just as the client hung up would otherwise run all of it
+  // before reaching the first per-note check.
+  if (opts.signal?.aborted) {
+    return { total: 0, embedded: 0, reused: 0, renamed: 0, deleted: 0, failed: 0 };
+  }
 
   // First, so an incompatible corpus identity discards the shards before they
   // are read: the shard map below must not see vectors of unknown provenance.
@@ -129,6 +145,10 @@ export async function reconcileCorpus(
 
   let indexed = 0;
   for (const notePath of paths) {
+    // Checked per note, not per embed: one note's work is the granularity a
+    // shutdown waits out, and stopping mid-note would leave its shard unwritten
+    // anyway (the next pass re-embeds it).
+    if (opts.signal?.aborted) break;
     try {
       const shard = shards.get(notePath) ?? null;
 
@@ -197,7 +217,17 @@ export async function reconcileCorpus(
     }
   }
 
+  // The sweep and the gitignore write below are corpus maintenance, not part of
+  // the partial result an aborted run hands back — skip them so a shutdown is
+  // bounded by the note in flight and nothing more.
+  if (opts.signal?.aborted) return summary;
+
   for (const orphanPath of orphans) {
+    // Per orphan, not just before the loop: a vault that dropped a whole folder
+    // from its scope sweeps thousands of shards here, and an abort arriving
+    // mid-sweep must stop it too. A shard left behind stays an orphan and is
+    // swept by the next pass.
+    if (opts.signal?.aborted) return summary;
     try {
       await store.deleteShard(orphanPath);
       summary.deleted += 1;

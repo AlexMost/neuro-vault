@@ -9,6 +9,7 @@ import { createOwnCorpusBackendFactory } from '../../../src/modules/semantic/bac
 
 const embedder = { asIndexEmbedFn: () => async () => [1] } as never;
 const reader = { scan: async () => [] } as never;
+const scope = { ignorePatterns: [], isExcluded: () => false };
 
 /**
  * A stand-in for the corpus backend this factory builds. Whether the factory
@@ -49,7 +50,7 @@ describe('createOwnCorpusBackendFactory', () => {
     const createWatcher = vi.fn();
     const factory = createOwnCorpusBackendFactory({ embedder, createWatcher });
 
-    const backend = factory({ vaultRoot, vaultName: 'v', reader, enabled: false });
+    const backend = factory({ vaultRoot, vaultName: 'v', reader, scope, enabled: false });
 
     expect(backend.status()).toEqual({ state: 'disabled' });
     expect(createWatcher).not.toHaveBeenCalled();
@@ -68,7 +69,7 @@ describe('createOwnCorpusBackendFactory', () => {
       }),
     });
 
-    const backend = factory({ vaultRoot, vaultName: 'v', reader, enabled: true });
+    const backend = factory({ vaultRoot, vaultName: 'v', reader, scope, enabled: true });
     await backend.dispose();
 
     // Watcher first: it is what feeds `requestReconcile`, so closing it after
@@ -91,7 +92,7 @@ describe('createOwnCorpusBackendFactory', () => {
       }),
     });
 
-    const backend = factory({ vaultRoot, vaultName: 'v', reader, enabled: true });
+    const backend = factory({ vaultRoot, vaultName: 'v', reader, scope, enabled: true });
 
     // The failure still surfaces to the caller — the server's disposer settles
     // each vault independently and reports it — but not at the cost of leaking

@@ -46,9 +46,15 @@ interface SemanticBackend {
 
 `unavailable` is not terminal. It is not a decision frozen at startup the way the corpus that preceded this design (`semanticAvailable: false`, decided once and never revisited) used to be — the next pass, whether from the watcher or an explicit request, re-runs the same reconcile and promotes back to `ready` on success.
 
+That recovery does not depend on anyone touching the vault. A pass that ends `unavailable` re-arms itself on a doubling backoff (`RETRY_BASE_MS` 30 s to `RETRY_MAX_MS` 15 min, `corpus-backend.ts`), reset on the first pass that does not fail; a watcher event or an explicit request supersedes the pending retry, since that pass _is_ the retry. Without it the watcher would be the only path back, and a vault nobody edits — a read-only reference vault, or one whose watcher failed to start — would stay broken until the process restarted, long after the cause (an absent model, a full disk, a lost network) had cleared. The retry timer is `unref`'d, so it never keeps the process alive on its own.
+
+A retry pass reports `indexing`, with counters, for its duration: a rebuild in flight is a build in flight, and reporting `unavailable` across it would tell a caller to run a second, competing `neuro-vault-mcp index` against the corpus that pass is already writing. A reconcile behind a corpus that is already `ready` is the one case that does _not_ change state — that vault is still serving.
+
 ## Live promotion
 
 `snapshot()` never touches disk — it returns whatever `CorpusSnapshot` is currently held in memory. A background pass replaces that value in a single assignment only when it changed something (`embedded + renamed + deleted > 0` from the reconcile summary) or when nothing has ever been decoded yet (so a vault that started `indexing` or recovered from `unavailable` does not get stuck serving the empty placeholder). A caller already holding a reference from an in-flight call keeps ranking against a coherent snapshot; the next call sees the promoted one.
+
+Every decode applies the vault's scope (`VaultScope.isExcluded`), so `sources` and `basenameIndex` never name an excluded note. The corpus on disk only agrees with the scope after a reconcile has swept the out-of-scope shards as orphans, which leaves two windows where it does not: between a `.gitignore`/`config.json` change and the pass that acts on it — including the warm snapshot served at startup, decoded before any pass runs — and after a shard deletion that failed. Neither is covered by `filterExisting`, which tests existence on disk, not membership. Filtering at decode closes both, and keeps the semantic leg from surfacing what the lexical leg (reading through the scoped reader) already hides.
 
 ## Freshness: the watcher and the debounce
 
@@ -88,6 +94,8 @@ Three tools, two different postures:
 ## Disposal
 
 A live `chokidar` watcher holds the Node event loop open, so it is a resource the server must release explicitly rather than let the process exit around. `createOwnCorpusBackendFactory` (`src/modules/semantic/backend/index.ts`) composes each vault's `dispose()` to close the watcher first, then the underlying corpus backend, `finally`-chained so a rejecting `watcher.close()` still lets the backend dispose. `startNeuroVaultServer` (`src/server.ts`) chains onto the MCP SDK's own `transport.onclose` — never replacing it — and calls every vault entry's `backend?.dispose()` via `Promise.allSettled`, so one vault's disposal failure is reported to stderr without blocking the others. This is what lets the stdio process exit when its client disconnects instead of hanging on an open watcher.
+
+Closing the watcher is not enough on its own while a vault is indexing. A cold pass is thousands of reads and embeds, each an active libuv request, so `dispose()` also aborts the reconcile in flight: it passes an `AbortSignal` into `reconcileCorpus`, which checks it at each note boundary and returns a partial summary, skipping the orphan sweep and the gitignore write. The caller that aborted discards that summary — a disposed backend promotes nothing. Shutdown is therefore bounded by the single note in flight rather than by the rest of the index.
 
 ## Boundaries
 
