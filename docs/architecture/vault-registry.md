@@ -60,9 +60,10 @@ VaultRegistry.create(config, deps)
 VaultRegistry
       │
       ├─── createSemanticModule(registry, ...)   ──► semantic tools (search_notes, get_similar_notes, ...)
-      ├─── createOperationsModule(registry, ...) ──► operations tools + vault://overview resources
-      └─── buildServerInstructions(registry)     ──► MCP instructions (per-vault conventions blocks)
+      └─── createOperationsModule(registry, ...) ──► operations tools + vault://overview resources
 ```
+
+The registry does not feed the MCP `instructions` string. That is `SERVER_INSTRUCTIONS`, a constant with no registry dependency ([ADR-0012](../adr/0012-conventions-leave-the-instructions-channel.md)).
 
 `server.ts` is the only caller of `VaultRegistry.create`. Both module factories receive the whole registry rather than individual entries so they can fan out without knowing vault count at compile time.
 

@@ -1,8 +1,30 @@
-# vault-conventions-delivery Specification
+## ADDED Requirements
 
-## Purpose
-TBD - created by archiving change vault-conventions-delivery. Update Purpose after archive.
-## Requirements
+### Requirement: Instructions point at the overview channel for conventions
+
+Composed MCP `instructions` SHALL carry a pointer stating that a vault's owner-authored conventions
+are delivered on the `get_vault_overview` response rather than in `instructions`, and that the tool
+is to be called before reading, writing, or organising notes in the vault. The pointer SHALL name
+`get_vault_overview` explicitly, so that an agent reading only `instructions` learns both that
+conventions exist for this vault and which single call retrieves them. The pointer is a reference,
+not a copy: it MUST NOT reproduce any part of a vault's conventions file.
+
+#### Scenario: the pointer names the tool
+
+- **WHEN** the composed `instructions` string is inspected
+- **THEN** it contains the literal tool name `get_vault_overview` in a statement that the vault's
+  conventions are delivered there
+
+#### Scenario: the pointer is present with no conventions file anywhere
+
+- **WHEN** instructions are composed for a registry in which no vault has a conventions file
+- **THEN** the pointer is still present and unchanged, because it describes where conventions would
+  arrive rather than reporting whether any exist
+
+---
+
+## MODIFIED Requirements
+
 ### Requirement: Composed instructions do not restate tool descriptions
 
 Composed MCP `instructions` SHALL be a constant that is independent of vault configuration, and
@@ -43,50 +65,6 @@ present in a tool description MUST be moved into the relevant description rather
 
 ---
 
-### Requirement: get_vault_overview carries the vault's conventions
-
-The vault overview payload SHALL include a `conventions` field holding the raw contents of that
-vault's `.neuro-vault/for-external-agents.md`. The field SHALL be produced by the shared overview
-computation so that both surfaces — the `get_vault_overview` tool and the `vault://overview`
-resource — carry it from one implementation and keep one response shape. The tool's description
-SHALL state that the response carries the vault owner's conventions for how the vault is organised
-and that they are to be followed when reading, writing, or organising notes there, so that an agent
-reaching the field over the description channel knows it is authoritative rather than decorative,
-scoped to vault organisation rather than an unconditional directive over arbitrary file content.
-
-#### Scenario: the tool returns the file's content
-
-- **WHEN** `get_vault_overview` is called for a vault whose conventions file has content
-- **THEN** the response's `conventions` field equals that file's trimmed content
-
-#### Scenario: the resource returns the same field
-
-- **WHEN** the `vault://overview` resource is read for the same vault
-- **THEN** its payload carries `conventions` with the same content as the tool's response
-
-#### Scenario: the description advertises the field
-
-- **WHEN** `get_vault_overview`'s advertised description is inspected
-- **THEN** it states that the response carries the vault owner's conventions for how the vault is
-  organised, and that they are to be followed when reading, writing, or organising notes there
-
-### Requirement: The conventions field is absent rather than empty
-
-The overview payload SHALL omit `conventions` entirely when the vault has no
-`.neuro-vault/for-external-agents.md`, when the file is empty, or when it contains only
-whitespace. An absent file MUST NOT produce an empty string, a null, or a placeholder, so that a
-vault without the feature returns exactly the payload it returned before this capability existed.
-
-#### Scenario: no file
-
-- **WHEN** `get_vault_overview` is called for a vault with no conventions file
-- **THEN** the response has no `conventions` key
-
-#### Scenario: whitespace-only file
-
-- **WHEN** the conventions file contains only whitespace
-- **THEN** the response has no `conventions` key
-
 ### Requirement: Conventions are read at call time
 
 The conventions file SHALL be read when the overview is computed, not cached from server startup,
@@ -108,24 +86,6 @@ startup that a consumer might read instead.
   conventions at all
 
 ---
-
-### Requirement: Oversized conventions are truncated visibly
-
-When a vault's conventions file exceeds the capability's character cap, the overview payload SHALL
-carry a bounded slice in `conventions` and SHALL set `conventions_truncated` to `true`. When the
-file fits, `conventions_truncated` SHALL be absent. Truncation MUST never be silent: a consumer
-reading `conventions` without the flag MUST be able to treat it as the complete file.
-
-#### Scenario: an oversized file is trimmed and flagged
-
-- **WHEN** the conventions file is longer than the cap
-- **THEN** `conventions` holds a slice bounded at the cap plus a single-character truncation
-  marker, and `conventions_truncated` is `true`
-
-#### Scenario: a normal file carries no flag
-
-- **WHEN** the conventions file is shorter than the cap
-- **THEN** `conventions` holds the whole file and the response has no `conventions_truncated` key
 
 ### Requirement: Each vault's conventions travel with that vault
 
@@ -180,26 +140,29 @@ call into an error or a failed vault.
 
 ---
 
-### Requirement: Instructions point at the overview channel for conventions
+## REMOVED Requirements
 
-Composed MCP `instructions` SHALL carry a pointer stating that a vault's owner-authored conventions
-are delivered on the `get_vault_overview` response rather than in `instructions`, and that the tool
-is to be called before reading, writing, or organising notes in the vault. The pointer SHALL name
-`get_vault_overview` explicitly, so that an agent reading only `instructions` learns both that
-conventions exist for this vault and which single call retrieves them. The pointer is a reference,
-not a copy: it MUST NOT reproduce any part of a vault's conventions file.
+### Requirement: A vault's conventions survive the instructions truncation budget
 
-#### Scenario: the pointer names the tool
+**Reason**: The requirement's premise was measured false, and the behaviour it mandated is being
+removed rather than corrected. It required conventions blocks to lead the composed `instructions`
+so a truncating client would receive them. Claude Code applies its 2048-character cap **per server,
+not per vault**, so with several vaults registered the first consumes the budget and later blocks
+arrive as nothing. Worse, the mandated ordering made the server-authored preamble the casualty
+instead: any conventions file over roughly 1,316 characters deleted it entirely, while the project's
+own documentation recommended files up to 8,000. The requirement's guard scenario pinned a
+1,227-character fixture and varied only the preamble, so the free variable in production was the
+constant in CI. Conventions no longer appear in `instructions` at all, leaving this requirement with
+no subject.
 
-- **WHEN** the composed `instructions` string is inspected
-- **THEN** it contains the literal tool name `get_vault_overview` in a statement that the vault's
-  conventions are delivered there
-
-#### Scenario: the pointer is present with no conventions file anywhere
-
-- **WHEN** instructions are composed for a registry in which no vault has a conventions file
-- **THEN** the pointer is still present and unchanged, because it describes where conventions would
-  arrive rather than reporting whether any exist
-
----
-
+**Migration**: No consumer action is required — the conventions file stays exactly where it is and
+`get_vault_overview` returns the same payload as before. Conventions now reach an agent solely
+through the overview channel, which is unaffected by this change and is governed by the
+`get_vault_overview carries the vault's conventions`, `Conventions are read at call time`,
+`Oversized conventions are truncated visibly`, and `Each vault's conventions travel with that vault`
+requirements. An agent that previously read conventions out of `instructions` follows the pointer
+mandated by `Instructions point at the overview channel for conventions` and calls
+`get_vault_overview` instead — a channel that additionally reaches sub-agents, reflects edits
+without a restart, and flags its own truncation via `conventions_truncated`. Vault owners who sized
+their file against a 2048-character `instructions` budget may now use the full 8,000-character
+`CONVENTIONS_CHAR_CAP`, which always belonged to the overview channel.
