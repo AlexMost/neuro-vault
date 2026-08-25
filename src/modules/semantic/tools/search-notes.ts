@@ -103,6 +103,8 @@ export type SearchNotesOutput = {
       lexical: number;
       lexical_tokens?: Record<string, number>;
       semantic_fallback?: true;
+      /** Present only for an entry worth acting on — see `queryStatsNote`. */
+      note?: string;
     }
   >;
 };
@@ -192,28 +194,82 @@ function narrowSources(
 // normalized token to how many notes it matches alone. Counts are taken
 // before the cross-query merge and before the final `matches[]` cap.
 // `undefined` for a single string query — `query_stats` is array-query-only.
-function buildQueryStats(
-  isMulti: boolean,
-  queries: string[],
-  lexicalPerQueryCounts: Record<string, number>,
-  lexicalPerQueryTokenCounts: Record<string, Record<string, number>>,
-  semanticPerQueryHits: Record<string, number>,
-  semanticPerQueryFallback: Record<string, boolean>,
-  semanticRan: boolean,
-): SearchNotesOutput['query_stats'] {
+// What to do about a query variant that misfired, decided per entry and
+// emitted only when there is something to do. This is the response channel of
+// ADR-0010: the same guidance in the tool's description would be paid for on
+// every `tools/list`, in every session, while a dead variant is rare — and a
+// caller reading one of these entries is holding the numbers the advice is
+// about. Ordered by what a caller acts on first: a variant that hit nothing
+// anywhere is dropped before its tokens are worth diagnosing, and a token
+// diagnosis outranks a note about the quality of hits that did come back.
+function queryStatsNote(args: {
+  semantic: number | null;
+  lexical: number;
+  tokenCounts: Record<string, number> | undefined;
+  fallback: boolean;
+}): string | undefined {
+  const { semantic, lexical, tokenCounts, fallback } = args;
+  if (lexical === 0 && (semantic === null || semantic === 0)) {
+    if (tokenCounts === undefined) {
+      return 'No hits in any leg that ran — rephrase or drop this variant.';
+    }
+    const dead = Object.keys(tokenCounts).filter((token) => tokenCounts[token] === 0);
+    if (dead.length > 0) {
+      return `No hits: ${dead.map((t) => `"${t}"`).join(', ')} match no note alone, which kills the AND match — drop or replace ${dead.length > 1 ? 'them' : 'it'}.`;
+    }
+    return 'No hits: every token matches on its own but they never co-occur in one title, heading or paragraph — split this variant into separate array entries.';
+  }
+  if (fallback) {
+    return 'Semantic hits came from the 0.3 fallback retry, so they are weaker than a normal result.';
+  }
+  return undefined;
+}
+
+function buildQueryStats(args: {
+  isMulti: boolean;
+  queries: string[];
+  lexicalPerQueryCounts: Record<string, number>;
+  lexicalPerQueryTokenCounts: Record<string, Record<string, number>>;
+  semanticPerQueryHits: Record<string, number>;
+  semanticPerQueryFallback: Record<string, boolean>;
+  semanticRan: boolean;
+  /**
+   * False on the empty-filter early return, where neither leg executed. A
+   * zero there says the filter matched no notes, not that the variant is
+   * dead — diagnosing it as dead would send the caller to rewrite a query
+   * that was never tried.
+   */
+  lexicalRan: boolean;
+}): SearchNotesOutput['query_stats'] {
+  const {
+    isMulti,
+    queries,
+    lexicalPerQueryCounts,
+    lexicalPerQueryTokenCounts,
+    semanticPerQueryHits,
+    semanticPerQueryFallback,
+    semanticRan,
+    lexicalRan,
+  } = args;
   if (!isMulti) return undefined;
   return Object.fromEntries(
     queries.map((q) => {
       const tokenCounts = lexicalPerQueryTokenCounts[q];
+      const semantic = semanticRan ? (semanticPerQueryHits[q] ?? 0) : null;
+      const lexical = lexicalPerQueryCounts[q] ?? 0;
+      const fallback = semanticRan && semanticPerQueryFallback[q] === true;
+      const note =
+        semanticRan || lexicalRan
+          ? queryStatsNote({ semantic, lexical, tokenCounts, fallback })
+          : undefined;
       return [
         q,
         {
-          semantic: semanticRan ? (semanticPerQueryHits[q] ?? 0) : null,
-          lexical: lexicalPerQueryCounts[q] ?? 0,
+          semantic,
+          lexical,
           ...(tokenCounts !== undefined ? { lexical_tokens: tokenCounts } : {}),
-          ...(semanticRan && semanticPerQueryFallback[q]
-            ? { semantic_fallback: true as const }
-            : {}),
+          ...(fallback ? { semantic_fallback: true as const } : {}),
+          ...(note !== undefined ? { note } : {}),
         },
       ];
     }),
@@ -362,7 +418,16 @@ async function runSearchForEntry(
     }
 
     if (allowed.size === 0) {
-      const query_stats = buildQueryStats(isMulti, queries, {}, {}, {}, {}, false);
+      const query_stats = buildQueryStats({
+        isMulti,
+        queries,
+        lexicalPerQueryCounts: {},
+        lexicalPerQueryTokenCounts: {},
+        semanticPerQueryHits: {},
+        semanticPerQueryFallback: {},
+        semanticRan: false,
+        lexicalRan: false,
+      });
       return {
         matches: [],
         truncated: false,
@@ -394,15 +459,16 @@ async function runSearchForEntry(
    * that failed after the lexical matches were already in hand.
    */
   const lexicalOnly = (status: SemanticStatusField): SearchNotesOutput => {
-    const query_stats = buildQueryStats(
+    const query_stats = buildQueryStats({
       isMulti,
       queries,
-      lexical.perQueryCounts,
-      lexical.perQueryTokenCounts,
-      {},
-      {},
-      false,
-    );
+      lexicalPerQueryCounts: lexical.perQueryCounts,
+      lexicalPerQueryTokenCounts: lexical.perQueryTokenCounts,
+      semanticPerQueryHits: {},
+      semanticPerQueryFallback: {},
+      semanticRan: false,
+      lexicalRan: true,
+    });
     return {
       ...assembleUnified({
         semanticNodes: [],
@@ -472,15 +538,16 @@ async function runSearchForEntry(
       .filter((n) => existing.has(n.path))
       .map((n) => ({ ...n, related: n.related.filter((rel) => existing.has(rel.path)) }));
 
-    const query_stats = buildQueryStats(
+    const query_stats = buildQueryStats({
       isMulti,
       queries,
-      lexical.perQueryCounts,
-      lexical.perQueryTokenCounts,
-      semantic.per_query_hits,
-      semantic.per_query_fallback,
-      true,
-    );
+      lexicalPerQueryCounts: lexical.perQueryCounts,
+      lexicalPerQueryTokenCounts: lexical.perQueryTokenCounts,
+      semanticPerQueryHits: semantic.per_query_hits,
+      semanticPerQueryFallback: semantic.per_query_fallback,
+      semanticRan: true,
+      lexicalRan: true,
+    });
     return {
       ...assembleUnified({
         semanticNodes,
@@ -549,20 +616,18 @@ export function buildSearchNotesTool(
     '',
     'PARAMETERS:',
     '- query (required): string, or array of 1-8 strings for synonyms/translations — merged into one ranked list per leg; each result carries `matched_queries`.',
-    "- limit: caps `matches[]` in every mode, overriding the effort default merged-list cap. Does not change either leg's internal pool size.",
-    "- threshold: min similarity 0-1 on the semantic leg's note scores. An explicit value is a hard filter with no fallback (zero hits are honest). Omitted → effort defaults (0.5 quick / 0.35 deep) plus one retry at 0.3, flagged as `semantic_fallback` in `query_stats`.",
-    '- expansion_floor: min seed↔note similarity 0-1 for the expansion leg (deep only). This note-to-note scale runs far higher than query scores — 0.9+ is typical. Default 0.35; threshold never affects it.',
+    '- limit: caps `matches[]` in every mode, overriding the effort default merged-list cap.',
     ...(registry.isMulti()
       ? ['- vault: target a specific vault by name when multiple are registered.']
       : []),
     '',
     'RESPONSE SHAPE:',
-    '- `matches[]` — one fused, ranked list; each note appears at most once. `found_in` names the leg(s) that surfaced it ("semantic", "lexical:title"|"lexical:heading"|"lexical:body", "expansion") and is never empty; each leg that hit attaches its own evidence field. More than one leg on a note is the strongest relevance signal there is.',
+    '- `matches[]` — one fused, ranked list; each note appears at most once. `found_in` names the leg(s) that surfaced it, and each leg that hit attaches its own evidence field. More than one leg on a note is the strongest relevance signal there is.',
     '- `truncated` — top-level, always present; true when candidates were dropped, either by the merged cap (recover by raising `limit`) or by a leg\'s internal pool cap (`limit` will NOT help — raise `effort` to "deep", or narrow `query`/`filter`).',
-    '- `semantic_status` — top-level, always present: `{ state: "ready"|"indexing"|"disabled"|"unavailable", indexed?, total? }`, describing the VAULT\'s index, not this request. Every state but "ready" carries a `note` saying what it did to this response. "ready" is about the index, not this call — the semantic leg never runs under `mode: "lexical"` or on an empty-filter result; read `query_stats.semantic` for that.',
-    '- `query_stats` — array queries only: per input query, PRE-cap hit counts `{ semantic, lexical }` (before cross-query merging and before the `matches[]` cap). `semantic` is `null` when the semantic leg did not run (mode "lexical", no index, empty filter set); a number always means it ran, so `{ semantic: 0, lexical: 0 }` marks a dead variant worth rephrasing or dropping. When the lexical leg ran and `lexical` is 0 on a multi-word query, `lexical_tokens` counts the notes each token matches alone: a zero names the token that killed the AND match — drop or replace it; all non-zero means the tokens never co-occur in one title/heading/paragraph — split the query into an array.',
+    '- `semantic_status` — top-level, always present: `{ state, indexed?, total? }` describing the VAULT\'s index, not this call. Every state but "ready" carries a `note` saying what it did to this response.',
+    '- `query_stats` — array queries only: per input query, PRE-cap hit counts `{ semantic, lexical }`. `semantic` is `null` when the semantic leg did not run at all; a number always means it ran. An entry worth acting on carries its own `note` diagnosing it.',
     '',
-    'LEXICAL MATCHING: case-, accent-, and apostrophe-variant-insensitive substring; multiword query = ALL tokens must appear (AND), contiguous phrase ranks higher.',
+    'LEXICAL MATCHING: accent- and case-insensitive substring; a multiword query needs ALL tokens (AND), and a contiguous phrase ranks higher.',
     '',
     'EXAMPLES:',
     '- "where did I write about X?" → search_notes({query: "X"}).',
@@ -584,8 +649,25 @@ export function buildSearchNotesTool(
       mode: z.enum(['hybrid', 'lexical']).optional(),
       effort: z.enum(['quick', 'deep']).optional(),
       limit: z.number().int().positive().optional(),
-      threshold: z.number().min(0).max(1).optional(),
-      expansion_floor: z.number().min(0).max(1).optional(),
+      // Documented here rather than in the tool description: both are expert
+      // floors, rarely the right reach, and their prose was mostly a warning
+      // against using them — so it belongs next to the field being filled.
+      threshold: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe(
+          "Min semantic similarity 0-1 on the semantic leg's note scores. An explicit value is a hard filter with no fallback — zero hits are honest. Omitted: effort defaults (0.5 quick / 0.35 deep) with one retry at 0.3. Never affects the lexical or expansion leg.",
+        ),
+      expansion_floor: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe(
+          'Min seed↔note similarity 0-1 for the expansion leg (deep effort only). A note-to-note scale that runs far higher than query scores — 0.9+ is typical. Default 0.35, and `threshold` never affects it.',
+        ),
       filter: filterSchema.optional(),
     },
     runForEntry: (entry, input: SearchNotesInput) => runSearchForEntry(entry, input, entryDeps),

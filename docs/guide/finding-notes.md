@@ -183,13 +183,22 @@ For an array `query`, the response also includes `query_stats` — one line per 
   "matches": [ /* ... */ ],
   "truncated": false,
   "query_stats": {
-    "a query with only weak matches": { "semantic": 2, "lexical": 0, "semantic_fallback": true },
+    "a query with only weak matches": {
+      "semantic": 2,
+      "lexical": 0,
+      "semantic_fallback": true,
+      "note": "Semantic hits came from the 0.3 fallback retry, so they are weaker than a normal result."
+    },
     "a query with strong matches": { "semantic": 5, "lexical": 1 }
   }
 }
 ```
 
 The first query's notes all scored below 0.35 (the deep default) but at least one scored ≥ 0.3, so the retry rescued them — flagged per query, not per call, since one query in a batch can need the rescue while another doesn't.
+
+**An entry worth acting on carries its own `note`.** It is one sentence naming the fix, and it exists so the tool description does not have to teach how to read these numbers to every session that never sees a misfire. It diagnoses in order of what a caller acts on first: a variant with no hits in any leg that ran names the tokens whose zero killed the AND match, or tells you to split it into separate array entries when every token matches alone but they never co-occur, or — with nothing more specific to say — to rephrase or drop it; failing all that, a `semantic_fallback` entry says its hits are the weaker kind. Entries that need nothing carry no `note`.
+
+The one case that deliberately gets no `note` is the empty-filter early return, where neither leg ran: a zero there describes the `filter`, not the query, and calling an untried variant dead would send you to rewrite something that was never searched.
 
 **`lexical_tokens` explains an AND-killed multi-word query, when the lexical leg executed.** When the lexical leg ran and a query's `lexical` count is `0` while the query has two or more normalized tokens, its entry also carries `lexical_tokens` — the same tokens, each mapped to how many notes *that token alone* matches (same normalization, same `filter` scope):
 

@@ -272,10 +272,27 @@ An explicitly provided `threshold` SHALL be a hard filter on the semantic leg's 
 
 For an array `query`, the response SHALL include `query_stats` mapping every normalized input query (trimmed, de-duplicated) to `{ semantic, lexical }` hit counts taken before cross-query merging and before any result-list cap. `semantic` SHALL be the number of notes that query retrieved from the semantic leg (post-threshold) when the leg executed, and SHALL be `null` — never `0` — when the semantic leg did not execute for the request (`mode: "lexical"`, no semantic corpus available, or the empty-filter early return); a numeric `semantic` SHALL always mean the leg ran and counted. When a query's semantic hits were produced by the default-threshold fallback retry at 0.3 (see Requirement: threshold is a hard semantic filter with default-only fallback), that query's entry SHALL additionally carry `semantic_fallback: true`; the key SHALL be absent in every other case, including explicit-threshold requests (where no fallback exists). `lexical` SHALL be the number of notes the query matched before the lexical note cap, counted over the leg's candidate set (`0` over an empty filter set). When the lexical leg executed and a query's `lexical` count is `0` while the query has two or more normalized tokens, its entry SHALL additionally carry `lexical_tokens` mapping each normalized token to the number of notes that token alone matches under the same normalization rules and filter set; `lexical_tokens` SHALL be omitted in every other case, including the empty-filter early return where neither leg runs. A query with zero hits in both executed legs SHALL report `{ semantic: 0, lexical: 0 }`. `query_stats` SHALL be omitted for a single string `query`.
 
+An entry SHALL additionally carry `note` — one sentence naming what to do about it — exactly when at least one leg executed and the entry is worth acting on, so that the tool description does not have to teach how to read these numbers. `note` SHALL diagnose, in this order of precedence: a variant with no hits in any executed leg names the tokens whose zero killed the AND match when `lexical_tokens` identifies them, tells the caller to split the variant into separate array entries when every token matches alone but never co-occurs, and otherwise says to rephrase or drop the variant; failing that, an entry carrying `semantic_fallback` SHALL say its semantic hits are weaker for having come from the retry. `note` SHALL be absent when neither leg executed — a zero on the empty-filter early return describes the filter, not the query, and SHALL NOT be diagnosed as a dead variant.
+
 #### Scenario: a dead query variant is visible in one line
 
 - **WHEN** `search_notes` is called with `{ query: ["monetization research", "Мобі"] }` in hybrid mode with a corpus available and «Мобі» matches nothing in either leg
-- **THEN** `query_stats["Мобі"]` is `{ semantic: 0, lexical: 0 }` while the other query reports non-zero counts
+- **THEN** `query_stats["Мобі"]` is `{ semantic: 0, lexical: 0 }` with a `note` telling the caller to rephrase or drop it, while the other query reports non-zero counts and no `note`
+
+#### Scenario: the killer token is named, not left to be inferred
+
+- **WHEN** a multi-token query returns `lexical: 0` and one of its `lexical_tokens` counts is `0`
+- **THEN** the entry's `note` names that token and says to drop or replace it
+
+#### Scenario: co-occurrence failure is diagnosed as a split, not a rephrase
+
+- **WHEN** a multi-token query returns `lexical: 0` and every one of its `lexical_tokens` counts is above `0`
+- **THEN** the entry's `note` tells the caller to split the variant into separate array entries
+
+#### Scenario: an untried query is not called dead
+
+- **WHEN** a `filter` matches no notes, neither leg runs, and `query_stats` reports `{ semantic: null, lexical: 0 }` per query
+- **THEN** no entry carries a `note`, because the zero describes the filter rather than the query
 
 #### Scenario: merge-cap cuts do not zero a query's stats
 
@@ -419,12 +436,17 @@ Every per-vault `search_notes` payload SHALL carry `semantic_status: { state, in
 
 ### Requirement: The search_notes description carries call-time guidance only
 
-The `search_notes` tool description SHALL carry only what a caller needs before issuing a call — what the tool does, how to write the query, the axes, the parameters, the pre-filter shape, and worked examples — and SHALL NOT carry prose whose only use is interpreting a response already in hand once that prose can travel on the response instead (`semantic_status.note`), per ADR-0010's response channel. The description SHALL NOT restate which fields are absent from a payload, SHALL NOT enumerate `matches[]` entry fields beyond `found_in`'s provenance meaning, and SHALL state any one fact once rather than under two headings. Its length SHALL NOT exceed 5,000 characters, measured on the longer multi-vault variant and asserted against the registered tool's advertised description so the budget fails CI rather than review.
+The `search_notes` tool description SHALL carry only what a caller needs before issuing a call — what the tool does, how to write the query, the axes, the everyday parameters, the pre-filter shape, and worked examples — and SHALL NOT carry prose whose only use is interpreting a response already in hand once that prose can travel on the response instead (`semantic_status.note`, `query_stats[].note`), per ADR-0010's response channel. Expert similarity floors (`threshold`, `expansion_floor`) SHALL be documented on the input schema, next to the field a caller fills, rather than in the description. The description SHALL NOT restate which fields are absent from a payload, SHALL NOT enumerate `matches[]` entry fields beyond `found_in`'s provenance meaning, and SHALL state any one fact once rather than under two headings. Its length SHALL NOT exceed 3,800 characters, measured on the longer multi-vault variant and asserted against the registered tool's advertised description so the budget fails CI rather than review.
 
 #### Scenario: the description stays inside its budget
 
 - **WHEN** the `search_notes` tool is registered against a multi-vault registry and its advertised `description` is measured
-- **THEN** it is at most 5,000 characters
+- **THEN** it is at most 3,800 characters
+
+#### Scenario: expert knobs stay callable while leaving the description
+
+- **WHEN** the registered tool is inspected for `threshold` and `expansion_floor`
+- **THEN** both are advertised and validated by `inputSchema`, each carrying its own description there, and neither is documented in the tool description
 
 #### Scenario: semantic_status costs one line, not a section
 

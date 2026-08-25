@@ -1322,15 +1322,16 @@ describe('search_notes advertised description', () => {
    * needs *before* a call; anything only useful for reading a response
    * already in hand belongs on that response instead.
    *
-   * 5,000 is the floor this string can reach while `truncated` and
-   * `query_stats` still explain themselves here: both are post-hoc reading
-   * aids (~830 characters between them) that stay in the description only
-   * because moving them would change the output shape. Giving them the
-   * `semantic_status.note` treatment is what buys the next cut — until then,
-   * do not lower this number by compressing `QUERY WRITING` or `EXAMPLES`,
-   * which are the only sections that change how a model writes a query.
+   * 3,800 is the floor this string can reach while `truncated` still
+   * explains its two recovery paths here. That prose is the same kind of
+   * post-hoc reading aid `semantic_status` and `query_stats` shed onto their
+   * own payloads; `truncated` keeps it only because turning the boolean into
+   * `{ by, fix }` would break a field released in 15.5.0. Doing that is the
+   * next cut — do NOT lower this number by compressing `QUERY WRITING` or
+   * `EXAMPLES` instead, which are the only sections that change how a model
+   * writes a query, and the only ones no harness here can regression-test.
    */
-  const DESCRIPTION_BUDGET = 5000;
+  const DESCRIPTION_BUDGET = 3800;
 
   it('stays inside its always-paid budget', () => {
     // The multi-vault variant is the longer of the two.
@@ -1358,8 +1359,28 @@ describe('search_notes advertised description', () => {
     expect(describeWith(['v'])).toMatch(/mode: "lexical"/);
   });
 
-  it('states semantic_fallback exactly once', () => {
-    const occurrences = describeWith(['v']).split('semantic_fallback').length - 1;
-    expect(occurrences).toBe(1);
+  it('leaves per-field diagnostics to the fields themselves', () => {
+    const description = describeWith(['v']);
+    // `semantic_fallback` and the AND-killed-token diagnosis are read only
+    // when they happen, so they live on `query_stats` entries and in the
+    // input schema — not in prose every session pays for.
+    expect(description).not.toMatch(/semantic_fallback/);
+    expect(description).not.toMatch(/lexical_tokens/);
+  });
+
+  it('leaves the expert similarity knobs to the input schema', () => {
+    const description = describeWith(['v']);
+    // Still callable and still validated — just not documented in the
+    // always-paid channel, where their prose was mostly a warning against
+    // using them.
+    expect(description).not.toMatch(/expansion_floor/);
+    expect(description).not.toMatch(/- threshold:/);
+  });
+
+  it('still advertises the expert knobs on the input schema', () => {
+    const spec = registerTool(buildSearchNotesTool(depsFor('v'))).spec;
+    const shape = JSON.stringify(spec.inputSchema);
+    expect(shape).toMatch(/threshold/);
+    expect(shape).toMatch(/expansion_floor/);
   });
 });
