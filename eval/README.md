@@ -97,7 +97,10 @@ Two independent axes, both recorded in every report:
     `flattenExpansion` + `fuseRanks` (expansion weight 0.85). This is the same
     sequence `search_notes` calls internally to assemble its unified list,
     minus the MCP response envelope — so a `fused` eval run measures the real
-    production ordering, not a reimplementation of it.
+    production ordering, not a reimplementation of it. That claim is pinned:
+    `test/eval/production-fusion-pin.test.ts` ranks one query both ways over a
+    fixture vault and asserts the two path orders are identical, so a change
+    to production's fusion that the harness doesn't follow fails the suite.
 - **`--backend`** — the vector source: `sc` (Smart Connections) or `own`
   (this server's own corpus). Both produce the same in-memory snapshot shape,
   so the same pipeline code runs unchanged over either.
