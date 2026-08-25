@@ -52,4 +52,4 @@ Parallel-safe among themselves; all depend on groups 4 and 5 being settled.
 
 - [x] 7.1 Run the full gates — `npm test`, `npm run lint`, `npm run typecheck` — and confirm the suite count moved only by the tests this change adds.
 - [x] 7.2 Smoke the real behaviour against a scratch vault: cold start reports `indexing` and answers lexically, promotion to `ready` happens without a restart, an edited note changes results within the debounce window, `"semantic": false` leaves no corpus directory behind, and the process exits when its client disconnects.
-- [ ] 7.3 Fix the `corpus-staleness-filtering` capability's Purpose prose in `openspec/specs/` when the delta is synced — delta specs carry requirements only, and its Purpose still describes a read-only plugin corpus.
+- [x] 7.3 Fix the `corpus-staleness-filtering` capability's Purpose prose in `openspec/specs/` when the delta is synced — delta specs carry requirements only, and its Purpose still describes a read-only plugin corpus.
