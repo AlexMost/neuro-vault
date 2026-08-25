@@ -4,10 +4,11 @@ import path from 'node:path';
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 
+import { MODEL_KEY } from './lib/obsidian/corpus/types.js';
+
 import type { ServerConfig, IVaultConfig } from './types.js';
 import { packageMeta } from './package-meta.js';
 
-const DEFAULT_MODEL_KEY = 'bge-micro-v2';
 const DEFAULT_MODEL_ID = 'TaylorAI/bge-micro-v2';
 const VAULT_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -114,7 +115,7 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
       vaults,
       semantic: {
         enabled: args.semantic,
-        modelKey: DEFAULT_MODEL_KEY,
+        modelKey: MODEL_KEY,
         modelId: DEFAULT_MODEL_ID,
       },
     },

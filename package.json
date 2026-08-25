@@ -59,6 +59,7 @@
     "mdast-util-from-markdown": "^2.0.3",
     "picomatch": "^4.0.5",
     "sift": "^17.1.3",
+    "write-file-atomic": "^5.0.1",
     "yaml": "^2.8.3",
     "yargs": "^18.0.0"
   },
@@ -70,6 +71,7 @@
     "@types/mdast": "^4.0.4",
     "@types/node": "^22.15.18",
     "@types/picomatch": "^4.0.3",
+    "@types/write-file-atomic": "^4.0.3",
     "@types/yargs": "^17.0.35",
     "commit-and-tag-version": "^12.6.1",
     "eslint": "^9.25.0",

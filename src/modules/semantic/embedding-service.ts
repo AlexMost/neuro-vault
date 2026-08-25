@@ -1,9 +1,29 @@
 import { pipeline } from '@xenova/transformers';
 
+// The corpus library owns the model's identity: EMBED_CHAR_BUDGET is derived
+// from the same token window, so the two must never drift apart.
+import { MAX_TOKENS, MODEL_KEY } from '../../lib/obsidian/corpus/types.js';
+
 import type { EmbeddingProvider } from './types.js';
 
-const DEFAULT_MODEL_KEY = 'bge-micro-v2';
 const EMBEDDING_TASK = 'feature-extraction';
+
+type CappableTokenizer = { model_max_length?: number };
+
+function capTokenizer(embeddingPipeline: unknown): void {
+  const tokenizer = (embeddingPipeline as { tokenizer?: CappableTokenizer } | null)?.tokenizer;
+  if (!tokenizer) return;
+  // A tokenizer config that declares an effectively unbounded window — or omits
+  // the field, turning the pipeline's truncation math into NaN — disables
+  // truncation and makes any input over the real window throw inside ONNX. A
+  // genuine window smaller than MAX_TOKENS must survive: raising it would
+  // reintroduce the same overflow.
+  const declared = tokenizer.model_max_length;
+  tokenizer.model_max_length =
+    typeof declared === 'number' && Number.isFinite(declared)
+      ? Math.min(declared, MAX_TOKENS)
+      : MAX_TOKENS;
+}
 
 type RawPipeline = (
   text: string,
@@ -27,7 +47,7 @@ export class EmbeddingService implements EmbeddingProvider {
   private initialization: Promise<void> | null = null;
 
   constructor(options: EmbeddingServiceOptions = {}) {
-    this.modelKey = options.modelKey ?? DEFAULT_MODEL_KEY;
+    this.modelKey = options.modelKey ?? MODEL_KEY;
     this.pipelineFactory = options.pipelineFactory ?? (pipeline as unknown as PipelineFactory);
   }
 
@@ -57,6 +77,7 @@ export class EmbeddingService implements EmbeddingProvider {
     if (!this.initialization) {
       this.initialization = this.pipelineFactory(EMBEDDING_TASK, this.modelKey)
         .then((embeddingPipeline) => {
+          capTokenizer(embeddingPipeline);
           this.pipeline = embeddingPipeline;
         })
         .catch((error: unknown) => {
