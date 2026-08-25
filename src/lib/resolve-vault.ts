@@ -31,24 +31,52 @@ export function resolveSemanticVault(
   opts: IResolveVaultOpts,
 ): IVaultEntry & { backend: SemanticBackend } {
   const entry = resolveVault(input, registry, opts);
-  // Any non-`ready` state (absent backend, `indexing`, `disabled`,
-  // `unavailable`) reports the same SEMANTIC_INDEX_NOT_FOUND today; splitting
-  // those into their own error codes is a later change, not this one.
-  if (entry.backend === undefined || entry.backend.status().state !== 'ready') {
-    throw new ToolHandlerError(
-      'SEMANTIC_INDEX_NOT_FOUND',
-      `Semantic index for vault "${entry.name}" is unavailable: ` +
-        `${entry.backend?.status().reason ?? 'unknown reason'}`,
-      {
-        details: {
-          vault: entry.name,
-          hint: `open vault "${entry.name}" in Obsidian with Smart Connections installed`,
+  // An absent backend means the semantic module is globally off for this
+  // server; it is reported through the same `unavailable` branch as a
+  // backend that reports its own failure reason.
+  const status = entry.backend?.status() ?? {
+    state: 'unavailable' as const,
+    reason: 'the semantic module is disabled for this server',
+  };
+  switch (status.state) {
+    case 'ready':
+      // The switch above proves `entry.backend` is defined and ready; the
+      // cast bridges what TS cannot narrow through the optional-chained
+      // `.status()` call used to compute `status`.
+      return entry as IVaultEntry & { backend: SemanticBackend };
+    case 'indexing':
+      throw new ToolHandlerError(
+        'SEMANTIC_INDEX_BUILDING',
+        `Semantic index for vault "${entry.name}" is still building`,
+        {
+          details: {
+            vault: entry.name,
+            indexed: status.indexed ?? 0,
+            total: status.total ?? 0,
+          },
         },
-      },
-    );
+      );
+    case 'disabled':
+      throw new ToolHandlerError(
+        'SEMANTIC_DISABLED',
+        `Semantic search is disabled for vault "${entry.name}"`,
+        {
+          details: {
+            vault: entry.name,
+            hint: 'set "semantic": true in the vault\'s .neuro-vault/config.json',
+          },
+        },
+      );
+    default:
+      throw new ToolHandlerError(
+        'SEMANTIC_INDEX_NOT_FOUND',
+        `Semantic index for vault "${entry.name}" is unavailable: ${status.reason ?? 'unknown reason'}`,
+        {
+          details: {
+            vault: entry.name,
+            hint: `build it with: neuro-vault-mcp index --vault ${entry.path}`,
+          },
+        },
+      );
   }
-  // The check above proves `entry.backend` is defined and ready; the cast
-  // bridges what TS cannot narrow through the optional-chained `.status()`
-  // call in the condition above.
-  return entry as IVaultEntry & { backend: SemanticBackend };
 }

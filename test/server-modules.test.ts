@@ -162,7 +162,7 @@ async function startForShutdown(opts: {
 }
 
 describe('Neuro Vault MCP server bootstrap', () => {
-  it('returns SEMANTIC_INDEX_NOT_FOUND while a vault is still building its corpus (startup tolerant)', async () => {
+  it('returns SEMANTIC_INDEX_BUILDING with progress while a vault is still building its corpus (startup tolerant)', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
@@ -180,7 +180,10 @@ describe('Neuro Vault MCP server bootstrap', () => {
       const result = await findDuplicates!({});
       expect(result).toMatchObject({
         isError: true,
-        structuredContent: { code: 'SEMANTIC_INDEX_NOT_FOUND' },
+        structuredContent: {
+          code: 'SEMANTIC_INDEX_BUILDING',
+          details: { indexed: 0, total: 12 },
+        },
       });
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });

@@ -129,7 +129,9 @@ export type ToolHandlerErrorCode =
   | 'DEPENDENCY_ERROR'
   | 'VAULT_REQUIRED'
   | 'VAULT_NOT_FOUND'
-  | 'SEMANTIC_INDEX_NOT_FOUND';
+  | 'SEMANTIC_INDEX_NOT_FOUND'
+  | 'SEMANTIC_INDEX_BUILDING'
+  | 'SEMANTIC_DISABLED';
 
 export interface ToolHandlers {
   getSimilarNotes(input: GetSimilarNotesInput): Promise<SimilarNoteResult[]>;

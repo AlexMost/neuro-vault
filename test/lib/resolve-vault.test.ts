@@ -37,6 +37,30 @@ function unavailableBackend(reason: string): SemanticBackend {
   };
 }
 
+function registryWithBackend(
+  status:
+    | { state: 'indexing'; indexed: number; total: number }
+    | { state: 'disabled' }
+    | { state: 'unavailable'; reason: string },
+): IVaultRegistry {
+  const backend: SemanticBackend = {
+    snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) as never,
+    status: () => status,
+    dispose: async () => {},
+  };
+  return makeRegistry([{ name: 'v', backend }]);
+}
+
+function catchError(fn: () => unknown): ToolHandlerError {
+  try {
+    fn();
+    throw new Error('expected throw');
+  } catch (err) {
+    if (err instanceof ToolHandlerError) return err;
+    throw err;
+  }
+}
+
 describe('resolveVault', () => {
   it('single-vault registry returns the sole entry when vault: omitted', () => {
     const reg = makeRegistry([{ name: 'only' }]);
@@ -119,5 +143,39 @@ describe('resolveSemanticVault', () => {
     const entry = resolveSemanticVault({ vault: 'b' }, reg, { tool: 'search_notes' });
     expect(entry.name).toBe('b');
     expect(entry.backend).toBe(backend);
+  });
+
+  it('reports a building index with its progress', () => {
+    const registry = registryWithBackend({ state: 'indexing', indexed: 12, total: 840 });
+    try {
+      resolveSemanticVault({}, registry, { tool: 'find_duplicates' });
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(ToolHandlerError);
+      const e = error as ToolHandlerError;
+      expect(e.code).toBe('SEMANTIC_INDEX_BUILDING');
+      expect(e.details).toMatchObject({ vault: 'v', indexed: 12, total: 840 });
+    }
+  });
+
+  it('names the config key for a disabled vault', () => {
+    const registry = registryWithBackend({ state: 'disabled' });
+    const error = catchError(() =>
+      resolveSemanticVault({}, registry, { tool: 'get_similar_notes' }),
+    );
+    expect(error.code).toBe('SEMANTIC_DISABLED');
+    expect(`${error.message} ${JSON.stringify(error.details)}`).toContain(
+      '.neuro-vault/config.json',
+    );
+  });
+
+  it('points an unavailable corpus at the index command and never at a plugin', () => {
+    const registry = registryWithBackend({ state: 'unavailable', reason: 'EACCES' });
+    const error = catchError(() => resolveSemanticVault({}, registry, { tool: 'find_duplicates' }));
+    expect(error.code).toBe('SEMANTIC_INDEX_NOT_FOUND');
+    const text = `${error.message} ${JSON.stringify(error.details)}`;
+    expect(text).toContain('EACCES');
+    expect(text).toContain('index');
+    expect(text).not.toMatch(/Obsidian|Smart Connections/i);
   });
 });
