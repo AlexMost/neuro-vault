@@ -4,6 +4,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { parseConfig } from './config.js';
+import { runIndexCommand } from './cli-index.js';
 import { startNeuroVaultServer, type NeuroVaultStartupDependencies } from './server.js';
 
 export async function main(
@@ -13,6 +14,10 @@ export async function main(
   const parsed = await parseConfig(argv);
   // yargs already satisfied this invocation (--help or --version); stop here.
   if (parsed.kind === 'handled') {
+    return;
+  }
+  if (parsed.kind === 'index') {
+    process.exitCode = await runIndexCommand(parsed.options);
     return;
   }
   await startNeuroVaultServer(parsed.config, deps);

@@ -170,4 +170,35 @@ describe('parseConfig', () => {
   it('still rejects a run invocation with no --vault', async () => {
     await expect(parseConfig(['node', 'cli.js', '--semantic'])).rejects.toThrow(/--vault/);
   });
+
+  describe('index subcommand', () => {
+    it('parses index --vault into the index variant', async () => {
+      const parsed = await parseConfig(['node', 'cli.js', 'index', '--vault', vaultPath]);
+      expect(parsed.kind).toBe('index');
+      if (parsed.kind !== 'index') return;
+      expect(parsed.options.vaults).toHaveLength(1);
+      expect(parsed.options.vaults[0].path).toBe(vaultPath);
+    });
+
+    it('index rejects a relative vault path with the same error as server mode', async () => {
+      await expect(parseConfig(['node', 'cli.js', 'index', '--vault', './rel'])).rejects.toThrow(
+        /--vault: path must be absolute/,
+      );
+    });
+
+    it('index without --vault is rejected naming the option', async () => {
+      await expect(parseConfig(['node', 'cli.js', 'index'])).rejects.toThrow(/--vault is required/);
+    });
+
+    it('index rejects --no-semantic (server-only option)', async () => {
+      await expect(
+        parseConfig(['node', 'cli.js', 'index', '--no-semantic', '--vault', vaultPath]),
+      ).rejects.toThrow();
+    });
+
+    it('a plain --vault invocation still resolves to the server variant', async () => {
+      const parsed = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
+      expect(parsed.kind).toBe('run');
+    });
+  });
 });
