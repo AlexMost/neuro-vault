@@ -53,21 +53,30 @@ describe('parseGoldenSet', () => {
 });
 
 describe('loadGoldenSet', () => {
+  // `tempRoot` is the parent of `vaultRoot` so an escaping `../outside.md`
+  // entry has somewhere real to point at.
+  let tempRoot: string;
   let vaultRoot: string;
   afterEach(async () => {
-    if (vaultRoot) {
-      await rm(vaultRoot, { recursive: true, force: true });
+    if (tempRoot) {
+      await rm(tempRoot, { recursive: true, force: true });
     }
   });
 
   async function makeVault(golden: string, notes: string[]): Promise<void> {
-    vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-golden-'));
+    tempRoot = await mkdtemp(path.join(tmpdir(), 'eval-golden-'));
+    vaultRoot = path.join(tempRoot, 'vault');
+    await mkdir(vaultRoot, { recursive: true });
     await mkdir(path.dirname(goldenSetPath(vaultRoot)), { recursive: true });
     await writeFile(goldenSetPath(vaultRoot), golden);
     for (const note of notes) {
       await mkdir(path.join(vaultRoot, path.dirname(note)), { recursive: true });
       await writeFile(path.join(vaultRoot, note), '# note\n');
     }
+  }
+
+  function oneEntry(relevant: string): string {
+    return `- id: q001\n  query: x\n  lang: en\n  relevant:\n    - "${relevant}"\n`;
   }
 
   it('resolves the fixed conventional path', () => {
@@ -87,5 +96,39 @@ describe('loadGoldenSet', () => {
     expect(message).toContain('q002');
     expect(message).toContain('Ideas/embeddings.md');
     expect(message).toContain('Tasks/rag.md');
+  });
+
+  // Each of these passes an `fs.access` check on the joined path yet is absent
+  // from the corpus and the lexical index, so `scoreQuery`'s Set lookup could
+  // never match it — a permanently unwinnable query. The gate validates
+  // membership in the scoped vault listing precisely to catch them.
+  it('rejects a case-mismatched path (case-insensitive volumes)', async () => {
+    await makeVault(oneEntry('Notes/Foo.md'), ['Notes/foo.md']);
+    const err = await loadGoldenSet(vaultRoot).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GoldenSetError);
+    expect((err as Error).message).toContain('Notes/Foo.md');
+  });
+
+  it('rejects a path escaping the vault root', async () => {
+    await makeVault(oneEntry('../outside.md'), ['Notes/foo.md']);
+    await writeFile(path.join(tempRoot, 'outside.md'), '# note\n');
+    const err = await loadGoldenSet(vaultRoot).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GoldenSetError);
+    expect((err as Error).message).toContain('../outside.md');
+  });
+
+  it('rejects a note the vault scope excludes', async () => {
+    // A dot-segment note exists on disk but is unconditionally invisible to
+    // indexing and search, so it can never be ranked.
+    await makeVault(oneEntry('.archive/hidden.md'), ['Notes/foo.md', '.archive/hidden.md']);
+    const err = await loadGoldenSet(vaultRoot).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GoldenSetError);
+    expect((err as Error).message).toContain('.archive/hidden.md');
+  });
+
+  it('says a broken entry is not in the vault rather than merely missing', async () => {
+    await makeVault(oneEntry('Notes/gone.md'), ['Notes/foo.md']);
+    const err = await loadGoldenSet(vaultRoot).catch((e: unknown) => e);
+    expect((err as Error).message).toMatch(/not in the vault \(or excluded by scope\)/i);
   });
 });

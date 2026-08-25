@@ -1,7 +1,10 @@
-import { access, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { parse } from 'yaml';
+
+import { FsVaultReader } from '../src/lib/obsidian/vault-reader.js';
+import { loadVaultScope } from '../src/lib/obsidian/vault-scope-config.js';
 
 export interface GoldenEntry {
   id: string;
@@ -62,19 +65,18 @@ export function parseGoldenSet(yamlText: string): GoldenEntry[] {
   return entries;
 }
 
-async function pathExists(absPath: string): Promise<boolean> {
-  try {
-    await access(absPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Read + parse + validate. Every broken relevant path is collected and
  * reported at once — a moved note is a data error to fix, never a silently
  * unwinnable query (spec: "Relevant-path validation gates the run").
+ *
+ * Membership is checked against the **scoped vault listing**, not the
+ * filesystem. `fs.access` on the joined path is a strictly weaker gate: on a
+ * case-insensitive volume `Notes/Foo.md` passes it while the corpus and the
+ * lexical index carry `Notes/foo.md`; a scope-excluded or dot-segment note
+ * exists on disk but is in neither index; and `../outside.md` resolves fine.
+ * Each of those becomes a permanently unwinnable query — the silent metric
+ * degradation this gate exists to prevent.
  */
 export async function loadGoldenSet(vaultRoot: string): Promise<GoldenEntry[]> {
   const file = goldenSetPath(vaultRoot);
@@ -85,16 +87,22 @@ export async function loadGoldenSet(vaultRoot: string): Promise<GoldenEntry[]> {
     fail(`golden set not found at ${file}`);
   }
   const entries = parseGoldenSet(text);
+  const scope = await loadVaultScope(vaultRoot);
+  const reader = new FsVaultReader({ vaultRoot, scope });
+  const known = new Set(await reader.scan());
   const broken: string[] = [];
   for (const entry of entries) {
     for (const rel of entry.relevant) {
-      if (!(await pathExists(path.join(vaultRoot, rel)))) {
+      if (!known.has(rel)) {
         broken.push(`  ${entry.id}: ${rel}`);
       }
     }
   }
   if (broken.length > 0) {
-    fail(`golden set has broken relevant paths (fix or update the entries):\n${broken.join('\n')}`);
+    fail(
+      'golden set has relevant paths that are not in the vault (or excluded by scope) — ' +
+        `fix or update the entries:\n${broken.join('\n')}`,
+    );
   }
   return entries;
 }

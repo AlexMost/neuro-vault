@@ -52,10 +52,15 @@ Structural problems — a missing `query`, an unknown `lang`, a duplicate `id`,
 an empty `relevant` list — fail the run immediately, naming the offending
 entry.
 
-**Every `relevant` path is also checked for existence before any query is
-embedded.** A note that moved or was renamed silently turns its query
-unwinnable — the ranking wouldn't have degraded, but the metric would. So a
-broken path is treated as the golden set's own "compile error": the run
+**Every `relevant` path is also checked against the vault's scoped note
+listing before any query is embedded** — the same listing the corpus and the
+lexical index are built from, not a bare filesystem check. A note that moved
+or was renamed silently turns its query unwinnable — the ranking wouldn't have
+degraded, but the metric would — and so do three entries a filesystem check
+waves through: a case-mismatched path on a case-insensitive volume
+(`Notes/Foo.md` for `Notes/foo.md`), a note the vault's scope excludes (or one
+under a dot-segment), and a path escaping the vault root (`../outside.md`).
+So a broken path is treated as the golden set's own "compile error": the run
 exits non-zero, lists every broken `id` + path in one pass (not just the
 first), and writes no report. Fix the entry (or move the note back) and
 re-run.
