@@ -67,7 +67,7 @@ Extraction reproduces the Smart Connections corpus 1:1 so that the one diagnosti
 
 ```
 <vault>/.neuro-vault/corpus/
-  manifest.json                # { embed_version, model_key, dims, strategy, created }
+  manifest.json                # { embed_version, model_key, model_id, dims, strategy, created }
   notes/<sha256(path)[:32]>.json
 ```
 
@@ -102,7 +102,7 @@ The one case that throws instead is writing a vector of the wrong dimension: the
 
 `reconcileCorpus(deps, opts)` takes ports — `scan`, `stat`, `readNote`, `embed`, a `CorpusStore` — and returns `{ total, embedded, reused, renamed, deleted, failed }`. In order:
 
-1. `ensureManifest` compares the stored manifest against the running configuration (`embed_version`, `model_key`, `dims`, `strategy`). A mismatch, or a missing manifest while shards exist, discards every shard and rebuilds. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
+1. `ensureManifest` compares the stored manifest against the running configuration (`embed_version`, `model_key`, `model_id`, `dims`, `strategy`). A mismatch, or a missing manifest while shards exist, discards every shard and rebuilds. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
 2. Take the scoped path set from `scan()` and the shard map from `listShards()`. Reconcile applies no exclusion rule of its own.
 3. Shards whose path is not in scope become deletion candidates, indexed by content hash — the only place a rename can be recognised.
 4. For each path in scope: equal `mtime` **and** `size` → reused, without opening the note. Otherwise read it; an equal `content_hash` → rewrite the shard's metadata and keep the vectors (**reused**); otherwise embed (**embedded**). A path with no shard whose hash matches a deletion candidate is a **rename**: the old shard is unlinked and the note is re-embedded under its new path.

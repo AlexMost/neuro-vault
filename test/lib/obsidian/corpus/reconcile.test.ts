@@ -201,6 +201,7 @@ describe('reconcileCorpus', () => {
     await store.writeManifest({
       embed_version: 1,
       model_key: 'other',
+      model_id: 'other/other',
       dims: MODEL_DIMS,
       strategy: 'sc-parity-v1',
       created: '2026-01-01T00:00:00.000Z',
@@ -333,6 +334,59 @@ describe('reconcileCorpus', () => {
 
     expect(summary).toMatchObject({ total: 1, failed: 1, embedded: 0 });
     expect(await store.readShard('A.md')).toEqual(before);
+  });
+
+  it('keeps the old shard when the re-embed of a renamed note fails', async () => {
+    const { run, store, vault, root } = await harness({ 'A.md': body('A') });
+    await run();
+    const before = (await store.readShard('A.md'))!;
+    vault.move('A.md', 'Dir/A.md');
+
+    const summary = await reconcileCorpus({
+      vaultRoot: root,
+      scan: vault.scan,
+      stat: vault.stat,
+      readNote: vault.readNote,
+      embed: vi.fn(async () => {
+        throw new Error('model exploded');
+      }),
+      store,
+      warn: vi.fn(),
+    });
+
+    expect(summary).toMatchObject({ failed: 1, renamed: 0, deleted: 0 });
+    expect(await store.readShard('A.md')).toEqual(before);
+    expect(await store.readShard('Dir/A.md')).toBeNull();
+  });
+
+  it('contains a throwing onProgress callback', async () => {
+    const { run, root, vault, store, warn } = await harness({
+      'A.md': body('A'),
+      'B.md': body('B'),
+    });
+    await run();
+    vault.state.delete('B.md');
+
+    const summary = await reconcileCorpus(
+      {
+        vaultRoot: root,
+        scan: vault.scan,
+        stat: vault.stat,
+        readNote: vault.readNote,
+        embed: fakeEmbed(),
+        store,
+        warn,
+      },
+      {
+        onProgress: () => {
+          throw new Error('renderer exploded');
+        },
+      },
+    );
+
+    // The run still completes: the summary is returned and the orphan is swept.
+    expect(summary).toMatchObject({ total: 1, reused: 1, deleted: 1 });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('onProgress'));
   });
 
   it('appends the corpus entry to the vault gitignore once', async () => {

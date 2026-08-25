@@ -43,6 +43,8 @@ export interface CorpusShard {
 export interface CorpusManifest {
   embed_version: number;
   model_key: string;
+  /** The repo id the vectors were produced from — editing MODEL_ID alone must rebuild. */
+  model_id: string;
   dims: number;
   strategy: string;
   created: string;

@@ -334,6 +334,7 @@ export function isManifestCompatible(
   return (
     stored.embed_version === expected.embed_version &&
     stored.model_key === expected.model_key &&
+    stored.model_id === expected.model_id &&
     stored.dims === expected.dims &&
     stored.strategy === expected.strategy
   );
@@ -345,6 +346,7 @@ function isValidManifest(value: unknown): value is CorpusManifest {
   return (
     typeof v.embed_version === 'number' &&
     typeof v.model_key === 'string' &&
+    typeof v.model_id === 'string' &&
     typeof v.dims === 'number' &&
     typeof v.strategy === 'string' &&
     typeof v.created === 'string'

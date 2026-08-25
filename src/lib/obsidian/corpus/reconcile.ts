@@ -5,6 +5,7 @@ import { CorpusStore, ensureCorpusGitignored } from './shard-store.js';
 import {
   EMBED_VERSION,
   MODEL_DIMS,
+  MODEL_ID,
   MODEL_KEY,
   SC_PARITY_STRATEGY,
   type CorpusBlock,
@@ -86,21 +87,32 @@ export async function reconcileCorpus(
   await store.ensureManifest({
     embed_version: EMBED_VERSION,
     model_key: MODEL_KEY,
+    model_id: MODEL_ID,
     dims: MODEL_DIMS,
     strategy: SC_PARITY_STRATEGY,
   });
 
   const paths = await scan();
-  const shards = await store.listShards();
+  // Retain only the metadata the loop reads — the vectors of a whole corpus
+  // would otherwise sit in memory for the run. The rare metadata-rewrite path
+  // re-reads its one shard lazily.
+  const shards = new Map<string, { mtime: number; size: number; content_hash: string }>();
+  for (const [shardPath, shard] of await store.listShards()) {
+    shards.set(shardPath, {
+      mtime: shard.mtime,
+      size: shard.size,
+      content_hash: shard.content_hash,
+    });
+  }
   const inScope = new Set(paths);
 
   // Shards whose note is no longer in scope: deletion candidates, and the only
   // place a rename can be recognised from.
-  const orphans = new Map<string, string>();
+  const orphans = new Set<string>();
   const orphansByHash = new Map<string, string[]>();
   for (const [shardPath, shard] of shards) {
     if (inScope.has(shardPath)) continue;
-    orphans.set(shardPath, shard.content_hash);
+    orphans.add(shardPath);
     const sameHash = orphansByHash.get(shard.content_hash);
     if (sameHash) sameHash.push(shardPath);
     else orphansByHash.set(shard.content_hash, [shardPath]);
@@ -129,10 +141,15 @@ export async function reconcileCorpus(
         const note = await readNote(notePath);
         const hash = contentHash(note.content);
         if (hash === shard.content_hash) {
-          // Same bytes, new metadata: rewrite the shard, keep the vectors.
-          await store.writeShard({ ...shard, mtime: note.mtime, size: note.size });
-          summary.reused += 1;
-          continue;
+          // Same bytes, new metadata: rewrite the shard, keep the vectors. The
+          // listing kept metadata only, so fetch the full shard lazily; a shard
+          // that vanished meanwhile falls through to a re-embed.
+          const full = await store.readShard(notePath);
+          if (full !== null) {
+            await store.writeShard({ ...full, mtime: note.mtime, size: note.size });
+            summary.reused += 1;
+            continue;
+          }
         }
         await embedNote(notePath, note, hash, embed, store);
         summary.embedded += 1;
@@ -141,12 +158,25 @@ export async function reconcileCorpus(
 
       const note = await readNote(notePath);
       const hash = contentHash(note.content);
+      // Claiming removes the orphan from the deletion sweep before the embed,
+      // so a failed embed preserves the old shard for the next pass's retry —
+      // a failure must leave the note's previous shard untouched.
       const renamedFrom = takeOrphanWithHash(orphansByHash, hash);
+      if (renamedFrom !== null) orphans.delete(renamedFrom);
       await embedNote(notePath, note, hash, embed, store);
       if (renamedFrom !== null) {
-        orphans.delete(renamedFrom);
-        await store.deleteShard(renamedFrom);
         summary.renamed += 1;
+        // The rename already succeeded; a failed unlink of the old shard must
+        // not recount it as a failed index. The stale shard is swept as an
+        // orphan on the next pass.
+        try {
+          await store.deleteShard(renamedFrom);
+        } catch (err) {
+          summary.failed += 1;
+          warn(
+            `neuro-vault corpus: failed to delete the shard of "${renamedFrom}" in vault ${vaultRoot}: ${String(err)}`,
+          );
+        }
       } else {
         summary.embedded += 1;
       }
@@ -158,11 +188,16 @@ export async function reconcileCorpus(
       );
     } finally {
       indexed += 1;
-      opts.onProgress?.({ indexed, total: summary.total });
+      // Guarded: a throw here would escape the catch above and abort the run.
+      try {
+        opts.onProgress?.({ indexed, total: summary.total });
+      } catch (err) {
+        warn(`neuro-vault corpus: onProgress callback threw: ${String(err)}`);
+      }
     }
   }
 
-  for (const orphanPath of orphans.keys()) {
+  for (const orphanPath of orphans) {
     try {
       await store.deleteShard(orphanPath);
       summary.deleted += 1;
