@@ -58,5 +58,5 @@ interface, not the in-flight worktree.
 - [x] 4.2 Confirm the slice stayed thin: no MCP tool contract change, no
   watcher, no new runtime dependency, no README/docs infrastructure-promise
   edits (those belong to slice #5).
-- [ ] 4.3 Open the PR (`Closes #83`), then run `/opsx:verify` before
+- [x] 4.3 Open the PR (`Closes #83`), then run `/opsx:verify` before
   archiving.
