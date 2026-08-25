@@ -169,6 +169,24 @@ describe('reconcileCorpus', () => {
     expect([...(await store.listShards()).keys()]).toEqual(['C.md']);
   });
 
+  it('does not rebuild when only membership changes', async () => {
+    const { run, vault, store, embed } = await harness({ 'A.md': body('A'), 'B.md': body('B') });
+    await run();
+    const manifestBefore = await store.readManifest();
+    const keptBefore = (await store.readShard('A.md'))!;
+    // An exclusion change is a membership change, not a vector change: B leaves
+    // scope, C enters it, and A must not be touched or re-embedded.
+    vault.state.delete('B.md');
+    vault.add('C.md', body('C'));
+    embed.mockClear();
+
+    const summary = await run();
+
+    expect(summary).toMatchObject({ total: 2, embedded: 1, reused: 1, deleted: 1 });
+    expect(await store.readShard('A.md')).toEqual(keptBefore);
+    expect(await store.readManifest()).toEqual(manifestBefore);
+  });
+
   it('is idempotent across repeated runs', async () => {
     const { run } = await harness({ 'A.md': body('A'), 'Dir/B.md': body('B') });
     await run();
