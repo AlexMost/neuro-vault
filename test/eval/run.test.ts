@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CorpusStore } from '../../src/lib/obsidian/corpus/shard-store.js';
 import { MODEL_DIMS } from '../../src/lib/obsidian/corpus/types.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
@@ -99,6 +99,25 @@ describe('runEval end-to-end (own backend, stub embedder)', () => {
       first_relevant_rank: 1,
     });
     expect(report.config).toMatchObject({ top_k: 10, semantic_threshold: 0 });
+  });
+
+  // `code_sha` answers "which checkout produced these numbers", so it must
+  // describe the checkout the harness code came from — not whatever directory
+  // the runner happened to be launched from.
+  it('records code_sha for the harness checkout, whatever the cwd', async () => {
+    await makeVault(GOLDEN);
+    const outside = await mkdtemp(path.join(tmpdir(), 'eval-not-a-repo-'));
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(outside);
+    try {
+      const { report } = await runEval(
+        { vault: vaultRoot, pipeline: 'semantic', backend: 'own' },
+        { embed: () => Promise.resolve(unitVec(0)), resultsDir },
+      );
+      expect(report.code_sha).not.toBeNull();
+    } finally {
+      cwdSpy.mockRestore();
+      await rm(outside, { recursive: true, force: true });
+    }
   });
 
   it('broken relevant path: fails before ranking, writes no report', async () => {

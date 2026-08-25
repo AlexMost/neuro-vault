@@ -56,7 +56,12 @@ export function parseEvalArgs(argv: string[]): EvalArgs {
   return { vault, pipeline, backend };
 }
 
-const DEFAULT_RESULTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'results');
+// "This repo" is the checkout the harness code came from — not the cwd the
+// runner happened to be launched from. Both the default results directory and
+// `code_sha` derive from it, so a report always names the code that produced
+// its numbers.
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_RESULTS_DIR = path.join(MODULE_DIR, 'results');
 
 export async function runEval(
   args: EvalArgs,
@@ -89,7 +94,7 @@ export async function runEval(
   }
 
   const report: EvalReport = {
-    code_sha: await gitSha(process.cwd()),
+    code_sha: await gitSha(MODULE_DIR),
     vault_sha: await gitSha(vaultRoot),
     model_id: deps.modelId ?? MODEL_ID,
     pipeline: args.pipeline,

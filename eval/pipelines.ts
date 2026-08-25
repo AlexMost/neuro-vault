@@ -73,10 +73,15 @@ async function rankFused(
   // effort (pool 8, expansion on) with an explicit threshold 0, the lexical
   // index with the real wikilink graph for its backlink tie-break, then the
   // exact fusion `assembleUnified` performs — flattenExpansion + fuseRanks.
+  // Every knob is passed explicitly, including the two that merely match
+  // `MODE_DEFAULTS.deep` today: `config` is the report's comparability record,
+  // and a silent lie there is worse than the drift it would hide.
   const semantic = await executeRetrieval({
     queries: [query],
     mode: 'deep',
+    limit: EVAL_CONFIG.semantic_pool,
     threshold: EVAL_CONFIG.semantic_threshold,
+    expansionLimit: EVAL_CONFIG.expansion_limit,
     expansionFloor: EVAL_CONFIG.expansion_floor,
     sources,
     embeddingProvider: { initialize: () => Promise.resolve(), embed },
