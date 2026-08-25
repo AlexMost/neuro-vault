@@ -2,6 +2,9 @@
 
 - **Status**: Accepted
 - **Date**: 2026-06-08
+- **Superseded in part by**: [ADR-0013](0013-own-embedding-corpus.md) — the
+  "server never writes embeddings" decision is reversed; the read-only
+  consumption record stands as history.
 
 ## Context
 
