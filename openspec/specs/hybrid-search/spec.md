@@ -63,7 +63,7 @@ The lexical leg SHALL function whatever state the vault's embedding corpus is in
 #### Scenario: a semantic leg that throws keeps the lexical matches
 
 - **WHEN** the semantic leg fails mid-search on a vault whose backend reported `ready` — the query embedding rejects, or the corpus snapshot cannot be read
-- **THEN** the call succeeds with the lexical matches it already computed, reports `semantic_status: { state: "unavailable" }` rather than the `ready` it started from, and writes the cause to stderr
+- **THEN** the call succeeds with the lexical matches it already computed, reports `semantic_status: { state: "unavailable", note }` rather than the `ready` it started from, and writes the cause to stderr
 
 ---
 
@@ -383,17 +383,22 @@ The semantic leg SHALL treat query arity as a surfacing concern, not a retrieval
 
 ### Requirement: search_notes reports the vault's semantic index state
 
-Every per-vault `search_notes` payload SHALL carry `semantic_status: { state, indexed?, total? }`, where `state` is one of `ready`, `indexing`, `disabled`, or `unavailable`, and `indexed`/`total` are present exactly when `state` is `indexing`. The field SHALL describe the vault's semantic backend, not the request: it SHALL be present in `mode: "lexical"`, on the empty-filter early return, and on every entry of a fan-out envelope. It SHALL NOT be omitted when the backend is `ready`.
+Every per-vault `search_notes` payload SHALL carry `semantic_status: { state, indexed?, total?, note? }`, where `state` is one of `ready`, `indexing`, `disabled`, or `unavailable`, and `indexed`/`total` are present exactly when `state` is `indexing`. The field SHALL describe the vault's semantic backend, not the request: it SHALL be present in `mode: "lexical"`, on the empty-filter early return, and on every entry of a fan-out envelope. It SHALL NOT be omitted when the backend is `ready`. `note` SHALL be present exactly when `state` is not `ready` — including the mid-request degradation path that reports `unavailable` over a backend that was `ready` — and SHALL state the consequence for the response carrying it: that the semantic leg did not run and the matches are lexical-only. `note` SHALL NOT restate the backend's `reason`, which travels on error payloads and is not exposed on this field.
 
 #### Scenario: a ready vault says so
 
 - **WHEN** `search_notes` runs against a vault whose index is built
-- **THEN** the payload carries `semantic_status: { state: "ready" }` with no counters
+- **THEN** the payload carries `semantic_status: { state: "ready" }` with no counters and no `note`
 
 #### Scenario: a building index is visible in the search response
 
 - **WHEN** `search_notes` runs against a vault that is still indexing
-- **THEN** the payload carries `semantic_status: { state: "indexing", indexed, total }` alongside the lexical matches it could produce
+- **THEN** the payload carries `semantic_status: { state: "indexing", indexed, total }` alongside the lexical matches it could produce, and its `note` says the matches are lexical-only
+
+#### Scenario: a degraded state explains itself on the response
+
+- **WHEN** `search_notes` runs in `mode: "hybrid"` against a vault whose backend is `disabled` or `unavailable`
+- **THEN** `semantic_status.note` states that the semantic leg did not run and the matches are lexical-only, so no prose in the tool description is needed to interpret the state
 
 #### Scenario: lexical mode still reports the index state
 
@@ -409,6 +414,32 @@ Every per-vault `search_notes` payload SHALL carry `semantic_status: { state, in
 
 - **WHEN** multiple vaults are registered, one indexing and one ready, and `search_notes` is called without `vault`
 - **THEN** each per-vault entry of the envelope carries its own `semantic_status`
+
+---
+
+### Requirement: The search_notes description carries call-time guidance only
+
+The `search_notes` tool description SHALL carry only what a caller needs before issuing a call — what the tool does, how to write the query, the axes, the parameters, the pre-filter shape, and worked examples — and SHALL NOT carry prose whose only use is interpreting a response already in hand once that prose can travel on the response instead (`semantic_status.note`), per ADR-0010's response channel. The description SHALL NOT restate which fields are absent from a payload, SHALL NOT enumerate `matches[]` entry fields beyond `found_in`'s provenance meaning, and SHALL state any one fact once rather than under two headings. Its length SHALL NOT exceed 5,000 characters, measured on the longer multi-vault variant and asserted against the registered tool's advertised description so the budget fails CI rather than review.
+
+#### Scenario: the description stays inside its budget
+
+- **WHEN** the `search_notes` tool is registered against a multi-vault registry and its advertised `description` is measured
+- **THEN** it is at most 5,000 characters
+
+#### Scenario: semantic_status costs one line, not a section
+
+- **WHEN** the description is read for `semantic_status`
+- **THEN** it names the field and its four state values without explaining what each state does to a response, because the response's own `note` carries that
+
+#### Scenario: invariants are not addressed to the caller
+
+- **WHEN** the description is read
+- **THEN** it contains no section stating which evidence fields are absent for a given `found_in` value, since a caller reads the fields the payload contains
+
+#### Scenario: query-writing guidance is preserved
+
+- **WHEN** the description is read
+- **THEN** it still instructs the caller to build the query from the core nouns, to pass synonyms and translations as one array in a single call, and it still carries the worked examples
 
 ---
 

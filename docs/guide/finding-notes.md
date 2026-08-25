@@ -130,7 +130,7 @@ Each note appears **at most once** in `matches[]`, even when multiple legs surfa
 
 ### `semantic_status`
 
-`semantic_status: { state, indexed?, total? }` — top-level, always present in every mode, including `mode: "lexical"` and an empty-filter result. It describes the **vault's** semantic index, not this particular request, so a client can distinguish "the semantic leg ran and found nothing" from "the semantic leg didn't run, and here's why":
+`semantic_status: { state, indexed?, total?, note? }` — top-level, always present in every mode, including `mode: "lexical"` and an empty-filter result. It describes the **vault's** semantic index, not this particular request, so a client can distinguish "the semantic leg ran and found nothing" from "the semantic leg didn't run, and here's why":
 
 | `state` | Meaning | `indexed` / `total` |
 | --- | --- | --- |
@@ -138,6 +138,8 @@ Each note appears **at most once** in `matches[]`, even when multiple legs surfa
 | `indexing` | The vault's index is still building — this response is lexical-only even under `mode: "hybrid"`. | present — note counts so far / total |
 | `disabled` | The vault opted out (`"semantic": false` in its `.neuro-vault/config.json`), or `--no-semantic` is set server-wide. | absent |
 | `unavailable` | No usable semantic answer for this call: the index is absent or broken with no build in flight, **or** the semantic leg failed mid-call (the query could not be embedded, the corpus could not be read) and this response fell back to its lexical leg. | absent |
+
+Every state but `ready` also carries a `note` — one sentence saying what that state did to the response in hand ("the semantic leg did not run … these matches are lexical-only"). It rides on the payload rather than in the tool's description on purpose: a description is sent on every `tools/list`, while this is read only on the responses it applies to. It is not the backend's failure `reason`, which travels on error payloads (`SEMANTIC_INDEX_BUILDING`, `SEMANTIC_DISABLED`, `SEMANTIC_INDEX_NOT_FOUND`) and is deliberately not exposed here.
 
 Anything other than `ready` explains why a hybrid-mode call degraded to lexical-only for that vault. `ready` is a necessary condition for the semantic leg, not a report that it ran — to know whether it contributed to `matches[]`, read `mode` and (for array queries) `query_stats.semantic`, which is `null` exactly when the leg did not run. `indexed`/`total` ride along only while `state === "indexing"` — check `state` before reading them, since they're omitted in every other state, including `ready`.
 

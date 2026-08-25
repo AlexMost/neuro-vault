@@ -198,7 +198,10 @@ describe('searchNotes', () => {
       // The field must describe the response the client is holding: a
       // lexical-only payload labelled `ready` would be a lie of the same
       // class the pinning above exists to prevent.
-      expect(result.semantic_status).toEqual({ state: 'unavailable' });
+      expect(result.semantic_status).toEqual({
+        state: 'unavailable',
+        note: expect.stringContaining('lexical-only'),
+      });
       // Degrading is not swallowing — the cause goes to stderr.
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('model unavailable'));
     } finally {
@@ -230,7 +233,10 @@ describe('searchNotes', () => {
       expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
         true,
       );
-      expect(result.semantic_status).toEqual({ state: 'unavailable' });
+      expect(result.semantic_status).toEqual({
+        state: 'unavailable',
+        note: expect.stringContaining('lexical-only'),
+      });
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('not valid JSON'));
     } finally {
       await cleanup();
@@ -1069,6 +1075,20 @@ describe('semantic_status', () => {
     expect(result.semantic_status).toEqual({ state: 'ready' });
   });
 
+  it('carries no note when the backend is ready', async () => {
+    const result = await runSearch({ backendStatus: { state: 'ready' }, input: { query: 'x' } });
+    expect(result.semantic_status).not.toHaveProperty('note');
+  });
+
+  it.each(['disabled', 'unavailable'] as const)(
+    'explains a %s state on the response itself',
+    async (state) => {
+      const result = await runSearch({ backendStatus: { state }, input: { query: 'x' } });
+      expect(result.semantic_status.note).toMatch(/semantic leg did not run/i);
+      expect(result.semantic_status.note).toMatch(/lexical-only/i);
+    },
+  );
+
   it('reports progress while indexing and still returns lexical matches', async () => {
     // `makeLexicalVault` writes a real on-disk body and wires a real
     // `FsVaultReader` (unlike `runSearch`'s fixture, which always writes an
@@ -1083,7 +1103,12 @@ describe('semantic_status', () => {
     try {
       const tool = buildSearchNotesTool(deps);
       const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
-      expect(result.semantic_status).toEqual({ state: 'indexing', indexed: 3, total: 9 });
+      expect(result.semantic_status).toEqual({
+        state: 'indexing',
+        indexed: 3,
+        total: 9,
+        note: expect.stringContaining('lexical-only'),
+      });
       expect(result.matches.length).toBeGreaterThan(0);
       expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
         true,
@@ -1111,7 +1136,10 @@ describe('semantic_status', () => {
       input: { query: 'x', filter: { path_prefix: 'Nope/' } },
     });
     expect(result.matches).toEqual([]);
-    expect(result.semantic_status).toEqual({ state: 'disabled' });
+    expect(result.semantic_status).toEqual({
+      state: 'disabled',
+      note: expect.stringContaining('lexical-only'),
+    });
   });
 
   it('reports unavailable when the semantic module is globally off (no backend)', async () => {
@@ -1132,7 +1160,10 @@ describe('semantic_status', () => {
         modelKey: MODEL_KEY,
       });
       const result = (await tool.handler({ vault: 'v', query: 'x' })) as SearchNotesOutput;
-      expect(result.semantic_status).toEqual({ state: 'unavailable' });
+      expect(result.semantic_status).toEqual({
+        state: 'unavailable',
+        note: expect.stringContaining('lexical-only'),
+      });
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -1177,7 +1208,12 @@ describe('semantic_status', () => {
       const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
 
       expect(status).toHaveBeenCalledTimes(1);
-      expect(result.semantic_status).toEqual({ state: 'indexing', indexed: 3, total: 9 });
+      expect(result.semantic_status).toEqual({
+        state: 'indexing',
+        indexed: 3,
+        total: 9,
+        note: expect.stringContaining('lexical-only'),
+      });
       expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
         true,
       );
@@ -1234,7 +1270,10 @@ describe('search_notes advertised description', () => {
   });
 
   const PRE_FILTER_FRONTMATTER_LINE =
-    '  - frontmatter: sift filter on frontmatter keys, same operator allow-list as query_notes.';
+    'PRE-FILTER (`filter`) — applies to every leg identically; at least one field required. ' +
+    '`path_prefix`/`exclude_path_prefix` scope to / drop folder subtrees (string or array); ' +
+    '`tags` matches ANY listed tag (no leading "#"); `frontmatter` is a sift filter, same ' +
+    'operator allow-list as query_notes.';
 
   it('ends the single-vault description exactly at the PRE-FILTER block, no trailing newline or multi-vault text', () => {
     const tool = buildSearchNotesTool(depsFor('only'));
@@ -1274,5 +1313,53 @@ describe('search_notes advertised description', () => {
   it('names failed_vaults in the multi-vault fan-out contract', () => {
     expect(describeWith(['a', 'b'])).toMatch(/failed_vaults/);
     expect(describeWith(['v'])).not.toMatch(/failed_vaults/);
+  });
+
+  /**
+   * The description ships on every `tools/list`, in every session, to every
+   * sub-agent — the always-paid channel ADR-0010 chose precisely because it
+   * always arrives. The budget is what keeps it spent on guidance a caller
+   * needs *before* a call; anything only useful for reading a response
+   * already in hand belongs on that response instead.
+   *
+   * 5,000 is the floor this string can reach while `truncated` and
+   * `query_stats` still explain themselves here: both are post-hoc reading
+   * aids (~830 characters between them) that stay in the description only
+   * because moving them would change the output shape. Giving them the
+   * `semantic_status.note` treatment is what buys the next cut — until then,
+   * do not lower this number by compressing `QUERY WRITING` or `EXAMPLES`,
+   * which are the only sections that change how a model writes a query.
+   */
+  const DESCRIPTION_BUDGET = 5000;
+
+  it('stays inside its always-paid budget', () => {
+    // The multi-vault variant is the longer of the two.
+    expect(describeWith(['alpha', 'beta']).length).toBeLessThanOrEqual(DESCRIPTION_BUDGET);
+  });
+
+  it('does not spend the budget listing which fields are absent', () => {
+    const description = describeWith(['v']);
+    expect(description).not.toMatch(/INVARIANTS/);
+    expect(description).not.toMatch(/appears ONLY when/i);
+  });
+
+  it('names semantic_status without explaining what each state does to a response', () => {
+    const description = describeWith(['v']);
+    expect(description).toMatch(/`semantic_status`/);
+    // Per-state meaning rides on the response's own `note`, so it is paid for
+    // only on the responses it applies to.
+    expect(description).not.toMatch(/still building/i);
+    expect(description).not.toMatch(/semantics turned off/i);
+  });
+
+  it('keeps the one semantic_status caveat a ready response cannot carry itself', () => {
+    // `note` is absent when the state is `ready`, so "ready describes the
+    // index, not this call" has nowhere else to live.
+    expect(describeWith(['v'])).toMatch(/mode: "lexical"/);
+  });
+
+  it('states semantic_fallback exactly once', () => {
+    const occurrences = describeWith(['v']).split('semantic_fallback').length - 1;
+    expect(occurrences).toBe(1);
   });
 });

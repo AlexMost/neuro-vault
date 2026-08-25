@@ -453,7 +453,10 @@ describe('multi-query and fan-out', () => {
         out.results_by_vault.map((r) => [r.vault, r.semantic_status]),
       );
       expect(byVault.v).toEqual({ state: 'ready' });
-      expect(byVault.w).toEqual({ state: 'unavailable' });
+      expect(byVault.w).toEqual({
+        state: 'unavailable',
+        note: expect.stringContaining('lexical-only'),
+      });
     } finally {
       await a.cleanup();
       await b.cleanup();
