@@ -5,6 +5,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildBasenameIndex } from '../src/lib/obsidian/index.js';
+import type { BackendStatus } from '../src/lib/obsidian/semantic-backend.js';
 import type { SmartConnectionsCorpusIndex } from '../src/lib/obsidian/smart-connections-corpus-index.js';
 import { main } from '../src/cli.js';
 import { startNeuroVaultServer } from '../src/server.js';
@@ -63,40 +64,59 @@ function makeFakeCorpusIndex(
   };
 }
 
+/**
+ * Boot the server over a real temp vault with the semantic backend replaced by
+ * one parked in a fixed state. What is under test is what the *server* does
+ * with a non-`ready` backend — startup tolerance, and the error every semantic
+ * tool returns — not how a backend arrives at that state (Task 5's tests own
+ * that), so the state is an input here, never the conclusion.
+ */
+async function startWithBackendStatus(
+  status: BackendStatus,
+  server: ReturnType<typeof createFakeServer>,
+  vaultPath: string,
+): Promise<void> {
+  await startNeuroVaultServer(
+    {
+      vaults: [
+        {
+          name: path.basename(vaultPath),
+          path: vaultPath,
+          smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
+        },
+      ],
+      semantic: { enabled: true, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
+    },
+    {
+      semantic: {
+        embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
+      },
+      vaultEntryDeps: {
+        semanticBackendFactory: () => ({
+          snapshot: () => Promise.reject(new Error('snapshot must not be read when not ready')),
+          status: () => status,
+          dispose: async () => {},
+        }),
+      },
+      serverFactory: (_instructions: string) => server,
+      transportFactory: () => ({}) as never,
+    },
+  );
+}
+
 describe('Neuro Vault MCP server bootstrap', () => {
-  it('returns SEMANTIC_INDEX_NOT_FOUND when Smart Connections directory is missing (startup tolerant)', async () => {
+  it('returns SEMANTIC_INDEX_NOT_FOUND while a vault is still building its corpus (startup tolerant)', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
     const server = createFakeServer();
 
     try {
-      // Startup should NOT throw — missing corpus is tolerated at module init time.
-      await startNeuroVaultServer(
-        {
-          vaults: [
-            {
-              name: path.basename(vaultPath),
-              path: vaultPath,
-              smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
-            },
-          ],
-          semantic: {
-            enabled: true,
-            modelKey: 'bge-micro-v2',
-            modelId: 'TaylorAI/bge-micro-v2',
-          },
-        },
-        {
-          semantic: {
-            embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
-          },
-          serverFactory: (_instructions: string) => server,
-          transportFactory: () => ({}) as never,
-        },
-      );
+      // Startup should NOT throw — a corpus still being built is tolerated at
+      // module init time; the backend decides its readiness live (design D9).
+      await startWithBackendStatus({ state: 'indexing', indexed: 0, total: 12 }, server, vaultPath);
 
-      // The tool is registered, but calling it on the missing-corpus vault
+      // The tool is registered, but calling it on the not-yet-ready vault
       // returns a structured error (not a thrown exception — MCP wraps ToolHandlerError).
       const findDuplicates = server.toolHandlers.get('find_duplicates');
       expect(findDuplicates).toBeDefined();
@@ -110,21 +130,55 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('returns SEMANTIC_INDEX_NOT_FOUND when corpus is empty (startup tolerant)', async () => {
+  it("returns SEMANTIC_INDEX_NOT_FOUND carrying the backend's reason when the corpus is unavailable", async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
-    // A real, existing, empty `.smart-env/multi` — no .ajson shards written
-    // into it — so the empty-corpus->unavailable mapping below runs through
-    // the production adapter's actual directory read (loadSmartConnectionsCorpus
-    // throws "No usable Smart Connections notes..." for zero sources; the
-    // adapter's catch turns that into `unavailable` with that message as the
-    // reason) instead of a fake that just states the conclusion.
-    await fs.mkdir(path.join(vaultPath, '.smart-env', 'multi'), { recursive: true });
-
+    await fs.mkdir(vaultPath, { recursive: true });
     const server = createFakeServer();
 
     try {
-      // Startup should NOT throw — empty corpus is tolerated at module init time.
+      // Startup should NOT throw — a broken corpus is tolerated at module init time.
+      await startWithBackendStatus(
+        { state: 'unavailable', reason: 'corpus shard notes/a.json is not valid JSON' },
+        server,
+        vaultPath,
+      );
+
+      const findDuplicates = server.toolHandlers.get('find_duplicates');
+      expect(findDuplicates).toBeDefined();
+      const result = await findDuplicates!({});
+      // The reason travels from the backend into the tool error, so an owner
+      // sees *why* the corpus is unusable rather than a bare code.
+      expect(result).toMatchObject({
+        isError: true,
+        structuredContent: {
+          code: 'SEMANTIC_INDEX_NOT_FOUND',
+          message: expect.stringContaining('corpus shard notes/a.json is not valid JSON'),
+        },
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('disposes every vault backend when the transport closes', async () => {
+    const vaultPath = await createTempVaultPath();
+    const dispose = vi.fn(async () => {});
+    const transport = {} as { onclose?: () => void };
+
+    // The MCP SDK installs its own `onclose` when the server connects — it
+    // aborts in-flight request handlers and rejects pending responses. Model
+    // that here, so a disposal hook that *replaced* the handler instead of
+    // chaining onto it fails this test rather than silently disabling the
+    // protocol's teardown in production.
+    const protocolOnClose = vi.fn();
+    const server = createFakeServer();
+    server.connect = vi.fn((t: { onclose?: () => void }) => {
+      t.onclose = protocolOnClose;
+      return Promise.resolve();
+    }) as never;
+
+    try {
       await startNeuroVaultServer(
         {
           vaults: [
@@ -134,48 +188,33 @@ describe('Neuro Vault MCP server bootstrap', () => {
               smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
             },
           ],
-          semantic: {
-            enabled: true,
-            modelKey: 'bge-micro-v2',
-            modelId: 'TaylorAI/bge-micro-v2',
-          },
+          semantic: { enabled: true, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
         },
         {
           semantic: {
             embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
           },
-          serverFactory: (_instructions: string) => server,
-          transportFactory: () => ({}) as never,
+          serverFactory: () => server as never,
+          transportFactory: () => transport as never,
+          vaultEntryDeps: {
+            semanticBackendFactory: () => ({
+              snapshot: async () => ({
+                sources: new Map(),
+                basenameIndex: buildBasenameIndex([]),
+              }),
+              status: () => ({ state: 'ready' as const }),
+              dispose,
+            }),
+          },
         },
       );
 
-      // The tool is registered, but calling it on the empty-corpus vault
-      // returns a structured error (not a thrown exception — MCP wraps ToolHandlerError).
-      const findDuplicates = server.toolHandlers.get('find_duplicates');
-      expect(findDuplicates).toBeDefined();
-
-      // The backend's directory read is background work now (design D9) —
-      // startup does not await it — so poll until it has actually settled
-      // onto `unavailable` with the real "no usable notes" reason, rather
-      // than asserting only the error code (which a still-`indexing` backend
-      // would also satisfy, and would not prove this specific mapping ran).
-      let result: { isError?: boolean; structuredContent?: { code?: string; message?: string } };
-      await vi.waitFor(async () => {
-        result = (await findDuplicates!({})) as typeof result;
-        expect(result.structuredContent?.message).toContain(
-          'No usable Smart Connections notes were found',
-        );
-      });
-
-      expect(result!).toMatchObject({
-        isError: true,
-        structuredContent: {
-          code: 'SEMANTIC_INDEX_NOT_FOUND',
-          message: expect.stringContaining('No usable Smart Connections notes were found'),
-        },
-      });
+      transport.onclose?.();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(dispose).toHaveBeenCalledTimes(1);
+      expect(protocolOnClose).toHaveBeenCalledTimes(1);
     } finally {
-      await fs.rm(tempRoot, { recursive: true, force: true });
+      await fs.rm(vaultPath, { recursive: true, force: true });
     }
   });
 

@@ -1,10 +1,8 @@
-import { readFile, stat } from 'node:fs/promises';
-import path from 'node:path';
-
 import type { IndexCliOptions } from './config.js';
 import type { IVaultConfig } from './types.js';
 import { loadVaultScope } from './lib/obsidian/vault-scope-config.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
+import { buildReconcileFsDeps } from './lib/obsidian/corpus/fs-deps.js';
 import { CorpusStore } from './lib/obsidian/corpus/shard-store.js';
 import {
   reconcileCorpus,
@@ -67,18 +65,7 @@ async function reconcileOne(
   const store = new CorpusStore(vault.path);
   return reconcile(
     {
-      vaultRoot: vault.path,
-      scan: () => reader.scan(),
-      stat: async (relPath) => {
-        const s = await stat(path.join(vault.path, relPath));
-        return { mtime: s.mtimeMs, size: s.size };
-      },
-      readNote: async (relPath) => {
-        const abs = path.join(vault.path, relPath);
-        const s = await stat(abs);
-        const content = await readFile(abs, 'utf8');
-        return { content, mtime: s.mtimeMs, size: s.size };
-      },
+      ...buildReconcileFsDeps({ vaultRoot: vault.path, reader }),
       embed,
       store,
     },

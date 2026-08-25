@@ -36,11 +36,12 @@ export interface IVaultEntry {
   readConventions: () => Promise<string | null>;
   /**
    * Filter vault-relative note paths down to those still present on this
-   * vault's disk. The Smart Connections corpus is read-only and unwatched
-   * (ADR-0006), so it can name notes deleted since the plugin last indexed;
-   * every tool returning corpus-derived paths runs them through here first.
-   * One implementation, so no consumer can disagree about what "exists" means
-   * or forget the check entirely.
+   * vault's disk. The corpus this server owns is watched, but only after a
+   * debounce (design D6) and only while a reconcile pass is not already in
+   * flight, so a snapshot can still name a note deleted seconds ago; every
+   * tool returning corpus-derived paths runs them through here first. One
+   * implementation, so no consumer can disagree about what "exists" means or
+   * forget the check entirely.
    */
   filterExisting: FilterExistingPaths;
   /**

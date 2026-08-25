@@ -1,9 +1,10 @@
-import path from 'node:path';
-
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import { createSemanticModule, type ISemanticModuleDeps } from './modules/semantic/index.js';
+import { createQueuedEmbedder, type QueuedEmbedder } from './modules/semantic/embed-queue.js';
+import { EmbeddingService } from './modules/semantic/embedding-service.js';
+import { createOwnCorpusBackendFactory } from './modules/semantic/backend/index.js';
 import { createOperationsModule } from './modules/operations/index.js';
 import { VaultRegistry, type IVaultEntryDeps } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
@@ -11,9 +12,6 @@ import { FsVaultWriter } from './lib/obsidian/vault-writer.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
 import { FsVaultProvider } from './modules/operations/fs-vault-provider.js';
-import { createSmartConnectionsCorpusIndex } from './lib/obsidian/smart-connections-corpus-index.js';
-import { buildBasenameIndex } from './lib/obsidian/link-resolver.js';
-import type { BackendStatus, SemanticBackend } from './lib/obsidian/semantic-backend.js';
 import { createExistingPathFilter } from './lib/obsidian/existing-paths.js';
 import { readVaultConventions } from './lib/obsidian/vault-conventions.js';
 import { loadVaultConfig } from './lib/obsidian/vault-config.js';
@@ -70,66 +68,8 @@ function defaultTransportFactory(): StdioServerTransport {
   return new StdioServerTransport();
 }
 
-/**
- * Interim adapter, Task 7 → Task 8 handoff. The vault registry (design D9)
- * now takes its semantic backend from a synchronous per-vault factory rather
- * than an awaited startup probe; this wraps today's read-only Smart
- * Connections plugin corpus behind that seam so the server keeps serving
- * exactly what it served before this branch, without redesigning what it
- * serves. Task 8 replaces this wholesale with `createOwnCorpusBackendFactory`
- * (the vault's own corpus, watched for live updates) — this function and its
- * `createSmartConnectionsCorpusIndex` import go with it.
- */
-function createSmartConnectionsBackend(opts: {
-  smartEnvPath: string;
-  modelKey: string;
-  enabled: boolean;
-}): SemanticBackend {
-  if (!opts.enabled) {
-    return {
-      snapshot: () =>
-        Promise.resolve({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
-      status: () => ({ state: 'disabled' }),
-      dispose: async () => {},
-    };
-  }
-
-  let status: BackendStatus = { state: 'indexing', indexed: 0, total: 0 };
-  const loaded = createSmartConnectionsCorpusIndex({
-    smartEnvPath: opts.smartEnvPath,
-    modelKey: opts.modelKey,
-  })
-    .then(async (corpus) => {
-      const snap = await corpus.snapshot();
-      if (snap.sources.size === 0) {
-        status = { state: 'unavailable', reason: 'Smart Connections corpus is empty' };
-        return undefined;
-      }
-      status = { state: 'ready' };
-      return corpus;
-    })
-    .catch((err: unknown) => {
-      status = { state: 'unavailable', reason: err instanceof Error ? err.message : String(err) };
-      return undefined;
-    });
-
-  return {
-    snapshot: async () => {
-      const corpus = await loaded;
-      if (!corpus) {
-        throw new Error(
-          status.state === 'unavailable' ? status.reason : 'semantic corpus unavailable',
-        );
-      }
-      return corpus.snapshot();
-    },
-    status: () => status,
-    dispose: async () => {},
-  };
-}
-
 function buildDefaultVaultEntryDeps(
-  modelKey: string,
+  embedder: QueuedEmbedder,
   overrides: Partial<IVaultEntryDeps> = {},
 ): IVaultEntryDeps {
   return {
@@ -140,12 +80,7 @@ function buildDefaultVaultEntryDeps(
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
     providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
-    semanticBackendFactory: ({ vaultRoot, enabled }) =>
-      createSmartConnectionsBackend({
-        smartEnvPath: path.join(vaultRoot, '.smart-env', 'multi'),
-        modelKey,
-        enabled,
-      }),
+    semanticBackendFactory: createOwnCorpusBackendFactory({ embedder }),
     conventionsReaderFactory:
       ({ vaultRoot }) =>
       () =>
@@ -155,17 +90,30 @@ function buildDefaultVaultEntryDeps(
   };
 }
 
+/**
+ * Boots the server and returns a disposer that releases every vault's
+ * background resources. The disposer is also wired to the transport's
+ * `onclose`, so a client that disconnects takes the watchers down with it —
+ * chokidar holds the event loop open, and without this the process would
+ * outlive the client that started it (design D10). The return value exists for
+ * tests and for future callers that shut the server down themselves; `cli.ts`
+ * ignores it and lets `onclose` do the work.
+ */
 export async function startNeuroVaultServer(
   config: ServerConfig,
   deps: NeuroVaultStartupDependencies = {},
-): Promise<void> {
+): Promise<() => Promise<void>> {
+  // One model, one embed in flight process-wide (design D7): every vault's
+  // indexing and every query share this queue, with queries jumping ahead.
+  const embedder = createQueuedEmbedder(new EmbeddingService({ modelId: config.semantic.modelId }));
+
   const registry = await VaultRegistry.create(
     {
       vaults: config.vaults,
       semanticEnabled: config.semantic.enabled,
       modelKey: config.semantic.modelKey,
     },
-    buildDefaultVaultEntryDeps(config.semantic.modelKey, deps.vaultEntryDeps),
+    buildDefaultVaultEntryDeps(embedder, deps.vaultEntryDeps),
   );
 
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
@@ -180,7 +128,10 @@ export async function startNeuroVaultServer(
     const semantic = createSemanticModule(
       registry,
       { modelKey: config.semantic.modelKey, modelId: config.semantic.modelId },
-      deps.semantic,
+      // The retrieval path embeds through the same queue as indexing, on the
+      // query lane — so a search issued mid cold-index is not stuck behind
+      // thousands of queued note embeds (design D7).
+      { embeddingServiceFactory: () => embedder.asProvider(), ...deps.semantic },
     );
     toolRegistrations.push(...semantic.tools);
     warmup = semantic.warmup;
@@ -197,9 +148,26 @@ export async function startNeuroVaultServer(
     server.registerResource(resource.name, resource.uri, resource.metadata, resource.handler);
   }
 
-  await server.connect(transportFactory());
+  const transport = transportFactory();
+  await server.connect(transport);
   void warmup().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`semantic warmup failed: ${message}\n`);
   });
+
+  const dispose = async (): Promise<void> => {
+    await Promise.all(
+      registry.list().map((entry) => entry.backend?.dispose() ?? Promise.resolve()),
+    );
+  };
+  // `server.connect()` installs the MCP SDK's own `onclose` (it aborts
+  // in-flight request handlers and rejects pending responses), so chain onto
+  // it rather than replacing it — a bare assignment here would silently
+  // disable the protocol's own teardown.
+  const protocolOnClose = transport.onclose;
+  transport.onclose = () => {
+    protocolOnClose?.();
+    void dispose();
+  };
+  return dispose;
 }
