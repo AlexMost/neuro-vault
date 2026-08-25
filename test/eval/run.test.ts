@@ -22,6 +22,7 @@ describe('parseEvalArgs', () => {
     [['--vault', '/v', '--pipeline', 'reranked', '--backend', 'own'], /semantic.*fused/s],
     [['--vault', '/v', '--pipeline', 'semantic', '--backend', 'foo'], /sc.*own/s],
     [['--vault', '/v', '--pipeline', 'semantic', '--backend', 'own', '--bogus'], /--bogus/],
+    [['--vault', '--pipeline', '--backend', 'own'], /--vault/],
   ])('rejects %j naming what is supported', (argv, pattern) => {
     expect(() => parseEvalArgs(argv)).toThrow(UsageError);
     expect(() => parseEvalArgs(argv)).toThrow(pattern);

@@ -33,8 +33,13 @@ export function parseEvalArgs(argv: string[]): EvalArgs {
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i];
     const value = argv[i + 1];
-    if (!['--vault', '--pipeline', '--backend'].includes(flag) || value === undefined) {
-      throw new UsageError(`unknown or valueless argument "${flag}"\n${USAGE}`);
+    if (!['--vault', '--pipeline', '--backend'].includes(flag)) {
+      throw new UsageError(`unknown argument "${flag}"\n${USAGE}`);
+    }
+    // A value token that is itself a recognized flag means the real value was
+    // omitted and the next flag got silently swallowed as this one's value.
+    if (value === undefined || value.startsWith('--')) {
+      throw new UsageError(`${flag} is missing its value\n${USAGE}`);
     }
     values.set(flag, value);
   }
