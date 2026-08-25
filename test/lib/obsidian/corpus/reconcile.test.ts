@@ -4,7 +4,10 @@ import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { reconcileCorpus } from '../../../../src/lib/obsidian/corpus/reconcile.js';
+import {
+  reconcileCorpus,
+  type ReconcileOptions,
+} from '../../../../src/lib/obsidian/corpus/reconcile.js';
 import { CorpusStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
 import { MODEL_DIMS } from '../../../../src/lib/obsidian/corpus/types.js';
 
@@ -65,16 +68,19 @@ async function harness(files: Record<string, string>) {
   const embed = fakeEmbed();
   const store = new CorpusStore(root);
   const warn = vi.fn();
-  const run = () =>
-    reconcileCorpus({
-      vaultRoot: root,
-      scan: vault.scan,
-      stat: vault.stat,
-      readNote: vault.readNote,
-      embed,
-      store,
-      warn,
-    });
+  const run = (opts: ReconcileOptions = {}) =>
+    reconcileCorpus(
+      {
+        vaultRoot: root,
+        scan: vault.scan,
+        stat: vault.stat,
+        readNote: vault.readNote,
+        embed,
+        store,
+        warn,
+      },
+      opts,
+    );
   return { root, vault, embed, store, warn, run };
 }
 
@@ -428,5 +434,73 @@ describe('reconcileCorpus', () => {
 
     expect(await run()).toMatchObject({ embedded: 1, failed: 0 });
     expect((await store.readShard('A.md'))!.path).toBe('A.md');
+  });
+
+  // A pass kicked off just as the client hung up must not run its setup — the
+  // manifest write, the full scan and the full shard listing are seconds of
+  // disk work on a large corpus, and they all precede the per-note loop.
+  it('does no work at all when the signal is already aborted', async () => {
+    const { run, store, vault, embed } = await harness({ 'A.md': body('A') });
+    const ensureManifest = vi.spyOn(store, 'ensureManifest');
+    const listShards = vi.spyOn(store, 'listShards');
+
+    const summary = await run({ signal: AbortSignal.abort() });
+
+    expect(summary).toEqual({
+      total: 0,
+      embedded: 0,
+      reused: 0,
+      renamed: 0,
+      deleted: 0,
+      failed: 0,
+    });
+    expect(ensureManifest).not.toHaveBeenCalled();
+    expect(listShards).not.toHaveBeenCalled();
+    expect(vault.readNote).not.toHaveBeenCalled();
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it('stops at the next note boundary when aborted mid-run', async () => {
+    const { run, embed, store } = await harness({
+      'A.md': body('A'),
+      'B.md': body('B'),
+      'C.md': body('C'),
+    });
+    const controller = new AbortController();
+    // Abort while the very first note is being embedded, so the loop has
+    // exactly one boundary to notice it at.
+    embed.mockImplementationOnce(async () => {
+      controller.abort();
+      return new Array<number>(MODEL_DIMS).fill(0);
+    });
+
+    const summary = await run({ signal: controller.signal });
+
+    expect(summary.total).toBe(3);
+    expect(summary.embedded).toBe(1);
+    expect([...(await store.listShards()).keys()]).toEqual(['A.md']);
+  });
+
+  it('leaves the orphan sweep for the next pass when aborted', async () => {
+    const { run, vault, embed, store } = await harness({
+      'A.md': body('A'),
+      'Gone.md': body('Gone'),
+    });
+    await run();
+    vault.state.delete('Gone.md');
+    vault.edit('A.md', body('A edited'));
+
+    const controller = new AbortController();
+    embed.mockImplementationOnce(async () => {
+      controller.abort();
+      return new Array<number>(MODEL_DIMS).fill(0);
+    });
+    const summary = await run({ signal: controller.signal });
+
+    expect(summary.deleted).toBe(0);
+    // The shard survives because the sweep never ran, not because deleting it
+    // failed — so the next unaborted pass still collects it.
+    expect((await store.listShards()).has('Gone.md')).toBe(true);
+    expect((await run()).deleted).toBe(1);
   });
 });

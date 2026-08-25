@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { loadCorpusSnapshot } from '../../../../src/lib/obsidian/corpus/snapshot.js';
 import { encodeVector } from '../../../../src/lib/obsidian/corpus/vector-codec.js';
@@ -48,5 +48,35 @@ describe('loadCorpusSnapshot', () => {
     const snap = await loadCorpusSnapshot(storeWith([]));
     expect(snap.sources.size).toBe(0);
     expect(snap.basenameIndex.resolve('a')).toBeNull();
+  });
+
+  // The corpus only agrees with the vault's scope once a reconcile has swept
+  // the out-of-scope shards, so a snapshot decoded before that pass — the warm
+  // one served at startup — would otherwise rank an excluded note.
+  it('drops a shard the vault scope excludes, from sources and basenames alike', async () => {
+    const snap = await loadCorpusSnapshot(
+      storeWith([
+        shard('Notes/keep.md', encodeVector([1])),
+        shard('Private/secret.md', encodeVector([1])),
+      ]),
+      { isExcluded: (p) => p.startsWith('Private/') },
+    );
+
+    expect([...snap.sources.keys()]).toEqual(['Notes/keep.md']);
+    // Both views must agree — a basename index still naming the excluded note
+    // would resolve a wikilink straight back to it.
+    expect(snap.basenameIndex.resolve('secret')).toBeNull();
+    expect(snap.basenameIndex.resolve('keep')).toBe('Notes/keep.md');
+  });
+
+  it('decodes a listing it was handed instead of re-reading the corpus', async () => {
+    const store = storeWith([shard('Notes/a.md', encodeVector([1]))]);
+    const listShards = vi.spyOn(store, 'listShards');
+    const handed = new Map([['Notes/b.md', shard('Notes/b.md', encodeVector([2]))]]);
+
+    const snap = await loadCorpusSnapshot(store, { shards: handed });
+
+    expect([...snap.sources.keys()]).toEqual(['Notes/b.md']);
+    expect(listShards).not.toHaveBeenCalled();
   });
 });

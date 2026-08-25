@@ -17,6 +17,21 @@ import { MODEL_DIMS, type EmbedFn } from '../../../src/lib/obsidian/corpus/types
 
 const EMPTY: CorpusSnapshot = { sources: new Map(), basenameIndex: buildBasenameIndex([]) };
 
+type CorpusBackendHandle = ReturnType<typeof createCorpusBackend>;
+type Progress = (p: { indexed: number; total: number }) => void;
+
+/**
+ * Timer seam for the self-retry, so a backoff test asserts on the delay asked
+ * for and fires it by hand — no real waiting, and nothing to make flaky.
+ */
+function fakeTimers(collected: Array<{ fn: () => void; ms: number }>) {
+  return {
+    setTimer: ((fn: () => void, ms: number) =>
+      collected.push({ fn, ms })) as unknown as typeof setTimeout,
+    clearTimer: (() => {}) as unknown as typeof clearTimeout,
+  };
+}
+
 function snapshotWith(paths: string[]): CorpusSnapshot {
   return {
     sources: new Map(paths.map((p) => [p, { path: p, embedding: [1], blocks: [] }])),
@@ -481,5 +496,107 @@ describe('createCorpusBackend over a real reconcile', () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
+  });
+
+  it('re-enters indexing, with counters, while rebuilding after a failure', async () => {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const during: Array<ReturnType<CorpusBackendHandle['status']>> = [];
+    const reconcile = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockImplementationOnce(async (opts: { onProgress?: Progress }) => {
+        during.push(backend.status());
+        opts.onProgress?.({ indexed: 2, total: 5 });
+        during.push(backend.status());
+        return summary({ embedded: 1 });
+      });
+
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      store: fakeStore({ compatible: false, shards: 0 }),
+      loadSnapshot: async () => snapshotWith(['a.md']),
+      reconcile,
+      warn: vi.fn(),
+      retryBaseMs: 1_000,
+      ...fakeTimers(timers),
+    });
+
+    await backend.whenSettled();
+    expect(backend.status().state).toBe('unavailable');
+
+    timers[0].fn();
+    await backend.whenSettled();
+
+    // A rebuild in flight is a build in flight — reporting `unavailable` across
+    // it would tell the caller to start a second, competing indexer.
+    expect(during[0]).toEqual({ state: 'indexing', indexed: 0, total: 0 });
+    expect(during[1]).toEqual({ state: 'indexing', indexed: 2, total: 5 });
+    expect(backend.status()).toEqual({ state: 'ready' });
+  });
+
+  it('retries a failed pass on its own, with no vault change to trigger it', async () => {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const reconcile = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('no model on disk'))
+      .mockResolvedValueOnce(summary({ embedded: 1 }));
+
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      store: fakeStore({ compatible: false, shards: 0 }),
+      loadSnapshot: async () => snapshotWith(['a.md']),
+      reconcile,
+      warn: vi.fn(),
+      retryBaseMs: 1_000,
+      ...fakeTimers(timers),
+    });
+
+    await backend.whenSettled();
+    // The watcher is the only other caller of `kick()`, so without this timer a
+    // vault nobody edits would stay broken until the process restarts.
+    expect(timers.map((t) => t.ms)).toEqual([1_000]);
+
+    timers[0].fn();
+    await backend.whenSettled();
+
+    expect(reconcile).toHaveBeenCalledTimes(2);
+    expect(backend.status()).toEqual({ state: 'ready' });
+    // A recovered vault starts its backoff over rather than staying at 2s.
+    expect(timers).toHaveLength(1);
+  });
+
+  it('aborts the reconcile in flight when disposed', async () => {
+    let started: () => void = () => {};
+    const passStarted = new Promise<void>((resolve) => (started = resolve));
+    let seen: AbortSignal | undefined;
+
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      store: fakeStore({ compatible: false, shards: 0 }),
+      loadSnapshot: async () => snapshotWith(['a.md']),
+      // Settles only on abort: a cold index is thousands of reads and embeds,
+      // and nothing else would stop them once the client hung up.
+      reconcile: (opts) =>
+        new Promise((resolve) => {
+          seen = opts.signal;
+          started();
+          opts.signal?.addEventListener('abort', () => resolve(summary()));
+        }),
+      warn: vi.fn(),
+    });
+
+    await passStarted;
+    await backend.dispose();
+    await backend.whenSettled();
+
+    expect(seen?.aborted).toBe(true);
+    // A disposed pass promotes nothing — its summary is partial by construction.
+    expect(backend.status().state).not.toBe('ready');
   });
 });

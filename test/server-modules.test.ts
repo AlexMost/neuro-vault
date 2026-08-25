@@ -76,7 +76,8 @@ async function startWithBackendStatus(
   status: BackendStatus,
   server: ReturnType<typeof createFakeServer>,
   vaultPath: string,
-): Promise<void> {
+): Promise<{ initialize: ReturnType<typeof vi.fn> }> {
+  const initialize = vi.fn();
   await startNeuroVaultServer(
     {
       vaults: [
@@ -89,7 +90,7 @@ async function startWithBackendStatus(
     },
     {
       semantic: {
-        embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
+        embeddingServiceFactory: () => ({ initialize, embed: vi.fn() }),
       },
       vaultEntryDeps: {
         semanticBackendFactory: () => ({
@@ -105,6 +106,7 @@ async function startWithBackendStatus(
       stdin: new PassThrough(),
     },
   );
+  return { initialize };
 }
 
 /** Let the fire-and-forget `void dispose()` and Node's rejection check run. */
@@ -216,6 +218,36 @@ async function startOverPipedStdin(opts: {
 }
 
 describe('Neuro Vault MCP server bootstrap', () => {
+  it('does not warm the embedding model when every vault opted out', async () => {
+    const vaultPath = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'nv-warmup-')), 'v');
+    await fs.mkdir(vaultPath, { recursive: true });
+
+    const { initialize } = await startWithBackendStatus(
+      { state: 'disabled' },
+      createFakeServer(),
+      vaultPath,
+    );
+    await settle();
+
+    // No indexing pass and no query embed can run for a disabled vault, so
+    // downloading and initializing ONNX is work for calls that never arrive.
+    expect(initialize).not.toHaveBeenCalled();
+  });
+
+  it('warms the embedding model when a vault can still embed', async () => {
+    const vaultPath = path.join(await fs.mkdtemp(path.join(os.tmpdir(), 'nv-warmup-')), 'v');
+    await fs.mkdir(vaultPath, { recursive: true });
+
+    const { initialize } = await startWithBackendStatus(
+      { state: 'ready' },
+      createFakeServer(),
+      vaultPath,
+    );
+    await settle();
+
+    expect(initialize).toHaveBeenCalled();
+  });
+
   it('returns SEMANTIC_INDEX_BUILDING with progress while a vault is still building its corpus (startup tolerant)', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
