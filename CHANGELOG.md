@@ -2,6 +2,79 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [16.0.0](https://github.com/AlexMost/neuro-vault/compare/v15.5.0...v16.0.0) (2026-08-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **semantic:** smartEnvPath leaves the vault config contract.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+* docs(adr): record background corpus freshness (ADR-0014)
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+* docs: describe the server's own embedding index honestly
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+* docs(research): fix dead link to deleted architecture doc
+
+Task 13 review caught a markdown link in the bge-m3 research doc that
+still pointed at docs/architecture/smart-connections-corpus.md, deleted
+in the prior commit. Retarget to own-corpus.md, the natural successor;
+the surrounding sentence's description of Smart Connections' format is
+untouched.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+* fix(server): dispose backends when the client closes stdin
+
+The MCP SDK's StdioServerTransport registers only 'data' and 'error' on
+stdin, so its `onclose` fires from an explicit `close()` and from nothing
+else. Disposal was chained onto that hook but nothing ever pulled it: a
+client that simply closed the pipe left the chokidar watcher holding the
+event loop open, and the server outlived it (measured: still alive 60 s
+after stdin EOF, SIGKILL required). That is the failure design D10 exists
+to prevent.
+
+`startNeuroVaultServer` now reads end of input on stdin — 'end' and also
+'close', for a stdin destroyed without EOF — and closes the transport
+once. Going through `transport.close()` rather than calling the disposer
+directly keeps a single teardown path, so the SDK's own `onclose` (which
+aborts in-flight handlers and rejects pending responses) still runs.
+
+Signals are deliberately left on Node's default: SIGINT/SIGTERM already
+terminate the process unstarvably, corpus writes are atomic (temp +
+rename) so an abrupt signal cannot corrupt one, and a handler would
+replace that default with teardown of our own that could hang.
+
+The existing disposal tests fired `transport.onclose()` by hand, which
+cannot observe a missing trigger. The new tests boot a real McpServer over
+a real StdioServerTransport on in-memory pipes and hang up by ending the
+stream, so they fail unless the server notices end of input itself.
+
+Every test that boots a server with a fake transport injects an inert
+stream, so the hang-up wiring never lands on the real `process.stdin` —
+a stdin event there would be a synchronous TypeError out of an
+EventEmitter handler, since the fake has no `close()`.
+
+Measured after the fix: exit in 23 ms with code 0, against the same
+scratch vault and driver that hung for 60 s before.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+* docs(openspec): mark the own-backend integration tasks complete
+
+### Features
+
+* **cli:** add the neuro-vault-mcp index subcommand ([#100](https://github.com/AlexMost/neuro-vault/issues/100)) ([e6ce3d9](https://github.com/AlexMost/neuro-vault/commit/e6ce3d9fa7a12117c0b5354b499ae388d520aabf)), closes [#83](https://github.com/AlexMost/neuro-vault/issues/83) [#83](https://github.com/AlexMost/neuro-vault/issues/83)
+* **corpus:** build the embedding corpus the server owns — extraction and storage ([#96](https://github.com/AlexMost/neuro-vault/issues/96)) ([dcba68b](https://github.com/AlexMost/neuro-vault/commit/dcba68b22f69f7d4e39fe22e8266d8d2f386d1c9)), closes [#82](https://github.com/AlexMost/neuro-vault/issues/82) [#82](https://github.com/AlexMost/neuro-vault/issues/82) [#82](https://github.com/AlexMost/neuro-vault/issues/82) [#82](https://github.com/AlexMost/neuro-vault/issues/82)
+* **corpus:** reconcile the owned corpus against the vault ([#97](https://github.com/AlexMost/neuro-vault/issues/97)) ([bba5272](https://github.com/AlexMost/neuro-vault/commit/bba52722a517c5c7d7398fc76631d57cee3cab33)), closes [#3](https://github.com/AlexMost/neuro-vault/issues/3) [#5](https://github.com/AlexMost/neuro-vault/issues/5) [#82](https://github.com/AlexMost/neuro-vault/issues/82) [#3](https://github.com/AlexMost/neuro-vault/issues/3) [#5](https://github.com/AlexMost/neuro-vault/issues/5) [#82](https://github.com/AlexMost/neuro-vault/issues/82) [#82](https://github.com/AlexMost/neuro-vault/issues/82) [#82](https://github.com/AlexMost/neuro-vault/issues/82) [#82](https://github.com/AlexMost/neuro-vault/issues/82) [#82](https://github.com/AlexMost/neuro-vault/issues/82) [#82](https://github.com/AlexMost/neuro-vault/issues/82)
+* **eval:** retrieval eval harness ([#102](https://github.com/AlexMost/neuro-vault/issues/102)) ([da67af3](https://github.com/AlexMost/neuro-vault/commit/da67af3c96f0f7a17e4abf3a5f2ae3354312682f)), closes [#84](https://github.com/AlexMost/neuro-vault/issues/84)
+* **semantic:** serve semantic search from the corpus the server owns ([#105](https://github.com/AlexMost/neuro-vault/issues/105)) ([f04d555](https://github.com/AlexMost/neuro-vault/commit/f04d55541c81cdaa10ee78d7f9b9556904ccf7f9)), closes [#85](https://github.com/AlexMost/neuro-vault/issues/85) [#88](https://github.com/AlexMost/neuro-vault/issues/88) [#87](https://github.com/AlexMost/neuro-vault/issues/87) [#85](https://github.com/AlexMost/neuro-vault/issues/85) [#85](https://github.com/AlexMost/neuro-vault/issues/85) [#85](https://github.com/AlexMost/neuro-vault/issues/85) [#85](https://github.com/AlexMost/neuro-vault/issues/85) [#85](https://github.com/AlexMost/neuro-vault/issues/85) [#85](https://github.com/AlexMost/neuro-vault/issues/85)
+
 ## [15.5.0](https://github.com/AlexMost/neuro-vault/compare/v15.4.0...v15.5.0) (2026-08-24)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "neuro-vault-mcp",
-  "version": "15.5.0",
+  "version": "16.0.0",
   "description": "MCP server for semantic and lexical search over Obsidian vaults, with a self-built embedding index.",
   "homepage": "https://github.com/AlexMost/neuro-vault#readme",
   "bugs": {
