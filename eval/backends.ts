@@ -38,6 +38,11 @@ async function loadOwn(vaultRoot: string): Promise<Map<string, SmartSource>> {
   return sources;
 }
 
+// How to produce an `sc` corpus. The spec requires every backend-loading
+// failure to name the missing corpus AND the remedy, so this rides on the
+// wrapped `catch` message below — the only message a real `sc` failure prints.
+const SC_REMEDY = 'open the vault in Obsidian with Smart Connections installed';
+
 async function loadSc(vaultRoot: string): Promise<Map<string, SmartSource>> {
   const smartEnvPath = path.join(vaultRoot, '.smart-env', 'multi');
   let sources: Map<string, SmartSource>;
@@ -47,13 +52,15 @@ async function loadSc(vaultRoot: string): Promise<Map<string, SmartSource>> {
   } catch (error) {
     throw new BackendError(
       `failed to load the Smart Connections corpus at ${smartEnvPath}: ` +
-        `${error instanceof Error ? error.message : String(error)}`,
+        `${error instanceof Error ? error.message : String(error)} — ${SC_REMEDY}`,
     );
   }
+  // Defensive only: the loader already throws both for a missing directory
+  // and for a corpus holding no usable notes, so control does not reach here
+  // today. Kept so a loader that ever returns an empty map still fails loudly
+  // rather than scoring every query against nothing.
   if (sources.size === 0) {
-    throw new BackendError(
-      `Smart Connections corpus at ${smartEnvPath} is empty — open the vault in Obsidian with Smart Connections installed`,
-    );
+    throw new BackendError(`Smart Connections corpus at ${smartEnvPath} is empty — ${SC_REMEDY}`);
   }
   return sources;
 }
