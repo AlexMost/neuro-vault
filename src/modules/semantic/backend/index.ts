@@ -5,7 +5,11 @@ import { loadCorpusSnapshot } from '../../../lib/obsidian/corpus/snapshot.js';
 import type { SemanticBackend } from '../../../lib/obsidian/semantic-backend.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
 import type { QueuedEmbedder } from '../embed-queue.js';
-import { createCorpusBackend } from './corpus-backend.js';
+import {
+  createCorpusBackend,
+  type CorpusBackend,
+  type CorpusBackendDeps,
+} from './corpus-backend.js';
 import { startVaultWatcher, type WatcherFactory } from './vault-watcher.js';
 
 export interface OwnCorpusBackendFactoryDeps {
@@ -13,6 +17,13 @@ export interface OwnCorpusBackendFactoryDeps {
   embedder: QueuedEmbedder;
   /** Injected by tests; production defaults to the chokidar-backed one. */
   createWatcher?: WatcherFactory;
+  /**
+   * Injected by tests; production defaults to {@link createCorpusBackend}.
+   * Whether this factory disposes the backend it built — and in what order
+   * relative to the watcher — is otherwise unobservable from the outside, since
+   * `SemanticBackend` exposes nothing that changes once disposed.
+   */
+  createBackend?: (deps: CorpusBackendDeps) => CorpusBackend;
   /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
   warn?: (message: string) => void;
 }
@@ -48,12 +59,14 @@ export function createOwnCorpusBackendFactory(
 ): (opts: OwnCorpusBackendOptions) => SemanticBackend {
   const warn = deps.warn ?? ((message: string) => console.error(message));
 
+  const createBackend = deps.createBackend ?? createCorpusBackend;
+
   return ({ vaultRoot, vaultName, reader, enabled }): SemanticBackend => {
-    const store = new CorpusStore(vaultRoot);
+    const store = new CorpusStore(vaultRoot, { warn });
     const fsDeps = buildReconcileFsDeps({ vaultRoot, reader });
     const embed = deps.embedder.asIndexEmbedFn();
 
-    const backend = createCorpusBackend({
+    const backend = createBackend({
       vaultRoot,
       vaultName,
       enabled,
@@ -77,8 +90,16 @@ export function createOwnCorpusBackendFactory(
       snapshot: () => backend.snapshot(),
       status: () => backend.status(),
       dispose: async () => {
-        await watcher?.close();
-        await backend.dispose();
+        // `finally`, not a plain sequence: a `watcher.close()` that rejects
+        // (chokidar can) must not leave the corpus backend un-disposed. The
+        // rejection still propagates — the server's disposer settles each
+        // vault independently and reports it — but both halves have run by
+        // then.
+        try {
+          await watcher?.close();
+        } finally {
+          await backend.dispose();
+        }
       },
     };
   };

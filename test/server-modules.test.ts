@@ -104,6 +104,63 @@ async function startWithBackendStatus(
   );
 }
 
+/** Let the fire-and-forget `void dispose()` and Node's rejection check run. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * Boot the server over `vaultPaths` with a fake transport, so a test can close
+ * it by hand. Every vault gets a ready backend whose `dispose()` is
+ * `backendDispose(vaultName)` — the name is how a test makes exactly one
+ * vault's disposal fail.
+ */
+async function startForShutdown(opts: {
+  vaultPaths: string[];
+  backendDispose: (vaultName: string) => Promise<void>;
+  protocolOnClose?: () => void;
+}): Promise<{ transport: { onclose?: () => void }; protocolOnClose: () => void }> {
+  const transport = {} as { onclose?: () => void };
+  // The MCP SDK installs its own `onclose` when the server connects — it
+  // aborts in-flight request handlers and rejects pending responses. Model
+  // that here, so a disposal hook that *replaced* the handler instead of
+  // chaining onto it fails these tests rather than silently disabling the
+  // protocol's teardown in production.
+  const protocolOnClose = opts.protocolOnClose ?? vi.fn();
+  const server = createFakeServer();
+  server.connect = vi.fn((t: { onclose?: () => void }) => {
+    t.onclose = protocolOnClose;
+    return Promise.resolve();
+  }) as never;
+
+  await startNeuroVaultServer(
+    {
+      vaults: opts.vaultPaths.map((vaultPath) => ({
+        name: path.basename(vaultPath),
+        path: vaultPath,
+        smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
+      })),
+      semantic: { enabled: true, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
+    },
+    {
+      semantic: {
+        embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
+      },
+      serverFactory: () => server as never,
+      transportFactory: () => transport as never,
+      vaultEntryDeps: {
+        semanticBackendFactory: ({ vaultName }) => ({
+          snapshot: async () => ({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
+          status: () => ({ state: 'ready' as const }),
+          dispose: () => opts.backendDispose(vaultName),
+        }),
+      },
+    },
+  );
+
+  return { transport, protocolOnClose };
+}
+
 describe('Neuro Vault MCP server bootstrap', () => {
   it('returns SEMANTIC_INDEX_NOT_FOUND while a vault is still building its corpus (startup tolerant)', async () => {
     const tempRoot = await createTempVaultPath();
@@ -164,55 +221,83 @@ describe('Neuro Vault MCP server bootstrap', () => {
   it('disposes every vault backend when the transport closes', async () => {
     const vaultPath = await createTempVaultPath();
     const dispose = vi.fn(async () => {});
-    const transport = {} as { onclose?: () => void };
-
-    // The MCP SDK installs its own `onclose` when the server connects — it
-    // aborts in-flight request handlers and rejects pending responses. Model
-    // that here, so a disposal hook that *replaced* the handler instead of
-    // chaining onto it fails this test rather than silently disabling the
-    // protocol's teardown in production.
-    const protocolOnClose = vi.fn();
-    const server = createFakeServer();
-    server.connect = vi.fn((t: { onclose?: () => void }) => {
-      t.onclose = protocolOnClose;
-      return Promise.resolve();
-    }) as never;
 
     try {
-      await startNeuroVaultServer(
-        {
-          vaults: [
-            {
-              name: path.basename(vaultPath),
-              path: vaultPath,
-              smartEnvPath: path.join(vaultPath, '.smart-env', 'multi'),
-            },
-          ],
-          semantic: { enabled: true, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
-        },
-        {
-          semantic: {
-            embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
-          },
-          serverFactory: () => server as never,
-          transportFactory: () => transport as never,
-          vaultEntryDeps: {
-            semanticBackendFactory: () => ({
-              snapshot: async () => ({
-                sources: new Map(),
-                basenameIndex: buildBasenameIndex([]),
-              }),
-              status: () => ({ state: 'ready' as const }),
-              dispose,
-            }),
-          },
-        },
-      );
+      const { transport, protocolOnClose } = await startForShutdown({
+        vaultPaths: [vaultPath],
+        backendDispose: dispose,
+      });
 
       transport.onclose?.();
-      await new Promise((resolve) => setImmediate(resolve));
+      await settle();
       expect(dispose).toHaveBeenCalledTimes(1);
       expect(protocolOnClose).toHaveBeenCalledTimes(1);
+    } finally {
+      await fs.rm(vaultPath, { recursive: true, force: true });
+    }
+  });
+
+  it("disposes the other vaults, and raises no unhandled rejection, when one backend's dispose rejects", async () => {
+    const [failingPath, healthyPath] = await Promise.all([
+      createTempVaultPath(),
+      createTempVaultPath(),
+    ]);
+    const failingName = path.basename(failingPath);
+    const healthyDispose = vi.fn(async () => {});
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    // The disposal hook is invoked as `void dispose()`, so a rejection that
+    // escapes it is ERR_UNHANDLED_REJECTION on Node >= 20 — a stack trace and
+    // a non-zero exit in place of the clean teardown design D10 exists for.
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+
+    try {
+      const { transport } = await startForShutdown({
+        vaultPaths: [failingPath, healthyPath],
+        backendDispose: (vaultName) =>
+          vaultName === failingName
+            ? Promise.reject(new Error('watcher close blew up'))
+            : healthyDispose(),
+      });
+
+      transport.onclose?.();
+      await settle();
+
+      // The healthy vault is disposed even though the other one failed first,
+      // and the failure is reported on stderr rather than swallowed.
+      expect(healthyDispose).toHaveBeenCalledTimes(1);
+      expect(stderr).toHaveBeenCalledWith(
+        expect.stringContaining('semantic backend disposal failed: watcher close blew up'),
+      );
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+      stderr.mockRestore();
+      await fs.rm(failingPath, { recursive: true, force: true });
+      await fs.rm(healthyPath, { recursive: true, force: true });
+    }
+  });
+
+  it("still disposes every vault backend when the protocol's own onclose throws", async () => {
+    const vaultPath = await createTempVaultPath();
+    const dispose = vi.fn(async () => {});
+
+    try {
+      const { transport } = await startForShutdown({
+        vaultPaths: [vaultPath],
+        backendDispose: dispose,
+        protocolOnClose: vi.fn(() => {
+          throw new Error('protocol teardown failed');
+        }),
+      });
+
+      // The throw still propagates to whoever closed the transport; what must
+      // not happen is disposal being skipped — that is precisely the "process
+      // outlives its client" failure design D10 targets.
+      expect(() => transport.onclose?.()).toThrow('protocol teardown failed');
+      await settle();
+      expect(dispose).toHaveBeenCalledTimes(1);
     } finally {
       await fs.rm(vaultPath, { recursive: true, force: true });
     }

@@ -155,19 +155,40 @@ export async function startNeuroVaultServer(
     process.stderr.write(`semantic warmup failed: ${message}\n`);
   });
 
+  /**
+   * Releases every vault's background resources. Never rejects: one vault's
+   * failure is reported to stderr and the others still get disposed. It is
+   * called from `onclose` as `void dispose()`, and an unhandled rejection
+   * there is `ERR_UNHANDLED_REJECTION` on Node ≥ 20 — a crash in place of the
+   * clean teardown this exists to produce.
+   */
   const dispose = async (): Promise<void> => {
-    await Promise.all(
-      registry.list().map((entry) => entry.backend?.dispose() ?? Promise.resolve()),
+    // `async` per entry so a backend whose `dispose()` throws synchronously
+    // becomes one settled rejection rather than blowing up the whole map.
+    const results = await Promise.allSettled(
+      registry.list().map(async (entry) => entry.backend?.dispose()),
     );
+    for (const result of results) {
+      if (result.status !== 'rejected') continue;
+      const message =
+        result.reason instanceof Error ? result.reason.message : String(result.reason);
+      process.stderr.write(`semantic backend disposal failed: ${message}\n`);
+    }
   };
+
   // `server.connect()` installs the MCP SDK's own `onclose` (it aborts
   // in-flight request handlers and rejects pending responses), so chain onto
   // it rather than replacing it — a bare assignment here would silently
-  // disable the protocol's own teardown.
+  // disable the protocol's own teardown. `finally`, so a throw from the
+  // protocol's handler cannot skip disposal and leave the watchers holding
+  // the event loop open past the client that started us (design D10).
   const protocolOnClose = transport.onclose;
   transport.onclose = () => {
-    protocolOnClose?.();
-    void dispose();
+    try {
+      protocolOnClose?.();
+    } finally {
+      void dispose();
+    }
   };
   return dispose;
 }
