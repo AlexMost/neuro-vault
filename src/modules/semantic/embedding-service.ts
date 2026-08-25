@@ -2,7 +2,7 @@ import { pipeline } from '@xenova/transformers';
 
 // The corpus library owns the model's identity: EMBED_CHAR_BUDGET is derived
 // from the same token window, so the two must never drift apart.
-import { MAX_TOKENS, MODEL_KEY } from '../../lib/obsidian/corpus/types.js';
+import { MAX_TOKENS, MODEL_ID } from '../../lib/obsidian/corpus/types.js';
 
 import type { EmbeddingProvider } from './types.js';
 
@@ -33,12 +33,13 @@ type RawPipeline = (
 type PipelineFactory = (task: string, model: string) => Promise<RawPipeline>;
 
 export interface EmbeddingServiceOptions {
-  modelKey?: string;
+  /** A transformers.js repo id (e.g. MODEL_ID) — a corpus model key cannot be loaded. */
+  modelId?: string;
   pipelineFactory?: PipelineFactory;
 }
 
 export class EmbeddingService implements EmbeddingProvider {
-  private readonly modelKey: string;
+  private readonly modelId: string;
 
   private readonly pipelineFactory: PipelineFactory;
 
@@ -47,7 +48,7 @@ export class EmbeddingService implements EmbeddingProvider {
   private initialization: Promise<void> | null = null;
 
   constructor(options: EmbeddingServiceOptions = {}) {
-    this.modelKey = options.modelKey ?? MODEL_KEY;
+    this.modelId = options.modelId ?? MODEL_ID;
     this.pipelineFactory = options.pipelineFactory ?? (pipeline as unknown as PipelineFactory);
   }
 
@@ -75,7 +76,7 @@ export class EmbeddingService implements EmbeddingProvider {
     }
 
     if (!this.initialization) {
-      this.initialization = this.pipelineFactory(EMBEDDING_TASK, this.modelKey)
+      this.initialization = this.pipelineFactory(EMBEDDING_TASK, this.modelId)
         .then((embeddingPipeline) => {
           capTokenizer(embeddingPipeline);
           this.pipeline = embeddingPipeline;

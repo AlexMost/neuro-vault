@@ -43,6 +43,8 @@ export interface CorpusShard {
 export interface CorpusManifest {
   embed_version: number;
   model_key: string;
+  /** The repo id the vectors were produced from — editing MODEL_ID alone must rebuild. */
+  model_id: string;
   dims: number;
   strategy: string;
   created: string;
@@ -58,6 +60,12 @@ export const MAX_TOKENS = 512;
 export const EMBED_CHAR_BUDGET = Math.floor(MAX_TOKENS * 3.7);
 /** The embedding model's corpus identity, as the manifest's `model_key` records it. */
 export const MODEL_KEY = 'bge-micro-v2';
+/**
+ * The model's transformers.js repo id — what a pipeline is actually loaded
+ * from. Distinct from MODEL_KEY, which is only the corpus's record of which
+ * model produced its vectors; loading `MODEL_KEY` as a repo id fails.
+ */
+export const MODEL_ID = 'TaylorAI/bge-micro-v2';
 export const MODEL_DIMS = 384;
 export const SC_PARITY_STRATEGY = 'sc-parity-v1';
 export const EMBED_VERSION = 1;

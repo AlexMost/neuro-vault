@@ -26,8 +26,7 @@ export function createSemanticModule(
   deps: ISemanticModuleDeps = {},
 ): ISemanticModule {
   const embeddingServiceFactory =
-    deps.embeddingServiceFactory ??
-    ((modelId: string) => new EmbeddingService({ modelKey: modelId }));
+    deps.embeddingServiceFactory ?? ((modelId: string) => new EmbeddingService({ modelId }));
   const searchEngine = deps.searchEngine ?? { findNeighbors, findBlockNeighbors, findDuplicates };
   const embeddingService = embeddingServiceFactory(config.modelId);
 

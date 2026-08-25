@@ -30,6 +30,7 @@ async function tempVault() {
 const expected = {
   embed_version: 1,
   model_key: 'bge-micro-v2',
+  model_id: 'TaylorAI/bge-micro-v2',
   dims: 384,
   strategy: 'sc-parity-v1',
 };
@@ -221,7 +222,7 @@ describe('isManifestCompatible', () => {
     expect(isManifestCompatible(stored, expected, true)).toBe(true);
   });
 
-  it.each(['embed_version', 'model_key', 'dims', 'strategy'] as const)(
+  it.each(['embed_version', 'model_key', 'model_id', 'dims', 'strategy'] as const)(
     'rejects a manifest differing in %s',
     (field) => {
       const changed = {

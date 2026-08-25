@@ -44,7 +44,7 @@ Full behaviour: [`docs/architecture/vault-conventions.md`](../architecture/vault
 
 ## Excluding paths from discovery
 
-By default, every note the server discovers — for the lexical leg of `search_notes`, `query_notes`, tag/property listings, `get_vault_overview` counts, backlinks, and note-name resolution — excludes dot-directories (`.obsidian/`, `.git/`, `.neuro-vault/`, …), `Templates/`, and every entry named in the vault root's `.gitignore`, if one exists. Two surfaces are unaffected: `read_notes` with an explicit path (a direct read, not a discovery call), and semantic matches, which come from the Smart Connections corpus and follow Smart Connections' own exclusion settings until the server's own embedding indexer lands.
+By default, every note the server discovers — for the lexical leg of `search_notes`, `query_notes`, tag/property listings, `get_vault_overview` counts, backlinks, and note-name resolution — excludes dot-directories (`.obsidian/`, `.git/`, `.neuro-vault/`, …), `Templates/`, and every entry named in the vault root's `.gitignore`, if one exists. Two surfaces are unaffected: `read_notes` with an explicit path (a direct read, not a discovery call), and semantic matches, which come from the Smart Connections corpus and follow Smart Connections' own exclusion settings until the server's own corpus starts serving those tools.
 
 To exclude additional paths, add an optional `<vault>/.neuro-vault/config.json`:
 

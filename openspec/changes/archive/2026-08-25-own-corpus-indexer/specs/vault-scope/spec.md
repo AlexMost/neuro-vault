@@ -19,4 +19,4 @@ Each vault entry SHALL own exactly one scope object that decides which vault fil
 #### Scenario: The corpus covers exactly the visible notes
 
 - **WHEN** the server's own embedding corpus is reconciled against a vault
-- **THEN** it holds an entry for every note the scope makes visible except those below the embedding size gate, and for no note the scope excludes
+- **THEN** it holds a shard for every note the scope makes visible — carrying vectors only for those that reach the embedding size gate — and no shard for any note the scope excludes
