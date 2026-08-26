@@ -3,7 +3,7 @@
 ## Requirements
 
 - Node.js 20+
-- An Obsidian vault (a directory of Markdown notes) — no plugin required
+- A vault — a directory of Markdown notes. An Obsidian vault is one, but Obsidian itself is not required: no plugin, no running app.
 
 Vault operations (`create_note`, `read_daily`, `edit_note`, properties, tags) read and write the vault directory directly on disk — no Obsidian installation or running instance is required. The server runs headless. The embedding index the semantic leg searches is one the server builds itself from your notes; see [First-run behavior](#first-run-behavior) below.
 
