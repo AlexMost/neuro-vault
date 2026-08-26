@@ -21,9 +21,10 @@ Your second brain stops being a folder you open between contexts and becomes a f
 - 🎯 **Quick or deep, your call** — `effort: "quick"` for fast direct lookups, `effort: "deep"` for exploration with related-note expansion; `mode: "lexical"` when you want exact text matching only (works even without embeddings).
 - 🧾 **Context with provenance, not mystery memory** — results come back with paths, matched queries, block-level snippets, and backlink counts so the assistant can show where an answer came from.
 - 🧭 **A real navigation toolkit for your agent** — instead of grepping files and opening notes one by one, your assistant walks the vault like a database: filter by tags and properties, batch-read metadata, traverse the wikilink graph, discover the structure, jump to semantic neighbours.
-- 🔎 **Ask structured questions in plain language** — _"active projects tagged #ai"_, _"todo tasks with a deadline this week"_, _"meeting notes from `Work/` newest first"_ — one call, ranked answer, no chains of reads.
-- ✍️ **Full write surface for your notes** — create, in-place replace, or rewrite the whole body; manage frontmatter, tags, and daily notes. Every write goes directly to disk — no Obsidian installation or running instance required; if you have Obsidian open, its own file watcher picks up the change on its usual cadence.
+- 🔎 **Ask structured questions in plain language** — _"active projects tagged #ai"_, _"todo tasks with a deadline this week"_, _"meeting notes from `Work/` newest first"_. Your assistant turns them into a **MongoDB-style filter** over frontmatter, tags, and backlink counts — one call, ranked answer, no chains of reads.
+- ✍️ **Full write surface for your notes** — create, in-place replace, or rewrite the whole body; manage frontmatter, tags, and daily notes. Every write goes directly to disk; if you have Obsidian open, its own file watcher picks up the change on its usual cadence.
 - ⚡ **Zero infrastructure** — local stdio MCP server, no database, no external processes, no API keys. The server keeps its own index fresh with an in-process watcher — nothing to run, nothing to babysit.
+- 🪶 **Obsidian optional** — a vault is just a directory of Markdown files, and the server reads and writes it headlessly: no plugin, no running app, nothing to install beyond this server. Obsidian-flavoured conventions (`[[wikilinks]]`, YAML frontmatter, inline `#tags`) are understood wherever they appear. The one tool that genuinely wants Obsidian is `read_daily` — it reads the Daily Notes plugin's `.obsidian/daily-notes.json` to learn your folder and date format, and returns `DAILY_NOTES_NOT_CONFIGURED` without it.
 - 🔌 **Drop-in for any MCP client** — Claude Code, Cursor, Windsurf — configuration is a single JSON block.
 
 ---
@@ -65,6 +66,30 @@ One question, one answer. Your assistant stops being a file browser and starts b
 
 ---
 
+### 🗃 Query your vault like a database
+
+`query_notes` runs a **MongoDB-style filter** over every note's frontmatter, tags, path, and backlink count. It's syntax your assistant already knows from training data — nothing to teach it — and it collapses N+1 patterns like _"list tags → read each note → filter in my head"_ into a single call.
+
+```json
+{
+  "filter": {
+    "$and": [
+      { "tags": "ai" },
+      { "$or": [{ "frontmatter.status": "active" }, { "frontmatter.status": "wip" }] },
+      { "frontmatter.deadline": { "$exists": true } }
+    ]
+  },
+  "path_prefix": "Projects/",
+  "sort": { "field": "frontmatter.deadline", "order": "asc" }
+}
+```
+
+Operators: `$eq` `$ne` `$in` `$nin` `$gt` `$gte` `$lt` `$lte` `$exists` `$regex` `$and` `$or` `$nor` `$not`. They run through [sift](https://github.com/crcn/sift.js) behind a strict allow-list — `$where` and `$function` are rejected, so a filter can never become code execution on your machine. Notes are scanned in bounded batches with an early exit, so _"the first 100 active projects"_ stops reading the moment it has them.
+
+→ Full filter reference: [docs/guide/finding-notes.md#query_notes](./docs/guide/finding-notes.md#query_notes)
+
+---
+
 ### 🔍 Pre-filter: scope search with structural filters
 
 `search_notes` accepts an optional `filter` to narrow the candidate set **before** ranking — combining the precision of `query_notes` with the recall of hybrid search. The filter applies identically to every leg: only notes that pass it can appear in the fused `matches[]` list. Useful when domain-relevant notes are crowded out by larger narrative clusters.
@@ -83,7 +108,9 @@ One question, one answer. Your assistant stops being a file browser and starts b
 flowchart LR
     You([You]) --> AI[AI assistant]
     AI <-->|MCP| NV[Neuro Vault]
-    NV <--> Vault[(Obsidian vault)]
+    NV <--> Vault[("Vault<br/>markdown files")]
+    NV <--> Corpus[(".neuro-vault/corpus<br/>embedding index")]
+    Vault -.->|watched, reindexed| Corpus
 ```
 
 You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — the semantic leg ranks against an embedding index the server builds and keeps in `<vault>/.neuro-vault/corpus/`, the lexical leg reads notes straight from disk, and vault operations read and write the vault directory directly on disk too. No database, no external process, no Obsidian install required — an in-process watcher reconciles the index after ~10 seconds of quiet, so it never falls far behind what's on disk.
@@ -113,7 +140,7 @@ Add to your MCP client config (here: Claude Code's `~/.claude/settings.json`):
 }
 ```
 
-> **Vault directory names** must match `^[a-zA-Z0-9_-]{1,64}$` — ASCII letters, digits, `_`, or `-`; 1–64 chars. Spaces and Unicode are rejected. The MCP-side alias is the directory basename, so if Obsidian shows the vault as "My Vault", the directory itself must be `My_Vault` or similar.
+> **Vault directory names** must match `^[a-zA-Z0-9_-]{1,64}$` — ASCII letters, digits, `_`, or `-`; 1–64 chars. Spaces and Unicode are rejected. The MCP-side alias is the directory basename, so a vault you think of as "My Vault" — the name Obsidian would display, for instance — must live in a directory called `My_Vault` or similar.
 
 ### 🗂 Multi-vault — two vaults, one server
 
@@ -152,6 +179,12 @@ Then ask your assistant:
 > "What did I write about building AI agents?"
 
 On first run the embedding model downloads automatically (~40 MB). Subsequent starts are fast.
+
+Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault):
+
+```bash
+neuro-vault-mcp index --vault /absolute/path/to/your/vault
+```
 
 For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./docs/guide/installation.md).
 
