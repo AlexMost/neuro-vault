@@ -62,7 +62,50 @@ A few more questions Neuro Vault makes one-shot:
 
 One question, one answer. Your assistant stops being a file browser and starts being an actual second brain.
 
-→ See [docs/guide/finding-notes.md](./docs/guide/finding-notes.md#query_notes) for the full query language and examples.
+---
+
+### 🔭 One search, both legs
+
+`search_notes` is the flagship: **one call runs a semantic leg and a lexical leg and fuses them into a single ranked list.** No picking a strategy up front, no cross-referencing two result sets by hand.
+
+Pass up to eight queries at once — synonyms, jargon, translations. The semantic leg works across languages, so a note written in one language is found by a query in another:
+
+```json
+{ "query": ["retrieval policy", "політика пошуку", "RRF"], "effort": "deep" }
+```
+
+Each match comes back with **its own provenance and evidence** — not just a path and a score:
+
+```json
+{
+  "path": "Notes/embeddings.md",
+  "found_in": ["semantic", "lexical:title"],
+  "similarity": 0.82,
+  "blocks": [{ "heading": "Notes/embeddings.md#What is an embedding", "lines": [3, 20] }],
+  "lexical": [{ "matched_in": "title", "snippet": "embeddings" }],
+  "backlink_count": 4
+}
+```
+
+`found_in` names every leg that surfaced the note — here both of them, which is the strongest relevance signal the server can give you. `blocks[]` points at the specific section and line range that matched, so the assistant can pull twenty lines instead of the whole note: that is where the low-token part of "low-token retrieval" actually comes from.
+
+**Fusion is the point.** A note found by two legs is lifted in the merged order automatically (reciprocal rank fusion) and still appears exactly once — there is no caller-side merging to write, and no way to double-count a note that both legs liked.
+
+**It degrades instead of failing.** While the embedding index is still building — or if you turned semantic off entirely — `search_notes` keeps answering from its lexical leg alone and reports `semantic_status` so the assistant knows which legs actually ran. Add `mode: "lexical"` to ask for exact text matching only, and `effort: "quick" | "deep"` to trade breadth for speed.
+
+→ Full reference: [docs/guide/finding-notes.md#search_notes](./docs/guide/finding-notes.md#search_notes)
+
+---
+
+### 🔍 Pre-filter: scope search with structural filters
+
+`search_notes` accepts an optional `filter` to narrow the candidate set **before** ranking — combining the precision of `query_notes` with the recall of hybrid search. The filter applies identically to every leg: only notes that pass it can appear in the fused `matches[]` list. Useful when domain-relevant notes are crowded out by larger narrative clusters.
+
+```json
+{ "query": "trading lessons", "filter": { "tags": ["trading"] } }
+```
+
+`filter` accepts `path_prefix` (string or array), `exclude_path_prefix` (string or array — drops matched subtrees), `tags` (ANY-of), and a `frontmatter` sift filter. Composition is include → exclude → tags → frontmatter, then each leg ranks within the allowed set (`threshold` further cuts the semantic leg only). See the [Finding Notes guide](./docs/guide/finding-notes.md#pre-filter-filter-parameter) for full details.
 
 ---
 
@@ -87,18 +130,6 @@ One question, one answer. Your assistant stops being a file browser and starts b
 Operators: `$eq` `$ne` `$in` `$nin` `$gt` `$gte` `$lt` `$lte` `$exists` `$regex` `$and` `$or` `$nor` `$not`. They run through [sift](https://github.com/crcn/sift.js) behind a strict allow-list — `$where` and `$function` are rejected, so a filter can never become code execution on your machine. Notes are scanned in bounded batches with an early exit, so _"the first 100 active projects"_ stops reading the moment it has them.
 
 → Full filter reference: [docs/guide/finding-notes.md#query_notes](./docs/guide/finding-notes.md#query_notes)
-
----
-
-### 🔍 Pre-filter: scope search with structural filters
-
-`search_notes` accepts an optional `filter` to narrow the candidate set **before** ranking — combining the precision of `query_notes` with the recall of hybrid search. The filter applies identically to every leg: only notes that pass it can appear in the fused `matches[]` list. Useful when domain-relevant notes are crowded out by larger narrative clusters.
-
-```json
-{ "query": "trading lessons", "filter": { "tags": ["trading"] } }
-```
-
-`filter` accepts `path_prefix` (string or array), `exclude_path_prefix` (string or array — drops matched subtrees), `tags` (ANY-of), and a `frontmatter` sift filter. Composition is include → exclude → tags → frontmatter, then each leg ranks within the allowed set (`threshold` further cuts the semantic leg only). See the [Finding Notes guide](./docs/guide/finding-notes.md#pre-filter-filter-parameter) for full details.
 
 ---
 
