@@ -4,7 +4,7 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { resolveVault } from '../../../lib/resolve-vault.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { normalizePath, validateReadNotesInput } from '../tool-helpers.js';
+import { normalizePath } from '../tool-helpers.js';
 import type { ContentMode, ReadNotesResult, ReadNotesResultItem } from '../types.js';
 import { previewBody } from '../preview-body.js';
 import type { ReadNotesField } from '../../../lib/obsidian/vault-reader.js';
@@ -42,7 +42,11 @@ export function buildReadNotesTool(
     inputSchema,
     handler: async (input) => {
       const entry = resolveVault(input, registry, { tool: 'read_notes' });
-      const { paths, content } = validateReadNotesInput(input);
+      // The registration gate has already enforced the schema: `paths` is a
+      // non-empty string or a 1-50 string array, `content` is one of the three
+      // modes. All that is left is widening the single-string form.
+      const paths = typeof input.paths === 'string' ? [input.paths] : input.paths;
+      const content = input.content;
 
       const seen = new Set<string>();
       const deduped: string[] = [];
