@@ -59,14 +59,14 @@ export class FsVaultWriter implements VaultWriter {
       );
     }
 
-    await this.writeFile(absPath, prefix + result.body, 'utf8');
+    await this.writeRaw(absPath, prefix + result.body, input.path);
   }
 
   async replaceFullBody(input: ReplaceFullBodyInput): Promise<void> {
     const absPath = path.join(this.vaultRoot, input.path);
     const raw = await this.readRaw(absPath, input.path);
     const { prefix } = splitRawFrontmatter(raw);
-    await this.writeFile(absPath, prefix + input.content, 'utf8');
+    await this.writeRaw(absPath, prefix + input.content, input.path);
   }
 
   private async readRaw(absPath: string, vaultRelativePath: string): Promise<string> {
@@ -83,6 +83,18 @@ export class FsVaultWriter implements VaultWriter {
       throw new ToolHandlerError(
         'READ_FAILED',
         `Failed to read ${vaultRelativePath}: ${(err as Error).message}`,
+        { details: { path: vaultRelativePath }, cause: err },
+      );
+    }
+  }
+
+  private async writeRaw(absPath: string, data: string, vaultRelativePath: string): Promise<void> {
+    try {
+      await this.writeFile(absPath, data, 'utf8');
+    } catch (err) {
+      throw new ToolHandlerError(
+        'WRITE_FAILED',
+        `Failed to write ${vaultRelativePath}: ${(err as Error).message}`,
         { details: { path: vaultRelativePath }, cause: err },
       );
     }

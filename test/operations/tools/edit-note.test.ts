@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { FsVaultWriter } from '../../../src/lib/obsidian/vault-writer.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import { buildEditNoteTool } from '../../../src/modules/operations/tools/edit-note.js';
 import { makeReader, makeWriter } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
@@ -131,6 +133,51 @@ describe('edit_note: path auto-promotion', () => {
     expect(writer.replaceFullBody).toHaveBeenCalledWith({
       path: 'Foo.md',
       content: 'body',
+    });
+  });
+});
+
+describe('edit_note: disk write failures reach the client with a code', () => {
+  // ADR-0003: every tool error the client sees carries `{ code, message,
+  // details }`. A failing fs write used to escape FsVaultWriter as a bare
+  // Error, which `toToolErrorResponse` renders through its code-less branch —
+  // nothing for an LLM client to branch on. Exercise the real writer through
+  // the registered tool so both the mapping and the rendering are asserted.
+  function buildWithFailingDisk() {
+    const writer = new FsVaultWriter({
+      vaultRoot: '/vault',
+      readFile: vi.fn().mockResolvedValue('---\nx: y\n---\nold body\n'),
+      writeFile: vi.fn().mockRejectedValue(
+        Object.assign(new Error('ENOSPC: no space left on device'), {
+          code: 'ENOSPC',
+        }),
+      ),
+    });
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader(), writer }]);
+    return registerTool(buildEditNoteTool({ registry }));
+  }
+
+  it('surfaces WRITE_FAILED on a full-body rewrite', async () => {
+    const result = await buildWithFailingDisk().handler({ path: 'n.md', content: 'new' });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      code: 'WRITE_FAILED',
+      details: { path: 'n.md' },
+    });
+  });
+
+  it('surfaces WRITE_FAILED on a targeted replace', async () => {
+    const result = await buildWithFailingDisk().handler({
+      path: 'n.md',
+      content: 'new',
+      replace: 'old body',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      code: 'WRITE_FAILED',
+      details: { path: 'n.md' },
     });
   });
 });
