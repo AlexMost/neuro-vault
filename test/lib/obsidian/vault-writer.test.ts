@@ -21,6 +21,14 @@ function fakeFs(initial: Record<string, string>) {
   return { files, readFile, writeFile };
 }
 
+function failingWriteFile(message: string, code: string) {
+  return vi.fn(async () => {
+    const err = new Error(message) as Error & { code?: string };
+    err.code = code;
+    throw err;
+  });
+}
+
 describe('FsVaultWriter.replaceInNote', () => {
   it('replaces a single occurrence and writes back', async () => {
     const fs = fakeFs({
@@ -112,6 +120,26 @@ describe('FsVaultWriter.replaceInNote', () => {
     });
     expect(fs.writeFile).not.toHaveBeenCalled();
   });
+
+  it('maps a write failure to WRITE_FAILED', async () => {
+    const fs = fakeFs({ '/vault/n.md': '---\ntype: note\n---\nfind me\n' });
+    const writer = new FsVaultWriter({
+      vaultRoot: '/vault',
+      readFile: fs.readFile,
+      writeFile: failingWriteFile('ENOSPC: no space left on device', 'ENOSPC'),
+    });
+
+    await expect(
+      writer.replaceInNote({ path: 'n.md', find: 'find me', content: 'x' }),
+    ).rejects.toBeInstanceOf(ToolHandlerError);
+    await expect(
+      writer.replaceInNote({ path: 'n.md', find: 'find me', content: 'x' }),
+    ).rejects.toMatchObject({
+      code: 'WRITE_FAILED',
+      details: { path: 'n.md' },
+      message: expect.stringContaining('no space left on device'),
+    });
+  });
 });
 
 describe('FsVaultWriter.replaceFullBody', () => {
@@ -182,6 +210,24 @@ describe('FsVaultWriter.replaceFullBody', () => {
     );
     await expect(writer.replaceFullBody({ path: 'gone.md', content: 'x' })).rejects.toMatchObject({
       code: 'NOT_FOUND',
+    });
+  });
+
+  it('maps a write failure to WRITE_FAILED', async () => {
+    const fs = fakeFs({ '/vault/n.md': '---\nx: y\n---\nbody\n' });
+    const writer = new FsVaultWriter({
+      vaultRoot: '/vault',
+      readFile: fs.readFile,
+      writeFile: failingWriteFile('EACCES: permission denied', 'EACCES'),
+    });
+
+    await expect(writer.replaceFullBody({ path: 'n.md', content: 'x' })).rejects.toBeInstanceOf(
+      ToolHandlerError,
+    );
+    await expect(writer.replaceFullBody({ path: 'n.md', content: 'x' })).rejects.toMatchObject({
+      code: 'WRITE_FAILED',
+      details: { path: 'n.md' },
+      message: expect.stringContaining('permission denied'),
     });
   });
 });

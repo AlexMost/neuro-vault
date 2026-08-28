@@ -62,7 +62,7 @@ export class FsVaultProvider implements VaultProvider {
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
     const vaultRoot = this.vaultRoot;
     if (input.name === undefined && input.path === undefined) {
-      throw new Error('createNote requires name or path');
+      throw invalidArgument('createNote requires name or path', 'name');
     }
     let relPath: string;
     if (input.path !== undefined) {

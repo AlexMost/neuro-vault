@@ -79,11 +79,17 @@ describe('FsVaultProvider.createNote (disk)', () => {
     );
   });
 
-  it('throws when neither name nor path is given', async () => {
+  it('fails INVALID_ARGUMENT when neither name nor path is given', async () => {
     const root = await makeVault({});
     const provider = makeProvider(root);
 
-    await expect(provider.createNote({})).rejects.toThrow('createNote requires name or path');
+    // The tool layer already enforces the name/path XOR, but the provider
+    // contract must not depend on that: every escape carries a code (ADR-0003).
+    await expect(provider.createNote({})).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      details: { field: 'name' },
+      message: 'createNote requires name or path',
+    });
   });
 
   it('writes an empty file when content is omitted', async () => {
