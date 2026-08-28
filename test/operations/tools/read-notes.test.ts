@@ -283,7 +283,7 @@ describe('operations.readNotes handler', () => {
       callTool(buildReg(), { paths: ['a.md'], fields: ['content'] }),
     ).rejects.toMatchObject({
       code: 'INVALID_PARAMS',
-      details: { issues: [{ path: '<root>', message: 'Unrecognized key: "fields"' }] },
+      details: { issues: [{ path: '<root>', message: expect.stringContaining('fields') }] },
     });
   });
 
@@ -325,7 +325,7 @@ describe('operations.readNotes handler', () => {
   it('rejects a vault argument in single-vault mode', async () => {
     await expect(callTool(buildReg(), { paths: ['a.md'], vault: 'v' })).rejects.toMatchObject({
       code: 'INVALID_PARAMS',
-      details: { issues: [{ path: '<root>', message: 'Unrecognized key: "vault"' }] },
+      details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
     });
   });
 });

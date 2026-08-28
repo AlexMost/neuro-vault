@@ -59,6 +59,38 @@ describe('callTool', () => {
     });
     expect(await callTool(reg, { q: 'x' })).toBeUndefined();
   });
+
+  it('raises a named error for a non-JSON text payload', async () => {
+    // A handler resolving with a function is not `undefined` (so `toToolResponse`
+    // does not take the `'ok'` sentinel branch) and is not a plain record (so
+    // no `structuredContent` is set), but `JSON.stringify` of a function is
+    // the JS value `undefined` rather than a JSON string — so the text block
+    // becomes the literal text "undefined", which `JSON.parse` rejects.
+    const reg = registerTool<{ q: string }, unknown>({
+      name: 'probe',
+      description: 'probe',
+      inputSchema: z.object({ q: z.string() }),
+      handler: async () => () => {},
+    });
+    await expect(callTool(reg, { q: 'x' })).rejects.toThrow(
+      /resolved with no structuredContent and non-JSON text/,
+    );
+  });
+
+  it('re-throws a plain Error from the handler with no invented code', async () => {
+    const reg = registerTool({
+      name: 'probe',
+      description: 'probe',
+      inputSchema: z.object({ q: z.string() }),
+      handler: async () => {
+        throw new Error('disk read failed');
+      },
+    });
+    const rejection = callTool(reg, { q: 'x' });
+    await expect(rejection).rejects.not.toBeInstanceOf(ToolHandlerError);
+    await expect(rejection).rejects.toThrow('disk read failed');
+    await expect(rejection).rejects.not.toHaveProperty('code');
+  });
 });
 
 describe('expectToolError', () => {
