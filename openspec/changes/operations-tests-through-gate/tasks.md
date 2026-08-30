@@ -28,17 +28,17 @@ Each of 2.1–2.9 does the same three things for its file: (a) build through
 (b) add a strict unknown-key rejection case; (c) add a single-vault `vault`-key
 rejection case. Tools with coercible fields also get (d), named per task.
 
-- [ ] 2.1 `test/operations/tools/create-note.test.ts` (17 call sites) — plus (d) `overwrite: "true"` coerces to `true`, and `frontmatter` as a JSON-string object parses.
-- [ ] 2.2 `test/operations/tools/query-notes.test.ts` (6) — plus (d) `filter` as a JSON-string object, `limit: "5"` → `5`, `include_content: "true"` → `true`, `path_prefix` as a JSON-string array.
-- [ ] 2.3 `test/operations/tools/set-property.test.ts` (16) — plus (d) `value` as a JSON-string array parses to the array branch of the union, while a plain string still resolves to the string branch (`docs/architecture/input-coercion.md` §"Ambiguous unions").
-- [ ] 2.4 `test/operations/tools/edit-note.test.ts` (14) — no coercible field. Keep the existing `WRITE_FAILED` block calling `reg.handler` directly (its subject *is* the `CallToolResult` envelope) and add a comment saying so.
-- [ ] 2.5 `test/operations/tools/read-daily.test.ts` (9) — no coercible field.
-- [ ] 2.6 `test/operations/tools/get-vault-overview.test.ts` (6) — no coercible field; the existing `registerTool(...).spec.description` assertion stays.
-- [ ] 2.7 `test/operations/tools/list-tags.test.ts` (5) — no coercible field.
-- [ ] 2.8 `test/operations/tools/get-note-links.test.ts` (5) — no coercible field.
-- [ ] 2.9 `test/operations/tools/remove-property.test.ts` (5) — no coercible field.
-- [ ] 2.10 Add `test/operations/tools/list-properties.test.ts` — `list_properties` is the one operations tool with no dedicated test file, so "per-tool" coverage is otherwise false for it. Gate-routed happy path, strict unknown-key rejection, and single-vault `vault` rejection.
-- [ ] 2.11 Run `npm test && npm run lint && npm run typecheck`; confirm `grep -rn '\.handler(' test/operations/tools/` returns only envelope-subject call sites, each commented. Open PR 2 with `Refs #112`.
+- [x] 2.1 `test/operations/tools/create-note.test.ts` (17 call sites) — plus (d) `overwrite: "true"` coerces to `true`, and `frontmatter` as a JSON-string object parses.
+- [x] 2.2 `test/operations/tools/query-notes.test.ts` (6) — plus (d) `filter` as a JSON-string object, `limit: "5"` → `5`, `include_content: "true"` → `true`, `path_prefix` as a JSON-string array.
+- [x] 2.3 `test/operations/tools/set-property.test.ts` (16) — plus (d) `value` as a JSON-string array parses to the array branch of the union, while a plain string still resolves to the string branch (`docs/architecture/input-coercion.md` §"Ambiguous unions").
+- [x] 2.4 `test/operations/tools/edit-note.test.ts` (14) — no coercible field. Keep the existing `WRITE_FAILED` block calling `reg.handler` directly (its subject *is* the `CallToolResult` envelope) and add a comment saying so.
+- [x] 2.5 `test/operations/tools/read-daily.test.ts` (9) — no coercible field.
+- [x] 2.6 `test/operations/tools/get-vault-overview.test.ts` (6) — no coercible field; the existing `registerTool(...).spec.description` assertion stays.
+- [x] 2.7 `test/operations/tools/list-tags.test.ts` (5) — no coercible field.
+- [x] 2.8 `test/operations/tools/get-note-links.test.ts` (5) — no coercible field.
+- [x] 2.9 `test/operations/tools/remove-property.test.ts` (5) — no coercible field.
+- [x] 2.10 Add `test/operations/tools/list-properties.test.ts` — `list_properties` is the one operations tool with no dedicated test file, so "per-tool" coverage is otherwise false for it. Gate-routed happy path, strict unknown-key rejection, and single-vault `vault` rejection.
+- [x] 2.11 Run `npm test && npm run lint && npm run typecheck`; confirm `grep -rn '\.handler(' test/operations/tools/` returns only envelope-subject call sites, each commented. Open PR 2 with `Refs #112`.
 
 ## 3. Semantic suite (PR 3)
 

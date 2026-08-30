@@ -4,6 +4,7 @@ import { buildGetVaultOverviewTool } from '../../../src/modules/operations/tools
 import type { VaultOverview } from '../../../src/lib/obsidian/vault-overview.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
+import { callTool } from '../../_gate.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { makeGraph, makeProvider, makeReader } from './_helpers.js';
@@ -41,9 +42,10 @@ describe('operations.getVaultOverview tool', () => {
     });
     const graph = makeGraph();
     const registry = makeTestRegistry([{ name: 'v', reader, provider, graph }]);
-    const tool = buildGetVaultOverviewTool({ registry });
-
-    const result = (await tool.handler({})) as SingleOverview;
+    const result = await callTool<SingleOverview>(
+      registerTool(buildGetVaultOverviewTool({ registry })),
+      {},
+    );
 
     expect(result.vault).toBe('v');
     expect(result.total_notes).toBe(1);
@@ -64,12 +66,10 @@ describe('operations.getVaultOverview tool', () => {
       { name: 'vault-a', reader: readerA, provider: providerA, graph: makeGraph() },
       { name: 'vault-b', reader: readerB, provider: providerB, graph: makeGraph() },
     ]);
-    const tool = buildGetVaultOverviewTool({ registry });
-
-    const result = (await tool.handler({})) as {
+    const result = await callTool<{
       results_by_vault: Array<SingleOverview>;
       skipped_vaults: Array<{ vault: string; reason: string }>;
-    };
+    }>(registerTool(buildGetVaultOverviewTool({ registry })), {});
 
     expect(result.results_by_vault).toHaveLength(2);
     expect(result.skipped_vaults).toEqual([]);
@@ -101,13 +101,11 @@ describe('operations.getVaultOverview tool', () => {
       { name: 'vault-a', reader: readerA, provider: providerA, graph: makeGraph() },
       { name: 'vault-b', reader: readerB, provider: providerB, graph: makeGraph() },
     ]);
-    const tool = buildGetVaultOverviewTool({ registry });
-
-    const result = (await tool.handler({})) as {
+    const result = await callTool<{
       results_by_vault: Array<SingleOverview>;
       skipped_vaults: Array<{ vault: string; reason: string }>;
       failed_vaults: Array<{ vault: string; error: { code: string; message: string } }>;
-    };
+    }>(registerTool(buildGetVaultOverviewTool({ registry })), {});
 
     expect(result.skipped_vaults).toEqual([]);
     expect(result.failed_vaults).toEqual([
@@ -129,9 +127,10 @@ describe('operations.getVaultOverview tool', () => {
       listTags: vi.fn().mockResolvedValue([{ name: 'tag1', count: 3 }]),
     });
     const registry = makeTestRegistry([{ name: 'solo', reader, provider, graph: makeGraph() }]);
-    const tool = buildGetVaultOverviewTool({ registry });
-
-    const result = (await tool.handler({})) as SingleOverview;
+    const result = await callTool<SingleOverview>(
+      registerTool(buildGetVaultOverviewTool({ registry })),
+      {},
+    );
 
     // Must be flat shape (single vault => isMulti() === false)
     expect(result.vault).toBe('solo');
@@ -149,7 +148,10 @@ describe('operations.getVaultOverview tool', () => {
         readConventions: async () => '# House rules',
       },
     ]);
-    const result = (await buildGetVaultOverviewTool({ registry }).handler({})) as SingleOverview;
+    const result = await callTool<SingleOverview>(
+      registerTool(buildGetVaultOverviewTool({ registry })),
+      {},
+    );
     expect(result.conventions).toBe('# House rules');
   });
 
@@ -171,10 +173,10 @@ describe('operations.getVaultOverview tool', () => {
       },
     ]);
 
-    const result = (await buildGetVaultOverviewTool({ registry }).handler({})) as {
+    const result = await callTool<{
       results_by_vault: SingleOverview[];
       failed_vaults: Array<{ vault: string }>;
-    };
+    }>(registerTool(buildGetVaultOverviewTool({ registry })), {});
 
     const byName = new Map(result.results_by_vault.map((r) => [r.vault, r]));
     expect(byName.get('vault-a')!.conventions).toBe('rules A');
@@ -199,5 +201,18 @@ describe('operations.getVaultOverview tool', () => {
     );
     expect(tool.description).not.toContain('skipped_vaults');
     expect(tool.description).toContain(FAN_OUT_SUFFIX);
+  });
+
+  it('rejects a vault argument in single-vault mode', async () => {
+    const registry = makeTestRegistry([
+      { name: 'v', reader: makeReader(), provider: makeProvider(), graph: makeGraph() },
+    ]);
+
+    await expect(
+      callTool(registerTool(buildGetVaultOverviewTool({ registry })), { vault: 'v' }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+      details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
+    });
   });
 });

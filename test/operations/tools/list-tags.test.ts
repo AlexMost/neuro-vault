@@ -1,11 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildListTagsTool } from '../../../src/modules/operations/tools/list-tags.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
+import { callTool } from '../../_gate.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { makeProvider } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
+
+function regOf(registry: IVaultRegistry) {
+  return registerTool(buildListTagsTool({ registry }));
+}
 
 function registryOf(...names: string[]): IVaultRegistry {
   return makeTestRegistry(
@@ -22,8 +28,7 @@ describe('operations.listTags handler', () => {
       listTags: vi.fn().mockResolvedValue([{ name: 'mcp', count: 3 }]),
     });
     const registry = makeTestRegistry([{ name: 'v', provider }]);
-    const tool = buildListTagsTool({ registry });
-    expect(await tool.handler({})).toEqual({
+    expect(await callTool(regOf(registry), {})).toEqual({
       vault: 'v',
       results: [{ name: 'mcp', count: 3 }],
     });
@@ -41,9 +46,8 @@ describe('operations.listTags handler', () => {
       { name: 'a', provider: providerA },
       { name: 'b', provider: providerB },
     ]);
-    const tool = buildListTagsTool({ registry });
 
-    expect(await tool.handler({ vault: 'b' })).toEqual({
+    expect(await callTool(regOf(registry), { vault: 'b' })).toEqual({
       vault: 'b',
       results: [{ name: 'fromB', count: 2 }],
     });
@@ -62,9 +66,8 @@ describe('operations.listTags handler', () => {
       { name: 'a', provider: providerA },
       { name: 'b', provider: providerB },
     ]);
-    const tool = buildListTagsTool({ registry });
 
-    const result = await tool.handler({});
+    const result = await callTool(regOf(registry), {});
     expect(result).toEqual({
       results_by_vault: [
         { vault: 'a', results: [{ name: 'fromA', count: 1 }] },
@@ -90,13 +93,12 @@ describe('operations.listTags handler', () => {
       { name: 'a', provider: providerA },
       { name: 'b', provider: providerB },
     ]);
-    const tool = buildListTagsTool({ registry });
 
-    const result = (await tool.handler({})) as {
+    const result = await callTool<{
       results_by_vault: Array<{ vault: string; results: Array<{ name: string; count: number }> }>;
       failed_vaults: Array<{ vault: string; error: { code: string; message: string } }>;
       skipped_vaults: Array<{ vault: string; reason: string }>;
-    };
+    }>(regOf(registry), {});
 
     expect(result.results_by_vault).toEqual([{ vault: 'a', results: [{ name: 'mcp', count: 5 }] }]);
     expect(result.failed_vaults).toEqual([
@@ -109,8 +111,7 @@ describe('operations.listTags handler', () => {
   });
 
   it('returns { vault, results } for a single vault and never a top-level fan-out envelope', async () => {
-    const tool = buildListTagsTool({ registry: registryOf('only') });
-    const out = await tool.handler({});
+    const out = await callTool(regOf(registryOf('only')), {});
     expect(out).toEqual({ vault: 'only', results: [{ name: 'x', count: 1 }] });
   });
 
@@ -118,5 +119,19 @@ describe('operations.listTags handler', () => {
     const tool = buildListTagsTool({ registry: registryOf('a', 'b') });
     expect(tool.description).toContain(FAN_OUT_SUFFIX);
     expect(tool.description).not.toContain('skipped_vaults');
+  });
+
+  it('rejects a vault argument in single-vault mode', async () => {
+    await expect(callTool(regOf(registryOf('only')), { vault: 'only' })).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+      details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
+    });
+  });
+
+  it('rejects an unknown key', async () => {
+    await expect(callTool(regOf(registryOf('only')), { prefix: 'x' })).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+      details: { issues: [{ path: '<root>', message: expect.stringContaining('prefix') }] },
+    });
   });
 });
