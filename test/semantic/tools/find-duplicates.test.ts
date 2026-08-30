@@ -4,6 +4,8 @@ import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import { buildFindDuplicatesTool } from '../../../src/modules/semantic/tools/find-duplicates.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
+import { callTool } from '../../_gate.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 import {
   MODEL_KEY,
@@ -15,6 +17,8 @@ import {
   findBlockNeighbors,
   toBackend,
 } from './_helpers.js';
+
+type DuplicateResults = Awaited<ReturnType<ReturnType<typeof buildFindDuplicatesTool>['handler']>>;
 
 describe('findDuplicates', () => {
   it('drops duplicate pairs whose paths no longer exist on disk', async () => {
@@ -42,8 +46,9 @@ describe('findDuplicates', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
+      const reg = registerTool(tool);
 
-      const results = await tool.handler({ threshold: 0.95 });
+      const results = await callTool<DuplicateResults>(reg, { threshold: 0.95 });
 
       expect(results.map((r) => [r.note_a, r.note_b])).toEqual([]);
     } finally {
@@ -83,8 +88,9 @@ describe('findDuplicates', () => {
           searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
           modelKey: 'bge-micro-v2',
         });
+        const reg = registerTool(tool);
 
-        const results = await tool.handler({ threshold: 0.95 });
+        const results = await callTool<DuplicateResults>(reg, { threshold: 0.95 });
 
         // note-d doesn't exist on disk; pairs involving note-d are dropped.
         // note-a and note-e both exist, so (a,e) stays; note-b and note-c
@@ -132,8 +138,9 @@ describe('findDuplicates', () => {
           searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
           modelKey: 'bge-micro-v2',
         });
+        const reg = registerTool(tool);
 
-        const results = await tool.handler({ threshold: 0.95 });
+        const results = await callTool<DuplicateResults>(reg, { threshold: 0.95 });
 
         expect(results.map((result) => [result.note_a, result.note_b])).toEqual([
           ['Folder/note-a.md', 'Folder/note-d.md'],
@@ -164,8 +171,9 @@ describe('findDuplicates', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
+      const reg = registerTool(tool);
 
-      await expect(tool.handler({})).rejects.toMatchObject({ code: 'VAULT_REQUIRED' });
+      await expect(callTool(reg, {})).rejects.toMatchObject({ code: 'VAULT_REQUIRED' });
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -186,9 +194,31 @@ describe('findDuplicates', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
+      const reg = registerTool(tool);
 
-      await expect(tool.handler({ vault: 'v' })).rejects.toMatchObject({
+      await expect(callTool(reg, {})).rejects.toMatchObject({
         code: 'SEMANTIC_INDEX_NOT_FOUND',
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a vault argument in single-vault mode', async () => {
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
+
+    try {
+      const registry = makeTestRegistry([{ name: 'v', path: tempRoot }]);
+      const tool = buildFindDuplicatesTool({
+        registry,
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+      const reg = registerTool(tool);
+
+      await expect(callTool(reg, { vault: 'v' })).rejects.toMatchObject({
+        code: 'INVALID_PARAMS',
+        details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
       });
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
@@ -215,8 +245,9 @@ describe('findDuplicates', () => {
       searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
       modelKey: MODEL_KEY,
     });
+    const reg = registerTool(tool);
 
-    const results = await tool.handler({ threshold: 0.95 });
+    const results = await callTool<DuplicateResults>(reg, { threshold: 0.95 });
 
     expect(results.map((r) => [r.note_a, r.note_b])).toEqual([
       ['Folder/note-d.md', 'Folder/note-e.md'],
