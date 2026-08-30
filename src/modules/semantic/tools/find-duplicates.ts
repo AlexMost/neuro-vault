@@ -2,15 +2,10 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
+import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import { readThreshold } from '../tool-helpers.js';
 import type { DuplicatePair, SearchEngine } from '../types.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
-import {
-  describeMultiVault,
-  EXPLICIT_VAULT_SUFFIX,
-  vaultParamShape,
-} from '../../../lib/vault-param.js';
 
 const DEFAULT_DUPLICATE_THRESHOLD = 0.9;
 
@@ -31,21 +26,15 @@ export function buildFindDuplicatesTool(
   deps: FindDuplicatesDeps,
 ): ITool<Input, StampedDuplicatePair[]> {
   const { registry, searchEngine, modelKey } = deps;
-  const inputSchema = z.object({
-    ...vaultParamShape(registry),
-    threshold: z.number().min(0).max(1).optional(),
-  });
-  return {
+  return buildSingleVaultTool<Input, StampedDuplicatePair[]>(registry, {
     name: 'find_duplicates',
     title: 'Find Duplicates',
-    description:
-      'Identify note pairs with high embedding similarity.' +
-      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
-    inputSchema,
-    handler: async (input) => {
-      const entry = resolveSemanticVault(input, registry, {
-        tool: 'find_duplicates',
-      });
+    description: 'Identify note pairs with high embedding similarity.',
+    semantic: true,
+    inputShape: {
+      threshold: z.number().min(0).max(1).optional(),
+    },
+    runForEntry: async (entry, input) => {
       const backend = entry.backend;
       const threshold = readThreshold(input.threshold, DEFAULT_DUPLICATE_THRESHOLD, 'threshold');
       try {
@@ -66,5 +55,5 @@ export function buildFindDuplicatesTool(
         });
       }
     },
-  };
+  });
 }
