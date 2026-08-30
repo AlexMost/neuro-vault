@@ -1,7 +1,6 @@
 import { ToolHandlerError } from './tool-response.js';
 import type { VaultReader } from './obsidian/vault-reader.js';
 import type { VaultScope } from './obsidian/vault-scope.js';
-import type { VaultWriter } from './obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from './obsidian/wikilink-graph.js';
 import type { ListMatchingPaths } from './obsidian/query/index.js';
 import type { VaultProvider } from './obsidian/vault-provider.js';
@@ -21,7 +20,6 @@ export interface IVaultEntry {
    */
   scope: VaultScope;
   reader: VaultReader;
-  writer: VaultWriter;
   provider: VaultProvider;
   graph: WikilinkGraphIndex;
   listMatchingPaths: ListMatchingPaths;
@@ -58,7 +56,6 @@ export interface IVaultEntryDeps {
   readerFactory: (opts: { vaultRoot: string; scope: VaultScope }) => VaultReader;
   vaultConfigFactory: (opts: { vaultRoot: string }) => Promise<VaultConfigFile>;
   scopeFactory: (opts: { vaultRoot: string; config: VaultConfigFile }) => Promise<VaultScope>;
-  writerFactory: (opts: { vaultRoot: string }) => VaultWriter;
   graphFactory: (opts: { reader: VaultReader }) => WikilinkGraphIndex;
   listMatchingPathsFactory: (opts: {
     reader: VaultReader;
@@ -124,7 +121,6 @@ export class VaultRegistry implements IVaultRegistry {
       const reader = deps.readerFactory({ vaultRoot: v.path, scope });
       const graph = deps.graphFactory({ reader });
       const listMatchingPaths = deps.listMatchingPathsFactory({ reader, graph });
-      const writer = deps.writerFactory({ vaultRoot: v.path });
       const provider = deps.providerFactory({
         vaultName: v.name,
         vaultRoot: v.path,
@@ -152,7 +148,6 @@ export class VaultRegistry implements IVaultRegistry {
         path: v.path,
         scope,
         reader,
-        writer,
         provider,
         graph,
         listMatchingPaths,

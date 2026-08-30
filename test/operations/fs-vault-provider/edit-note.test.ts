@@ -33,6 +33,35 @@ describe('FsVaultProvider.replaceFullBody', () => {
       provider.replaceFullBody({ identifier: byPath('n.md'), content: 'x' }),
     ).rejects.toMatchObject({ code: 'WRITE_FAILED', details: { path: 'n.md' } });
   });
+
+  it('replaces the entire file when there is no frontmatter', async () => {
+    const root = await makeVault({ 'n.md': 'no frontmatter here\n' });
+
+    await makeProvider(root).replaceFullBody({ identifier: byPath('n.md'), content: 'new\n' });
+
+    expect(await readFile(path.join(root, 'n.md'), 'utf8')).toBe('new\n');
+  });
+
+  it('writes content verbatim with no added or stripped newlines', async () => {
+    const root = await makeVault({ 'n.md': '---\nx: y\n---\nbody\n' });
+
+    await makeProvider(root).replaceFullBody({
+      identifier: byPath('n.md'),
+      content: 'no trailing newline',
+    });
+
+    expect(await readFile(path.join(root, 'n.md'), 'utf8')).toBe(
+      '---\nx: y\n---\nno trailing newline',
+    );
+  });
+
+  it('allows empty content (truncates body, keeps frontmatter)', async () => {
+    const root = await makeVault({ 'n.md': '---\nx: y\n---\nbody\n' });
+
+    await makeProvider(root).replaceFullBody({ identifier: byPath('n.md'), content: '' });
+
+    expect(await readFile(path.join(root, 'n.md'), 'utf8')).toBe('---\nx: y\n---\n');
+  });
 });
 
 describe('FsVaultProvider.replaceInNote', () => {
@@ -55,6 +84,41 @@ describe('FsVaultProvider.replaceInNote', () => {
     await expect(
       makeProvider(root).replaceInNote({ identifier: byPath('n.md'), find: 'nope', content: 'x' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', details: { path: 'n.md' } });
+  });
+
+  it('fails NOT_FOUND when the note file is missing', async () => {
+    const root = await makeVault({});
+
+    await expect(
+      makeProvider(root).replaceInNote({ identifier: byPath('gone.md'), find: 'x', content: 'y' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', details: { path: 'gone.md' } });
+  });
+
+  it('preserves frontmatter byte-for-byte even if find matches inside it', async () => {
+    const root = await makeVault({
+      'n.md': '---\n# inline comment\ntype: note   \nbody\n---\nbody body body\n',
+    });
+
+    await makeProvider(root).replaceInNote({
+      identifier: byPath('n.md'),
+      find: 'body body body',
+      content: 'B',
+    });
+
+    expect(await readFile(path.join(root, 'n.md'), 'utf8')).toBe(
+      '---\n# inline comment\ntype: note   \nbody\n---\nB\n',
+    );
+  });
+
+  it('fails WRITE_FAILED when the write rejects', async () => {
+    const root = await makeVault({ 'n.md': WITH_FM });
+    const provider = makeProvider(root, {
+      writeFile: vi.fn().mockRejectedValue(new Error('ENOSPC: no space left on device')),
+    });
+
+    await expect(
+      provider.replaceInNote({ identifier: byPath('n.md'), find: 'alpha', content: 'x' }),
+    ).rejects.toMatchObject({ code: 'WRITE_FAILED', details: { path: 'n.md' } });
   });
 
   it('fails AMBIGUOUS_MATCH with line numbers when the find text repeats', async () => {
