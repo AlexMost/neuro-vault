@@ -4,19 +4,33 @@ How multi-vault tools spread a single call across every registered vault and ass
 
 ## What it is
 
-`src/lib/fan-out.ts` provides one helper — `runFanOut` — that takes a `VaultRegistry` and a per-vault async function and produces a uniform response shape: `{ results_by_vault, skipped_vaults, failed_vaults }`. Tools that need to answer for "all vaults" (when the caller omits the `vault:` parameter in multi-vault mode) call this helper; tools that target a single named vault call `resolveVault` / `resolveSemanticVault` directly and never touch fan-out.
+`src/lib/fan-out.ts` provides one helper — `runFanOut` — that takes a `VaultRegistry` and a per-vault async function and produces a uniform response shape: `{ results_by_vault, skipped_vaults, failed_vaults }`. Tools that need to answer for "all vaults" (when the caller omits the `vault:` parameter in multi-vault mode) reach it through the fan-out builder; tools that target a single named vault never touch fan-out at all.
 
-## The builder
+## The two dispatch builders
 
-Tools do not call `runFanOut` directly. `src/lib/multi-vault-tool.ts` exports
-`buildMultiVaultTool`, which owns the whole dispatch contract: it contributes the
-`vault` parameter via `vaultParamShape`, appends the shared `FAN_OUT_SUFFIX`
-through `describeMultiVault`, and chooses between `runFanOut` and `resolveVault`.
-A tool supplies its own `name`, `title`, domain `description`, `inputShape`,
-`runForEntry`, and which single-vault shape it follows via `single` — its
-domain specifics. The builder alone owns everything about the dispatch
-contract: the `vault` parameter, the shared suffix, and the branch between
-`runFanOut` and `resolveVault`.
+Every vault-aware tool falls into one of two dispatch classes, and each class
+has exactly one builder in `src/lib/`:
+
+| class          | builder                                        | tools                                                                                                                   | suffix                   | resolution                                        |
+| -------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------- |
+| fan-out        | `buildMultiVaultTool` (`multi-vault-tool.ts`)  | `search_notes`, `query_notes`, `get_vault_overview`, `list_tags`, `list_properties`                                     | `FAN_OUT_SUFFIX`         | `runFanOut` when `vault` is omitted, else `resolveVault` |
+| explicit-vault | `buildSingleVaultTool` (`single-vault-tool.ts`) | `read_notes`, `create_note`, `edit_note`, `read_daily`, `set_property`, `remove_property`, `get_note_links`, `get_similar_notes`, `find_duplicates` | `EXPLICIT_VAULT_SUFFIX`  | `resolveVault`, or `resolveSemanticVault` under `semantic: true` |
+
+A tool module never composes dispatch itself. It supplies only its domain
+specifics — `name`, `title`, domain `description`, `inputShape`, `runForEntry`
+(plus `single` for the fan-out class) — and the builder owns the rest: the
+`vault` parameter via `vaultParamShape`, the shared suffix via
+`describeMultiVault`, and the resolver call. That boundary is CI-enforced: an
+ESLint `no-restricted-imports` override bans `src/modules/**` from importing
+`lib/vault-param.js` or `lib/resolve-vault.js`, so `npm run lint` fails on any
+tool that reaches around a builder.
+
+`buildSingleVaultTool` discriminates on `semantic`. With `semantic: true` it
+resolves through `resolveSemanticVault`, which owns the readiness gate
+(`SEMANTIC_INDEX_BUILDING` / `SEMANTIC_DISABLED` / `SEMANTIC_INDEX_NOT_FOUND` —
+see [`semantic-backend.md`](./semantic-backend.md)), and hands `runForEntry` an
+entry whose `backend` is typed as present. There is no fan-out shape choice and
+no post-suffix hook: nothing may follow the dispatch block.
 
 Two single-vault shapes exist, and each tool names its own — there is no default:
 
@@ -29,21 +43,26 @@ Two single-vault shapes exist, and each tool names its own — there is no defau
 appended after the shared suffix — and keeps its own `- vault: ...` line inside
 its mid-description `PARAMETERS:` block, which a generic builder cannot place.
 
-The builder also picks the separator in front of the multi-vault block, based
-on the shape of the tool's own `description`: when it contains a newline (a
-multi-section description), the block is joined with a blank line and starts
-at column 0; when it is one flowing paragraph, the pre-existing single leading
-space is kept. `search_notes` is the only multi-line description today — the
-other four are single paragraphs, so they all take the leading-space form.
-This rule lives in `buildMultiVaultTool` itself, not in `describeMultiVault`:
-`describeMultiVault` always emits its block with a single leading space,
-because the nine non-fan-out tools consume it the same way through
-`EXPLICIT_VAULT_SUFFIX` and have no multi-section descriptions to worry about.
+Both builders place the dispatch block identically: as the description's own
+final paragraph, joined with `\n\n`, whatever the shape of the domain prose.
+`describeMultiVault` returns the bare block and no longer wraps it in a leading
+space; placement belongs to the builders. That uniformity is what makes
+suffix-last verifiable byte-wise — the earlier per-shape separator heuristic
+existed only because description composition had two owners, and it is gone.
 
-Before the builder, all five tools carried private copies of the dispatch
-branch, the prose, and the `IFanOutResult` type bound; the prose copies had
-drifted into three variants. `test/lib/fan-out-prose.test.ts` now asserts all
-five carry `FAN_OUT_SUFFIX` byte for byte, so the drift cannot recur.
+Nothing may follow the block. `create_note` used to append an overwrite warning
+after it and `get_note_links` folded it into a `.join('\n')` array element;
+both now end their domain description before the builder appends, with the
+prose words unchanged.
+
+Before the builders, all fourteen tools carried private copies of their
+dispatch composition — the branch, the prose, the resolver call, and (for the
+fan-out five) the `IFanOutResult` type bound; the fan-out prose copies had
+drifted into three variants. `test/lib/fan-out-prose.test.ts` asserts all five
+carry `FAN_OUT_SUFFIX` byte for byte, and `test/lib/single-vault-tool.test.ts`
+pins the explicit-vault contract — `VAULT_REQUIRED` code and details, vault
+advertisement, suffix placement, and semantic routing — once, through the
+registration gate.
 
 ## Why it exists
 
