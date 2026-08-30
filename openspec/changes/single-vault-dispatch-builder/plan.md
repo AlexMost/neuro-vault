@@ -31,7 +31,7 @@
 - Consumes: `resolveVault`/`resolveSemanticVault` (`src/lib/resolve-vault.ts`), `vaultParamShape`/`describeMultiVault`/`EXPLICIT_VAULT_SUFFIX` (`src/lib/vault-param.ts`), `ITool` (`src/lib/tool-registry.ts`).
 - Produces: `buildSingleVaultTool<TInput, TOutput>(registry, spec)` and the spec types below — Tasks 2–3 migrate the nine tools onto exactly these.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/lib/single-vault-tool.test.ts`:
 
@@ -187,12 +187,12 @@ describe('buildSingleVaultTool', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run test/lib/single-vault-tool.test.ts`
 Expected: FAIL — cannot resolve `../../src/lib/single-vault-tool.js`.
 
-- [ ] **Step 3: Implement the builder**
+- [x] **Step 3: Implement the builder**
 
 `src/lib/single-vault-tool.ts`:
 
@@ -270,12 +270,12 @@ export function buildSingleVaultTool<TInput extends { vault?: string }, TOutput>
 
 (The `.trimStart()` bridges `describeMultiVault`'s current leading-space return; Task 4 moves that normalization into the helper and deletes the call.)
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run test/lib/single-vault-tool.test.ts`
 Expected: PASS (all 9 tests).
 
-- [ ] **Step 5: Full gates, then commit**
+- [x] **Step 5: Full gates, then commit**
 
 Run: `npm test && npm run lint && npm run typecheck`
 Expected: all green.
@@ -310,7 +310,7 @@ The transformation is identical for all seven (worked example below). Per file:
    - `description` is the former description **minus** the `+ describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX)` term — every word kept.
    - `runForEntry: async (entry, input) => { ... }` is the former handler body with the `const entry = resolveVault(...)` line deleted.
 
-- [ ] **Step 1: Migrate `remove-property.ts` (worked example)**
+- [x] **Step 1: Migrate `remove-property.ts` (worked example)**
 
 The file becomes:
 
@@ -359,9 +359,9 @@ export function buildRemovePropertyTool(
 }
 ```
 
-- [ ] **Step 2: Migrate `read-notes.ts`, `edit-note.ts`, `read-daily.ts`, `set-property.ts`** — pure applications of the recipe: in each, the `describeMultiVault(...)` term is already the final term of the description, so removing it leaves the domain prose byte-identical.
+- [x] **Step 2: Migrate `read-notes.ts`, `edit-note.ts`, `read-daily.ts`, `set-property.ts`** — pure applications of the recipe: in each, the `describeMultiVault(...)` term is already the final term of the description, so removing it leaves the domain prose byte-identical.
 
-- [ ] **Step 3: Migrate `create-note.ts` (suffix-order fix)** — apply the recipe, plus: the overwrite sentence currently *follows* the `describeMultiVault(...)` term (`create-note.ts:56-57`). Move it before it, dropping its leading space so the domain description's last term becomes:
+- [x] **Step 3: Migrate `create-note.ts` (suffix-order fix)** — apply the recipe, plus: the overwrite sentence currently *follows* the `describeMultiVault(...)` term (`create-note.ts:56-57`). Move it before it, dropping its leading space so the domain description's last term becomes:
 
 ```ts
       'Templates are not handled by this tool — render any template yourself (Obsidian Core Templates, Templater, or anything else) and pass the result as `content`. ' +
@@ -370,7 +370,7 @@ export function buildRemovePropertyTool(
 
 Every word unchanged; only its position (and the space-vs-nothing join) moves.
 
-- [ ] **Step 4: Migrate `get-note-links.ts` (composition fix)** — apply the recipe, plus: the `DESCRIPTION` array's last element currently concatenates the suffix (`get-note-links.ts:39-41`). The last element becomes just its domain sentence:
+- [x] **Step 4: Migrate `get-note-links.ts` (composition fix)** — apply the recipe, plus: the `DESCRIPTION` array's last element currently concatenates the suffix (`get-note-links.ts:39-41`). The last element becomes just its domain sentence:
 
 ```ts
     'Use `search_notes` / `query_notes` to find a starting note, then call `get_note_links` to traverse the graph around it.',
@@ -378,12 +378,12 @@ Every word unchanged; only its position (and the space-vs-nothing join) moves.
 
 and the joined string is passed as `description`.
 
-- [ ] **Step 5: Run gates and inspect for collateral**
+- [x] **Step 5: Run gates and inspect for collateral**
 
 Run: `npm test && npm run lint && npm run typecheck`
 Expected: green. If a description assertion fails, it must be an exact-string/ordering test tripped by whitespace or the two deliberate moves — fix the assertion. A failing **regex phrase** assertion (e.g. `test/operations/tools.test.ts` `toMatch(/VAULT_REQUIRED/)`) means dropped words: fix the source file, not the test.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/modules/operations/tools/ test/
@@ -470,14 +470,14 @@ export function buildFindDuplicatesTool(
 }
 ```
 
-- [ ] **Step 1: Migrate `find-duplicates.ts`** as above.
-- [ ] **Step 2: Migrate `get-similar-notes.ts`** — same recipe: `semantic: true`; `runForEntry: async (entry, input) => { ... }` is the former handler body minus the `resolveSemanticVault` call (the `const backend = entry.backend;` line stays); `inputShape` is the former shape minus the `vaultParamShape` spread; description loses only the `describeMultiVault` term. The file's helper functions above the builder are untouched.
-- [ ] **Step 3: Run gates**
+- [x] **Step 1: Migrate `find-duplicates.ts`** as above.
+- [x] **Step 2: Migrate `get-similar-notes.ts`** — same recipe: `semantic: true`; `runForEntry: async (entry, input) => { ... }` is the former handler body minus the `resolveSemanticVault` call (the `const backend = entry.backend;` line stays); `inputShape` is the former shape minus the `vaultParamShape` spread; description loses only the `describeMultiVault` term. The file's helper functions above the builder are untouched.
+- [x] **Step 3: Run gates**
 
 Run: `npm test && npm run lint && npm run typecheck`
 Expected: green (same collateral rule as Task 2 Step 5).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/modules/semantic/tools/ test/
@@ -502,22 +502,22 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 This task changes `describeMultiVault`'s return contract and both call sites together (a signature-behaviour change never ships apart from its call sites).
 
-- [ ] **Step 1: Update the exact-string expectations first** — in `test/lib/multi-vault-tool.test.ts`: the multi-line separator test keeps its expected string (already `\n\n` at column 0) but its name/comment now describes the uniform rule, and add/adjust a single-paragraph case asserting `Domain prose.\n\nRegistered vaults: "a", "b". ${FAN_OUT_SUFFIX}`. In `test/lib/vault-param.test.ts`: expectations drop the leading space. `test/lib/single-vault-tool.test.ts` from Task 1 already asserts the paragraph form and must not change.
-- [ ] **Step 2: Run to verify the new expectations fail**
+- [x] **Step 1: Update the exact-string expectations first** — in `test/lib/multi-vault-tool.test.ts`: the multi-line separator test keeps its expected string (already `\n\n` at column 0) but its name/comment now describes the uniform rule, and add/adjust a single-paragraph case asserting `Domain prose.\n\nRegistered vaults: "a", "b". ${FAN_OUT_SUFFIX}`. In `test/lib/vault-param.test.ts`: expectations drop the leading space. `test/lib/single-vault-tool.test.ts` from Task 1 already asserts the paragraph form and must not change.
+- [x] **Step 2: Run to verify the new expectations fail**
 
 Run: `npx vitest run test/lib/vault-param.test.ts test/lib/multi-vault-tool.test.ts`
 Expected: FAIL on the updated assertions only.
 
-- [ ] **Step 3: Implement** —
+- [x] **Step 3: Implement** —
   - `vault-param.ts`: `describeMultiVault` returns `` `Registered vaults: ${names}. ${suffix}` `` (leading space gone); rewrite its doc comment: the builders own placement (own final paragraph), callers no longer concatenate inline.
   - `multi-vault-tool.ts`: delete the `separator` heuristic (`spec.description.includes('\n')` branch and its comment, ~L75-83); compose `description: multiVaultBlock === '' ? spec.description : `${spec.description}\n\n${multiVaultBlock}``.
   - `single-vault-tool.ts`: drop the `.trimStart()`.
-- [ ] **Step 4: Run gates**
+- [x] **Step 4: Run gates**
 
 Run: `npm test && npm run lint && npm run typecheck`
 Expected: green — `test/lib/fan-out-prose.test.ts` and `test/operations/tools.test.ts` use `toContain`/`toMatch` and must pass **untouched**; if one fails, wording regressed — fix source.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/ test/lib/
@@ -539,7 +539,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Consumes: the completed migrations (the rule is only satisfiable once no tool module imports the helpers).
 - Produces: a CI-enforced boundary; `npm run lint` is the gate.
 
-- [ ] **Step 1: Add the override** to `eslint.config.js`, after the base TS block (before the `test/**` block):
+- [x] **Step 1: Add the override** to `eslint.config.js`, after the base TS block (before the `test/**` block):
 
 ```js
   {
@@ -564,13 +564,13 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   },
 ```
 
-- [ ] **Step 2: Probe the gate with the verbatim command** — temporarily add `import { resolveVault } from '../../../lib/resolve-vault.js';` to `src/modules/operations/tools/remove-property.ts`, run `npm run lint`, confirm it FAILS with the restriction message, then revert the probe line (`git checkout -- src/modules/operations/tools/remove-property.ts`).
-- [ ] **Step 3: Run gates**
+- [x] **Step 2: Probe the gate with the verbatim command** — temporarily add `import { resolveVault } from '../../../lib/resolve-vault.js';` to `src/modules/operations/tools/remove-property.ts`, run `npm run lint`, confirm it FAILS with the restriction message, then revert the probe line (`git checkout -- src/modules/operations/tools/remove-property.ts`).
+- [x] **Step 3: Run gates**
 
 Run: `npm test && npm run lint && npm run typecheck`
 Expected: green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add eslint.config.js
@@ -589,7 +589,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Modify: `docs/architecture/fan-out.md` (and any file the sweep surfaces)
 - Scratch (worktree root, untracked, deleted after): `describe-dump.ts`
 
-- [ ] **Step 1: Word-wise description diff against main** — prove prose bytes are unchanged. Write `describe-dump.ts` at the worktree root:
+- [x] **Step 1: Word-wise description diff against main** — prove prose bytes are unchanged. Write `describe-dump.ts` at the worktree root:
 
 ```ts
 import { buildOperationsTools } from './src/modules/operations/tools/index.js';
@@ -626,14 +626,14 @@ for (const t of [...tools].sort((a, b) => a.name.localeCompare(b.name))) {
 
 Run `npx tsx describe-dump.ts > /private/tmp/claude-501/-Users-amostovenko-git-neuro-vault/a364deb0-a39f-4e50-a9f9-1e60a56a5805/scratchpad/after.txt`, then `git stash -u && npx tsx describe-dump.ts > .../before.txt && git stash pop` (the script is untracked; copy it aside first if stash removes it — `cp describe-dump.ts <scratchpad>/ && npx tsx <scratchpad>/describe-dump.ts` does not resolve relative imports, so run it from the worktree root both times).
 `diff before.txt after.txt` — Expected: differences ONLY in `create_note` (overwrite sentence repositioned before the vault contract text). Any other word delta is a regression: fix the source. Delete `describe-dump.ts` afterwards.
-- [ ] **Step 2: Update `docs/architecture/fan-out.md`** — it documents `buildMultiVaultTool` as the (sole) builder and the separator behaviour; describe the two dispatch classes (fan-out vs explicit-vault), `buildSingleVaultTool` ownership, the uniform final-paragraph placement, and the lint-enforced boundary.
-- [ ] **Step 3: Sweep all of `docs/`** — `grep -rn "vaultParamShape\|describeMultiVault\|resolveVault\|EXPLICIT_VAULT_SUFFIX" docs/` and fix any passage describing the hand-rolled composition (known hits: `docs/adr/0010-context-delivery-channels.md`, `docs/architecture/input-coercion.md` — update only if they state the old mechanism; ADRs are immutable, so an ADR gets no edit unless the hit is a broken cross-reference).
-- [ ] **Step 4: Full gates one last time**
+- [x] **Step 2: Update `docs/architecture/fan-out.md`** — it documents `buildMultiVaultTool` as the (sole) builder and the separator behaviour; describe the two dispatch classes (fan-out vs explicit-vault), `buildSingleVaultTool` ownership, the uniform final-paragraph placement, and the lint-enforced boundary.
+- [x] **Step 3: Sweep all of `docs/`** — `grep -rn "vaultParamShape\|describeMultiVault\|resolveVault\|EXPLICIT_VAULT_SUFFIX" docs/` and fix any passage describing the hand-rolled composition (known hits: `docs/adr/0010-context-delivery-channels.md`, `docs/architecture/input-coercion.md` — update only if they state the old mechanism; ADRs are immutable, so an ADR gets no edit unless the hit is a broken cross-reference).
+- [x] **Step 4: Full gates one last time**
 
 Run: `npm test && npm run lint && npm run typecheck && npm run build`
 Expected: all green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/
@@ -648,9 +648,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ### Task 7: Verify, retro, archive, PR
 
-- [ ] **Step 1:** Run `/opsx:verify` against this change's artifacts; resolve any mismatch.
-- [ ] **Step 2:** Write `retrospective.md`; archive the change (`/opsx:archive`), which syncs the delta into `openspec/specs/multi-vault-dispatch/spec.md`.
-- [ ] **Step 3:** Push the branch and open the PR:
+- [x] **Step 1:** Run `/opsx:verify` against this change's artifacts; resolve any mismatch.
+- [x] **Step 2:** Write `retrospective.md`; archive the change (`/opsx:archive`), which syncs the delta into `openspec/specs/multi-vault-dispatch/spec.md`.
+- [x] **Step 3:** Push the branch and open the PR:
 
 ```bash
 git push -u origin HEAD
