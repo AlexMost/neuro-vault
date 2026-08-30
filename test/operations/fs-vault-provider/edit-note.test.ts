@@ -83,6 +83,14 @@ describe('FsVaultProvider: name-addressed edits resolve like every other write',
     expect(await readFile(path.join(root, 'Folder/Uniq.md'), 'utf8')).toBe('new\n');
   });
 
+  it('fails NOT_FOUND when the name matches zero notes', async () => {
+    const root = await makeVault({ 'Other.md': 'body\n' });
+
+    await expect(
+      makeProvider(root).replaceFullBody({ identifier: byName('Missing'), content: 'new\n' }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND', details: { name: 'Missing' } });
+  });
+
   it('fails AMBIGUOUS_MATCH on a shared basename and writes nothing', async () => {
     const root = await makeVault({ 'A/Dup.md': 'a\n', 'B/Dup.md': 'b\n' });
 
