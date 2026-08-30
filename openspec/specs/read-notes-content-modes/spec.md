@@ -16,6 +16,12 @@ default to `'preview'`. An explicitly supplied `content` value SHALL always take
 over this count-based default. `read_notes` SHALL NOT expose a `fields` parameter. `paths`
 semantics (string-or-array, 1–50, dedup, per-item errors) are otherwise unchanged.
 
+Argument shape — the `content` enum, the `paths` string-or-array union, and its 1–50 bound —
+SHALL be enforced by the tool's declared input schema at the registration gate, so a
+violation fails with `INVALID_PARAMS` before the handler runs. `read_notes` SHALL NOT
+re-check any of these post-gate; `INVALID_ARGUMENT` remains reserved for per-item path
+faults (traversal, absolute paths), which the schema cannot express.
+
 #### Scenario: a single path defaults to the full body
 
 - **WHEN** `read_notes` is called with exactly one distinct path and no `content` parameter
@@ -49,12 +55,27 @@ semantics (string-or-array, 1–50, dedup, per-item errors) are otherwise unchan
 
 - **WHEN** `read_notes` is called with a `content` value other than `'full'`, `'preview'`, or
   `'frontmatter'` (e.g. `'none'`)
-- **THEN** the call fails with an `INVALID_ARGUMENT` error
+- **THEN** the call SHALL fail with an `INVALID_PARAMS` error naming the `content` field and
+  the three allowed values
 
-#### Scenario: a legacy `fields` parameter has no effect
+#### Scenario: an out-of-range `paths` argument is rejected at the gate
+
+- **WHEN** `read_notes` is called with `paths` as an empty string, an empty array, or an array
+  of more than 50 entries
+- **THEN** the call SHALL fail with `INVALID_PARAMS` identifying `paths`, not with
+  `INVALID_ARGUMENT`
+
+#### Scenario: a legacy `fields` parameter is rejected
 
 - **WHEN** `read_notes` is called with a `fields` key (the removed parameter)
-- **THEN** the key is ignored and the body is returned according to the count-based default
+- **THEN** the call SHALL fail with `INVALID_PARAMS` reporting `fields` as an unrecognized key,
+  consistent with the `tolerant-arguments` requirement that unknown keys remain rejected
+
+#### Scenario: a stringified `paths` array is accepted
+
+- **WHEN** `read_notes` is called with `paths` set to the string `'["a.md","b.md"]'`
+- **THEN** the gate SHALL parse it to `['a.md', 'b.md']` and the call SHALL proceed with two
+  distinct paths
 
 ### Requirement: Frontmatter is always returned regardless of mode
 

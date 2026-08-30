@@ -61,5 +61,5 @@ rejection case. Tools with coercible fields also get (d), named per task.
 - [x] 4.3 Add to `docs/architecture/input-coercion.md` that the same wrapper closes the object with `.strict()`, so unknown keys are rejected rather than stripped, and cross-link `mcp-server-shape.md`.
 - [x] 4.4 Add one line to `AGENTS.md` §"Run / check": tool tests reach tools through `registerTool`, never `buildXTool(...).handler` — the gate coerces, closes the schema, and returns `INVALID_PARAMS`.
 - [x] 4.5 Sweep all of `docs/` for other prose asserting `INVALID_ARGUMENT` for schema-shaped failures; an architecture-scoped grep alone misses `docs/guide/`.
-- [ ] 4.6 Run `openspec validate --all` and `npm test && npm run lint && npm run typecheck`.
-- [ ] 4.7 `/opsx:verify` → retrospective → `/opsx:archive` (which syncs both delta specs into `openspec/specs/`), then open PR 4 with `Closes #112`.
+- [x] 4.6 Run `openspec validate --all` and `npm test && npm run lint && npm run typecheck`.
+- [x] 4.7 `/opsx:verify` → retrospective → `/opsx:archive` (which syncs both delta specs into `openspec/specs/`), then open PR 4 with `Closes #112`.
