@@ -9,6 +9,7 @@ import {
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
+import { callTool } from '../../_gate.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import {
@@ -73,12 +74,13 @@ describe('searchNotes', () => {
         absentPaths: new Set(['Folder/note-b.md']),
       });
       const tool = buildSearchNotesTool(deps);
+      const reg = registerTool(tool);
 
       try {
-        const result = (await tool.handler({
+        const result = await callTool<SearchNotesOutput>(reg, {
           query: 'semantic query',
           threshold: 0,
-        })) as SearchNotesOutput;
+        });
         expect(result.matches.map((r) => r.path)).toEqual(['Folder/note-a.md', 'Folder/note-c.md']);
         // blocks now live under each match; assert none belong to the absent path
         for (const r of result.matches) {
@@ -111,12 +113,13 @@ describe('searchNotes', () => {
         modelKey: 'bge-micro-v2',
       });
       const tool = buildSearchNotesTool(deps);
+      const reg = registerTool(tool);
 
       try {
-        const result = (await tool.handler({
+        const result = await callTool<SearchNotesOutput>(reg, {
           query: '  semantic query  ',
           threshold: 0,
-        })) as SearchNotesOutput;
+        });
 
         expect(embed).toHaveBeenCalledTimes(1);
         expect(embed).toHaveBeenCalledWith('semantic query');
@@ -151,9 +154,10 @@ describe('searchNotes', () => {
         modelKey: 'bge-micro-v2',
       });
       const tool = buildSearchNotesTool(deps);
+      const reg = registerTool(tool);
 
       try {
-        await expect(tool.handler({ query: '   ' })).rejects.toMatchObject({
+        await expect(callTool(reg, { query: '   ' })).rejects.toMatchObject({
           code: 'INVALID_ARGUMENT',
         });
         expect(embed).not.toHaveBeenCalled();
@@ -187,8 +191,9 @@ describe('searchNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embed },
         warn,
       });
+      const reg = registerTool(tool);
 
-      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+      const result = await callTool<SearchNotesOutput>(reg, { query: 'пошук' });
 
       expect(embed).toHaveBeenCalled();
       expect(result.matches.length).toBeGreaterThan(0);
@@ -226,8 +231,9 @@ describe('searchNotes', () => {
         snapshot: vi.fn().mockRejectedValue(new Error('corpus shard a.json is not valid JSON')),
       };
       const tool = buildSearchNotesTool({ ...deps, warn });
+      const reg = registerTool(tool);
 
-      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+      const result = await callTool<SearchNotesOutput>(reg, { query: 'пошук' });
 
       expect(result.matches.length).toBeGreaterThan(0);
       expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
@@ -258,7 +264,8 @@ describe('searchNotes', () => {
           embed: vi.fn().mockRejectedValue(new Error('model unavailable')),
         },
       });
-      await tool.handler({ query: 'пошук' });
+      const reg = registerTool(tool);
+      await callTool(reg, { query: 'пошук' });
       expect(stderr).toHaveBeenCalledWith(expect.stringContaining('model unavailable'));
     } finally {
       stderr.mockRestore();
@@ -281,14 +288,21 @@ describe('searchNotes', () => {
         modelKey: 'bge-micro-v2',
       });
       const tool = buildSearchNotesTool(deps);
+      const reg = registerTool(tool);
 
       try {
         await expect(
-          tool.handler({ query: 'semantic query', threshold: -0.01 }),
-        ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+          callTool(reg, { query: 'semantic query', threshold: -0.01 }),
+        ).rejects.toMatchObject({
+          code: 'INVALID_PARAMS',
+          details: { issues: [{ path: 'threshold' }] },
+        });
         await expect(
-          tool.handler({ query: 'semantic query', threshold: 1.01 }),
-        ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+          callTool(reg, { query: 'semantic query', threshold: 1.01 }),
+        ).rejects.toMatchObject({
+          code: 'INVALID_PARAMS',
+          details: { issues: [{ path: 'threshold' }] },
+        });
       } finally {
         await cleanup();
       }
@@ -316,12 +330,13 @@ describe('searchNotes', () => {
         modelKey: MODEL_KEY,
       });
       const tool = buildSearchNotesTool(deps);
+      const reg = registerTool(tool);
 
       try {
-        const output = (await tool.handler({
+        const output = await callTool<SearchNotesOutput>(reg, {
           query: ['alpha', 'beta'],
           threshold: 0,
-        })) as SearchNotesOutput;
+        });
 
         expect(embed).toHaveBeenCalledTimes(2);
         expect(embed).toHaveBeenNthCalledWith(1, 'alpha');
@@ -349,9 +364,11 @@ describe('searchNotes', () => {
         modelKey: MODEL_KEY,
       });
       const tool = buildSearchNotesTool(deps);
+      const reg = registerTool(tool);
       try {
-        await expect(tool.handler({ query: [] })).rejects.toMatchObject({
-          code: 'INVALID_ARGUMENT',
+        await expect(callTool(reg, { query: [] })).rejects.toMatchObject({
+          code: 'INVALID_PARAMS',
+          details: { issues: [{ path: 'query' }] },
         });
       } finally {
         await cleanup();
@@ -371,10 +388,14 @@ describe('searchNotes', () => {
         modelKey: MODEL_KEY,
       });
       const tool = buildSearchNotesTool(deps);
+      const reg = registerTool(tool);
       try {
         await expect(
-          tool.handler({ query: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'] }),
-        ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+          callTool(reg, { query: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'] }),
+        ).rejects.toMatchObject({
+          code: 'INVALID_PARAMS',
+          details: { issues: [{ path: 'query' }] },
+        });
       } finally {
         await cleanup();
       }
@@ -398,8 +419,9 @@ describe('searchNotes', () => {
         modelKey: MODEL_KEY,
       });
       const tool = buildSearchNotesTool(deps);
+      const reg = registerTool(tool);
       try {
-        await tool.handler({ query: ['  alpha  ', 'alpha', 'beta'], threshold: 0 });
+        await callTool(reg, { query: ['  alpha  ', 'alpha', 'beta'], threshold: 0 });
         expect(embed).toHaveBeenCalledTimes(2);
         expect(embed).toHaveBeenNthCalledWith(1, 'alpha');
         expect(embed).toHaveBeenNthCalledWith(2, 'beta');
@@ -426,11 +448,12 @@ describe('searchNotes', () => {
         modelKey: MODEL_KEY,
       });
       const tool = buildSearchNotesTool(deps);
+      const reg = registerTool(tool);
       try {
-        const output = (await tool.handler({
+        const output = await callTool<SearchNotesOutput>(reg, {
           query: 'semantic query',
           threshold: 0,
-        })) as SearchNotesOutput;
+        });
 
         // The fixture notes' blocks carry no embeddings, so the real
         // `findBlockNeighbors` never surfaces a hit and backfill can't
@@ -457,8 +480,9 @@ describe('searchNotes', () => {
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      await expect(tool.handler({ query: [''] })).rejects.toMatchObject({
+      await expect(callTool(reg, { query: [''] })).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
       });
     } finally {
@@ -475,8 +499,9 @@ describe('searchNotes', () => {
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      await expect(tool.handler({ query: ['  '] })).rejects.toMatchObject({
+      await expect(callTool(reg, { query: ['  '] })).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
       });
     } finally {
@@ -497,8 +522,9 @@ describe('searchNotes', () => {
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      const output = (await tool.handler({ query: ['single'], threshold: 0 })) as SearchNotesOutput;
+      const output = await callTool<SearchNotesOutput>(reg, { query: ['single'], threshold: 0 });
 
       expect(output.matches).toHaveLength(1);
       expect(output.matches[0].matched_queries).toEqual(['single']);
@@ -529,11 +555,12 @@ describe('searchNotes', () => {
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      const output = (await tool.handler({
+      const output = await callTool<SearchNotesOutput>(reg, {
         query: ['q1', 'q2'],
         threshold: 0,
-      })) as SearchNotesOutput;
+      });
 
       const byPath = new Map(output.matches.map((r) => [r.path, r]));
       expect(byPath.get('note-a.md')!.matched_queries).toEqual(['q1']);
@@ -561,12 +588,13 @@ describe('searchNotes', () => {
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      const output = (await tool.handler({
+      const output = await callTool<SearchNotesOutput>(reg, {
         query: ['q1'],
         effort: 'deep',
         threshold: 0,
-      })) as SearchNotesOutput;
+      });
 
       const noteA = output.matches.find((r) => r.path === 'note-a.md')!;
       expect(noteA.matched_queries).toEqual(['q1']);
@@ -598,12 +626,13 @@ describe('searchNotes', () => {
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      const output = (await tool.handler({
+      const output = await callTool<SearchNotesOutput>(reg, {
         query: ['q1', 'q2'],
         effort: 'quick',
         threshold: 0,
-      })) as SearchNotesOutput;
+      });
 
       expect(output.matches.every((r) => !r.found_in.includes('expansion'))).toBe(true);
       expect(output.matches.every((r) => r.expansion_similarity === undefined)).toBe(true);
@@ -631,12 +660,13 @@ describe('searchNotes', () => {
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      const output = (await tool.handler({
+      const output = await callTool<SearchNotesOutput>(reg, {
         query: 'test query',
         effort: 'deep',
         threshold: 0,
-      })) as SearchNotesOutput;
+      });
 
       const exp = output.matches.find((r) => r.path === 'exp.md')!;
       expect(exp.found_in).toEqual(['expansion']);
@@ -667,12 +697,13 @@ describe('searchNotes', () => {
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      const output = (await tool.handler({
+      const output = await callTool<SearchNotesOutput>(reg, {
         query: ['q1', 'q2'],
         effort: 'deep',
         threshold: 0,
-      })) as SearchNotesOutput;
+      });
 
       // "shared.md" is a neighbour of both seeds (0.85 via seed-a, 0.81 via
       // seed-b); flattened expansion dedups to a single entry at the best
@@ -704,8 +735,9 @@ describe('searchNotes', () => {
       graph,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      const output = (await tool.handler({ query: 'topic', threshold: 0 })) as SearchNotesOutput;
+      const output = await callTool<SearchNotesOutput>(reg, { query: 'topic', threshold: 0 });
 
       expect(graph.ensureFresh).toHaveBeenCalled();
       const byPath = new Map(output.matches.map((r) => [r.path, r]));
@@ -734,11 +766,12 @@ describe('searchNotes', () => {
       graph,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      const output = (await tool.handler({
+      const output = await callTool<SearchNotesOutput>(reg, {
         query: ['q1', 'q2'],
         threshold: 0,
-      })) as SearchNotesOutput;
+      });
 
       expect(graph.ensureFresh).toHaveBeenCalled();
       const byPath = new Map(output.matches.map((r) => [r.path, r]));
@@ -775,13 +808,14 @@ describe('searchNotes', () => {
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      const output = (await tool.handler({
+      const output = await callTool<SearchNotesOutput>(reg, {
         query: ['q1', 'q2', 'q3'],
         effort: 'quick',
         limit: 2,
         threshold: 0,
-      })) as SearchNotesOutput;
+      });
 
       expect(output.matches.length).toBeLessThanOrEqual(2);
       expect(output.truncated).toBe(true);
@@ -806,8 +840,9 @@ describe('searchNotes', () => {
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(tool);
     try {
-      const output = (await tool.handler({ query: 'topic', threshold: 0 })) as SearchNotesOutput;
+      const output = await callTool<SearchNotesOutput>(reg, { query: 'topic', threshold: 0 });
       expect(output.matches.every((r) => r.vault === 'v')).toBe(true);
     } finally {
       await cleanup();
@@ -869,11 +904,12 @@ describe('searchNotes', () => {
           searchEngine,
           modelKey: MODEL_KEY,
         });
+        const reg = registerTool(tool);
 
-        const result = (await tool.handler({ query: 'q', threshold: 0 })) as {
+        const result = await callTool<{
           results_by_vault: Array<{ vault: string; matches: Array<{ path: string }> }>;
           skipped_vaults: Array<{ vault: string; reason: string }>;
-        };
+        }>(reg, { query: 'q', threshold: 0 });
 
         expect(result.results_by_vault).toHaveLength(2);
         expect(result.skipped_vaults).toEqual([]);
@@ -947,12 +983,13 @@ describe('searchNotes', () => {
           searchEngine,
           modelKey: MODEL_KEY,
         });
+        const reg = registerTool(tool);
 
-        const result = (await tool.handler({ query: 'q', threshold: 0 })) as {
+        const result = await callTool<{
           results_by_vault: Array<{ vault: string; matches: Array<{ path: string }> }>;
           skipped_vaults: Array<{ vault: string; reason: string }>;
           failed_vaults: Array<{ vault: string; error: { code: string; message: string } }>;
-        };
+        }>(reg, { query: 'q', threshold: 0 });
 
         expect(result.skipped_vaults).toEqual([]);
         expect(result.failed_vaults).toEqual([
@@ -1017,14 +1054,15 @@ describe('searchNotes', () => {
           },
           modelKey: MODEL_KEY,
         });
+        const reg = registerTool(tool);
 
-        const result = (await tool.handler({ query: 'q', threshold: 0 })) as {
+        const result = await callTool<{
           results_by_vault: Array<{
             vault: string;
             matches: Array<{ path: string; found_in: string[] }>;
           }>;
           skipped_vaults: Array<{ vault: string; reason: string }>;
-        };
+        }>(reg, { query: 'q', threshold: 0 });
 
         expect(result.results_by_vault).toHaveLength(2);
         expect(result.skipped_vaults).toEqual([]);
@@ -1059,8 +1097,9 @@ describe('searchNotes', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
+      const reg = registerTool(tool);
 
-      const result = (await tool.handler({ vault: 'v', query: 'q' })) as SearchNotesOutput;
+      const result = await callTool<SearchNotesOutput>(reg, { query: 'q' });
       expect(result.matches).toEqual([]);
       expect(result.truncated).toBe(false);
     } finally {
@@ -1102,7 +1141,8 @@ describe('semantic_status', () => {
     );
     try {
       const tool = buildSearchNotesTool(deps);
-      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+      const reg = registerTool(tool);
+      const result = await callTool<SearchNotesOutput>(reg, { query: 'пошук' });
       expect(result.semantic_status).toEqual({
         state: 'indexing',
         indexed: 3,
@@ -1159,7 +1199,8 @@ describe('semantic_status', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
-      const result = (await tool.handler({ vault: 'v', query: 'x' })) as SearchNotesOutput;
+      const reg = registerTool(tool);
+      const result = await callTool<SearchNotesOutput>(reg, { query: 'x' });
       expect(result.semantic_status).toEqual({
         state: 'unavailable',
         note: expect.stringContaining('lexical-only'),
@@ -1205,7 +1246,8 @@ describe('semantic_status', () => {
       entry.backend = { ...entry.backend!, status };
 
       const tool = buildSearchNotesTool(deps);
-      const result = (await tool.handler({ query: 'пошук' })) as SearchNotesOutput;
+      const reg = registerTool(tool);
+      const result = await callTool<SearchNotesOutput>(reg, { query: 'пошук' });
 
       expect(status).toHaveBeenCalledTimes(1);
       expect(result.semantic_status).toEqual({
