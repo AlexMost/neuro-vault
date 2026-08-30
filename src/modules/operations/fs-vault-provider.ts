@@ -77,23 +77,8 @@ export class FsVaultProvider implements VaultProvider {
   }
 
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
-    const vaultRoot = this.vaultRoot;
-    if (input.name === undefined && input.path === undefined) {
-      throw invalidArgument('createNote requires name or path', 'name');
-    }
-    let relPath: string;
-    if (input.path !== undefined) {
-      relPath = input.path;
-    } else {
-      try {
-        relPath = normalizeNotePath((await this.newNoteDir(vaultRoot)) + input.name!);
-      } catch (err) {
-        // Mirror the tool-layer `path` branch: a name that normalizes outside
-        // the vault (e.g. '../x') is a caller error, not an internal failure.
-        throw invalidArgument((err as Error).message, 'name');
-      }
-    }
-    const absPath = path.join(vaultRoot, relPath);
+    const relPath = await this.resolveNew(input.identifier);
+    const absPath = path.join(this.vaultRoot, relPath);
 
     try {
       await mkdir(path.dirname(absPath), { recursive: true });
@@ -303,6 +288,22 @@ export class FsVaultProvider implements VaultProvider {
   private async resolveExisting(identifier: NoteIdentifier): Promise<string> {
     if (identifier.kind === 'path') return normalizeNotePath(identifier.value);
     return resolveNoteName(this.reader, identifier.value);
+  }
+
+  /**
+   * Resolve an identifier for a note being created. `kind: 'name'` cannot use
+   * the basename index — the note does not exist yet — so it goes through the
+   * vault's new-note-location convention instead (design D3). A name that
+   * normalizes outside the vault is a caller error on the `name` field, the
+   * same way the `path` branch reports on `path`.
+   */
+  private async resolveNew(identifier: NoteIdentifier): Promise<string> {
+    if (identifier.kind === 'path') return normalizeNotePath(identifier.value);
+    try {
+      return normalizeNotePath((await this.newNoteDir(this.vaultRoot)) + identifier.value);
+    } catch (err) {
+      throw invalidArgument((err as Error).message, 'name');
+    }
   }
 
   async replaceInNote(input: ReplaceInNoteInput): Promise<void> {

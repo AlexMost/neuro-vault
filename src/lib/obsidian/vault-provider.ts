@@ -1,8 +1,7 @@
 export type NoteIdentifier = { kind: 'name'; value: string } | { kind: 'path'; value: string };
 
 export interface CreateNoteInput {
-  name?: string;
-  path?: string;
+  identifier: NoteIdentifier;
   content?: string;
   overwrite?: boolean;
 }

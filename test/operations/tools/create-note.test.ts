@@ -31,7 +31,7 @@ describe('operations.createNote handler', () => {
     });
 
     expect(provider.createNote).toHaveBeenCalledWith({
-      path: 'Inbox/idea.md',
+      identifier: { kind: 'path', value: 'Inbox/idea.md' },
       content: 'hello',
       overwrite: true,
     });
@@ -41,6 +41,36 @@ describe('operations.createNote handler', () => {
   it('rejects when neither name nor path is provided', async () => {
     await expect(callTool(buildReg(), { content: 'hello' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
+    });
+  });
+
+  it('reports the path field when both name and path are supplied', async () => {
+    const provider = makeProvider();
+    await expect(
+      callTool(buildReg(provider), { name: 'A', path: 'a.md', content: '' }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      details: { field: 'path' },
+    });
+    expect(provider.createNote).not.toHaveBeenCalled();
+  });
+
+  it('uses the shared message when neither name nor path is supplied', async () => {
+    const provider = makeProvider();
+    await expect(callTool(buildReg(provider), { content: '' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      message: 'Provide exactly one of name or path',
+      details: { field: 'name' },
+    });
+  });
+
+  it('passes an identifier down rather than a name/path pair', async () => {
+    const provider = makeProvider();
+    await callTool(buildReg(provider), { path: 'Notes/New', content: 'body' });
+
+    expect(provider.createNote).toHaveBeenCalledWith({
+      identifier: { kind: 'path', value: 'Notes/New.md' },
+      content: 'body',
     });
   });
 
@@ -78,7 +108,7 @@ describe('operations.createNote handler', () => {
     await callTool(buildReg(provider), { path: './Inbox/x.md' });
 
     expect(provider.createNote).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'Inbox/x.md' }),
+      expect.objectContaining({ identifier: { kind: 'path', value: 'Inbox/x.md' } }),
     );
   });
 
@@ -90,7 +120,7 @@ describe('operations.createNote handler', () => {
     await callTool(buildReg(provider), { path: 'Inbox/Foo' });
 
     expect(provider.createNote).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'Inbox/Foo.md' }),
+      expect.objectContaining({ identifier: { kind: 'path', value: 'Inbox/Foo.md' } }),
     );
   });
 
@@ -102,7 +132,7 @@ describe('operations.createNote handler', () => {
     await callTool(buildReg(provider), { path: 'Inbox/x.md', content: 'hello' });
 
     expect(provider.createNote).toHaveBeenCalledWith({
-      path: 'Inbox/x.md',
+      identifier: { kind: 'path', value: 'Inbox/x.md' },
       content: 'hello',
     });
   });
@@ -174,7 +204,7 @@ describe('operations.createNote handler', () => {
     });
 
     expect(provider.createNote).toHaveBeenCalledWith({
-      path: 'Inbox/x.md',
+      identifier: { kind: 'path', value: 'Inbox/x.md' },
       content: '---\ntype: task\ntags:\n  - mcp\n---\n# Title\nBody\n',
     });
   });
@@ -213,7 +243,7 @@ describe('operations.createNote handler', () => {
 
     // `type` collides → param wins (task); `stale` is content-only → survives.
     expect(provider.createNote).toHaveBeenCalledWith({
-      path: 'Inbox/x.md',
+      identifier: { kind: 'path', value: 'Inbox/x.md' },
       content: '---\ntype: task\nstale: true\n---\n# Title\n',
     });
   });
@@ -231,7 +261,7 @@ describe('operations.createNote handler', () => {
 
     // created survives (content-only); type collides → param wins; tags added (param-only).
     expect(provider.createNote).toHaveBeenCalledWith({
-      path: 'Inbox/x.md',
+      identifier: { kind: 'path', value: 'Inbox/x.md' },
       content: '---\ncreated: 2026-06-01\ntype: task\ntags:\n  - mcp\n---\nBody\n',
     });
   });
@@ -248,7 +278,7 @@ describe('operations.createNote handler', () => {
     });
 
     expect(provider.createNote).toHaveBeenCalledWith({
-      path: 'Inbox/x.md',
+      identifier: { kind: 'path', value: 'Inbox/x.md' },
       content: '---\ntype: idea\n---\nBody\n',
     });
   });
@@ -261,7 +291,7 @@ describe('operations.createNote handler', () => {
     await callTool(buildReg(provider), { path: 'Inbox/x.md', frontmatter: { type: 'task' } });
 
     expect(provider.createNote).toHaveBeenCalledWith({
-      path: 'Inbox/x.md',
+      identifier: { kind: 'path', value: 'Inbox/x.md' },
       content: '---\ntype: task\n---\n',
     });
   });
