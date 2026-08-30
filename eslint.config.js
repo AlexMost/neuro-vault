@@ -39,6 +39,26 @@ export default defineConfig(
     },
   },
   {
+    // The explicit-vault and fan-out dispatch contracts have exactly two
+    // owners: buildSingleVaultTool and buildMultiVaultTool (src/lib). Tool
+    // modules consume the contract through them, never compose it by hand.
+    files: ['src/modules/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/lib/vault-param.js', '**/lib/resolve-vault.js'],
+              message:
+                'Compose vault dispatch through buildSingleVaultTool / buildMultiVaultTool (src/lib), not by hand.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Test-only relaxation: these rules false-positive on the mock/fixture
     // idiom — async interface conformance without await, expect(mock.method),
     // probing unknown payloads. Promise-safety rules (no-floating-promises,
