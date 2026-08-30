@@ -57,7 +57,7 @@ The builder SHALL require every tool to state which single-vault return shape it
 
 ### Requirement: The fan-out contract text is identical across every fan-out tool
 
-Every fan-out-capable tool's description SHALL carry the same fan-out contract text, sourced from one shared constant, so the wording cannot drift between tools. A tool MAY append its own domain-specific sentence after that text, and MAY state the `vault` parameter separately in its own parameter listing.
+Every fan-out-capable tool's description SHALL carry the same fan-out contract text, sourced from one shared constant, so the wording cannot drift between tools. The builder SHALL place the multi-vault block as its own paragraph at the end of the description, without inspecting the domain description's layout. A tool MAY append its own domain-specific sentence after that text within the same paragraph, and MAY state the `vault` parameter separately in its own parameter listing.
 
 #### Scenario: all fan-out tools share byte-identical contract text
 
@@ -68,6 +68,11 @@ Every fan-out-capable tool's description SHALL carry the same fan-out contract t
 
 - **WHEN** a fan-out tool's description is read in multi-vault mode
 - **THEN** it names the registered vaults exactly once, emitted by the shared helper rather than hand-composed by the tool
+
+#### Scenario: the multi-vault block is its own final paragraph regardless of description layout
+
+- **WHEN** a fan-out tool with a single-paragraph domain description and one with a multi-line domain description are both built in multi-vault mode
+- **THEN** both descriptions end with the multi-vault block as its own paragraph, and the builder contains no branch inspecting the domain description for line breaks
 
 #### Scenario: single-vault mode omits the fan-out text entirely
 
@@ -87,4 +92,67 @@ No tool description SHALL describe `skipped_vaults` while no code path can popul
 
 - **WHEN** a fan-out tool fans out across all registered vaults
 - **THEN** the response still contains `skipped_vaults` as an empty array alongside `results_by_vault` and `failed_vaults`
+
+### Requirement: One builder owns the explicit-vault dispatch contract
+
+Every explicit-vault tool — a tool that cannot fan out — SHALL be constructed through a single shared builder that owns the `vault` parameter contribution, the resolver call, and the explicit-vault description suffix. A tool file SHALL NOT import the vault-param or resolver helpers directly, and SHALL state its tool name literal exactly once, in its spec's `name` field.
+
+#### Scenario: no tool file composes the dispatch contract by hand
+
+- **WHEN** the source of a tool module under `src/modules/` is inspected or linted
+- **THEN** it contains no direct import of the vault-param shape/description helpers or the vault resolvers, and instead supplies a per-vault function, its domain description, and its input shape to the shared builder
+
+#### Scenario: a new explicit-vault tool costs one per-vault function
+
+- **WHEN** a tenth explicit-vault tool is added
+- **THEN** it is registered by supplying `name`, domain description, input shape, and a per-vault function to the builder, adding no new copy of the vault param, the suffix concatenation, or the resolver call
+
+### Requirement: Explicit-vault dispatch resolves the vault identically for every tool
+
+An explicit-vault tool SHALL fail with `VAULT_REQUIRED` — carrying the tool name and the registered vault names in `details` — when `vault` is omitted and the registry holds more than one vault; SHALL resolve to the named vault when `vault` is supplied, failing the whole call for an unknown name; and SHALL resolve to the only registered vault when the registry holds exactly one, whether or not `vault` was supplied.
+
+#### Scenario: omitted vault in multi-vault mode is refused
+
+- **WHEN** an explicit-vault tool is called without `vault` and the registry holds more than one vault
+- **THEN** the call fails with code `VAULT_REQUIRED` and `details` naming the tool and the registered vault names
+
+#### Scenario: an explicit vault targets one vault
+
+- **WHEN** an explicit-vault tool is called with `vault: "<name>"` and that name is registered
+- **THEN** the per-vault function runs against exactly that vault's entry
+
+#### Scenario: an unknown vault name fails the whole call
+
+- **WHEN** an explicit-vault tool is called with a `vault` name that is not registered
+- **THEN** the call fails with a single fatal error and the per-vault function does not run
+
+#### Scenario: single-vault mode needs no vault parameter
+
+- **WHEN** an explicit-vault tool is called and the registry holds exactly one vault
+- **THEN** the per-vault function runs against that vault, and the `vault` parameter is absent from the advertised input schema
+
+### Requirement: Semantic explicit-vault tools resolve through the readiness gate
+
+An explicit-vault tool that declares itself semantic SHALL resolve its vault through the semantic resolver, so a vault whose semantic backend is not ready fails with the readiness-gate error codes (`SEMANTIC_INDEX_BUILDING`, `SEMANTIC_DISABLED`, `SEMANTIC_INDEX_NOT_FOUND`) before the per-vault function runs, and the per-vault function receives an entry whose backend is typed as present and ready.
+
+#### Scenario: a non-ready backend is refused before the per-vault function
+
+- **WHEN** a semantic explicit-vault tool resolves a vault whose backend reports a non-ready state
+- **THEN** the call fails with the corresponding readiness-gate error code and the per-vault function does not run
+
+### Requirement: The explicit-vault contract text is identical and final in every explicit-vault description
+
+Every explicit-vault tool's description SHALL end with the same explicit-vault contract text — naming the `VAULT_REQUIRED` error code and sourced from one shared constant — placed by the builder as the description's final paragraph, with the registered vault names stated once. No prose SHALL follow it. In single-vault mode the description SHALL contain no explicit-vault contract text and no vault-name listing.
+
+#### Scenario: the suffix is the last paragraph of every explicit-vault description
+
+- **WHEN** the description of every registered explicit-vault tool is read in multi-vault mode
+- **THEN** each ends with the shared explicit-vault contract text, byte for byte, as its own final paragraph naming `VAULT_REQUIRED` and the registered vault names
+
+#### Scenario: single-vault mode omits the contract text entirely
+
+- **WHEN** an explicit-vault tool's description is read and the registry holds exactly one vault
+- **THEN** it contains no explicit-vault contract text and no vault-name listing
+
+---
 
