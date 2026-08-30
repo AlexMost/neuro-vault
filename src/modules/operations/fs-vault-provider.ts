@@ -39,9 +39,20 @@ function sortCounts(counts: Map<string, number>): Array<{ name: string; count: n
 /** Same batching pattern as query-notes.ts — bound memory, never hold every body at once. */
 const READ_BATCH_SIZE = 32;
 
+export type FsReadFile = (absPath: string, encoding: 'utf8') => Promise<string>;
+export type FsWriteFile = (absPath: string, data: string, encoding: 'utf8') => Promise<void>;
+
 export interface FsVaultProviderOptions {
   vaultRoot: string;
   reader: VaultReader;
+  /**
+   * Note-file read/write, injectable so the `READ_FAILED` / `WRITE_FAILED`
+   * branches are reachable without making a temp vault unwritable. Covers the
+   * existing-note paths only; `createNote` writes with its own flags and its
+   * own taxonomy (design D5/D6).
+   */
+  readFile?: FsReadFile;
+  writeFile?: FsWriteFile;
 }
 
 /**
@@ -53,10 +64,14 @@ export interface FsVaultProviderOptions {
 export class FsVaultProvider implements VaultProvider {
   private readonly reader: VaultReader;
   private readonly vaultRoot: string;
+  private readonly readFileFn: FsReadFile;
+  private readonly writeFileFn: FsWriteFile;
 
   constructor(opts: FsVaultProviderOptions) {
     this.reader = opts.reader;
     this.vaultRoot = opts.vaultRoot;
+    this.readFileFn = opts.readFile ?? ((p, enc) => readFile(p, enc));
+    this.writeFileFn = opts.writeFile ?? ((p, d, enc) => writeFile(p, d, enc));
   }
 
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
@@ -202,29 +217,8 @@ export class FsVaultProvider implements VaultProvider {
     identifier: NoteIdentifier,
     mutate: (doc: ReturnType<typeof parseDocument>) => boolean,
   ): Promise<void> {
-    const vaultRoot = this.vaultRoot;
     const relPath = await this.resolveIdentifierPath(identifier);
-    const absPath = path.join(vaultRoot, relPath);
-
-    let raw: string;
-    try {
-      raw = await readFile(absPath, 'utf8');
-    } catch (err) {
-      if ((err as { code?: string }).code === 'ENOENT') {
-        throw new ToolHandlerError('NOT_FOUND', `Note not found: ${relPath}`, {
-          details: { path: relPath },
-          cause: err,
-        });
-      }
-      throw new ToolHandlerError(
-        'READ_FAILED',
-        `Failed to read ${relPath}: ${(err as Error).message}`,
-        {
-          details: { path: relPath },
-          cause: err,
-        },
-      );
-    }
+    const raw = await this.readRaw(relPath);
 
     const { prefix, body } = splitRawFrontmatter(raw);
     const yamlBody = prefix === '' ? '' : sliceFrontmatterYaml(prefix);
@@ -263,8 +257,32 @@ export class FsVaultProvider implements VaultProvider {
     } else {
       newPrefix = `---\n${doc.toString()}---\n`;
     }
+    await this.writeRaw(relPath, newPrefix + body);
+  }
+
+  /** Read one existing note. The single ENOENT → NOT_FOUND mapping. */
+  private async readRaw(relPath: string): Promise<string> {
     try {
-      await writeFile(absPath, newPrefix + body, 'utf8');
+      return await this.readFileFn(path.join(this.vaultRoot, relPath), 'utf8');
+    } catch (err) {
+      if ((err as { code?: string }).code === 'ENOENT') {
+        throw new ToolHandlerError('NOT_FOUND', `Note not found: ${relPath}`, {
+          details: { path: relPath },
+          cause: err,
+        });
+      }
+      throw new ToolHandlerError(
+        'READ_FAILED',
+        `Failed to read ${relPath}: ${(err as Error).message}`,
+        { details: { path: relPath }, cause: err },
+      );
+    }
+  }
+
+  /** Overwrite one existing note. The single WRITE_FAILED mapping. */
+  private async writeRaw(relPath: string, data: string): Promise<void> {
+    try {
+      await this.writeFileFn(path.join(this.vaultRoot, relPath), data, 'utf8');
     } catch (err) {
       throw new ToolHandlerError(
         'WRITE_FAILED',

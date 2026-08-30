@@ -7,6 +7,7 @@ import { vi } from 'vitest';
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 import { FsVaultProvider } from '../../../src/modules/operations/fs-vault-provider.js';
+import type { FsReadFile, FsWriteFile } from '../../../src/modules/operations/fs-vault-provider.js';
 
 /** Create a temp vault seeded with the given `{ vault-relative-path: contents }` map. */
 export async function makeVault(files: Record<string, string> = {}): Promise<string> {
@@ -19,8 +20,15 @@ export async function makeVault(files: Record<string, string> = {}): Promise<str
 }
 
 /** Build an FsVaultProvider backed by a real FsVaultReader over `root`. */
-export function makeProvider(root: string): FsVaultProvider {
-  return new FsVaultProvider({ vaultRoot: root, reader: new FsVaultReader({ vaultRoot: root }) });
+export function makeProvider(
+  root: string,
+  fs: { readFile?: FsReadFile; writeFile?: FsWriteFile } = {},
+): FsVaultProvider {
+  return new FsVaultProvider({
+    vaultRoot: root,
+    reader: new FsVaultReader({ vaultRoot: root }),
+    ...fs,
+  });
 }
 
 /** A stub WikilinkGraphIndex for `computeVaultOverview` integration tests. */
