@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FsVaultWriter } from '../../../src/lib/obsidian/vault-writer.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { buildEditNoteTool } from '../../../src/modules/operations/tools/edit-note.js';
+import { callTool } from '../../_gate.js';
 import { makeReader, makeWriter } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
@@ -22,7 +23,7 @@ function buildTool(
 describe('edit_note: targeted replace (replace field present)', () => {
   it('routes to writer.replaceInNote with normalised path and returns { vault }', async () => {
     const { tool, writer } = buildTool();
-    const result = await tool.handler({
+    const result = await callTool(registerTool(tool), {
       path: 'Notes/x.md',
       content: 'new',
       replace: 'old',
@@ -38,7 +39,9 @@ describe('edit_note: targeted replace (replace field present)', () => {
 
   it('rejects empty replace with INVALID_ARGUMENT', async () => {
     const { tool, writer } = buildTool();
-    await expect(tool.handler({ path: 'x.md', content: 'y', replace: '' })).rejects.toMatchObject({
+    await expect(
+      callTool(registerTool(tool), { path: 'x.md', content: 'y', replace: '' }),
+    ).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
     expect(writer.replaceInNote).not.toHaveBeenCalled();
@@ -47,14 +50,14 @@ describe('edit_note: targeted replace (replace field present)', () => {
   it('rejects invalid path', async () => {
     const { tool } = buildTool();
     await expect(
-      tool.handler({ path: '../bad', content: 'y', replace: 'x' }),
+      callTool(registerTool(tool), { path: '../bad', content: 'y', replace: 'x' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
   });
 
   it('rejects Unix absolute path', async () => {
     const { tool, writer } = buildTool();
     await expect(
-      tool.handler({ path: '/etc/passwd', content: 'y', replace: 'x' }),
+      callTool(registerTool(tool), { path: '/etc/passwd', content: 'y', replace: 'x' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     expect(writer.replaceInNote).not.toHaveBeenCalled();
   });
@@ -64,7 +67,7 @@ describe('edit_note: targeted replace (replace field present)', () => {
       scan: vi.fn().mockResolvedValue(['Folder/My Note.md', 'Folder/Other.md']),
     });
     const { tool, writer } = buildTool({ reader });
-    await tool.handler({
+    await callTool(registerTool(tool), {
       name: 'My Note',
       content: 'new',
       replace: 'old',
@@ -80,7 +83,7 @@ describe('edit_note: targeted replace (replace field present)', () => {
     });
     const { tool, writer } = buildTool({ reader });
     await expect(
-      tool.handler({ name: 'My Note', content: 'new', replace: 'old' }),
+      callTool(registerTool(tool), { name: 'My Note', content: 'new', replace: 'old' }),
     ).rejects.toMatchObject({
       code: 'AMBIGUOUS_MATCH',
       details: { matches: ['A/My Note.md', 'B/My Note.md'] },
@@ -95,7 +98,7 @@ describe('edit_note: targeted replace (replace field present)', () => {
     const reader = makeReader({ scan: vi.fn().mockResolvedValue(['Other.md']) });
     const { tool, writer } = buildTool({ reader });
     await expect(
-      tool.handler({ name: 'Missing', content: 'new', replace: 'old' }),
+      callTool(registerTool(tool), { name: 'Missing', content: 'new', replace: 'old' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(writer.replaceInNote).not.toHaveBeenCalled();
   });
@@ -104,7 +107,7 @@ describe('edit_note: targeted replace (replace field present)', () => {
 describe('edit_note: full-body replace (replace field absent)', () => {
   it('routes to writer.replaceFullBody and returns { vault }', async () => {
     const { tool, writer } = buildTool();
-    const result = await tool.handler({
+    const result = await callTool(registerTool(tool), {
       path: 'Notes/x.md',
       content: 'whole new body',
     });
@@ -118,7 +121,7 @@ describe('edit_note: full-body replace (replace field absent)', () => {
 
   it('allows empty content', async () => {
     const { tool, writer } = buildTool();
-    await tool.handler({ path: 'Notes/x.md', content: '' });
+    await callTool(registerTool(tool), { path: 'Notes/x.md', content: '' });
     expect(writer.replaceFullBody).toHaveBeenCalledWith({
       path: 'Notes/x.md',
       content: '',
@@ -129,7 +132,7 @@ describe('edit_note: full-body replace (replace field absent)', () => {
 describe('edit_note: path auto-promotion', () => {
   it('auto-appends .md to a path without an extension', async () => {
     const { tool, writer } = buildTool();
-    await tool.handler({ path: 'Foo', content: 'body' });
+    await callTool(registerTool(tool), { path: 'Foo', content: 'body' });
     expect(writer.replaceFullBody).toHaveBeenCalledWith({
       path: 'Foo.md',
       content: 'body',
@@ -157,6 +160,9 @@ describe('edit_note: disk write failures reach the client with a code', () => {
     return registerTool(buildEditNoteTool({ registry }));
   }
 
+  // Intentionally handler-direct on the registration: the subject here is the
+  // CallToolResult envelope itself (isError + structuredContent), not the
+  // unwrapped payload, so `callTool` would hide what is under test.
   it('surfaces WRITE_FAILED on a full-body rewrite', async () => {
     const result = await buildWithFailingDisk().handler({ path: 'n.md', content: 'new' });
 
@@ -185,15 +191,37 @@ describe('edit_note: disk write failures reach the client with a code', () => {
 describe('edit_note: identifier validation', () => {
   it('rejects when both name and path are provided', async () => {
     const { tool } = buildTool();
-    await expect(tool.handler({ name: 'X', path: 'X.md', content: 'y' })).rejects.toMatchObject({
+    await expect(
+      callTool(registerTool(tool), { name: 'X', path: 'X.md', content: 'y' }),
+    ).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
     });
   });
 
   it('rejects when neither name nor path is provided', async () => {
     const { tool } = buildTool();
-    await expect(tool.handler({ content: 'y' })).rejects.toMatchObject({
+    await expect(callTool(registerTool(tool), { content: 'y' })).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
+    });
+  });
+
+  it('rejects an unknown key', async () => {
+    const { tool } = buildTool();
+    await expect(
+      callTool(registerTool(tool), { path: 'n.md', content: 'x', append: true }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+      details: { issues: [{ path: '<root>', message: expect.stringContaining('append') }] },
+    });
+  });
+
+  it('rejects a vault argument in single-vault mode', async () => {
+    const { tool } = buildTool();
+    await expect(
+      callTool(registerTool(tool), { path: 'n.md', content: 'x', vault: 'v' }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+      details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
     });
   });
 });
