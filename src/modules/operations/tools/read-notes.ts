@@ -1,18 +1,13 @@
 import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
-import { resolveVault } from '../../../lib/resolve-vault.js';
+import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { normalizePath } from '../tool-helpers.js';
 import type { ContentMode, ReadNotesResult, ReadNotesResultItem } from '../types.js';
 import { previewBody } from '../preview-body.js';
 import type { ReadNotesField } from '../../../lib/obsidian/vault-reader.js';
-import {
-  describeMultiVault,
-  EXPLICIT_VAULT_SUFFIX,
-  vaultParamShape,
-} from '../../../lib/vault-param.js';
 
 interface Input {
   vault?: string;
@@ -28,20 +23,16 @@ export function buildReadNotesTool(
   deps: ReadNotesDeps,
 ): ITool<Input, { vault: string } & ReadNotesResult> {
   const { registry } = deps;
-  const inputSchema = z.object({
-    ...vaultParamShape(registry),
-    paths: z.union([z.string().min(1), z.array(z.string()).min(1).max(50)]),
-    content: z.enum(['full', 'preview', 'frontmatter']).optional(),
-  });
-  return {
+  return buildSingleVaultTool<Input, { vault: string } & ReadNotesResult>(registry, {
     name: 'read_notes',
     title: 'Read Notes',
     description:
-      "Read one or more notes in one call. `paths` is a vault-relative POSIX path string or an array of 1–50 such paths; duplicates are de-duplicated and results returned in input order. `content` controls how much of each note's body comes back: `full` returns the complete body, `preview` returns a bounded slice plus a `truncated` flag, `frontmatter` returns no body at all. Frontmatter is always returned. The default is derived from the number of distinct paths: one path → `full`, two or more → `preview`; passing `content` explicitly overrides this. Re-read a previewed note with `content: 'full'` before citing or editing it. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running." +
-      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
-    inputSchema,
-    handler: async (input) => {
-      const entry = resolveVault(input, registry, { tool: 'read_notes' });
+      "Read one or more notes in one call. `paths` is a vault-relative POSIX path string or an array of 1–50 such paths; duplicates are de-duplicated and results returned in input order. `content` controls how much of each note's body comes back: `full` returns the complete body, `preview` returns a bounded slice plus a `truncated` flag, `frontmatter` returns no body at all. Frontmatter is always returned. The default is derived from the number of distinct paths: one path → `full`, two or more → `preview`; passing `content` explicitly overrides this. Re-read a previewed note with `content: 'full'` before citing or editing it. One missing or unreadable path does not fail the others — per-item errors come back inline. A single MCP roundtrip with parallel disk reads. Reads are direct from disk and do not require Obsidian to be running.",
+    inputShape: {
+      paths: z.union([z.string().min(1), z.array(z.string()).min(1).max(50)]),
+      content: z.enum(['full', 'preview', 'frontmatter']).optional(),
+    },
+    runForEntry: async (entry, input) => {
       // The registration gate has already enforced the schema: `paths` is a
       // non-empty string or a 1-50 string array, `content` is one of the three
       // modes. All that is left is widening the single-string form.
@@ -114,5 +105,5 @@ export function buildReadNotesTool(
       const errors = results.reduce((n, r) => n + ('error' in r ? 1 : 0), 0);
       return { vault: entry.name, results, count: results.length, errors };
     },
-  };
+  });
 }

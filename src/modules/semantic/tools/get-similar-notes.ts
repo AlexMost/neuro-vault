@@ -3,16 +3,11 @@ import { z } from 'zod';
 import { getNoteLinks, type BasenameIndex } from '../../../lib/obsidian/index.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
-import { resolveSemanticVault } from '../../../lib/resolve-vault.js';
+import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import { readNoteContentForEntry, readPositiveInteger, readThreshold } from '../tool-helpers.js';
 import type { EmbeddingProvider, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
-import {
-  describeMultiVault,
-  EXPLICIT_VAULT_SUFFIX,
-  vaultParamShape,
-} from '../../../lib/vault-param.js';
 
 const DEFAULT_LIMIT = 10;
 const DEFAULT_THRESHOLD = 0.5;
@@ -160,26 +155,20 @@ export function buildGetSimilarNotesTool(
   deps: GetSimilarNotesDeps,
 ): ITool<Input, StampedSimilarNoteResult[]> {
   const { registry, searchEngine, modelKey } = deps;
-  const inputSchema = z.object({
-    ...vaultParamShape(registry),
-    path: z.string(),
-    limit: z.number().int().positive().optional(),
-    threshold: z.number().min(0).max(1).optional(),
-    exclude_folders: z.array(z.string()).optional(),
-  });
-
-  return {
+  return buildSingleVaultTool<Input, StampedSimilarNoteResult[]>(registry, {
     name: 'get_similar_notes',
     title: 'Get Similar Notes',
     description:
       'Find related notes — both semantically similar and explicitly linked from this note via [[wikilinks]]. Pass a vault-relative POSIX path (e.g. "Folder/note.md") as `path`. Forward-linked results rank ahead of semantic-only ones.' +
-      ' Typical flow: `search_notes` surfaces a relevant note, then call this on its path to expand the surrounding context into a deeper neighbour profile.' +
-      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
-    inputSchema,
-    handler: async (input) => {
-      const entry = resolveSemanticVault(input, registry, {
-        tool: 'get_similar_notes',
-      });
+      ' Typical flow: `search_notes` surfaces a relevant note, then call this on its path to expand the surrounding context into a deeper neighbour profile.',
+    semantic: true,
+    inputShape: {
+      path: z.string(),
+      limit: z.number().int().positive().optional(),
+      threshold: z.number().min(0).max(1).optional(),
+      exclude_folders: z.array(z.string()).optional(),
+    },
+    runForEntry: async (entry, input) => {
       const backend = entry.backend;
       let notePath: string;
       try {
@@ -231,5 +220,5 @@ export function buildGetSimilarNotesTool(
         });
       }
     },
-  };
+  });
 }
