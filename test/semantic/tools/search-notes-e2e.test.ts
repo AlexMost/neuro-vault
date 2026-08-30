@@ -4,7 +4,9 @@ import {
   buildSearchNotesTool,
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
+import { callTool } from '../../_gate.js';
 import { makeLexicalVault } from './_hybrid-helpers.js';
 
 // End-to-end sanity fixture for hybrid `search_notes`: a real vault on disk
@@ -32,8 +34,8 @@ describe('search_notes end-to-end sanity fixture', () => {
       { sources, engine },
     );
     try {
-      const tool = buildSearchNotesTool(deps);
-      const out = (await tool.handler({ query: 'retrieval eval harness' })) as SearchNotesOutput;
+      const reg = registerTool(buildSearchNotesTool(deps));
+      const out = await callTool<SearchNotesOutput>(reg, { query: 'retrieval eval harness' });
 
       expect(out.matches).toHaveLength(1);
       const m = out.matches[0];
@@ -53,12 +55,12 @@ describe('search_notes end-to-end sanity fixture', () => {
       { semantic: false },
     );
     try {
-      const tool = buildSearchNotesTool(deps);
+      const reg = registerTool(buildSearchNotesTool(deps));
       // Query uses U+2019 (') uppercase; the file uses U+0027 (') lowercase.
-      const out = (await tool.handler({
+      const out = await callTool<SearchNotesOutput>(reg, {
         query: 'ОБ’ЄКТ',
         mode: 'lexical',
-      })) as SearchNotesOutput;
+      });
 
       expect(out.matches).toHaveLength(1);
       expect(out.matches[0]).toMatchObject({ path: 'Note.md' });
@@ -95,11 +97,11 @@ describe('search_notes end-to-end sanity fixture', () => {
       { sources, engine, listMatchingPaths: async () => new Set([tasksPath]) },
     );
     try {
-      const tool = buildSearchNotesTool(deps);
-      const out = (await tool.handler({
+      const reg = registerTool(buildSearchNotesTool(deps));
+      const out = await callTool<SearchNotesOutput>(reg, {
         query: 'пошук',
         filter: { path_prefix: 'Tasks/' },
-      })) as SearchNotesOutput;
+      });
 
       expect(out.matches.map((m) => m.path)).toEqual([tasksPath]);
       const m = out.matches[0];
@@ -116,11 +118,11 @@ describe('search_notes end-to-end sanity fixture', () => {
       { semantic: false },
     );
     try {
-      const tool = buildSearchNotesTool(deps);
-      const out = (await tool.handler({
+      const reg = registerTool(buildSearchNotesTool(deps));
+      const out = await callTool<SearchNotesOutput>(reg, {
         query: 'пошук',
         mode: 'lexical',
-      })) as SearchNotesOutput;
+      });
 
       expect(out.matches).toHaveLength(1);
       expect(out.matches[0]).toMatchObject({ path: 'Cold corpus note.md' });
