@@ -2,15 +2,10 @@ import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
 import type { NoteLinks, WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
-import { resolveVault } from '../../../lib/resolve-vault.js';
+import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument } from '../tool-helpers.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
-import {
-  describeMultiVault,
-  EXPLICIT_VAULT_SUFFIX,
-  vaultParamShape,
-} from '../../../lib/vault-param.js';
 
 interface Input {
   vault?: string;
@@ -21,31 +16,28 @@ export interface GetNoteLinksDeps {
   registry: IVaultRegistry;
 }
 
+const DESCRIPTION = [
+  'Return the wikilink adjacency for a single note: full incoming and outgoing edge lists derived from the vault-wide wikilink graph.',
+  '',
+  '`incoming` is the resolved list of source notes whose body or frontmatter wikilinks (or `![[embeds]]`) point at the requested path. `outgoing` lists the wikilink targets in the requested note; each carries `resolved: bool`. Resolved entries also carry the resolved vault path; unresolved entries (concepts the user has anchored but not yet written) are kept verbatim and surfaced for traversal use cases.',
+  '',
+  'Backed by an in-memory index that rebuilds lazily on query when older than 3 minutes — no background timers, no watchers. The first call after a stale window pays the rebuild cost.',
+  '',
+  'Use `search_notes` / `query_notes` to find a starting note, then call `get_note_links` to traverse the graph around it.',
+].join('\n');
+
 export function buildGetNoteLinksTool(
   deps: GetNoteLinksDeps,
 ): ITool<Input, { vault: string } & NoteLinks> {
   const { registry } = deps;
-  const inputSchema = z.object({
-    ...vaultParamShape(registry),
-    path: z.string().min(1),
-  });
-  const DESCRIPTION = [
-    'Return the wikilink adjacency for a single note: full incoming and outgoing edge lists derived from the vault-wide wikilink graph.',
-    '',
-    '`incoming` is the resolved list of source notes whose body or frontmatter wikilinks (or `![[embeds]]`) point at the requested path. `outgoing` lists the wikilink targets in the requested note; each carries `resolved: bool`. Resolved entries also carry the resolved vault path; unresolved entries (concepts the user has anchored but not yet written) are kept verbatim and surfaced for traversal use cases.',
-    '',
-    'Backed by an in-memory index that rebuilds lazily on query when older than 3 minutes — no background timers, no watchers. The first call after a stale window pays the rebuild cost.',
-    '',
-    'Use `search_notes` / `query_notes` to find a starting note, then call `get_note_links` to traverse the graph around it.' +
-      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
-  ].join('\n');
-  return {
+  return buildSingleVaultTool<Input, { vault: string } & NoteLinks>(registry, {
     name: 'get_note_links',
     title: 'Get Note Links',
     description: DESCRIPTION,
-    inputSchema,
-    handler: async (input) => {
-      const entry = resolveVault(input, registry, { tool: 'get_note_links' });
+    inputShape: {
+      path: z.string().min(1),
+    },
+    runForEntry: async (entry, input) => {
       let path: string;
       try {
         path = normalizeNotePath(input.path);
@@ -56,7 +48,7 @@ export function buildGetNoteLinksTool(
       const links = entry.graph.getNoteLinks(path);
       return { vault: entry.name, ...links };
     },
-  };
+  });
 }
 
 // Re-export for type consumers that reference the old standalone graph dep shape

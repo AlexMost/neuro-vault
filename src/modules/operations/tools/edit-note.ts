@@ -1,17 +1,12 @@
 import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
-import { resolveVault } from '../../../lib/resolve-vault.js';
+import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument } from '../tool-helpers.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import { resolveNoteName } from '../resolve-note-name.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
-import {
-  describeMultiVault,
-  EXPLICIT_VAULT_SUFFIX,
-  vaultParamShape,
-} from '../../../lib/vault-param.js';
 
 interface Input {
   vault?: string;
@@ -27,14 +22,7 @@ export interface EditNoteDeps {
 
 export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: string }> {
   const { registry } = deps;
-  const inputSchema = z.object({
-    ...vaultParamShape(registry),
-    name: z.string().optional(),
-    path: z.string().optional(),
-    content: z.string(),
-    replace: z.string().optional(),
-  });
-  return {
+  return buildSingleVaultTool<Input, { vault: string }>(registry, {
     name: 'edit_note',
     title: 'Edit Note',
     description:
@@ -44,12 +32,14 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: str
       '\n\n' +
       'Without `replace`: the entire body is overwritten with `content`. Use this for whole-body rewrites; pre-fetch the body with `read_notes` if you need to preserve parts of it. Use `\\n` for newlines in either mode.' +
       '\n\n' +
-      'Writes land in the vault directory directly on disk — Obsidian does not need to be installed or running. Editing while a live Obsidian session has the vault open is permitted, but the last writer wins per file — a concurrent Obsidian save can silently overwrite this edit, and vice versa.' +
-      describeMultiVault(registry, EXPLICIT_VAULT_SUFFIX),
-    inputSchema,
-    handler: async (input) => {
-      const entry = resolveVault(input, registry, { tool: 'edit_note' });
-
+      'Writes land in the vault directory directly on disk — Obsidian does not need to be installed or running. Editing while a live Obsidian session has the vault open is permitted, but the last writer wins per file — a concurrent Obsidian save can silently overwrite this edit, and vice versa.',
+    inputShape: {
+      name: z.string().optional(),
+      path: z.string().optional(),
+      content: z.string(),
+      replace: z.string().optional(),
+    },
+    runForEntry: async (entry, input) => {
       if (
         (input.name === undefined && input.path === undefined) ||
         (input.name !== undefined && input.path !== undefined)
@@ -77,7 +67,7 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: str
 
       return { vault: entry.name };
     },
-  };
+  });
 }
 
 async function resolveToPath(input: Input, reader: VaultReader): Promise<string> {
