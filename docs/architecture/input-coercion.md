@@ -8,6 +8,8 @@ A single shared layer in `src/lib/input-coercion.ts` that the tool registry wrap
 
 The wrapper lives in one place — `wrapSchemaWithCoercion` — so coercion is a property of the dispatcher, not of any individual tool definition.
 
+Coercion is not all it does. `wrapSchemaWithCoercion` returns `z.object(shape).strict()`, so the object it hands to zod is **closed**: an unknown key is *rejected* with `INVALID_PARAMS`, not silently stripped. That includes a `vault` key sent to a single-vault server — `vaultParamShape` (`src/lib/vault-param.ts`) contributes a `vault` parameter only when the registry is multi-vault, so on a single-vault server the key is not merely ignored, it is not part of the schema at all. Leniency is therefore about the *shape of a value*, never about which fields exist: the declared schema is the whole contract, and [`mcp-server-shape.md`](./mcp-server-shape.md) describes the gate this wrapper sits inside.
+
 ## Why it exists
 
 Some MCP clients (and intermediate runtimes) serialize every tool argument as a string, even when the schema declares the field as `number`, `boolean`, `object`, or `string[]`. The agent's intent is unambiguous in all of these cases:

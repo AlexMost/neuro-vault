@@ -51,13 +51,19 @@ What *pulls* that chain is wired in `startNeuroVaultServer` too, and has to be: 
 
 ## Tool handler contract
 
-There is no central tool-handlers module. Each tool lives in its own file under `src/modules/<module>/tools/<name>.ts` and exports a `buildXTool(deps)` factory that returns an `ITool<I, O>` — name, title, description, zod input schema, and an async `handler`. Each handler:
+There is no central tool-handlers module. Each tool lives in its own file under `src/modules/<module>/tools/<name>.ts` and exports a `buildXTool(deps)` factory that returns an `ITool<I, O>` — name, title, description, zod input schema, and an async `handler`.
 
-- Validates and normalizes its input (paths, queries, thresholds) and throws `ToolHandlerError('INVALID_ARGUMENT', ...)` on bad input.
+A handler never sees raw arguments. `registerTool` (`src/lib/tool-registry.ts`) wraps the declared schema with `wrapSchemaWithCoercion`, which coerces each top-level field from realistic client stringification and then closes the object with `.strict()`, and `safeParse`s the arguments before dispatching. A failure there never reaches the handler — it becomes `ToolHandlerError('INVALID_PARAMS', ...)` carrying `details.issues`, one entry per violation. So the schema owns every constraint it can state (type, enum, bound, unknown key, coercion), and the handler owns only what the schema cannot say. See [`input-coercion.md`](./input-coercion.md) and [ADR-0015](../adr/0015-input-gate-owns-schema-validation.md).
+
+With that boundary in place, each handler:
+
+- Throws `ToolHandlerError('INVALID_ARGUMENT', ...)` for the argument faults a schema cannot express — an exactly-one-of constraint across fields (`name` xor `path`), a path that escapes the vault root after normalization, list items containing commas, a value that does not match a separately declared `type`. It does **not** re-check type, enum, bound, or unknown-key constraints: the gate above has already rejected those, so such a check is unreachable ([ADR-0015](../adr/0015-input-gate-owns-schema-validation.md)).
 - Calls the search engine / embedding provider / corpus / vault provider via the dependencies passed into its factory.
 - Wraps unexpected dependency failures via `wrapDependencyError`, which keeps the original cause but adds the operation name and `modelKey` to `details`.
 
 Per-module aggregators (`src/modules/semantic/tools/index.ts`, `src/modules/operations/tools/index.ts`) compose every tool factory with its dependencies and return a list of `ToolRegistration` objects via the `registerTool` helper from `src/lib/tool-registry.ts`. Dependencies (vault registry, search engine, embedding provider, modelKey) are passed into the factories — pure dependency injection, no module-level state. Tests inject mocks; runtime injects the real implementations.
+
+Tool tests reach a tool the way a client does: `registerTool(buildXTool(deps))`, then the `callTool` / `expectToolError` helpers in [`test/_gate.ts`](../../test/_gate.ts). Never `buildXTool(deps).handler` — a handler-direct call enters one frame past coercion, `.strict()`, and `INVALID_PARAMS`, so it can pin behaviour production does not have. The one admissible exception is a test whose subject *is* the `CallToolResult` envelope rather than the tool's behaviour, and it says so in a comment.
 
 ## Boundaries
 
