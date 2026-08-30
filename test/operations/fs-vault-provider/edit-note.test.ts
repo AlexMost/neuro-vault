@@ -177,7 +177,12 @@ describe('FsVaultProvider: name-addressed edits resolve like every other write',
 
     await expect(
       makeProvider(root).replaceFullBody({ identifier: byName('Dup'), content: 'new\n' }),
-    ).rejects.toMatchObject({ code: 'AMBIGUOUS_MATCH' });
+    ).rejects.toMatchObject({
+      code: 'AMBIGUOUS_MATCH',
+      // The candidate paths must also surface in the human message so clients
+      // that render only `content[0].text` (no structuredContent) still see them.
+      message: expect.stringContaining('A/Dup.md, B/Dup.md'),
+    });
     expect(await readFile(path.join(root, 'A/Dup.md'), 'utf8')).toBe('a\n');
     expect(await readFile(path.join(root, 'B/Dup.md'), 'utf8')).toBe('b\n');
   });

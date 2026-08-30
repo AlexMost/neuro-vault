@@ -163,6 +163,9 @@ export class FsVaultProvider implements VaultProvider {
     try {
       raw = await readFile(path.join(vaultRoot, relPath), 'utf8');
     } catch (err) {
+      // Deliberately not routed through `readRaw`: the `headless-vault-operations`
+      // spec pins this NOT_FOUND message wording, so it can't share readRaw's
+      // generic error mapping.
       if ((err as { code?: string }).code === 'ENOENT') {
         throw new ToolHandlerError(
           'NOT_FOUND',
