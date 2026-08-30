@@ -45,12 +45,12 @@ rejection case. Tools with coercible fields also get (d), named per task.
 **3.1 is sequential** (every file below depends on the converted helper);
 **3.2–3.5 are parallel-safe** across disjoint files.
 
-- [ ] 3.1 Convert `runSearch` in `test/semantic/tools/_helpers.ts:291` to build through `registerTool` and return via `callTool<SearchNotesOutput>`, keeping its current signature and return type so its ~120 call sites are unchanged. Verify the whole semantic suite still passes before touching any test file.
-- [ ] 3.2 `test/semantic/tools/search-notes-hybrid.test.ts` (44 direct calls) — migrate; keep the existing `reg.spec.inputSchema` axis assertions as they are.
-- [ ] 3.3 `test/semantic/tools/search-notes.test.ts` (32) — migrate.
-- [ ] 3.4 `test/semantic/tools/get-similar-notes.test.ts` (19) and `test/semantic/tools/find-duplicates.test.ts` (6) — migrate; add the single-vault `vault`-rejection case to each.
-- [ ] 3.5 `test/semantic/tools/search-notes-filter.test.ts` (14) and `test/semantic/tools/search-notes-e2e.test.ts` (4) — migrate.
-- [ ] 3.6 Run `npm test && npm run lint && npm run typecheck`; confirm the `grep` acceptance over `test/semantic/tools/`. Open PR 3 with `Refs #112`.
+- [x] 3.1 Convert `runSearch` in `test/semantic/tools/_helpers.ts:291` to build through `registerTool` and return via `callTool<SearchNotesOutput>`, keeping its current signature and return type so its ~120 call sites are unchanged. Verify the whole semantic suite still passes before touching any test file.
+- [x] 3.2 `test/semantic/tools/search-notes-hybrid.test.ts` (44 direct calls) — migrate; keep the existing `reg.spec.inputSchema` axis assertions as they are.
+- [x] 3.3 `test/semantic/tools/search-notes.test.ts` (32) — migrate.
+- [x] 3.4 `test/semantic/tools/get-similar-notes.test.ts` (19) and `test/semantic/tools/find-duplicates.test.ts` (6) — migrate; add the single-vault `vault`-rejection case to each.
+- [x] 3.5 `test/semantic/tools/search-notes-filter.test.ts` (14) and `test/semantic/tools/search-notes-e2e.test.ts` (4) — migrate.
+- [x] 3.6 Run `npm test && npm run lint && npm run typecheck`; confirm the `grep` acceptance over `test/semantic/tools/`. Open PR 3 with `Refs #112`.
 
 ## 4. Record the contract (PR 4)
 

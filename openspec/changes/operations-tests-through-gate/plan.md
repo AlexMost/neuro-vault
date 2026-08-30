@@ -989,7 +989,7 @@ BODY
 
 **Sequential — Tasks 16–19 depend on it.**
 
-- [ ] **Step 1: Change the call inside `runSearch`**
+- [x] **Step 1: Change the call inside `runSearch`**
 
 Replace:
 
@@ -1016,12 +1016,12 @@ with:
 adding `import { registerTool } from '../../../src/lib/tool-registry.js';` and
 `import { callTool } from '../../_gate.js';` at the top.
 
-- [ ] **Step 2: Run the whole semantic suite before touching any test file**
+- [x] **Step 2: Run the whole semantic suite before touching any test file**
 
 Run: `npx vitest run test/semantic/`
 Expected: PASS. One helper change now routes ~120 call sites through the gate; any failure here is a real finding about `search_notes`'s advertised schema. Triage each: a `SearchNotesInput` field the tests pass but the schema does not declare is a bug in the test input or a genuine gap in the schema — report it rather than relaxing `.strict()`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add test/semantic/tools/_helpers.ts
@@ -1041,24 +1041,24 @@ commit with `Refs #112`.
 
 **Files:** Modify `test/semantic/tools/search-notes-hybrid.test.ts` (44 direct calls)
 
-- [ ] **Step 1:** Run the shared cycle. Leave the existing `reg.spec.inputSchema` axis assertions (roughly L769-778, L1052-1053) exactly as they are — they already assert against the wrapped schema.
-- [ ] **Step 2:** Run `npx vitest run test/semantic/tools/search-notes-hybrid.test.ts` — expect PASS.
-- [ ] **Step 3:** Commit `test(semantic): route search_notes hybrid tests through the gate` with `Refs #112`.
+- [x] **Step 1:** Run the shared cycle. Leave the existing `reg.spec.inputSchema` axis assertions (roughly L769-778, L1052-1053) exactly as they are — they already assert against the wrapped schema.
+- [x] **Step 2:** Run `npx vitest run test/semantic/tools/search-notes-hybrid.test.ts` — expect PASS.
+- [x] **Step 3:** Commit `test(semantic): route search_notes hybrid tests through the gate` with `Refs #112`.
 
 ### Task 17: `search-notes.test.ts`
 
 **Files:** Modify `test/semantic/tools/search-notes.test.ts` (32 direct calls)
 
-- [ ] **Step 1:** Run the shared cycle. The `registerTool(tool).spec.description` helper at L1297-1301 and the `spec` assertion at L1381 stay as they are.
-- [ ] **Step 2:** Run `npx vitest run test/semantic/tools/search-notes.test.ts` — expect PASS.
-- [ ] **Step 3:** Commit `test(semantic): route search_notes tests through the gate` with `Refs #112`.
+- [x] **Step 1:** Run the shared cycle. The `registerTool(tool).spec.description` helper at L1297-1301 and the `spec` assertion at L1381 stay as they are.
+- [x] **Step 2:** Run `npx vitest run test/semantic/tools/search-notes.test.ts` — expect PASS.
+- [x] **Step 3:** Commit `test(semantic): route search_notes tests through the gate` with `Refs #112`.
 
 ### Task 18: `get-similar-notes.test.ts` and `find-duplicates.test.ts`
 
 **Files:** Modify `test/semantic/tools/get-similar-notes.test.ts` (19), `test/semantic/tools/find-duplicates.test.ts` (6)
 
-- [ ] **Step 1:** Run the shared cycle on both. `get-similar-notes.test.ts` already has SDK-gate coercion cases at L566-581 — keep them.
-- [ ] **Step 2:** Add the single-vault `vault` rejection to each file:
+- [x] **Step 1:** Run the shared cycle on both. `get-similar-notes.test.ts` already has SDK-gate coercion cases at L566-581 — keep them.
+- [x] **Step 2:** Add the single-vault `vault` rejection to each file:
 
 ```ts
   it('rejects a vault argument in single-vault mode', async () => {
@@ -1071,24 +1071,24 @@ commit with `Refs #112`.
 
 (For `find_duplicates`, drop the `path` argument — its schema has no required path; check `src/modules/semantic/tools/find-duplicates.ts` for the required fields and supply exactly those.)
 
-- [ ] **Step 3:** Run `npx vitest run test/semantic/tools/get-similar-notes.test.ts test/semantic/tools/find-duplicates.test.ts` — expect PASS.
-- [ ] **Step 4:** Commit `test(semantic): route get_similar_notes and find_duplicates through the gate` with `Refs #112`.
+- [x] **Step 3:** Run `npx vitest run test/semantic/tools/get-similar-notes.test.ts test/semantic/tools/find-duplicates.test.ts` — expect PASS.
+- [x] **Step 4:** Commit `test(semantic): route get_similar_notes and find_duplicates through the gate` with `Refs #112`.
 
 ### Task 19: `search-notes-filter.test.ts` and `search-notes-e2e.test.ts`
 
 **Files:** Modify `test/semantic/tools/search-notes-filter.test.ts` (14), `test/semantic/tools/search-notes-e2e.test.ts` (4)
 
-- [ ] **Step 1:** Run the shared cycle on both.
-- [ ] **Step 2:** Run `npx vitest run test/semantic/tools/search-notes-filter.test.ts test/semantic/tools/search-notes-e2e.test.ts` — expect PASS.
-- [ ] **Step 3:** Commit `test(semantic): route the remaining search_notes suites through the gate` with `Refs #112`.
+- [x] **Step 1:** Run the shared cycle on both.
+- [x] **Step 2:** Run `npx vitest run test/semantic/tools/search-notes-filter.test.ts test/semantic/tools/search-notes-e2e.test.ts` — expect PASS.
+- [x] **Step 3:** Commit `test(semantic): route the remaining search_notes suites through the gate` with `Refs #112`.
 
 ### Task 20: Close out PR 3
 
 **Sequential — after Tasks 16–19.**
 
-- [ ] **Step 1:** Run `grep -rn '\.handler(' test/semantic/tools/` — expect no output, or only envelope-subject call sites each carrying a comment.
-- [ ] **Step 2:** Run `npm test && npm run lint && npm run typecheck` — expect all pass.
-- [ ] **Step 3:** Open PR 3:
+- [x] **Step 1:** Run `grep -rn '\.handler(' test/semantic/tools/` — expect no output, or only envelope-subject call sites each carrying a comment.
+- [x] **Step 2:** Run `npm test && npm run lint && npm run typecheck` — expect all pass.
+- [x] **Step 3:** Open PR 3:
 
 ```bash
 gh pr create --base main --title "test(semantic): route the semantic tool tests through the gate" --body "$(cat <<'BODY'
