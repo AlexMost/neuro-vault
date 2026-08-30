@@ -31,7 +31,11 @@ describe('FsVaultProvider.replaceFullBody', () => {
 
     await expect(
       provider.replaceFullBody({ identifier: byPath('n.md'), content: 'x' }),
-    ).rejects.toMatchObject({ code: 'WRITE_FAILED', details: { path: 'n.md' } });
+    ).rejects.toMatchObject({
+      code: 'WRITE_FAILED',
+      details: { path: 'n.md' },
+      message: expect.stringContaining('no space left on device'),
+    });
   });
 
   it('replaces the entire file when there is no frontmatter', async () => {
@@ -88,10 +92,13 @@ describe('FsVaultProvider.replaceInNote', () => {
 
   it('fails NOT_FOUND when the note file is missing', async () => {
     const root = await makeVault({});
+    const writeFile = vi.fn();
+    const provider = makeProvider(root, { writeFile });
 
     await expect(
-      makeProvider(root).replaceInNote({ identifier: byPath('gone.md'), find: 'x', content: 'y' }),
+      provider.replaceInNote({ identifier: byPath('gone.md'), find: 'x', content: 'y' }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND', details: { path: 'gone.md' } });
+    expect(writeFile).not.toHaveBeenCalled();
   });
 
   it('preserves frontmatter byte-for-byte even if find matches inside it', async () => {
@@ -118,7 +125,11 @@ describe('FsVaultProvider.replaceInNote', () => {
 
     await expect(
       provider.replaceInNote({ identifier: byPath('n.md'), find: 'alpha', content: 'x' }),
-    ).rejects.toMatchObject({ code: 'WRITE_FAILED', details: { path: 'n.md' } });
+    ).rejects.toMatchObject({
+      code: 'WRITE_FAILED',
+      details: { path: 'n.md' },
+      message: expect.stringContaining('no space left on device'),
+    });
   });
 
   it('fails AMBIGUOUS_MATCH with line numbers when the find text repeats', async () => {
@@ -126,7 +137,13 @@ describe('FsVaultProvider.replaceInNote', () => {
 
     await expect(
       makeProvider(root).replaceInNote({ identifier: byPath('n.md'), find: 'dup', content: 'x' }),
-    ).rejects.toMatchObject({ code: 'AMBIGUOUS_MATCH', details: { matches: [1, 2] } });
+    ).rejects.toMatchObject({
+      code: 'AMBIGUOUS_MATCH',
+      details: { matches: [1, 2] },
+      // Line numbers must also surface in the human message so clients that
+      // render only `content[0].text` (no structuredContent) still see them.
+      message: expect.stringContaining('1, 2'),
+    });
   });
 
   it('does not write when the find text is ambiguous', async () => {
