@@ -173,6 +173,7 @@ describe('edit_note: disk write failures reach the client with a code', () => {
     });
   });
 
+  // Handler-direct for the same reason as the test above.
   it('surfaces WRITE_FAILED on a targeted replace', async () => {
     const result = await buildWithFailingDisk().handler({
       path: 'n.md',

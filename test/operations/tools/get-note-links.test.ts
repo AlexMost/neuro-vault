@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { buildGetNoteLinksTool } from '../../../src/modules/operations/tools/get-note-links.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
+import { callTool } from '../../_gate.js';
 import { makeGraph } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
@@ -27,9 +29,10 @@ describe('get_note_links tool', () => {
       },
     });
     const registry = makeTestRegistry([{ name: 'v', graph }]);
-    const tool = buildGetNoteLinksTool({ registry });
 
-    const out = await tool.handler({ path: 'Folder/A.md' });
+    const out = await callTool(registerTool(buildGetNoteLinksTool({ registry })), {
+      path: 'Folder/A.md',
+    });
 
     expect(out).toEqual({
       vault: 'v',
@@ -55,9 +58,8 @@ describe('get_note_links tool', () => {
       getBacklinkCount: vi.fn(),
     } as unknown as WikilinkGraphIndex;
     const registry = makeTestRegistry([{ name: 'v', graph }]);
-    const tool = buildGetNoteLinksTool({ registry });
 
-    await tool.handler({ path: 'X.md' });
+    await callTool(registerTool(buildGetNoteLinksTool({ registry })), { path: 'X.md' });
 
     expect(order).toEqual(['ensureFresh', 'getNoteLinks']);
   });
@@ -65,9 +67,10 @@ describe('get_note_links tool', () => {
   it('normalizes the input path before querying the graph', async () => {
     const graph = makeLinksGraph({});
     const registry = makeTestRegistry([{ name: 'v', graph }]);
-    const tool = buildGetNoteLinksTool({ registry });
 
-    await tool.handler({ path: '  Folder/A.md  ' });
+    await callTool(registerTool(buildGetNoteLinksTool({ registry })), {
+      path: '  Folder/A.md  ',
+    });
 
     expect(graph.getNoteLinks).toHaveBeenCalledWith('Folder/A.md');
   });
@@ -80,9 +83,8 @@ describe('get_note_links tool', () => {
       },
     });
     const registry = makeTestRegistry([{ name: 'v', graph }]);
-    const tool = buildGetNoteLinksTool({ registry });
 
-    await tool.handler({ path: 'Folder/A' });
+    await callTool(registerTool(buildGetNoteLinksTool({ registry })), { path: 'Folder/A' });
 
     expect(graph.getNoteLinks).toHaveBeenCalledWith('Folder/A.md');
   });
@@ -90,9 +92,10 @@ describe('get_note_links tool', () => {
   it('returns an empty adjacency for an unknown path', async () => {
     const graph = makeLinksGraph({});
     const registry = makeTestRegistry([{ name: 'v', graph }]);
-    const tool = buildGetNoteLinksTool({ registry });
 
-    expect(await tool.handler({ path: 'Missing.md' })).toEqual({
+    expect(
+      await callTool(registerTool(buildGetNoteLinksTool({ registry })), { path: 'Missing.md' }),
+    ).toEqual({
       vault: 'v',
       incoming: [],
       outgoing: [],
@@ -107,5 +110,27 @@ describe('get_note_links tool', () => {
     expect(tool.description).toMatch(/incoming/i);
     expect(tool.description).toMatch(/outgoing/i);
     expect(tool.description).toMatch(/resolved/i);
+  });
+
+  it('rejects an empty path at the gate', async () => {
+    const registry = makeTestRegistry([{ name: 'v', graph: makeGraph() }]);
+
+    await expect(
+      callTool(registerTool(buildGetNoteLinksTool({ registry })), { path: '' }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+      details: { issues: [{ path: 'path' }] },
+    });
+  });
+
+  it('rejects a vault argument in single-vault mode', async () => {
+    const registry = makeTestRegistry([{ name: 'v', graph: makeGraph() }]);
+
+    await expect(
+      callTool(registerTool(buildGetNoteLinksTool({ registry })), { path: 'A.md', vault: 'v' }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+      details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
+    });
   });
 });

@@ -5,7 +5,10 @@ import { join } from 'node:path';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 import { buildReadDailyTool } from '../../../src/modules/operations/tools/read-daily.js';
+import type { ReadDailyHandlerResult } from '../../../src/modules/operations/tools/read-daily.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
+import { callTool } from '../../_gate.js';
 import { type ReadNotesItem, type VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import { makeGraph, makeProvider } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
@@ -62,9 +65,9 @@ describe('operations.readDaily handler', () => {
     const registry = makeTestRegistry([
       { name: 'v', path: tmpDir, provider, reader: buildReader([]), graph: makeGraph() },
     ]);
-    const tool = buildReadDailyTool({ registry });
-
-    await expect(tool.handler({})).rejects.toMatchObject({
+    await expect(
+      callTool(registerTool(buildReadDailyTool({ registry })), {}),
+    ).rejects.toMatchObject({
       code: 'DAILY_NOTES_NOT_CONFIGURED',
     });
     expect(provider.readDaily).toHaveBeenCalledTimes(1);
@@ -76,9 +79,10 @@ describe('operations.readDaily handler', () => {
     const registry = makeTestRegistry([
       { name: 'v', path: tmpDir, provider, reader: buildReader([]), graph },
     ]);
-    const tool = buildReadDailyTool({ registry });
-
-    const result = await tool.handler({});
+    const result = await callTool<ReadDailyHandlerResult>(
+      registerTool(buildReadDailyTool({ registry })),
+      {},
+    );
 
     expect(provider.readDaily).toHaveBeenCalledTimes(1);
     expect(result.vault).toBe('v');
@@ -99,9 +103,10 @@ describe('operations.readDaily handler', () => {
         graph: makeGraph(),
       },
     ]);
-    const tool = buildReadDailyTool({ registry });
-
-    const result = await tool.handler({});
+    const result = await callTool<ReadDailyHandlerResult>(
+      registerTool(buildReadDailyTool({ registry })),
+      {},
+    );
 
     expect(result.notes_today).toEqual([]);
   });
@@ -124,9 +129,10 @@ describe('operations.readDaily handler', () => {
         graph: makeGraph(),
       },
     ]);
-    const tool = buildReadDailyTool({ registry });
-
-    const result = await tool.handler({});
+    const result = await callTool<ReadDailyHandlerResult>(
+      registerTool(buildReadDailyTool({ registry })),
+      {},
+    );
 
     expect(result.notes_today.map((n) => n.path)).toEqual([
       'Reflections/morning.md',
@@ -157,9 +163,10 @@ describe('operations.readDaily handler', () => {
         graph: makeGraph(),
       },
     ]);
-    const tool = buildReadDailyTool({ registry });
-
-    const result = await tool.handler({});
+    const result = await callTool<ReadDailyHandlerResult>(
+      registerTool(buildReadDailyTool({ registry })),
+      {},
+    );
 
     expect(result.notes_today.map((n) => n.path)).toEqual([
       'Notes/afternoon.md',
@@ -185,9 +192,10 @@ describe('operations.readDaily handler', () => {
         graph,
       },
     ]);
-    const tool = buildReadDailyTool({ registry });
-
-    const result = await tool.handler({});
+    const result = await callTool<ReadDailyHandlerResult>(
+      registerTool(buildReadDailyTool({ registry })),
+      {},
+    );
 
     expect(result.notes_today).toEqual([
       {
@@ -217,9 +225,10 @@ describe('operations.readDaily handler', () => {
         graph: makeGraph(),
       },
     ]);
-    const tool = buildReadDailyTool({ registry });
-
-    const result = await tool.handler({});
+    const result = await callTool<ReadDailyHandlerResult>(
+      registerTool(buildReadDailyTool({ registry })),
+      {},
+    );
 
     expect(result.notes_today.map((n) => n.path)).toEqual(['A.md', 'B.md', 'C.md']);
   });
@@ -238,9 +247,10 @@ describe('operations.readDaily handler', () => {
         graph: makeGraph(),
       },
     ]);
-    const tool = buildReadDailyTool({ registry });
-
-    const result = await tool.handler({});
+    const result = await callTool<ReadDailyHandlerResult>(
+      registerTool(buildReadDailyTool({ registry })),
+      {},
+    );
 
     expect(result.notes_today.length).toBe(200);
     expect(result.notes_today[0].path).toBe('Notes/000.md');
@@ -270,10 +280,51 @@ describe('operations.readDaily handler', () => {
         graph: makeGraph(),
       },
     ]);
-    const tool = buildReadDailyTool({ registry });
-
-    const result = await tool.handler({});
+    const result = await callTool<ReadDailyHandlerResult>(
+      registerTool(buildReadDailyTool({ registry })),
+      {},
+    );
 
     expect(result.notes_today.map((n) => n.path)).toEqual(['Notes/match.md']);
+  });
+
+  it('rejects a vault argument in single-vault mode', async () => {
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        path: tmpDir,
+        provider: dailyProvider('Daily/2026-05-12.md'),
+        reader: buildReader([]),
+        graph: makeGraph(),
+      },
+    ]);
+
+    await expect(
+      callTool(registerTool(buildReadDailyTool({ registry })), { vault: 'v' }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+      details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
+    });
+  });
+
+  // read_daily's schema is `z.object({ ...vaultParamShape(registry) })`, which in
+  // single-vault mode is the empty object — so every input key is unknown.
+  it('rejects an unknown key', async () => {
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        path: tmpDir,
+        provider: dailyProvider('Daily/2026-05-12.md'),
+        reader: buildReader([]),
+        graph: makeGraph(),
+      },
+    ]);
+
+    await expect(
+      callTool(registerTool(buildReadDailyTool({ registry })), { date: '2026-05-12' }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+      details: { issues: [{ path: '<root>', message: expect.stringContaining('date') }] },
+    });
   });
 });
