@@ -6,7 +6,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { buildGetSimilarNotesTool } from '../../../src/modules/semantic/tools/get-similar-notes.js';
+import type { ToolRegistration } from '../../../src/lib/tool-registration.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
+import { callTool } from '../../_gate.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 import {
   MODEL_KEY,
@@ -19,6 +21,8 @@ import {
   toBackend,
 } from './_helpers.js';
 import type { SmartSource } from './_helpers.js';
+
+type SimilarResults = Awaited<ReturnType<ReturnType<typeof buildGetSimilarNotesTool>['handler']>>;
 
 // Create a temp vault root with specific note files on disk.
 // Returns { vaultRoot, cleanup }.
@@ -63,8 +67,9 @@ describe('getSimilarNotes', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
+      const reg = registerTool(tool);
 
-      const results = await tool.handler({
+      const results = await callTool<SimilarResults>(reg, {
         path: 'Folder/note-a.md',
         threshold: 0,
       });
@@ -102,10 +107,11 @@ describe('getSimilarNotes', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
+      const reg = registerTool(tool);
 
       // Note: path passed WITHOUT .md — must resolve to Folder/note-a.md and
       // return Folder/note-c.md as the similar candidate.
-      const results = await tool.handler({
+      const results = await callTool<SimilarResults>(reg, {
         path: 'Folder/note-a',
         threshold: 0,
       });
@@ -139,8 +145,9 @@ describe('getSimilarNotes', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
+      const reg = registerTool(tool);
 
-      await expect(tool.handler({ path: 'Folder/missing.md' })).rejects.toMatchObject({
+      await expect(callTool(reg, { path: 'Folder/missing.md' })).rejects.toMatchObject({
         code: 'NOT_FOUND',
       });
     } finally {
@@ -176,8 +183,9 @@ describe('getSimilarNotes', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
+      const reg = registerTool(tool);
 
-      const results = await tool.handler({
+      const results = await callTool<SimilarResults>(reg, {
         path: 'Folder/note-a.md',
         threshold: 0,
       });
@@ -221,8 +229,9 @@ describe('getSimilarNotes', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
+      const reg = registerTool(tool);
 
-      const results = await tool.handler({
+      const results = await callTool<SimilarResults>(reg, {
         path: './Folder/note-a.md',
         threshold: 0,
       });
@@ -259,8 +268,9 @@ describe('getSimilarNotes', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
+      const reg = registerTool(tool);
 
-      await expect(tool.handler({ path: '../Folder/note-a.md' })).rejects.toMatchObject({
+      await expect(callTool(reg, { path: '../Folder/note-a.md' })).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
       });
     } finally {
@@ -290,8 +300,9 @@ describe('getSimilarNotes', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
+      const reg = registerTool(tool);
 
-      await expect(tool.handler({ path: 'C:/vault/Folder/note-a.md' })).rejects.toMatchObject({
+      await expect(callTool(reg, { path: 'C:/vault/Folder/note-a.md' })).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
       });
     } finally {
@@ -314,8 +325,9 @@ describe('getSimilarNotes', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
+      const reg = registerTool(tool);
 
-      await expect(tool.handler({ path: 'Folder/note-a.md' })).rejects.toMatchObject({
+      await expect(callTool(reg, { path: 'Folder/note-a.md' })).rejects.toMatchObject({
         code: 'VAULT_REQUIRED',
       });
     } finally {
@@ -339,9 +351,32 @@ describe('getSimilarNotes', () => {
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
+      const reg = registerTool(tool);
 
-      await expect(tool.handler({ vault: 'v', path: 'Folder/note-a.md' })).rejects.toMatchObject({
+      await expect(callTool(reg, { path: 'Folder/note-a.md' })).rejects.toMatchObject({
         code: 'SEMANTIC_INDEX_NOT_FOUND',
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a vault argument in single-vault mode', async () => {
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
+
+    try {
+      const registry = makeTestRegistry([{ name: 'v', path: tempRoot }]);
+      const tool = buildGetSimilarNotesTool({
+        registry,
+        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
+        modelKey: MODEL_KEY,
+      });
+      const reg = registerTool(tool);
+
+      await expect(callTool(reg, { path: 'Folder/note-a.md', vault: 'v' })).rejects.toMatchObject({
+        code: 'INVALID_PARAMS',
+        details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
       });
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
@@ -373,6 +408,7 @@ describe('getSimilarNotes — graph signals', () => {
     } = {},
   ): Promise<{
     tool: ReturnType<typeof buildGetSimilarNotesTool>;
+    reg: ToolRegistration;
     cleanup: () => Promise<void>;
   }> {
     const sources = opts.sources ?? makeSources();
@@ -403,13 +439,13 @@ describe('getSimilarNotes — graph signals', () => {
       searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
       modelKey: MODEL_KEY,
     });
-    return { tool, cleanup };
+    return { tool, reg: registerTool(tool), cleanup };
   }
 
   it('surfaces forward-linked notes even when their semantic similarity is below threshold', async () => {
-    const { tool, cleanup } = await buildToolWithVault();
+    const { reg, cleanup } = await buildToolWithVault();
     try {
-      const results = await tool.handler({ path: 'Folder/A.md', threshold: 0.9 });
+      const results = await callTool<SimilarResults>(reg, { path: 'Folder/A.md', threshold: 0.9 });
       const paths = results.map((r) => r.path);
       expect(paths).toContain('Folder/B.md');
       expect(paths).toContain('Folder/C.md');
@@ -424,9 +460,9 @@ describe('getSimilarNotes — graph signals', () => {
   });
 
   it('returns semantic-only neighbors with signals.semantic set', async () => {
-    const { tool, cleanup } = await buildToolWithVault({ body: '# A\n\nNo links here.\n' });
+    const { reg, cleanup } = await buildToolWithVault({ body: '# A\n\nNo links here.\n' });
     try {
-      const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+      const results = await callTool<SimilarResults>(reg, { path: 'Folder/A.md', threshold: 0 });
       const e = results.find((r) => r.path === 'Folder/E.md');
       expect(e).toBeDefined();
       expect(e!.signals.semantic).toBeGreaterThan(0);
@@ -438,9 +474,9 @@ describe('getSimilarNotes — graph signals', () => {
   });
 
   it('ranks forward-linked results ahead of semantic-only ones regardless of similarity', async () => {
-    const { tool, cleanup } = await buildToolWithVault();
+    const { reg, cleanup } = await buildToolWithVault();
     try {
-      const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+      const results = await callTool<SimilarResults>(reg, { path: 'Folder/A.md', threshold: 0 });
       const indexOf = (p: string) => results.findIndex((r) => r.path === p);
       const eIdx = indexOf('Folder/E.md');
       expect(eIdx).toBeGreaterThan(indexOf('Folder/B.md'));
@@ -454,9 +490,9 @@ describe('getSimilarNotes — graph signals', () => {
   it('combines signals when a path is both linked and semantically close', async () => {
     const sources = makeSources();
     sources.set('Folder/B.md', makeSyntheticSource('Folder/B.md', [0.99, 0.01, 0]));
-    const { tool, cleanup } = await buildToolWithVault({ sources });
+    const { reg, cleanup } = await buildToolWithVault({ sources });
     try {
-      const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+      const results = await callTool<SimilarResults>(reg, { path: 'Folder/A.md', threshold: 0 });
       const b = results.find((r) => r.path === 'Folder/B.md')!;
       expect(b.signals.forward_link).toBe(true);
       expect(b.signals.semantic).toBeGreaterThan(0);
@@ -469,12 +505,12 @@ describe('getSimilarNotes — graph signals', () => {
   it('removes results matching exclude_folders prefixes', async () => {
     const sources = makeSources();
     sources.set('Templates/X.md', makeSyntheticSource('Templates/X.md', [0.99, 0, 0]));
-    const { tool, cleanup } = await buildToolWithVault({
+    const { reg, cleanup } = await buildToolWithVault({
       sources,
       body: '# A\n\n[[B]] [[Templates/X]]\n',
     });
     try {
-      const results = await tool.handler({
+      const results = await callTool<SimilarResults>(reg, {
         path: 'Folder/A.md',
         threshold: 0,
         exclude_folders: ['Templates'],
@@ -487,9 +523,13 @@ describe('getSimilarNotes — graph signals', () => {
   });
 
   it('honours limit and preserves linked-first ordering during truncation', async () => {
-    const { tool, cleanup } = await buildToolWithVault();
+    const { reg, cleanup } = await buildToolWithVault();
     try {
-      const results = await tool.handler({ path: 'Folder/A.md', threshold: 0, limit: 2 });
+      const results = await callTool<SimilarResults>(reg, {
+        path: 'Folder/A.md',
+        threshold: 0,
+        limit: 2,
+      });
       expect(results).toHaveLength(2);
       for (const r of results) {
         expect(r.signals.forward_link).toBe(true);
@@ -500,11 +540,11 @@ describe('getSimilarNotes — graph signals', () => {
   });
 
   it('silently skips broken wikilinks without throwing', async () => {
-    const { tool, cleanup } = await buildToolWithVault({
+    const { reg, cleanup } = await buildToolWithVault({
       body: '# A\n\n[[Nonexistent]] but [[B]] exists\n',
     });
     try {
-      const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+      const results = await callTool<SimilarResults>(reg, { path: 'Folder/A.md', threshold: 0 });
       expect(results.map((r) => r.path)).toContain('Folder/B.md');
       expect(results.map((r) => r.path)).not.toContain('Nonexistent');
     } finally {
@@ -513,11 +553,11 @@ describe('getSimilarNotes — graph signals', () => {
   });
 
   it('drops a candidate that is both excluded and missing, without raising', async () => {
-    const { tool, cleanup } = await buildToolWithVault({
+    const { reg, cleanup } = await buildToolWithVault({
       absentPaths: ['Folder/B.md'],
     });
     try {
-      const results = await tool.handler({
+      const results = await callTool<SimilarResults>(reg, {
         path: 'Folder/A.md',
         threshold: 0,
         exclude_folders: ['Folder/B.md'],
@@ -531,11 +571,11 @@ describe('getSimilarNotes — graph signals', () => {
 
   it('respects pathExists filter on linked targets too', async () => {
     // Folder/B.md is absent from disk, so it should be filtered out despite being linked
-    const { tool, cleanup } = await buildToolWithVault({
+    const { reg, cleanup } = await buildToolWithVault({
       absentPaths: ['Folder/B.md'],
     });
     try {
-      const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+      const results = await callTool<SimilarResults>(reg, { path: 'Folder/A.md', threshold: 0 });
       expect(results.map((r) => r.path)).not.toContain('Folder/B.md');
       expect(results.map((r) => r.path)).toContain('Folder/C.md');
       expect(results.map((r) => r.path)).toContain('Folder/D.md');
@@ -545,9 +585,9 @@ describe('getSimilarNotes — graph signals', () => {
   });
 
   it('stamps vault name on every result item', async () => {
-    const { tool, cleanup } = await buildToolWithVault({ body: '# A\n\nNo links here.\n' });
+    const { reg, cleanup } = await buildToolWithVault({ body: '# A\n\nNo links here.\n' });
     try {
-      const results = await tool.handler({ path: 'Folder/A.md', threshold: 0 });
+      const results = await callTool<SimilarResults>(reg, { path: 'Folder/A.md', threshold: 0 });
       expect(results.length).toBeGreaterThan(0);
       expect(results.every((r) => r.vault === 'v')).toBe(true);
     } finally {

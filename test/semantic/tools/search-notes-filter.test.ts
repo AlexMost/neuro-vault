@@ -5,7 +5,9 @@ import {
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
+import { callTool } from '../../_gate.js';
 import { makeSearchDeps } from './_helpers.js';
 
 function makeMockSource(p: string, embedding: number[] = [1, 0]): SmartSource {
@@ -45,13 +47,13 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths: async () => new Set(['Resources/a.md', 'Resources/b.md']),
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      const result = (await tool.handler({
+      const result = await callTool<SearchNotesOutput>(reg, {
         query: 'q',
         filter: { path_prefix: 'Resources/' },
-      })) as SearchNotesOutput;
+      });
 
       // every match path starts with the filter prefix — proves the filter
       // scoped the merged list, not just the semantic leg
@@ -77,13 +79,13 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      const result = (await tool.handler({
+      const result = await callTool<SearchNotesOutput>(reg, {
         query: 'q',
         filter: { tags: ['nonexistent'] },
-      })) as SearchNotesOutput;
+      });
 
       expect(result.matches).toEqual([]);
       expect(result.truncated).toBe(false);
@@ -102,14 +104,14 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      const result = (await tool.handler({
+      const result = await callTool<SearchNotesOutput>(reg, {
         query: 'q',
         effort: 'deep',
         filter: { tags: ['x'] },
-      })) as SearchNotesOutput;
+      });
 
       expect(result.matches).toEqual([]);
       expect(result).not.toHaveProperty('blockResults');
@@ -126,13 +128,13 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      const result = (await tool.handler({
+      const result = await callTool<SearchNotesOutput>(reg, {
         query: ['q1', 'q2'],
         filter: { tags: ['x'] },
-      })) as SearchNotesOutput;
+      });
 
       expect(result.matches).toEqual([]);
       expect(result.truncated).toBe(false);
@@ -150,10 +152,10 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths,
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      await tool.handler({ query: 'q' });
+      await callTool(reg, { query: 'q' });
       expect(listMatchingPaths).not.toHaveBeenCalled();
     } finally {
       await cleanup();
@@ -167,10 +169,10 @@ describe('search_notes — filter', () => {
       searchEngine: makeEngine(),
       modelKey: 'm',
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      await expect(tool.handler({ query: 'q', filter: {} })).rejects.toMatchObject({
+      await expect(callTool(reg, { query: 'q', filter: {} })).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
       });
     } finally {
@@ -189,11 +191,11 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths,
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
       await expect(
-        tool.handler({ query: 'q', filter: { frontmatter: { $where: '...' } } }),
+        callTool(reg, { query: 'q', filter: { frontmatter: { $where: '...' } } }),
       ).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
         message: expect.stringContaining('banned op'),
@@ -214,10 +216,10 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths,
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      await expect(tool.handler({ query: 'q', filter: { tags: ['x'] } })).rejects.toMatchObject({
+      await expect(callTool(reg, { query: 'q', filter: { tags: ['x'] } })).rejects.toMatchObject({
         code: 'DEPENDENCY_ERROR',
       });
     } finally {
@@ -239,10 +241,10 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths: async () => new Set(['Resources/a.md', 'Resources/b.md']),
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      await tool.handler({
+      await callTool(reg, {
         query: 'q',
         effort: 'deep',
         filter: { path_prefix: 'Resources/' },
@@ -272,13 +274,13 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths: async () => new Set(['Resources/a.md', 'Resources/b.md']),
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      const result = (await tool.handler({
+      const result = await callTool<SearchNotesOutput>(reg, {
         query: ['q1', 'q2'],
         filter: { path_prefix: 'Resources/' },
-      })) as SearchNotesOutput;
+      });
 
       expect(result.matches.map((m) => m.path).sort()).toEqual([
         'Resources/a.md',
@@ -306,13 +308,13 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths: async () => new Set(['Live/a.md', 'Live/b.md']),
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      const result = (await tool.handler({
+      const result = await callTool<SearchNotesOutput>(reg, {
         query: 'q',
         filter: { exclude_path_prefix: 'Archive/' },
-      })) as SearchNotesOutput;
+      });
 
       expect(result.matches.map((m) => m.path).sort()).toEqual(['Live/a.md', 'Live/b.md']);
     } finally {
@@ -320,7 +322,9 @@ describe('search_notes — filter', () => {
     }
   });
 
-  it('handler treats empty path_prefix array as empty filter (INVALID_ARGUMENT fallback)', async () => {
+  // `filter.path_prefix` is declared `.min(1)`, so the gate rejects an empty
+  // array before the handler's empty-filter fallback can see it.
+  it('rejects an empty path_prefix array at the gate', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
       embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
@@ -328,18 +332,23 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      await expect(tool.handler({ query: 'q', filter: { path_prefix: [] } })).rejects.toMatchObject(
-        { code: 'INVALID_ARGUMENT' },
-      );
+      await expect(
+        callTool(reg, { query: 'q', filter: { path_prefix: [] } }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_PARAMS',
+        details: { issues: [{ path: 'filter.path_prefix' }] },
+      });
     } finally {
       await cleanup();
     }
   });
 
-  it('handler treats empty exclude_path_prefix array as empty filter (INVALID_ARGUMENT fallback)', async () => {
+  // `filter.exclude_path_prefix` is declared `.min(1)`, so the gate rejects an empty
+  // array before the handler's empty-filter fallback can see it.
+  it('rejects an empty exclude_path_prefix array at the gate', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
       embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
@@ -347,12 +356,15 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
       await expect(
-        tool.handler({ query: 'q', filter: { exclude_path_prefix: [] } }),
-      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+        callTool(reg, { query: 'q', filter: { exclude_path_prefix: [] } }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_PARAMS',
+        details: { issues: [{ path: 'filter.exclude_path_prefix' }] },
+      });
     } finally {
       await cleanup();
     }
@@ -405,12 +417,12 @@ describe('search_notes — filter', () => {
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
     });
-    const tool = buildSearchNotesTool(deps);
+    const reg = registerTool(buildSearchNotesTool(deps));
 
     try {
-      await expect(tool.handler({ query: 'q', filter: { path_prefix: '' } })).rejects.toMatchObject(
-        { code: 'INVALID_ARGUMENT' },
-      );
+      await expect(
+        callTool(reg, { query: 'q', filter: { path_prefix: '' } }),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
     } finally {
       await cleanup();
     }

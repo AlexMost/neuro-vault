@@ -11,6 +11,7 @@ import type {
   SemanticBackend,
 } from '../../../src/lib/obsidian/semantic-backend.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import {
   buildSearchNotesTool,
   type SearchNotesInput,
@@ -27,6 +28,7 @@ import type {
   SearchEngine,
   SmartSource,
 } from '../../../src/modules/semantic/types.js';
+import { callTool } from '../../_gate.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 
 export const MODEL_KEY = 'bge-micro-v2';
@@ -287,8 +289,8 @@ export async function runSearch(opts: {
   });
 
   try {
-    const tool = buildSearchNotesTool(deps);
-    return (await tool.handler(opts.input)) as SearchNotesOutput;
+    const reg = registerTool(buildSearchNotesTool(deps));
+    return await callTool<SearchNotesOutput>(reg, opts.input);
   } finally {
     await cleanup();
   }
