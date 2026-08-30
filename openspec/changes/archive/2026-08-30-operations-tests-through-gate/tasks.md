@@ -16,7 +16,7 @@ its tests at the same instant).
 - [x] 1.5 Rewrite `read-notes.test.ts:282-292` — assert that a legacy `fields` key is rejected through the gate with `INVALID_PARAMS` and an unrecognized-key message, replacing the raw-schema strip assertion.
 - [x] 1.6 Add `read_notes` coverage the suite has never had: `paths: '["a.md","b.md"]'` coerces to a two-path array, and `vault: 'v'` against a single-vault registry is rejected as an unrecognized key.
 - [x] 1.7 Delete `validateReadNotesInput` and `VALID_CONTENT_MODES` from `src/modules/operations/tool-helpers.ts` and inline the surviving `string → string[]` widening into `buildReadNotesTool`; `content` passes through untouched. (Delivered as its own commit rather than folded into 1.3–1.6: 1.3–1.6 touch no `src/` file and are green on their own, so no intermediate commit is broken.)
-- [ ] 1.8 Run `npm test && npm run lint && npm run typecheck`. Open PR 1 to `main` with `Refs #112`, naming in the body every previously-green test the migration broke and how each was triaged. **Pause for review before group 2.**
+- [x] 1.8 Run `npm test && npm run lint && npm run typecheck`. Open PR 1 to `main` with `Refs #112`, naming in the body every previously-green test the migration broke and how each was triaged. **Pause for review before group 2.**
 
 ## 2. Operations suite — remaining nine files plus new coverage (PR 2)
 
@@ -56,10 +56,10 @@ rejection case. Tools with coercible fields also get (d), named per task.
 
 **Parallel-safe: 4.1–4.4 touch disjoint files.** 4.5–4.7 are sequential after them.
 
-- [ ] 4.1 Write `docs/adr/0015-<slug>.md` from `docs/adr/0000-template.md`: zod owns schema shape and fails as `INVALID_PARAMS`; `INVALID_ARGUMENT` is reserved for semantic argument faults a schema cannot express. Status Accepted. Add its `docs/adr/INDEX.md` row and append "refined in part by [0015]" to the 0003 row (follow the 0001 row's existing formatting).
-- [ ] 4.2 Correct `docs/architecture/mcp-server-shape.md` §"Tool handler contract" — its first bullet currently says handlers throw `INVALID_ARGUMENT` on bad input with no mention of the gate. Describe the gate (coercion, `.strict()`, `INVALID_PARAMS` before the handler), the division of responsibility, and the rule that tool tests cross the same seam a client does.
-- [ ] 4.3 Add to `docs/architecture/input-coercion.md` that the same wrapper closes the object with `.strict()`, so unknown keys are rejected rather than stripped, and cross-link `mcp-server-shape.md`.
-- [ ] 4.4 Add one line to `AGENTS.md` §"Run / check": tool tests reach tools through `registerTool`, never `buildXTool(...).handler` — the gate coerces, closes the schema, and returns `INVALID_PARAMS`.
-- [ ] 4.5 Sweep all of `docs/` for other prose asserting `INVALID_ARGUMENT` for schema-shaped failures; an architecture-scoped grep alone misses `docs/guide/`.
-- [ ] 4.6 Run `openspec validate --all` and `npm test && npm run lint && npm run typecheck`.
-- [ ] 4.7 `/opsx:verify` → retrospective → `/opsx:archive` (which syncs both delta specs into `openspec/specs/`), then open PR 4 with `Closes #112`.
+- [x] 4.1 Write `docs/adr/0015-<slug>.md` from `docs/adr/0000-template.md`: zod owns schema shape and fails as `INVALID_PARAMS`; `INVALID_ARGUMENT` is reserved for semantic argument faults a schema cannot express. Status Accepted. Add its `docs/adr/INDEX.md` row and append "refined in part by [0015]" to the 0003 row (follow the 0001 row's existing formatting).
+- [x] 4.2 Correct `docs/architecture/mcp-server-shape.md` §"Tool handler contract" — its first bullet currently says handlers throw `INVALID_ARGUMENT` on bad input with no mention of the gate. Describe the gate (coercion, `.strict()`, `INVALID_PARAMS` before the handler), the division of responsibility, and the rule that tool tests cross the same seam a client does.
+- [x] 4.3 Add to `docs/architecture/input-coercion.md` that the same wrapper closes the object with `.strict()`, so unknown keys are rejected rather than stripped, and cross-link `mcp-server-shape.md`.
+- [x] 4.4 Add one line to `AGENTS.md` §"Run / check": tool tests reach tools through `registerTool`, never `buildXTool(...).handler` — the gate coerces, closes the schema, and returns `INVALID_PARAMS`.
+- [x] 4.5 Sweep all of `docs/` for other prose asserting `INVALID_ARGUMENT` for schema-shaped failures; an architecture-scoped grep alone misses `docs/guide/`.
+- [x] 4.6 Run `openspec validate --all` and `npm test && npm run lint && npm run typecheck`.
+- [x] 4.7 `/opsx:verify` → retrospective → `/opsx:archive` (which syncs both delta specs into `openspec/specs/`), then open PR 4 with `Closes #112`.
