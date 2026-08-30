@@ -1,0 +1,72 @@
+## MODIFIED Requirements
+
+### Requirement: read_notes selects body granularity via a `content` mode
+
+`read_notes` SHALL accept an optional `content` parameter with exactly the values
+`'full'`, `'preview'`, or `'frontmatter'`. When `content` is omitted, the effective mode
+SHALL be derived from the number of **distinct** requested paths (after de-duplication):
+exactly one distinct path SHALL default to `'full'`, and two or more distinct paths SHALL
+default to `'preview'`. An explicitly supplied `content` value SHALL always take precedence
+over this count-based default. `read_notes` SHALL NOT expose a `fields` parameter. `paths`
+semantics (string-or-array, 1–50, dedup, per-item errors) are otherwise unchanged.
+
+Argument shape — the `content` enum, the `paths` string-or-array union, and its 1–50 bound —
+SHALL be enforced by the tool's declared input schema at the registration gate, so a
+violation fails with `INVALID_PARAMS` before the handler runs. `read_notes` SHALL NOT
+re-check any of these post-gate; `INVALID_ARGUMENT` remains reserved for per-item path
+faults (traversal, absolute paths), which the schema cannot express.
+
+#### Scenario: a single path defaults to the full body
+
+- **WHEN** `read_notes` is called with exactly one distinct path and no `content` parameter
+- **THEN** the successful item returns `{ path, frontmatter, content }` with the complete body
+  and no `truncated` field
+
+#### Scenario: multiple paths default to preview
+
+- **WHEN** `read_notes` is called with two or more distinct paths and no `content` parameter
+- **THEN** each successful item returns frontmatter plus a preview body and a `truncated` flag
+  (full body only where the body is within the preview bound)
+
+#### Scenario: duplicate of a single path still counts as one
+
+- **WHEN** `read_notes` is called with the same path repeated and no `content` parameter
+- **THEN** the request is treated as one distinct path and defaults to `'full'`
+
+#### Scenario: explicit `content` overrides the count-based default
+
+- **WHEN** `read_notes` is called with `content: 'full'` and two or more paths, **OR** with
+  `content: 'preview'` and a single path
+- **THEN** the explicit mode is applied to every item regardless of the path count
+
+#### Scenario: `content: 'frontmatter'` returns frontmatter only
+
+- **WHEN** `read_notes` is called with `content: 'frontmatter'`
+- **THEN** each successful item returns `{ path, frontmatter }` with no `content` field and no
+  `truncated` field
+
+#### Scenario: an invalid `content` value is rejected
+
+- **WHEN** `read_notes` is called with a `content` value other than `'full'`, `'preview'`, or
+  `'frontmatter'` (e.g. `'none'`)
+- **THEN** the call SHALL fail with an `INVALID_PARAMS` error naming the `content` field and
+  the three allowed values
+
+#### Scenario: an out-of-range `paths` argument is rejected at the gate
+
+- **WHEN** `read_notes` is called with `paths` as an empty string, an empty array, or an array
+  of more than 50 entries
+- **THEN** the call SHALL fail with `INVALID_PARAMS` identifying `paths`, not with
+  `INVALID_ARGUMENT`
+
+#### Scenario: a legacy `fields` parameter is rejected
+
+- **WHEN** `read_notes` is called with a `fields` key (the removed parameter)
+- **THEN** the call SHALL fail with `INVALID_PARAMS` reporting `fields` as an unrecognized key,
+  consistent with the `tolerant-arguments` requirement that unknown keys remain rejected
+
+#### Scenario: a stringified `paths` array is accepted
+
+- **WHEN** `read_notes` is called with `paths` set to the string `'["a.md","b.md"]'`
+- **THEN** the gate SHALL parse it to `['a.md', 'b.md']` and the call SHALL proceed with two
+  distinct paths

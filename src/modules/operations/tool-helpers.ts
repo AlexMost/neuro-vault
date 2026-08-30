@@ -1,10 +1,5 @@
 import { ToolHandlerError } from '../../lib/tool-response.js';
-import type {
-  ContentMode,
-  OperationsErrorCode,
-  ReadNotesToolInput,
-  SetPropertyToolInput,
-} from './types.js';
+import type { OperationsErrorCode, SetPropertyToolInput } from './types.js';
 import type {
   NoteIdentifier,
   PropertyType,
@@ -117,38 +112,4 @@ export function normalizePath(raw: string): string {
   } catch (err) {
     throw invalidArgument((err as Error).message, 'path');
   }
-}
-
-export const VALID_CONTENT_MODES: readonly ContentMode[] = ['full', 'preview', 'frontmatter'];
-
-export function validateReadNotesInput(input: ReadNotesToolInput): {
-  paths: string[];
-  content: ContentMode | undefined;
-} {
-  let paths: string[];
-  if (typeof input.paths === 'string') {
-    if (input.paths === '') {
-      throw invalidArgument('paths must not be empty', 'paths');
-    }
-    paths = [input.paths];
-  } else if (Array.isArray(input.paths)) {
-    paths = input.paths;
-  } else {
-    throw invalidArgument('paths must be a string or an array of strings', 'paths');
-  }
-  if (paths.length < 1 || paths.length > 50) {
-    throw invalidArgument('paths must contain between 1 and 50 entries', 'paths');
-  }
-  let content: ContentMode | undefined;
-  if (input.content === undefined) {
-    content = undefined;
-  } else if (VALID_CONTENT_MODES.includes(input.content)) {
-    content = input.content;
-  } else {
-    throw invalidArgument(
-      `unknown content mode '${String(input.content)}'; allowed: ${VALID_CONTENT_MODES.join(', ')}`,
-      'content',
-    );
-  }
-  return { paths, content };
 }
