@@ -10,7 +10,7 @@ import {
   sliceFrontmatterYaml,
   splitFrontmatter,
 } from '../../lib/obsidian/frontmatter.js';
-import { splitRawFrontmatter } from '../../lib/obsidian/in-place-edit.js';
+import { applyReplace, splitRawFrontmatter } from '../../lib/obsidian/in-place-edit.js';
 import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
 import { resolveNoteName } from './resolve-note-name.js';
 import { invalidArgument } from './tool-helpers.js';
@@ -23,6 +23,8 @@ import type {
   NoteIdentifier,
   PropertyListEntry,
   RemovePropertyInput,
+  ReplaceFullBodyInput,
+  ReplaceInNoteInput,
   SetPropertyInput,
   TagListEntry,
   VaultProvider,
@@ -217,7 +219,7 @@ export class FsVaultProvider implements VaultProvider {
     identifier: NoteIdentifier,
     mutate: (doc: ReturnType<typeof parseDocument>) => boolean,
   ): Promise<void> {
-    const relPath = await this.resolveIdentifierPath(identifier);
+    const relPath = await this.resolveExisting(identifier);
     const raw = await this.readRaw(relPath);
 
     const { prefix, body } = splitRawFrontmatter(raw);
@@ -292,9 +294,42 @@ export class FsVaultProvider implements VaultProvider {
     }
   }
 
-  private async resolveIdentifierPath(identifier: NoteIdentifier): Promise<string> {
+  /**
+   * Resolve an identifier for a note that must already exist: `kind: 'path'`
+   * normalizes, `kind: 'name'` goes through the scoped basename index —
+   * NOT_FOUND on no match, AMBIGUOUS_MATCH on several, never a silent
+   * first-match write. `createNote` uses `resolveNew` instead (design D3).
+   */
+  private async resolveExisting(identifier: NoteIdentifier): Promise<string> {
     if (identifier.kind === 'path') return normalizeNotePath(identifier.value);
     return resolveNoteName(this.reader, identifier.value);
+  }
+
+  async replaceInNote(input: ReplaceInNoteInput): Promise<void> {
+    const relPath = await this.resolveExisting(input.identifier);
+    const { prefix, body } = splitRawFrontmatter(await this.readRaw(relPath));
+
+    const result = applyReplace(body, input.find, input.content);
+    if ('error' in result) {
+      if (result.error === 'NOT_FOUND') {
+        throw new ToolHandlerError('NOT_FOUND', `Find text not present in body of ${relPath}`, {
+          details: { path: relPath },
+        });
+      }
+      throw new ToolHandlerError(
+        'AMBIGUOUS_MATCH',
+        `Find text matched ${result.lines.length} times in ${relPath} at lines ${result.lines.join(', ')}; make 'replace' more specific (extend the anchor with surrounding text) or omit it to rewrite the whole body`,
+        { details: { path: relPath, matches: result.lines } },
+      );
+    }
+
+    await this.writeRaw(relPath, prefix + result.body);
+  }
+
+  async replaceFullBody(input: ReplaceFullBodyInput): Promise<void> {
+    const relPath = await this.resolveExisting(input.identifier);
+    const { prefix } = splitRawFrontmatter(await this.readRaw(relPath));
+    await this.writeRaw(relPath, prefix + input.content);
   }
 
   async listProperties(): Promise<PropertyListEntry[]> {
