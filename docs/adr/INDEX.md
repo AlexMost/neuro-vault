@@ -10,7 +10,7 @@ Template: [0000-template.md](0000-template.md).
 | ---- | ----------------------------------------------------------------------------------------------------- | -------- |
 | 0001 | [Spec workflow: OpenSpec + superpowers-bridge](0001-spec-workflow-openspec-superpowers.md)            | Accepted; doc-altitude map superseded in part by [0011](0011-retire-frozen-doc-layer.md) |
 | 0002 | [ESM + TypeScript strict; `tsc --noEmit` is the build source of truth](0002-esm-typescript-strict.md) | Accepted |
-| 0003 | [Structured tool errors via `ToolHandlerError`](0003-structured-errors-toolhandlererror.md)           | Accepted |
+| 0003 | [Structured tool errors via `ToolHandlerError`](0003-structured-errors-toolhandlererror.md)           | Accepted; input-validation instruction refined in part by [0015](0015-input-gate-owns-schema-validation.md) |
 | 0004 | [External processes via `execFile`, never a shell string](0004-execfile-no-shell.md)                  | Accepted |
 | 0005 | [MCP parameter dictionary: one concept = one name](0005-mcp-parameter-dictionary.md)                  | Accepted |
 | 0006 | [Smart Connections as the read-only embedding corpus](0006-smart-connections-corpus.md)               | Superseded by [0013](0013-own-embedding-corpus.md), [0014](0014-background-corpus-freshness.md) |
@@ -22,3 +22,4 @@ Template: [0000-template.md](0000-template.md).
 | 0012 | [Vault conventions leave the `instructions` channel](0012-conventions-leave-the-instructions-channel.md) | Accepted |
 | 0013 | [The server builds and owns its embedding corpus](0013-own-embedding-corpus.md)                        | Accepted |
 | 0014 | [Background corpus freshness, and the removal it enabled](0014-background-corpus-freshness.md)         | Accepted |
+| 0015 | [The registration gate owns schema validation; `INVALID_ARGUMENT` is for semantic faults](0015-input-gate-owns-schema-validation.md) | Accepted |
