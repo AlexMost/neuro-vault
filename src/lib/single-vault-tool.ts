@@ -63,7 +63,7 @@ export function buildSingleVaultTool<TInput extends { vault?: string }, TOutput>
   return {
     name: spec.name,
     title: spec.title,
-    description: block === '' ? spec.description : `${spec.description}\n\n${block.trimStart()}`,
+    description: block === '' ? spec.description : `${spec.description}\n\n${block}`,
     inputSchema: z.object({ ...vaultParamShape(registry), ...spec.inputShape }),
     handler: async (input) =>
       spec.semantic === true

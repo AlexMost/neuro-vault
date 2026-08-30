@@ -106,7 +106,7 @@ describe('buildMultiVaultTool', () => {
     );
   });
 
-  it('separates the multi-vault block with a blank line at column 0 for a multi-line description', () => {
+  it('appends the multi-vault block as its own final paragraph for a multi-line description', () => {
     const tool = buildMultiVaultTool<Input, { results: string[] }, unknown>(registryOf('a', 'b'), {
       name: 'list_tags',
       title: 'List Tags',
@@ -120,7 +120,7 @@ describe('buildMultiVaultTool', () => {
     );
   });
 
-  it('keeps the single leading-space separator for a single-paragraph description', () => {
+  it('appends the multi-vault block as its own final paragraph for a single-paragraph description too', () => {
     const tool = buildMultiVaultTool<Input, { results: string[] }, unknown>(registryOf('a', 'b'), {
       name: 'list_tags',
       title: 'List Tags',
@@ -129,7 +129,9 @@ describe('buildMultiVaultTool', () => {
       runForEntry: async (entry) => ({ results: [entry.name] }),
       single: withVaultName,
     });
-    expect(tool.description).toBe(`Domain prose. Registered vaults: "a", "b". ${FAN_OUT_SUFFIX}`);
+    expect(tool.description).toBe(
+      `Domain prose.\n\nRegistered vaults: "a", "b". ${FAN_OUT_SUFFIX}`,
+    );
   });
 
   it('rejects an inputShape that declares vault at the type level', () => {

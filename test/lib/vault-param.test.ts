@@ -28,6 +28,12 @@ describe('FAN_OUT_SUFFIX', () => {
     expect(text).toContain(FAN_OUT_SUFFIX);
   });
 
+  it('returns the bare block — the builders own its placement, not this helper', () => {
+    expect(describeMultiVault(registryOf('alpha', 'beta'), FAN_OUT_SUFFIX)).toBe(
+      `Registered vaults: "alpha", "beta". ${FAN_OUT_SUFFIX}`,
+    );
+  });
+
   it('collapses to an empty string in single-vault mode', () => {
     expect(describeMultiVault(registryOf('only'), FAN_OUT_SUFFIX)).toBe('');
   });

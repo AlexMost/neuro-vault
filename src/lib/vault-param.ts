@@ -8,12 +8,8 @@ import type { IVaultRegistry } from './vault-registry.js';
  * single-vault mode the parameter is omitted entirely so the LLM doesn't see
  * a field it can't usefully fill.
  *
- * Spread it into the tool's input schema:
- *
- *   const inputSchema = z.object({
- *     ...vaultParamShape(registry),
- *     name: z.string().optional(),
- *   });
+ * The two dispatch builders spread it into the tool's input schema alongside
+ * the spec's domain `inputShape`; tool modules never spread it themselves.
  */
 export function vaultParamShape(
   registry: IVaultRegistry,
@@ -22,13 +18,13 @@ export function vaultParamShape(
 }
 
 /**
- * Returns the multi-vault description suffix for a tool — or an empty string
- * in single-vault mode. Wraps the suffix with a leading space so callers can
- * always concatenate:
+ * Returns the multi-vault description block for a tool — or an empty string in
+ * single-vault mode. The block is bare: placement belongs to its two callers,
+ * `buildSingleVaultTool` and `buildMultiVaultTool`, which append it as the
+ * description's own final paragraph. Tool modules never concatenate it inline;
+ * an ESLint boundary on `src/modules/**` enforces that.
  *
- *   description: 'Base description.' + describeMultiVault(registry, 'Pass `vault:` to...'),
- *
- * Every suffix is prefixed with the registered vault names. `vaultParamShape`
+ * Every block is prefixed with the registered vault names. `vaultParamShape`
  * contributes a bare optional string with no enum, so this is the only place a
  * model learns which names are valid — without it the names are discoverable
  * only reactively, by fanning out or by eating a `VAULT_REQUIRED` error.
@@ -39,7 +35,7 @@ export function describeMultiVault(registry: IVaultRegistry, suffix: string): st
     .names()
     .map((n) => `"${n}"`)
     .join(', ');
-  return ` Registered vaults: ${names}. ${suffix}`;
+  return `Registered vaults: ${names}. ${suffix}`;
 }
 
 /**
