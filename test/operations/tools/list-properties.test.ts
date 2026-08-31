@@ -1,17 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { buildListPropertiesTool } from '../../../src/modules/operations/tools/list-properties.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
-import { makeProvider } from './_helpers.js';
+import { readerOver } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 function buildReg(names: string[] = ['v']) {
   const registry = makeTestRegistry(
     names.map((name) => ({
       name,
-      provider: makeProvider({
-        listProperties: vi.fn().mockResolvedValue([{ name: 'status', count: 2 }]),
+      reader: readerOver({
+        'a.md': { frontmatter: { status: 'open' } },
+        'b.md': { frontmatter: { status: 'done' } },
       }),
     })),
   );

@@ -15,7 +15,6 @@ export interface GetVaultOverviewDeps {
 async function runOverviewForEntry(entry: IVaultEntry): Promise<VaultOverview> {
   return computeVaultOverview({
     reader: entry.reader,
-    provider: entry.provider,
     graph: entry.graph,
     readConventions: entry.readConventions,
   });

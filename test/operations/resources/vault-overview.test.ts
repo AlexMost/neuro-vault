@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { buildVaultOverviewResource } from '../../../src/modules/operations/resources/vault-overview.js';
 import { buildOperationsResources } from '../../../src/modules/operations/resources/index.js';
 import type { IVaultEntry } from '../../../src/lib/vault-registry.js';
-import { makeGraph, makeProvider, makeReader } from '../tools/_helpers.js';
+import { makeGraph, makeReader, readerOver } from '../tools/_helpers.js';
 import { makeTestRegistry } from '../tools/_test-registry.js';
 
 function makeEntry(overrides: Partial<IVaultEntry> = {}): IVaultEntry {
@@ -11,7 +11,6 @@ function makeEntry(overrides: Partial<IVaultEntry> = {}): IVaultEntry {
     name: 'v',
     path: '/v',
     reader: makeReader(),
-    provider: makeProvider(),
     graph: makeGraph(),
     listMatchingPaths: async () => new Set<string>(),
     readConventions: async () => null,
@@ -39,16 +38,11 @@ describe('operations.vaultOverview resource', () => {
   });
 
   it('returns the same snapshot as computeVaultOverview, JSON-encoded', async () => {
-    const reader = makeReader({
-      scan: vi.fn().mockResolvedValue(['Notes/a.md']),
-    });
-    const provider = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'x', count: 1 }]),
-    });
+    const reader = readerOver({ 'Notes/a.md': { frontmatter: { tags: ['x'] } } });
     const graph = makeGraph();
     const res = buildVaultOverviewResource({
       uri: 'vault://overview',
-      entry: makeEntry({ reader, provider, graph }),
+      entry: makeEntry({ reader, graph }),
     });
 
     const payload = await res.handler(new URL('vault://overview'));
@@ -87,19 +81,17 @@ describe('buildOperationsResources', () => {
   });
 
   it('each resource handler returns the overview of its own vault — not the last one registered', async () => {
-    const readerA = makeReader({ scan: vi.fn().mockResolvedValue(['A/note.md']) });
-    const readerB = makeReader({
-      scan: vi.fn().mockResolvedValue(['B/note1.md', 'B/note2.md']),
-    });
-    const providerA = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'fromA', count: 7 }]),
-    });
-    const providerB = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'fromB', count: 11 }]),
-    });
+    const aTagged = { frontmatter: { tags: ['fromA'] } };
+    const bTagged = { frontmatter: { tags: ['fromB'] } };
+    const readerA = readerOver(
+      Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`A/note${i}.md`, aTagged])),
+    );
+    const readerB = readerOver(
+      Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`B/note${i}.md`, bTagged])),
+    );
     const registry = makeTestRegistry([
-      makeEntry({ name: 'a', path: '/a', reader: readerA, provider: providerA }),
-      makeEntry({ name: 'b', path: '/b', reader: readerB, provider: providerB }),
+      makeEntry({ name: 'a', path: '/a', reader: readerA }),
+      makeEntry({ name: 'b', path: '/b', reader: readerB }),
     ]);
 
     const resources = buildOperationsResources({ registry });
@@ -118,13 +110,13 @@ describe('buildOperationsResources', () => {
     const aPayload = JSON.parse((aResp.contents[0] as { text: string }).text);
     const bPayload = JSON.parse((bResp.contents[0] as { text: string }).text);
 
-    expect(aPayload.total_notes).toBe(1);
-    expect(bPayload.total_notes).toBe(2);
+    expect(aPayload.total_notes).toBe(7);
+    expect(bPayload.total_notes).toBe(11);
     expect(aPayload.top_tags).toEqual([{ name: 'fromA', count: 7 }]);
     expect(bPayload.top_tags).toEqual([{ name: 'fromB', count: 11 }]);
 
-    // Also verify the providers were actually called per-vault — no shared deps.
-    expect(providerA.listTags).toHaveBeenCalledTimes(1);
-    expect(providerB.listTags).toHaveBeenCalledTimes(1);
+    // Also verify each vault's own reader was actually used — no shared deps.
+    expect(readerA.readNotes).toHaveBeenCalled();
+    expect(readerB.readNotes).toHaveBeenCalled();
   });
 });

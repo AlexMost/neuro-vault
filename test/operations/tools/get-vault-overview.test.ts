@@ -7,7 +7,7 @@ import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
-import { makeGraph, makeProvider, makeReader } from './_helpers.js';
+import { makeGraph, makeReader, readerOver } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 type SingleOverview = { vault: string } & VaultOverview;
@@ -24,9 +24,7 @@ function registryOf(...names: string[]): IVaultRegistry {
 
 describe('operations.getVaultOverview tool', () => {
   it('declares the expected name, title, and empty input schema', () => {
-    const registry = makeTestRegistry([
-      { name: 'v', reader: makeReader(), provider: makeProvider(), graph: makeGraph() },
-    ]);
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader(), graph: makeGraph() }]);
     const tool = buildGetVaultOverviewTool({ registry });
     expect(tool.name).toBe('get_vault_overview');
     expect(tool.title).toBe('Get Vault Overview');
@@ -34,14 +32,9 @@ describe('operations.getVaultOverview tool', () => {
   });
 
   it('computes the overview through computeVaultOverview and includes vault field', async () => {
-    const reader = makeReader({
-      scan: vi.fn().mockResolvedValue(['Notes/a.md']),
-    });
-    const provider = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'x', count: 1 }]),
-    });
+    const reader = readerOver({ 'Notes/a.md': { frontmatter: { tags: ['x'] } } });
     const graph = makeGraph();
-    const registry = makeTestRegistry([{ name: 'v', reader, provider, graph }]);
+    const registry = makeTestRegistry([{ name: 'v', reader, graph }]);
     const result = await callTool<SingleOverview>(
       registerTool(buildGetVaultOverviewTool({ registry })),
       {},
@@ -54,17 +47,14 @@ describe('operations.getVaultOverview tool', () => {
   });
 
   it('fans out across two vaults when vault: is omitted in multi-vault mode', async () => {
-    const readerA = makeReader({ scan: vi.fn().mockResolvedValue(['a.md']) });
-    const readerB = makeReader({ scan: vi.fn().mockResolvedValue(['b.md', 'c.md']) });
-    const providerA = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'alpha', count: 1 }]),
-    });
-    const providerB = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'beta', count: 2 }]),
+    const readerA = readerOver({ 'a.md': { frontmatter: { tags: ['alpha'] } } });
+    const readerB = readerOver({
+      'b.md': { frontmatter: { tags: ['beta'] } },
+      'c.md': { frontmatter: { tags: ['beta'] } },
     });
     const registry = makeTestRegistry([
-      { name: 'vault-a', reader: readerA, provider: providerA, graph: makeGraph() },
-      { name: 'vault-b', reader: readerB, provider: providerB, graph: makeGraph() },
+      { name: 'vault-a', reader: readerA, graph: makeGraph() },
+      { name: 'vault-b', reader: readerB, graph: makeGraph() },
     ]);
     const result = await callTool<{
       results_by_vault: Array<SingleOverview>;
@@ -87,19 +77,16 @@ describe('operations.getVaultOverview tool', () => {
   });
 
   it('returns failed_vaults when one vault overview computation rejects', async () => {
-    const readerA = makeReader({ scan: vi.fn().mockResolvedValue(['a.md']) });
-    const readerB = makeReader({ scan: vi.fn().mockResolvedValue(['b.md']) });
-    const providerA = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'alpha', count: 1 }]),
-    });
-    const providerB = makeProvider({
-      listTags: vi
+    const readerA = readerOver({ 'a.md': { frontmatter: { tags: ['alpha'] } } });
+    const readerB = makeReader({
+      scan: vi.fn().mockResolvedValue(['b.md']),
+      readNotes: vi
         .fn()
         .mockRejectedValue(new ToolHandlerError('CLI_UNAVAILABLE', 'obsidian not running')),
     });
     const registry = makeTestRegistry([
-      { name: 'vault-a', reader: readerA, provider: providerA, graph: makeGraph() },
-      { name: 'vault-b', reader: readerB, provider: providerB, graph: makeGraph() },
+      { name: 'vault-a', reader: readerA, graph: makeGraph() },
+      { name: 'vault-b', reader: readerB, graph: makeGraph() },
     ]);
     const result = await callTool<{
       results_by_vault: Array<SingleOverview>;
@@ -122,11 +109,11 @@ describe('operations.getVaultOverview tool', () => {
   });
 
   it('single-vault path still returns { vault, ...overview } flat shape (regression)', async () => {
-    const reader = makeReader({ scan: vi.fn().mockResolvedValue(['x.md', 'y.md']) });
-    const provider = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'tag1', count: 3 }]),
+    const reader = readerOver({
+      'x.md': { frontmatter: { tags: ['tag1'] } },
+      'y.md': { frontmatter: { tags: ['tag1'] } },
     });
-    const registry = makeTestRegistry([{ name: 'solo', reader, provider, graph: makeGraph() }]);
+    const registry = makeTestRegistry([{ name: 'solo', reader, graph: makeGraph() }]);
     const result = await callTool<SingleOverview>(
       registerTool(buildGetVaultOverviewTool({ registry })),
       {},
@@ -143,7 +130,6 @@ describe('operations.getVaultOverview tool', () => {
       {
         name: 'v',
         reader: makeReader(),
-        provider: makeProvider(),
         graph: makeGraph(),
         readConventions: async () => '# House rules',
       },
@@ -160,14 +146,12 @@ describe('operations.getVaultOverview tool', () => {
       {
         name: 'vault-a',
         reader: makeReader(),
-        provider: makeProvider(),
         graph: makeGraph(),
         readConventions: async () => 'rules A',
       },
       {
         name: 'vault-b',
         reader: makeReader(),
-        provider: makeProvider(),
         graph: makeGraph(),
         readConventions: async () => null,
       },
@@ -185,9 +169,7 @@ describe('operations.getVaultOverview tool', () => {
   });
 
   it('advertises the conventions field in its description', () => {
-    const registry = makeTestRegistry([
-      { name: 'v', reader: makeReader(), provider: makeProvider(), graph: makeGraph() },
-    ]);
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader(), graph: makeGraph() }]);
     const description = registerTool(buildGetVaultOverviewTool({ registry })).spec.description;
     expect(description).toMatch(
       /the response carries them in `conventions`.*Follow them when reading, writing, or organising notes here/,
@@ -204,9 +186,7 @@ describe('operations.getVaultOverview tool', () => {
   });
 
   it('rejects a vault argument in single-vault mode', async () => {
-    const registry = makeTestRegistry([
-      { name: 'v', reader: makeReader(), provider: makeProvider(), graph: makeGraph() },
-    ]);
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader(), graph: makeGraph() }]);
 
     await expect(
       callTool(registerTool(buildGetVaultOverviewTool({ registry })), { vault: 'v' }),

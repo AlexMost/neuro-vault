@@ -1,4 +1,5 @@
 import type { IFanOutResult } from '../../../lib/fan-out.js';
+import { listProperties } from '../../../lib/obsidian/vault-aggregates.js';
 import { buildMultiVaultTool, withVaultName } from '../../../lib/multi-vault-tool.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
@@ -16,7 +17,7 @@ export interface ListPropertiesDeps {
 }
 
 async function runForEntry(entry: IVaultEntry): Promise<FanOutPayload> {
-  const results = await entry.provider.listProperties();
+  const results = await listProperties(entry.reader);
   return { results };
 }
 

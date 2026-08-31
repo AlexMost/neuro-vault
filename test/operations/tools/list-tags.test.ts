@@ -6,7 +6,7 @@ import { callTool } from '../../_gate.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
-import { makeProvider } from './_helpers.js';
+import { makeReader, readerOver } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 function regOf(registry: IVaultRegistry) {
@@ -17,54 +17,47 @@ function registryOf(...names: string[]): IVaultRegistry {
   return makeTestRegistry(
     names.map((name) => ({
       name,
-      provider: makeProvider({ listTags: vi.fn().mockResolvedValue([{ name: 'x', count: 1 }]) }),
+      reader: readerOver({ 'n.md': { frontmatter: { tags: ['x'] } } }),
     })),
   );
 }
 
 describe('operations.listTags handler', () => {
-  it('forwards to provider and wraps result with vault', async () => {
-    const provider = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'mcp', count: 3 }]),
-    });
-    const registry = makeTestRegistry([{ name: 'v', provider }]);
+  it('derives tag counts from the vault reader and wraps result with vault', async () => {
+    const tagged = { frontmatter: { tags: ['mcp'] } };
+    const reader = readerOver({ 'a.md': tagged, 'b.md': tagged, 'c.md': tagged });
+    const registry = makeTestRegistry([{ name: 'v', reader }]);
     expect(await callTool(regOf(registry), {})).toEqual({
       vault: 'v',
       results: [{ name: 'mcp', count: 3 }],
     });
-    expect(provider.listTags).toHaveBeenCalled();
+    expect(reader.readNotes).toHaveBeenCalled();
   });
 
   it('routes to the named vault in multi-vault mode when vault is provided', async () => {
-    const providerA = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'fromA', count: 1 }]),
-    });
-    const providerB = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'fromB', count: 2 }]),
-    });
+    const readerA = readerOver({ 'a.md': { frontmatter: { tags: ['fromA'] } } });
+    const bTagged = { frontmatter: { tags: ['fromB'] } };
+    const readerB = readerOver({ 'b1.md': bTagged, 'b2.md': bTagged });
     const registry = makeTestRegistry([
-      { name: 'a', provider: providerA },
-      { name: 'b', provider: providerB },
+      { name: 'a', reader: readerA },
+      { name: 'b', reader: readerB },
     ]);
 
     expect(await callTool(regOf(registry), { vault: 'b' })).toEqual({
       vault: 'b',
       results: [{ name: 'fromB', count: 2 }],
     });
-    expect(providerA.listTags).not.toHaveBeenCalled();
-    expect(providerB.listTags).toHaveBeenCalledTimes(1);
+    expect(readerA.readNotes).not.toHaveBeenCalled();
+    expect(readerB.readNotes).toHaveBeenCalledTimes(1);
   });
 
   it('fans out across all registered vaults when vault is omitted in multi-vault mode', async () => {
-    const providerA = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'fromA', count: 1 }]),
-    });
-    const providerB = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'fromB', count: 2 }]),
-    });
+    const readerA = readerOver({ 'a.md': { frontmatter: { tags: ['fromA'] } } });
+    const bTagged = { frontmatter: { tags: ['fromB'] } };
+    const readerB = readerOver({ 'b1.md': bTagged, 'b2.md': bTagged });
     const registry = makeTestRegistry([
-      { name: 'a', provider: providerA },
-      { name: 'b', provider: providerB },
+      { name: 'a', reader: readerA },
+      { name: 'b', reader: readerB },
     ]);
 
     const result = await callTool(regOf(registry), {});
@@ -76,22 +69,28 @@ describe('operations.listTags handler', () => {
       skipped_vaults: [],
       failed_vaults: [],
     });
-    expect(providerA.listTags).toHaveBeenCalledTimes(1);
-    expect(providerB.listTags).toHaveBeenCalledTimes(1);
+    expect(readerA.readNotes).toHaveBeenCalledTimes(1);
+    expect(readerB.readNotes).toHaveBeenCalledTimes(1);
   });
 
-  it('returns failed_vaults when one vault provider rejects', async () => {
-    const providerA = makeProvider({
-      listTags: vi.fn().mockResolvedValue([{ name: 'mcp', count: 5 }]),
+  it('returns failed_vaults when one vault reader rejects', async () => {
+    const tagged = { frontmatter: { tags: ['mcp'] } };
+    const readerA = readerOver({
+      'a1.md': tagged,
+      'a2.md': tagged,
+      'a3.md': tagged,
+      'a4.md': tagged,
+      'a5.md': tagged,
     });
-    const providerB = makeProvider({
-      listTags: vi
+    const readerB = makeReader({
+      scan: vi.fn().mockResolvedValue(['b.md']),
+      readNotes: vi
         .fn()
         .mockRejectedValue(new ToolHandlerError('CLI_NOT_FOUND', 'obsidian not on PATH')),
     });
     const registry = makeTestRegistry([
-      { name: 'a', provider: providerA },
-      { name: 'b', provider: providerB },
+      { name: 'a', reader: readerA },
+      { name: 'b', reader: readerB },
     ]);
 
     const result = await callTool<{

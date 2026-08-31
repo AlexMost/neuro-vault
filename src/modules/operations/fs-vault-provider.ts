@@ -14,32 +14,19 @@ import { applyReplace, splitRawFrontmatter } from '../../lib/obsidian/in-place-e
 import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
 import { resolveNoteName } from './resolve-note-name.js';
 import { invalidArgument } from './tool-helpers.js';
-import { extractTags } from '../../lib/obsidian/query/note-record.js';
-import { extractInlineTags } from '../../lib/obsidian/inline-tags.js';
 import type {
   CreateNoteInput,
   CreateNoteResult,
   DailyNoteResult,
   NoteIdentifier,
-  PropertyListEntry,
   RemovePropertyInput,
   ReplaceFullBodyInput,
   ReplaceInNoteInput,
   SetPropertyInput,
-  TagListEntry,
   VaultProvider,
 } from '../../lib/obsidian/vault-provider.js';
-import type { ReadNotesItemSuccess, VaultReader } from '../../lib/obsidian/vault-reader.js';
+import type { VaultReader } from '../../lib/obsidian/vault-reader.js';
 import { ToolHandlerError } from '../../lib/tool-response.js';
-
-function sortCounts(counts: Map<string, number>): Array<{ name: string; count: number }> {
-  return [...counts.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-}
-
-/** Same batching pattern as query-notes.ts — bound memory, never hold every body at once. */
-const READ_BATCH_SIZE = 32;
 
 export type FsReadFile = (absPath: string, encoding: 'utf8') => Promise<string>;
 export type FsWriteFile = (absPath: string, data: string, encoding: 'utf8') => Promise<void>;
@@ -58,10 +45,12 @@ export interface FsVaultProviderOptions {
 }
 
 /**
- * Disk-direct VaultProvider. Every method reads and writes the vault directory
- * straight from disk (via `node:fs` and the injected {@link VaultReader}) — the
- * server no longer shells out to the Obsidian CLI, so Obsidian need not be
- * installed or running.
+ * Disk-direct VaultProvider: the one owner of every note-file read and write
+ * over a vault root. Each method opens exactly one note file, straight from
+ * disk (via `node:fs` and the injected {@link VaultReader}) — the server no
+ * longer shells out to the Obsidian CLI, so Obsidian need not be installed or
+ * running. Vault-wide aggregates are not its job; those are free functions
+ * over a {@link VaultReader} in `lib/obsidian/vault-aggregates.ts`.
  */
 export class FsVaultProvider implements VaultProvider {
   private readonly reader: VaultReader;
@@ -334,41 +323,5 @@ export class FsVaultProvider implements VaultProvider {
     const relPath = await this.resolveExisting(input.identifier);
     const { prefix } = splitRawFrontmatter(await this.readRaw(relPath));
     await this.writeRaw(relPath, prefix + input.content);
-  }
-
-  async listProperties(): Promise<PropertyListEntry[]> {
-    const counts = new Map<string, number>();
-    for (const fm of await this.scanFrontmatter()) {
-      for (const key of Object.keys(fm)) counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return sortCounts(counts);
-  }
-
-  async listTags(): Promise<TagListEntry[]> {
-    const reader = this.reader;
-    const counts = new Map<string, number>();
-    const paths = await reader.scan();
-    for (let i = 0; i < paths.length; i += READ_BATCH_SIZE) {
-      const slice = paths.slice(i, i + READ_BATCH_SIZE);
-      const items = await reader.readNotes({ paths: slice, fields: ['frontmatter', 'content'] });
-      for (const item of items) {
-        if ('error' in item) continue;
-        const noteTags = new Set([
-          ...extractTags(item.frontmatter ?? {}),
-          ...extractInlineTags(item.content),
-        ]);
-        for (const tag of noteTags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-      }
-    }
-    return sortCounts(counts);
-  }
-
-  private async scanFrontmatter(): Promise<Array<Record<string, unknown>>> {
-    const reader = this.reader;
-    const paths = await reader.scan();
-    const items = await reader.readNotes({ paths, fields: ['frontmatter'] });
-    return items
-      .filter((i): i is ReadNotesItemSuccess => !('error' in i))
-      .map((i) => i.frontmatter ?? {});
   }
 }

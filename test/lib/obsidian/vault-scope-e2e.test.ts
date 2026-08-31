@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../../../src/lib/obsidian/vault-scope-config.js';
-import { FsVaultProvider } from '../../../src/modules/operations/fs-vault-provider.js';
+import { listProperties, listTags } from '../../../src/lib/obsidian/vault-aggregates.js';
 
 let vaultRoot: string;
 
@@ -65,16 +65,14 @@ describe('vault scope end-to-end (real temp-dir vault)', () => {
   it('tag listings skip excluded notes (Templates, gitignored, config-excluded)', async () => {
     const scope = await loadVaultScope(vaultRoot);
     const reader = new FsVaultReader({ vaultRoot, scope });
-    const provider = new FsVaultProvider({ vaultRoot, reader });
-    const tags = await provider.listTags();
+    const tags = await listTags(reader);
     expect(tags.map((t) => t.name)).toEqual(['kept']);
   });
 
   it('property listings skip excluded notes: an excluded status property never surfaces', async () => {
     const scope = await loadVaultScope(vaultRoot);
     const reader = new FsVaultReader({ vaultRoot, scope });
-    const provider = new FsVaultProvider({ vaultRoot, reader });
-    const properties = await provider.listProperties();
+    const properties = await listProperties(reader);
     // Templates/Daily.md (excluded by default scope) carries a `status`
     // property; it must contribute nothing to list_properties.
     expect(properties.map((p) => p.name)).not.toContain('status');

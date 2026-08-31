@@ -12,8 +12,6 @@ export function makeProvider(overrides: Partial<VaultProvider> = {}): VaultProvi
     removeProperty: vi.fn().mockResolvedValue(undefined),
     replaceInNote: vi.fn().mockResolvedValue(undefined),
     replaceFullBody: vi.fn().mockResolvedValue(undefined),
-    listProperties: vi.fn().mockResolvedValue([]),
-    listTags: vi.fn().mockResolvedValue([]),
     ...overrides,
   };
 }
@@ -23,6 +21,28 @@ export function makeReader(overrides: Partial<VaultReader> = {}): VaultReader {
     readNotes: vi.fn().mockResolvedValue([] as ReadNotesItem[]),
     scan: vi.fn().mockResolvedValue([] as string[]),
     ...overrides,
+  };
+}
+
+/**
+ * A reader over an in-memory note map. Tags and properties are derived from
+ * what the reader yields, so a tool's `top_tags` / `properties` are set up by
+ * seeding notes rather than by stubbing an aggregate method.
+ */
+export function readerOver(
+  notes: Record<string, { frontmatter?: Record<string, unknown>; content?: string }>,
+): VaultReader {
+  return {
+    scan: vi.fn().mockResolvedValue(Object.keys(notes)),
+    readNotes: vi.fn(async ({ paths }: { paths: string[] }) =>
+      paths.map(
+        (p): ReadNotesItem => ({
+          path: p,
+          frontmatter: notes[p]?.frontmatter ?? {},
+          content: notes[p]?.content ?? '',
+        }),
+      ),
+    ),
   };
 }
 
