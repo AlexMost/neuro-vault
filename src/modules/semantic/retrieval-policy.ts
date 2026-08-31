@@ -9,18 +9,10 @@ import type {
   SmartSource,
 } from './types.js';
 
-import {
-  DEFAULT_EXPANSION_FLOOR,
-  EFFORT_PROFILES,
-  FALLBACK_THRESHOLD,
-} from './effort-profiles.js';
+import { DEFAULT_EXPANSION_FLOOR, EFFORT_PROFILES, FALLBACK_THRESHOLD } from './effort-profiles.js';
 import type { EffortProfile } from './effort-profiles.js';
 
 const QUICK_BLOCK_LIMIT = 5;
-// The expansion leg's similarity floor operates on the seed↔note scale
-// (empirically 0.89–0.985 in real corpora) — incomparable with the semantic
-// leg's query↔note scale, which is why it is a separate knob. 0.35 matches
-// what default calls effectively used before the split (behavior-preserving).
 
 interface ModeConfig {
   limit: number;

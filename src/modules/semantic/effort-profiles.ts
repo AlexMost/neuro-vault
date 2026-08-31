@@ -46,5 +46,11 @@ export const LEXICAL_PER_NOTE_CAP = 3;
 /** One-shot retry floor when a DEFAULT threshold finds nothing (never for an explicit threshold). */
 export const FALLBACK_THRESHOLD = 0.3;
 
-/** Default seed↔note floor for the expansion leg — a different scale than semanticThreshold. */
+/**
+ * Default seed↔note floor for the expansion leg — a different scale than semanticThreshold.
+ * The expansion leg's similarity floor operates on the seed↔note scale
+ * (empirically 0.89–0.985 in real corpora) — incomparable with the semantic
+ * leg's query↔note scale, which is why it is a separate knob. 0.35 matches
+ * what default calls effectively used before the split (behavior-preserving).
+ */
 export const DEFAULT_EXPANSION_FLOOR = 0.35;
