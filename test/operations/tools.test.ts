@@ -12,8 +12,6 @@ const noopProvider = {
   readDaily: vi.fn(),
   setProperty: vi.fn(),
   removeProperty: vi.fn(),
-  listProperties: vi.fn(),
-  listTags: vi.fn(),
 } as unknown as VaultProvider;
 
 const noopReader = {

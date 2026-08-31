@@ -12,8 +12,6 @@ export function makeProvider(overrides: Partial<VaultProvider> = {}): VaultProvi
     removeProperty: vi.fn().mockResolvedValue(undefined),
     replaceInNote: vi.fn().mockResolvedValue(undefined),
     replaceFullBody: vi.fn().mockResolvedValue(undefined),
-    listProperties: vi.fn().mockResolvedValue([]),
-    listTags: vi.fn().mockResolvedValue([]),
     ...overrides,
   };
 }

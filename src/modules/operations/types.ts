@@ -1,5 +1,3 @@
-import type { QueryNotesResult, QueryNotesToolInput } from '../../lib/obsidian/query/types.js';
-
 export type {
   NoteRecord,
   QueryNotesResult,
@@ -28,11 +26,6 @@ export type OperationsErrorCode =
 
 export type ContentMode = 'full' | 'preview' | 'frontmatter';
 
-export interface ReadNotesToolInput {
-  paths: string | string[];
-  content?: ContentMode;
-}
-
 export interface ReadNotesResultItemSuccess {
   path: string;
   frontmatter?: Record<string, unknown> | null;
@@ -56,56 +49,10 @@ export interface ReadNotesResult {
   errors: number;
 }
 
-export interface CreateNoteToolInput {
-  name?: string;
-  path?: string;
-  content?: string;
-  overwrite?: boolean;
-}
-
-export interface EditNoteToolInput {
-  name?: string;
-  path?: string;
-  content: string;
-  replace?: string;
-}
-
-export type ReadDailyToolInput = Record<string, never>;
-
 export interface SetPropertyToolInput {
   name?: string;
   path?: string;
   key: string;
   value: string | number | boolean | string[] | number[];
   type?: 'text' | 'list' | 'number' | 'checkbox' | 'date' | 'datetime';
-}
-
-export interface RemovePropertyToolInput {
-  name?: string;
-  path?: string;
-  key: string;
-}
-
-export type ListTagsToolInput = Record<string, never>;
-export type ListPropertiesToolInput = Record<string, never>;
-
-export interface OperationsToolHandlers {
-  readNotes(input: ReadNotesToolInput): Promise<ReadNotesResult>;
-  queryNotes(input: QueryNotesToolInput): Promise<QueryNotesResult>;
-  createNote(input: CreateNoteToolInput): Promise<{ path: string }>;
-  editNote(input: EditNoteToolInput): Promise<void>;
-  readDaily(input: ReadDailyToolInput): Promise<{
-    path: string;
-    frontmatter: Record<string, unknown> | null;
-    content: string;
-    notes_today: Array<{
-      path: string;
-      frontmatter: Record<string, unknown>;
-      backlink_count: number;
-    }>;
-  }>;
-  setProperty(input: SetPropertyToolInput): Promise<{ ok: true }>;
-  removeProperty(input: RemovePropertyToolInput): Promise<{ ok: true }>;
-  listTags(input: ListTagsToolInput): Promise<Array<{ name: string; count: number }>>;
-  listProperties(input: ListPropertiesToolInput): Promise<Array<{ name: string; count: number }>>;
 }

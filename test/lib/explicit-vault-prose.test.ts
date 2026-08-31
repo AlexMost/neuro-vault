@@ -27,7 +27,6 @@ function allTools(...names: string[]) {
       path: `/vaults/${name}`,
       graph: makeFakeGraph(),
       listMatchingPaths: async () => new Set<string>(),
-      provider: { listTags: async () => [], listProperties: async () => [] } as never,
     })),
   );
   return [

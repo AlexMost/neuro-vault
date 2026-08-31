@@ -42,16 +42,6 @@ export interface ReplaceFullBodyInput {
   content: string;
 }
 
-export interface PropertyListEntry {
-  name: string;
-  count: number;
-}
-
-export interface TagListEntry {
-  name: string;
-  count: number;
-}
-
 export interface VaultProvider {
   createNote(input: CreateNoteInput): Promise<CreateNoteResult>;
   readDaily(): Promise<DailyNoteResult>;
@@ -59,6 +49,4 @@ export interface VaultProvider {
   removeProperty(input: RemovePropertyInput): Promise<void>;
   replaceInNote(input: ReplaceInNoteInput): Promise<void>;
   replaceFullBody(input: ReplaceFullBodyInput): Promise<void>;
-  listProperties(): Promise<PropertyListEntry[]>;
-  listTags(): Promise<TagListEntry[]>;
 }

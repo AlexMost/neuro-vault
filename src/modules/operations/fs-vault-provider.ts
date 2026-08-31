@@ -12,10 +12,6 @@ import {
 } from '../../lib/obsidian/frontmatter.js';
 import { applyReplace, splitRawFrontmatter } from '../../lib/obsidian/in-place-edit.js';
 import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
-import {
-  listProperties as listPropertiesOverReader,
-  listTags as listTagsOverReader,
-} from '../../lib/obsidian/vault-aggregates.js';
 import { resolveNoteName } from './resolve-note-name.js';
 import { invalidArgument } from './tool-helpers.js';
 import type {
@@ -23,12 +19,10 @@ import type {
   CreateNoteResult,
   DailyNoteResult,
   NoteIdentifier,
-  PropertyListEntry,
   RemovePropertyInput,
   ReplaceFullBodyInput,
   ReplaceInNoteInput,
   SetPropertyInput,
-  TagListEntry,
   VaultProvider,
 } from '../../lib/obsidian/vault-provider.js';
 import type { VaultReader } from '../../lib/obsidian/vault-reader.js';
@@ -51,10 +45,12 @@ export interface FsVaultProviderOptions {
 }
 
 /**
- * Disk-direct VaultProvider. Every method reads and writes the vault directory
- * straight from disk (via `node:fs` and the injected {@link VaultReader}) — the
- * server no longer shells out to the Obsidian CLI, so Obsidian need not be
- * installed or running.
+ * Disk-direct VaultProvider: the one owner of every note-file read and write
+ * over a vault root. Each method opens exactly one note file, straight from
+ * disk (via `node:fs` and the injected {@link VaultReader}) — the server no
+ * longer shells out to the Obsidian CLI, so Obsidian need not be installed or
+ * running. Vault-wide aggregates are not its job; those are free functions
+ * over a {@link VaultReader} in `lib/obsidian/vault-aggregates.ts`.
  */
 export class FsVaultProvider implements VaultProvider {
   private readonly reader: VaultReader;
@@ -327,13 +323,5 @@ export class FsVaultProvider implements VaultProvider {
     const relPath = await this.resolveExisting(input.identifier);
     const { prefix } = splitRawFrontmatter(await this.readRaw(relPath));
     await this.writeRaw(relPath, prefix + input.content);
-  }
-
-  async listProperties(): Promise<PropertyListEntry[]> {
-    return listPropertiesOverReader(this.reader);
-  }
-
-  async listTags(): Promise<TagListEntry[]> {
-    return listTagsOverReader(this.reader);
   }
 }
