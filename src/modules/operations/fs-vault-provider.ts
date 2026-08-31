@@ -12,10 +12,12 @@ import {
 } from '../../lib/obsidian/frontmatter.js';
 import { applyReplace, splitRawFrontmatter } from '../../lib/obsidian/in-place-edit.js';
 import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
+import {
+  listProperties as listPropertiesOverReader,
+  listTags as listTagsOverReader,
+} from '../../lib/obsidian/vault-aggregates.js';
 import { resolveNoteName } from './resolve-note-name.js';
 import { invalidArgument } from './tool-helpers.js';
-import { extractTags } from '../../lib/obsidian/query/note-record.js';
-import { extractInlineTags } from '../../lib/obsidian/inline-tags.js';
 import type {
   CreateNoteInput,
   CreateNoteResult,
@@ -29,17 +31,8 @@ import type {
   TagListEntry,
   VaultProvider,
 } from '../../lib/obsidian/vault-provider.js';
-import type { ReadNotesItemSuccess, VaultReader } from '../../lib/obsidian/vault-reader.js';
+import type { VaultReader } from '../../lib/obsidian/vault-reader.js';
 import { ToolHandlerError } from '../../lib/tool-response.js';
-
-function sortCounts(counts: Map<string, number>): Array<{ name: string; count: number }> {
-  return [...counts.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-}
-
-/** Same batching pattern as query-notes.ts — bound memory, never hold every body at once. */
-const READ_BATCH_SIZE = 32;
 
 export type FsReadFile = (absPath: string, encoding: 'utf8') => Promise<string>;
 export type FsWriteFile = (absPath: string, data: string, encoding: 'utf8') => Promise<void>;
@@ -337,38 +330,10 @@ export class FsVaultProvider implements VaultProvider {
   }
 
   async listProperties(): Promise<PropertyListEntry[]> {
-    const counts = new Map<string, number>();
-    for (const fm of await this.scanFrontmatter()) {
-      for (const key of Object.keys(fm)) counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return sortCounts(counts);
+    return listPropertiesOverReader(this.reader);
   }
 
   async listTags(): Promise<TagListEntry[]> {
-    const reader = this.reader;
-    const counts = new Map<string, number>();
-    const paths = await reader.scan();
-    for (let i = 0; i < paths.length; i += READ_BATCH_SIZE) {
-      const slice = paths.slice(i, i + READ_BATCH_SIZE);
-      const items = await reader.readNotes({ paths: slice, fields: ['frontmatter', 'content'] });
-      for (const item of items) {
-        if ('error' in item) continue;
-        const noteTags = new Set([
-          ...extractTags(item.frontmatter ?? {}),
-          ...extractInlineTags(item.content),
-        ]);
-        for (const tag of noteTags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-      }
-    }
-    return sortCounts(counts);
-  }
-
-  private async scanFrontmatter(): Promise<Array<Record<string, unknown>>> {
-    const reader = this.reader;
-    const paths = await reader.scan();
-    const items = await reader.readNotes({ paths, fields: ['frontmatter'] });
-    return items
-      .filter((i): i is ReadNotesItemSuccess => !('error' in i))
-      .map((i) => i.frontmatter ?? {});
+    return listTagsOverReader(this.reader);
   }
 }
