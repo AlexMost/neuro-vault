@@ -1,10 +1,11 @@
 import type { SearchEffort } from './types.js';
 
 /**
- * The single source of the quick/deep retrieval profile. Everything that
- * states one of these numbers — retrieval-policy defaults, the pipeline's
- * pool caps, the search_notes description prose, the eval config — reads
- * this file; a retune here is the whole retune.
+ * The single source of the quick/deep retrieval profile. Retrieval-policy
+ * defaults, the pipeline's pool caps, and the search_notes description prose
+ * all read this file, so a retune here reaches every one of them. (The eval
+ * config under `eval/` still restates these numbers as literals — it is not
+ * yet wired to this file.)
  */
 export interface EffortProfile {
   /** Semantic-leg seed pool (retrieval-policy `limit`). */

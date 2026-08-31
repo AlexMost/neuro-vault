@@ -102,6 +102,11 @@ export async function runRetrievalPipeline(
       const { sources } = await deps.snapshot();
       const effectiveSources =
         input.allowed !== undefined ? narrowSources(sources, input.allowed) : sources;
+      // `cap`/`input.cap` bounds ONLY the final fused list (the `.slice(0,
+      // cap)` below) — it is deliberately NOT forwarded here, so it never
+      // steers either leg's internal pool volume. A caller raising `limit`
+      // recovers a merged-cap truncation but cannot recover a leg's own pool
+      // truncation; only `effort` controls that.
       const leg = await executeRetrieval({
         queries: input.queries,
         mode: input.effort,

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -9,7 +10,8 @@ import {
 // The advertisement-derivation pin (spec: hybrid-search "Effort-profile
 // advertisement derives from the retrieval constants"). Reads the SOURCE of
 // the description to prove the numbers are interpolated, and the BUILT
-// description to prove each advertised number equals the profile constant.
+// description/schema to prove each advertised number equals the profile
+// constant.
 import { readFile } from 'node:fs/promises';
 
 import { registerTool } from '../../../src/lib/tool-registry.js';
@@ -21,15 +23,17 @@ import {
 import { buildSearchNotesTool } from '../../../src/modules/semantic/tools/search-notes.js';
 import { makeTestRegistry } from './_helpers.js';
 
+function builtTool() {
+  return buildSearchNotesTool({
+    registry: makeTestRegistry([]),
+    embeddingProvider: { initialize: () => Promise.resolve(), embed: () => Promise.resolve([1]) },
+    searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
+    modelKey: 'k',
+  });
+}
+
 function builtDescription(): string {
-  return registerTool(
-    buildSearchNotesTool({
-      registry: makeTestRegistry([]),
-      embeddingProvider: { initialize: () => Promise.resolve(), embed: () => Promise.resolve([1]) },
-      searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
-      modelKey: 'k',
-    }),
-  ).spec.description!;
+  return registerTool(builtTool()).spec.description!;
 }
 
 describe('search_notes advertised numbers derive from the effort profile', () => {
@@ -56,9 +60,28 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     expect(source).toContain('${EFFORT_PROFILES.deep.semanticPool}');
     expect(source).toContain('${EFFORT_PROFILES.deep.lexicalNoteCap}');
     expect(source).toContain('${EFFORT_PROFILES.deep.mergedCap}');
-    // And the values render into the advertised text.
-    expect(builtDescription()).toBeTruthy();
-    expect(String(FALLBACK_THRESHOLD)).toBe('0.3');
-    expect(String(DEFAULT_EXPANSION_FLOOR)).toBe('0.35');
+  });
+
+  it('threshold and expansion-floor numbers land in the ADVERTISED schema', () => {
+    // Pinned against the tool's declared inputSchema converted to JSON
+    // Schema the same way the MCP SDK converts it for `tools/list` — not
+    // against the source file. A source-only grep (the test above) can't
+    // catch the two interpolation slots getting swapped, since swapped
+    // source still contains every token that grep checks for.
+    //
+    // Deliberately NOT `registerTool(builtTool()).spec.inputSchema`:
+    // `wrapSchemaWithCoercion` (src/lib/input-coercion.ts, pre-existing,
+    // unrelated to this change) unwraps every `.optional()` field down to
+    // its inner schema and rebuilds a fresh wrapper around it, which drops
+    // the `.describe()` metadata `.optional()` was carrying — so the
+    // *coerced* schema advertises no per-field descriptions at all, for any
+    // optional field on any tool. `builtTool().inputSchema` is the same zod
+    // schema object minus that unrelated stripping step, so it is the
+    // faithful stand-in for what the field-level prose says.
+    const schema = JSON.stringify(z.toJSONSchema(builtTool().inputSchema));
+    expect(schema).toContain(
+      `effort defaults (${EFFORT_PROFILES.quick.semanticThreshold} quick / ${EFFORT_PROFILES.deep.semanticThreshold} deep) with one retry at ${FALLBACK_THRESHOLD}`,
+    );
+    expect(schema).toContain(`Default ${DEFAULT_EXPANSION_FLOOR}`);
   });
 });
