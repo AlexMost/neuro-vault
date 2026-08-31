@@ -39,7 +39,8 @@ export interface NoteResultNode {
   similarity: number;
   // Always populated. For a single-query call this is `[query]` — arity is a
   // surfacing concern in the tool layer, not a retrieval one. Whether it
-  // reaches the MCP response is decided by `isMulti` in `assembleUnified`.
+  // reaches the MCP response is decided by `isMulti` in
+  // `runSearchForEntry`'s shaping pass (search-notes.ts).
   matched_queries: string[];
   blocks: BlockMatch[];
   related: RelatedNote[];
