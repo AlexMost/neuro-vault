@@ -6,8 +6,7 @@ import {
   TOP_PROPERTIES_LIMIT,
 } from '../../../src/lib/obsidian/vault-overview.js';
 import { CONVENTIONS_CHAR_CAP } from '../../../src/lib/obsidian/vault-conventions.js';
-import type { VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
-import type { VaultProvider } from '../../../src/lib/obsidian/vault-provider.js';
+import type { ReadNotesItem, VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 
 const noConventions = async (): Promise<string | null> => null;
@@ -20,17 +19,25 @@ function makeReader(overrides: Partial<VaultReader> = {}): VaultReader {
   };
 }
 
-function makeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
+/**
+ * A reader over an in-memory note map. Tags and properties are derived from
+ * what the reader yields, so a snapshot's `top_tags` / `properties` are set up
+ * by seeding notes rather than by stubbing an aggregate method.
+ */
+function readerOver(
+  notes: Record<string, { frontmatter?: Record<string, unknown>; content?: string }>,
+): VaultReader {
   return {
-    createNote: vi.fn().mockResolvedValue({ path: '' }),
-    readDaily: vi.fn().mockResolvedValue({ path: '', frontmatter: null, content: '' }),
-    setProperty: vi.fn().mockResolvedValue(undefined),
-    removeProperty: vi.fn().mockResolvedValue(undefined),
-    replaceInNote: vi.fn().mockResolvedValue(undefined),
-    replaceFullBody: vi.fn().mockResolvedValue(undefined),
-    listProperties: vi.fn().mockResolvedValue([]),
-    listTags: vi.fn().mockResolvedValue([]),
-    ...overrides,
+    scan: vi.fn().mockResolvedValue(Object.keys(notes)),
+    readNotes: vi.fn(async ({ paths }: { paths: string[] }) =>
+      paths.map(
+        (p): ReadNotesItem => ({
+          path: p,
+          frontmatter: notes[p]?.frontmatter ?? {},
+          content: notes[p]?.content ?? '',
+        }),
+      ),
+    ),
   };
 }
 
@@ -46,15 +53,9 @@ function makeGraph(overrides: Partial<WikilinkGraphIndex> = {}): WikilinkGraphIn
 describe('computeVaultOverview', () => {
   it('returns zeroed snapshot for an empty vault', async () => {
     const reader = makeReader();
-    const provider = makeProvider();
     const graph = makeGraph();
 
-    const result = await computeVaultOverview({
-      reader,
-      provider,
-      graph,
-      readConventions: noConventions,
-    });
+    const result = await computeVaultOverview({ reader, graph, readConventions: noConventions });
 
     expect(result).toEqual({
       total_notes: 0,
@@ -72,15 +73,9 @@ describe('computeVaultOverview', () => {
         .fn()
         .mockResolvedValue(['Projects/a.md', 'Projects/sub/b.md', 'Notes/c.md', 'root.md']),
     });
-    const provider = makeProvider();
     const graph = makeGraph();
 
-    const result = await computeVaultOverview({
-      reader,
-      provider,
-      graph,
-      readConventions: noConventions,
-    });
+    const result = await computeVaultOverview({ reader, graph, readConventions: noConventions });
 
     expect(result.total_notes).toBe(4);
     expect(result.folders).toEqual([
@@ -90,18 +85,18 @@ describe('computeVaultOverview', () => {
     ]);
   });
 
-  it('passes top_tags through from provider.listTags()', async () => {
-    const reader = makeReader({ scan: vi.fn().mockResolvedValue(['a.md', 'b.md']) });
-    const provider = makeProvider({
-      listTags: vi.fn().mockResolvedValue([
-        { name: 'ai', count: 5 },
-        { name: 'mcp', count: 3 },
-      ]),
+  it('derives top_tags from the reader', async () => {
+    const reader = readerOver({
+      'a.md': { frontmatter: { tags: ['ai', 'mcp'] } },
+      'b.md': { frontmatter: { tags: ['ai'] }, content: 'body #ai' },
+      'c.md': { content: 'body #ai' },
+      'd.md': { frontmatter: { tags: ['ai'] } },
+      'e.md': { frontmatter: { tags: ['ai', 'mcp'] } },
+      'f.md': { content: '#mcp' },
     });
 
     const result = await computeVaultOverview({
       reader,
-      provider,
       graph: makeGraph(),
       readConventions: noConventions,
     });
@@ -112,18 +107,15 @@ describe('computeVaultOverview', () => {
     ]);
   });
 
-  it('passes properties through from provider.listProperties()', async () => {
-    const reader = makeReader({ scan: vi.fn().mockResolvedValue(['a.md']) });
-    const provider = makeProvider({
-      listProperties: vi.fn().mockResolvedValue([
-        { name: 'status', count: 10 },
-        { name: 'type', count: 7 },
-      ]),
-    });
+  it('derives properties from the reader', async () => {
+    const notes: Record<string, { frontmatter: Record<string, unknown> }> = {};
+    for (let i = 0; i < 10; i += 1) notes[`s${i}.md`] = { frontmatter: { status: 'open' } };
+    for (let i = 0; i < 7; i += 1) {
+      notes[`t${i}.md`] = { frontmatter: { type: 'note' } };
+    }
 
     const result = await computeVaultOverview({
-      reader,
-      provider,
+      reader: readerOver(notes),
       graph: makeGraph(),
       readConventions: noConventions,
     });
@@ -131,6 +123,25 @@ describe('computeVaultOverview', () => {
     expect(result.properties).toEqual([
       { name: 'status', count: 10 },
       { name: 'type', count: 7 },
+    ]);
+  });
+
+  it('reports tags and properties from the same note together', async () => {
+    const reader = readerOver({
+      'a.md': { frontmatter: { tags: ['alpha'], status: 'open' }, content: '' },
+    });
+
+    const result = await computeVaultOverview({
+      reader,
+      graph: makeGraph(),
+      readConventions: noConventions,
+    });
+
+    expect(result.top_tags).toEqual([{ name: 'alpha', count: 1 }]);
+    // `tags` is itself a frontmatter key, so it counts as a property too.
+    expect(result.properties).toEqual([
+      { name: 'status', count: 1 },
+      { name: 'tags', count: 1 },
     ]);
   });
 
@@ -147,12 +158,7 @@ describe('computeVaultOverview', () => {
       getBacklinkCount: vi.fn((p: string) => backlinks[p] ?? 0),
     });
 
-    const result = await computeVaultOverview({
-      reader,
-      provider: makeProvider(),
-      graph,
-      readConventions: noConventions,
-    });
+    const result = await computeVaultOverview({ reader, graph, readConventions: noConventions });
 
     expect(result.top_by_backlinks).toEqual([
       { path: 'Projects/Alpha.md', title: 'Alpha', backlink_count: 5 },
@@ -170,12 +176,7 @@ describe('computeVaultOverview', () => {
       getBacklinkCount: vi.fn((p: string) => Number(p.replace(/[^0-9]/g, ''))),
     });
 
-    const result = await computeVaultOverview({
-      reader,
-      provider: makeProvider(),
-      graph,
-      readConventions: noConventions,
-    });
+    const result = await computeVaultOverview({ reader, graph, readConventions: noConventions });
 
     expect(result.top_by_backlinks).toHaveLength(10);
     expect(result.top_by_backlinks[0]).toMatchObject({
@@ -185,15 +186,11 @@ describe('computeVaultOverview', () => {
   });
 
   it('caps top_tags at TOP_TAGS_LIMIT', async () => {
-    const reader = makeReader({ scan: vi.fn().mockResolvedValue(['a.md']) });
-    const manyTags = Array.from({ length: 35 }, (_, i) => ({ name: `tag${i}`, count: 35 - i }));
-    const provider = makeProvider({
-      listTags: vi.fn().mockResolvedValue(manyTags),
-    });
+    const manyTags = Array.from({ length: 35 }, (_, i) => `tag${i}`);
+    const reader = readerOver({ 'a.md': { frontmatter: { tags: manyTags } } });
 
     const result = await computeVaultOverview({
       reader,
-      provider,
       graph: makeGraph(),
       readConventions: noConventions,
     });
@@ -202,18 +199,12 @@ describe('computeVaultOverview', () => {
   });
 
   it('caps properties at TOP_PROPERTIES_LIMIT', async () => {
-    const reader = makeReader({ scan: vi.fn().mockResolvedValue(['a.md']) });
-    const manyProps = Array.from({ length: 35 }, (_, i) => ({
-      name: `prop${i}`,
-      count: 35 - i,
-    }));
-    const provider = makeProvider({
-      listProperties: vi.fn().mockResolvedValue(manyProps),
-    });
+    const frontmatter: Record<string, unknown> = {};
+    for (let i = 0; i < 35; i += 1) frontmatter[`prop${i}`] = i;
+    const reader = readerOver({ 'a.md': { frontmatter } });
 
     const result = await computeVaultOverview({
       reader,
-      provider,
       graph: makeGraph(),
       readConventions: noConventions,
     });
@@ -226,7 +217,6 @@ describe('computeVaultOverview conventions', () => {
   it('carries the conventions file content when present', async () => {
     const result = await computeVaultOverview({
       reader: makeReader(),
-      provider: makeProvider(),
       graph: makeGraph(),
       readConventions: async () => '# Conventions\n- No writes to Resources/',
     });
@@ -237,7 +227,6 @@ describe('computeVaultOverview conventions', () => {
   it('omits the key entirely when there are no conventions', async () => {
     const result = await computeVaultOverview({
       reader: makeReader(),
-      provider: makeProvider(),
       graph: makeGraph(),
       readConventions: async () => null,
     });
@@ -249,7 +238,6 @@ describe('computeVaultOverview conventions', () => {
     const huge = 'x '.repeat(CONVENTIONS_CHAR_CAP);
     const result = await computeVaultOverview({
       reader: makeReader(),
-      provider: makeProvider(),
       graph: makeGraph(),
       readConventions: async () => huge,
     });
@@ -261,7 +249,6 @@ describe('computeVaultOverview conventions', () => {
     const reader = makeReader({ scan: vi.fn().mockResolvedValue(['Notes/a.md']) });
     const result = await computeVaultOverview({
       reader,
-      provider: makeProvider(),
       graph: makeGraph(),
       readConventions: async () => {
         throw new Error('EACCES');
@@ -275,7 +262,6 @@ describe('computeVaultOverview conventions', () => {
     let current = 'first';
     const deps = {
       reader: makeReader(),
-      provider: makeProvider(),
       graph: makeGraph(),
       readConventions: async () => current,
     };

@@ -21,7 +21,6 @@ export function buildVaultOverviewResource(
     handler: async () =>
       computeVaultOverview({
         reader: entry.reader,
-        provider: entry.provider,
         graph: entry.graph,
         readConventions: entry.readConventions,
       }),

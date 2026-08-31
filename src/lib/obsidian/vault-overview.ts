@@ -1,8 +1,8 @@
 import type { VaultReader } from './vault-reader.js';
-import type { VaultProvider } from './vault-provider.js';
 import type { WikilinkGraphIndex } from './wikilink-graph.js';
 import { topByBacklinks, type TopBacklinkedNote } from './top-by-backlinks.js';
 import { capConventions } from './vault-conventions.js';
+import { listProperties, listTags } from './vault-aggregates.js';
 
 export interface VaultOverviewFolder {
   path: string;
@@ -35,7 +35,6 @@ export interface VaultOverview {
 
 export interface ComputeVaultOverviewDeps {
   reader: VaultReader;
-  provider: VaultProvider;
   graph: WikilinkGraphIndex;
   readConventions: () => Promise<string | null>;
 }
@@ -64,13 +63,13 @@ async function conventionsFields(
 }
 
 export async function computeVaultOverview(deps: ComputeVaultOverviewDeps): Promise<VaultOverview> {
-  const { reader, provider, graph, readConventions } = deps;
+  const { reader, graph, readConventions } = deps;
   await graph.ensureFresh();
 
   const paths = await reader.scan();
   const [tags, props, conventions] = await Promise.all([
-    provider.listTags(),
-    provider.listProperties(),
+    listTags(reader),
+    listProperties(reader),
     conventionsFields(readConventions),
   ]);
 
