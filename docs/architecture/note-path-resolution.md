@@ -14,17 +14,17 @@ How MCP tools turn user-supplied path-or-name inputs into vault-relative POSIX p
 
 A vault-relative path can mean three different things to a caller — a single note, a subtree filter, or a batch entry — and each has a different "missing extension" intent:
 
-- For an individual note (`set_property("Foo", ...)`) the user means `Foo.md`. Auto-appending matches `create_note`'s own behavior and is what lets `resolveIdentifierPath` (`FsVaultProvider`) turn a bare name into a real vault-relative path instead of failing on an unresolved identifier.
+- For an individual note (`set_property("Foo", ...)`) the user means `Foo.md`. Auto-appending matches `create_note`'s own behavior and is what lets `FsVaultProvider`'s two resolution modes (`resolveExisting` / `resolveNew`, see [`vault-provider.md`](./vault-provider.md#identifier-shape)) turn a bare name into a real vault-relative path instead of failing on an unresolved identifier.
 - For a subtree filter (`path_prefix: "Tasks/"`) the user means the folder `Tasks/`, not a file. Appending `.md` would be wrong.
 - For a batch read (`read_notes(paths: [...])`) the user is reading raw files by exact path; silently inserting `.md` would obscure typos.
 
 ## The rule
 
-The MCP layer always resolves before any disk I/O happens. If the resolver cannot turn the input into a valid path, the tool fails with a structured error before `FsVaultProvider`/`FsVaultReader`/`FsVaultWriter` ever touch the filesystem. This is what makes `set_property("Foo", ...)` safe — the resolver turns it into `Foo.md`, and the provider either finds a matching file or fails explicitly with `NOT_FOUND`.
+The MCP layer always resolves before any disk I/O happens. Every write tool does it through the single `resolveIdentifier(name, path)` in `src/modules/operations/tool-helpers.ts`, which runs `normalizeNotePath` on the `path` branch; if the resolver cannot turn the input into a valid path, the tool fails `INVALID_ARGUMENT` before `FsVaultProvider` or `FsVaultReader` ever touch the filesystem. This is what makes `set_property("Foo", ...)` safe — the resolver turns it into `Foo.md`, and the provider either finds a matching file or fails explicitly with `NOT_FOUND`.
 
 ## What `normalizeNotePath` does _not_ do
 
-- It does not check that the file exists. Existence is the reader's / writer's / provider's job.
+- It does not check that the file exists. Existence is the reader's or the provider's job.
 - It does not change a non-`.md` extension into `.md`. If the user wrote `Foo.txt`, they meant `Foo.txt`. The auto-append is a friendliness affordance for missing extensions only.
 - It does not trim whitespace itself — `trim()` is applied upstream by `normalizeVaultPath`.
 

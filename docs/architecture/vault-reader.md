@@ -38,12 +38,15 @@ deferred to a future `VaultIndex`-style implementation.
 
 Both `VaultReader` and `VaultProvider` are disk-direct today (see [ADR-0009](../adr/0009-disk-direct-vault-operations.md)), so the split is no longer about which backend a call goes through — it is about shape. `VaultReader` is a narrow, read-only, batch-oriented interface (`readNotes` over up to 50 paths, `scan`) built for the high-volume read paths (`read_notes`, `query_notes`, the lexical search leg). `VaultProvider` is single-note, mutation-oriented, and owns a few pieces of note-format knowledge reads don't need (frontmatter YAML mutation, Daily Notes config resolution). Splitting the abstractions keeps each one honest: implementers do not have to stub mutation behavior they do not own, and tests that only care about reads do not have to fake writes.
 
-The two abstractions are siblings: the operations module's `index.ts`
-constructs both and injects them into the handlers — `FsVaultProvider` is even
+The two abstractions are siblings: the registry constructs both and the
+operations module injects them into the handlers — `FsVaultProvider` is even
 constructed with a `VaultReader` instance, since resolving a `name`-style
-`NoteIdentifier` and scanning frontmatter for `listTags`/`listProperties`
-reuse the reader's `scan`/`readNotes`. The handlers depend on each
-explicitly.
+`NoteIdentifier` reuses the reader's `scan`. The reader also feeds the
+vault-wide aggregate scans directly: `listTags(reader)` and
+`listProperties(reader)` (`src/lib/obsidian/vault-aggregates.ts`) walk
+`scan`/`readNotes` as free functions, without a provider in the path at all —
+they only read (see [ADR-0016](../adr/0016-one-disk-module-owns-note-writes.md)).
+The handlers depend on each explicitly.
 
 ## Per-item failure model
 

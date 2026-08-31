@@ -1,6 +1,6 @@
 # Disk-direct vault writes
 
-How `create_note` and `read_daily` behave now that every `VaultProvider` method (`FsVaultProvider`) writes and reads the vault directory directly via `node:fs/promises`, with no external process in the path. See [ADR-0009](../adr/0009-disk-direct-vault-operations.md) for why this replaced the `obsidian-cli`-backed path (formerly ADR-0007).
+How `create_note`, `edit_note`, and `read_daily` behave now that every `VaultProvider` method (`FsVaultProvider`) writes and reads the vault directory directly via `node:fs/promises`, with no external process in the path. See [ADR-0009](../adr/0009-disk-direct-vault-operations.md) for why this replaced the `obsidian-cli`-backed path (formerly ADR-0007), and [ADR-0016](../adr/0016-one-disk-module-owns-note-writes.md) for why one module — not two — owns that path.
 
 ## `create_note`: writes the exact path it was asked for
 
@@ -9,6 +9,25 @@ How `create_note` and `read_daily` behave now that every `VaultProvider` method 
 This retires the failure mode ADR-0007 guarded against: the old `ObsidianCLIProvider.createNote` shelled out to `obsidian-cli`, which could return exit 0 without writing (most reproducibly on a vault-name mismatch between `--vault` and what Obsidian showed under "Manage vaults"), so the provider added a post-write `fs.stat` as a defense against a silent lie from the CLI. `FsVaultProvider` has no CLI to lie to it, so that defense — and the `CREATE_FAILED` path it existed to catch — no longer applies; `CREATE_FAILED` is now only reachable from a genuine `fs.writeFile` error (e.g. `EACCES`, a bad path).
 
 `EEXIST` (from the `wx` flag) is translated to `NOTE_EXISTS`, the same code callers already handled.
+
+## `edit_note`: rewrites an existing body, frontmatter untouched
+
+`edit_note` is the same module's other write. `replaceInNote` (targeted find/replace) and `replaceFullBody` (whole-body rewrite) both resolve the note, read it, split the raw frontmatter prefix off, mutate only the body, and write `prefix + body` back — so the frontmatter block survives byte-for-byte, including comments and key order that a YAML round-trip would lose. `applyReplace` (`src/lib/obsidian/in-place-edit.ts`) is what refuses an ambiguous anchor rather than replacing a first match.
+
+These two used to live in a separate `FsVaultWriter` behind its own `VaultWriter` interface, with its own fs-error mapping. That second mapping is what shipped #113 — an `edit_note` write failure escaping with no error code. Both methods now share the provider's `readRaw` / `writeRaw` helpers, so there is one mapping to be correct.
+
+## Two error taxonomies, split by whether the note exists
+
+Every write in this module goes through one of two resolution modes (see [`vault-provider.md`](./vault-provider.md#identifier-shape)), and each has its own codes. They do not overlap:
+
+| Path                                                                          | Codes                                                                                                                                        |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Existing note** — `edit_note`, `set_property`, `remove_property`             | `NOT_FOUND` (no such file, or a `name` matching nothing), `AMBIGUOUS_MATCH` (a `name` matching several notes, or a find-anchor matching several lines), `READ_FAILED`, `WRITE_FAILED` |
+| **New note** — `create_note`                                                   | `NOTE_EXISTS` (`EEXIST` under the `wx` flag), `CREATE_FAILED` (any other write or parent-directory failure)                                    |
+
+`create_note` therefore never reports `NOT_FOUND` or `WRITE_FAILED`, and the existing-note path never reports `CREATE_FAILED` or `NOTE_EXISTS` — the code tells a caller which side of the note's existence it was on. Both taxonomies carry `details: { path }` and the originating `cause`. `read_daily` sits with the existing-note reads, with one deliberate exception: its `NOT_FOUND` message wording is pinned by the `headless-vault-operations` spec, so it maps `ENOENT` itself rather than routing through `readRaw`.
+
+Ahead of both, an identifier that cannot be validated at all — neither `name` nor `path`, both of them, an empty `name`, or a path escaping the vault root — fails `INVALID_ARGUMENT` at the tool layer, before any disk I/O.
 
 ## `read_daily`: Daily Notes preflight, now for a different reason
 
