@@ -12,6 +12,7 @@ import {
 // description to prove each advertised number equals the profile constant.
 import { readFile } from 'node:fs/promises';
 
+import { registerTool } from '../../../src/lib/tool-registry.js';
 import {
   findBlockNeighbors,
   findDuplicates,
@@ -21,12 +22,14 @@ import { buildSearchNotesTool } from '../../../src/modules/semantic/tools/search
 import { makeTestRegistry } from './_helpers.js';
 
 function builtDescription(): string {
-  return buildSearchNotesTool({
-    registry: makeTestRegistry([]),
-    embeddingProvider: { initialize: () => Promise.resolve(), embed: () => Promise.resolve([1]) },
-    searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
-    modelKey: 'k',
-  }).description;
+  return registerTool(
+    buildSearchNotesTool({
+      registry: makeTestRegistry([]),
+      embeddingProvider: { initialize: () => Promise.resolve(), embed: () => Promise.resolve([1]) },
+      searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
+      modelKey: 'k',
+    }),
+  ).spec.description!;
 }
 
 describe('search_notes advertised numbers derive from the effort profile', () => {
@@ -47,6 +50,12 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     expect(source).toContain('${DEFAULT_EXPANSION_FLOOR}');
     expect(source).toContain('${EFFORT_PROFILES.quick.semanticThreshold}');
     expect(source).toContain('${EFFORT_PROFILES.deep.semanticThreshold}');
+    expect(source).toContain('${EFFORT_PROFILES.quick.semanticPool}');
+    expect(source).toContain('${EFFORT_PROFILES.quick.lexicalNoteCap}');
+    expect(source).toContain('${EFFORT_PROFILES.quick.mergedCap}');
+    expect(source).toContain('${EFFORT_PROFILES.deep.semanticPool}');
+    expect(source).toContain('${EFFORT_PROFILES.deep.lexicalNoteCap}');
+    expect(source).toContain('${EFFORT_PROFILES.deep.mergedCap}');
     // And the values render into the advertised text.
     expect(builtDescription()).toBeTruthy();
     expect(String(FALLBACK_THRESHOLD)).toBe('0.3');
