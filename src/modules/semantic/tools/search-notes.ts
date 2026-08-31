@@ -4,7 +4,11 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import type { IFanOutResult } from '../../../lib/fan-out.js';
 import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.js';
-import { EFFORT_PROFILES } from '../effort-profiles.js';
+import {
+  DEFAULT_EXPANSION_FLOOR,
+  EFFORT_PROFILES,
+  FALLBACK_THRESHOLD,
+} from '../effort-profiles.js';
 import { runRetrievalPipeline } from '../retrieval-pipeline.js';
 import {
   normalizeQuery,
@@ -196,7 +200,7 @@ function queryStatsNote(args: {
     return 'No hits: every token matches on its own but they never co-occur in one title, heading or paragraph — split this variant into separate array entries.';
   }
   if (fallback) {
-    return 'Semantic hits came from the 0.3 fallback retry, so they are weaker than a normal result.';
+    return `Semantic hits came from the ${FALLBACK_THRESHOLD} fallback retry, so they are weaker than a normal result.`;
   }
   return undefined;
 }
@@ -463,7 +467,7 @@ export function buildSearchNotesTool(
     '',
     'AXES:',
     '- mode: "hybrid" (default) runs all legs; "lexical" runs ONLY exact text matching — works even when no embedding corpus exists.',
-    '- effort: "quick" (default) — compact lookup (3 semantic notes, ~5 lexical, no expansion, merged cap 5); "deep" — exploration (8 semantic, ~10 lexical, expansion on, merged cap 12).',
+    `- effort: "quick" (default) — compact lookup (${EFFORT_PROFILES.quick.semanticPool} semantic notes, ~${EFFORT_PROFILES.quick.lexicalNoteCap} lexical, no expansion, merged cap ${EFFORT_PROFILES.quick.mergedCap}); "deep" — exploration (${EFFORT_PROFILES.deep.semanticPool} semantic, ~${EFFORT_PROFILES.deep.lexicalNoteCap} lexical, expansion on, merged cap ${EFFORT_PROFILES.deep.mergedCap}).`,
     '',
     'PARAMETERS:',
     '- query (required): string, or array of 1-8 strings for synonyms/translations — merged into one ranked list per leg; each result carries `matched_queries`.',
@@ -509,7 +513,7 @@ export function buildSearchNotesTool(
         .max(1)
         .optional()
         .describe(
-          "Min semantic similarity 0-1 on the semantic leg's note scores. An explicit value is a hard filter with no fallback — zero hits are honest. Omitted: effort defaults (0.5 quick / 0.35 deep) with one retry at 0.3. Never affects the lexical or expansion leg.",
+          `Min semantic similarity 0-1 on the semantic leg's note scores. An explicit value is a hard filter with no fallback — zero hits are honest. Omitted: effort defaults (${EFFORT_PROFILES.quick.semanticThreshold} quick / ${EFFORT_PROFILES.deep.semanticThreshold} deep) with one retry at ${FALLBACK_THRESHOLD}. Never affects the lexical or expansion leg.`,
         ),
       expansion_floor: z
         .number()
@@ -517,7 +521,7 @@ export function buildSearchNotesTool(
         .max(1)
         .optional()
         .describe(
-          'Min seed↔note similarity 0-1 for the expansion leg (deep effort only). A note-to-note scale that runs far higher than query scores — 0.9+ is typical. Default 0.35, and `threshold` never affects it.',
+          `Min seed↔note similarity 0-1 for the expansion leg (deep effort only). A note-to-note scale that runs far higher than query scores — 0.9+ is typical. Default ${DEFAULT_EXPANSION_FLOOR}, and \`threshold\` never affects it.`,
         ),
       filter: filterSchema.optional(),
     },
