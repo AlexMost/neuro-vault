@@ -68,7 +68,6 @@ flowchart LR
         subgraph Operations[Operations module]
             direction TB
             Provider[FsVaultProvider<br/>fs/promises]
-            Writer[FsVaultWriter<br/>fs/promises]
             Reader[FsVaultReader<br/>fs/promises]
         end
         CLI --> Core
@@ -83,10 +82,9 @@ flowchart LR
     Backend -. reads/writes, watches for changes .-> Vault
     Lexical -. reads per call .-> Vault
     Provider -. fs read/write .-> Vault
-    Writer -. fs read/write .-> Vault
     Reader -. fs read .-> Vault
 ```
 
-The `VaultRegistry` is built once at startup from the list of vaults declared via `--vault` flags (repeatable). Each entry bundles a reader, writer, provider, wikilink graph, and — when the semantic module is enabled server-wide — a `backend` over that vault's own corpus. A backend never fails startup: it decides its own readiness live, reported through `status()`, so a vault whose corpus is missing, incompatible, or fails to build simply reports `unavailable` with a reason rather than aborting the process. See [`vault-registry.md`](./vault-registry.md) and [`semantic-backend.md`](./semantic-backend.md).
+The `VaultRegistry` is built once at startup from the list of vaults declared via `--vault` flags (repeatable). Each entry bundles a reader, provider, wikilink graph, and — when the semantic module is enabled server-wide — a `backend` over that vault's own corpus. A backend never fails startup: it decides its own readiness live, reported through `status()`, so a vault whose corpus is missing, incompatible, or fails to build simply reports `unavailable` with a reason rather than aborting the process. See [`vault-registry.md`](./vault-registry.md) and [`semantic-backend.md`](./semantic-backend.md).
 
-Each vault's semantic backend keeps a decoded corpus snapshot in memory, built from that vault's own `.neuro-vault/corpus/` shards and kept fresh by a debounced in-process watcher rather than loaded once at startup and left static (see [`semantic-backend.md`](./semantic-backend.md)); the lexical leg of `search_notes` instead reads note files from disk at call time behind an mtime cache. The operations module reads and writes the vault directory directly — `FsVaultReader` for batch reads (`read_notes`, `query_notes`), `FsVaultWriter` for in-place edits (`edit_note`), and `FsVaultProvider` for everything else (`create_note`, `read_daily`, properties, tags) — with no external process anywhere in the path (see [ADR-0009](../adr/0009-disk-direct-vault-operations.md)). The semantic module can be disabled via `--no-semantic`; operations tools are always registered.
+Each vault's semantic backend keeps a decoded corpus snapshot in memory, built from that vault's own `.neuro-vault/corpus/` shards and kept fresh by a debounced in-process watcher rather than loaded once at startup and left static (see [`semantic-backend.md`](./semantic-backend.md)); the lexical leg of `search_notes` instead reads note files from disk at call time behind an mtime cache. The operations module reads and writes the vault directory directly — `FsVaultReader` for batch reads (`read_notes`, `query_notes`) and for the `list_tags` / `list_properties` aggregate scans, and `FsVaultProvider` for every write to a single note (`create_note`, `edit_note`, `read_daily`, properties) — with no external process anywhere in the path (see [ADR-0009](../adr/0009-disk-direct-vault-operations.md) and [ADR-0016](../adr/0016-one-disk-module-owns-note-writes.md) for why one module, not two, owns those writes). The semantic module can be disabled via `--no-semantic`; operations tools are always registered.
