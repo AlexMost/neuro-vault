@@ -41,6 +41,6 @@ concurrently. 3.6–3.9 are sequential after them.
 - [x] 3.4 Update `docs/architecture/note-path-resolution.md` (its rule paragraph names `FsVaultWriter`, and its `normalizeNotePath` row and "What it does not do" list reference the writer) and `docs/architecture/vault-registry.md` (delete the `writer` table row at L17; fix the `reader`/`writer`/`provider` enumeration at L27).
 - [x] 3.5 Update `docs/architecture/obsidian-lib.md` (delete the `vault-writer.ts` bullet at L21; fix the entry-construction sentence at L49) and `docs/architecture/module-structure.md` (the `Writer[FsVaultWriter]` mermaid node at L71 and its edge at L86, plus the prose at L90 and L92).
 - [x] 3.6 Sweep all of `docs/` for remaining prose asserting a separate writer or a `VaultProvider` that owns tags/properties — `grep -rn "VaultWriter\|listTags\|listProperties" docs/`. An architecture-scoped grep alone misses `docs/guide/`.
-- [ ] 3.7 After archive syncs the deltas, update the `## Purpose` paragraph of `openspec/specs/headless-vault-operations/spec.md` to include `edit_note` in its enumeration. The Purpose block is not expressible as a requirement delta, so this is a deliberate hand-edit on the synced spec, not a sync gap.
-- [ ] 3.8 Run `openspec validate --all` and `npm test && npm run lint && npm run typecheck`.
-- [ ] 3.9 `/opsx:verify` → retrospective → `/opsx:archive`, then open PR 3 with `Closes #114`.
+- [x] 3.7 After archive syncs the deltas, update the `## Purpose` paragraph of `openspec/specs/headless-vault-operations/spec.md` to include `edit_note` in its enumeration. The Purpose block is not expressible as a requirement delta, so this is a deliberate hand-edit on the synced spec, not a sync gap.
+- [x] 3.8 Run `openspec validate --all` and `npm test && npm run lint && npm run typecheck`.
+- [x] 3.9 `/opsx:verify` → retrospective → `/opsx:archive`, then open PR 3 with `Closes #114`.
