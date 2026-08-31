@@ -3,10 +3,7 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
-import { invalidArgument } from '../tool-helpers.js';
-import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
-import { resolveNoteName } from '../resolve-note-name.js';
-import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
+import { invalidArgument, resolveIdentifier } from '../tool-helpers.js';
 
 interface Input {
   vault?: string;
@@ -40,47 +37,22 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: str
       replace: z.string().optional(),
     },
     runForEntry: async (entry, input) => {
-      if (
-        (input.name === undefined && input.path === undefined) ||
-        (input.name !== undefined && input.path !== undefined)
-      ) {
-        throw invalidArgument(
-          'Provide exactly one of name or path',
-          input.name === undefined ? 'name' : 'path',
-        );
-      }
-
-      const path = await resolveToPath(input, entry.reader);
+      const identifier = resolveIdentifier(input.name, input.path);
 
       if (input.replace !== undefined) {
         if (input.replace === '') {
           throw invalidArgument('replace must not be empty', 'replace');
         }
-        await entry.writer.replaceInNote({
-          path,
+        await entry.provider.replaceInNote({
+          identifier,
           find: input.replace,
           content: input.content,
         });
       } else {
-        await entry.writer.replaceFullBody({ path, content: input.content });
+        await entry.provider.replaceFullBody({ identifier, content: input.content });
       }
 
       return { vault: entry.name };
     },
   });
-}
-
-async function resolveToPath(input: Input, reader: VaultReader): Promise<string> {
-  if (input.path !== undefined) {
-    try {
-      return normalizeNotePath(input.path);
-    } catch (err) {
-      throw invalidArgument((err as Error).message, 'path');
-    }
-  }
-  const name = input.name!.trim();
-  if (name === '') {
-    throw invalidArgument('name must not be empty', 'name');
-  }
-  return resolveNoteName(reader, name);
 }

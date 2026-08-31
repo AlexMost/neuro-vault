@@ -1,8 +1,7 @@
 export type NoteIdentifier = { kind: 'name'; value: string } | { kind: 'path'; value: string };
 
 export interface CreateNoteInput {
-  name?: string;
-  path?: string;
+  identifier: NoteIdentifier;
   content?: string;
   overwrite?: boolean;
 }
@@ -32,6 +31,17 @@ export interface RemovePropertyInput {
   name: string;
 }
 
+export interface ReplaceInNoteInput {
+  identifier: NoteIdentifier;
+  find: string;
+  content: string;
+}
+
+export interface ReplaceFullBodyInput {
+  identifier: NoteIdentifier;
+  content: string;
+}
+
 export interface PropertyListEntry {
   name: string;
   count: number;
@@ -47,6 +57,8 @@ export interface VaultProvider {
   readDaily(): Promise<DailyNoteResult>;
   setProperty(input: SetPropertyInput): Promise<void>;
   removeProperty(input: RemovePropertyInput): Promise<void>;
+  replaceInNote(input: ReplaceInNoteInput): Promise<void>;
+  replaceFullBody(input: ReplaceFullBodyInput): Promise<void>;
   listProperties(): Promise<PropertyListEntry[]>;
   listTags(): Promise<TagListEntry[]>;
 }

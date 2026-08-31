@@ -10,7 +10,7 @@ import {
   sliceFrontmatterYaml,
   splitFrontmatter,
 } from '../../lib/obsidian/frontmatter.js';
-import { splitRawFrontmatter } from '../../lib/obsidian/in-place-edit.js';
+import { applyReplace, splitRawFrontmatter } from '../../lib/obsidian/in-place-edit.js';
 import { normalizeNotePath } from '../../lib/obsidian/note-path.js';
 import { resolveNoteName } from './resolve-note-name.js';
 import { invalidArgument } from './tool-helpers.js';
@@ -23,6 +23,8 @@ import type {
   NoteIdentifier,
   PropertyListEntry,
   RemovePropertyInput,
+  ReplaceFullBodyInput,
+  ReplaceInNoteInput,
   SetPropertyInput,
   TagListEntry,
   VaultProvider,
@@ -39,9 +41,20 @@ function sortCounts(counts: Map<string, number>): Array<{ name: string; count: n
 /** Same batching pattern as query-notes.ts — bound memory, never hold every body at once. */
 const READ_BATCH_SIZE = 32;
 
+export type FsReadFile = (absPath: string, encoding: 'utf8') => Promise<string>;
+export type FsWriteFile = (absPath: string, data: string, encoding: 'utf8') => Promise<void>;
+
 export interface FsVaultProviderOptions {
   vaultRoot: string;
   reader: VaultReader;
+  /**
+   * Note-file read/write, injectable so the `READ_FAILED` / `WRITE_FAILED`
+   * branches are reachable without making a temp vault unwritable. Covers the
+   * existing-note paths only; `createNote` writes with its own flags and its
+   * own taxonomy (design D5/D6).
+   */
+  readFile?: FsReadFile;
+  writeFile?: FsWriteFile;
 }
 
 /**
@@ -53,30 +66,19 @@ export interface FsVaultProviderOptions {
 export class FsVaultProvider implements VaultProvider {
   private readonly reader: VaultReader;
   private readonly vaultRoot: string;
+  private readonly readFileFn: FsReadFile;
+  private readonly writeFileFn: FsWriteFile;
 
   constructor(opts: FsVaultProviderOptions) {
     this.reader = opts.reader;
     this.vaultRoot = opts.vaultRoot;
+    this.readFileFn = opts.readFile ?? ((p, enc) => readFile(p, enc));
+    this.writeFileFn = opts.writeFile ?? ((p, d, enc) => writeFile(p, d, enc));
   }
 
   async createNote(input: CreateNoteInput): Promise<CreateNoteResult> {
-    const vaultRoot = this.vaultRoot;
-    if (input.name === undefined && input.path === undefined) {
-      throw invalidArgument('createNote requires name or path', 'name');
-    }
-    let relPath: string;
-    if (input.path !== undefined) {
-      relPath = input.path;
-    } else {
-      try {
-        relPath = normalizeNotePath((await this.newNoteDir(vaultRoot)) + input.name!);
-      } catch (err) {
-        // Mirror the tool-layer `path` branch: a name that normalizes outside
-        // the vault (e.g. '../x') is a caller error, not an internal failure.
-        throw invalidArgument((err as Error).message, 'name');
-      }
-    }
-    const absPath = path.join(vaultRoot, relPath);
+    const relPath = await this.resolveNew(input.identifier);
+    const absPath = path.join(this.vaultRoot, relPath);
 
     try {
       await mkdir(path.dirname(absPath), { recursive: true });
@@ -161,6 +163,9 @@ export class FsVaultProvider implements VaultProvider {
     try {
       raw = await readFile(path.join(vaultRoot, relPath), 'utf8');
     } catch (err) {
+      // Deliberately not routed through `readRaw`: the `headless-vault-operations`
+      // spec pins this NOT_FOUND message wording, so it can't share readRaw's
+      // generic error mapping.
       if ((err as { code?: string }).code === 'ENOENT') {
         throw new ToolHandlerError(
           'NOT_FOUND',
@@ -202,29 +207,8 @@ export class FsVaultProvider implements VaultProvider {
     identifier: NoteIdentifier,
     mutate: (doc: ReturnType<typeof parseDocument>) => boolean,
   ): Promise<void> {
-    const vaultRoot = this.vaultRoot;
-    const relPath = await this.resolveIdentifierPath(identifier);
-    const absPath = path.join(vaultRoot, relPath);
-
-    let raw: string;
-    try {
-      raw = await readFile(absPath, 'utf8');
-    } catch (err) {
-      if ((err as { code?: string }).code === 'ENOENT') {
-        throw new ToolHandlerError('NOT_FOUND', `Note not found: ${relPath}`, {
-          details: { path: relPath },
-          cause: err,
-        });
-      }
-      throw new ToolHandlerError(
-        'READ_FAILED',
-        `Failed to read ${relPath}: ${(err as Error).message}`,
-        {
-          details: { path: relPath },
-          cause: err,
-        },
-      );
-    }
+    const relPath = await this.resolveExisting(identifier);
+    const raw = await this.readRaw(relPath);
 
     const { prefix, body } = splitRawFrontmatter(raw);
     const yamlBody = prefix === '' ? '' : sliceFrontmatterYaml(prefix);
@@ -263,8 +247,32 @@ export class FsVaultProvider implements VaultProvider {
     } else {
       newPrefix = `---\n${doc.toString()}---\n`;
     }
+    await this.writeRaw(relPath, newPrefix + body);
+  }
+
+  /** Read one existing note. The single ENOENT → NOT_FOUND mapping. */
+  private async readRaw(relPath: string): Promise<string> {
     try {
-      await writeFile(absPath, newPrefix + body, 'utf8');
+      return await this.readFileFn(path.join(this.vaultRoot, relPath), 'utf8');
+    } catch (err) {
+      if ((err as { code?: string }).code === 'ENOENT') {
+        throw new ToolHandlerError('NOT_FOUND', `Note not found: ${relPath}`, {
+          details: { path: relPath },
+          cause: err,
+        });
+      }
+      throw new ToolHandlerError(
+        'READ_FAILED',
+        `Failed to read ${relPath}: ${(err as Error).message}`,
+        { details: { path: relPath }, cause: err },
+      );
+    }
+  }
+
+  /** Overwrite one existing note. The single WRITE_FAILED mapping. */
+  private async writeRaw(relPath: string, data: string): Promise<void> {
+    try {
+      await this.writeFileFn(path.join(this.vaultRoot, relPath), data, 'utf8');
     } catch (err) {
       throw new ToolHandlerError(
         'WRITE_FAILED',
@@ -274,9 +282,58 @@ export class FsVaultProvider implements VaultProvider {
     }
   }
 
-  private async resolveIdentifierPath(identifier: NoteIdentifier): Promise<string> {
+  /**
+   * Resolve an identifier for a note that must already exist: `kind: 'path'`
+   * normalizes, `kind: 'name'` goes through the scoped basename index —
+   * NOT_FOUND on no match, AMBIGUOUS_MATCH on several, never a silent
+   * first-match write. `createNote` uses `resolveNew` instead (design D3).
+   */
+  private async resolveExisting(identifier: NoteIdentifier): Promise<string> {
     if (identifier.kind === 'path') return normalizeNotePath(identifier.value);
     return resolveNoteName(this.reader, identifier.value);
+  }
+
+  /**
+   * Resolve an identifier for a note being created. `kind: 'name'` cannot use
+   * the basename index — the note does not exist yet — so it goes through the
+   * vault's new-note-location convention instead (design D3). A name that
+   * normalizes outside the vault is a caller error on the `name` field, the
+   * same way the `path` branch reports on `path`.
+   */
+  private async resolveNew(identifier: NoteIdentifier): Promise<string> {
+    if (identifier.kind === 'path') return normalizeNotePath(identifier.value);
+    try {
+      return normalizeNotePath((await this.newNoteDir(this.vaultRoot)) + identifier.value);
+    } catch (err) {
+      throw invalidArgument((err as Error).message, 'name');
+    }
+  }
+
+  async replaceInNote(input: ReplaceInNoteInput): Promise<void> {
+    const relPath = await this.resolveExisting(input.identifier);
+    const { prefix, body } = splitRawFrontmatter(await this.readRaw(relPath));
+
+    const result = applyReplace(body, input.find, input.content);
+    if ('error' in result) {
+      if (result.error === 'NOT_FOUND') {
+        throw new ToolHandlerError('NOT_FOUND', `Find text not present in body of ${relPath}`, {
+          details: { path: relPath },
+        });
+      }
+      throw new ToolHandlerError(
+        'AMBIGUOUS_MATCH',
+        `Find text matched ${result.lines.length} times in ${relPath} at lines ${result.lines.join(', ')}; make 'replace' more specific (extend the anchor with surrounding text) or omit it to rewrite the whole body`,
+        { details: { path: relPath, matches: result.lines } },
+      );
+    }
+
+    await this.writeRaw(relPath, prefix + result.body);
+  }
+
+  async replaceFullBody(input: ReplaceFullBodyInput): Promise<void> {
+    const relPath = await this.resolveExisting(input.identifier);
+    const { prefix } = splitRawFrontmatter(await this.readRaw(relPath));
+    await this.writeRaw(relPath, prefix + input.content);
   }
 
   async listProperties(): Promise<PropertyListEntry[]> {

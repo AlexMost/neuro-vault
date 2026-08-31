@@ -4,7 +4,6 @@ import { createOperationsModule } from '../../src/modules/operations/index.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
 import type { IVaultRegistry, IVaultEntry } from '../../src/lib/vault-registry.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
-import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import { createExistingPathFilter } from '../../src/lib/obsidian/existing-paths.js';
 import { createVaultScope } from '../../src/lib/obsidian/vault-scope.js';
@@ -25,11 +24,6 @@ describe('createOperationsModule', () => {
       scan: vi.fn().mockResolvedValue([]),
     } as unknown as VaultReader;
 
-    const fakeWriter = {
-      replaceInNote: vi.fn(),
-      replaceFullBody: vi.fn(),
-    } as unknown as VaultWriter;
-
     const fakeGraph = {
       ensureFresh: vi.fn().mockResolvedValue(undefined),
       getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
@@ -41,7 +35,6 @@ describe('createOperationsModule', () => {
       path: '/tmp/MyVault',
       scope: createVaultScope(),
       reader: fakeReader,
-      writer: fakeWriter,
       provider: fakeProvider,
       graph: fakeGraph,
       listMatchingPaths: vi.fn(),

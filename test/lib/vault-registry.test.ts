@@ -12,21 +12,18 @@ import { loadVaultScope } from '../../src/lib/obsidian/vault-scope-config.js';
 import { buildBasenameIndex } from '../../src/lib/obsidian/link-resolver.js';
 import type { IVaultConfig } from '../../src/types.js';
 
-// Type-level guard: writer and provider must be required on IVaultEntry.
-// If anyone reintroduces optionality (e.g. by adding `?`), this assertion
-// breaks at compile time — a much cleaner signal than the 14 runtime `!`
-// asserts the codebase used to carry.
+// Type-level guard: provider must be required on IVaultEntry. If anyone
+// reintroduces optionality (e.g. by adding `?`), this assertion breaks at
+// compile time — a much cleaner signal than the 14 runtime `!` asserts the
+// codebase used to carry.
 type AssertRequired<T, K extends keyof T> = undefined extends T[K] ? never : true;
-const _writerIsRequired: AssertRequired<IVaultEntry, 'writer'> = true;
 const _providerIsRequired: AssertRequired<IVaultEntry, 'provider'> = true;
 // Reference to silence the unused-variable lint.
-void _writerIsRequired;
 void _providerIsRequired;
 
 function fakeDeps(): IVaultEntryDeps {
   return {
     readerFactory: ({ vaultRoot }) => ({ vaultRoot }) as never,
-    writerFactory: ({ vaultRoot }) => ({ vaultRoot }) as never,
     graphFactory: ({ reader }) => ({ reader, ensureFresh: async () => {} }) as never,
     listMatchingPathsFactory: () => async () => new Set<string>(),
     providerFactory: ({ vaultName, vaultRoot, reader }) =>
@@ -197,7 +194,7 @@ describe('createVaultRegistry', () => {
     expect(seen[0]).toBe(fakeReader);
   });
 
-  it('always populates writer and provider on every entry', async () => {
+  it('always populates provider on every entry, with no writer field', async () => {
     const registry = await VaultRegistry.create(
       {
         vaults: [vault('v', '/tmp/v')],
@@ -206,7 +203,7 @@ describe('createVaultRegistry', () => {
       fakeDeps(),
     );
     const [entry] = registry.list();
-    expect(entry.writer).toBeDefined();
+    expect('writer' in entry).toBe(false);
     expect(entry.provider).toBeDefined();
   });
 

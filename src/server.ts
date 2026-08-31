@@ -8,7 +8,6 @@ import { createOwnCorpusBackendFactory } from './modules/semantic/backend/index.
 import { createOperationsModule } from './modules/operations/index.js';
 import { VaultRegistry, type IVaultEntryDeps } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
-import { FsVaultWriter } from './lib/obsidian/vault-writer.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
 import { FsVaultProvider } from './modules/operations/fs-vault-provider.js';
@@ -91,7 +90,6 @@ function buildDefaultVaultEntryDeps(
     readerFactory: ({ vaultRoot, scope }) => new FsVaultReader({ vaultRoot, scope }),
     vaultConfigFactory: ({ vaultRoot }) => loadVaultConfig(vaultRoot),
     scopeFactory: ({ vaultRoot, config }) => loadVaultScope(vaultRoot, { config }),
-    writerFactory: ({ vaultRoot }) => new FsVaultWriter({ vaultRoot }),
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
     providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),

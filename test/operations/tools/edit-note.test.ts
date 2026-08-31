@@ -1,50 +1,53 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { FsVaultWriter } from '../../../src/lib/obsidian/vault-writer.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { buildEditNoteTool } from '../../../src/modules/operations/tools/edit-note.js';
+import { FsVaultProvider } from '../../../src/modules/operations/fs-vault-provider.js';
 import { callTool } from '../../_gate.js';
-import { makeReader, makeWriter } from './_helpers.js';
+import { makeProvider, makeReader } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 function buildTool(
   overrides: {
     reader?: ReturnType<typeof makeReader>;
-    writer?: ReturnType<typeof makeWriter>;
+    provider?: ReturnType<typeof makeProvider>;
   } = {},
 ) {
   const reader = overrides.reader ?? makeReader();
-  const writer = overrides.writer ?? makeWriter();
-  const registry = makeTestRegistry([{ name: 'v', reader, writer }]);
+  const provider = overrides.provider ?? makeProvider();
+  const registry = makeTestRegistry([{ name: 'v', reader, provider }]);
   const tool = buildEditNoteTool({ registry });
-  return { tool, reader, writer };
+  return { tool, reader, provider };
 }
 
 describe('edit_note: targeted replace (replace field present)', () => {
-  it('routes to writer.replaceInNote with normalised path and returns { vault }', async () => {
-    const { tool, writer } = buildTool();
+  it('routes to provider.replaceInNote with a path identifier and returns { vault }', async () => {
+    const { tool, provider } = buildTool();
     const result = await callTool(registerTool(tool), {
       path: 'Notes/x.md',
       content: 'new',
       replace: 'old',
     });
-    expect(writer.replaceInNote).toHaveBeenCalledWith({
-      path: 'Notes/x.md',
+    expect(provider.replaceInNote).toHaveBeenCalledWith({
+      identifier: { kind: 'path', value: 'Notes/x.md' },
       find: 'old',
       content: 'new',
     });
-    expect(writer.replaceFullBody).not.toHaveBeenCalled();
+    expect(provider.replaceFullBody).not.toHaveBeenCalled();
     expect(result).toEqual({ vault: 'v' });
   });
 
-  it('rejects empty replace with INVALID_ARGUMENT', async () => {
-    const { tool, writer } = buildTool();
+  // The tool now validates its arguments before any disk I/O, so a malformed
+  // `replace` is reported even when the identifier would not have resolved.
+  // Previously `edit_note` resolved name -> path first and reported NOT_FOUND.
+  it('rejects empty replace before resolving an unresolvable name', async () => {
+    const reader = makeReader({ scan: vi.fn().mockResolvedValue([]) });
+    const { tool, provider } = buildTool({ reader });
+
     await expect(
-      callTool(registerTool(tool), { path: 'x.md', content: 'y', replace: '' }),
-    ).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-    });
-    expect(writer.replaceInNote).not.toHaveBeenCalled();
+      callTool(registerTool(tool), { name: 'Nope', content: 'y', replace: '' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', details: { field: 'replace' } });
+    expect(provider.replaceInNote).not.toHaveBeenCalled();
   });
 
   it('rejects invalid path', async () => {
@@ -55,75 +58,44 @@ describe('edit_note: targeted replace (replace field present)', () => {
   });
 
   it('rejects Unix absolute path', async () => {
-    const { tool, writer } = buildTool();
+    const { tool, provider } = buildTool();
     await expect(
       callTool(registerTool(tool), { path: '/etc/passwd', content: 'y', replace: 'x' }),
     ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
-    expect(writer.replaceInNote).not.toHaveBeenCalled();
+    expect(provider.replaceInNote).not.toHaveBeenCalled();
   });
 
-  it('resolves name → path via reader.scan (unique match)', async () => {
-    const reader = makeReader({
-      scan: vi.fn().mockResolvedValue(['Folder/My Note.md', 'Folder/Other.md']),
-    });
-    const { tool, writer } = buildTool({ reader });
-    await callTool(registerTool(tool), {
-      name: 'My Note',
-      content: 'new',
-      replace: 'old',
-    });
-    expect(writer.replaceInNote).toHaveBeenCalledWith(
-      expect.objectContaining({ path: 'Folder/My Note.md' }),
-    );
-  });
+  it('passes a name identifier down unresolved', async () => {
+    const { tool, provider } = buildTool();
+    await callTool(registerTool(tool), { name: '  Foo  ', content: 'body' });
 
-  it('rejects ambiguous name with AMBIGUOUS_MATCH', async () => {
-    const reader = makeReader({
-      scan: vi.fn().mockResolvedValue(['A/My Note.md', 'B/My Note.md']),
+    expect(provider.replaceFullBody).toHaveBeenCalledWith({
+      identifier: { kind: 'name', value: 'Foo' },
+      content: 'body',
     });
-    const { tool, writer } = buildTool({ reader });
-    await expect(
-      callTool(registerTool(tool), { name: 'My Note', content: 'new', replace: 'old' }),
-    ).rejects.toMatchObject({
-      code: 'AMBIGUOUS_MATCH',
-      details: { matches: ['A/My Note.md', 'B/My Note.md'] },
-      // Candidate paths must also be in the human message for clients that
-      // only render the text content of the error.
-      message: expect.stringContaining('A/My Note.md, B/My Note.md'),
-    });
-    expect(writer.replaceInNote).not.toHaveBeenCalled();
-  });
-
-  it('rejects unresolved name with NOT_FOUND', async () => {
-    const reader = makeReader({ scan: vi.fn().mockResolvedValue(['Other.md']) });
-    const { tool, writer } = buildTool({ reader });
-    await expect(
-      callTool(registerTool(tool), { name: 'Missing', content: 'new', replace: 'old' }),
-    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    expect(writer.replaceInNote).not.toHaveBeenCalled();
   });
 });
 
 describe('edit_note: full-body replace (replace field absent)', () => {
-  it('routes to writer.replaceFullBody and returns { vault }', async () => {
-    const { tool, writer } = buildTool();
+  it('routes to provider.replaceFullBody and returns { vault }', async () => {
+    const { tool, provider } = buildTool();
     const result = await callTool(registerTool(tool), {
       path: 'Notes/x.md',
       content: 'whole new body',
     });
-    expect(writer.replaceFullBody).toHaveBeenCalledWith({
-      path: 'Notes/x.md',
+    expect(provider.replaceFullBody).toHaveBeenCalledWith({
+      identifier: { kind: 'path', value: 'Notes/x.md' },
       content: 'whole new body',
     });
-    expect(writer.replaceInNote).not.toHaveBeenCalled();
+    expect(provider.replaceInNote).not.toHaveBeenCalled();
     expect(result).toEqual({ vault: 'v' });
   });
 
   it('allows empty content', async () => {
-    const { tool, writer } = buildTool();
+    const { tool, provider } = buildTool();
     await callTool(registerTool(tool), { path: 'Notes/x.md', content: '' });
-    expect(writer.replaceFullBody).toHaveBeenCalledWith({
-      path: 'Notes/x.md',
+    expect(provider.replaceFullBody).toHaveBeenCalledWith({
+      identifier: { kind: 'path', value: 'Notes/x.md' },
       content: '',
     });
   });
@@ -131,10 +103,10 @@ describe('edit_note: full-body replace (replace field absent)', () => {
 
 describe('edit_note: path auto-promotion', () => {
   it('auto-appends .md to a path without an extension', async () => {
-    const { tool, writer } = buildTool();
+    const { tool, provider } = buildTool();
     await callTool(registerTool(tool), { path: 'Foo', content: 'body' });
-    expect(writer.replaceFullBody).toHaveBeenCalledWith({
-      path: 'Foo.md',
+    expect(provider.replaceFullBody).toHaveBeenCalledWith({
+      identifier: { kind: 'path', value: 'Foo.md' },
       content: 'body',
     });
   });
@@ -142,13 +114,14 @@ describe('edit_note: path auto-promotion', () => {
 
 describe('edit_note: disk write failures reach the client with a code', () => {
   // ADR-0003: every tool error the client sees carries `{ code, message,
-  // details }`. A failing fs write used to escape FsVaultWriter as a bare
+  // details }`. A failing fs write used to escape FsVaultProvider as a bare
   // Error, which `toToolErrorResponse` renders through its code-less branch —
-  // nothing for an LLM client to branch on. Exercise the real writer through
+  // nothing for an LLM client to branch on. Exercise the real provider through
   // the registered tool so both the mapping and the rendering are asserted.
   function buildWithFailingDisk() {
-    const writer = new FsVaultWriter({
+    const provider = new FsVaultProvider({
       vaultRoot: '/vault',
+      reader: makeReader(),
       readFile: vi.fn().mockResolvedValue('---\nx: y\n---\nold body\n'),
       writeFile: vi.fn().mockRejectedValue(
         Object.assign(new Error('ENOSPC: no space left on device'), {
@@ -156,7 +129,7 @@ describe('edit_note: disk write failures reach the client with a code', () => {
         }),
       ),
     });
-    const registry = makeTestRegistry([{ name: 'v', reader: makeReader(), writer }]);
+    const registry = makeTestRegistry([{ name: 'v', reader: makeReader(), provider }]);
     return registerTool(buildEditNoteTool({ registry }));
   }
 

@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { makeProvider, makeVault } from './_helpers.js';
+import { byName, byPath, makeProvider, makeVault } from './_helpers.js';
 
 describe('FsVaultProvider.createNote (disk)', () => {
   it('writes content verbatim and creates parent folders', async () => {
@@ -11,7 +11,7 @@ describe('FsVaultProvider.createNote (disk)', () => {
     const provider = makeProvider(root);
 
     const result = await provider.createNote({
-      path: 'Deep/Nested/x.md',
+      identifier: byPath('Deep/Nested/x.md'),
       content: '---\na: 1\n---\nbody\n',
     });
 
@@ -25,11 +25,13 @@ describe('FsVaultProvider.createNote (disk)', () => {
     const root = await makeVault({ 'x.md': 'old' });
     const provider = makeProvider(root);
 
-    await expect(provider.createNote({ path: 'x.md', content: 'new' })).rejects.toMatchObject({
+    await expect(
+      provider.createNote({ identifier: byPath('x.md'), content: 'new' }),
+    ).rejects.toMatchObject({
       code: 'NOTE_EXISTS',
       details: { path: 'x.md' },
     });
-    await provider.createNote({ path: 'x.md', content: 'new', overwrite: true });
+    await provider.createNote({ identifier: byPath('x.md'), content: 'new', overwrite: true });
     expect(await readFile(path.join(root, 'x.md'), 'utf8')).toBe('new');
   });
 
@@ -39,7 +41,7 @@ describe('FsVaultProvider.createNote (disk)', () => {
     });
     const provider = makeProvider(root);
 
-    const result = await provider.createNote({ name: 'Idea 42' });
+    const result = await provider.createNote({ identifier: byName('Idea 42') });
 
     expect(result).toEqual({ path: 'Inbox/Idea 42.md' });
   });
@@ -48,14 +50,18 @@ describe('FsVaultProvider.createNote (disk)', () => {
     const root = await makeVault({});
     const provider = makeProvider(root);
 
-    expect(await provider.createNote({ name: 'Idea' })).toEqual({ path: 'Idea.md' });
+    expect(await provider.createNote({ identifier: byName('Idea') })).toEqual({
+      path: 'Idea.md',
+    });
   });
 
   it('fails INVALID_ARGUMENT on a traversal name, creating nothing outside the vault', async () => {
     const root = await makeVault({});
     const provider = makeProvider(root);
 
-    await expect(provider.createNote({ name: '../escape', content: 'x' })).rejects.toMatchObject({
+    await expect(
+      provider.createNote({ identifier: byName('../escape'), content: 'x' }),
+    ).rejects.toMatchObject({
       code: 'INVALID_ARGUMENT',
       details: { field: 'name' },
     });
@@ -71,24 +77,11 @@ describe('FsVaultProvider.createNote (disk)', () => {
     const root = await makeVault({ blocked: 'i am a file\n' });
     const provider = makeProvider(root);
 
-    await expect(provider.createNote({ path: 'blocked/x.md', content: 'y' })).rejects.toMatchObject(
-      {
-        code: 'CREATE_FAILED',
-        details: { path: 'blocked/x.md' },
-      },
-    );
-  });
-
-  it('fails INVALID_ARGUMENT when neither name nor path is given', async () => {
-    const root = await makeVault({});
-    const provider = makeProvider(root);
-
-    // The tool layer already enforces the name/path XOR, but the provider
-    // contract must not depend on that: every escape carries a code (ADR-0003).
-    await expect(provider.createNote({})).rejects.toMatchObject({
-      code: 'INVALID_ARGUMENT',
-      details: { field: 'name' },
-      message: 'createNote requires name or path',
+    await expect(
+      provider.createNote({ identifier: byPath('blocked/x.md'), content: 'y' }),
+    ).rejects.toMatchObject({
+      code: 'CREATE_FAILED',
+      details: { path: 'blocked/x.md' },
     });
   });
 
@@ -96,7 +89,7 @@ describe('FsVaultProvider.createNote (disk)', () => {
     const root = await makeVault({});
     const provider = makeProvider(root);
 
-    const result = await provider.createNote({ path: 'empty.md' });
+    const result = await provider.createNote({ identifier: byPath('empty.md') });
 
     expect(result).toEqual({ path: 'empty.md' });
     expect(await readFile(path.join(root, 'empty.md'), 'utf8')).toBe('');
@@ -106,7 +99,7 @@ describe('FsVaultProvider.createNote (disk)', () => {
     const root = await makeVault({ 'x.md': 'AAAAA long old' });
     const provider = makeProvider(root);
 
-    await provider.createNote({ path: 'x.md', content: 'new', overwrite: true });
+    await provider.createNote({ identifier: byPath('x.md'), content: 'new', overwrite: true });
 
     expect(await readFile(path.join(root, 'x.md'), 'utf8')).toBe('new');
   });
@@ -117,7 +110,9 @@ describe('FsVaultProvider.createNote (disk)', () => {
     });
     const provider = makeProvider(root);
 
-    expect(await provider.createNote({ name: 'Idea' })).toEqual({ path: 'Idea.md' });
+    expect(await provider.createNote({ identifier: byName('Idea') })).toEqual({
+      path: 'Idea.md',
+    });
   });
 
   it('falls back to vault root when app.json is malformed JSON', async () => {
@@ -126,7 +121,9 @@ describe('FsVaultProvider.createNote (disk)', () => {
     });
     const provider = makeProvider(root);
 
-    expect(await provider.createNote({ name: 'Idea' })).toEqual({ path: 'Idea.md' });
+    expect(await provider.createNote({ identifier: byName('Idea') })).toEqual({
+      path: 'Idea.md',
+    });
   });
 
   it('trims a trailing slash on newFileFolderPath', async () => {
@@ -135,7 +132,9 @@ describe('FsVaultProvider.createNote (disk)', () => {
     });
     const provider = makeProvider(root);
 
-    expect(await provider.createNote({ name: 'Idea' })).toEqual({ path: 'Inbox/Idea.md' });
+    expect(await provider.createNote({ identifier: byName('Idea') })).toEqual({
+      path: 'Inbox/Idea.md',
+    });
   });
 
   it('resolves name to vault root when newFileFolderPath is empty', async () => {
@@ -144,7 +143,9 @@ describe('FsVaultProvider.createNote (disk)', () => {
     });
     const provider = makeProvider(root);
 
-    expect(await provider.createNote({ name: 'Idea' })).toEqual({ path: 'Idea.md' });
+    expect(await provider.createNote({ identifier: byName('Idea') })).toEqual({
+      path: 'Idea.md',
+    });
   });
 
   it('creates parent folders that do not exist yet', async () => {
@@ -153,7 +154,7 @@ describe('FsVaultProvider.createNote (disk)', () => {
     });
     const provider = makeProvider(root);
 
-    const result = await provider.createNote({ name: 'Idea' });
+    const result = await provider.createNote({ identifier: byName('Idea') });
 
     expect(result).toEqual({ path: 'Deep/Nested/Idea.md' });
     expect(await readFile(path.join(root, 'Deep/Nested/Idea.md'), 'utf8')).toBe('');

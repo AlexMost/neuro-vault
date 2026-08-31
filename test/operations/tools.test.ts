@@ -4,7 +4,6 @@ import { buildOperationsTools } from '../../src/modules/operations/tools/index.j
 import { FAN_OUT_SUFFIX } from '../../src/lib/vault-param.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
-import type { VaultWriter } from '../../src/lib/obsidian/vault-writer.js';
 import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import type { IVaultRegistry } from '../../src/lib/vault-registry.js';
 
@@ -28,16 +27,10 @@ const noopGraph = {
   getBacklinkCount: vi.fn(() => 0),
 } as unknown as WikilinkGraphIndex;
 
-const noopWriter = {
-  replaceInNote: vi.fn(),
-  replaceFullBody: vi.fn(),
-} as unknown as VaultWriter;
-
 const noopEntry = {
   name: 'test',
   path: '/tmp/vault',
   reader: noopReader,
-  writer: noopWriter,
   provider: noopProvider,
   graph: noopGraph,
   listMatchingPaths: vi.fn(),

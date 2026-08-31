@@ -459,6 +459,8 @@ describe('Neuro Vault MCP server bootstrap', () => {
       readDaily: vi.fn(),
       setProperty: vi.fn().mockResolvedValue(undefined),
       removeProperty: vi.fn().mockResolvedValue(undefined),
+      replaceInNote: vi.fn().mockResolvedValue(undefined),
+      replaceFullBody: vi.fn().mockResolvedValue(undefined),
       listProperties: vi.fn().mockResolvedValue([]),
       listTags: vi.fn().mockResolvedValue([]),
     };
@@ -515,6 +517,8 @@ describe('Neuro Vault MCP server bootstrap', () => {
       readDaily: vi.fn(),
       setProperty: vi.fn().mockResolvedValue(undefined),
       removeProperty: vi.fn().mockResolvedValue(undefined),
+      replaceInNote: vi.fn().mockResolvedValue(undefined),
+      replaceFullBody: vi.fn().mockResolvedValue(undefined),
       listProperties: vi.fn().mockResolvedValue([]),
       listTags: vi.fn().mockResolvedValue([]),
     };

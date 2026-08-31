@@ -3,10 +3,9 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
-import { invalidArgument } from '../tool-helpers.js';
-import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
+import { resolveIdentifier } from '../tool-helpers.js';
 import { serializeFrontmatter, splitFrontmatter } from '../../../lib/obsidian/frontmatter.js';
-import type { CreateNoteToolInput } from '../types.js';
+import type { CreateNoteInput } from '../../../lib/obsidian/vault-provider.js';
 
 interface Input {
   vault?: string;
@@ -49,25 +48,9 @@ export function buildCreateNoteTool(
       overwrite: z.boolean().optional(),
     },
     runForEntry: async (entry, input) => {
-      if (input.name === undefined && input.path === undefined) {
-        throw invalidArgument('Provide name or path', 'name');
-      }
-      if (input.name !== undefined && input.path !== undefined) {
-        throw invalidArgument('Provide exactly one of name or path', 'name');
-      }
+      const identifier = resolveIdentifier(input.name, input.path);
 
-      const passthrough: CreateNoteToolInput = {};
-      if (input.name !== undefined) {
-        if (input.name.trim() === '') throw invalidArgument('name must not be empty', 'name');
-        passthrough.name = input.name.trim();
-      }
-      if (input.path !== undefined) {
-        try {
-          passthrough.path = normalizeNotePath(input.path);
-        } catch (err) {
-          throw invalidArgument((err as Error).message, 'path');
-        }
-      }
+      const passthrough: CreateNoteInput = { identifier };
       if (input.overwrite !== undefined) passthrough.overwrite = input.overwrite;
 
       const hasFrontmatter =
