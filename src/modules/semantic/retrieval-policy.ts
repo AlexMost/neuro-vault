@@ -9,13 +9,10 @@ import type {
   SmartSource,
 } from './types.js';
 
-const FALLBACK_THRESHOLD = 0.3;
+import { DEFAULT_EXPANSION_FLOOR, EFFORT_PROFILES, FALLBACK_THRESHOLD } from './effort-profiles.js';
+import type { EffortProfile } from './effort-profiles.js';
+
 const QUICK_BLOCK_LIMIT = 5;
-// The expansion leg's similarity floor operates on the seed↔note scale
-// (empirically 0.89–0.985 in real corpora) — incomparable with the semantic
-// leg's query↔note scale, which is why it is a separate knob. 0.35 matches
-// what default calls effectively used before the split (behavior-preserving).
-const DEFAULT_EXPANSION_FLOOR = 0.35;
 
 interface ModeConfig {
   limit: number;
@@ -24,9 +21,18 @@ interface ModeConfig {
   expansionLimit: number;
 }
 
+function toModeConfig(profile: EffortProfile): ModeConfig {
+  return {
+    limit: profile.semanticPool,
+    threshold: profile.semanticThreshold,
+    expansion: profile.expansion,
+    expansionLimit: profile.expansionLimit,
+  };
+}
+
 const MODE_DEFAULTS: Record<SearchMode, ModeConfig> = {
-  quick: { limit: 3, threshold: 0.5, expansion: false, expansionLimit: 0 },
-  deep: { limit: 8, threshold: 0.35, expansion: true, expansionLimit: 3 },
+  quick: toModeConfig(EFFORT_PROFILES.quick),
+  deep: toModeConfig(EFFORT_PROFILES.deep),
 };
 
 // Per-seed expansion. Each seed gets its own sorted, capped list of neighbours.
