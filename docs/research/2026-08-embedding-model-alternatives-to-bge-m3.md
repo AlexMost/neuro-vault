@@ -2,6 +2,8 @@
 
 Research question: is there a better embedding model than `BAAI/bge-m3` for semantic search over a personal Obsidian vault, under these constraints — multilingual retrieval (Ukrainian + English) as a hard requirement, local inference on macOS, runnable from Node ≥ 20 (transformers.js / ONNX Runtime preferred, Ollama / llama.cpp as fallback), and co-existence with a Smart Connections-style corpus.
 
+> **Update (October 2026):** the candidates were measured on a real vault with the repo's golden set in [`2026-10-embedding-model-bakeoff.md`](2026-10-embedding-model-bakeoff.md). The pick changed: `microsoft/harrier-oss-v1-270m` (released March 2026, absent from this survey) beat every model below on Ukrainian retrieval. Read that document first; this one remains the background on the wider field.
+
 All claims below are sourced to model cards, official release posts, the Smart Connections source, or this repo's source. Findings are as of 2026-08-25. Models released after the researcher's January 2026 knowledge cutoff (Granite R2, KaLM) were found via live search, not memory.
 
 ## Context: what this repo actually runs today
