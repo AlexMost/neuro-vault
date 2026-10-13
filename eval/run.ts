@@ -1,4 +1,5 @@
 import { realpathSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17,6 +18,7 @@ import { aggregate, scoreQuery, type QueryScore } from './metrics.js';
 import {
   bestRelevantSimilarity,
   createFusedContext,
+  EVAL_TOP_K,
   evalConfig,
   rankQuery,
   type EmbedFn,
@@ -24,6 +26,7 @@ import {
   type PipelineId,
 } from './pipelines.js';
 import { gitSha, writeReport, type EvalReport } from './report.js';
+import { collectPopulations, computeCalibrationStats, type CalibrationStats } from './stats.js';
 
 export class UsageError extends Error {}
 
@@ -93,6 +96,21 @@ export function parseEvalArgs(argv: string[]): EvalArgs {
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_RESULTS_DIR = path.join(MODULE_DIR, 'results');
 
+async function readBaseline(file: string): Promise<CalibrationStats> {
+  let report: { stats?: CalibrationStats };
+  try {
+    report = JSON.parse(await readFile(file, 'utf8')) as { stats?: CalibrationStats };
+  } catch (error) {
+    throw new UsageError(
+      `--baseline ${file} cannot be read: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (report.stats?.pass_rates === undefined) {
+    throw new UsageError(`--baseline ${file} is not a --stats report`);
+  }
+  return report.stats;
+}
+
 export async function runEval(
   args: EvalArgs,
   deps: { embed?: EmbedFn; resultsDir?: string } = {},
@@ -104,6 +122,8 @@ export async function runEval(
   const profile = args.model; // the only profile this run sees
   const identity = identityOf(profile);
   const sources = await loadSnapshot(vaultRoot, corpusIdentityOf(identity));
+  // A bad baseline fails here, not after the whole golden set has been embedded.
+  const baseline = args.baseline === undefined ? undefined : await readBaseline(args.baseline);
   const embed =
     deps.embed ??
     (() => {
@@ -113,9 +133,12 @@ export async function runEval(
   const fusedContext: FusedContext | undefined =
     args.pipeline === 'fused' ? await createFusedContext(vaultRoot) : undefined;
 
+  const config = evalConfig(profile.similarity);
   const per_query: QueryScore[] = [];
+  const queryVectors: number[][] = [];
   for (const entry of entries) {
     const queryVector = await embed(entry.query);
+    queryVectors.push(queryVector);
     const ranked = await rankQuery({
       pipeline: args.pipeline,
       query: entry.query,
@@ -129,6 +152,25 @@ export async function runEval(
     );
   }
 
+  let stats: CalibrationStats | undefined;
+  if (args.stats) {
+    // The run's own knobs, so the populations can never drift from what was ranked.
+    const populations = collectPopulations({
+      queryVectors,
+      sources,
+      seedPool: config.semantic_pool,
+      expansionLimit: config.expansion_limit,
+      topK: EVAL_TOP_K,
+    });
+    stats = computeCalibrationStats({
+      populations,
+      similarity: profile.similarity,
+      perQuery: per_query,
+      deepPool: config.semantic_pool,
+      baseline,
+    });
+  }
+
   const report: EvalReport = {
     code_sha: await gitSha(MODULE_DIR),
     vault_sha: await gitSha(vaultRoot),
@@ -136,10 +178,11 @@ export async function runEval(
     model_key: profile.key,
     identity,
     pipeline: args.pipeline,
-    config: { ...evalConfig(profile.similarity) },
+    config: { ...config },
     golden: { path: goldenSetPath(vaultRoot), count: entries.length },
     metrics: aggregate(per_query),
     per_query,
+    ...(stats ? { stats } : {}),
   };
   const reportFile = await writeReport(report, deps.resultsDir ?? DEFAULT_RESULTS_DIR);
   return { reportFile, report };
@@ -147,6 +190,19 @@ export async function runEval(
 
 function formatSlice(name: string, m: EvalReport['metrics']['overall']): string {
   return `${name.padEnd(8)} n=${m.n}  p@3=${m.precision_at_3.toFixed(3)}  mrr=${m.mrr.toFixed(3)}  hit@3=${m.hit_at_3.toFixed(3)}`;
+}
+
+function formatStats(stats: CalibrationStats): string[] {
+  const lines = Object.entries(stats.pass_rates).map(([key, rate]) => {
+    const suggested = stats.suggested?.[key as keyof typeof stats.pass_rates];
+    const tail = suggested ? `  → suggested ${suggested.threshold.toFixed(3)}` : '';
+    return `${key}: threshold=${rate.threshold.toFixed(3)} pass=${rate.pass_rate.toFixed(3)}${tail}`;
+  });
+  lines.push(
+    `guard deep_filtered_first_relevant=${stats.guards.deep_filtered_first_relevant} (target 0)`,
+    `guard quick_hit_at_3_drop=${stats.guards.quick_hit_at_3_drop} (target ≤ 1)`,
+  );
+  return lines;
 }
 
 async function main(): Promise<void> {
@@ -158,6 +214,7 @@ async function main(): Promise<void> {
     console.log(formatSlice('overall', report.metrics.overall));
     console.log(formatSlice('ua', report.metrics.ua));
     console.log(formatSlice('en', report.metrics.en));
+    if (report.stats) for (const line of formatStats(report.stats)) console.log(line);
     console.log(`report: ${reportFile}`);
   } catch (error) {
     if (

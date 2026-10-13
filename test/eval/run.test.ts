@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
 import { GoldenSetError } from '../../eval/golden.js';
 import { UsageError, parseEvalArgs, runEval } from '../../eval/run.js';
 import { BackendError } from '../../eval/backends.js';
+import type { EvalReport } from '../../eval/report.js';
 import {
   DEFAULT_MODEL_KEY,
   identityOf,
@@ -193,6 +194,119 @@ describe('runEval end-to-end (stub embedder)', () => {
     );
     expect(report.metrics.overall.n).toBe(1);
     expect(report.per_query[0].top).toContain('Notes/target.md');
+  });
+
+  it('embeds each golden query exactly once, for the semantic and the fused pipeline alike', async () => {
+    await makeVault(
+      `${GOLDEN}- id: q002\n  query: other\n  lang: en\n  relevant: [Notes/other.md]\n`,
+    );
+    for (const pipeline of ['semantic', 'fused'] as const) {
+      const embed = vi.fn(() => Promise.resolve(unitVec(0)));
+      const { report } = await runEval(
+        { vault: vaultRoot, pipeline, model: GRANITE, stats: false },
+        { embed, resultsDir },
+      );
+      expect(report.golden.count).toBe(2);
+      expect(embed).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('leaves the statistics out of a report that did not ask for them', async () => {
+    await makeVault(GOLDEN);
+    const { report } = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
+      { embed: () => Promise.resolve(unitVec(0)), resultsDir },
+    );
+    expect(report).not.toHaveProperty('stats');
+  });
+
+  it('with --stats, measures the populations against the selected profile', async () => {
+    await makeVault(GOLDEN);
+    const { report, reportFile } = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed: () => Promise.resolve(unitVec(0)), resultsDir },
+    );
+    expect(report.stats?.pass_rates.deep.threshold).toBe(GRANITE.similarity.deep);
+    expect(report.stats?.populations.query_candidates.n).toBe(2); // both notes are top-k candidates
+    expect(report.stats?.guards).toEqual({
+      deep_filtered_first_relevant: 0,
+      quick_hit_at_3_drop: 0,
+    });
+    expect(report.stats?.suggested).toBeUndefined();
+    const written = JSON.parse(await readFile(reportFile, 'utf8')) as EvalReport;
+    expect(written.stats?.pass_rates.deep).toEqual(report.stats?.pass_rates.deep);
+  });
+
+  it('with --baseline, suggests thresholds reproducing the baseline report pass rates', async () => {
+    await makeVault(GOLDEN);
+    // More notes than the seed pool, so the expansion leg has non-seed neighbours to measure.
+    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
+    for (let i = 1; i <= 10; i += 1) {
+      await store.writeShard({
+        path: `Notes/extra-${i}.md`,
+        content_hash: `x${i}`,
+        mtime: i,
+        size: 30,
+        embedding: encodeVector(unitVec(10 + i)),
+        blocks: [],
+      });
+    }
+    const embed = () => Promise.resolve(unitVec(0));
+    const first = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed, resultsDir },
+    );
+    const { report } = await runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        model: GRANITE,
+        stats: true,
+        baseline: first.reportFile,
+      },
+      { embed, resultsDir },
+    );
+    expect(first.report.stats?.pass_rates.deep.pass_rate).toBe(0.1); // one of the ten candidates scores 1, the rest 0
+    expect(report.stats?.suggested?.deep.baseline_pass_rate).toBe(0.1);
+    expect(report.stats?.suggested?.deep.threshold).toBe(1);
+  });
+
+  it('refuses a --baseline that is not a --stats report, before embedding anything', async () => {
+    await makeVault(GOLDEN);
+    const plain = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
+      { embed: () => Promise.resolve(unitVec(0)), resultsDir },
+    );
+    const embed = vi.fn(() => Promise.resolve(unitVec(0)));
+    const run = runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        model: GRANITE,
+        stats: true,
+        baseline: plain.reportFile,
+      },
+      { embed, resultsDir },
+    );
+    await expect(run).rejects.toThrow(UsageError);
+    await expect(run).rejects.toThrow(/is not a --stats report/);
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it('refuses a --baseline file that cannot be read', async () => {
+    await makeVault(GOLDEN);
+    const run = runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        model: GRANITE,
+        stats: true,
+        baseline: path.join(resultsDir, 'missing.json'),
+      },
+      { embed: () => Promise.resolve(unitVec(0)), resultsDir },
+    );
+    await expect(run).rejects.toThrow(UsageError);
+    await expect(run).rejects.toThrow(/missing\.json/);
   });
 
   it('hands the selected profile to the corpus gate before any query is embedded', async () => {

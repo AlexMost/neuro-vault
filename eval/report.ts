@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import type { EmbeddingIdentity } from '../src/lib/obsidian/corpus/types.js';
 import type { Metrics, QueryScore } from './metrics.js';
 import type { PipelineId } from './pipelines.js';
+import type { CalibrationStats } from './stats.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -24,8 +25,8 @@ export interface EvalReport {
   golden: { path: string; count: number };
   metrics: Metrics;
   per_query: QueryScore[];
-  /** Calibration statistics (`--stats`); filled by the statistics layer. */
-  stats?: unknown;
+  /** Calibration statistics; present only on a `--stats` run. */
+  stats?: CalibrationStats;
 }
 
 export async function gitSha(dir: string): Promise<string | null> {
