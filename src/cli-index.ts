@@ -36,7 +36,10 @@ export interface IndexCommandDeps {
 
 function defaultEmbedder(profile: ModelProfile): IndexEmbedder {
   const service = new EmbeddingService({ profile });
-  return { identity: service.identity, embed: (text) => service.embed(text) };
+  return {
+    identity: service.identity,
+    embed: (text) => service.embedDocuments([text]).then(([vector]) => vector),
+  };
 }
 
 function createProgressRenderer(stdout: OutStream, vaultName: string) {

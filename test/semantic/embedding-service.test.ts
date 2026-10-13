@@ -55,31 +55,31 @@ describe('EmbeddingService', () => {
 
   it('loads the model once, shared by concurrent embeds', async () => {
     const { service, loader } = serviceFor(granite, fakeModel().model);
-    await Promise.all([service.embed('a'), service.embed('b'), service.initialize()]);
+    await Promise.all([service.embedQuery('a'), service.embedQuery('b'), service.initialize()]);
     expect(loader).toHaveBeenCalledTimes(1);
     expect(loader).toHaveBeenCalledWith(granite);
   });
 
   it('rejects blank text before loading the model', async () => {
     const { service, loader } = serviceFor(granite, fakeModel().model);
-    await expect(service.embed('   ')).rejects.toThrow(/blank/i);
+    await expect(service.embedQuery('   ')).rejects.toThrow(/blank/i);
     expect(loader).not.toHaveBeenCalled();
   });
 
   it('pools the first token for a CLS profile', async () => {
     const { service } = serviceFor(granite, fakeModel().model);
-    expect(await service.embed('ab')).toEqual(unit([101, 1]));
+    expect(await service.embedQuery('ab')).toEqual(unit([101, 1]));
   });
 
   it('pools the mean for a mean profile', async () => {
     const { service } = serviceFor(bge, fakeModel(() => [3]).model);
-    expect(await service.embed('x')).toEqual(unit([(101 + 3 + 102) / 3, 1]));
+    expect(await service.embedQuery('x')).toEqual(unit([(101 + 3 + 102) / 3, 1]));
   });
 
   it('cuts an over-long input to the profile window and still returns a vector', async () => {
     const { model, runs } = fakeModel(() => Array.from({ length: 600 }, (_, i) => i + 1000));
     const { service } = serviceFor(bge, model);
-    const vector = await service.embed('long');
+    const vector = await service.embedQuery('long');
     const ids = runs[0].ids[0];
     expect(ids).toHaveLength(bge.maxTokens);
     // v2 semantics: encode with special tokens, then slice. The leading [101]
@@ -96,8 +96,18 @@ describe('EmbeddingService', () => {
     const { model } = fakeModel();
     const loader = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(model);
     const service = new EmbeddingService({ profile: granite, loader });
-    await expect(service.embed('a')).rejects.toThrow('offline');
-    await expect(service.embed('a')).resolves.toHaveLength(2);
+    await expect(service.embedQuery('a')).rejects.toThrow('offline');
+    await expect(service.embedQuery('a')).resolves.toHaveLength(2);
     expect(loader).toHaveBeenCalledTimes(2);
+  });
+
+  it('splits query and document embedding, with at most maxBatchSize documents per call', async () => {
+    const { service } = serviceFor(granite, fakeModel().model);
+    expect(service.maxBatchSize).toBe(8);
+    expect(await service.embedQuery('ab')).toEqual(unit([101, 1]));
+    expect(await service.embedDocuments(['ab', 'cd'])).toHaveLength(2);
+    await expect(service.embedDocuments(Array.from({ length: 9 }, () => 'x'))).rejects.toThrow(
+      'embedDocuments takes at most 8 texts, got 9',
+    );
   });
 });

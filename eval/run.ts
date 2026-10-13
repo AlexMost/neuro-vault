@@ -76,7 +76,7 @@ export async function runEval(
     deps.embed ??
     (() => {
       const service = new EmbeddingService({ profile });
-      return (text: string) => service.embed(text);
+      return (text: string) => service.embedQuery(text);
     })();
   const fusedContext: FusedContext | undefined =
     args.pipeline === 'fused' ? await createFusedContext(vaultRoot) : undefined;

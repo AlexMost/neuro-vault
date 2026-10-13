@@ -1,6 +1,7 @@
-import type { EmbeddingProvider } from './types.js';
+import type { EmbeddingProvider, QueryEmbedder } from './types.js';
 
 interface QueueEntry {
+  lane: 'query' | 'index';
   text: string;
   resolve: (value: number[]) => void;
   reject: (reason: unknown) => void;
@@ -12,8 +13,8 @@ export interface QueuedEmbedder {
   embedQuery(text: string): Promise<number[]>;
   /** Indexing lane — FIFO behind every pending query. */
   embedIndex(text: string): Promise<number[]>;
-  /** `EmbeddingProvider` view for the retrieval path. */
-  asProvider(): EmbeddingProvider;
+  /** `QueryEmbedder` view for the retrieval path. */
+  asProvider(): QueryEmbedder;
   /** `EmbedFn` view for `reconcileCorpus`. */
   asIndexEmbedFn(): (text: string) => Promise<number[]>;
 }
@@ -43,7 +44,11 @@ export function createQueuedEmbedder(provider: EmbeddingProvider): QueuedEmbedde
 
   async function run(entry: QueueEntry): Promise<void> {
     try {
-      const vector = await provider.embed(entry.text);
+      const vector =
+        entry.lane === 'query'
+          ? await provider.embedQuery(entry.text)
+          : (await provider.embedDocuments([entry.text]))[0];
+      if (vector === undefined) throw new Error('Embedding provider returned no vector');
       entry.resolve(vector);
     } catch (error) {
       entry.reject(error);
@@ -53,29 +58,33 @@ export function createQueuedEmbedder(provider: EmbeddingProvider): QueuedEmbedde
     }
   }
 
-  function enqueue(lane: QueueEntry[], text: string): Promise<number[]> {
+  function enqueue(
+    laneName: QueueEntry['lane'],
+    lane: QueueEntry[],
+    text: string,
+  ): Promise<number[]> {
     return new Promise<number[]>((resolve, reject) => {
-      lane.push({ text, resolve, reject });
+      lane.push({ lane: laneName, text, resolve, reject });
       pump();
     });
   }
 
   function embedQuery(text: string): Promise<number[]> {
-    return enqueue(queryLane, text);
+    return enqueue('query', queryLane, text);
   }
 
   function embedIndex(text: string): Promise<number[]> {
-    return enqueue(indexLane, text);
+    return enqueue('index', indexLane, text);
   }
 
   return {
     initialize: () => provider.initialize(),
     embedQuery,
     embedIndex,
-    asProvider(): EmbeddingProvider {
+    asProvider(): QueryEmbedder {
       return {
         initialize: () => provider.initialize(),
-        embed: embedQuery,
+        embedQuery,
       };
     },
     asIndexEmbedFn(): (text: string) => Promise<number[]> {

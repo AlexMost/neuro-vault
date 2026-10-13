@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type {
   BlockSearchResult,
-  EmbeddingProvider,
+  QueryEmbedder,
   SearchEngine,
   SearchResult,
   SmartSource,
@@ -38,10 +38,10 @@ function makeSources(entries: Array<[string, number[]]>): Map<string, SmartSourc
   return new Map(entries.map(([path, emb]) => [path, makeSource(path, emb)]));
 }
 
-function makeEmbeddingProvider(vector: number[] = QUERY_VECTOR): EmbeddingProvider {
+function makeEmbeddingProvider(vector: number[] = QUERY_VECTOR): QueryEmbedder {
   return {
     initialize: vi.fn(),
-    embed: vi.fn().mockResolvedValue(vector),
+    embedQuery: vi.fn().mockResolvedValue(vector),
   };
 }
 
@@ -918,9 +918,9 @@ describe.each(arities)('result cap and leg-level pool truncation (%s)', (_label,
 // point is that the queries differ.
 describe('cross-query behaviour (query array only)', () => {
   it('merges seeds by path, keeping max similarity, and aggregates matched_queries', async () => {
-    const embeddingProvider: EmbeddingProvider = {
+    const embeddingProvider: QueryEmbedder = {
       initialize: vi.fn(),
-      embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+      embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
     };
     const searchEngine = makeSearchEngine({
       findNeighbors: vi
@@ -963,7 +963,7 @@ describe('cross-query behaviour (query array only)', () => {
     // not matter.
     const embeddingProvider = {
       initialize: vi.fn(),
-      embed: vi.fn().mockImplementation(async (q: string) => (q === 'q1' ? [1, 0] : [0, 1])),
+      embedQuery: vi.fn().mockImplementation(async (q: string) => (q === 'q1' ? [1, 0] : [0, 1])),
     };
     const findNeighbors = vi.fn(
       ({ queryVector, threshold }: { queryVector: number[]; threshold: number }) => {
@@ -987,9 +987,9 @@ describe('cross-query behaviour (query array only)', () => {
   it('dedupes blocks across query vectors, keeping max similarity', async () => {
     // Two queries each surface the same block at different similarities. The
     // merged block must carry the higher similarity (0.8), not the lower (0.5).
-    const embeddingProvider: EmbeddingProvider = {
+    const embeddingProvider: QueryEmbedder = {
       initialize: vi.fn(),
-      embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+      embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
     };
     const searchEngine = makeSearchEngine({
       findNeighbors: vi
@@ -1030,9 +1030,9 @@ describe('cross-query behaviour (query array only)', () => {
   ])(
     'backfills a starved seed with the best block across query vectors ($label)',
     async ({ queries }) => {
-      const embeddingProvider: EmbeddingProvider = {
+      const embeddingProvider: QueryEmbedder = {
         initialize: vi.fn(),
-        embed: vi.fn((query: string) => Promise.resolve(query === 'q-high' ? [0, 1] : [1, 0])),
+        embedQuery: vi.fn((query: string) => Promise.resolve(query === 'q-high' ? [0, 1] : [1, 0])),
       };
       const findBlockNeighbors = vi.fn(
         ({
@@ -1084,9 +1084,9 @@ describe('cross-query behaviour (query array only)', () => {
     // exactly those same 3 paths, contributing no new unique paths, so the
     // CROSS-QUERY merge cap never fires (merged.length === limit). `truncated`
     // must still be true, driven by query 'a's per-query overflow.
-    const embeddingProvider: EmbeddingProvider = {
+    const embeddingProvider: QueryEmbedder = {
       initialize: vi.fn(),
-      embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+      embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
     };
     const searchEngine = makeSearchEngine({
       findNeighbors: vi
@@ -1122,9 +1122,9 @@ describe('cross-query behaviour (query array only)', () => {
   });
 
   it('caps results at limit (final) regardless of N queries', async () => {
-    const embeddingProvider: EmbeddingProvider = {
+    const embeddingProvider: QueryEmbedder = {
       initialize: vi.fn(),
-      embed: vi.fn().mockResolvedValue([1, 0]),
+      embedQuery: vi.fn().mockResolvedValue([1, 0]),
     };
     const searchEngine = makeSearchEngine({
       findNeighbors: vi
@@ -1154,9 +1154,9 @@ describe('cross-query behaviour (query array only)', () => {
   });
 
   it('reports per-query hits before the cross-query cap', async () => {
-    const embeddingProvider: EmbeddingProvider = {
+    const embeddingProvider: QueryEmbedder = {
       initialize: vi.fn(),
-      embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+      embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
     };
     const searchEngine = makeSearchEngine({
       findNeighbors: vi
@@ -1186,9 +1186,9 @@ describe('cross-query behaviour (query array only)', () => {
     // merge sort but is sliced off by the Step-3 cap. per_query_hits must still
     // report b's pre-cap count (1), taken from perQueryOutputs, not from the
     // post-cap seeds.
-    const embeddingProvider: EmbeddingProvider = {
+    const embeddingProvider: QueryEmbedder = {
       initialize: vi.fn(),
-      embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+      embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
     };
     const searchEngine = makeSearchEngine({
       findNeighbors: vi

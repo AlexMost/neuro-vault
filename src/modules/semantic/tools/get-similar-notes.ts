@@ -6,7 +6,7 @@ import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import { readNoteContentForEntry, readPositiveInteger, readThreshold } from '../tool-helpers.js';
-import type { EmbeddingProvider, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
+import type { QueryEmbedder, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
 
 const DEFAULT_LIMIT = 10;
@@ -22,7 +22,7 @@ interface Input {
 
 export interface GetSimilarNotesDeps {
   registry: IVaultRegistry;
-  embeddingProvider: EmbeddingProvider;
+  embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
   modelKey: string;
 }

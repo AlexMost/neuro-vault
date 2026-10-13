@@ -63,7 +63,7 @@ describe('getSimilarNotes', () => {
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
@@ -103,7 +103,7 @@ describe('getSimilarNotes', () => {
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
@@ -141,7 +141,7 @@ describe('getSimilarNotes', () => {
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
@@ -179,7 +179,7 @@ describe('getSimilarNotes', () => {
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
@@ -225,7 +225,7 @@ describe('getSimilarNotes', () => {
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
@@ -264,7 +264,7 @@ describe('getSimilarNotes', () => {
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
@@ -296,7 +296,7 @@ describe('getSimilarNotes', () => {
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
@@ -321,7 +321,7 @@ describe('getSimilarNotes', () => {
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
@@ -347,7 +347,7 @@ describe('getSimilarNotes', () => {
       ]);
       const tool = buildGetSimilarNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
@@ -368,7 +368,7 @@ describe('getSimilarNotes', () => {
       const registry = makeTestRegistry([{ name: 'v', path: tempRoot }]);
       const tool = buildGetSimilarNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
@@ -435,7 +435,7 @@ describe('getSimilarNotes — graph signals', () => {
     ]);
     const tool = buildGetSimilarNotesTool({
       registry,
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
       modelKey: MODEL_KEY,
     });

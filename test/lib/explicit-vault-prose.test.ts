@@ -33,7 +33,7 @@ function allTools(...names: string[]) {
     ...buildOperationsTools({ registry }),
     ...buildSemanticTools({
       registry,
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: {
         findNeighbors: vi.fn().mockReturnValue([]),
         findBlockNeighbors: vi.fn().mockReturnValue([]),

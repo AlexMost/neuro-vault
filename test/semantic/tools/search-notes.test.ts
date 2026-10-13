@@ -68,7 +68,7 @@ describe('searchNotes', () => {
       // note-b is absent from disk
       const { deps, cleanup } = await makeSearchDeps({
         sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
         absentPaths: new Set(['Folder/note-b.md']),
@@ -108,7 +108,7 @@ describe('searchNotes', () => {
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const { deps, cleanup } = await makeSearchDeps({
         sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
@@ -149,7 +149,7 @@ describe('searchNotes', () => {
       const embed = vi.fn();
       const { deps, cleanup } = await makeSearchDeps({
         sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
@@ -188,7 +188,7 @@ describe('searchNotes', () => {
       const embed = vi.fn().mockRejectedValue(new Error('model unavailable'));
       const tool = buildSearchNotesTool({
         ...deps,
-        embeddingProvider: { initialize: vi.fn(), embed },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
         warn,
       });
       const reg = registerTool(tool);
@@ -261,7 +261,7 @@ describe('searchNotes', () => {
         ...deps,
         embeddingProvider: {
           initialize: vi.fn(),
-          embed: vi.fn().mockRejectedValue(new Error('model unavailable')),
+          embedQuery: vi.fn().mockRejectedValue(new Error('model unavailable')),
         },
       });
       const reg = registerTool(tool);
@@ -283,7 +283,7 @@ describe('searchNotes', () => {
     try {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
@@ -325,7 +325,7 @@ describe('searchNotes', () => {
         .mockResolvedValueOnce([0.1, 0.2, 0.7]);
       const { deps, cleanup } = await makeSearchDeps({
         sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
@@ -359,7 +359,7 @@ describe('searchNotes', () => {
     try {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
@@ -383,7 +383,7 @@ describe('searchNotes', () => {
     try {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
@@ -414,7 +414,7 @@ describe('searchNotes', () => {
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const { deps, cleanup } = await makeSearchDeps({
         sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
@@ -443,7 +443,7 @@ describe('searchNotes', () => {
       const embed = vi.fn().mockResolvedValue([0.7, 0.2, 0.1]);
       const { deps, cleanup } = await makeSearchDeps({
         sources,
-        embeddingProvider: { initialize: vi.fn(), embed },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
@@ -475,7 +475,7 @@ describe('searchNotes', () => {
     const sources = makeMockSources(['note-a.md']);
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeMockSearchEngine(),
       modelKey: MODEL_KEY,
     });
@@ -494,7 +494,7 @@ describe('searchNotes', () => {
     const sources = makeMockSources(['note-a.md']);
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeMockSearchEngine(),
       modelKey: MODEL_KEY,
     });
@@ -517,7 +517,7 @@ describe('searchNotes', () => {
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine,
       modelKey: MODEL_KEY,
     });
@@ -550,7 +550,7 @@ describe('searchNotes', () => {
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine,
       modelKey: MODEL_KEY,
     });
@@ -583,7 +583,7 @@ describe('searchNotes', () => {
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine,
       modelKey: MODEL_KEY,
     });
@@ -621,7 +621,7 @@ describe('searchNotes', () => {
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine,
       modelKey: MODEL_KEY,
     });
@@ -655,7 +655,7 @@ describe('searchNotes', () => {
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine,
       modelKey: MODEL_KEY,
     });
@@ -692,7 +692,7 @@ describe('searchNotes', () => {
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine,
       modelKey: MODEL_KEY,
     });
@@ -729,7 +729,7 @@ describe('searchNotes', () => {
     const graph = makeFakeGraph({ 'note-a.md': 3, 'note-b.md': 0 });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine,
       modelKey: MODEL_KEY,
       graph,
@@ -760,7 +760,7 @@ describe('searchNotes', () => {
     const graph = makeFakeGraph({ 'note-a.md': 5, 'note-b.md': 1 });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine,
       modelKey: MODEL_KEY,
       graph,
@@ -803,7 +803,7 @@ describe('searchNotes', () => {
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine,
       modelKey: MODEL_KEY,
     });
@@ -835,7 +835,7 @@ describe('searchNotes', () => {
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine,
       modelKey: MODEL_KEY,
     });
@@ -900,7 +900,7 @@ describe('searchNotes', () => {
         ]);
         const tool = buildSearchNotesTool({
           registry,
-          embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+          embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
           searchEngine,
           modelKey: MODEL_KEY,
         });
@@ -979,7 +979,7 @@ describe('searchNotes', () => {
         ]);
         const tool = buildSearchNotesTool({
           registry,
-          embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+          embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
           searchEngine,
           modelKey: MODEL_KEY,
         });
@@ -1046,7 +1046,7 @@ describe('searchNotes', () => {
         ]);
         const tool = buildSearchNotesTool({
           registry,
-          embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+          embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
           searchEngine: {
             findNeighbors: vi.fn().mockReturnValue([{ path: 'note-a.md', similarity: 0.9 }]),
             findBlockNeighbors: vi.fn().mockReturnValue([]),
@@ -1093,7 +1093,7 @@ describe('searchNotes', () => {
       ]);
       const tool = buildSearchNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
@@ -1195,7 +1195,7 @@ describe('semantic_status', () => {
       ]);
       const tool = buildSearchNotesTool({
         registry,
-        embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
@@ -1281,7 +1281,7 @@ describe('search_notes advertised description', () => {
     );
     return {
       registry,
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
       modelKey: MODEL_KEY,
     };

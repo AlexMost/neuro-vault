@@ -1,4 +1,4 @@
-import type { SmartSource } from '../../lib/obsidian/corpus/types.js';
+import type { EmbeddingIdentity, SmartSource } from '../../lib/obsidian/corpus/types.js';
 import type {
   ListMatchingPaths,
   NoteFilter,
@@ -61,9 +61,25 @@ export interface DuplicatePair {
   similarity: number;
 }
 
-export interface EmbeddingProvider {
+/** What the retrieval path needs from an embedder: queries only. */
+export interface QueryEmbedder {
   initialize(): Promise<void>;
-  embed(text: string): Promise<number[]>;
+  /** Embeds a search query; the provider applies its profile's query prefix. */
+  embedQuery(text: string): Promise<number[]>;
+}
+
+/**
+ * A full embedding provider (design D4): the local transformers.js one today,
+ * possibly a remote API later. Queries and documents are separate calls so the
+ * query prefix stays a provider concern no caller can forget.
+ */
+export interface EmbeddingProvider extends QueryEmbedder {
+  /** What produces this provider's vectors; the corpus manifest records it. */
+  readonly identity: EmbeddingIdentity;
+  /** The most texts one `embedDocuments` call accepts. */
+  readonly maxBatchSize: number;
+  /** Embeds document texts (no query prefix), vectors in input order. */
+  embedDocuments(texts: string[]): Promise<number[][]>;
 }
 
 export interface SearchEngine {
@@ -117,7 +133,7 @@ export interface ToolHandlerDependencies {
   loader: {
     sources: Map<string, SmartSource>;
   };
-  embeddingProvider: EmbeddingProvider;
+  embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
   modelKey: string;
   pathExists?: PathExistsCheck;

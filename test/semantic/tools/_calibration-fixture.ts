@@ -6,7 +6,7 @@ import {
   findNeighbors,
 } from '../../../src/modules/semantic/search-engine.js';
 import type {
-  EmbeddingProvider,
+  QueryEmbedder,
   SearchEngine,
   SmartSource,
 } from '../../../src/modules/semantic/types.js';
@@ -57,7 +57,7 @@ function neighbourNote(index: number, seedSim: number): SmartSource {
 export function makeCalibrationFixture(): {
   sources: Map<string, SmartSource>;
   searchEngine: SearchEngine;
-  embeddingProvider: EmbeddingProvider;
+  embeddingProvider: QueryEmbedder;
 } {
   const notes = [
     ...BAND_SIMS.map((s, i) => bandNote(i, s)),
@@ -68,7 +68,7 @@ export function makeCalibrationFixture(): {
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     embeddingProvider: {
       initialize: vi.fn(),
-      embed: vi.fn().mockResolvedValue(vec(0)),
+      embedQuery: vi.fn().mockResolvedValue(vec(0)),
     },
   };
 }

@@ -42,7 +42,7 @@ describe('search_notes — filter', () => {
     ]);
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
       searchEngine: makeEngine({ findNeighbors }),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(['Resources/a.md', 'Resources/b.md']),
@@ -74,7 +74,7 @@ describe('search_notes — filter', () => {
     const findNeighbors = vi.fn();
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md', 'b.md']),
-      embeddingProvider: { initialize: vi.fn(), embed },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
       searchEngine: makeEngine({ findNeighbors }),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
@@ -99,7 +99,7 @@ describe('search_notes — filter', () => {
   it('returns an empty matches[] for deep mode with empty allowed set (no top-level blockResults)', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeEngine(),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
@@ -123,7 +123,7 @@ describe('search_notes — filter', () => {
   it('returns truncated: false for multi-query with empty allowed set', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeEngine(),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
@@ -147,7 +147,7 @@ describe('search_notes — filter', () => {
     const listMatchingPaths = vi.fn();
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
       searchEngine: makeEngine({ findNeighbors: vi.fn().mockReturnValue([]) }),
       modelKey: 'm',
       listMatchingPaths,
@@ -165,7 +165,7 @@ describe('search_notes — filter', () => {
   it('rejects empty filter object', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeEngine(),
       modelKey: 'm',
     });
@@ -186,7 +186,7 @@ describe('search_notes — filter', () => {
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeEngine(),
       modelKey: 'm',
       listMatchingPaths,
@@ -211,7 +211,7 @@ describe('search_notes — filter', () => {
     });
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeEngine(),
       modelKey: 'm',
       listMatchingPaths,
@@ -236,7 +236,7 @@ describe('search_notes — filter', () => {
     const findBlockNeighbors = vi.fn().mockReturnValue([]);
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
       searchEngine: makeEngine({ findNeighbors, findBlockNeighbors }),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(['Resources/a.md', 'Resources/b.md']),
@@ -268,7 +268,7 @@ describe('search_notes — filter', () => {
       sources,
       embeddingProvider: {
         initialize: vi.fn(),
-        embed: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+        embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
       },
       searchEngine: makeEngine({ findNeighbors }),
       modelKey: 'm',
@@ -303,7 +303,7 @@ describe('search_notes — filter', () => {
     ]);
     const { deps, cleanup } = await makeSearchDeps({
       sources,
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
       searchEngine: makeEngine({ findNeighbors }),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(['Live/a.md', 'Live/b.md']),
@@ -327,7 +327,7 @@ describe('search_notes — filter', () => {
   it('rejects an empty path_prefix array at the gate', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeEngine(),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
@@ -351,7 +351,7 @@ describe('search_notes — filter', () => {
   it('rejects an empty exclude_path_prefix array at the gate', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeEngine(),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
@@ -373,7 +373,7 @@ describe('search_notes — filter', () => {
   it('inputSchema (zod) rejects empty path_prefix array', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeEngine(),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
@@ -391,7 +391,7 @@ describe('search_notes — filter', () => {
   it('inputSchema (zod) rejects empty exclude_path_prefix array', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeEngine(),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),
@@ -412,7 +412,7 @@ describe('search_notes — filter', () => {
   it('handler treats empty path_prefix string as empty filter (INVALID_ARGUMENT)', async () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: makeSources(['a.md']),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn() },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: makeEngine(),
       modelKey: 'm',
       listMatchingPaths: async () => new Set(),

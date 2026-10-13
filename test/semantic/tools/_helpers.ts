@@ -23,7 +23,7 @@ import {
   findNeighbors,
 } from '../../../src/modules/semantic/search-engine.js';
 import type {
-  EmbeddingProvider,
+  QueryEmbedder,
   ListMatchingPaths,
   SearchEngine,
   SmartSource,
@@ -185,7 +185,7 @@ export function toBackend(
  */
 export async function makeSearchDeps(opts: {
   sources: Map<string, SmartSource>;
-  embeddingProvider: EmbeddingProvider;
+  embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
   modelKey: string;
   absentPaths?: Set<string>;
@@ -196,7 +196,7 @@ export async function makeSearchDeps(opts: {
 }): Promise<{
   deps: {
     registry: ReturnType<typeof makeTestRegistry>;
-    embeddingProvider: EmbeddingProvider;
+    embeddingProvider: QueryEmbedder;
     searchEngine: SearchEngine;
     modelKey: string;
   };
@@ -279,7 +279,7 @@ export async function runSearch(opts: {
   const allowed = opts.allowed;
   const { deps, cleanup } = await makeSearchDeps({
     sources,
-    embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0, 0]) },
+    embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0, 0]) },
     searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
     modelKey: MODEL_KEY,
     absentPaths,
@@ -299,4 +299,4 @@ export async function runSearch(opts: {
 export { makeTestRegistry };
 
 export { findNeighbors, findDuplicates, findBlockNeighbors, buildBasenameIndex };
-export type { EmbeddingProvider, ListMatchingPaths, SearchEngine, SmartSource, BasenameIndex };
+export type { QueryEmbedder, ListMatchingPaths, SearchEngine, SmartSource, BasenameIndex };

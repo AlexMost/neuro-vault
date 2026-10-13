@@ -97,7 +97,7 @@ async function productionOrder(
   ]);
   const tool = buildSearchNotesTool({
     registry,
-    embeddingProvider: { initialize: () => Promise.resolve(), embed },
+    embeddingProvider: { initialize: () => Promise.resolve(), embedQuery: embed },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     modelKey: 'k',
   });

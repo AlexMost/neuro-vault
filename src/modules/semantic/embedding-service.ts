@@ -19,6 +19,8 @@ export interface EmbeddingServiceOptions {
 export class EmbeddingService implements EmbeddingProvider {
   readonly identity: EmbeddingIdentity;
 
+  readonly maxBatchSize = 8;
+
   private readonly profile: ModelProfile;
 
   private readonly loader: LocalModelLoader;
@@ -28,7 +30,7 @@ export class EmbeddingService implements EmbeddingProvider {
   private initialization: Promise<void> | null = null;
 
   constructor(options: EmbeddingServiceOptions) {
-    // `embed` has no query/document distinction yet (design D4, PR 2), so a
+    // `embedOne` has no query/document distinction yet (design D4, PR 2), so a
     // prefix would be silently dropped. Refuse the profile instead.
     if (options.profile.queryPrefix !== '' || options.profile.documentPrefix !== '') {
       throw new Error(
@@ -44,7 +46,22 @@ export class EmbeddingService implements EmbeddingProvider {
     await this.getModel();
   }
 
-  async embed(text: string): Promise<number[]> {
+  embedQuery(text: string): Promise<number[]> {
+    return this.embedOne(text);
+  }
+
+  async embedDocuments(texts: string[]): Promise<number[][]> {
+    if (texts.length > this.maxBatchSize) {
+      throw new Error(
+        `embedDocuments takes at most ${this.maxBatchSize} texts, got ${texts.length}`,
+      );
+    }
+    const vectors: number[][] = [];
+    for (const text of texts) vectors.push(await this.embedOne(text));
+    return vectors;
+  }
+
+  private async embedOne(text: string): Promise<number[]> {
     const normalizedText = text.trim();
     if (!normalizedText) {
       throw new Error('Embedding text must not be blank');

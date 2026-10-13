@@ -75,7 +75,7 @@ export async function makeLexicalVault(
   ]);
   const deps = {
     registry,
-    embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+    embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
     searchEngine: opts.engine ?? makeMockEngine(),
     modelKey: 'k',
   };

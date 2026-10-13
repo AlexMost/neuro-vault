@@ -2,7 +2,7 @@ import { EmbeddingService } from './embedding-service.js';
 import type { ModelProfile } from './model-profiles.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
 import { buildSemanticTools, type ISemanticToolDeps } from './tools/index.js';
-import type { EmbeddingProvider, SearchEngine } from './types.js';
+import type { QueryEmbedder, SearchEngine } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 import type { IVaultRegistry } from '../../lib/vault-registry.js';
 
@@ -11,7 +11,7 @@ export interface ISemanticModuleConfig {
 }
 
 export interface ISemanticModuleDeps {
-  embeddingServiceFactory?: (profile: ModelProfile) => EmbeddingProvider;
+  embeddingServiceFactory?: (profile: ModelProfile) => QueryEmbedder;
   searchEngine?: SearchEngine;
 }
 

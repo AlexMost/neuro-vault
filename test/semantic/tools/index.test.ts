@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildSemanticTools } from '../../../src/modules/semantic/tools/index.js';
-import type { EmbeddingProvider, SearchEngine } from '../../../src/modules/semantic/types.js';
+import type { QueryEmbedder, SearchEngine } from '../../../src/modules/semantic/types.js';
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 import { makeFakeGraph } from './_helpers.js';
 
-const embeddingProvider: EmbeddingProvider = { initialize: vi.fn(), embed: vi.fn() };
+const embeddingProvider: QueryEmbedder = { initialize: vi.fn(), embedQuery: vi.fn() };
 const searchEngine: SearchEngine = {
   findNeighbors: vi.fn().mockReturnValue([]),
   findBlockNeighbors: vi.fn().mockReturnValue([]),
