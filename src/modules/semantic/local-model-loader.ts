@@ -7,6 +7,10 @@ import type { ModelOutput } from './pooling.js';
 /** The tokenizer surface the provider uses — a structural slice of transformers.js's. */
 export interface TokenizerHandle {
   encode(text: string, options: { add_special_tokens: boolean }): number[];
+  /** The side the tokenizer pads on; transformers.js defaults to right when its config is silent. */
+  readonly padding_side?: string;
+  /** May equal a template id (harrier-0.6b pads with its suffix) — pooling reads the mask, never ids. */
+  readonly pad_token_id?: number | null;
 }
 
 /** A loaded profile: its tokenizer, and a forward pass over already-padded id rows. */
@@ -26,6 +30,7 @@ interface RawModel {
   (inputs: Record<string, unknown>): Promise<Record<string, OutputTensor | undefined>>;
   sessions: Record<string, { inputNames: string[]; outputNames: string[] }>;
   config?: { max_position_embeddings?: number };
+  dispose?(): Promise<unknown>;
 }
 
 /** The slice of `@huggingface/transformers` the loader touches — the seam tests replace. */
@@ -116,25 +121,33 @@ export function createLocalModelLoader(
       device: 'cpu',
     });
 
-    // Fail at load, naming the profile, rather than embed garbage later.
-    const session = Object.values(model.sessions)[0];
-    if (session === undefined)
-      throw new Error(`model "${profile.key}": no inference session was loaded`);
-    for (const input of REQUIRED_INPUTS) {
-      if (!session.inputNames.includes(input)) {
+    // Fail at load, naming the profile, rather than embed garbage later. A
+    // rejected export must not keep its weights alive until GC, so the session
+    // is released before the error propagates.
+    let output: { name: string; kind: ModelOutput['kind'] };
+    try {
+      const session = Object.values(model.sessions)[0];
+      if (session === undefined)
+        throw new Error(`model "${profile.key}": no inference session was loaded`);
+      for (const input of REQUIRED_INPUTS) {
+        if (!session.inputNames.includes(input)) {
+          throw new Error(
+            `model "${profile.key}": export lacks the "${input}" input (has: ${session.inputNames.join(', ')})`,
+          );
+        }
+      }
+      output = pickOutput(profile, session.outputNames);
+      // The model's position window, not the tokenizer's declared one: bge-micro's
+      // tokenizer declares an effectively unbounded window over a 512-position model.
+      const window = model.config?.max_position_embeddings;
+      if (typeof window === 'number' && window < profile.maxTokens) {
         throw new Error(
-          `model "${profile.key}": export lacks the "${input}" input (has: ${session.inputNames.join(', ')})`,
+          `model "${profile.key}": maxTokens ${profile.maxTokens} exceeds the model's ${window}-position window`,
         );
       }
-    }
-    const output = pickOutput(profile, session.outputNames);
-    // The model's position window, not the tokenizer's declared one: bge-micro's
-    // tokenizer declares an effectively unbounded window over a 512-position model.
-    const window = model.config?.max_position_embeddings;
-    if (typeof window === 'number' && window < profile.maxTokens) {
-      throw new Error(
-        `model "${profile.key}": maxTokens ${profile.maxTokens} exceeds the model's ${window}-position window`,
-      );
+    } catch (error) {
+      await model.dispose?.().catch(() => undefined);
+      throw error;
     }
 
     return {

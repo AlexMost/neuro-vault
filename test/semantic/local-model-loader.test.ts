@@ -25,6 +25,7 @@ function fakeTransformers(
     outputNames?: string[];
     outputs?: Record<string, { data: number[]; dims: number[] }>;
     maxPositions?: number;
+    sessions?: Record<string, { inputNames: string[]; outputNames: string[] }>;
   } = {},
 ) {
   const forward: Array<Record<string, FakeTensor>> = [];
@@ -34,16 +35,17 @@ function fakeTransformers(
       return opts.outputs ?? { last_hidden_state: { data: [1, 2], dims: [1, 1, 2] } };
     },
     {
-      sessions: {
+      sessions: opts.sessions ?? {
         model: {
           inputNames: opts.inputNames ?? ['input_ids', 'attention_mask'],
           outputNames: opts.outputNames ?? ['last_hidden_state'],
         },
       },
       config: { max_position_embeddings: opts.maxPositions },
+      dispose: vi.fn(async () => {}),
     },
   );
-  const tokenizer = { encode: () => [1] };
+  const tokenizer = { encode: () => [1], padding_side: 'right', pad_token_id: 0 };
   const tf = {
     env: { cacheDir: null as string | null, logLevel: undefined as unknown },
     LogLevel: { ERROR: 'error-level' },
@@ -51,7 +53,7 @@ function fakeTransformers(
     AutoModel: { from_pretrained: vi.fn(async () => model) },
     Tensor: FakeTensor,
   };
-  return { tf, forward, module: tf as unknown as TransformersModule };
+  return { tf, forward, model, module: tf as unknown as TransformersModule };
 }
 
 describe('defaultModelCacheDir', () => {
@@ -169,5 +171,64 @@ describe('createLocalModelLoader', () => {
       cacheDir: '/m',
     })(granite);
     expect(await model.run([[1]], [[1]])).toEqual({ kind: 'pooled', data: [3, 4], dims: [1, 2] });
+  });
+
+  it("passes the tokenizer's padding side and pad id through", async () => {
+    const { module } = fakeTransformers();
+    const loaded = await createLocalModelLoader({
+      importTransformers: async () => module,
+      cacheDir: '/m',
+    })(granite);
+    expect(loaded.tokenizer).toMatchObject({ padding_side: 'right', pad_token_id: 0 });
+  });
+
+  it('fails naming the profile when no inference session was loaded', async () => {
+    const { module } = fakeTransformers({ sessions: {} });
+    await expect(
+      createLocalModelLoader({ importTransformers: async () => module, cacheDir: '/m' })(granite),
+    ).rejects.toThrow('model "granite-97m": no inference session was loaded');
+  });
+
+  it('disposes the model when export validation fails', async () => {
+    const failing = fakeTransformers({ outputNames: ['logits'] });
+    await expect(
+      createLocalModelLoader({
+        importTransformers: async () => failing.module,
+        cacheDir: '/m',
+      })(granite),
+    ).rejects.toThrow('export has no usable output');
+    expect(failing.model.dispose).toHaveBeenCalledTimes(1);
+
+    const ok = fakeTransformers();
+    await createLocalModelLoader({ importTransformers: async () => ok.module, cacheDir: '/m' })(
+      granite,
+    );
+    expect(ok.model.dispose).not.toHaveBeenCalled();
+  });
+
+  it('fails naming the profile when the forward pass returns no output', async () => {
+    const { module } = fakeTransformers({
+      outputNames: ['last_hidden_state'],
+      outputs: {},
+    });
+    const model = await createLocalModelLoader({
+      importTransformers: async () => module,
+      cacheDir: '/m',
+    })(granite);
+    await expect(model.run([[1]], [[1]])).rejects.toThrow(
+      'model "granite-97m": forward pass returned no "last_hidden_state"',
+    );
+  });
+
+  it('accepts token_embeddings as token states', async () => {
+    const { module } = fakeTransformers({
+      outputNames: ['token_embeddings'],
+      outputs: { token_embeddings: { data: [1, 2], dims: [1, 1, 2] } },
+    });
+    const model = await createLocalModelLoader({
+      importTransformers: async () => module,
+      cacheDir: '/m',
+    })(granite);
+    expect((await model.run([[1]], [[1]])).kind).toBe('token_states');
   });
 });
