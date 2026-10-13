@@ -128,7 +128,7 @@ Parallel-safe among themselves; after 12.
 
 Strictly in this order.
 
-- [ ] 14.1 `/opsx:verify` → `verify.md` (gates, test count, acceptance numbers).
+- [x] 14.1 `/opsx:verify` → `verify.md` (gates, test count, acceptance numbers).
 - [ ] 14.2 `retrospective.md`.
 - [ ] 14.3 `npx openspec archive -y`.
 - [ ] 14.4 After retrospective and archive — `superpowers:finishing-a-development-branch`: PR 4 (`Closes #98`), `feat!` with a BREAKING CHANGE footer (default model, forced re-index, download and memory). **Stop for review.**
