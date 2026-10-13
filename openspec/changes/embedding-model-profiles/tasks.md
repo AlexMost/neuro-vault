@@ -103,26 +103,26 @@ Sequential after 8.1 (EVAL_CONFIG reads the profile's floor). 9.5 is parallel-sa
 
 Sequential.
 
-- [ ] 11.0 Unranked calibration populations (design D11): `--stats` adds query↔every note, seed↔every note and note↔every note; each default's pass rate is measured on its unranked population; `--baseline` refuses a report measured on another population. Re-capture the bge-micro baseline on them **before 11.3**, while bge is in the registry; if any bge default still passes 1.0, stop for the owner. Tests: populations, population mapping, refusal.
-- [ ] 11.1 Manifest v2 (design D8): `CorpusManifest` gains `provider`, `revision`, `dtype`, `pooling`, `max_tokens`; `EMBED_VERSION` = 2; strategy `token-window-v1`; compatibility compares every field but `created`; a legacy manifest parses as incompatible and is named in rebuild messages. Tests: legacy bge manifest → rebuild report names `bge-micro-v2` and 1; each new field's mismatch rebuilds.
-- [ ] 11.2 Remove `EMBED_CHAR_BUDGET`: the note formula is breadcrumbs + full text. Tests: embed-text and types tests updated; a 5 000-character note's embed text is untruncated.
-- [ ] 11.3 Default → `harrier-270m`; remove `bge-micro-v2` from the registry. Tests: default, key set, `--model bge-micro-v2` rejected.
+- [x] 11.0 Unranked calibration populations (design D11): `--stats` adds query↔every note, seed↔every note and note↔every note; each default's pass rate is measured on its unranked population; `--baseline` refuses a report measured on another population. Re-capture the bge-micro baseline on them **before 11.3**, while bge is in the registry; if any bge default still passes 1.0, stop for the owner. Tests: populations, population mapping, refusal.
+- [x] 11.1 Manifest v2 (design D8): `CorpusManifest` gains `provider`, `revision`, `dtype`, `pooling`, `max_tokens`; `EMBED_VERSION` = 2; strategy `token-window-v1`; compatibility compares every field but `created`; a legacy manifest parses as incompatible and is named in rebuild messages. Tests: legacy bge manifest → rebuild report names `bge-micro-v2` and 1; each new field's mismatch rebuilds.
+- [x] 11.2 Remove `EMBED_CHAR_BUDGET`: the note formula is breadcrumbs + full text. Tests: embed-text and types tests updated; a 5 000-character note's embed text is untruncated.
+- [x] 11.3 Default → `harrier-270m`; remove `bge-micro-v2` from the registry. Tests: default, key set, `--model bge-micro-v2` rejected.
 
 ## 12. Calibration and acceptance
 
 Sequential; manual runs on the vault copy, results committed as aggregates.
 
-- [ ] 12.1 Confirm `calibration.md` holds the bge-micro baseline on the unranked populations (11.0). Index the copy with each profile; `eval --stats` per profile; set every similarity default by design D11 (quantile matching + golden guard); record values, pass rates and guard results in `calibration.md`; put the values in the registry. Test: registry pin of the calibrated values.
-- [ ] 12.2 Acceptance: default-profile cold index wall time (minutes); `npm run eval -- --pipeline semantic` UA MRR ≥ 0.6 and EN MRR ≥ 0.8; `fused` recorded; `--model granite-97m` end-to-end through the server. Results into `calibration.md`.
+- [x] 12.1 Confirm `calibration.md` holds the bge-micro baseline on the unranked populations (11.0). Index the copy with each profile; `eval --stats` per profile; set every similarity default by design D11 (quantile matching + golden guard); record values, pass rates and guard results in `calibration.md`; put the values in the registry. Test: registry pin of the calibrated values.
+- [x] 12.2 Acceptance: default-profile cold index wall time (minutes); `npm run eval -- --pipeline semantic` UA MRR ≥ 0.6 and EN MRR ≥ 0.8; `fused` recorded; `--model granite-97m` end-to-end through the server. Results into `calibration.md`.
 
 ## 13. ADR and docs sweep
 
 Parallel-safe among themselves; after 12.
 
-- [ ] 13.1 `docs/adr/0017-embedding-model-profiles.md` (design D14) with the calibrated numbers; `docs/adr/INDEX.md` row; 0013 marked "refined in part by 0017".
-- [ ] 13.2 Architecture sweep: `embedding-pipeline.md`, `own-corpus.md` (constants, formula, manifest v2, tokenizer-cap section, benchmarks), `semantic-backend.md`, `retrieval-policy.md` (thresholds per profile + calibration), `mcp-parameter-dictionary.md`, `module-structure.md`, `cli-startup.md`, `docs/architecture/README.md`.
-- [ ] 13.3 Guide + top-level sweep: `docs/guide/finding-notes.md` (threshold guidance per profile), `configuration.md`, `installation.md` (download sizes, RAM, cold-index cost, upgrade re-index), `README.md`, `AGENTS.md` (stale Smart Connections line). Grep `docs/`, `README.md`, `eval/README.md` for `bge`, `xenova`, `1894`, `3.7`, `0.35`, `0.3 `, `~40 MB` and resolve every hit outside `docs/research/` and accepted ADRs.
-- [ ] 13.4 Guide page `docs/guide/embedding-models.md` (owner's request in PR 4): profiles table (purpose, download, RAM, cold-index time), how to choose, how to configure `--model` for the server and `index`, what a switch does, per-profile calibrated thresholds, and benchmarks (semantic MRR/hit@3 per profile, UA/EN, aggregates from `calibration.md`). Linked from the guide index, `README.md` and `configuration.md`.
+- [x] 13.1 `docs/adr/0017-embedding-model-profiles.md` (design D14) with the calibrated numbers; `docs/adr/INDEX.md` row; 0013 marked "refined in part by 0017".
+- [x] 13.2 Architecture sweep: `embedding-pipeline.md`, `own-corpus.md` (constants, formula, manifest v2, tokenizer-cap section, benchmarks), `semantic-backend.md`, `retrieval-policy.md` (thresholds per profile + calibration), `mcp-parameter-dictionary.md`, `module-structure.md`, `cli-startup.md`, `docs/architecture/README.md`.
+- [x] 13.3 Guide + top-level sweep: `docs/guide/finding-notes.md` (threshold guidance per profile), `configuration.md`, `installation.md` (download sizes, RAM, cold-index cost, upgrade re-index), `README.md`, `AGENTS.md` (stale Smart Connections line). Grep `docs/`, `README.md`, `eval/README.md` for `bge`, `xenova`, `1894`, `3.7`, `0.35`, `0.3 `, `~40 MB` and resolve every hit outside `docs/research/` and accepted ADRs.
+- [x] 13.4 Guide page `docs/guide/embedding-models.md` (owner's request in PR 4): profiles table (purpose, download, RAM, cold-index time), how to choose, how to configure `--model` for the server and `index`, what a switch does, per-profile calibrated thresholds, and benchmarks (semantic MRR/hit@3 per profile, UA/EN, aggregates from `calibration.md`). Linked from the guide index, `README.md` and `configuration.md`.
 
 ## 14. Delivery (PR 4)
 
