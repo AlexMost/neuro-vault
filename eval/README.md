@@ -71,7 +71,8 @@ npm run eval -- --vault <path> [--pipeline semantic|fused] [--model <key>] [--st
 
 - `--pipeline` defaults to `semantic`.
 - `--model` names an embedding model profile and defaults to the registry
-  default (see [Axis: model](#axis-model)).
+  default (`DEFAULT_MODEL_KEY` in `src/modules/semantic/model-profiles.ts`;
+  currently `bge-micro-v2`; see [Axis: model](#axis-model)).
 - `--stats` adds the calibration statistics to the report and the printout
   (see [Calibration](#calibration)); it works on the `semantic` pipeline only.
 - `--baseline` names an earlier `--stats` report to calibrate against, and is
@@ -308,12 +309,18 @@ suggestion matches distributions only — it does not look at the guards.
    A vault has one corpus directory, so once it is re-indexed for another
    profile this baseline can no longer be reproduced.
 2. **Per profile:** index the vault copy with it, then run
-   `npm run eval -- --vault <copy> --model <key> --stats --baseline <baseline report>`.
-   Set each threshold to its `suggested` value.
-3. **Check the guards** on that same run. If either misses its target, lower
-   the threshold (`deep` for the first, `quick` for the second) until it passes
-   and record the adjustment.
-4. **Record** the baseline pass rates, the per-profile values and the guard
+   `npm run eval -- --vault <copy> --model <key> --stats --baseline <baseline report>`
+   and read each default's `suggested` value.
+3. **Write the chosen values** into the profile's `similarity` in
+   `src/modules/semantic/model-profiles.ts`.
+4. **Check the guards on the new values.** Re-run
+   `npm run eval -- --vault <copy> --model <key> --stats` (no re-index — the
+   corpus is the same): the guards evaluate the profile's _current_
+   `similarity`, not the `suggested` ones, so only this run reflects what you
+   wrote in step 3. If either guard misses its target, lower the threshold
+   (`deep` for the first, `quick` for the second), repeat this step until it
+   passes, and record the adjustment.
+5. **Record** the baseline pass rates, the per-profile values and the guard
    results where the decision lives (an ADR and the retrieval-policy
    architecture doc), not in a growing pile of local reports.
 
