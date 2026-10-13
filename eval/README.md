@@ -111,7 +111,8 @@ by shard. There are three refusals, each naming the command that fixes it:
 - the corpus has no readable manifest.
 
 The command is `neuro-vault-mcp index --vault <vault> --model <key>`, with
-the resolved vault root and the key you passed to `--model`.
+the resolved vault root and the selected profile's key (the default when
+`--model` is omitted).
 
 **Reproducing a model comparison** (a bake-off) means, for each profile:
 
@@ -304,7 +305,7 @@ suggestion matches distributions only — it does not look at the guards.
 The baseline's pass rates are validated up front: each of the six must be a
 number in [0, 1], otherwise the run fails naming the file and the key. The new
 report records which baseline the suggestions came from as `stats.baseline`
-(`file` — resolved —, `model_key`, `vault_sha`, `code_sha`). If the baseline's
+(`file` (the resolved path), `model_key`, `vault_sha`, `code_sha`). If the baseline's
 `vault_sha` differs from this run's, or either is unknown or `-dirty`, the run
 prints one warning line to stderr that the two reports are not comparable (see
 [Reports and comparability](#reports-and-comparability)) — the run still
