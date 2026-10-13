@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildEmbedInputs } from '../../../../src/lib/obsidian/corpus/embed-text.js';
-import { EMBED_CHAR_BUDGET } from '../../../../src/lib/obsidian/corpus/types.js';
 
 const long = (n: number) => 'x'.repeat(n);
 
@@ -14,10 +13,11 @@ describe('buildEmbedInputs', () => {
     expect(inner?.embedText).toContain('## Inner');
   });
 
-  it('builds note embed text from path breadcrumbs and truncates by characters', () => {
-    const { note } = buildEmbedInputs('Folder/Note.md', long(5000));
-    expect(note?.startsWith('Folder > Note:\n')).toBe(true);
-    expect(note).toHaveLength(EMBED_CHAR_BUDGET);
+  it('does not cut a long note by characters — the tokenizer bounds it', () => {
+    const content = `# Title\n${'слово '.repeat(1000)}`;
+    const { note } = buildEmbedInputs('Folder/Long.md', content);
+    expect(note).toBe(`Folder > Long:\n${content}`);
+    expect(note!.length).toBeGreaterThan(5000);
   });
 
   it('drops the note-level input below the gate but keeps qualifying blocks', () => {

@@ -100,7 +100,5 @@ export type EmbedDocumentsFn = (texts: string[]) => Promise<number[][]>;
 
 /** Notes and blocks shorter than this are not embedded. */
 export const MIN_CHARS = 200;
-/** Note embed text is cut here — the Smart Connections parity formula, 512 tokens × 3.7. */
-export const EMBED_CHAR_BUDGET = 1894;
 export const EMBED_STRATEGY = 'token-window-v1';
 export const EMBED_VERSION = 2;

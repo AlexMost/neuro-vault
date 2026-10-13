@@ -20,9 +20,11 @@ export interface QueuedEmbedder {
 /**
  * Groups text indices shortest-first into buckets of at most `maxBatchSize`
  * whose longest text is at most twice the shortest (design D6), so no input is
- * padded to one far longer. Sorting by measured length matters because the
- * longest input varies: the note text contains all its blocks, but
- * `EMBED_CHAR_BUDGET` caps it and not them, so a long block can outrun it.
+ * padded to one far longer. A note's inputs differ widely in length — its
+ * blocks among themselves, and the note text (which holds them all) from each
+ * of them — and which one is longest is not fixed: a block's heading
+ * breadcrumbs can make it outrun a note that is little more than that block.
+ * So the buckets come from measured lengths, not from input order.
  */
 export function bucketByLength(texts: readonly string[], maxBatchSize: number): number[][] {
   const order = texts.map((_, i) => i).sort((a, b) => texts[a].length - texts[b].length || a - b);
