@@ -5,12 +5,12 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
+import type { SimilarityDefaults } from '../model-profiles.js';
 import { readNoteContentForEntry, readPositiveInteger, readThreshold } from '../tool-helpers.js';
 import type { QueryEmbedder, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
 
 const DEFAULT_LIMIT = 10;
-const DEFAULT_THRESHOLD = 0.5;
 
 interface Input {
   vault?: string;
@@ -25,6 +25,7 @@ export interface GetSimilarNotesDeps {
   embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
   modelKey: string;
+  similarity: SimilarityDefaults;
 }
 
 interface Candidate {
@@ -154,7 +155,7 @@ function toSimilarNoteResult(c: Candidate, vaultName: string): StampedSimilarNot
 export function buildGetSimilarNotesTool(
   deps: GetSimilarNotesDeps,
 ): ITool<Input, StampedSimilarNoteResult[]> {
-  const { registry, searchEngine, modelKey } = deps;
+  const { registry, searchEngine, modelKey, similarity } = deps;
   return buildSingleVaultTool<Input, StampedSimilarNoteResult[]>(registry, {
     name: 'get_similar_notes',
     title: 'Get Similar Notes',
@@ -179,7 +180,7 @@ export function buildGetSimilarNotesTool(
         });
       }
       const limit = readPositiveInteger(input.limit, DEFAULT_LIMIT, 'limit');
-      const threshold = readThreshold(input.threshold, DEFAULT_THRESHOLD, 'threshold');
+      const threshold = readThreshold(input.threshold, similarity.similarNotes, 'threshold');
       const excludePrefixes = (input.exclude_folders ?? []).map(normalizeExcludeEntry);
 
       try {

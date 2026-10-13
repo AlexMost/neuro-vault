@@ -9,6 +9,7 @@ import { buildGetSimilarNotesTool } from '../../../src/modules/semantic/tools/ge
 import type { ToolRegistration } from '../../../src/lib/tool-registration.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
+import { TEST_SIMILARITY } from '../../_identity.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 import {
   MODEL_KEY,
@@ -66,6 +67,7 @@ describe('getSimilarNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -106,6 +108,7 @@ describe('getSimilarNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -144,6 +147,7 @@ describe('getSimilarNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -182,6 +186,7 @@ describe('getSimilarNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -228,6 +233,7 @@ describe('getSimilarNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -267,6 +273,7 @@ describe('getSimilarNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -299,6 +306,7 @@ describe('getSimilarNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -324,6 +332,7 @@ describe('getSimilarNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -350,6 +359,7 @@ describe('getSimilarNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -371,6 +381,7 @@ describe('getSimilarNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -438,6 +449,7 @@ describe('getSimilarNotes — graph signals', () => {
       embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
       modelKey: MODEL_KEY,
+      similarity: TEST_SIMILARITY,
     });
     return { tool, reg: registerTool(tool), cleanup };
   }
@@ -639,6 +651,32 @@ describe('getSimilarNotes — graph signals', () => {
       const description = registerTool(tool).spec.description!;
       expect(description).toMatch(/search_notes/);
       expect(description).toMatch(/expand/i);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('applies the profile’s similarNotes default when threshold is omitted', async () => {
+    const { vaultRoot, cleanup } = await makeTempVault({ 'a.md': '# A\n' });
+    try {
+      const thresholds: number[] = [];
+      const sources = new Map<string, SmartSource>([['a.md', makeSyntheticSource('a.md')]]);
+      const tool = buildGetSimilarNotesTool({
+        registry: makeTestRegistry([
+          { name: 'v', path: vaultRoot, backend: toBackend(makeFakeCorpusIndex(sources)) },
+        ]),
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
+        searchEngine: {
+          findNeighbors: (args) => (thresholds.push(args.threshold), []),
+          findDuplicates,
+          findBlockNeighbors,
+        },
+        modelKey: MODEL_KEY,
+        similarity: { ...TEST_SIMILARITY, similarNotes: 0.77 },
+      });
+      await callTool(registerTool(tool), { path: 'a.md' });
+      expect(thresholds).toContain(0.77);
+      expect(thresholds).not.toContain(0.5);
     } finally {
       await cleanup();
     }

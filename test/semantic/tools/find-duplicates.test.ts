@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { buildFindDuplicatesTool } from '../../../src/modules/semantic/tools/find-duplicates.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
+import { TEST_SIMILARITY } from '../../_identity.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 import {
   MODEL_KEY,
@@ -45,6 +46,7 @@ describe('findDuplicates', () => {
         registry,
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -87,6 +89,7 @@ describe('findDuplicates', () => {
           registry,
           searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
           modelKey: 'bge-micro-v2',
+          similarity: TEST_SIMILARITY,
         });
         const reg = registerTool(tool);
 
@@ -137,6 +140,7 @@ describe('findDuplicates', () => {
           registry,
           searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
           modelKey: 'bge-micro-v2',
+          similarity: TEST_SIMILARITY,
         });
         const reg = registerTool(tool);
 
@@ -170,6 +174,7 @@ describe('findDuplicates', () => {
         registry,
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -193,6 +198,7 @@ describe('findDuplicates', () => {
         registry,
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -213,6 +219,7 @@ describe('findDuplicates', () => {
         registry,
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -244,6 +251,7 @@ describe('findDuplicates', () => {
       registry,
       searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
       modelKey: MODEL_KEY,
+      similarity: TEST_SIMILARITY,
     });
     const reg = registerTool(tool);
 
@@ -252,5 +260,24 @@ describe('findDuplicates', () => {
     expect(results.map((r) => [r.note_a, r.note_b])).toEqual([
       ['Folder/note-d.md', 'Folder/note-e.md'],
     ]);
+  });
+
+  it('applies the profile’s duplicates default when threshold is omitted', async () => {
+    const thresholds: number[] = [];
+    const registry = makeTestRegistry([
+      { name: 'v', path: os.tmpdir(), backend: toBackend(makeFakeCorpusIndex(new Map())) },
+    ]);
+    const tool = buildFindDuplicatesTool({
+      registry,
+      searchEngine: {
+        findNeighbors,
+        findBlockNeighbors,
+        findDuplicates: (args) => (thresholds.push(args.threshold), []),
+      },
+      modelKey: MODEL_KEY,
+      similarity: { ...TEST_SIMILARITY, duplicates: 0.97 },
+    });
+    await callTool(registerTool(tool), {});
+    expect(thresholds).toEqual([0.97]);
   });
 });
