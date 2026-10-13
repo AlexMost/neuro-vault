@@ -64,22 +64,14 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     expect(source).toContain('${EFFORT_PROFILES.deep.mergedCap}');
   });
 
-  it('advertises the active profile’s defaults in the input schema', () => {
-    // Pinned against the tool's declared inputSchema converted to JSON
-    // Schema the same way the MCP SDK converts it for `tools/list` — not
-    // against the source file. A source-only grep (the test above) can't
-    // catch the two interpolation slots getting swapped, since swapped
-    // source still contains every token that grep checks for.
-    //
-    // Deliberately NOT `registerTool(builtTool()).spec.inputSchema`:
-    // `wrapSchemaWithCoercion` (src/lib/input-coercion.ts, pre-existing,
-    // unrelated to this change) unwraps every `.optional()` field down to
-    // its inner schema and rebuilds a fresh wrapper around it, which drops
-    // the `.describe()` metadata `.optional()` was carrying — so the
-    // *coerced* schema advertises no per-field descriptions at all, for any
-    // optional field on any tool. `builtTool().inputSchema` is the same zod
-    // schema object minus that unrelated stripping step, so it is the
-    // faithful stand-in for what the field-level prose says.
+  it('advertises the active profile’s defaults in the ADVERTISED schema', () => {
+    // Pinned against the post-gate schema MCP clients receive — the
+    // registration's coercing `spec.inputSchema`, converted the way the MCP
+    // SDK converts it for `tools/list` (`pipeStrategy: 'input'`) — not against
+    // the source file. A source-only grep (the test above) can't catch the two
+    // interpolation slots getting swapped, since swapped source still contains
+    // every token that grep checks for. Distinct values prove the numbers come
+    // from the profile passed in, not from a constant.
     const distinct = {
       quick: 0.61,
       deep: 0.47,
@@ -88,9 +80,33 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
       similarNotes: 0.6,
       duplicates: 0.95,
     };
-    const schema = JSON.stringify(z.toJSONSchema(builtTool(distinct).inputSchema));
-    expect(schema).toContain('effort defaults (0.61 quick / 0.47 deep) with one retry at 0.42');
-    expect(schema).toContain('Default 0.73');
-    expect(schema).not.toContain('0.9+');
+    const { properties } = z.toJSONSchema(
+      registerTool(builtTool(distinct)).spec.inputSchema as z.ZodType,
+      { io: 'input' },
+    ) as { properties: Record<string, { description?: string }> };
+    expect(properties.threshold?.description).toContain(
+      'effort defaults (0.61 quick / 0.47 deep) with one retry at 0.42',
+    );
+    expect(properties.expansion_floor?.description).toContain('Default 0.73');
+    expect(properties.expansion_floor?.description).not.toContain('0.9+');
+  });
+
+  it('the input gate advertises every field description the tool declares', () => {
+    // The sweep: whatever the tool declares per field must survive
+    // `wrapSchemaWithCoercion`, so the pre- and post-gate advertisements agree.
+    const tool = builtTool();
+    const describedFields = (schema: z.ZodType) =>
+      Object.fromEntries(
+        Object.entries(
+          (
+            z.toJSONSchema(schema, { io: 'input' }) as {
+              properties: Record<string, { description?: string }>;
+            }
+          ).properties,
+        ).flatMap(([k, v]) => (v.description === undefined ? [] : [[k, v.description]])),
+      );
+    const declared = describedFields(tool.inputSchema);
+    expect(Object.keys(declared)).toEqual(expect.arrayContaining(['threshold', 'expansion_floor']));
+    expect(describedFields(registerTool(tool).spec.inputSchema as z.ZodType)).toEqual(declared);
   });
 });

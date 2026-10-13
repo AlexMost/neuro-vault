@@ -152,17 +152,47 @@ export function coerceInput(schema: ZodTypeAny, value: unknown): unknown {
   return out;
 }
 
+type WrapperLayer =
+  | z.ZodOptional<ZodTypeAny>
+  | z.ZodNullable<ZodTypeAny>
+  | z.ZodDefault<ZodTypeAny>;
+
+function isWrapperLayer(schema: ZodTypeAny): schema is WrapperLayer {
+  return (
+    schema instanceof z.ZodOptional ||
+    schema instanceof z.ZodNullable ||
+    schema instanceof z.ZodDefault
+  );
+}
+
+/**
+ * Re-applies one unwrapped layer around the rebuilt field, with the metadata
+ * (`.describe()` / `.meta()`) zod keeps for that layer instance — `registerTool`
+ * advertises the rebuilt schema, so a layer's description must not be lost.
+ */
+function rewrapLayer(layer: WrapperLayer, schema: ZodTypeAny): ZodTypeAny {
+  let rebuilt: ZodTypeAny;
+  if (layer instanceof z.ZodOptional) {
+    rebuilt = schema.optional();
+  } else if (layer instanceof z.ZodNullable) {
+    rebuilt = schema.nullable();
+  } else {
+    // A thunk re-reads the original default on every parse, so a function
+    // default stays fresh instead of being frozen into one value.
+    const def = (layer as unknown as { _def: { defaultValue: unknown } })._def;
+    rebuilt = schema.default(() => def.defaultValue);
+  }
+  const meta = z.globalRegistry.get(layer);
+  return meta === undefined ? rebuilt : rebuilt.meta(meta);
+}
+
 function wrapField(field: ZodTypeAny, fieldName: string): ZodTypeAny {
+  const layers: WrapperLayer[] = [];
   let inner: ZodTypeAny = field;
-  let isOptional = false;
-  while (
-    inner instanceof z.ZodOptional ||
-    inner instanceof z.ZodNullable ||
-    inner instanceof z.ZodDefault
-  ) {
-    if (inner instanceof z.ZodOptional) isOptional = true;
+  while (isWrapperLayer(inner)) {
     const next = (inner as z.ZodOptional<ZodTypeAny>).unwrap();
     if (!next) break;
+    layers.push(inner);
     inner = next;
   }
   const wrapped = z.preprocess((v, ctx) => {
@@ -176,7 +206,7 @@ function wrapField(field: ZodTypeAny, fieldName: string): ZodTypeAny {
       throw err;
     }
   }, inner);
-  return isOptional ? wrapped.optional() : wrapped;
+  return layers.reduceRight<ZodTypeAny>((schema, layer) => rewrapLayer(layer, schema), wrapped);
 }
 
 export function wrapSchemaWithCoercion(schema: ZodTypeAny): ZodTypeAny {

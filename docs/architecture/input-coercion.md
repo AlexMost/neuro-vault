@@ -25,7 +25,7 @@ The companion goal is **error legibility**: when coercion cannot succeed, the re
 
 ## Coverage
 
-The layer walks the **top-level** input object (`z.object({...})`) and, for each declared field present in the input, applies one of the rules below. `z.optional`, `z.nullable`, `z.default` are unwrapped first.
+The layer walks the **top-level** input object (`z.object({...})`) and, for each declared field present in the input, applies one of the rules below. `z.optional`, `z.nullable`, `z.default` are unwrapped first, then re-applied around the coerced field in their original order, each with its own `.describe()`/`.meta()` metadata — the registry advertises the wrapped schema, so a field description must survive the rebuild. One loss is zod's, not ours: an input-mode JSON Schema omits `default` for any transforming schema, so a `z.default` value is honoured at parse time but not advertised.
 
 | Schema leaf                           | Coerced from         | Coerced to                                          | If the conversion fails                                                 |
 | ------------------------------------- | -------------------- | --------------------------------------------------- | ----------------------------------------------------------------------- |
