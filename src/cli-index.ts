@@ -11,7 +11,8 @@ import {
   type ReconcileOptions,
   type ReconcileSummary,
 } from './lib/obsidian/corpus/reconcile.js';
-import type { EmbedFn, EmbeddingIdentity } from './lib/obsidian/corpus/types.js';
+import type { EmbedDocumentsFn, EmbeddingIdentity } from './lib/obsidian/corpus/types.js';
+import { createQueuedEmbedder } from './modules/semantic/embed-queue.js';
 import { EmbeddingService } from './modules/semantic/embedding-service.js';
 import type { ModelProfile } from './modules/semantic/model-profiles.js';
 
@@ -23,7 +24,7 @@ interface OutStream {
 /** One embedder for the whole run: what it is, and how to call it. */
 export interface IndexEmbedder {
   identity: EmbeddingIdentity;
-  embed: EmbedFn;
+  embedDocuments: EmbedDocumentsFn;
 }
 
 export interface IndexCommandDeps {
@@ -36,9 +37,10 @@ export interface IndexCommandDeps {
 
 function defaultEmbedder(profile: ModelProfile): IndexEmbedder {
   const service = new EmbeddingService({ profile });
+  // Through the queue so `index` buckets by length exactly as the server does.
   return {
     identity: service.identity,
-    embed: (text) => service.embedDocuments([text]).then(([vector]) => vector),
+    embedDocuments: createQueuedEmbedder(service).asDocumentEmbedFn(),
   };
 }
 
@@ -78,7 +80,7 @@ async function reconcileOne(
   return reconcile(
     {
       ...buildReconcileFsDeps({ vaultRoot: vault.path, reader }),
-      embed: embedder.embed,
+      embedDocuments: embedder.embedDocuments,
       store,
       identity,
     },

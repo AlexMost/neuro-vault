@@ -69,7 +69,7 @@ A watcher that fails to start, or errors once running, degrades rather than fail
 One `QueuedEmbedder` (`src/modules/semantic/embed-queue.ts`) wraps the single process-wide `EmbeddingService` instance in a FIFO queue with two lanes:
 
 - `embedQuery` enqueues on the **query lane** — the retrieval path (`asProvider()`, wired into `search_notes`/`get_similar_notes`/`find_duplicates`) uses this.
-- `embedIndex` enqueues on the **index lane** — reconcile (`asIndexEmbedFn()`, wired into every backend's `reconcile` dependency) uses this.
+- `embedDocuments` enqueues one entry per length bucket on the **index lane** — reconcile (`asDocumentEmbedFn()`, wired into every backend's `reconcile` dependency) embeds each note's text and blocks in one such call.
 
 The pump always drains the query lane first. A query issued while a vault is cold-indexing therefore waits for at most the one embed already in flight (~25 ms), never behind the thousands of queued indexing embeds — one model instance serves every vault's indexing and every live query without either starving the other.
 

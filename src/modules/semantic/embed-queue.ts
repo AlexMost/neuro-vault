@@ -15,8 +15,6 @@ export interface QueuedEmbedder {
   asProvider(): QueryEmbedder;
   /** Document-embed view for `reconcileCorpus`. */
   asDocumentEmbedFn(): (texts: string[]) => Promise<number[][]>;
-  /** Single-text view, kept until reconcile takes the batch port. */
-  asIndexEmbedFn(): (text: string) => Promise<number[]>;
 }
 
 /**
@@ -99,9 +97,5 @@ export function createQueuedEmbedder(provider: EmbeddingProvider): QueuedEmbedde
     embedDocuments,
     asProvider: () => ({ initialize: () => provider.initialize(), embedQuery }),
     asDocumentEmbedFn: () => embedDocuments,
-    asIndexEmbedFn: () => async (text) => {
-      const [vector] = await embedDocuments([text]);
-      return vector;
-    },
   };
 }

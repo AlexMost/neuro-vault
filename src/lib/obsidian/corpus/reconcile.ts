@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { buildEmbedInputs } from './embed-text.js';
 import type { CorpusIdentity } from './identity.js';
 import { CorpusStore, ensureCorpusGitignored } from './shard-store.js';
-import type { CorpusBlock, CorpusManifest, CorpusShard, EmbedFn } from './types.js';
+import type { CorpusBlock, CorpusManifest, CorpusShard, EmbedDocumentsFn } from './types.js';
 import { encodeVector } from './vector-codec.js';
 
 export interface NoteStat {
@@ -28,7 +28,8 @@ export interface ReconcileDeps {
   stat: (relPath: string) => Promise<NoteStat>;
   /** Content plus the metadata observed with it, so the shard records what was hashed. */
   readNote: (relPath: string) => Promise<NoteContent>;
-  embed: EmbedFn;
+  /** One call per note: its text and its blocks' texts together, vectors back in order. */
+  embedDocuments: EmbedDocumentsFn;
   store: CorpusStore;
   /** The identity the corpus must carry — the provider's, under this build's extraction. */
   identity: CorpusIdentity;
@@ -88,7 +89,7 @@ export async function reconcileCorpus(
   deps: ReconcileDeps,
   opts: ReconcileOptions = {},
 ): Promise<ReconcileSummary> {
-  const { vaultRoot, scan, stat, readNote, embed, store } = deps;
+  const { vaultRoot, scan, stat, readNote, embedDocuments, store } = deps;
   const warn = deps.warn ?? ((message: string) => console.error(message));
 
   // Before any I/O. The setup below — a manifest write, a full scan, a full
@@ -174,7 +175,7 @@ export async function reconcileCorpus(
             continue;
           }
         }
-        await embedNote(notePath, note, hash, embed, store);
+        await embedNote(notePath, note, hash, embedDocuments, store);
         summary.embedded += 1;
         continue;
       }
@@ -186,7 +187,7 @@ export async function reconcileCorpus(
       // a failure must leave the note's previous shard untouched.
       const renamedFrom = takeOrphanWithHash(orphansByHash, hash);
       if (renamedFrom !== null) orphans.delete(renamedFrom);
-      await embedNote(notePath, note, hash, embed, store);
+      await embedNote(notePath, note, hash, embedDocuments, store);
       if (renamedFrom !== null) {
         summary.renamed += 1;
         // The rename already succeeded; a failed unlink of the old shard must
@@ -261,22 +262,30 @@ async function embedNote(
   notePath: string,
   note: NoteContent,
   hash: string,
-  embed: EmbedFn,
+  embedDocuments: EmbedDocumentsFn,
   store: CorpusStore,
 ): Promise<void> {
   const inputs = buildEmbedInputs(notePath, note.content);
 
-  const embedding = inputs.note === null ? null : encodeVector(await embed(inputs.note));
-
-  const blocks: CorpusBlock[] = [];
-  for (const block of inputs.blocks) {
-    blocks.push({
-      key: block.key,
-      heading: block.heading,
-      lines: block.lines,
-      embedding: encodeVector(await embed(block.embedText)),
-    });
+  // One call per note: the embedder batches within it, and a failure stays
+  // this note's alone — its previous shard is left untouched.
+  const texts = [
+    ...(inputs.note === null ? [] : [inputs.note]),
+    ...inputs.blocks.map((block) => block.embedText),
+  ];
+  const vectors = texts.length === 0 ? [] : await embedDocuments(texts);
+  if (vectors.length !== texts.length) {
+    throw new Error(`embedder returned ${vectors.length} vectors for ${texts.length} inputs`);
   }
+
+  let next = 0;
+  const embedding = inputs.note === null ? null : encodeVector(vectors[next++]);
+  const blocks: CorpusBlock[] = inputs.blocks.map((block) => ({
+    key: block.key,
+    heading: block.heading,
+    lines: block.lines,
+    embedding: encodeVector(vectors[next++]),
+  }));
 
   const shard: CorpusShard = {
     path: notePath,

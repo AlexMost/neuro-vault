@@ -79,8 +79,8 @@ export interface EmbeddingIdentity {
   max_tokens: number;
 }
 
-/** The indexer's only view of the embedding model (design D1). */
-export type EmbedFn = (text: string) => Promise<number[]>;
+/** The indexer's only view of the embedding model: documents in, vectors out, in order (design D4). */
+export type EmbedDocumentsFn = (texts: string[]) => Promise<number[][]>;
 
 /** Notes and blocks shorter than this are not embedded. */
 export const MIN_CHARS = 200;

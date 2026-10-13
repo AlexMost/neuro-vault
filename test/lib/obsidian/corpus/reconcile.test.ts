@@ -9,17 +9,20 @@ import {
   type ReconcileOptions,
 } from '../../../../src/lib/obsidian/corpus/reconcile.js';
 import { CorpusStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
+import { buildEmbedInputs } from '../../../../src/lib/obsidian/corpus/embed-text.js';
 import { TEST_DIMS, TEST_IDENTITY } from '../../../_identity.js';
 
-/** Deterministic fake embedder: the vector is a checkable function of its input text. */
-function fakeEmbed() {
-  return vi.fn(async (text: string) => {
-    const vector = new Array<number>(TEST_DIMS).fill(0);
-    for (let i = 0; i < text.length; i += 1) {
-      vector[i % TEST_DIMS] = Math.fround((vector[i % TEST_DIMS] ?? 0) + text.charCodeAt(i) / 1000);
-    }
-    return vector;
-  });
+function vectorFor(text: string): number[] {
+  const vector = new Array<number>(TEST_DIMS).fill(0);
+  for (let i = 0; i < text.length; i += 1) {
+    vector[i % TEST_DIMS] = Math.fround((vector[i % TEST_DIMS] ?? 0) + text.charCodeAt(i) / 1000);
+  }
+  return vector;
+}
+
+/** Deterministic fake document embedder: each vector is a checkable function of its text. */
+function fakeEmbedDocuments() {
+  return vi.fn(async (texts: string[]) => texts.map(vectorFor));
 }
 
 /** In-memory vault: path -> { content, mtime, size }. */
@@ -63,7 +66,7 @@ const body = (marker: string) => `# ${marker}\n${'x'.repeat(300)}\n`;
 async function harness(files: Record<string, string>) {
   const root = await mkdtemp(path.join(tmpdir(), 'nv-reconcile-'));
   const vault = fakeVault(files);
-  const embed = fakeEmbed();
+  const embed = fakeEmbedDocuments();
   const store = new CorpusStore(root, { dims: TEST_DIMS });
   const warn = vi.fn();
   const run = (opts: ReconcileOptions = {}) =>
@@ -73,7 +76,7 @@ async function harness(files: Record<string, string>) {
         scan: vault.scan,
         stat: vault.stat,
         readNote: vault.readNote,
-        embed,
+        embedDocuments: embed,
         identity: TEST_IDENTITY,
         store,
         warn,
@@ -91,6 +94,34 @@ describe('reconcileCorpus', () => {
 
     expect(summary).toMatchObject({ total: 2, embedded: 2, reused: 0, deleted: 0, failed: 0 });
     expect([...(await store.listShards()).keys()].sort()).toEqual(['A.md', 'Dir/B.md']);
+  });
+
+  it('embeds a note’s text and its blocks in one call, in order', async () => {
+    const note = `# Top\n${'a'.repeat(250)}\n\n## Inner\n${'b'.repeat(250)}\n`;
+    const { run, embed } = await harness({ 'A.md': note });
+    await run();
+    expect(embed).toHaveBeenCalledTimes(1);
+    const inputs = buildEmbedInputs('A.md', note);
+    expect(embed.mock.calls[0][0]).toEqual([
+      ...(inputs.note === null ? [] : [inputs.note]),
+      ...inputs.blocks.map((b) => b.embedText),
+    ]);
+    expect(inputs.blocks.length).toBeGreaterThan(0);
+  });
+
+  it('a failed call fails only that note and keeps its previous shard', async () => {
+    const { run, vault, store, embed } = await harness({ 'A.md': body('A'), 'B.md': body('B') });
+    await run();
+    const before = await store.readShard('A.md');
+    vault.edit('A.md', body('A2'));
+    vault.edit('B.md', body('B2'));
+    embed.mockImplementation(async (texts: string[]) => {
+      if (texts.some((t) => t.includes('A2'))) throw new Error('batch failed');
+      return texts.map(vectorFor);
+    });
+    const summary = await run();
+    expect(summary).toMatchObject({ embedded: 1, failed: 1 });
+    expect(await store.readShard('A.md')).toEqual(before);
   });
 
   it('embeds nothing on a second run over an untouched vault', async () => {
@@ -283,7 +314,7 @@ describe('reconcileCorpus', () => {
         scan: vault.scan,
         stat: vault.stat,
         readNote: vault.readNote,
-        embed: fakeEmbed(),
+        embedDocuments: fakeEmbedDocuments(),
         identity: TEST_IDENTITY,
         store: new CorpusStore(root, { dims: TEST_DIMS }),
       },
@@ -298,9 +329,9 @@ describe('reconcileCorpus', () => {
   it('records a failing note and keeps going', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-fail-'));
     const vault = fakeVault({ 'A.md': body('A'), 'Bad.md': body('Bad'), 'C.md': body('C') });
-    const embed = vi.fn(async (text: string) => {
-      if (text.includes('Bad')) throw new Error('model exploded');
-      return new Array<number>(TEST_DIMS).fill(0.1);
+    const embed = vi.fn(async (texts: string[]) => {
+      if (texts.some((t) => t.includes('Bad'))) throw new Error('model exploded');
+      return texts.map(() => new Array<number>(TEST_DIMS).fill(0.1));
     });
     const store = new CorpusStore(root, { dims: TEST_DIMS });
     const warn = vi.fn();
@@ -310,7 +341,7 @@ describe('reconcileCorpus', () => {
       scan: vault.scan,
       stat: vault.stat,
       readNote: vault.readNote,
-      embed,
+      embedDocuments: embed,
       identity: TEST_IDENTITY,
       store,
       warn,
@@ -332,7 +363,7 @@ describe('reconcileCorpus', () => {
       scan: vault.scan,
       stat: vault.stat,
       readNote: vault.readNote,
-      embed: vi.fn(async () => {
+      embedDocuments: vi.fn(async () => {
         throw new Error('nope');
       }),
       identity: TEST_IDENTITY,
@@ -355,7 +386,7 @@ describe('reconcileCorpus', () => {
       scan: vault.scan,
       stat: vault.stat,
       readNote: vault.readNote,
-      embed: vi.fn(async () => {
+      embedDocuments: vi.fn(async () => {
         throw new Error('model exploded');
       }),
       identity: TEST_IDENTITY,
@@ -382,7 +413,7 @@ describe('reconcileCorpus', () => {
         scan: vault.scan,
         stat: vault.stat,
         readNote: vault.readNote,
-        embed: fakeEmbed(),
+        embedDocuments: fakeEmbedDocuments(),
         identity: TEST_IDENTITY,
         store,
         warn,
@@ -473,9 +504,9 @@ describe('reconcileCorpus', () => {
     const controller = new AbortController();
     // Abort while the very first note is being embedded, so the loop has
     // exactly one boundary to notice it at.
-    embed.mockImplementationOnce(async () => {
+    embed.mockImplementationOnce(async (texts: string[]) => {
       controller.abort();
-      return new Array<number>(TEST_DIMS).fill(0);
+      return texts.map(() => new Array<number>(TEST_DIMS).fill(0));
     });
 
     const summary = await run({ signal: controller.signal });
@@ -495,9 +526,9 @@ describe('reconcileCorpus', () => {
     vault.edit('A.md', body('A edited'));
 
     const controller = new AbortController();
-    embed.mockImplementationOnce(async () => {
+    embed.mockImplementationOnce(async (texts: string[]) => {
       controller.abort();
-      return new Array<number>(TEST_DIMS).fill(0);
+      return texts.map(() => new Array<number>(TEST_DIMS).fill(0));
     });
     const summary = await run({ signal: controller.signal });
 

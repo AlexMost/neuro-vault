@@ -39,20 +39,23 @@ function okSummary(overrides = {}) {
 function makeDeps(reconcile: IndexCommandDeps['reconcile'], tty = false) {
   return {
     reconcile,
-    createEmbedder: () => ({ identity: TEST_EMBEDDING_IDENTITY, embed: async () => [0.1, 0.2] }),
+    createEmbedder: () => ({
+      identity: TEST_EMBEDDING_IDENTITY,
+      embedDocuments: async (ts: string[]) => ts.map(() => [0.1, 0.2]),
+    }),
     stdout: fakeStream(tty),
     stderr: fakeStream(false),
   };
 }
 
 describe('runIndexCommand', () => {
-  it('reconciles each vault sequentially with one shared embed function', async () => {
+  it('reconciles each vault sequentially with one shared embedDocuments function', async () => {
     const calls: string[] = [];
     const embeds: unknown[] = [];
     const identities: unknown[] = [];
     const reconcile = vi.fn(async (deps: ReconcileDeps) => {
       calls.push(deps.vaultRoot);
-      embeds.push(deps.embed);
+      embeds.push(deps.embedDocuments);
       identities.push(deps.identity);
       return okSummary();
     });
@@ -140,7 +143,7 @@ describe('runIndexCommand', () => {
   it('builds its one embedder from the selected profile', async () => {
     const createEmbedder = vi.fn((_profile: ModelProfile) => ({
       identity: TEST_EMBEDDING_IDENTITY,
-      embed: async () => [0.1],
+      embedDocuments: async (ts: string[]) => ts.map(() => [0.1]),
     }));
     const deps = { ...makeDeps(vi.fn(async () => okSummary())), createEmbedder };
     const granite = resolveModelProfile('granite-97m');
