@@ -166,7 +166,14 @@ export function buildGetSimilarNotesTool(
     inputShape: {
       path: z.string(),
       limit: z.number().int().positive().optional(),
-      threshold: z.number().min(0).max(1).optional(),
+      threshold: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe(
+          `Min note↔note similarity 0-1 for semantic neighbours; linked notes are kept regardless. Default ${similarity.similarNotes}, on the active embedding model's scale.`,
+        ),
       exclude_folders: z.array(z.string()).optional(),
     },
     runForEntry: async (entry, input) => {

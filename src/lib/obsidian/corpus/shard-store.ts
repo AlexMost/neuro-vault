@@ -9,7 +9,7 @@ import path from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
 
-import type { CorpusIdentity } from './identity.js';
+import { IDENTITY_FIELDS, type CorpusIdentity } from './identity.js';
 import type { CorpusBlock, CorpusManifest, CorpusShard, StoredManifest } from './types.js';
 
 /** Corpus root, relative to the vault root. */
@@ -324,19 +324,6 @@ function describeVector(value: unknown): string {
   const bytes = Buffer.from(value, 'base64').length;
   return bytes % 4 === 0 ? `${bytes / 4} dims` : `${bytes} bytes`;
 }
-
-const IDENTITY_FIELDS = [
-  'embed_version',
-  'provider',
-  'model_key',
-  'model_id',
-  'revision',
-  'dtype',
-  'dims',
-  'pooling',
-  'max_tokens',
-  'strategy',
-] as const satisfies ReadonlyArray<keyof CorpusIdentity>;
 
 /**
  * Whether `stored` matches `expected` on every corpus-identity field. A

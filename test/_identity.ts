@@ -5,6 +5,7 @@ import type { SimilarityDefaults } from '../src/modules/semantic/model-profiles.
 /** Vector width every corpus test writes and reads. */
 export const TEST_DIMS = 384;
 
+/** An arbitrary producer for corpus tests — deliberately not a registry profile. */
 export const TEST_EMBEDDING_IDENTITY: EmbeddingIdentity = {
   provider: 'test',
   model_key: 'bge-micro-v2',
@@ -18,7 +19,10 @@ export const TEST_EMBEDDING_IDENTITY: EmbeddingIdentity = {
 
 export const TEST_IDENTITY: CorpusIdentity = corpusIdentityOf(TEST_EMBEDDING_IDENTITY);
 
-/** Today's bge-scale defaults, for fixtures that do not care about the scale. */
+/**
+ * Fixed defaults for fixtures that do not care about the scale — the retired
+ * bge-micro-v2 values, which the fixtures' similarities were written against.
+ */
 export const TEST_SIMILARITY: SimilarityDefaults = {
   quick: 0.5,
   deep: 0.35,

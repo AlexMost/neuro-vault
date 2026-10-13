@@ -81,6 +81,12 @@ describe('bucketByLength', () => {
     expect(bucketByLength([note, ...blocks], 8)).toEqual([[1, 2, 3, 4, 5, 6], [0]]);
   });
 
+  it('buckets texts past the length cap together, as they all fill the window', () => {
+    const texts = ['n'.repeat(3000), 'n'.repeat(60_000), 'b'.repeat(250)];
+    expect(bucketByLength(texts, 8, 2048)).toEqual([[2], [0, 1]]);
+    expect(bucketByLength(texts, 8)).toEqual([[2], [0], [1]]);
+  });
+
   it('returns no buckets for no texts', () => {
     expect(bucketByLength([], 8)).toEqual([]);
   });

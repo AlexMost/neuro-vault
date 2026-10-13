@@ -89,7 +89,9 @@ export const POPULATION_OF: Record<DefaultKey, keyof Populations> = {
 export const DEFAULT_KEYS = Object.keys(POPULATION_OF) as DefaultKey[];
 
 export function quantiles(values: number[]): Quantiles {
-  const sorted = [...values].sort((a, b) => a - b);
+  // A typed copy sorts numerically without a comparator, at 8 bytes a value —
+  // `note_all` holds N·(N−1) of them.
+  const sorted = Float64Array.from(values).sort();
   const at = (q: number): number => sorted[Math.floor(q * (sorted.length - 1))] ?? 0;
   return {
     n: sorted.length,
@@ -107,7 +109,9 @@ export function quantiles(values: number[]): Quantiles {
 
 export function passRate(values: number[], threshold: number): number {
   if (values.length === 0) return 0;
-  return values.filter((v) => v >= threshold).length / values.length;
+  let passing = 0;
+  for (const v of values) if (v >= threshold) passing += 1;
+  return passing / values.length;
 }
 
 /**
@@ -120,20 +124,27 @@ export function passRate(values: number[], threshold: number): number {
  * more permissive on an exact tie (as `Math.round` would).
  */
 export function thresholdForPassRate(values: number[], rate: number): number | null {
-  const descending = [...values].sort((a, b) => b - a);
-  const [highest] = descending;
-  if (highest === undefined) return null;
-  const target = rate * descending.length;
-  let best = { threshold: highest + 1e-6, passing: 0 };
-  for (let i = 0; i < descending.length; i += 1) {
-    if (descending[i + 1] === descending[i]) continue; // not yet the end of a tied run
-    const passing = i + 1;
+  const ascending = Float64Array.from(values).sort();
+  const n = ascending.length;
+  if (n === 0) return null;
+  const target = rate * n;
+  let best = { threshold: ascending[n - 1] + 1e-6, passing: 0 };
+  // Walks from the highest value down, so a tie on distance goes to the more permissive.
+  for (let i = n - 1; i >= 0; i -= 1) {
+    if (ascending[i - 1] === ascending[i]) continue; // not yet the end of a tied run
+    const passing = n - i;
     if (Math.abs(passing - target) <= Math.abs(best.passing - target)) {
-      best = { threshold: descending[i], passing };
+      best = { threshold: ascending[i], passing };
     }
   }
   return best.threshold;
 }
+
+/**
+ * The most note vectors `--stats` takes: `note_all` holds N·(N−1)
+ * similarities in one array, and V8 caps an array at 2^27 elements.
+ */
+export const MAX_STATS_SOURCES = 11_000;
 
 export function collectPopulations(args: {
   queryVectors: number[][];

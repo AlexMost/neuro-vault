@@ -30,6 +30,7 @@ import {
   collectPopulations,
   computeCalibrationStats,
   DEFAULT_KEYS,
+  MAX_STATS_SOURCES,
   POPULATION_OF,
   type CalibrationStats,
 } from './stats.js';
@@ -122,16 +123,17 @@ async function readBaseline(file: string): Promise<Baseline> {
     throw new UsageError(`--baseline ${file} is not a --stats report`);
   }
   for (const key of DEFAULT_KEYS) {
-    const rate = (stats.pass_rates as Record<string, { pass_rate?: unknown } | undefined>)[key]
-      ?.pass_rate;
+    const entry = (
+      stats.pass_rates as Record<string, { pass_rate?: unknown; population?: unknown } | undefined>
+    )[key];
+    const rate = entry?.pass_rate;
     if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0 || rate > 1) {
       throw new UsageError(
         `--baseline ${file}: pass_rates.${key}.pass_rate must be a number in [0, 1], got ${JSON.stringify(rate) ?? 'nothing'}`,
       );
     }
     // A pass rate only means something on the population it was measured on.
-    const population = (stats.pass_rates as Record<string, { population?: unknown }>)[key]
-      .population;
+    const population = entry?.population;
     if (population !== POPULATION_OF[key]) {
       throw new UsageError(
         `--baseline ${file}: ${key} was measured on ${JSON.stringify(population) ?? 'nothing'}, this build measures it on "${POPULATION_OF[key]}" — re-capture the baseline with --stats`,
@@ -172,6 +174,12 @@ export async function runEval(
   const profile = args.model; // the only profile this run sees
   const identity = identityOf(profile);
   const sources = await loadSnapshot(vaultRoot, corpusIdentityOf(identity));
+  // Refused here, not as a RangeError after the whole golden set has been embedded.
+  if (args.stats && sources.size > MAX_STATS_SOURCES) {
+    throw new UsageError(
+      `--stats keeps every note↔note similarity in memory and takes at most ${MAX_STATS_SOURCES} note vectors; this vault has ${sources.size}`,
+    );
+  }
   // A bad baseline fails here, not after the whole golden set has been embedded.
   const baseline = args.baseline === undefined ? undefined : await readBaseline(args.baseline);
   const embed =

@@ -284,7 +284,8 @@ above the threshold.
 `note_all` holds N·(N−1) similarities for N in-scope notes with a vector (787 656
 for the 888-vector vault measured here), and the run keeps them in memory, so
 memory use grows with the square of the vault. JavaScript arrays are capped at
-2^27 elements, so `--stats` fails on vaults above roughly 11 000 note vectors:
+2^27 elements, so `--stats` refuses vaults above 11 000 note vectors up front
+(`MAX_STATS_SOURCES` in `eval/stats.ts`):
 it is a calibration tool for vault-sized samples, not for very large vaults.
 
 ### Guards

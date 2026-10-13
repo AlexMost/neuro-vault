@@ -25,15 +25,24 @@ export interface QueuedEmbedder {
  * of them — and which one is longest is not fixed: a block's heading
  * breadcrumbs can make it outrun a note that is little more than that block.
  * So the buckets come from measured lengths, not from input order.
+ *
+ * Lengths are clamped at `lengthCap`: past it every text fills the model's
+ * token window, so a 6 000- and a 60 000-character note pad to the same width
+ * and belong in one bucket.
  */
-export function bucketByLength(texts: readonly string[], maxBatchSize: number): number[][] {
-  const order = texts.map((_, i) => i).sort((a, b) => texts[a].length - texts[b].length || a - b);
+export function bucketByLength(
+  texts: readonly string[],
+  maxBatchSize: number,
+  lengthCap = Infinity,
+): number[][] {
+  const length = (i: number): number => Math.min(texts[i].length, lengthCap);
+  const order = texts.map((_, i) => i).sort((a, b) => length(a) - length(b) || a - b);
   const buckets: number[][] = [];
   let current: number[] = [];
   for (const index of order) {
     const shortest = current[0];
     const full = current.length >= maxBatchSize;
-    const tooLong = shortest !== undefined && texts[index].length > 2 * texts[shortest].length;
+    const tooLong = shortest !== undefined && length(index) > 2 * length(shortest);
     if (current.length > 0 && (full || tooLong)) {
       buckets.push(current);
       current = [];
@@ -43,6 +52,14 @@ export function bucketByLength(texts: readonly string[], maxBatchSize: number): 
   if (current.length > 0) buckets.push(current);
   return buckets;
 }
+
+/**
+ * Characters per window token past which a text surely fills the window, for
+ * bucketing only: prose runs 1.6–2.9 characters per token. A text misjudged by
+ * it costs padding, never a different vector — the tokenizer still decides
+ * what reaches the model (design D9).
+ */
+const WINDOW_FILL_CHARS_PER_TOKEN = 4;
 
 /**
  * Serializes embedding work onto one provider, process-wide (design D7): one
@@ -89,7 +106,11 @@ export function createQueuedEmbedder(provider: EmbeddingProvider): QueuedEmbedde
     // the forward pass instead of computing vectors nobody will read.
     let failed = false;
     await Promise.all(
-      bucketByLength(texts, provider.maxBatchSize).map(async (bucket) => {
+      bucketByLength(
+        texts,
+        provider.maxBatchSize,
+        provider.identity.max_tokens * WINDOW_FILL_CHARS_PER_TOKEN,
+      ).map(async (bucket) => {
         try {
           const batch = await enqueue(indexLane, () =>
             failed
