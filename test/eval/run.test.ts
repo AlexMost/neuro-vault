@@ -51,7 +51,10 @@ describe('parseEvalArgs', () => {
     [['--vault', '/v', '--pipeline', 'reranked'], /semantic.*fused/s],
     [['--vault', '/v', '--pipeline', 'semantic', '--bogus'], /--bogus/],
     [['--vault', '--pipeline'], /--vault/],
-    [['--vault', '/v', '--model', 'text-embedding-3-small'], /bge-micro-v2.*granite-97m/s],
+    [
+      ['--vault', '/v', '--model', 'text-embedding-3-small'],
+      /harrier-270m.*granite-97m.*harrier-0\.6b/s,
+    ],
     [['--vault', '/v', '--baseline', '/r.json'], /--baseline requires --stats/],
     [['--vault', '/v', '--pipeline', 'fused', '--stats'], /--stats measures the semantic pipeline/],
   ])('rejects %j naming what is supported', (argv, pattern) => {
@@ -307,6 +310,24 @@ describe('runEval end-to-end (stub embedder)', () => {
       code_sha: first.report.code_sha,
     });
     expect(first.report.stats?.baseline).toBeUndefined();
+  });
+
+  it('reads a baseline whose profile has left the registry', async () => {
+    await makeVault(GOLDEN);
+    await addExtraNotes();
+    const embed = () => Promise.resolve(unitVec(0));
+    const first = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed, resultsDir },
+    );
+    const retired = path.join(resultsDir, 'retired-baseline.json');
+    await writeFile(retired, JSON.stringify({ ...first.report, model_key: 'bge-micro-v2' }));
+    const { report } = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: retired },
+      { embed, resultsDir },
+    );
+    expect(report.stats?.baseline?.model_key).toBe('bge-micro-v2');
+    expect(report.stats?.suggested).toBeDefined();
   });
 
   it.each([

@@ -9,14 +9,9 @@ import {
 } from '../../src/modules/semantic/model-profiles.js';
 
 describe('model profile registry', () => {
-  it('holds exactly the verified profiles, bge-micro-v2 by default', () => {
-    expect([...MODEL_KEYS].sort()).toEqual([
-      'bge-micro-v2',
-      'granite-97m',
-      'harrier-0.6b',
-      'harrier-270m',
-    ]);
-    expect(DEFAULT_MODEL_KEY).toBe('bge-micro-v2');
+  it('holds exactly the verified profiles, harrier-270m by default', () => {
+    expect([...MODEL_KEYS].sort()).toEqual(['granite-97m', 'harrier-0.6b', 'harrier-270m']);
+    expect(DEFAULT_MODEL_KEY).toBe('harrier-270m');
   });
 
   it('pins every profile to an exact 40-hex revision, int8', () => {
@@ -29,7 +24,7 @@ describe('model profile registry', () => {
 
   it('rejects an unknown key, listing the allowed ones', () => {
     expect(() => resolveModelProfile('bge-m3')).toThrow(
-      'unknown model "bge-m3" — choose one of: bge-micro-v2, granite-97m, harrier-270m, harrier-0.6b',
+      'unknown model "bge-m3" — choose one of: harrier-270m, granite-97m, harrier-0.6b',
     );
   });
 
@@ -81,15 +76,15 @@ describe('model profile registry', () => {
     });
   });
 
-  it("reproduces today's corpus identity for bge-micro-v2", () => {
-    expect(identityOf(resolveModelProfile('bge-micro-v2'))).toEqual({
+  it('reports the corpus identity for harrier-270m', () => {
+    expect(identityOf(resolveModelProfile('harrier-270m'))).toEqual({
       provider: LOCAL_PROVIDER,
-      model_key: 'bge-micro-v2',
-      model_id: 'TaylorAI/bge-micro-v2',
-      revision: '3edf6d7de0faa426b09780416fe61009f26ae589',
+      model_key: 'harrier-270m',
+      model_id: 'onnx-community/harrier-oss-v1-270m-ONNX',
+      revision: 'd59c919d0159aea2c19ed7d04288fcdd048d0f9c',
       dtype: 'q8',
-      dims: 384,
-      pooling: 'mean',
+      dims: 640,
+      pooling: 'last_token',
       max_tokens: 512,
     });
   });

@@ -20,8 +20,9 @@ export interface SimilarityDefaults {
 }
 
 /**
- * The values calibrated on bge-micro-v2's similarity scale. Every profile
- * carries them until it is recalibrated against its own scale (design D11).
+ * The set calibrated on the similarity scale of the bge-micro model, which
+ * has left the registry. Every remaining profile carries it until it is
+ * recalibrated against its own scale (design D11).
  */
 const BGE_SCALE_SIMILARITY: SimilarityDefaults = Object.freeze({
   quick: 0.5,
@@ -60,19 +61,6 @@ export interface ModelProfile {
 
 /** The provider name every identity of this package's local provider carries. */
 export const LOCAL_PROVIDER = 'transformers.js';
-
-const BGE_MICRO_V2: ModelProfile = {
-  key: 'bge-micro-v2',
-  repo: 'TaylorAI/bge-micro-v2',
-  revision: '3edf6d7de0faa426b09780416fe61009f26ae589',
-  dtype: 'q8',
-  dims: 384,
-  pooling: 'mean',
-  queryPrefix: '',
-  documentPrefix: '',
-  maxTokens: 512,
-  similarity: BGE_SCALE_SIMILARITY,
-};
 
 const GRANITE_97M: ModelProfile = {
   key: 'granite-97m',
@@ -118,13 +106,12 @@ const HARRIER_0_6B: ModelProfile = {
 };
 
 export const MODEL_PROFILES: Readonly<Record<string, ModelProfile>> = Object.freeze({
-  [BGE_MICRO_V2.key]: BGE_MICRO_V2,
-  [GRANITE_97M.key]: GRANITE_97M,
   [HARRIER_270M.key]: HARRIER_270M,
+  [GRANITE_97M.key]: GRANITE_97M,
   [HARRIER_0_6B.key]: HARRIER_0_6B,
 });
 
-export const DEFAULT_MODEL_KEY = BGE_MICRO_V2.key;
+export const DEFAULT_MODEL_KEY = HARRIER_270M.key;
 
 export const MODEL_KEYS: readonly string[] = Object.freeze(Object.keys(MODEL_PROFILES));
 

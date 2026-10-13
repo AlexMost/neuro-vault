@@ -72,7 +72,7 @@ npm run eval -- --vault <path> [--pipeline semantic|fused] [--model <key>] [--st
 - `--pipeline` defaults to `semantic`.
 - `--model` names an embedding model profile and defaults to the registry
   default (`DEFAULT_MODEL_KEY` in `src/modules/semantic/model-profiles.ts`;
-  currently `bge-micro-v2`; see [Axis: model](#axis-model)).
+  currently `harrier-270m`; see [Axis: model](#axis-model)).
 - `--stats` adds the calibration statistics to the report and the printout
   (see [Calibration](#calibration)); it works on the `semantic` pipeline only.
 - `--baseline` names an earlier `--stats` report to calibrate against, and is

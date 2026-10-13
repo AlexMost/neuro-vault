@@ -12,7 +12,6 @@ import { deriveTemplate, encodeRow } from '../../src/modules/semantic/tokenizati
 const enabled = process.env.NEURO_VAULT_HF_TESTS === '1';
 
 const EXPECTED: Record<string, { prefix: number[]; suffix: number[]; side: string }> = {
-  'bge-micro-v2': { prefix: [101], suffix: [102], side: 'right' },
   'granite-97m': { prefix: [179934], suffix: [179938], side: 'right' },
   'harrier-270m': { prefix: [2], suffix: [1], side: 'right' },
   'harrier-0.6b': { prefix: [], suffix: [151643], side: 'right' },
