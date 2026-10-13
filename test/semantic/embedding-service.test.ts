@@ -148,6 +148,26 @@ function templatedModel(side: 'left' | 'right' = 'right') {
   return { model, runs, encode };
 }
 
+/**
+ * Like harrier's ONNX export: a right-padding tokenizer and an in-graph pooled
+ * output that reads position `sum(mask) − 1` — correct only under right
+ * padding (spike 1.1). The pooled vector is [id at that position, 1].
+ */
+function rightOnlyPooledModel(): LocalModel {
+  const { model } = templatedModel('right');
+  return {
+    ...model,
+    run: async (ids, mask) => {
+      const data: number[] = [];
+      ids.forEach((row, b) => {
+        const position = mask[b].reduce((sum, m) => sum + m, 0) - 1;
+        data.push(row[position], 1);
+      });
+      return { kind: 'pooled', data, dims: [ids.length, 2] };
+    },
+  };
+}
+
 describe('EmbeddingService — template-aware batches', () => {
   it('keeps the end-of-sequence token of an over-long document', async () => {
     const { model, runs } = templatedModel();
@@ -170,6 +190,27 @@ describe('EmbeddingService — template-aware batches', () => {
     const service = new EmbeddingService({ profile: lastTokenProfile, loader: async () => model });
     await service.embedDocuments(['ab', 'abcd']);
     expect(runs[0].ids[0]).toEqual([0, 0, 2, 97, 98, 1]);
+  });
+
+  it('pads on the right when the tokenizer declares right', async () => {
+    const { model, runs } = templatedModel('right');
+    const service = new EmbeddingService({ profile: lastTokenProfile, loader: async () => model });
+    await service.embedDocuments(['ab', 'abcd']);
+    expect(runs[0].ids[0]).toEqual([2, 97, 98, 1, 0, 0]);
+    expect(runs[0].mask[0]).toEqual([1, 1, 1, 1, 0, 0]);
+  });
+
+  it('gives a pooled-export text the same vector alone and in a batch', async () => {
+    // An in-graph last-token pool that assumes right padding reads a pad
+    // under left padding: this pins the side harrier's exports depend on.
+    const service = new EmbeddingService({
+      profile: lastTokenProfile,
+      loader: async () => rightOnlyPooledModel(),
+    });
+    const [alone] = await service.embedDocuments(['ab']);
+    const [batched] = await service.embedDocuments(['ab', 'abcdef']);
+    expect(alone).toEqual(unit([1, 1]));
+    expect(batched).toEqual(alone);
   });
 
   it('applies the query prefix to queries only', async () => {
