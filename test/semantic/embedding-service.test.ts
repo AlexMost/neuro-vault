@@ -47,6 +47,15 @@ describe('EmbeddingService', () => {
     expect(service.identity).toEqual(identityOf(granite));
   });
 
+  it('constructs for a profile with a query prefix and reports its identity', () => {
+    const harrier = resolveModelProfile('harrier-270m');
+    const service = new EmbeddingService({
+      profile: harrier,
+      loader: vi.fn(async () => fakeModel().model),
+    });
+    expect(service.identity).toEqual(identityOf(harrier));
+  });
+
   it('loads the model once, shared by concurrent embeds', async () => {
     const { service, loader } = serviceFor(granite, fakeModel().model);
     await Promise.all([service.embedQuery('a'), service.embedQuery('b'), service.initialize()]);
