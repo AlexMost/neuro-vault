@@ -22,6 +22,7 @@ import {
 } from '../../../src/modules/semantic/search-engine.js';
 import { buildSearchNotesTool } from '../../../src/modules/semantic/tools/search-notes.js';
 import { makeTestRegistry } from './_helpers.js';
+import { TEST_SIMILARITY } from '../../_identity.js';
 
 function builtTool() {
   return buildSearchNotesTool({
@@ -32,6 +33,7 @@ function builtTool() {
     },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     modelKey: 'k',
+    similarity: TEST_SIMILARITY,
   });
 }
 

@@ -11,6 +11,7 @@ import type {
   SearchEngine,
   SmartSource,
 } from '../../../src/modules/semantic/types.js';
+import { TEST_SIMILARITY } from '../../_identity.js';
 import { makeTestRegistry, makeFakeGraph, makeFakeCorpusIndex, toBackend } from './_helpers.js';
 
 // Shared fixtures for the hybrid search_notes tests (mode/effort axes,
@@ -78,6 +79,7 @@ export async function makeLexicalVault(
     embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
     searchEngine: opts.engine ?? makeMockEngine(),
     modelKey: 'k',
+    similarity: TEST_SIMILARITY,
   };
   return { deps, cleanup: () => fs.rm(vaultRoot, { recursive: true, force: true }) };
 }

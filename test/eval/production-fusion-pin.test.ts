@@ -18,6 +18,7 @@ import {
 import type { SmartSource } from '../../src/modules/semantic/types.js';
 import { EVAL_TOP_K, createFusedContext, rankQuery } from '../../eval/pipelines.js';
 import { makeFakeCorpusIndex, makeTestRegistry, toBackend } from '../semantic/tools/_helpers.js';
+import { TEST_SIMILARITY } from '../_identity.js';
 
 // The harness's central validity claim: a `fused` eval run measures the REAL
 // production ordering, not a reimplementation of it. Nothing else in the suite
@@ -100,6 +101,7 @@ async function productionOrder(
     embeddingProvider: { initialize: () => Promise.resolve(), embedQuery: embed },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     modelKey: 'k',
+    similarity: TEST_SIMILARITY,
   });
   return (await tool.handler({
     query: QUERY,
@@ -127,6 +129,7 @@ describe('fused pipeline pins the production fused ordering', () => {
       sources: fixture.sources,
       embed,
       fusedContext,
+      similarity: TEST_SIMILARITY,
     });
 
     expect(actual).toEqual(expected);

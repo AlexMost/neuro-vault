@@ -93,4 +93,12 @@ describe('model profile registry', () => {
       max_tokens: 512,
     });
   });
+
+  it('carries similarity defaults on every profile, ordered quick ≥ deep > fallback', () => {
+    for (const key of MODEL_KEYS) {
+      const { quick, deep, fallback } = resolveModelProfile(key).similarity;
+      expect(quick).toBeGreaterThanOrEqual(deep);
+      expect(deep).toBeGreaterThan(fallback);
+    }
+  });
 });

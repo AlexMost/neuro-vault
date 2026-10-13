@@ -3,6 +3,35 @@ import type { EmbeddingIdentity } from '../../lib/obsidian/corpus/types.js';
 /** How a model's token states become one vector. */
 export type Pooling = 'mean' | 'cls' | 'last_token';
 
+/** Default similarity thresholds, on this profile's own similarity scale (design D10). */
+export interface SimilarityDefaults {
+  /** `search_notes` semantic floor at effort "quick". */
+  readonly quick: number;
+  /** `search_notes` semantic floor at effort "deep"; also the deep block-evidence floor. */
+  readonly deep: number;
+  /** One-shot retry floor when a default threshold finds nothing. */
+  readonly fallback: number;
+  /** Default seed↔note floor for the expansion leg. */
+  readonly expansionFloor: number;
+  /** `get_similar_notes` default threshold. */
+  readonly similarNotes: number;
+  /** `find_duplicates` default threshold. */
+  readonly duplicates: number;
+}
+
+/**
+ * The values calibrated on bge-micro-v2's similarity scale. Every profile
+ * carries them until it is recalibrated against its own scale (design D11).
+ */
+const BGE_SCALE_SIMILARITY: SimilarityDefaults = Object.freeze({
+  quick: 0.5,
+  deep: 0.35,
+  fallback: 0.3,
+  expansionFloor: 0.35,
+  similarNotes: 0.5,
+  duplicates: 0.9,
+});
+
 /**
  * Everything model-specific, in one record (design D2). A profile joins the
  * registry only after it has been measured on the retrieval eval and verified
@@ -25,6 +54,7 @@ export interface ModelProfile {
   readonly documentPrefix: string;
   /** Input window in tokens of this profile's tokenizer, special tokens included. */
   readonly maxTokens: number;
+  readonly similarity: SimilarityDefaults;
 }
 
 /** The provider name every identity of this package's local provider carries. */
@@ -40,6 +70,7 @@ const BGE_MICRO_V2: ModelProfile = {
   queryPrefix: '',
   documentPrefix: '',
   maxTokens: 512,
+  similarity: BGE_SCALE_SIMILARITY,
 };
 
 const GRANITE_97M: ModelProfile = {
@@ -52,6 +83,7 @@ const GRANITE_97M: ModelProfile = {
   queryPrefix: '',
   documentPrefix: '',
   maxTokens: 512,
+  similarity: BGE_SCALE_SIMILARITY,
 };
 
 /** harrier's retrieval instruction (model card); documents take no prompt. */
@@ -68,6 +100,7 @@ const HARRIER_270M: ModelProfile = {
   queryPrefix: HARRIER_QUERY_PREFIX,
   documentPrefix: '',
   maxTokens: 512,
+  similarity: BGE_SCALE_SIMILARITY,
 };
 
 const HARRIER_0_6B: ModelProfile = {
@@ -80,6 +113,7 @@ const HARRIER_0_6B: ModelProfile = {
   queryPrefix: HARRIER_QUERY_PREFIX,
   documentPrefix: '',
   maxTokens: 512,
+  similarity: BGE_SCALE_SIMILARITY,
 };
 
 export const MODEL_PROFILES: Readonly<Record<string, ModelProfile>> = Object.freeze({

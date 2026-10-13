@@ -3,6 +3,7 @@ import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
 import { FsVaultReader } from '../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../src/lib/obsidian/vault-scope-config.js';
 import { WikilinkGraphIndex } from '../src/lib/obsidian/wikilink-graph.js';
+import type { SimilarityDefaults } from '../src/modules/semantic/model-profiles.js';
 import {
   EXPANSION_WEIGHT,
   flattenExpansion,
@@ -68,6 +69,7 @@ async function rankFused(
   sources: Map<string, SmartSource>,
   embed: EmbedFn,
   context: FusedContext,
+  similarity: SimilarityDefaults,
 ): Promise<string[]> {
   // The production legs, verbatim (design D5): executeRetrieval at deep
   // effort (pool 8, expansion on) with an explicit threshold 0, the lexical
@@ -86,6 +88,7 @@ async function rankFused(
     sources,
     embeddingProvider: { initialize: () => Promise.resolve(), embedQuery: embed },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
+    similarity,
   });
   const lexical = await context.lexical.search({
     queries: [query],
@@ -112,6 +115,7 @@ export async function rankQuery(args: {
   sources: Map<string, SmartSource>;
   embed: EmbedFn;
   fusedContext?: FusedContext;
+  similarity: SimilarityDefaults;
 }): Promise<string[]> {
   if (args.pipeline === 'semantic') {
     return rankSemantic(args.query, args.sources, args.embed);
@@ -119,5 +123,5 @@ export async function rankQuery(args: {
   if (!args.fusedContext) {
     throw new Error('fused pipeline requires a FusedContext');
   }
-  return rankFused(args.query, args.sources, args.embed, args.fusedContext);
+  return rankFused(args.query, args.sources, args.embed, args.fusedContext, args.similarity);
 }

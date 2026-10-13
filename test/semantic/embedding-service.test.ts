@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EmbeddingService } from '../../src/modules/semantic/embedding-service.js';
 import type { LocalModel } from '../../src/modules/semantic/local-model-loader.js';
+import { TEST_SIMILARITY } from '../_identity.js';
 import {
   identityOf,
   resolveModelProfile,
@@ -126,6 +127,7 @@ const lastTokenProfile: ModelProfile = {
   queryPrefix: 'Q: ',
   documentPrefix: '',
   maxTokens: 8,
+  similarity: TEST_SIMILARITY,
 };
 
 /** bos=2 / eos=1 tokenizer padding with 0 on `side`; token state at each position is [id, 1]. */

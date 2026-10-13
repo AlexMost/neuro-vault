@@ -1,6 +1,7 @@
 import type { LexicalIndex, RankedNote } from '../../lib/obsidian/lexical/index.js';
 import { EFFORT_PROFILES, LEXICAL_PER_NOTE_CAP } from './effort-profiles.js';
 import { flattenExpansion, fuseRanks, type ExpansionCandidate } from './rank-fusion.js';
+import type { SimilarityDefaults } from './model-profiles.js';
 import { executeRetrieval } from './retrieval-policy.js';
 import type {
   QueryEmbedder,
@@ -23,6 +24,8 @@ export interface RetrievalPipelineDeps {
   filterExisting: (paths: string[]) => Promise<Set<string>>;
   embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
+  /** The active model profile's default thresholds. */
+  similarity: SimilarityDefaults;
 }
 
 /** One caller's retrieval request: queries, effort profile, and per-leg overrides. */
@@ -115,6 +118,7 @@ export async function runRetrievalPipeline(
         sources: effectiveSources,
         embeddingProvider: deps.embeddingProvider,
         searchEngine: deps.searchEngine,
+        similarity: deps.similarity,
       });
       // Existence check covers seeds AND their flattened expansion targets;
       // expansion is recomputed below from the survivors so it reflects only

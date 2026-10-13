@@ -5,6 +5,7 @@ import type { QueryEmbedder, SearchEngine } from '../../../src/modules/semantic/
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 import { makeFakeGraph } from './_helpers.js';
+import { TEST_SIMILARITY } from '../../_identity.js';
 
 const embeddingProvider: QueryEmbedder = { initialize: vi.fn(), embedQuery: vi.fn() };
 const searchEngine: SearchEngine = {
@@ -30,6 +31,7 @@ function toolsFor(...names: string[]) {
     embeddingProvider,
     searchEngine,
     modelKey: 'bge-micro-v2',
+    similarity: TEST_SIMILARITY,
   });
 }
 

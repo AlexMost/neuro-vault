@@ -10,6 +10,7 @@ import {
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
+import { TEST_SIMILARITY } from '../../_identity.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import {
@@ -903,6 +904,7 @@ describe('searchNotes', () => {
           embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
           searchEngine,
           modelKey: MODEL_KEY,
+          similarity: TEST_SIMILARITY,
         });
         const reg = registerTool(tool);
 
@@ -982,6 +984,7 @@ describe('searchNotes', () => {
           embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
           searchEngine,
           modelKey: MODEL_KEY,
+          similarity: TEST_SIMILARITY,
         });
         const reg = registerTool(tool);
 
@@ -1053,6 +1056,7 @@ describe('searchNotes', () => {
             findDuplicates: vi.fn().mockReturnValue([]),
           },
           modelKey: MODEL_KEY,
+          similarity: TEST_SIMILARITY,
         });
         const reg = registerTool(tool);
 
@@ -1096,6 +1100,7 @@ describe('searchNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -1198,6 +1203,7 @@ describe('semantic_status', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
       const result = await callTool<SearchNotesOutput>(reg, { query: 'x' });
@@ -1284,6 +1290,7 @@ describe('search_notes advertised description', () => {
       embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
       modelKey: MODEL_KEY,
+      similarity: TEST_SIMILARITY,
     };
   }
 

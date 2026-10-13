@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { executeRetrieval } from '../../src/modules/semantic/retrieval-policy.js';
+import { TEST_SIMILARITY } from '../_identity.js';
 import { makeCalibrationFixture } from './tools/_calibration-fixture.js';
 
 describe('calibration fixture baseline (default inputs)', () => {
   it('deep defaults: 8 seeds, expansion populated, truncated', async () => {
     const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       sources,
@@ -80,6 +82,7 @@ describe('calibration fixture baseline (default inputs)', () => {
   it('quick defaults: 3 seeds, no expansion', async () => {
     const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'quick',
       sources,
@@ -96,6 +99,7 @@ describe('calibration fixture baseline (default inputs)', () => {
   it('multi-query deep defaults keep the same shape', async () => {
     const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q1', 'q2'],
       mode: 'deep',
       sources,
@@ -113,6 +117,7 @@ describe('split thresholds on the calibration fixture', () => {
   it('expansionFloor 0.93 floors expansion at 0.93; 0.99 empties expansion', async () => {
     const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
     const at93 = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       expansionFloor: 0.93,
@@ -127,6 +132,7 @@ describe('split thresholds on the calibration fixture', () => {
     }
 
     const at99 = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       expansionFloor: 0.99,
@@ -142,6 +148,7 @@ describe('split thresholds on the calibration fixture', () => {
     // 0.6: below the band (all 8 seeds survive), far above the old
     // accidental expansion coupling's bite point.
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       threshold: 0.6,
@@ -150,6 +157,7 @@ describe('split thresholds on the calibration fixture', () => {
       searchEngine,
     });
     const defaults = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       sources,
@@ -162,6 +170,7 @@ describe('split thresholds on the calibration fixture', () => {
   it('explicit threshold 0.99 yields honest zero seeds (deep)', async () => {
     const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       threshold: 0.99,
@@ -176,6 +185,7 @@ describe('split thresholds on the calibration fixture', () => {
   it('an in-band explicit threshold filters partially', async () => {
     const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       threshold: 0.787,
@@ -193,6 +203,7 @@ describe('split thresholds on the calibration fixture', () => {
     // Band blocks sit ~0.2 below their note (inside (0.35, band)); with the
     // old coupling a 0.787 note threshold silently dropped them to backfill.
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       threshold: 0.787,

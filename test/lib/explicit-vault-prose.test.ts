@@ -7,6 +7,7 @@ import { EXPLICIT_VAULT_SUFFIX } from '../../src/lib/vault-param.js';
 import type { ToolName } from '../../src/lib/tool-names.js';
 import { makeTestRegistry } from '../operations/tools/_test-registry.js';
 import { makeFakeGraph } from '../semantic/tools/_helpers.js';
+import { TEST_SIMILARITY } from '../_identity.js';
 
 const EXPLICIT_VAULT_TOOLS: ToolName[] = [
   'read_notes',
@@ -40,6 +41,7 @@ function allTools(...names: string[]) {
         findDuplicates: vi.fn().mockReturnValue([]),
       },
       modelKey: 'bge-micro-v2',
+      similarity: TEST_SIMILARITY,
     }),
   ];
 }

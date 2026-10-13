@@ -89,6 +89,7 @@ export async function runEval(
       sources,
       embed,
       fusedContext,
+      similarity: profile.similarity,
     });
     per_query.push(scoreQuery(entry, top));
   }

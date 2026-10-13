@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SmartSource } from '../../src/lib/obsidian/corpus/types.js';
+import { TEST_SIMILARITY } from '../_identity.js';
 import { EVAL_CONFIG, EVAL_TOP_K, createFusedContext, rankQuery } from '../../eval/pipelines.js';
 
 // 3-dim vectors are fine here: pipelines never touch CorpusStore's dims guard.
@@ -19,7 +20,13 @@ const embed = (_text: string): Promise<number[]> => Promise.resolve([1, 0, 0]);
 
 describe('semantic pipeline', () => {
   it('ranks by cosine at threshold 0 and caps at top-10', async () => {
-    const top = await rankQuery({ pipeline: 'semantic', query: 'q', sources: SOURCES, embed });
+    const top = await rankQuery({
+      pipeline: 'semantic',
+      query: 'q',
+      sources: SOURCES,
+      embed,
+      similarity: TEST_SIMILARITY,
+    });
     expect(top[0]).toBe('a.md');
     expect(top[1]).toBe('b.md');
     // threshold 0: even the orthogonal note appears — positions only.
@@ -48,6 +55,7 @@ describe('fused pipeline', () => {
       sources: SOURCES,
       embed,
       fusedContext,
+      similarity: TEST_SIMILARITY,
     });
     // The lexical leg surfaced a note the semantic leg cannot know about —
     // the fused list carries it (the Moby-case mechanism, RRF fusion).
