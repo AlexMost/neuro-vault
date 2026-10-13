@@ -336,6 +336,45 @@ describe('createCorpusBackend', () => {
     await backend.whenSettled();
     expect(reconcile).toHaveBeenCalledTimes(1);
   });
+
+  it('announces an incompatible corpus on stderr, naming both identities', async () => {
+    const warn = vi.fn();
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'Notes',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore({ compatible: false, shards: 2 }),
+      loadSnapshot: async () => EMPTY,
+      reconcile: async () => summary({ embedded: 1, reused: 0 }),
+      warn,
+    });
+    await backend.whenSettled();
+    expect(warn).toHaveBeenCalledWith(
+      'neuro-vault corpus: vault "Notes" was indexed with other (embed_version 99); active model is bge-micro-v2 (embed_version 1) — discarding the corpus and re-indexing in the background',
+    );
+  });
+
+  it('does not announce a compatible corpus or an empty one', async () => {
+    for (const store of [
+      fakeStore({ compatible: true, shards: 2 }),
+      fakeStore({ compatible: false, shards: 0 }),
+    ]) {
+      const warn = vi.fn();
+      const backend = createCorpusBackend({
+        vaultRoot: '/v',
+        vaultName: 'Notes',
+        enabled: true,
+        identity: TEST_IDENTITY,
+        store,
+        loadSnapshot: async () => snapshotWith(['a.md']),
+        reconcile: async () => summary(),
+        warn,
+      });
+      await backend.whenSettled();
+      expect(warn.mock.calls.flat().join('\n')).not.toContain('was indexed with');
+    }
+  });
 });
 
 /**

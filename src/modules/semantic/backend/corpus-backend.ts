@@ -1,4 +1,4 @@
-import type { CorpusIdentity } from '../../../lib/obsidian/corpus/identity.js';
+import { formatIdentity, type CorpusIdentity } from '../../../lib/obsidian/corpus/identity.js';
 import type { ReconcileOptions, ReconcileSummary } from '../../../lib/obsidian/corpus/reconcile.js';
 import {
   isManifestCompatible,
@@ -265,7 +265,16 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
       deps.store.listShards(),
     ]);
     const hasShards = shards.size > 0;
-    if (!hasShards || !isManifestCompatible(manifest, deps.identity, hasShards)) return null;
+    if (!hasShards) return null;
+    if (!isManifestCompatible(manifest, deps.identity, hasShards)) {
+      // Never silent (design D8): say what is being thrown away and why. The
+      // background pass that follows discards and rebuilds it.
+      warn(
+        `neuro-vault corpus: vault "${deps.vaultName}" was indexed with ${formatIdentity(manifest)}; ` +
+          `active model is ${formatIdentity(deps.identity)} — discarding the corpus and re-indexing in the background`,
+      );
+      return null;
+    }
     // Hand the listing on rather than letting the decode re-read it: `shards`
     // already holds every shard file, parsed. Re-listing here would read and
     // `JSON.parse` the whole corpus a second time on every startup.
