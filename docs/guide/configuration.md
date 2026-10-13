@@ -6,7 +6,7 @@
 | ---------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--vault`        | yes      | —          | Absolute path to an Obsidian vault directory. Repeat the flag to register additional vaults. The MCP-side alias is always the directory basename; there is no override. |
 | `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip)                                                                                                                 |
-| `--model`        | no       | `bge-micro-v2` | Embedding model profile, one per process: `bge-micro-v2` (current default, English-centred, ≈ 17 MB), `granite-97m` (lite, multilingual, ≈ 98 MB), `harrier-270m` (multilingual, ≈ 344 MB) or `harrier-0.6b` (highest quality, ≈ 706 MB, ~4× slower to index). Applies to `index` too — use the same value for both, or the server rebuilds the corpus `index` built. The default similarity thresholds are tuned for `bge-micro-v2` — see the note below. |
+| `--model`        | no       | `bge-micro-v2` | Embedding model profile, one per process: `bge-micro-v2` (current default, English-centred, ≈ 17 MB), `granite-97m` (lite, multilingual, ≈ 98 MB), `harrier-270m` (multilingual, ≈ 344 MB) or `harrier-0.6b` (highest quality, ≈ 706 MB, ~4× slower to index than `harrier-270m`). Applies to `index` too — use the same value for both, or the server rebuilds the corpus `index` built. The default similarity thresholds are tuned for `bge-micro-v2` — see the note below. |
 | `--help`         | no       | —          | Show help                                                                                                                                                               |
 | `--version`      | no       | —          | Print the installed version and exit                                                                                                                                    |
 
@@ -15,7 +15,7 @@ The `--model` profiles:
 - `bge-micro-v2` — the current default; small and fast, English-centred.
 - `granite-97m` — lite multilingual, ≈ 98 MB.
 - `harrier-270m` — multilingual, ≈ 344 MB.
-- `harrier-0.6b` — highest quality, ≈ 706 MB, ~4× slower to index.
+- `harrier-0.6b` — highest quality, ≈ 706 MB, ~4× slower to index than `harrier-270m`.
 
 **Similarity thresholds are tuned for `bge-micro-v2`.** The built-in defaults — `search_notes` (`threshold` and its fallback retry, `expansion_floor`), `get_similar_notes` (`threshold`) and `find_duplicates` (`threshold`) — are calibrated to `bge-micro-v2`'s cosine-score scale. The other profiles score on different scales (`granite-97m` higher), so under them the defaults filter differently; if results look too loose or too tight, pass an explicit `threshold` (and `expansion_floor` for `search_notes`). A later release recalibrates the defaults per profile.
 

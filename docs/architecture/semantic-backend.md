@@ -71,7 +71,7 @@ One `QueuedEmbedder` (`src/modules/semantic/embed-queue.ts`) wraps the single pr
 - `embedQuery` enqueues on the **query lane** — the retrieval path (`asProvider()`, wired into `search_notes`/`get_similar_notes`/`find_duplicates`) uses this.
 - `embedDocuments` enqueues one entry per length bucket on the **index lane** — reconcile (`asDocumentEmbedFn()`, wired into every backend's `reconcile` dependency) hands it each note's text and blocks in one call, which the queue splits into length buckets (at most 8 texts each, the longest at most twice the shortest — see [`embedding-pipeline.md`](./embedding-pipeline.md#batching)). Each bucket is one forward pass.
 
-The pump always drains the query lane first. A query issued while a vault is cold-indexing therefore waits for at most the one batch already in flight (≈ 0.5 s on `harrier-270m` at 8 × 512 tokens), never behind the thousands of queued indexing batches — one model instance serves every vault's indexing and every live query without either starving the other.
+The pump always drains the query lane first. A query issued while a vault is cold-indexing therefore waits for at most the one batch already in flight (roughly half a second for a typical batch on `harrier-270m` — a bake-off estimate; a full 8 × 512-token batch takes longer), never behind the thousands of queued indexing batches — one model instance serves every vault's indexing and every live query without either starving the other.
 
 ## Who reads the state
 
