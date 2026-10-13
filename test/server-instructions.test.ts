@@ -5,6 +5,7 @@ import { PassThrough } from 'node:stream';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { DEFAULT_MODEL_KEY, resolveModelProfile } from '../src/modules/semantic/model-profiles.js';
 import { SERVER_INSTRUCTIONS, startNeuroVaultServer } from '../src/server.js';
 
 /**
@@ -41,7 +42,7 @@ describe('SERVER_INSTRUCTIONS', () => {
               path: vault,
             },
           ],
-          semantic: { enabled: false, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
+          semantic: { enabled: false, model: resolveModelProfile(DEFAULT_MODEL_KEY) },
         },
         {
           serverFactory: (instructions: string) => {

@@ -4,7 +4,6 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createSemanticModule, type ISemanticModuleDeps } from './modules/semantic/index.js';
 import { createQueuedEmbedder, type QueuedEmbedder } from './modules/semantic/embed-queue.js';
 import { EmbeddingService } from './modules/semantic/embedding-service.js';
-import { resolveModelProfile } from './modules/semantic/model-profiles.js';
 import { createOwnCorpusBackendFactory } from './modules/semantic/backend/index.js';
 import { corpusIdentityOf, type CorpusIdentity } from './lib/obsidian/corpus/identity.js';
 import { createOperationsModule } from './modules/operations/index.js';
@@ -122,7 +121,7 @@ export async function startNeuroVaultServer(
 ): Promise<() => Promise<void>> {
   // One model, one embed in flight process-wide (design D7): every vault's
   // indexing and every query share this queue, with queries jumping ahead.
-  const service = new EmbeddingService({ profile: resolveModelProfile(config.semantic.modelKey) });
+  const service = new EmbeddingService({ profile: config.semantic.model });
   const embedder = createQueuedEmbedder(service);
   const identity = corpusIdentityOf(service.identity);
 
@@ -145,7 +144,7 @@ export async function startNeuroVaultServer(
   if (config.semantic.enabled) {
     const semantic = createSemanticModule(
       registry,
-      { modelKey: config.semantic.modelKey, modelId: config.semantic.modelId },
+      { profile: config.semantic.model },
       // The retrieval path embeds through the same queue as indexing, on the
       // query lane — so a search issued mid cold-index is not stuck behind
       // thousands of queued note embeds (design D7).

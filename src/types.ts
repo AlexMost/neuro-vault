@@ -1,3 +1,5 @@
+import type { ModelProfile } from './modules/semantic/model-profiles.js';
+
 export type {
   EmbeddingProvider,
   SearchEngine,
@@ -24,7 +26,7 @@ export interface ServerConfig {
   vaults: IVaultConfig[]; // length >= 1, names unique
   semantic: {
     enabled: boolean;
-    modelKey: string;
-    modelId: string;
+    /** The one embedding profile this process serves (design D3). */
+    model: ModelProfile;
   };
 }

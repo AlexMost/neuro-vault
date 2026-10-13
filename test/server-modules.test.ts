@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildBasenameIndex } from '../src/lib/obsidian/index.js';
 import type { BackendStatus } from '../src/lib/obsidian/semantic-backend.js';
 import { main } from '../src/cli.js';
+import { DEFAULT_MODEL_KEY, resolveModelProfile } from '../src/modules/semantic/model-profiles.js';
 import { startNeuroVaultServer } from '../src/server.js';
 
 function createTempVaultPath() {
@@ -86,7 +87,7 @@ async function startWithBackendStatus(
           path: vaultPath,
         },
       ],
-      semantic: { enabled: true, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
+      semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY) },
     },
     {
       semantic: {
@@ -144,7 +145,7 @@ async function startForShutdown(opts: {
         name: path.basename(vaultPath),
         path: vaultPath,
       })),
-      semantic: { enabled: true, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
+      semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY) },
     },
     {
       semantic: {
@@ -187,7 +188,7 @@ async function startOverPipedStdin(opts: {
   await startNeuroVaultServer(
     {
       vaults: [{ name: path.basename(opts.vaultPath), path: opts.vaultPath }],
-      semantic: { enabled: true, modelKey: 'bge-micro-v2', modelId: 'TaylorAI/bge-micro-v2' },
+      semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY) },
     },
     {
       semantic: {

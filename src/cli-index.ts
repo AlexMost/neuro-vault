@@ -4,7 +4,7 @@ import { loadVaultScope } from './lib/obsidian/vault-scope-config.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { buildReconcileFsDeps } from './lib/obsidian/corpus/fs-deps.js';
 import { CorpusStore } from './lib/obsidian/corpus/shard-store.js';
-import { corpusIdentityOf } from './lib/obsidian/corpus/identity.js';
+import { corpusIdentityOf, formatIdentity } from './lib/obsidian/corpus/identity.js';
 import {
   reconcileCorpus,
   type ReconcileDeps,
@@ -13,7 +13,7 @@ import {
 } from './lib/obsidian/corpus/reconcile.js';
 import type { EmbedFn, EmbeddingIdentity } from './lib/obsidian/corpus/types.js';
 import { EmbeddingService } from './modules/semantic/embedding-service.js';
-import { DEFAULT_MODEL_KEY, resolveModelProfile } from './modules/semantic/model-profiles.js';
+import type { ModelProfile } from './modules/semantic/model-profiles.js';
 
 interface OutStream {
   isTTY?: boolean;
@@ -28,14 +28,14 @@ export interface IndexEmbedder {
 
 export interface IndexCommandDeps {
   reconcile?: (deps: ReconcileDeps, opts?: ReconcileOptions) => Promise<ReconcileSummary>;
-  /** One embedder shared by every vault in the run. */
-  createEmbedder?: () => IndexEmbedder;
+  /** One embedder shared by every vault in the run, built from the selected profile. */
+  createEmbedder?: (profile: ModelProfile) => IndexEmbedder;
   stdout?: OutStream;
   stderr?: OutStream;
 }
 
-function defaultEmbedder(): IndexEmbedder {
-  const service = new EmbeddingService({ profile: resolveModelProfile(DEFAULT_MODEL_KEY) });
+function defaultEmbedder(profile: ModelProfile): IndexEmbedder {
+  const service = new EmbeddingService({ profile });
   return { identity: service.identity, embed: (text) => service.embed(text) };
 }
 
@@ -79,7 +79,14 @@ async function reconcileOne(
       store,
       identity,
     },
-    { onProgress: createProgressRenderer(stdout, vault.name) },
+    {
+      onProgress: createProgressRenderer(stdout, vault.name),
+      onRebuild: ({ stored, active }) => {
+        stdout.write(
+          `rebuilding ${vault.name}: corpus was indexed with ${formatIdentity(stored)}; active model is ${formatIdentity(active)}\n`,
+        );
+      },
+    },
   );
 }
 
@@ -90,7 +97,7 @@ export async function runIndexCommand(
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
   const reconcile = deps.reconcile ?? reconcileCorpus;
-  const embedder = (deps.createEmbedder ?? defaultEmbedder)();
+  const embedder = (deps.createEmbedder ?? defaultEmbedder)(options.model);
 
   let complete = true;
   for (const vault of options.vaults) {

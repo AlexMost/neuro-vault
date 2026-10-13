@@ -6,6 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { packageMeta } from '../src/package-meta.js';
 import { parseConfig } from '../src/config.js';
+import {
+  DEFAULT_MODEL_KEY,
+  MODEL_KEYS,
+  resolveModelProfile,
+} from '../src/modules/semantic/model-profiles.js';
 
 describe('parseConfig', () => {
   let tmpRoot: string;
@@ -203,6 +208,108 @@ describe('parseConfig', () => {
     it('a plain --vault invocation still resolves to the server variant', async () => {
       const parsed = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
       expect(parsed.kind).toBe('run');
+    });
+  });
+
+  describe('--model', () => {
+    it('defaults to the registry default', async () => {
+      const parsed = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
+      if (parsed.kind !== 'run') throw new Error('expected a run configuration');
+      expect(parsed.config.semantic.model.key).toBe(DEFAULT_MODEL_KEY);
+    });
+
+    it('selects a profile by key', async () => {
+      const parsed = await parseConfig([
+        'node',
+        'cli.js',
+        '--vault',
+        vaultPath,
+        '--model',
+        'granite-97m',
+      ]);
+      if (parsed.kind !== 'run') throw new Error('expected a run configuration');
+      expect(parsed.config.semantic.model).toBe(resolveModelProfile('granite-97m'));
+    });
+
+    it('rejects an unknown key, listing the allowed keys', async () => {
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await expect(
+          parseConfig(['node', 'cli.js', '--vault', vaultPath, '--model', 'all-MiniLM-L6-v2']),
+        ).rejects.toThrow(new RegExp(MODEL_KEYS.map((k) => `"${k}"`).join('.*'), 's'));
+      } finally {
+        errorLog.mockRestore();
+      }
+    });
+
+    it('rejects --model given twice', async () => {
+      await expect(
+        parseConfig([
+          'node',
+          'cli.js',
+          '--vault',
+          vaultPath,
+          '--model',
+          'granite-97m',
+          '--model',
+          'bge-micro-v2',
+        ]),
+      ).rejects.toThrow('--model may be given only once');
+    });
+
+    it('accepts --model alongside --no-semantic', async () => {
+      const parsed = await parseConfig([
+        'node',
+        'cli.js',
+        '--vault',
+        vaultPath,
+        '--no-semantic',
+        '--model',
+        'granite-97m',
+      ]);
+      if (parsed.kind !== 'run') throw new Error('expected a run configuration');
+      expect(parsed.config.semantic.enabled).toBe(false);
+    });
+
+    it('documents the choices and the default in --help', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        await parseConfig(['node', 'cli.js', '--help']);
+        const help = String(log.mock.calls[0][0]);
+        expect(help).toContain('--model');
+        for (const key of MODEL_KEYS) expect(help).toContain(key);
+        expect(help).toContain(`default: "${DEFAULT_MODEL_KEY}"`);
+      } finally {
+        log.mockRestore();
+      }
+    });
+
+    it('index accepts the same keys and default', async () => {
+      const parsed = await parseConfig([
+        'node',
+        'cli.js',
+        'index',
+        '--vault',
+        vaultPath,
+        '--model',
+        'granite-97m',
+      ]);
+      if (parsed.kind !== 'index') throw new Error('expected index');
+      expect(parsed.options.model.key).toBe('granite-97m');
+      const plain = await parseConfig(['node', 'cli.js', 'index', '--vault', vaultPath]);
+      if (plain.kind !== 'index') throw new Error('expected index');
+      expect(plain.options.model.key).toBe(DEFAULT_MODEL_KEY);
+    });
+
+    it('index rejects an unknown key the same way', async () => {
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await expect(
+          parseConfig(['node', 'cli.js', 'index', '--vault', vaultPath, '--model', 'bge-m3']),
+        ).rejects.toThrow(/Choices/);
+      } finally {
+        errorLog.mockRestore();
+      }
     });
   });
 });

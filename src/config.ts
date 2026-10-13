@@ -4,7 +4,12 @@ import path from 'node:path';
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 
-import { DEFAULT_MODEL_KEY, resolveModelProfile } from './modules/semantic/model-profiles.js';
+import {
+  DEFAULT_MODEL_KEY,
+  MODEL_KEYS,
+  resolveModelProfile,
+  type ModelProfile,
+} from './modules/semantic/model-profiles.js';
 
 import type { ServerConfig, IVaultConfig } from './types.js';
 import { packageMeta } from './package-meta.js';
@@ -17,6 +22,7 @@ function basenameNoTrailingSlash(p: string): string {
 
 export interface IndexCliOptions {
   vaults: IVaultConfig[];
+  model: ModelProfile;
 }
 
 /**
@@ -95,19 +101,36 @@ const VAULT_OPTION = {
     'Absolute path to a vault directory. Repeat for multi-vault. The MCP-side alias is derived from the directory basename.',
 } as const;
 
+const MODEL_OPTION = {
+  type: 'string',
+  choices: MODEL_KEYS,
+  default: DEFAULT_MODEL_KEY,
+  describe:
+    'Embedding model profile, one per process. A vault indexed with another model is rebuilt, so give the server and `index` the same value.',
+} as const;
+
+function readModel(raw: unknown): ModelProfile {
+  // yargs turns a repeated flag into an array; picking one silently would hide a mistake.
+  if (Array.isArray(raw)) throw new Error('--model may be given only once');
+  return resolveModelProfile(String(raw));
+}
+
 export async function parseConfig(argv: string[]): Promise<ParsedCli> {
   const args = await yargs(hideBin(argv))
     .scriptName('neuro-vault-mcp')
     .usage('$0 --vault <path> [--vault <path> ...]\n\nMCP server for one or more Obsidian vaults.')
     .command('$0', 'Run the MCP server over stdio (default)', (y) =>
-      y.option('vault', VAULT_OPTION).option('semantic', {
-        type: 'boolean',
-        default: true,
-        describe: 'Enable semantic search module (embedding-based search)',
-      }),
+      y
+        .option('vault', VAULT_OPTION)
+        .option('semantic', {
+          type: 'boolean',
+          default: true,
+          describe: 'Enable semantic search module (embedding-based search)',
+        })
+        .option('model', MODEL_OPTION),
     )
     .command('index', 'Build or refresh the embedding corpus for each vault, then exit', (y) =>
-      y.option('vault', VAULT_OPTION),
+      y.option('vault', VAULT_OPTION).option('model', MODEL_OPTION),
     )
     .strict()
     .help()
@@ -125,8 +148,10 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
 
   const vaults = validateVaults((args.vault as string[] | undefined) ?? []);
 
+  const model = readModel(args.model);
+
   if (args._[0] === 'index') {
-    return { kind: 'index', options: { vaults } };
+    return { kind: 'index', options: { vaults, model } };
   }
   return {
     kind: 'run',
@@ -134,8 +159,7 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
       vaults,
       semantic: {
         enabled: (args.semantic as boolean | undefined) ?? true,
-        modelKey: DEFAULT_MODEL_KEY,
-        modelId: resolveModelProfile(DEFAULT_MODEL_KEY).repo,
+        model,
       },
     },
   };
