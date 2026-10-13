@@ -1,31 +1,16 @@
+import type { CorpusIdentity } from '../../../lib/obsidian/corpus/identity.js';
 import type { ReconcileOptions, ReconcileSummary } from '../../../lib/obsidian/corpus/reconcile.js';
 import {
   isManifestCompatible,
   type CorpusStore,
 } from '../../../lib/obsidian/corpus/shard-store.js';
-import {
-  EMBED_VERSION,
-  MODEL_DIMS,
-  MODEL_ID,
-  MODEL_KEY,
-  SC_PARITY_STRATEGY,
-  type CorpusShard,
-} from '../../../lib/obsidian/corpus/types.js';
+import type { CorpusShard } from '../../../lib/obsidian/corpus/types.js';
 import { buildBasenameIndex } from '../../../lib/obsidian/link-resolver.js';
 import type {
   BackendStatus,
   CorpusSnapshot,
   SemanticBackend,
 } from '../../../lib/obsidian/semantic-backend.js';
-
-/** The corpus identity this build produces — what a stored manifest must match. */
-const EXPECTED_IDENTITY = {
-  embed_version: EMBED_VERSION,
-  model_key: MODEL_KEY,
-  model_id: MODEL_ID,
-  dims: MODEL_DIMS,
-  strategy: SC_PARITY_STRATEGY,
-};
 
 /**
  * Backoff for the self-retry after a pass leaves the vault `unavailable`: the
@@ -42,6 +27,8 @@ export interface CorpusBackendDeps {
   /** Global `--semantic` AND the per-vault config, already resolved. */
   enabled: boolean;
   store: CorpusStore;
+  /** The identity a stored manifest must match to be served. */
+  identity: CorpusIdentity;
   /**
    * Shard → snapshot decode, already bound to this vault's scope. Production:
    * `loadCorpusSnapshot`. `shards`, when given, is a listing the caller has
@@ -278,7 +265,7 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
       deps.store.listShards(),
     ]);
     const hasShards = shards.size > 0;
-    if (!hasShards || !isManifestCompatible(manifest, EXPECTED_IDENTITY, hasShards)) return null;
+    if (!hasShards || !isManifestCompatible(manifest, deps.identity, hasShards)) return null;
     // Hand the listing on rather than letting the decode re-read it: `shards`
     // already holds every shard file, parsed. Re-listing here would read and
     // `JSON.parse` the whole corpus a second time on every startup.

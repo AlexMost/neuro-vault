@@ -4,12 +4,11 @@ import path from 'node:path';
 import yargs from 'yargs/yargs';
 import { hideBin } from 'yargs/helpers';
 
-import { MODEL_ID, MODEL_KEY } from './lib/obsidian/corpus/types.js';
+import { DEFAULT_MODEL_KEY, resolveModelProfile } from './modules/semantic/model-profiles.js';
 
 import type { ServerConfig, IVaultConfig } from './types.js';
 import { packageMeta } from './package-meta.js';
 
-const DEFAULT_MODEL_ID = MODEL_ID;
 const VAULT_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
 function basenameNoTrailingSlash(p: string): string {
@@ -135,8 +134,8 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
       vaults,
       semantic: {
         enabled: (args.semantic as boolean | undefined) ?? true,
-        modelKey: MODEL_KEY,
-        modelId: DEFAULT_MODEL_ID,
+        modelKey: DEFAULT_MODEL_KEY,
+        modelId: resolveModelProfile(DEFAULT_MODEL_KEY).repo,
       },
     },
   };

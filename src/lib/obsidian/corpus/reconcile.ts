@@ -1,17 +1,9 @@
 import { createHash } from 'node:crypto';
 
 import { buildEmbedInputs } from './embed-text.js';
+import type { CorpusIdentity } from './identity.js';
 import { CorpusStore, ensureCorpusGitignored } from './shard-store.js';
-import {
-  EMBED_VERSION,
-  MODEL_DIMS,
-  MODEL_ID,
-  MODEL_KEY,
-  SC_PARITY_STRATEGY,
-  type CorpusBlock,
-  type CorpusShard,
-  type EmbedFn,
-} from './types.js';
+import type { CorpusBlock, CorpusShard, EmbedFn } from './types.js';
 import { encodeVector } from './vector-codec.js';
 
 export interface NoteStat {
@@ -38,6 +30,8 @@ export interface ReconcileDeps {
   readNote: (relPath: string) => Promise<NoteContent>;
   embed: EmbedFn;
   store: CorpusStore;
+  /** The identity the corpus must carry — the provider's, under this build's extraction. */
+  identity: CorpusIdentity;
   /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
   warn?: (message: string) => void;
 }
@@ -100,13 +94,7 @@ export async function reconcileCorpus(
 
   // First, so an incompatible corpus identity discards the shards before they
   // are read: the shard map below must not see vectors of unknown provenance.
-  await store.ensureManifest({
-    embed_version: EMBED_VERSION,
-    model_key: MODEL_KEY,
-    model_id: MODEL_ID,
-    dims: MODEL_DIMS,
-    strategy: SC_PARITY_STRATEGY,
-  });
+  await store.ensureManifest(deps.identity);
 
   const paths = await scan();
   // Retain only the metadata the loop reads — the vectors of a whole corpus

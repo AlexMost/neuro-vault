@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CorpusStore } from '../../src/lib/obsidian/corpus/shard-store.js';
-import { MODEL_DIMS } from '../../src/lib/obsidian/corpus/types.js';
+import { TEST_DIMS } from '../_identity.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
 import { GoldenSetError } from '../../eval/golden.js';
 import { UsageError, parseEvalArgs, runEval } from '../../eval/run.js';
@@ -41,7 +41,7 @@ describe('runEval end-to-end (stub embedder)', () => {
   });
 
   function unitVec(hot: number): number[] {
-    const v = new Array<number>(MODEL_DIMS).fill(0);
+    const v = new Array<number>(TEST_DIMS).fill(0);
     v[hot] = 1;
     return v;
   }
@@ -56,7 +56,7 @@ describe('runEval end-to-end (stub embedder)', () => {
       await mkdir(path.join(vaultRoot, path.dirname(note)), { recursive: true });
       await writeFile(path.join(vaultRoot, note), text);
     }
-    const store = new CorpusStore(vaultRoot);
+    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
     await store.writeShard({
       path: 'Notes/target.md',
       content_hash: 'h1',

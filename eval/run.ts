@@ -65,8 +65,8 @@ export async function runEval(
   // Validation gates the run: golden set first (its failures must precede any
   // model/corpus work), then the backend snapshot.
   const entries = await loadGoldenSet(vaultRoot);
-  const sources = await loadSnapshot(vaultRoot);
   const profile = resolveModelProfile(DEFAULT_MODEL_KEY);
+  const sources = await loadSnapshot(vaultRoot, profile.dims);
   const embed =
     deps.embed ??
     (() => {

@@ -6,8 +6,11 @@ import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
 
 export class BackendError extends Error {}
 
-export async function loadSnapshot(vaultRoot: string): Promise<Map<string, SmartSource>> {
-  const snapshot = await loadCorpusSnapshot(new CorpusStore(vaultRoot));
+export async function loadSnapshot(
+  vaultRoot: string,
+  dims: number,
+): Promise<Map<string, SmartSource>> {
+  const snapshot = await loadCorpusSnapshot(new CorpusStore(vaultRoot, { dims }));
   if (snapshot.sources.size === 0) {
     throw new BackendError(
       `own corpus at ${path.join(vaultRoot, '.neuro-vault/corpus')} is missing or empty — ` +

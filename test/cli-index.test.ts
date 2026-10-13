@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { runIndexCommand, type IndexCommandDeps } from '../src/cli-index.js';
 import type { ReconcileDeps, ReconcileOptions } from '../src/lib/obsidian/corpus/reconcile.js';
+import { TEST_EMBEDDING_IDENTITY, TEST_IDENTITY } from './_identity.js';
 
 interface FakeStream {
   chunks: string[];
@@ -31,7 +32,7 @@ function okSummary(overrides = {}) {
 function makeDeps(reconcile: IndexCommandDeps['reconcile'], tty = false) {
   return {
     reconcile,
-    createEmbed: () => async () => [0.1, 0.2],
+    createEmbedder: () => ({ identity: TEST_EMBEDDING_IDENTITY, embed: async () => [0.1, 0.2] }),
     stdout: fakeStream(tty),
     stderr: fakeStream(false),
   };
@@ -41,9 +42,11 @@ describe('runIndexCommand', () => {
   it('reconciles each vault sequentially with one shared embed function', async () => {
     const calls: string[] = [];
     const embeds: unknown[] = [];
+    const identities: unknown[] = [];
     const reconcile = vi.fn(async (deps: ReconcileDeps) => {
       calls.push(deps.vaultRoot);
       embeds.push(deps.embed);
+      identities.push(deps.identity);
       return okSummary();
     });
     const deps = makeDeps(reconcile);
@@ -51,6 +54,7 @@ describe('runIndexCommand', () => {
     expect(code).toBe(0);
     expect(calls).toEqual(['/abs/VaultA', '/abs/VaultB']);
     expect(embeds[0]).toBe(embeds[1]); // one EmbeddingService for the run
+    expect(identities).toEqual([TEST_IDENTITY, TEST_IDENTITY]); // the embedder's, not a constant
   });
 
   it('exit code is 1 when any vault has failed notes, summaries still printed', async () => {
