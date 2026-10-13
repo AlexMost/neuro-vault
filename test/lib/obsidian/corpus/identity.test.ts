@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { corpusIdentityOf } from '../../../../src/lib/obsidian/corpus/identity.js';
+import { corpusIdentityOf, formatIdentity } from '../../../../src/lib/obsidian/corpus/identity.js';
 
 describe('corpusIdentityOf', () => {
   it('records the producing model under this build’s extraction version and strategy', () => {
@@ -22,5 +22,17 @@ describe('corpusIdentityOf', () => {
       dims: 384,
       strategy: 'sc-parity-v1',
     });
+  });
+});
+
+describe('formatIdentity', () => {
+  it('names the model and the embedding version', () => {
+    expect(formatIdentity({ model_key: 'bge-micro-v2', embed_version: 1 })).toBe(
+      'bge-micro-v2 (embed_version 1)',
+    );
+  });
+
+  it('describes a corpus whose manifest could not be read', () => {
+    expect(formatIdentity(null)).toBe('an unreadable or missing manifest');
   });
 });

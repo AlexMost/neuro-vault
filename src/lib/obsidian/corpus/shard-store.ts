@@ -189,14 +189,16 @@ export class CorpusStore {
    * "no manifest + shards present" as incompatible and discard the whole first
    * index. Shards are only cleared when there are shards to clear.
    */
-  async ensureManifest(expected: CorpusIdentity): Promise<{ rebuilt: boolean }> {
+  async ensureManifest(
+    expected: CorpusIdentity,
+  ): Promise<{ rebuilt: boolean; previous: CorpusManifest | null }> {
     const stored = await this.readManifest();
     const hasShards = await this.hasAnyShards();
     const compatible = isManifestCompatible(stored, expected, hasShards);
-    if (compatible && stored !== null) return { rebuilt: false };
+    if (compatible && stored !== null) return { rebuilt: false, previous: stored };
     if (!compatible && hasShards) await this.clearShards();
     await this.writeManifest({ ...expected, created: new Date().toISOString() });
-    return { rebuilt: !compatible };
+    return { rebuilt: !compatible, previous: stored };
   }
 
   private async hasAnyShards(): Promise<boolean> {

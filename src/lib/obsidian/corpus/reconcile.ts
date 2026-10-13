@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { buildEmbedInputs } from './embed-text.js';
 import type { CorpusIdentity } from './identity.js';
 import { CorpusStore, ensureCorpusGitignored } from './shard-store.js';
-import type { CorpusBlock, CorpusShard, EmbedFn } from './types.js';
+import type { CorpusBlock, CorpusManifest, CorpusShard, EmbedFn } from './types.js';
 import { encodeVector } from './vector-codec.js';
 
 export interface NoteStat {
@@ -46,6 +46,11 @@ export interface ReconcileOptions {
    * that aborted is expected to discard it.
    */
   signal?: AbortSignal;
+  /**
+   * Called once, before any note is processed, when the stored corpus was
+   * built with another identity and has just been discarded (design D8).
+   */
+  onRebuild?: (rebuild: { stored: CorpusManifest | null; active: CorpusIdentity }) => void;
 }
 
 export interface ReconcileSummary {
@@ -94,7 +99,15 @@ export async function reconcileCorpus(
 
   // First, so an incompatible corpus identity discards the shards before they
   // are read: the shard map below must not see vectors of unknown provenance.
-  await store.ensureManifest(deps.identity);
+  const { rebuilt, previous } = await store.ensureManifest(deps.identity);
+  if (rebuilt) {
+    // Guarded like onProgress: a throwing callback must not abort the run.
+    try {
+      opts.onRebuild?.({ stored: previous, active: deps.identity });
+    } catch (err) {
+      warn(`neuro-vault corpus: onRebuild callback threw: ${String(err)}`);
+    }
+  }
 
   const paths = await scan();
   // Retain only the metadata the loop reads — the vectors of a whole corpus

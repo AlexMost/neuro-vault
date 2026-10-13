@@ -507,4 +507,42 @@ describe('reconcileCorpus', () => {
     expect((await store.listShards()).has('Gone.md')).toBe(true);
     expect((await run()).deleted).toBe(1);
   });
+
+  it('reports the stored identity it replaces, once, before any note', async () => {
+    const { run, store } = await harness({ 'A.md': body('A') });
+    await run();
+    await store.writeManifest({
+      ...TEST_IDENTITY,
+      model_key: 'other',
+      created: '2026-01-01T00:00:00.000Z',
+    });
+    const events: string[] = [];
+    await run({
+      onRebuild: ({ stored, active }) => events.push(`${stored?.model_key} -> ${active.model_key}`),
+      onProgress: () => events.push('progress'),
+    });
+    expect(events[0]).toBe('other -> bge-micro-v2');
+    expect(events.filter((e) => e.includes('->'))).toHaveLength(1);
+  });
+
+  it('does not report a rebuild for a matching or a fresh corpus', async () => {
+    const { run } = await harness({ 'A.md': body('A') });
+    const onRebuild = vi.fn();
+    await run({ onRebuild });
+    await run({ onRebuild });
+    expect(onRebuild).not.toHaveBeenCalled();
+  });
+
+  it('a throwing onRebuild is contained', async () => {
+    const { run, store, warn } = await harness({ 'A.md': body('A') });
+    await run();
+    await store.writeManifest({ ...TEST_IDENTITY, model_key: 'other', created: 'x' });
+    const summary = await run({
+      onRebuild: () => {
+        throw new Error('boom');
+      },
+    });
+    expect(summary.embedded).toBe(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('onRebuild callback threw'));
+  });
 });

@@ -23,3 +23,11 @@ export function corpusIdentityOf(embedding: EmbeddingIdentity): CorpusIdentity {
     strategy: SC_PARITY_STRATEGY,
   };
 }
+
+/** `<model_key> (embed_version <n>)` — how a rebuild names a corpus identity. */
+export function formatIdentity(
+  identity: Pick<CorpusManifest, 'model_key' | 'embed_version'> | null,
+): string {
+  if (identity === null) return 'an unreadable or missing manifest';
+  return `${identity.model_key} (embed_version ${identity.embed_version})`;
+}
