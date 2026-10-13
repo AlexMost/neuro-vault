@@ -545,4 +545,13 @@ describe('reconcileCorpus', () => {
     expect(summary.embedded).toBe(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('onRebuild callback threw'));
   });
+
+  it('does not report a stale manifest that had no shards, but still writes the active one', async () => {
+    const { run, store } = await harness({ 'A.md': body('A') });
+    await store.writeManifest({ ...TEST_IDENTITY, model_key: 'other', created: 'x' });
+    const onRebuild = vi.fn();
+    await run({ onRebuild });
+    expect(onRebuild).not.toHaveBeenCalled();
+    expect((await store.readManifest())?.model_key).toBe(TEST_IDENTITY.model_key);
+  });
 });

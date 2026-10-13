@@ -47,8 +47,10 @@ export interface ReconcileOptions {
    */
   signal?: AbortSignal;
   /**
-   * Called once, before any note is processed, when the stored corpus was
-   * built with another identity and has just been discarded (design D8).
+   * Called once, before any note is processed, when a stored corpus (manifest
+   * plus shards) was built with another identity and has just been discarded
+   * (design D8). A stale manifest with no shards discards nothing and is not
+   * reported.
    */
   onRebuild?: (rebuild: { stored: CorpusManifest | null; active: CorpusIdentity }) => void;
 }

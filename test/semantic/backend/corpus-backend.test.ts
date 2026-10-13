@@ -355,25 +355,23 @@ describe('createCorpusBackend', () => {
     );
   });
 
-  it('does not announce a compatible corpus or an empty one', async () => {
-    for (const store of [
-      fakeStore({ compatible: true, shards: 2 }),
-      fakeStore({ compatible: false, shards: 0 }),
-    ]) {
-      const warn = vi.fn();
-      const backend = createCorpusBackend({
-        vaultRoot: '/v',
-        vaultName: 'Notes',
-        enabled: true,
-        identity: TEST_IDENTITY,
-        store,
-        loadSnapshot: async () => snapshotWith(['a.md']),
-        reconcile: async () => summary(),
-        warn,
-      });
-      await backend.whenSettled();
-      expect(warn.mock.calls.flat().join('\n')).not.toContain('was indexed with');
-    }
+  it.each([
+    ['a compatible corpus', { compatible: true, shards: 2 }],
+    ['an empty corpus', { compatible: false, shards: 0 }],
+  ])('does not announce %s', async (_name, storeOpts) => {
+    const warn = vi.fn();
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'Notes',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore(storeOpts),
+      loadSnapshot: async () => snapshotWith(['a.md']),
+      reconcile: async () => summary(),
+      warn,
+    });
+    await backend.whenSettled();
+    expect(warn.mock.calls.flat().join('\n')).not.toContain('was indexed with');
   });
 });
 

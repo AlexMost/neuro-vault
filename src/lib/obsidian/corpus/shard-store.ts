@@ -184,6 +184,10 @@ export class CorpusStore {
    * on any mismatch. Writes nothing when the stored manifest already
    * matches. Called first by reconcile.
    *
+   * `rebuilt` means a stored corpus was actually discarded: an incompatible
+   * manifest with no shards is replaced, but nothing is thrown away, so it is
+   * not a rebuild. `previous` is the manifest that was found, if any.
+   *
    * A fresh corpus (no manifest, no shards) is not a mismatch, but the manifest
    * is still written: leaving it absent would make the very next pass read
    * "no manifest + shards present" as incompatible and discard the whole first
@@ -198,7 +202,7 @@ export class CorpusStore {
     if (compatible && stored !== null) return { rebuilt: false, previous: stored };
     if (!compatible && hasShards) await this.clearShards();
     await this.writeManifest({ ...expected, created: new Date().toISOString() });
-    return { rebuilt: !compatible, previous: stored };
+    return { rebuilt: !compatible && hasShards, previous: stored };
   }
 
   private async hasAnyShards(): Promise<boolean> {

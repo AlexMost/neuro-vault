@@ -210,6 +210,28 @@ describe('CorpusStore', () => {
     expect(started).toEqual([...entries].sort());
   });
 
+  it('returns the manifest it found: compatible, incompatible with shards, incompatible without', async () => {
+    const compatibleRoot = await tempVault();
+    const compatible = new CorpusStore(compatibleRoot, { dims: TEST_DIMS });
+    await compatible.writeShard(shard('N.md'));
+    await compatible.writeManifest(stored);
+    expect(await compatible.ensureManifest(expected)).toEqual({
+      rebuilt: false,
+      previous: stored,
+    });
+
+    const withShards = new CorpusStore(await tempVault(), { dims: TEST_DIMS });
+    const other = { ...stored, model_key: 'other-model' };
+    await withShards.writeShard(shard('N.md'));
+    await withShards.writeManifest(other);
+    expect(await withShards.ensureManifest(expected)).toEqual({ rebuilt: true, previous: other });
+
+    const noShards = new CorpusStore(await tempVault(), { dims: TEST_DIMS });
+    await noShards.writeManifest(other);
+    expect(await noShards.ensureManifest(expected)).toEqual({ rebuilt: false, previous: other });
+    expect((await noShards.readManifest())?.model_key).toBe('bge-micro-v2');
+  });
+
   it('clears every shard when the manifest is incompatible', async () => {
     const root = await tempVault();
     const store = new CorpusStore(root, { dims: TEST_DIMS });
