@@ -3283,7 +3283,19 @@ Expected: "stdout is JSON-RPC only"; semantic provenance count ≥ 1; no rebuild
 
 # PR 3 — eval model axis, thresholds as profile data (`Refs #98`)
 
-Fresh worktree off `origin/main` (PR 2 merged), branch `feat/embedding-model-profiles-3`. Re-read Tasks 8.1–10.1 against `main` first.
+Fresh worktree off `origin/main` (PR 2 merged), branch `feat/embedding-model-profiles-pr3`. Re-read Tasks 8.1–10.1 against `main` first.
+
+**Reconciled against `main` @ `ce6b57b` (PR 2 as merged).** PR 2's review changed code around these snippets; the tasks below already carry the fixes:
+
+- **(a) `LocalModel` carries `template`** — the loader derives it inside export validation; `EmbeddingService` no longer does. PR 3 constructs the service only as `new EmbeddingService({ profile })` (eval) and never touches the template. Nothing to change.
+- **(b) The corpus port is `EmbedDocumentsFn` (one call per note); `asIndexEmbedFn` / `embedIndex` are gone.** No PR 3 snippet names them. `eval/pipelines.ts`'s `EmbedFn` is the harness's own query-side type, not the corpus port: it stays, and `runEval`'s `deps.embed?: EmbedFn` stays with it.
+- **(c) The queue rejects blank text with the caller's index and skips a failed call's remaining buckets (3f2c909).** PR 3 does not touch the queue's behaviour. The deferred minor that lands here is `bucketByLength`'s comment (and design D6) claiming a note's text is "almost always" its longest input — false while `EMBED_CHAR_BUDGET` caps the note text but not its blocks (349 of 888 notes on the verification vault have a longer block). Fixed in its own commit before Task 8.1.
+- **(d) `eval/backends.ts` `loadSnapshot(vaultRoot, identity)` already refuses another model's corpus (PR 1).** Task 9.2 does **not** add a second gate: the check stays in `loadSnapshot` — the one place the runner reads the corpus — and moves *ahead of* shard listing, so a corpus of another width is refused on its manifest instead of failing shard by shard. The signature stays `loadSnapshot(vaultRoot, expected)`; the `--model <key>` in the rebuild command is `expected.model_key` (one source, no separate `modelKey` argument), and `--vault` names the resolved vault root instead of a literal `<path>`.
+- **(e) `eval/run.ts` embeds queries through `service.embedQuery`, so the harrier query prefix is applied by the provider.** Task 9.1 makes `runEval` build that service from `args.model` (today it resolves `DEFAULT_MODEL_KEY` itself) and pins it with a test: `--model` reaches the embedder and the gate, nothing else picks a profile.
+- **(f) Thresholds.** Task 8.x moves `semanticThreshold`, `FALLBACK_THRESHOLD`, `DEFAULT_EXPANSION_FLOOR` (and the two tool defaults) into `ModelProfile.similarity` with today's values on **every** profile, harrier included. Calibration is PR 4.
+- **Report identity.** `runEval`'s `deps.modelId` override goes away in Task 9.3; the report's `identity` is always `identityOf(args.model)`, `model_id` is `identity.model_id`.
+- **Commits.** Task 8.2's `git add` also stages `src/modules/semantic/effort-profiles.ts` and `test/semantic/effort-profiles.test.ts` (it edits both).
+- **Environment** (as in PR 2): the worktree guard blocks the bare word `eval` and compound commands touching the scratchpad path. Run the harness as `npx tsx ./eval/run.ts`, write the directory as `./ev[a]l` in greps, and do multi-step verification with a `.mjs`/`.mts` driver in the scratchpad launched by one simple command (top-level `await` only in `.mts`). Probes live in the scratchpad, never at the worktree root (`eslint .` / `prettier --check .` would pick them up).
 
 ### Task 8.1: Similarity defaults move into the profile; the retrieval policy reads them
 
@@ -3308,7 +3320,7 @@ Append to `test/semantic/model-profiles.test.ts`:
   });
 ```
 
-Append to `test/semantic/retrieval-policy.test.ts`:
+Append to `test/semantic/retrieval-policy.test.ts` (the two imports join the file's import block):
 
 ```ts
 import type { SearchEngine, SmartSource } from '../../src/modules/semantic/types.js';
@@ -3533,7 +3545,7 @@ Run: `npm test && npm run typecheck && npm run lint` — Expected: PASS.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/modules/semantic/tools/search-notes.ts test/semantic/tools
+git add src/modules/semantic/tools/search-notes.ts src/modules/semantic/effort-profiles.ts test/semantic/tools test/semantic/effort-profiles.test.ts
 git commit -m "feat(search): describe the active profile's similarity defaults
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -3731,6 +3743,21 @@ export function parseEvalArgs(argv: string[]): EvalArgs {
 }
 ```
 
+Then make `runEval` use the parsed profile — it is the only profile the run sees (reconcile note (e)):
+
+```ts
+  const profile = args.model; // was resolveModelProfile(DEFAULT_MODEL_KEY)
+  const sources = await loadSnapshot(vaultRoot, corpusIdentityOf(identityOf(profile)));
+  const embed =
+    deps.embed ??
+    (() => {
+      const service = new EmbeddingService({ profile });
+      return (text: string) => service.embedQuery(text);
+    })();
+```
+
+and add an end-to-end test that the selected profile reaches the gate: a fixture corpus whose manifest is `bge-micro-v2`'s, run with `model: resolveModelProfile('granite-97m')`, rejects with `BackendError` naming `granite-97m` before the (rejecting) stub `embed` is called. (The embedder side is `new EmbeddingService({ profile })` → `embedQuery`, which applies the profile's query prefix; `test/semantic/embedding-service.test.ts` already pins that.)
+
 - [ ] **Step 3: Run, then commit**
 
 Run: `npx vitest run test/eval/run.test.ts && npm run typecheck && npm run lint` — Expected: PASS (end-to-end tests still construct `EvalArgs` by hand; add `model` and `stats: false` there).
@@ -3752,18 +3779,20 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `corpusIdentityOf`, `formatIdentity` (corpus identity module), `isManifestCompatible` (`shard-store.ts`), `identityOf` (`model-profiles.ts`).
-- Produces: `loadSnapshot(vaultRoot: string, expected: CorpusIdentity, modelKey: string): Promise<Map<string, SmartSource>>`.
+- Produces: `loadSnapshot(vaultRoot: string, expected: CorpusIdentity): Promise<Map<string, SmartSource>>` — signature unchanged since PR 1; the gate is reworked in place, not duplicated in `run.ts` (reconcile note (d)).
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `test/eval/backends.test.ts` (and change existing calls to `loadSnapshot(vaultRoot, TEST_IDENTITY, 'bge-micro-v2')`, writing a manifest with `store.writeManifest({ ...TEST_IDENTITY, created: 'x' })` in the setup of tests that expect success). In `test/eval/run.test.ts`, the end-to-end fixtures pass `model: resolveModelProfile('granite-97m')` explicitly and write the manifest `{ ...corpusIdentityOf(identityOf(granite)), created: 'x' }` with 384-dim vectors — explicit, so they survive PR 4's switch of the default to a 640-dim profile:
+In `test/eval/backends.test.ts`, replace the PR 1 test "fails a corpus indexed with another model, naming both identities" with the two below; the success test's `ensureManifest(TEST_IDENTITY)` setup already writes a matching manifest. In `test/eval/run.test.ts`, the end-to-end fixtures pass `model: resolveModelProfile('granite-97m')` explicitly and write the manifest `corpusIdentityOf(identityOf(granite))` (via `ensureManifest`) with 384-dim vectors — explicit, so they survive PR 4's switch of the default to a 640-dim profile:
 
 ```ts
-  it('refuses a corpus built by another profile, naming the index command', async () => {
+  it('refuses a corpus built by another profile before listing shards, naming the index command', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
-    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
-    await store.writeManifest({ ...TEST_IDENTITY, model_key: 'granite-97m', created: 'x' });
-    await expect(loadSnapshot(vaultRoot, { ...TEST_IDENTITY, model_key: 'harrier-270m' }, 'harrier-270m')).rejects.toThrow(
+    // A 640-wide shard under a granite manifest: the manifest must be what refuses it.
+    const wide = new CorpusStore(vaultRoot, { dims: 640 });
+    await wide.writeManifest({ ...TEST_IDENTITY, model_key: 'granite-97m', dims: 640, created: 'x' });
+    await wide.writeShard({ path: 'a.md', content_hash: 'h', mtime: 1, size: 1, embedding: encodeVector(new Array<number>(640).fill(0.01)), blocks: [] });
+    await expect(loadSnapshot(vaultRoot, { ...TEST_IDENTITY, model_key: 'harrier-270m' })).rejects.toThrow(
       `was indexed with granite-97m (embed_version 1), not harrier-270m (embed_version 1) — rebuild it for this model with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
     );
   });
@@ -3772,9 +3801,13 @@ Add to `test/eval/backends.test.ts` (and change existing calls to `loadSnapshot(
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
     const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
     await store.writeShard({ path: 'a.md', content_hash: 'h', mtime: 1, size: 1, embedding: encodeVector(unitVec(0)), blocks: [] });
-    await expect(loadSnapshot(vaultRoot, TEST_IDENTITY, 'bge-micro-v2')).rejects.toThrow(/no readable manifest/);
+    await expect(loadSnapshot(vaultRoot, TEST_IDENTITY)).rejects.toThrow(
+      `has no readable manifest — rebuild it with: neuro-vault-mcp index --vault ${vaultRoot} --model bge-micro-v2`,
+    );
   });
 ```
+
+The existing "fails an empty corpus" test additionally expects `--model bge-micro-v2` in the message.
 
 Run — Expected: FAIL.
 
@@ -3798,10 +3831,9 @@ export class BackendError extends Error {}
 export async function loadSnapshot(
   vaultRoot: string,
   expected: CorpusIdentity,
-  modelKey: string,
 ): Promise<Map<string, SmartSource>> {
   const corpusDir = path.join(vaultRoot, '.neuro-vault/corpus');
-  const rebuild = `neuro-vault-mcp index --vault ${vaultRoot} --model ${modelKey}`;
+  const rebuild = `neuro-vault-mcp index --vault ${vaultRoot} --model ${expected.model_key}`;
   const store = new CorpusStore(vaultRoot, { dims: expected.dims });
   // Before listing: shards of another width would each fail validation loudly.
   const manifest = await store.readManifest();
@@ -3821,14 +3853,14 @@ export async function loadSnapshot(
 }
 ```
 
-In `eval/run.ts`: `const sources = await loadSnapshot(vaultRoot, corpusIdentityOf(identityOf(args.model)), args.model.key);`.
+`eval/run.ts` already calls `loadSnapshot(vaultRoot, corpusIdentityOf(identityOf(profile)))` with `profile = args.model` (Task 9.1) — no change there; `runEval` stays free of a second manifest check.
 
 - [ ] **Step 3: Run, then commit**
 
 Run: `npm test && npm run typecheck && npm run lint` — Expected: PASS. (The "Corpus absent" test now expects the message to contain `neuro-vault-mcp index`; it does.)
 
 ```bash
-git add eval/backends.ts eval/run.ts test/eval/backends.test.ts
+git add eval/backends.ts test/eval/backends.test.ts test/eval/run.test.ts
 git commit -m "feat(eval): refuse a corpus built by another model profile
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -3966,7 +3998,7 @@ function rankSemantic(queryVector: number[], sources: Map<string, SmartSource>):
 
 `eval/report.ts` — `EvalReport` gains `model_key: string; identity: EmbeddingIdentity; stats?: CalibrationStats` (import the type from `./stats.js` in Task 9.5; until then declare `stats?: unknown`), and the file name becomes `` `${stamp}-${report.model_key}-${report.pipeline}.json` ``.
 
-`eval/run.ts` — per entry: `const queryVector = await embed(entry.query);`, then `rankQuery({ pipeline, queryVector, sources, similarity: args.model.similarity, fusedContext })` and `scoreQuery(entry, ranked, bestRelevantSimilarity(queryVector, entry.relevant, sources))`; the report sets `model_key: args.model.key`, `identity`, `model_id: identity.model_id`, where `identity = deps.identity ?? identityOf(args.model)`. Print `model=<key>` alongside `pipeline=` in `main`.
+`eval/run.ts` — per entry: `const queryVector = await embed(entry.query);`, then `rankQuery({ pipeline, queryVector, sources, similarity: args.model.similarity, fusedContext })` and `scoreQuery(entry, ranked, bestRelevantSimilarity(queryVector, entry.relevant, sources))`; the report sets `model_key: args.model.key`, `identity`, `model_id: identity.model_id`, where `identity = identityOf(args.model)`; drop the `deps.modelId` override (no test uses it). Print `model=<key>` alongside `pipeline=` in `main`.
 
 - [ ] **Step 3: Run, then commit**
 
@@ -4393,27 +4425,26 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 2: The gate refuses a mismatched corpus**
 
+Each command below is one simple command (worktree guard); multi-step work goes through a driver in the scratchpad.
+
 ```bash
-rsync -a --delete /Users/amostovenko/Obsidian/ "$VAULT_COPY/"   # live bge-micro corpus
-npm run eval -- --vault "$VAULT_COPY" --model granite-97m; echo "exit=$?"
+rsync -a --delete /Users/amostovenko/Obsidian/ <scratchpad>/vault-copy/Obsidian/
+npx tsx ./eval/run.ts --vault <scratchpad>/vault-copy/Obsidian --model granite-97m
 ```
 
-Expected: non-zero exit; the message names `bge-micro-v2 (embed_version 1)` and `neuro-vault-mcp index --vault … --model granite-97m`.
+First confirm the copy's `.neuro-vault/corpus/manifest.json` is the live bge-micro manifest (`model_key: bge-micro-v2`, `embed_version: 1`). Expected: non-zero exit; the message names `bge-micro-v2 (embed_version 1)` and `neuro-vault-mcp index --vault <copy> --model granite-97m`.
 
 - [ ] **Step 3: Capture the bge-micro baseline** (unrecoverable once PR 4 removes the profile)
 
 ```bash
-npm run eval -- --vault "$VAULT_COPY" --model bge-micro-v2 --pipeline semantic --stats | tee "$SCRATCH/baseline-stdout.txt"
-BASELINE=$(ls -t eval/results/*-bge-micro-v2-semantic.json | head -1)
-cp "$BASELINE" "$SCRATCH/baseline-bge-micro-v2.json"
-node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); console.log(JSON.stringify({code_sha:r.code_sha, vault_sha:r.vault_sha, model_key:r.model_key, metrics:r.metrics, stats:r.stats}, null, 2))' "$BASELINE" > "$SCRATCH/baseline-aggregates.json"
+npx tsx ./eval/run.ts --vault <scratchpad>/vault-copy/Obsidian --model bge-micro-v2 --pipeline semantic --stats
 ```
 
-Expected: overall MRR 0.398 ± 0.005 (same as PR 1). Create `openspec/changes/embedding-model-profiles/calibration.md` with a "Baseline — bge-micro-v2" section holding `baseline-aggregates.json` verbatim in a fenced block (aggregates only: no `per_query`, no paths). PR 4 passes the full report to `--baseline`, and the scratchpad does not outlive the session, so park it in the **main checkout's** gitignored results directory (it holds private paths, so it never enters git): `cp "$BASELINE" /Users/amostovenko/git/neuro-vault/eval/results/baseline-bge-micro-v2.json`.
+Expected: overall MRR 0.398 ± 0.005 (same as PR 1). The report lands in the worktree's gitignored `eval/results/<stamp>-bge-micro-v2-semantic.json`. A scratchpad driver (`extract-aggregates.mjs <report> <out>`) copies the full report to `<scratchpad>/baseline-bge-micro-v2.json` and writes `{ code_sha, vault_sha, model_key, identity, config, metrics, stats }` — aggregates only, no `per_query`, no paths — to `<scratchpad>/baseline-aggregates.json`. Create `openspec/changes/embedding-model-profiles/calibration.md` with a "Baseline — bge-micro-v2" section holding those aggregates in a fenced block plus a short reading of them. PR 4 passes the full report to `--baseline`, and neither the scratchpad nor the worktree outlives the work, so park it in the **main checkout's** gitignored results directory by absolute path (no `cd`; it holds private paths, so it never enters git): `<main checkout>/eval/results/baseline-bge-micro-v2.json`.
 
 - [ ] **Step 4: Open PR 3**
 
-Commit `calibration.md`; `gh pr create --base main --title "feat: embedding model profiles — eval model axis, thresholds as profile data (3/4)"`. Body: what landed (Tasks 8.1–9.6), that every default value is unchanged, the gate demo, the baseline numbers, `Refs #98`, footer `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Bind with the ccd_pr tools.
+Commit `calibration.md`; `gh pr create --base main --title "feat: embedding model profiles — eval model axis, thresholds as profile data (3/4)"`. Body: what landed (Tasks 8.1–9.6); that the thresholds moved into the profile with every value unchanged (bge behaviour identical); how `--model` and the manifest gate work, with the gate demo; the baseline aggregates; that the harrier profiles still carry the bge-scale values until PR 4 calibrates them; `Refs #98`, footer `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Bind with the ccd_pr tools.
 
 - [ ] **Step 5: STOP** — wait for review and merge before Task 11.1.
 
