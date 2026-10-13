@@ -9,7 +9,7 @@ import path from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
 
-import { MODEL_DIMS } from './types.js';
+import type { CorpusIdentity } from './identity.js';
 import type { CorpusBlock, CorpusManifest, CorpusShard } from './types.js';
 
 /** Corpus root, relative to the vault root. */
@@ -31,8 +31,8 @@ export interface CorpusStoreDeps {
   mkdir?: (p: string) => Promise<void>;
   /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
   warn?: (message: string) => void;
-  /** Expected vector dimension, used to validate a shard's vectors. Defaults to MODEL_DIMS. */
-  dims?: number;
+  /** Expected vector dimension, used to validate a shard's vectors. */
+  dims: number;
 }
 
 /** Reads, writes, lists, and deletes per-note shards under `<vaultRoot>/.neuro-vault/corpus/notes/`. */
@@ -48,12 +48,12 @@ export class CorpusStore {
   private readonly mkdir: (p: string) => Promise<void>;
   private readonly warn: (message: string) => void;
 
-  constructor(vaultRoot: string, deps: CorpusStoreDeps = {}) {
+  constructor(vaultRoot: string, deps: CorpusStoreDeps) {
     const root = path.join(vaultRoot, CORPUS_DIR);
     this.corpusRoot = root;
     this.notesDir = path.join(root, 'notes');
     this.manifestFile = path.join(root, 'manifest.json');
-    this.dims = deps.dims ?? MODEL_DIMS;
+    this.dims = deps.dims;
     this.writeFile = deps.writeFile ?? ((p, data) => writeFileAtomic(p, data));
     this.readFile = deps.readFile ?? ((p) => fsReadFile(p, 'utf8'));
     this.readdir = deps.readdir ?? ((p) => fsReaddir(p));
@@ -184,19 +184,25 @@ export class CorpusStore {
    * on any mismatch. Writes nothing when the stored manifest already
    * matches. Called first by reconcile.
    *
+   * `rebuilt` means a stored corpus was actually discarded: an incompatible
+   * manifest with no shards is replaced, but nothing is thrown away, so it is
+   * not a rebuild. `previous` is the manifest that was found, if any.
+   *
    * A fresh corpus (no manifest, no shards) is not a mismatch, but the manifest
    * is still written: leaving it absent would make the very next pass read
    * "no manifest + shards present" as incompatible and discard the whole first
    * index. Shards are only cleared when there are shards to clear.
    */
-  async ensureManifest(expected: Omit<CorpusManifest, 'created'>): Promise<{ rebuilt: boolean }> {
+  async ensureManifest(
+    expected: CorpusIdentity,
+  ): Promise<{ rebuilt: boolean; previous: CorpusManifest | null }> {
     const stored = await this.readManifest();
     const hasShards = await this.hasAnyShards();
     const compatible = isManifestCompatible(stored, expected, hasShards);
-    if (compatible && stored !== null) return { rebuilt: false };
+    if (compatible && stored !== null) return { rebuilt: false, previous: stored };
     if (!compatible && hasShards) await this.clearShards();
     await this.writeManifest({ ...expected, created: new Date().toISOString() });
-    return { rebuilt: !compatible };
+    return { rebuilt: !compatible && hasShards, previous: stored };
   }
 
   private async hasAnyShards(): Promise<boolean> {
@@ -327,7 +333,7 @@ function describeVector(value: unknown): string {
  */
 export function isManifestCompatible(
   stored: CorpusManifest | null,
-  expected: Omit<CorpusManifest, 'created'>,
+  expected: CorpusIdentity,
   hasShards: boolean,
 ): boolean {
   if (stored === null) return !hasShards;

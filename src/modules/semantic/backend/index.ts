@@ -1,4 +1,5 @@
 import { buildReconcileFsDeps } from '../../../lib/obsidian/corpus/fs-deps.js';
+import type { CorpusIdentity } from '../../../lib/obsidian/corpus/identity.js';
 import { reconcileCorpus } from '../../../lib/obsidian/corpus/reconcile.js';
 import { CorpusStore } from '../../../lib/obsidian/corpus/shard-store.js';
 import { loadCorpusSnapshot } from '../../../lib/obsidian/corpus/snapshot.js';
@@ -16,6 +17,8 @@ import { startVaultWatcher, type WatcherFactory } from './vault-watcher.js';
 export interface OwnCorpusBackendFactoryDeps {
   /** Shared process-wide (design D7) — one model, one embed in flight. */
   embedder: QueuedEmbedder;
+  /** What the embedder's vectors are — the manifest records it and a stored corpus must match it. */
+  identity: CorpusIdentity;
   /** Injected by tests; production defaults to the chokidar-backed one. */
   createWatcher?: WatcherFactory;
   /**
@@ -71,7 +74,7 @@ export function createOwnCorpusBackendFactory(
   const createBackend = deps.createBackend ?? createCorpusBackend;
 
   return ({ vaultRoot, vaultName, reader, scope, enabled }): SemanticBackend => {
-    const store = new CorpusStore(vaultRoot, { warn });
+    const store = new CorpusStore(vaultRoot, { warn, dims: deps.identity.dims });
     const fsDeps = buildReconcileFsDeps({ vaultRoot, reader });
     const embed = deps.embedder.asIndexEmbedFn();
 
@@ -80,12 +83,14 @@ export function createOwnCorpusBackendFactory(
       vaultName,
       enabled,
       store,
+      identity: deps.identity,
       loadSnapshot: (s, opts) =>
         loadCorpusSnapshot(s, {
           shards: opts?.shards,
           isExcluded: (relPath) => scope.isExcluded(relPath),
         }),
-      reconcile: (opts) => reconcileCorpus({ ...fsDeps, embed, store, warn }, opts),
+      reconcile: (opts) =>
+        reconcileCorpus({ ...fsDeps, embed, store, warn, identity: deps.identity }, opts),
       warn,
     });
 

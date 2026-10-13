@@ -2,14 +2,14 @@ import os from 'node:os';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { MODEL_DIMS } from '../../../../src/lib/obsidian/corpus/types.js';
+import { TEST_DIMS } from '../../../_identity.js';
 import { decodeVector, encodeVector } from '../../../../src/lib/obsidian/corpus/vector-codec.js';
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('vector codec', () => {
   it('round-trips a vector bit-exactly', () => {
-    const values = Array.from({ length: MODEL_DIMS }, (_, i) => Math.fround(Math.sin(i) / 3));
+    const values = Array.from({ length: TEST_DIMS }, (_, i) => Math.fround(Math.sin(i) / 3));
     expect(decodeVector(encodeVector(values))).toEqual(values);
   });
 
@@ -17,7 +17,7 @@ describe('vector codec', () => {
     // Small Buffers come from a shared pool: decoding via a bare `.buffer`
     // would read a neighbouring vector's bytes.
     const vectors = Array.from({ length: 50 }, (_, n) =>
-      Array.from({ length: MODEL_DIMS }, (_, i) => Math.fround((n + 1) * 0.001 * i)),
+      Array.from({ length: TEST_DIMS }, (_, i) => Math.fround((n + 1) * 0.001 * i)),
     );
     const encoded = vectors.map(encodeVector);
     encoded.forEach((e, n) => expect(decodeVector(e)).toEqual(vectors[n]));

@@ -61,7 +61,7 @@ flowchart LR
             direction TB
             Backend[Corpus backend<br/>watcher + reconcile]
             Retrieval[Retrieval policy<br/>effort: quick / deep]
-            Embed[Embedding service<br/>bge-micro-v2]
+            Embed[Embedding service<br/>model profile]
             Search[Search engine<br/>cosine similarity]
             Lexical[Lexical index<br/>exact text, mtime cache]
         end

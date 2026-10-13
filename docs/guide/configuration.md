@@ -6,8 +6,11 @@
 | ---------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--vault`        | yes      | —          | Absolute path to an Obsidian vault directory. Repeat the flag to register additional vaults. The MCP-side alias is always the directory basename; there is no override. |
 | `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip)                                                                                                                 |
+| `--model`        | no       | `bge-micro-v2` | Embedding model profile, one per process: `bge-micro-v2` (≈ 17 MB) or `granite-97m` (lite, multilingual, ≈ 98 MB). Applies to `index` too — use the same value for both, or the server rebuilds the corpus `index` built. The default similarity thresholds are tuned for `bge-micro-v2` — see the note below. |
 | `--help`         | no       | —          | Show help                                                                                                                                                               |
 | `--version`      | no       | —          | Print the installed version and exit                                                                                                                                    |
+
+**Similarity thresholds are tuned for `bge-micro-v2`.** The built-in defaults — `search_notes` (`threshold` and its fallback retry, `expansion_floor`), `get_similar_notes` (`threshold`) and `find_duplicates` (`threshold`) — are calibrated to `bge-micro-v2`'s cosine-score scale. `granite-97m` scores sit on a different (higher) scale, so under it the defaults filter differently; if results look too loose or too tight, pass an explicit `threshold` (and `expansion_floor` for `search_notes`). A later release recalibrates the defaults per profile.
 
 The vault's directory basename is the MCP-side alias used by the `vault` parameter on multi-vault tool calls. If a tool call fails with `VAULT_NOT_FOUND`, the `vault` value passed does not match any registered `--vault name:path` alias — check the flags the server was started with.
 
@@ -74,9 +77,11 @@ The global `--no-semantic` flag outranks this: it turns the semantic module off 
 
 ## Troubleshooting
 
-**Semantic results are missing or thin right after startup** — a vault with no embedding index yet indexes in the background; check `semantic_status` on the `search_notes` response (`state: "indexing"` means it is still building, `indexed`/`total` show progress). Either wait for it to finish, or warm it ahead of time with `neuro-vault-mcp index --vault <path>` (see [Installation → First-run behavior](./installation.md#first-run-behavior)).
+**Semantic results are missing or thin right after startup** — a vault with no embedding index yet indexes in the background; check `semantic_status` on the `search_notes` response (`state: "indexing"` means it is still building, `indexed`/`total` show progress). Either wait for it to finish, or warm it ahead of time with `neuro-vault-mcp index --vault <path> --model <key>` (the same `--model` the server runs with; omit it for the default; see [Installation → First-run behavior](./installation.md#first-run-behavior)).
 
-**First startup is slow** — the embedding model (~40 MB) is downloading. Subsequent starts use the cached model.
+**First startup is slow** — the embedding model is downloading (`bge-micro-v2` ≈ 17 MB, `granite-97m` ≈ 98 MB) into `~/.cache/neuro-vault/models` (or `$XDG_CACHE_HOME/neuro-vault/models`). Subsequent starts use the cached model.
+
+**The server log says it is discarding the corpus and re-indexing** — the vault's corpus was built with a different embedding model (or an older extraction version) than the one now active, so it is rebuilt from scratch in the background; `search_notes` answers from its lexical leg meanwhile. It usually means the server and `neuro-vault-mcp index` were given different `--model` values — use the same one for both.
 
 **Search returns nothing** — first try the call again *without* `threshold` at all: an omitted threshold gets the effort default (0.5 quick / 0.35 deep) plus an automatic one-shot retry at 0.3 if that finds nothing (flagged as `semantic_fallback: true` in `query_stats` for array queries). Passing `threshold` explicitly disables that retry — an explicit value is a hard filter with no rescue, so `threshold: 0.3` returns zero rather than falling back further. Also check `semantic_status` — `"disabled"` or `"unavailable"` means the semantic leg isn't running for that vault at all — and confirm `search_notes` returns results for a broad query like `search_notes({ query: "note" })`.
 
@@ -85,7 +90,8 @@ The global `--no-semantic` flag outranks this: it turns the semantic module off 
 - In-memory search only — no persistent database; the on-disk corpus under `.neuro-vault/corpus/` is the persistence, reloaded into memory on startup and kept current by the per-vault watcher.
 - stdio transport only — not HTTP or SSE.
 - Local vault path only — no remote vaults.
-- Embedding model loaded at startup; first run can be slow.
+- One embedding model per process, chosen with `--model` — every registered vault uses it. Switching models re-indexes each vault.
+- The embedding model is warmed up in the background after the server connects (skipped when every vault has semantic search disabled), and a failed load is retried on the next query. The first run also downloads it, so it can be slow.
 - All vault operations (`read_notes`, `create_note`, `edit_note`, properties, tags, daily notes) read and write the vault directory directly on disk. No Obsidian installation or running instance is required — the server runs fully headless.
 
 ## Lenient input coercion

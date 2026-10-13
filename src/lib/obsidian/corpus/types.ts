@@ -56,11 +56,27 @@ export interface CorpusShard {
 export interface CorpusManifest {
   embed_version: number;
   model_key: string;
-  /** The repo id the vectors were produced from — editing MODEL_ID alone must rebuild. */
+  /** The repo id the vectors were produced from — changing it alone must rebuild. */
   model_id: string;
   dims: number;
   strategy: string;
   created: string;
+}
+
+/**
+ * What produced a corpus's vectors, as the embedding provider reports it
+ * (design D4). The corpus records this; it never derives it from constants
+ * of its own, so a remote provider can describe itself the same way.
+ */
+export interface EmbeddingIdentity {
+  provider: string;
+  model_key: string;
+  model_id: string;
+  revision: string;
+  dtype: string;
+  dims: number;
+  pooling: string;
+  max_tokens: number;
 }
 
 /** The indexer's only view of the embedding model (design D1). */
@@ -68,17 +84,7 @@ export type EmbedFn = (text: string) => Promise<number[]>;
 
 /** Notes and blocks shorter than this are not embedded. */
 export const MIN_CHARS = 200;
-export const MAX_TOKENS = 512;
-/** Note embed text is cut here — max_tokens x 3.7, the parity formula. */
-export const EMBED_CHAR_BUDGET = Math.floor(MAX_TOKENS * 3.7);
-/** The embedding model's corpus identity, as the manifest's `model_key` records it. */
-export const MODEL_KEY = 'bge-micro-v2';
-/**
- * The model's transformers.js repo id — what a pipeline is actually loaded
- * from. Distinct from MODEL_KEY, which is only the corpus's record of which
- * model produced its vectors; loading `MODEL_KEY` as a repo id fails.
- */
-export const MODEL_ID = 'TaylorAI/bge-micro-v2';
-export const MODEL_DIMS = 384;
+/** Note embed text is cut here — the Smart Connections parity formula, 512 tokens × 3.7. */
+export const EMBED_CHAR_BUDGET = 1894;
 export const SC_PARITY_STRATEGY = 'sc-parity-v1';
 export const EMBED_VERSION = 1;

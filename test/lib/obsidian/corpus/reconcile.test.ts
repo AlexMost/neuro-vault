@@ -9,16 +9,14 @@ import {
   type ReconcileOptions,
 } from '../../../../src/lib/obsidian/corpus/reconcile.js';
 import { CorpusStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
-import { MODEL_DIMS } from '../../../../src/lib/obsidian/corpus/types.js';
+import { TEST_DIMS, TEST_IDENTITY } from '../../../_identity.js';
 
 /** Deterministic fake embedder: the vector is a checkable function of its input text. */
 function fakeEmbed() {
   return vi.fn(async (text: string) => {
-    const vector = new Array<number>(MODEL_DIMS).fill(0);
+    const vector = new Array<number>(TEST_DIMS).fill(0);
     for (let i = 0; i < text.length; i += 1) {
-      vector[i % MODEL_DIMS] = Math.fround(
-        (vector[i % MODEL_DIMS] ?? 0) + text.charCodeAt(i) / 1000,
-      );
+      vector[i % TEST_DIMS] = Math.fround((vector[i % TEST_DIMS] ?? 0) + text.charCodeAt(i) / 1000);
     }
     return vector;
   });
@@ -66,7 +64,7 @@ async function harness(files: Record<string, string>) {
   const root = await mkdtemp(path.join(tmpdir(), 'nv-reconcile-'));
   const vault = fakeVault(files);
   const embed = fakeEmbed();
-  const store = new CorpusStore(root);
+  const store = new CorpusStore(root, { dims: TEST_DIMS });
   const warn = vi.fn();
   const run = (opts: ReconcileOptions = {}) =>
     reconcileCorpus(
@@ -76,6 +74,7 @@ async function harness(files: Record<string, string>) {
         stat: vault.stat,
         readNote: vault.readNote,
         embed,
+        identity: TEST_IDENTITY,
         store,
         warn,
       },
@@ -208,7 +207,7 @@ describe('reconcileCorpus', () => {
       embed_version: 1,
       model_key: 'other',
       model_id: 'other/other',
-      dims: MODEL_DIMS,
+      dims: TEST_DIMS,
       strategy: 'sc-parity-v1',
       created: '2026-01-01T00:00:00.000Z',
     });
@@ -285,7 +284,8 @@ describe('reconcileCorpus', () => {
         stat: vault.stat,
         readNote: vault.readNote,
         embed: fakeEmbed(),
-        store: new CorpusStore(root),
+        identity: TEST_IDENTITY,
+        store: new CorpusStore(root, { dims: TEST_DIMS }),
       },
       { onProgress: (p) => seen.push({ ...p }) },
     );
@@ -300,9 +300,9 @@ describe('reconcileCorpus', () => {
     const vault = fakeVault({ 'A.md': body('A'), 'Bad.md': body('Bad'), 'C.md': body('C') });
     const embed = vi.fn(async (text: string) => {
       if (text.includes('Bad')) throw new Error('model exploded');
-      return new Array<number>(MODEL_DIMS).fill(0.1);
+      return new Array<number>(TEST_DIMS).fill(0.1);
     });
-    const store = new CorpusStore(root);
+    const store = new CorpusStore(root, { dims: TEST_DIMS });
     const warn = vi.fn();
 
     const summary = await reconcileCorpus({
@@ -311,6 +311,7 @@ describe('reconcileCorpus', () => {
       stat: vault.stat,
       readNote: vault.readNote,
       embed,
+      identity: TEST_IDENTITY,
       store,
       warn,
     });
@@ -334,6 +335,7 @@ describe('reconcileCorpus', () => {
       embed: vi.fn(async () => {
         throw new Error('nope');
       }),
+      identity: TEST_IDENTITY,
       store,
       warn: vi.fn(),
     });
@@ -356,6 +358,7 @@ describe('reconcileCorpus', () => {
       embed: vi.fn(async () => {
         throw new Error('model exploded');
       }),
+      identity: TEST_IDENTITY,
       store,
       warn: vi.fn(),
     });
@@ -380,6 +383,7 @@ describe('reconcileCorpus', () => {
         stat: vault.stat,
         readNote: vault.readNote,
         embed: fakeEmbed(),
+        identity: TEST_IDENTITY,
         store,
         warn,
       },
@@ -471,7 +475,7 @@ describe('reconcileCorpus', () => {
     // exactly one boundary to notice it at.
     embed.mockImplementationOnce(async () => {
       controller.abort();
-      return new Array<number>(MODEL_DIMS).fill(0);
+      return new Array<number>(TEST_DIMS).fill(0);
     });
 
     const summary = await run({ signal: controller.signal });
@@ -493,7 +497,7 @@ describe('reconcileCorpus', () => {
     const controller = new AbortController();
     embed.mockImplementationOnce(async () => {
       controller.abort();
-      return new Array<number>(MODEL_DIMS).fill(0);
+      return new Array<number>(TEST_DIMS).fill(0);
     });
     const summary = await run({ signal: controller.signal });
 
@@ -502,5 +506,52 @@ describe('reconcileCorpus', () => {
     // failed — so the next unaborted pass still collects it.
     expect((await store.listShards()).has('Gone.md')).toBe(true);
     expect((await run()).deleted).toBe(1);
+  });
+
+  it('reports the stored identity it replaces, once, before any note', async () => {
+    const { run, store } = await harness({ 'A.md': body('A') });
+    await run();
+    await store.writeManifest({
+      ...TEST_IDENTITY,
+      model_key: 'other',
+      created: '2026-01-01T00:00:00.000Z',
+    });
+    const events: string[] = [];
+    await run({
+      onRebuild: ({ stored, active }) => events.push(`${stored?.model_key} -> ${active.model_key}`),
+      onProgress: () => events.push('progress'),
+    });
+    expect(events[0]).toBe('other -> bge-micro-v2');
+    expect(events.filter((e) => e.includes('->'))).toHaveLength(1);
+  });
+
+  it('does not report a rebuild for a matching or a fresh corpus', async () => {
+    const { run } = await harness({ 'A.md': body('A') });
+    const onRebuild = vi.fn();
+    await run({ onRebuild });
+    await run({ onRebuild });
+    expect(onRebuild).not.toHaveBeenCalled();
+  });
+
+  it('a throwing onRebuild is contained', async () => {
+    const { run, store, warn } = await harness({ 'A.md': body('A') });
+    await run();
+    await store.writeManifest({ ...TEST_IDENTITY, model_key: 'other', created: 'x' });
+    const summary = await run({
+      onRebuild: () => {
+        throw new Error('boom');
+      },
+    });
+    expect(summary.embedded).toBe(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('onRebuild callback threw'));
+  });
+
+  it('does not report a stale manifest that had no shards, but still writes the active one', async () => {
+    const { run, store } = await harness({ 'A.md': body('A') });
+    await store.writeManifest({ ...TEST_IDENTITY, model_key: 'other', created: 'x' });
+    const onRebuild = vi.fn();
+    await run({ onRebuild });
+    expect(onRebuild).not.toHaveBeenCalled();
+    expect((await store.readManifest())?.model_key).toBe(TEST_IDENTITY.model_key);
   });
 });

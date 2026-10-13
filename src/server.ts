@@ -5,6 +5,7 @@ import { createSemanticModule, type ISemanticModuleDeps } from './modules/semant
 import { createQueuedEmbedder, type QueuedEmbedder } from './modules/semantic/embed-queue.js';
 import { EmbeddingService } from './modules/semantic/embedding-service.js';
 import { createOwnCorpusBackendFactory } from './modules/semantic/backend/index.js';
+import { corpusIdentityOf, type CorpusIdentity } from './lib/obsidian/corpus/identity.js';
 import { createOperationsModule } from './modules/operations/index.js';
 import { VaultRegistry, type IVaultEntryDeps } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
@@ -84,6 +85,7 @@ function defaultTransportFactory(): StdioServerTransport {
 
 function buildDefaultVaultEntryDeps(
   embedder: QueuedEmbedder,
+  identity: CorpusIdentity,
   overrides: Partial<IVaultEntryDeps> = {},
 ): IVaultEntryDeps {
   return {
@@ -93,7 +95,7 @@ function buildDefaultVaultEntryDeps(
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
     providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
-    semanticBackendFactory: createOwnCorpusBackendFactory({ embedder }),
+    semanticBackendFactory: createOwnCorpusBackendFactory({ embedder, identity }),
     conventionsReaderFactory:
       ({ vaultRoot }) =>
       () =>
@@ -119,14 +121,16 @@ export async function startNeuroVaultServer(
 ): Promise<() => Promise<void>> {
   // One model, one embed in flight process-wide (design D7): every vault's
   // indexing and every query share this queue, with queries jumping ahead.
-  const embedder = createQueuedEmbedder(new EmbeddingService({ modelId: config.semantic.modelId }));
+  const service = new EmbeddingService({ profile: config.semantic.model });
+  const embedder = createQueuedEmbedder(service);
+  const identity = corpusIdentityOf(service.identity);
 
   const registry = await VaultRegistry.create(
     {
       vaults: config.vaults,
       semanticEnabled: config.semantic.enabled,
     },
-    buildDefaultVaultEntryDeps(embedder, deps.vaultEntryDeps),
+    buildDefaultVaultEntryDeps(embedder, identity, deps.vaultEntryDeps),
   );
 
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
@@ -140,7 +144,7 @@ export async function startNeuroVaultServer(
   if (config.semantic.enabled) {
     const semantic = createSemanticModule(
       registry,
-      { modelKey: config.semantic.modelKey, modelId: config.semantic.modelId },
+      { profile: config.semantic.model },
       // The retrieval path embeds through the same queue as indexing, on the
       // query lane — so a search issued mid cold-index is not stuck behind
       // thousands of queued note embeds (design D7).

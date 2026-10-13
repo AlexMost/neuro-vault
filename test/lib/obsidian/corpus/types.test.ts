@@ -4,14 +4,12 @@ import path from 'node:path';
 
 import {
   EMBED_CHAR_BUDGET,
-  MAX_TOKENS,
   MIN_CHARS,
   SC_PARITY_STRATEGY,
 } from '../../../../src/lib/obsidian/corpus/types.js';
 
 describe('corpus parity constants', () => {
-  it('cuts note embed text at max_tokens x 3.7', () => {
-    expect(MAX_TOKENS).toBe(512);
+  it('cuts note embed text at the 512 x 3.7 parity budget', () => {
     expect(EMBED_CHAR_BUDGET).toBe(1894);
   });
 

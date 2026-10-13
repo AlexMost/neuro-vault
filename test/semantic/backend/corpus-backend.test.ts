@@ -13,7 +13,8 @@ import {
   type ReconcileSummary,
 } from '../../../src/lib/obsidian/corpus/reconcile.js';
 import { loadCorpusSnapshot } from '../../../src/lib/obsidian/corpus/snapshot.js';
-import { MODEL_DIMS, type EmbedFn } from '../../../src/lib/obsidian/corpus/types.js';
+import type { EmbedFn } from '../../../src/lib/obsidian/corpus/types.js';
+import { TEST_DIMS, TEST_IDENTITY } from '../../_identity.js';
 
 const EMPTY: CorpusSnapshot = { sources: new Map(), basenameIndex: buildBasenameIndex([]) };
 
@@ -76,6 +77,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: false,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: true, shards: 3 }),
       loadSnapshot: async () => EMPTY,
       reconcile,
@@ -92,6 +94,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: false,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: true, shards: 3 }),
       loadSnapshot: async () => snapshotWith(['a.md']),
       reconcile,
@@ -109,6 +112,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: true, shards: 2 }),
       loadSnapshot: async () => snapshotWith(['a.md', 'b.md']),
       reconcile,
@@ -125,6 +129,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: false, shards: 0 }),
       loadSnapshot: async () => snapshotWith(['a.md']),
       reconcile: async ({ onProgress }) => {
@@ -144,6 +149,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: false, shards: 0 }),
       loadSnapshot: async () => snapshotWith(['a.md']),
       reconcile: async () => summary({ embedded: 1 }),
@@ -159,6 +165,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: true, shards: 1 }),
       loadSnapshot,
       reconcile: async () => summary(),
@@ -173,6 +180,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: {
         readManifest: () => Promise.reject(new Error('EIO')),
         listShards: () => Promise.reject(new Error('EIO')),
@@ -217,6 +225,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: true, shards: 1 }),
       loadSnapshot,
       // Only the first pass moves the corpus; the follow-up finds nothing to do
@@ -243,6 +252,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: false, shards: 0 }),
       loadSnapshot: async () => EMPTY,
       reconcile: async () => {
@@ -264,6 +274,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: false, shards: 0 }),
       loadSnapshot: async () => snapshotWith(['a.md']),
       reconcile: async () => {
@@ -295,6 +306,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: true, shards: 1 }),
       loadSnapshot: async () => EMPTY,
       reconcile,
@@ -312,6 +324,7 @@ describe('createCorpusBackend', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: true, shards: 1 }),
       loadSnapshot: async () => EMPTY,
       reconcile,
@@ -322,6 +335,50 @@ describe('createCorpusBackend', () => {
     backend.requestReconcile();
     await backend.whenSettled();
     expect(reconcile).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces an incompatible corpus on stderr, naming both identities', async () => {
+    const warn = vi.fn();
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'Notes',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore({ compatible: false, shards: 2 }),
+      loadSnapshot: async () => EMPTY,
+      // Stands in for reconcileCorpus finding the mismatch and discarding the shards.
+      reconcile: async (opts) => {
+        opts?.onRebuild?.({
+          stored: { ...TEST_IDENTITY, model_key: 'other', embed_version: 99, created: 'x' },
+          active: TEST_IDENTITY,
+        });
+        return summary({ embedded: 1, reused: 0 });
+      },
+      warn,
+    });
+    await backend.whenSettled();
+    expect(warn).toHaveBeenCalledWith(
+      'neuro-vault corpus: vault "Notes" was indexed with other (embed_version 99); active model is bge-micro-v2 (embed_version 1) — discarding the corpus and re-indexing in the background',
+    );
+  });
+
+  it.each([
+    ['a compatible corpus', { compatible: true, shards: 2 }],
+    ['an empty corpus', { compatible: false, shards: 0 }],
+  ])('does not announce %s', async (_name, storeOpts) => {
+    const warn = vi.fn();
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'Notes',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore(storeOpts),
+      loadSnapshot: async () => snapshotWith(['a.md']),
+      reconcile: async () => summary(),
+      warn,
+    });
+    await backend.whenSettled();
+    expect(warn.mock.calls.flat().join('\n')).not.toContain('was indexed with');
   });
 });
 
@@ -338,7 +395,7 @@ describe('createCorpusBackend over a real reconcile', () => {
   /** A cold vault on disk, wired to the production reconcile/store/loader. */
   async function coldVault(files: Record<string, string>) {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-'));
-    const store = new CorpusStore(root);
+    const store = new CorpusStore(root, { dims: TEST_DIMS });
     // Swapped per pass, so a vault that recovers can be exercised too.
     let embed: EmbedFn = () => {
       throw new Error('ONNX model failed to load');
@@ -351,6 +408,7 @@ describe('createCorpusBackend over a real reconcile', () => {
       vaultRoot: root,
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store,
       loadSnapshot: loadCorpusSnapshot,
       reconcile: (opts) =>
@@ -361,6 +419,7 @@ describe('createCorpusBackend over a real reconcile', () => {
             stat: async (p) => ({ mtime: 1, size: files[p].length }),
             readNote: async (p) => ({ content: files[p], mtime: 1, size: files[p].length }),
             embed: (text) => embed(text),
+            identity: TEST_IDENTITY,
             store,
             warn: reconcileWarn,
           },
@@ -373,7 +432,7 @@ describe('createCorpusBackend over a real reconcile', () => {
       backendWarn,
       reconcileWarn,
       repairEmbed: () => {
-        embed = async () => new Array<number>(MODEL_DIMS).fill(0.1);
+        embed = async () => new Array<number>(TEST_DIMS).fill(0.1);
       },
       cleanup: () => rm(root, { recursive: true, force: true }),
     };
@@ -464,12 +523,13 @@ describe('createCorpusBackend over a real reconcile', () => {
   it('reports ready when only some notes fail and the rest are served', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-partial-'));
     try {
-      const store = new CorpusStore(root);
+      const store = new CorpusStore(root, { dims: TEST_DIMS });
       const files: Record<string, string> = { 'good.md': body('good'), 'bad.md': body('bad') };
       const backend = createCorpusBackend({
         vaultRoot: root,
         vaultName: 'v',
         enabled: true,
+        identity: TEST_IDENTITY,
         store,
         loadSnapshot: loadCorpusSnapshot,
         reconcile: (opts) =>
@@ -482,7 +542,8 @@ describe('createCorpusBackend over a real reconcile', () => {
                 if (p === 'bad.md') throw new Error('EACCES');
                 return { content: files[p], mtime: 1, size: files[p].length };
               },
-              embed: async () => new Array<number>(MODEL_DIMS).fill(0.1),
+              embed: async () => new Array<number>(TEST_DIMS).fill(0.1),
+              identity: TEST_IDENTITY,
               store,
               warn: vi.fn(),
             },
@@ -515,6 +576,7 @@ describe('createCorpusBackend over a real reconcile', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: false, shards: 0 }),
       loadSnapshot: async () => snapshotWith(['a.md']),
       reconcile,
@@ -547,6 +609,7 @@ describe('createCorpusBackend over a real reconcile', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: false, shards: 0 }),
       loadSnapshot: async () => snapshotWith(['a.md']),
       reconcile,
@@ -578,6 +641,7 @@ describe('createCorpusBackend over a real reconcile', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       enabled: true,
+      identity: TEST_IDENTITY,
       store: fakeStore({ compatible: false, shards: 0 }),
       loadSnapshot: async () => snapshotWith(['a.md']),
       // Settles only on abort: a cold index is thousands of reads and embeds,

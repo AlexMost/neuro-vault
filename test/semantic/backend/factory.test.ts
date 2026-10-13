@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CorpusBackend } from '../../../src/modules/semantic/backend/corpus-backend.js';
 import { createOwnCorpusBackendFactory } from '../../../src/modules/semantic/backend/index.js';
+import { TEST_IDENTITY } from '../../_identity.js';
 
 const embedder = { asIndexEmbedFn: () => async () => [1] } as never;
 const reader = { scan: async () => [] } as never;
@@ -48,7 +49,11 @@ describe('createOwnCorpusBackendFactory', () => {
 
   it('does not start a watcher for a disabled vault', () => {
     const createWatcher = vi.fn();
-    const factory = createOwnCorpusBackendFactory({ embedder, createWatcher });
+    const factory = createOwnCorpusBackendFactory({
+      embedder,
+      identity: TEST_IDENTITY,
+      createWatcher,
+    });
 
     const backend = factory({ vaultRoot, vaultName: 'v', reader, scope, enabled: false });
 
@@ -61,6 +66,7 @@ describe('createOwnCorpusBackendFactory', () => {
     const inner = fakeBackend(order);
     const factory = createOwnCorpusBackendFactory({
       embedder,
+      identity: TEST_IDENTITY,
       createBackend: () => inner,
       createWatcher: () => ({
         close: vi.fn(async () => {
@@ -83,6 +89,7 @@ describe('createOwnCorpusBackendFactory', () => {
     const inner = fakeBackend(order);
     const factory = createOwnCorpusBackendFactory({
       embedder,
+      identity: TEST_IDENTITY,
       createBackend: () => inner,
       createWatcher: () => ({
         close: async () => {
