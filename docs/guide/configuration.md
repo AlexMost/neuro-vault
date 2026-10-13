@@ -6,9 +6,11 @@
 | ---------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--vault`        | yes      | —          | Absolute path to an Obsidian vault directory. Repeat the flag to register additional vaults. The MCP-side alias is always the directory basename; there is no override. |
 | `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip)                                                                                                                 |
-| `--model`        | no       | `bge-micro-v2` | Embedding model profile, one per process: `bge-micro-v2` (≈ 17 MB) or `granite-97m` (lite, multilingual, ≈ 98 MB). Applies to `index` too — use the same value for both, or the server rebuilds the corpus `index` built. |
+| `--model`        | no       | `bge-micro-v2` | Embedding model profile, one per process: `bge-micro-v2` (≈ 17 MB) or `granite-97m` (lite, multilingual, ≈ 98 MB). Applies to `index` too — use the same value for both, or the server rebuilds the corpus `index` built. The default similarity thresholds are tuned for `bge-micro-v2` — see the note below. |
 | `--help`         | no       | —          | Show help                                                                                                                                                               |
 | `--version`      | no       | —          | Print the installed version and exit                                                                                                                                    |
+
+**Similarity thresholds are tuned for `bge-micro-v2`.** The built-in defaults — `search_notes` (`threshold` and its fallback retry, `expansion_floor`), `get_similar_notes` (`threshold`) and `find_duplicates` (`threshold`) — are calibrated to `bge-micro-v2`'s cosine-score scale. `granite-97m` scores sit on a different (higher) scale, so under it the defaults filter differently; if results look too loose or too tight, pass an explicit `threshold` (and `expansion_floor` for `search_notes`). A later release recalibrates the defaults per profile.
 
 The vault's directory basename is the MCP-side alias used by the `vault` parameter on multi-vault tool calls. If a tool call fails with `VAULT_NOT_FOUND`, the `vault` value passed does not match any registered `--vault name:path` alias — check the flags the server was started with.
 

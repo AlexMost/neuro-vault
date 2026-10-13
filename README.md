@@ -209,7 +209,7 @@ Then ask your assistant:
 
 > "What did I write about building AI agents?"
 
-On first run the embedding model downloads automatically (bge-micro-v2 ≈ 17 MB, granite-97m ≈ 98 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `bge-micro-v2`; add `--model granite-97m` for the lite multilingual one.
+On first run the embedding model downloads automatically (bge-micro-v2 ≈ 17 MB, granite-97m ≈ 98 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `bge-micro-v2`; add `--model granite-97m` for the lite multilingual one. ⚖️ The default similarity thresholds are tuned for `bge-micro-v2`; under `granite-97m`, pass explicit `threshold`s if results look too loose or too tight ([details](./docs/guide/configuration.md#cli-arguments)).
 
 Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault):
 
