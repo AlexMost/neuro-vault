@@ -1,11 +1,8 @@
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 
-import {
-  DEFAULT_EXPANSION_FLOOR,
-  EFFORT_PROFILES,
-  FALLBACK_THRESHOLD,
-} from '../../../src/modules/semantic/effort-profiles.js';
+import { EFFORT_PROFILES } from '../../../src/modules/semantic/effort-profiles.js';
+import type { SimilarityDefaults } from '../../../src/modules/semantic/model-profiles.js';
 
 // The advertisement-derivation pin (spec: hybrid-search "Effort-profile
 // advertisement derives from the retrieval constants"). Reads the SOURCE of
@@ -24,7 +21,7 @@ import { buildSearchNotesTool } from '../../../src/modules/semantic/tools/search
 import { makeTestRegistry } from './_helpers.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
 
-function builtTool() {
+function builtTool(similarity: SimilarityDefaults = TEST_SIMILARITY) {
   return buildSearchNotesTool({
     registry: makeTestRegistry([]),
     embeddingProvider: {
@@ -33,7 +30,7 @@ function builtTool() {
     },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     modelKey: 'k',
-    similarity: TEST_SIMILARITY,
+    similarity,
   });
 }
 
@@ -55,10 +52,10 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
 
   it('threshold and expansion-floor prose interpolate their constants', async () => {
     const source = await readFile('src/modules/semantic/tools/search-notes.ts', 'utf8');
-    expect(source).toContain('${FALLBACK_THRESHOLD}');
-    expect(source).toContain('${DEFAULT_EXPANSION_FLOOR}');
-    expect(source).toContain('${EFFORT_PROFILES.quick.semanticThreshold}');
-    expect(source).toContain('${EFFORT_PROFILES.deep.semanticThreshold}');
+    expect(source).toContain('${similarity.quick}');
+    expect(source).toContain('${similarity.deep}');
+    expect(source).toContain('${similarity.fallback}');
+    expect(source).toContain('${similarity.expansionFloor}');
     expect(source).toContain('${EFFORT_PROFILES.quick.semanticPool}');
     expect(source).toContain('${EFFORT_PROFILES.quick.lexicalNoteCap}');
     expect(source).toContain('${EFFORT_PROFILES.quick.mergedCap}');
@@ -67,7 +64,7 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     expect(source).toContain('${EFFORT_PROFILES.deep.mergedCap}');
   });
 
-  it('threshold and expansion-floor numbers land in the ADVERTISED schema', () => {
+  it('advertises the active profile’s defaults in the input schema', () => {
     // Pinned against the tool's declared inputSchema converted to JSON
     // Schema the same way the MCP SDK converts it for `tools/list` — not
     // against the source file. A source-only grep (the test above) can't
@@ -83,10 +80,17 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     // optional field on any tool. `builtTool().inputSchema` is the same zod
     // schema object minus that unrelated stripping step, so it is the
     // faithful stand-in for what the field-level prose says.
-    const schema = JSON.stringify(z.toJSONSchema(builtTool().inputSchema));
-    expect(schema).toContain(
-      `effort defaults (${EFFORT_PROFILES.quick.semanticThreshold} quick / ${EFFORT_PROFILES.deep.semanticThreshold} deep) with one retry at ${FALLBACK_THRESHOLD}`,
-    );
-    expect(schema).toContain(`Default ${DEFAULT_EXPANSION_FLOOR}`);
+    const distinct = {
+      quick: 0.61,
+      deep: 0.47,
+      fallback: 0.42,
+      expansionFloor: 0.73,
+      similarNotes: 0.6,
+      duplicates: 0.95,
+    };
+    const schema = JSON.stringify(z.toJSONSchema(builtTool(distinct).inputSchema));
+    expect(schema).toContain('effort defaults (0.61 quick / 0.47 deep) with one retry at 0.42');
+    expect(schema).toContain('Default 0.73');
+    expect(schema).not.toContain('0.9+');
   });
 });

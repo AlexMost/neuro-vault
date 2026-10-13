@@ -54,6 +54,7 @@ export interface ModelProfile {
   readonly documentPrefix: string;
   /** Input window in tokens of this profile's tokenizer, special tokens included. */
   readonly maxTokens: number;
+  /** Default similarity thresholds on this profile's own scale (design D10). */
   readonly similarity: SimilarityDefaults;
 }
 
