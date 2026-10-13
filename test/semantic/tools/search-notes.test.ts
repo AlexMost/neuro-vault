@@ -10,6 +10,7 @@ import {
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
+import { TEST_SIMILARITY } from '../../_identity.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
 import {
@@ -903,6 +904,7 @@ describe('searchNotes', () => {
           embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
           searchEngine,
           modelKey: MODEL_KEY,
+          similarity: TEST_SIMILARITY,
         });
         const reg = registerTool(tool);
 
@@ -982,6 +984,7 @@ describe('searchNotes', () => {
           embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
           searchEngine,
           modelKey: MODEL_KEY,
+          similarity: TEST_SIMILARITY,
         });
         const reg = registerTool(tool);
 
@@ -1053,6 +1056,7 @@ describe('searchNotes', () => {
             findDuplicates: vi.fn().mockReturnValue([]),
           },
           modelKey: MODEL_KEY,
+          similarity: TEST_SIMILARITY,
         });
         const reg = registerTool(tool);
 
@@ -1096,6 +1100,7 @@ describe('searchNotes', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
 
@@ -1198,6 +1203,7 @@ describe('semantic_status', () => {
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
         searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
       });
       const reg = registerTool(tool);
       const result = await callTool<SearchNotesOutput>(reg, { query: 'x' });
@@ -1284,6 +1290,7 @@ describe('search_notes advertised description', () => {
       embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
       searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
       modelKey: MODEL_KEY,
+      similarity: TEST_SIMILARITY,
     };
   }
 
@@ -1424,5 +1431,35 @@ describe('search_notes advertised description', () => {
     const shape = JSON.stringify(spec.inputSchema);
     expect(shape).toMatch(/threshold/);
     expect(shape).toMatch(/expansion_floor/);
+  });
+});
+
+describe('query_stats fallback note', () => {
+  it('names the active profile’s fallback threshold', async () => {
+    // Hits at 0.45: below the quick default (0.5), above this profile's 0.42
+    // fallback, so the leg's hits exist only because the retry ran.
+    const engine: SearchEngine = {
+      findNeighbors: vi.fn(({ threshold }: { threshold: number }) =>
+        threshold <= 0.42 ? [{ path: 'note.md', similarity: 0.45 }] : [],
+      ),
+      findBlockNeighbors: vi.fn().mockReturnValue([]),
+      findDuplicates: vi.fn().mockReturnValue([]),
+    };
+    const { deps, cleanup } = await makeLexicalVault(
+      { 'note.md': 'зміст' },
+      { sources: sourcesWithEmbeddingFor('note.md', [1, 0]), engine },
+    );
+    try {
+      const tool = buildSearchNotesTool({
+        ...deps,
+        similarity: { ...TEST_SIMILARITY, fallback: 0.42 },
+      });
+      const out = await callTool<SearchNotesOutput>(registerTool(tool), { query: ['щось'] });
+      expect(out.query_stats!['щось'].note).toBe(
+        'Semantic hits came from the 0.42 fallback retry, so they are weaker than a normal result.',
+      );
+    } finally {
+      await cleanup();
+    }
   });
 });

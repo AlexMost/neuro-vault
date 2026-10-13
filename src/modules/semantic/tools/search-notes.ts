@@ -4,11 +4,8 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import type { IFanOutResult } from '../../../lib/fan-out.js';
 import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.js';
-import {
-  DEFAULT_EXPANSION_FLOOR,
-  EFFORT_PROFILES,
-  FALLBACK_THRESHOLD,
-} from '../effort-profiles.js';
+import { EFFORT_PROFILES } from '../effort-profiles.js';
+import type { SimilarityDefaults } from '../model-profiles.js';
 import { runRetrievalPipeline } from '../retrieval-pipeline.js';
 import {
   normalizeQuery,
@@ -136,6 +133,8 @@ export interface SearchNotesDeps {
   embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
   modelKey: string;
+  /** The active model profile's default thresholds. */
+  similarity: SimilarityDefaults;
   /** Defaults to console.error — diagnostics must never touch stdout (the MCP transport). */
   warn?: (message: string) => void;
 }
@@ -187,8 +186,9 @@ function queryStatsNote(args: {
   lexical: number;
   tokenCounts: Record<string, number> | undefined;
   fallback: boolean;
+  fallbackThreshold: number;
 }): string | undefined {
-  const { semantic, lexical, tokenCounts, fallback } = args;
+  const { semantic, lexical, tokenCounts, fallback, fallbackThreshold } = args;
   if (lexical === 0 && (semantic === null || semantic === 0)) {
     if (tokenCounts === undefined) {
       return 'No hits in any leg that ran — rephrase or drop this variant.';
@@ -200,7 +200,7 @@ function queryStatsNote(args: {
     return 'No hits: every token matches on its own but they never co-occur in one title, heading or paragraph — split this variant into separate array entries.';
   }
   if (fallback) {
-    return `Semantic hits came from the ${FALLBACK_THRESHOLD} fallback retry, so they are weaker than a normal result.`;
+    return `Semantic hits came from the ${fallbackThreshold} fallback retry, so they are weaker than a normal result.`;
   }
   return undefined;
 }
@@ -213,6 +213,8 @@ function buildQueryStats(args: {
   semanticPerQueryHits: Record<string, number>;
   semanticPerQueryFallback: Record<string, boolean>;
   semanticRan: boolean;
+  /** The active profile's fallback-retry threshold, named in the fallback note. */
+  fallbackThreshold: number;
   /**
    * False on the empty-filter early return, where neither leg executed. A
    * zero there says the filter matched no notes, not that the variant is
@@ -229,6 +231,7 @@ function buildQueryStats(args: {
     semanticPerQueryHits,
     semanticPerQueryFallback,
     semanticRan,
+    fallbackThreshold,
     lexicalRan,
   } = args;
   if (!isMulti) return undefined;
@@ -240,7 +243,7 @@ function buildQueryStats(args: {
       const fallback = semanticRan && semanticPerQueryFallback[q] === true;
       const note =
         semanticRan || lexicalRan
-          ? queryStatsNote({ semantic, lexical, tokenCounts, fallback })
+          ? queryStatsNote({ semantic, lexical, tokenCounts, fallback, fallbackThreshold })
           : undefined;
       return [
         q,
@@ -259,13 +262,13 @@ function buildQueryStats(args: {
 async function runSearchForEntry(
   entry: IVaultEntry,
   input: SearchNotesInput,
-  deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'searchEngine' | 'modelKey'> & {
+  deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'searchEngine' | 'modelKey' | 'similarity'> & {
     lexicalFor: (entry: IVaultEntry) => LexicalIndex;
     warn: (message: string) => void;
   },
 ): Promise<SearchNotesOutput> {
   const { graph, listMatchingPaths } = entry;
-  const { embeddingProvider, searchEngine, modelKey, lexicalFor, warn } = deps;
+  const { embeddingProvider, searchEngine, modelKey, similarity, lexicalFor, warn } = deps;
 
   // Read once, up front — it describes the vault's index, not this
   // request, so every return path below (including the empty-filter early
@@ -338,6 +341,7 @@ async function runSearchForEntry(
         semanticPerQueryHits: {},
         semanticPerQueryFallback: {},
         semanticRan: false,
+        fallbackThreshold: similarity.fallback,
         lexicalRan: false,
       });
       return {
@@ -374,6 +378,7 @@ async function runSearchForEntry(
       filterExisting: (paths) => entry.filterExisting(paths),
       embeddingProvider,
       searchEngine,
+      similarity,
     },
   );
 
@@ -397,6 +402,7 @@ async function runSearchForEntry(
     semanticPerQueryHits: semanticRan ? semanticOutcome.perQueryHits : {},
     semanticPerQueryFallback: semanticRan ? semanticOutcome.perQueryFallback : {},
     semanticRan,
+    fallbackThreshold: similarity.fallback,
     lexicalRan: true,
   });
 
@@ -440,7 +446,7 @@ async function runSearchForEntry(
 export function buildSearchNotesTool(
   deps: SearchNotesDeps,
 ): ITool<SearchNotesInput, SearchNotesOutput | IFanOutResult<SearchNotesOutput>> {
-  const { registry, embeddingProvider, searchEngine, modelKey } = deps;
+  const { registry, embeddingProvider, searchEngine, modelKey, similarity } = deps;
   const warn = deps.warn ?? ((message: string) => console.error(message));
 
   // Per-vault lexical indexes, created lazily; the Map lives for the tool's
@@ -456,7 +462,7 @@ export function buildSearchNotesTool(
     return idx;
   };
 
-  const entryDeps = { embeddingProvider, searchEngine, modelKey, lexicalFor, warn };
+  const entryDeps = { embeddingProvider, searchEngine, modelKey, similarity, lexicalFor, warn };
   const SEARCH_NOTES_DESCRIPTION = [
     'Hybrid search over notes: fuses a semantic leg (embedding similarity — fuzzy recall, topic exploration, cross-language), a lexical leg (exact text over titles, headings and body — names, codes, terms) and, at deep effort, an expansion leg (neighbours of the semantic hits) into ONE reciprocal-rank-fused list. Pass short keyword queries (1-4 words), not sentences.',
     '',
@@ -513,7 +519,7 @@ export function buildSearchNotesTool(
         .max(1)
         .optional()
         .describe(
-          `Min semantic similarity 0-1 on the semantic leg's note scores. An explicit value is a hard filter with no fallback — zero hits are honest. Omitted: effort defaults (${EFFORT_PROFILES.quick.semanticThreshold} quick / ${EFFORT_PROFILES.deep.semanticThreshold} deep) with one retry at ${FALLBACK_THRESHOLD}. Never affects the lexical or expansion leg.`,
+          `Min semantic similarity 0-1 on the semantic leg's note scores. An explicit value is a hard filter with no fallback — zero hits are honest. Omitted: effort defaults (${similarity.quick} quick / ${similarity.deep} deep) with one retry at ${similarity.fallback}. Never affects the lexical or expansion leg.`,
         ),
       expansion_floor: z
         .number()
@@ -521,7 +527,7 @@ export function buildSearchNotesTool(
         .max(1)
         .optional()
         .describe(
-          `Min seed↔note similarity 0-1 for the expansion leg (deep effort only). A note-to-note scale that runs far higher than query scores — 0.9+ is typical. Default ${DEFAULT_EXPANSION_FLOOR}, and \`threshold\` never affects it.`,
+          `Min seed↔note similarity 0-1 for the expansion leg (deep effort only), on a note-to-note scale that typically runs far higher than query scores. Default ${similarity.expansionFloor}, and \`threshold\` never affects it.`,
         ),
       filter: filterSchema.optional(),
     },

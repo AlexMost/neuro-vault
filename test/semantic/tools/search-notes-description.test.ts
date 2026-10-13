@@ -1,11 +1,8 @@
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 
-import {
-  DEFAULT_EXPANSION_FLOOR,
-  EFFORT_PROFILES,
-  FALLBACK_THRESHOLD,
-} from '../../../src/modules/semantic/effort-profiles.js';
+import { EFFORT_PROFILES } from '../../../src/modules/semantic/effort-profiles.js';
+import type { SimilarityDefaults } from '../../../src/modules/semantic/model-profiles.js';
 
 // The advertisement-derivation pin (spec: hybrid-search "Effort-profile
 // advertisement derives from the retrieval constants"). Reads the SOURCE of
@@ -22,8 +19,9 @@ import {
 } from '../../../src/modules/semantic/search-engine.js';
 import { buildSearchNotesTool } from '../../../src/modules/semantic/tools/search-notes.js';
 import { makeTestRegistry } from './_helpers.js';
+import { TEST_SIMILARITY } from '../../_identity.js';
 
-function builtTool() {
+function builtTool(similarity: SimilarityDefaults = TEST_SIMILARITY) {
   return buildSearchNotesTool({
     registry: makeTestRegistry([]),
     embeddingProvider: {
@@ -32,6 +30,7 @@ function builtTool() {
     },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     modelKey: 'k',
+    similarity,
   });
 }
 
@@ -53,10 +52,10 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
 
   it('threshold and expansion-floor prose interpolate their constants', async () => {
     const source = await readFile('src/modules/semantic/tools/search-notes.ts', 'utf8');
-    expect(source).toContain('${FALLBACK_THRESHOLD}');
-    expect(source).toContain('${DEFAULT_EXPANSION_FLOOR}');
-    expect(source).toContain('${EFFORT_PROFILES.quick.semanticThreshold}');
-    expect(source).toContain('${EFFORT_PROFILES.deep.semanticThreshold}');
+    expect(source).toContain('${similarity.quick}');
+    expect(source).toContain('${similarity.deep}');
+    expect(source).toContain('${similarity.fallback}');
+    expect(source).toContain('${similarity.expansionFloor}');
     expect(source).toContain('${EFFORT_PROFILES.quick.semanticPool}');
     expect(source).toContain('${EFFORT_PROFILES.quick.lexicalNoteCap}');
     expect(source).toContain('${EFFORT_PROFILES.quick.mergedCap}');
@@ -65,20 +64,31 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     expect(source).toContain('${EFFORT_PROFILES.deep.mergedCap}');
   });
 
-  it('threshold and expansion-floor numbers land in the ADVERTISED schema', () => {
+  it('advertises the active profile’s defaults in the ADVERTISED schema', () => {
     // Pinned against the post-gate schema MCP clients receive — the
     // registration's coercing `spec.inputSchema`, converted the way the MCP
     // SDK converts it for `tools/list` (`pipeStrategy: 'input'`) — not against
     // the source file. A source-only grep (the test above) can't catch the two
     // interpolation slots getting swapped, since swapped source still contains
-    // every token that grep checks for.
-    const { properties } = z.toJSONSchema(registerTool(builtTool()).spec.inputSchema as z.ZodType, {
-      io: 'input',
-    }) as { properties: Record<string, { description?: string }> };
+    // every token that grep checks for. Distinct values prove the numbers come
+    // from the profile passed in, not from a constant.
+    const distinct = {
+      quick: 0.61,
+      deep: 0.47,
+      fallback: 0.42,
+      expansionFloor: 0.73,
+      similarNotes: 0.6,
+      duplicates: 0.95,
+    };
+    const { properties } = z.toJSONSchema(
+      registerTool(builtTool(distinct)).spec.inputSchema as z.ZodType,
+      { io: 'input' },
+    ) as { properties: Record<string, { description?: string }> };
     expect(properties.threshold?.description).toContain(
-      `effort defaults (${EFFORT_PROFILES.quick.semanticThreshold} quick / ${EFFORT_PROFILES.deep.semanticThreshold} deep) with one retry at ${FALLBACK_THRESHOLD}`,
+      'effort defaults (0.61 quick / 0.47 deep) with one retry at 0.42',
     );
-    expect(properties.expansion_floor?.description).toContain(`Default ${DEFAULT_EXPANSION_FLOOR}`);
+    expect(properties.expansion_floor?.description).toContain('Default 0.73');
+    expect(properties.expansion_floor?.description).not.toContain('0.9+');
   });
 
   it('the input gate advertises every field description the tool declares', () => {

@@ -7,7 +7,9 @@ import type {
   SearchResult,
   SmartSource,
 } from '../../src/types.js';
+import type { SimilarityDefaults } from '../../src/modules/semantic/model-profiles.js';
 import { executeRetrieval } from '../../src/modules/semantic/retrieval-policy.js';
+import { TEST_SIMILARITY } from '../_identity.js';
 
 // The vector every fixture below embeds every query to. A single shared ARRAY
 // INSTANCE on purpose: `embedQuery` is mocked with `mockResolvedValue(QUERY_VECTOR)`,
@@ -111,6 +113,7 @@ describe.each(arities)('mode defaults (%s)', (_label, queries) => {
     const embeddingProvider = makeEmbeddingProvider();
 
     await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources,
@@ -130,6 +133,7 @@ describe.each(arities)('mode defaults (%s)', (_label, queries) => {
     const embeddingProvider = makeEmbeddingProvider();
 
     await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       expansion: false,
@@ -152,6 +156,7 @@ describe.each(arities)('mode defaults (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources,
@@ -176,6 +181,7 @@ describe.each(arities)('mode defaults (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources,
@@ -197,6 +203,7 @@ describe.each(arities)('mode defaults (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       sources,
@@ -218,6 +225,7 @@ describe.each(arities)('fallback to lower threshold (%s)', (_label, queries) => 
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources,
@@ -237,6 +245,7 @@ describe.each(arities)('fallback to lower threshold (%s)', (_label, queries) => 
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       threshold: 0.3,
@@ -257,6 +266,7 @@ describe.each(arities)('explicit threshold is a hard filter (%s)', (_label, quer
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       threshold: 0.99,
@@ -279,6 +289,7 @@ describe.each(arities)('explicit threshold is a hard filter (%s)', (_label, quer
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources: oneNote,
@@ -302,6 +313,7 @@ describe.each(arities)('explicit threshold is a hard filter (%s)', (_label, quer
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources: oneNote,
@@ -317,6 +329,7 @@ describe.each(arities)('explicit threshold is a hard filter (%s)', (_label, quer
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       threshold: 0.7,
@@ -344,6 +357,7 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       expansion: true,
@@ -372,6 +386,7 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       expansion: true,
@@ -403,6 +418,7 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       expansion: true,
@@ -434,6 +450,7 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       expansion: true,
@@ -481,6 +498,7 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       expansion: true,
@@ -503,6 +521,7 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       expansion: false,
@@ -525,6 +544,7 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources,
@@ -546,6 +566,7 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       sources,
@@ -566,6 +587,7 @@ describe.each(arities)('expansion floor and block decoupling (%s)', (_label, que
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       threshold: 0.7, // explicit, must NOT reach expansion
@@ -589,6 +611,7 @@ describe.each(arities)('expansion floor and block decoupling (%s)', (_label, que
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       threshold: 0.7,
@@ -612,6 +635,7 @@ describe.each(arities)('expansion floor and block decoupling (%s)', (_label, que
     });
 
     await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       threshold: 0.7,
@@ -652,6 +676,7 @@ describe.each(arities)('per-seed block backfill (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources: twoNotes,
@@ -678,6 +703,7 @@ describe.each(arities)('per-seed block backfill (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources: blockless,
@@ -705,6 +731,7 @@ describe.each(arities)('per-seed block backfill (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources: twoNotes,
@@ -726,6 +753,7 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       expansion: false,
@@ -751,6 +779,7 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources,
@@ -771,6 +800,7 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       sources,
@@ -799,6 +829,7 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       sources,
@@ -817,6 +848,7 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       sources,
@@ -839,6 +871,7 @@ describe.each(arities)('result cap and leg-level pool truncation (%s)', (_label,
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources,
@@ -854,6 +887,7 @@ describe.each(arities)('result cap and leg-level pool truncation (%s)', (_label,
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       limit: 7,
@@ -881,6 +915,7 @@ describe.each(arities)('result cap and leg-level pool truncation (%s)', (_label,
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources,
@@ -900,6 +935,7 @@ describe.each(arities)('result cap and leg-level pool truncation (%s)', (_label,
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       sources,
@@ -936,6 +972,7 @@ describe('cross-query behaviour (query array only)', () => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['alpha', 'beta'],
       mode: 'quick',
       sources,
@@ -974,6 +1011,7 @@ describe('cross-query behaviour (query array only)', () => {
     const searchEngine = makeSearchEngine({ findNeighbors });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q1', 'q2'],
       mode: 'quick',
       sources: fallbackSources,
@@ -1007,6 +1045,7 @@ describe('cross-query behaviour (query array only)', () => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['q1', 'q2'],
       mode: 'deep',
       expansion: false,
@@ -1064,6 +1103,7 @@ describe('cross-query behaviour (query array only)', () => {
       });
 
       const output = await executeRetrieval({
+        similarity: TEST_SIMILARITY,
         queries,
         mode: 'quick',
         sources,
@@ -1105,6 +1145,7 @@ describe('cross-query behaviour (query array only)', () => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['a', 'b'],
       mode: 'quick',
       sources,
@@ -1141,6 +1182,7 @@ describe('cross-query behaviour (query array only)', () => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['a', 'b', 'c'],
       mode: 'quick',
       limit: 5,
@@ -1170,6 +1212,7 @@ describe('cross-query behaviour (query array only)', () => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['a', 'dead'],
       mode: 'quick',
       sources,
@@ -1201,6 +1244,7 @@ describe('cross-query behaviour (query array only)', () => {
     });
 
     const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
       queries: ['a', 'b'],
       mode: 'quick',
       limit: 2,
@@ -1212,5 +1256,84 @@ describe('cross-query behaviour (query array only)', () => {
     expect(output.results.map((r) => r.path)).toEqual(['note-a1.md', 'note-a2.md']);
     expect(output.truncated).toBe(true);
     expect(output.per_query_hits).toEqual({ a: 2, b: 1 });
+  });
+});
+
+const DISTINCT: SimilarityDefaults = {
+  quick: 0.7,
+  deep: 0.6,
+  fallback: 0.55,
+  expansionFloor: 0.9,
+  similarNotes: 0.8,
+  duplicates: 0.99,
+};
+const QUERY = [1, 0];
+const SOURCES = new Map<string, SmartSource>([
+  ['a.md', { path: 'a.md', embedding: [0, 1], blocks: [] }],
+]);
+const embedder = { initialize: async () => {}, embedQuery: async () => QUERY };
+
+describe('executeRetrieval — profile similarity defaults', () => {
+  it("filters at the profile's quick default, then retries at its fallback", async () => {
+    const thresholds: number[] = [];
+    const searchEngine = {
+      findNeighbors: ({ threshold }: { threshold: number }) => (thresholds.push(threshold), []),
+      findBlockNeighbors: () => [],
+      findDuplicates: () => [],
+    } as unknown as SearchEngine;
+    await executeRetrieval({
+      queries: ['q'],
+      mode: 'quick',
+      sources: SOURCES,
+      embeddingProvider: embedder,
+      searchEngine,
+      similarity: DISTINCT,
+    });
+    expect(thresholds).toEqual([0.7, 0.55]);
+  });
+
+  it("uses the profile's deep default for seeds and block evidence, and its expansion floor", async () => {
+    const calls: Array<[string, number]> = [];
+    const searchEngine = {
+      findNeighbors: ({ queryVector, threshold }: { queryVector: number[]; threshold: number }) => {
+        calls.push([queryVector === QUERY ? 'seed' : 'expansion', threshold]);
+        return queryVector === QUERY ? [{ path: 'a.md', similarity: 0.65 }] : [];
+      },
+      findBlockNeighbors: ({ threshold }: { threshold: number }) => (
+        calls.push(['block', threshold]),
+        []
+      ),
+      findDuplicates: () => [],
+    } as unknown as SearchEngine;
+    await executeRetrieval({
+      queries: ['q'],
+      mode: 'deep',
+      sources: SOURCES,
+      embeddingProvider: embedder,
+      searchEngine,
+      similarity: DISTINCT,
+    });
+    expect(calls).toContainEqual(['seed', 0.6]);
+    expect(calls).toContainEqual(['block', 0.6]);
+    expect(calls).toContainEqual(['expansion', 0.9]);
+  });
+
+  it('an explicit threshold still wins and never falls back', async () => {
+    const thresholds: number[] = [];
+    const searchEngine = {
+      findNeighbors: ({ threshold }: { threshold: number }) => (thresholds.push(threshold), []),
+      findBlockNeighbors: () => [],
+      findDuplicates: () => [],
+    } as unknown as SearchEngine;
+    await executeRetrieval({
+      queries: ['q'],
+      mode: 'quick',
+      threshold: 0.95,
+      sources: SOURCES,
+      embeddingProvider: embedder,
+      searchEngine,
+      similarity: DISTINCT,
+    });
+    expect(thresholds).toEqual([0.95]);
   });
 });

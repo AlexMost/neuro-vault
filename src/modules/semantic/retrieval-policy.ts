@@ -9,14 +9,14 @@ import type {
   SmartSource,
 } from './types.js';
 
-import { DEFAULT_EXPANSION_FLOOR, EFFORT_PROFILES, FALLBACK_THRESHOLD } from './effort-profiles.js';
+import { EFFORT_PROFILES } from './effort-profiles.js';
 import type { EffortProfile } from './effort-profiles.js';
+import type { SimilarityDefaults } from './model-profiles.js';
 
 const QUICK_BLOCK_LIMIT = 5;
 
 interface ModeConfig {
   limit: number;
-  threshold: number;
   expansion: boolean;
   expansionLimit: number;
 }
@@ -24,7 +24,6 @@ interface ModeConfig {
 function toModeConfig(profile: EffortProfile): ModeConfig {
   return {
     limit: profile.semanticPool,
-    threshold: profile.semanticThreshold,
     expansion: profile.expansion,
     expansionLimit: profile.expansionLimit,
   };
@@ -81,6 +80,8 @@ export interface RetrievalInput {
   sources: Map<string, SmartSource>;
   embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
+  /** The active profile's defaults — every implicit threshold comes from here. */
+  similarity: SimilarityDefaults;
 }
 
 export interface RetrievalOutput {
@@ -133,10 +134,10 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
 
   const modeConfig = MODE_DEFAULTS[mode];
   const explicitThreshold = input.threshold !== undefined;
-  const threshold = input.threshold ?? modeConfig.threshold;
+  const threshold = input.threshold ?? input.similarity[mode];
   const expansion = input.expansion ?? modeConfig.expansion;
   const expansionLimit = input.expansionLimit ?? modeConfig.expansionLimit;
-  const expansionFloor = input.expansionFloor ?? DEFAULT_EXPANSION_FLOOR;
+  const expansionFloor = input.expansionFloor ?? input.similarity.expansionFloor;
   const limit = input.limit ?? modeConfig.limit;
 
   // Step 1: per-query embed + retrieve (no expansion here). Request one
@@ -157,11 +158,11 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
       // Step 2 (per query): fallback threshold — default thresholds only. An
       // explicit threshold that filters everything returns an honest zero.
       let fallback = false;
-      if (neighbors.length === 0 && !explicitThreshold && threshold > FALLBACK_THRESHOLD) {
+      if (neighbors.length === 0 && !explicitThreshold && threshold > input.similarity.fallback) {
         neighbors = searchEngine.findNeighbors({
           queryVector,
           sources: sources.values(),
-          threshold: FALLBACK_THRESHOLD,
+          threshold: input.similarity.fallback,
           limit: limit + 1,
         });
         fallback = neighbors.length > 0;
@@ -206,7 +207,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
           ? searchEngine.findBlockNeighbors({
               queryVector,
               sources: seedSources,
-              threshold: MODE_DEFAULTS.deep.threshold,
+              threshold: input.similarity.deep,
               limit,
             })
           : searchEngine.findBlockNeighbors({

@@ -29,6 +29,8 @@ import type {
   SmartSource,
 } from '../../../src/modules/semantic/types.js';
 import { callTool } from '../../_gate.js';
+import { TEST_SIMILARITY } from '../../_identity.js';
+import type { SimilarityDefaults } from '../../../src/modules/semantic/model-profiles.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 
 export const MODEL_KEY = 'bge-micro-v2';
@@ -188,6 +190,7 @@ export async function makeSearchDeps(opts: {
   embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
   modelKey: string;
+  similarity?: SimilarityDefaults;
   absentPaths?: Set<string>;
   corpus?: CorpusLike;
   graph?: WikilinkGraphIndex;
@@ -199,6 +202,7 @@ export async function makeSearchDeps(opts: {
     embeddingProvider: QueryEmbedder;
     searchEngine: SearchEngine;
     modelKey: string;
+    similarity: SimilarityDefaults;
   };
   cleanup: () => Promise<void>;
 }> {
@@ -229,6 +233,7 @@ export async function makeSearchDeps(opts: {
       embeddingProvider: opts.embeddingProvider,
       searchEngine: opts.searchEngine,
       modelKey: opts.modelKey,
+      similarity: opts.similarity ?? TEST_SIMILARITY,
     },
     cleanup: () => fs.rm(vaultRoot, { recursive: true, force: true }),
   };

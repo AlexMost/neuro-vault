@@ -3,11 +3,10 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
+import type { SimilarityDefaults } from '../model-profiles.js';
 import { readThreshold } from '../tool-helpers.js';
 import type { DuplicatePair, SearchEngine } from '../types.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
-
-const DEFAULT_DUPLICATE_THRESHOLD = 0.9;
 
 interface Input {
   vault?: string;
@@ -20,12 +19,13 @@ export interface FindDuplicatesDeps {
   registry: IVaultRegistry;
   searchEngine: SearchEngine;
   modelKey: string;
+  similarity: SimilarityDefaults;
 }
 
 export function buildFindDuplicatesTool(
   deps: FindDuplicatesDeps,
 ): ITool<Input, StampedDuplicatePair[]> {
-  const { registry, searchEngine, modelKey } = deps;
+  const { registry, searchEngine, modelKey, similarity } = deps;
   return buildSingleVaultTool<Input, StampedDuplicatePair[]>(registry, {
     name: 'find_duplicates',
     title: 'Find Duplicates',
@@ -36,7 +36,7 @@ export function buildFindDuplicatesTool(
     },
     runForEntry: async (entry, input) => {
       const backend = entry.backend;
-      const threshold = readThreshold(input.threshold, DEFAULT_DUPLICATE_THRESHOLD, 'threshold');
+      const threshold = readThreshold(input.threshold, similarity.duplicates, 'threshold');
       try {
         const { sources } = await backend.snapshot();
         const pairs = searchEngine.findDuplicates({

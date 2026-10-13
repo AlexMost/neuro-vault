@@ -35,6 +35,7 @@ export function createSemanticModule(
     embeddingProvider: embeddingService,
     searchEngine,
     modelKey: config.profile.key,
+    similarity: config.profile.similarity,
   };
   return {
     tools: buildSemanticTools(semanticDeps),

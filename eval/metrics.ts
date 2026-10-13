@@ -1,10 +1,17 @@
 import type { GoldenEntry } from './golden.js';
+import type { RankedPath } from './pipelines.js';
 
 export interface QueryScore {
   id: string;
   query: string;
   lang: 'ua' | 'en';
   top: string[];
+  /** The score each `top` path was ranked by: cosine for `semantic`, the fused RRF score for `fused`. */
+  top_scores: number[];
+  /** 1-based ranks of every relevant path inside `top`. */
+  relevant_ranks: number[];
+  /** Best cosine between the query and any relevant note, ranked or not; null when none has a note vector. */
+  best_relevant_similarity: number | null;
   /** 1-based rank of the first relevant hit within the top list, or null. */
   first_relevant_rank: number | null;
   precision_at_3: number;
@@ -12,16 +19,24 @@ export interface QueryScore {
   hit_at_3: boolean;
 }
 
-export function scoreQuery(entry: GoldenEntry, top: string[]): QueryScore {
+export function scoreQuery(
+  entry: GoldenEntry,
+  ranked: RankedPath[],
+  bestRelevantSimilarity: number | null,
+): QueryScore {
   const relevant = new Set(entry.relevant);
-  const firstIndex = top.findIndex((p) => relevant.has(p));
-  const first_relevant_rank = firstIndex === -1 ? null : firstIndex + 1;
-  const hitsAt3 = top.slice(0, 3).filter((p) => relevant.has(p)).length;
+  const top = ranked.map((r) => r.path);
+  const relevant_ranks = top.flatMap((p, i) => (relevant.has(p) ? [i + 1] : []));
+  const first_relevant_rank = relevant_ranks[0] ?? null;
+  const hitsAt3 = relevant_ranks.filter((r) => r <= 3).length;
   return {
     id: entry.id,
     query: entry.query,
     lang: entry.lang,
     top,
+    top_scores: ranked.map((r) => r.score),
+    relevant_ranks,
+    best_relevant_similarity: bestRelevantSimilarity,
     first_relevant_rank,
     precision_at_3: hitsAt3 / 3,
     reciprocal_rank: first_relevant_rank === null ? 0 : 1 / first_relevant_rank,

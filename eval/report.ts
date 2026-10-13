@@ -3,8 +3,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
+import type { EmbeddingIdentity } from '../src/lib/obsidian/corpus/types.js';
 import type { Metrics, QueryScore } from './metrics.js';
 import type { PipelineId } from './pipelines.js';
+import type { CalibrationStats } from './stats.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -14,11 +16,17 @@ export interface EvalReport {
   /** Vault HEAD, same convention — two reports compare iff these match, clean. */
   vault_sha: string | null;
   model_id: string;
+  /** The profile key the run was invoked with (`--model`). */
+  model_key: string;
+  /** The full identity the corpus was gated against and queries were embedded under. */
+  identity: EmbeddingIdentity;
   pipeline: PipelineId;
   config: Record<string, unknown>;
   golden: { path: string; count: number };
   metrics: Metrics;
   per_query: QueryScore[];
+  /** Calibration statistics; present only on a `--stats` run. */
+  stats?: CalibrationStats;
 }
 
 export async function gitSha(dir: string): Promise<string | null> {
@@ -39,7 +47,7 @@ export async function writeReport(
 ): Promise<string> {
   await mkdir(resultsDir, { recursive: true });
   const stamp = now.toISOString().slice(0, 19).replaceAll(':', '-');
-  const file = path.join(resultsDir, `${stamp}-${report.pipeline}.json`);
+  const file = path.join(resultsDir, `${stamp}-${report.model_key}-${report.pipeline}.json`);
   await writeFile(file, `${JSON.stringify(report, null, 2)}\n`);
   return file;
 }

@@ -76,24 +76,24 @@ Sequential; depends on 4.1.
 
 Sequential; each lands with its call sites.
 
-- [ ] 8.1 `ModelProfile.similarity` (design D10) with today's values on every profile; `executeRetrieval` and the retrieval pipeline take the similarity defaults and stop reading the effort-profile threshold constants; the semantic module passes the active profile's. Tests: a fake profile with distinct values drives quick/deep/fallback/block-evidence/expansion defaults; the calibration-curve suite still passes.
-- [ ] 8.2 `search_notes` descriptions interpolate the active profile's values and drop the "0.9+ is typical" scale claim; the fallback note text uses the profile's fallback; then `semanticThreshold`, `FALLBACK_THRESHOLD` and `DEFAULT_EXPANSION_FLOOR` are deleted. Tests: description under a fake profile states its values; effort-profile pin updated.
-- [ ] 8.3 `get_similar_notes` and `find_duplicates` defaults come from the profile. Tests: omitted threshold applies the profile value.
+- [x] 8.1 `ModelProfile.similarity` (design D10) with today's values on every profile; `executeRetrieval` and the retrieval pipeline take the similarity defaults and stop reading the effort-profile threshold constants; the semantic module passes the active profile's. Tests: a fake profile with distinct values drives quick/deep/fallback/block-evidence/expansion defaults; the calibration-curve suite still passes.
+- [x] 8.2 `search_notes` descriptions interpolate the active profile's values and drop the "0.9+ is typical" scale claim; the fallback note text uses the profile's fallback; then `semanticThreshold`, `FALLBACK_THRESHOLD` and `DEFAULT_EXPANSION_FLOOR` are deleted. Tests: description under a fake profile states its values; effort-profile pin updated.
+- [x] 8.3 `get_similar_notes` and `find_duplicates` defaults come from the profile. Tests: omitted threshold applies the profile value.
 
 ## 9. Eval `--model`
 
 Sequential after 8.1 (EVAL_CONFIG reads the profile's floor). 9.5 is parallel-safe with 9.2–9.4.
 
-- [ ] 9.1 `parseEvalArgs`: `--model` (registry keys, default), `--stats` (boolean flag), `--baseline <report>` (only with `--stats`); usage text. Tests: valid, unknown listing keys, `--stats` parsed, flag-as-value still rejected.
-- [ ] 9.2 Manifest gate (design D12): before any embed, compare the corpus manifest with the profile's corpus identity; mismatch → error naming the stored model and `neuro-vault-mcp index --vault <path> --model <key>`. Tests.
-- [ ] 9.3 Report: `model_key` + identity; `per_query` ranked paths with similarity; best relevant similarity regardless of rank; filename `<stamp>-<model_key>-<pipeline>.json`. Tests.
-- [ ] 9.4 `EVAL_CONFIG.expansion_floor` from the selected profile; the production-fusion pin still asserts identical order.
-- [ ] 9.5 `eval/stats.ts`: quantile summaries of the four populations (design D11), per-default pass rates, the two golden-set guards (deep filters no in-pool first-relevant hit; quick costs at most one hit@3), and with `--baseline <report>` the threshold reproducing each baseline pass rate; wired behind `--stats`. Pure-function tests on small fixtures.
-- [ ] 9.6 `eval/README.md`: model axis, the manifest gate, `--stats`, the calibration procedure, and the destructive cross-model workflow.
+- [x] 9.1 `parseEvalArgs`: `--model` (registry keys, default), `--stats` (boolean flag), `--baseline <report>` (only with `--stats`); usage text. Tests: valid, unknown listing keys, `--stats` parsed, flag-as-value still rejected.
+- [x] 9.2 Manifest gate (design D12): before any embed, compare the corpus manifest with the profile's corpus identity; mismatch → error naming the stored model and `neuro-vault-mcp index --vault <path> --model <key>`. Tests.
+- [x] 9.3 Report: `model_key` + identity; `per_query` ranked paths with similarity; best relevant similarity regardless of rank; filename `<stamp>-<model_key>-<pipeline>.json`. Tests.
+- [x] 9.4 `EVAL_CONFIG.expansion_floor` from the selected profile; the production-fusion pin still asserts identical order.
+- [x] 9.5 `eval/stats.ts`: quantile summaries of the four populations (design D11), per-default pass rates, the two golden-set guards (deep filters no in-pool first-relevant hit; quick costs at most one hit@3), and with `--baseline <report>` the threshold reproducing each baseline pass rate; wired behind `--stats`. Pure-function tests on small fixtures.
+- [x] 9.6 `eval/README.md`: model axis, the manifest gate, `--stats`, the calibration procedure, and the destructive cross-model workflow.
 
 ## 10. Delivery (PR 3)
 
-- [ ] 10.1 Verify on the vault copy: gates; `eval --model granite-97m` against the bge-micro corpus fails naming the index command; **capture the calibration baseline**: `npm run eval -- --model bge-micro-v2 --stats` on the existing corpus, aggregates only (quantiles, pass rates — no note paths) copied into `openspec/changes/embedding-model-profiles/calibration.md`. Open PR 3 (`Refs #98`). **Stop for review.**
+- [x] 10.1 Verify on the vault copy: gates; `eval --model granite-97m` against the bge-micro corpus fails naming the index command; **capture the calibration baseline**: `npm run eval -- --model bge-micro-v2 --stats` on the existing corpus, aggregates only (quantiles, pass rates — no note paths) copied into `openspec/changes/embedding-model-profiles/calibration.md`. Open PR 3 (`Refs #98`). **Stop for review.**
 
 ---
 

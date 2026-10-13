@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EvalReport } from '../../eval/report.js';
 import { gitSha, writeReport } from '../../eval/report.js';
+import { TEST_EMBEDDING_IDENTITY } from '../_identity.js';
 
 const run = promisify(execFile);
 
@@ -39,7 +40,9 @@ describe('writeReport', () => {
     const report: EvalReport = {
       code_sha: 'abc',
       vault_sha: null,
-      model_id: 'TaylorAI/bge-micro-v2',
+      model_id: 'onnx-community/harrier-oss-v1-270m-ONNX',
+      model_key: 'harrier-270m',
+      identity: { ...TEST_EMBEDDING_IDENTITY, model_key: 'harrier-270m' },
       pipeline: 'semantic',
       config: { top_k: 10 },
       golden: { path: '/v/.neuro-vault/eval/golden.yaml', count: 2 },
@@ -50,8 +53,8 @@ describe('writeReport', () => {
       },
       per_query: [],
     };
-    const file = await writeReport(report, dir, new Date('2026-08-25T10:20:30Z'));
-    expect(path.basename(file)).toBe('2026-08-25T10-20-30-semantic.json');
+    const file = await writeReport(report, dir, new Date('2026-10-13T12:00:00Z'));
+    expect(path.basename(file)).toBe('2026-10-13T12-00-00-harrier-270m-semantic.json');
     const parsed = JSON.parse(await readFile(file, 'utf8')) as EvalReport;
     expect(parsed).toEqual(report);
   });

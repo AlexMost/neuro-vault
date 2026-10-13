@@ -1,5 +1,6 @@
 import { registerTool } from '../../../lib/tool-registry.js';
 import type { ToolRegistration } from '../../../lib/tool-registration.js';
+import type { SimilarityDefaults } from '../model-profiles.js';
 import type { QueryEmbedder, SearchEngine } from '../types.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { buildFindDuplicatesTool } from './find-duplicates.js';
@@ -11,6 +12,8 @@ export interface ISemanticToolDeps {
   embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
   modelKey: string;
+  /** The active model profile's default thresholds. */
+  similarity: SimilarityDefaults;
 }
 
 export function buildSemanticTools(deps: ISemanticToolDeps): ToolRegistration[] {

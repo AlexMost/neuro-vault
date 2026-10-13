@@ -3,6 +3,7 @@ import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
 import { FsVaultReader } from '../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../src/lib/obsidian/vault-scope-config.js';
 import { WikilinkGraphIndex } from '../src/lib/obsidian/wikilink-graph.js';
+import type { SimilarityDefaults } from '../src/modules/semantic/model-profiles.js';
 import {
   EXPANSION_WEIGHT,
   flattenExpansion,
@@ -20,21 +21,26 @@ export type EmbedFn = (text: string) => Promise<number[]>;
 
 export const EVAL_TOP_K = 10;
 
-// Every knob in effect, echoed verbatim into the report's `config` (design
-// D5/D7): a run with different knobs must be distinguishable. Semantic legs
-// run at threshold 0 — production thresholds are model-scale-bound and eval
-// counts positions only. Everything else mirrors production deep effort.
-export const EVAL_CONFIG = {
-  top_k: EVAL_TOP_K,
-  semantic_threshold: 0,
-  semantic_pool: 8,
-  expansion_limit: 3,
-  expansion_floor: 0.35,
-  lexical_note_cap: 10,
-  lexical_per_note_cap: 3,
-  expansion_weight: EXPANSION_WEIGHT,
-  k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
-} as const;
+/**
+ * Every knob in effect, echoed into the report's `config` (design D5/D7): a
+ * run with different knobs must be distinguishable. Query-side thresholds are
+ * 0 — eval counts positions. The expansion floor is the profile's own default,
+ * so `fused` stays the production pipeline for that profile (design D12).
+ * Everything else mirrors production deep effort.
+ */
+export function evalConfig(similarity: SimilarityDefaults) {
+  return {
+    top_k: EVAL_TOP_K,
+    semantic_threshold: 0,
+    semantic_pool: 8,
+    expansion_limit: 3,
+    expansion_floor: similarity.expansionFloor,
+    lexical_note_cap: 10,
+    lexical_per_note_cap: 3,
+    expansion_weight: EXPANSION_WEIGHT,
+    k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
+  } as const;
+}
 
 export interface FusedContext {
   lexical: LexicalIndex;
@@ -49,26 +55,48 @@ export async function createFusedContext(vaultRoot: string): Promise<FusedContex
   return { lexical: new LexicalIndex({ vaultRoot, reader }), graph };
 }
 
-async function rankSemantic(
-  query: string,
+export interface RankedPath {
+  path: string;
+  score: number;
+}
+
+/**
+ * Best cosine between the query and any relevant note, ranked or not — the
+ * evidence a threshold calibration needs for notes the top list never reached.
+ */
+export function bestRelevantSimilarity(
+  queryVector: number[],
+  relevant: string[],
   sources: Map<string, SmartSource>,
-  embed: EmbedFn,
-): Promise<string[]> {
-  const queryVector = await embed(query);
+): number | null {
+  const candidates = relevant.flatMap((p) => {
+    const source = sources.get(p);
+    return source ? [source] : [];
+  });
+  const [best] = findNeighbors({ queryVector, sources: candidates, threshold: -1, limit: 1 });
+  return best?.similarity ?? null;
+}
+
+function rankSemantic(
+  queryVector: number[],
+  sources: Map<string, SmartSource>,
+  similarity: SimilarityDefaults,
+): RankedPath[] {
   return findNeighbors({
     queryVector,
     sources: sources.values(),
-    threshold: EVAL_CONFIG.semantic_threshold,
+    threshold: evalConfig(similarity).semantic_threshold,
     limit: EVAL_TOP_K,
-  }).map((r) => r.path);
+  }).map((r) => ({ path: r.path, score: r.similarity }));
 }
 
 async function rankFused(
   query: string,
+  queryVector: number[],
   sources: Map<string, SmartSource>,
-  embed: EmbedFn,
   context: FusedContext,
-): Promise<string[]> {
+  similarity: SimilarityDefaults,
+): Promise<RankedPath[]> {
   // The production legs, verbatim (design D5): executeRetrieval at deep
   // effort (pool 8, expansion on) with an explicit threshold 0, the lexical
   // index with the real wikilink graph for its backlink tie-break, then the
@@ -76,21 +104,26 @@ async function rankFused(
   // Every knob is passed explicitly, including the two that merely match
   // `MODE_DEFAULTS.deep` today: `config` is the report's comparability record,
   // and a silent lie there is worse than the drift it would hide.
+  const config = evalConfig(similarity);
   const semantic = await executeRetrieval({
     queries: [query],
     mode: 'deep',
-    limit: EVAL_CONFIG.semantic_pool,
-    threshold: EVAL_CONFIG.semantic_threshold,
-    expansionLimit: EVAL_CONFIG.expansion_limit,
-    expansionFloor: EVAL_CONFIG.expansion_floor,
+    limit: config.semantic_pool,
+    threshold: config.semantic_threshold,
+    expansionLimit: config.expansion_limit,
+    expansionFloor: config.expansion_floor,
     sources,
-    embeddingProvider: { initialize: () => Promise.resolve(), embedQuery: embed },
+    embeddingProvider: {
+      initialize: () => Promise.resolve(),
+      embedQuery: () => Promise.resolve(queryVector),
+    },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
+    similarity,
   });
   const lexical = await context.lexical.search({
     queries: [query],
-    noteCap: EVAL_CONFIG.lexical_note_cap,
-    perNoteCap: EVAL_CONFIG.lexical_per_note_cap,
+    noteCap: config.lexical_note_cap,
+    perNoteCap: config.lexical_per_note_cap,
     getBacklinkCount: (p) => context.graph.getBacklinkCount(p),
   });
   const expansion = flattenExpansion(semantic.results);
@@ -103,21 +136,24 @@ async function rankFused(
     totalNotes: lexical.totalNotes,
   })
     .slice(0, EVAL_TOP_K)
-    .map((c) => c.path);
+    .map((c) => ({ path: c.path, score: c.score }));
 }
 
 export async function rankQuery(args: {
   pipeline: PipelineId;
+  /** The query text — the lexical leg of `fused` searches it; `semantic` ignores it. */
   query: string;
+  /** The query embedded once by the caller, so both pipelines rank the same vector. */
+  queryVector: number[];
   sources: Map<string, SmartSource>;
-  embed: EmbedFn;
   fusedContext?: FusedContext;
-}): Promise<string[]> {
+  similarity: SimilarityDefaults;
+}): Promise<RankedPath[]> {
   if (args.pipeline === 'semantic') {
-    return rankSemantic(args.query, args.sources, args.embed);
+    return rankSemantic(args.queryVector, args.sources, args.similarity);
   }
   if (!args.fusedContext) {
     throw new Error('fused pipeline requires a FusedContext');
   }
-  return rankFused(args.query, args.sources, args.embed, args.fusedContext);
+  return rankFused(args.query, args.queryVector, args.sources, args.fusedContext, args.similarity);
 }

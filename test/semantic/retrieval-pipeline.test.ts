@@ -12,6 +12,7 @@ import {
   type RetrievalPipelineInput,
 } from '../../src/modules/semantic/retrieval-pipeline.js';
 import type { SmartSource } from '../../src/modules/semantic/types.js';
+import { TEST_SIMILARITY } from '../_identity.js';
 
 // Same geometry as the old production-fusion pin: 10 unit vectors fanned away
 // from the query vector, so at deep effort (pool 8) n0..n7 seed and n8/n9 are
@@ -63,6 +64,7 @@ function makeDeps(overrides: Partial<RetrievalPipelineDeps> = {}): RetrievalPipe
       embedQuery: () => Promise.resolve(QUERY_VECTOR),
     },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
+    similarity: TEST_SIMILARITY,
     ...overrides,
   };
 }
