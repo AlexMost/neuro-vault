@@ -5086,6 +5086,33 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ---
 
+### Task 13.4: Guide page — choosing and configuring an embedding model (owner's request)
+
+The owner asked, during PR 4, for one user-facing page that explains how to run a given model, with benchmarks alongside.
+
+**Files:**
+- Create: `docs/guide/embedding-models.md`
+- Modify: `docs/guide/README.md` (add it to the list), `README.md` (§ user guide list; the model sentence links here), `docs/guide/configuration.md` (the `--model` row links here)
+
+- [ ] **Step 1: Write the page.** Model-agnostic and current-state (no history), with these sections:
+  - **The profiles**: a table with key, what it is for (default / lite / quality), repo, dims, pooling, download size, peak RSS while indexing, cold-index time on the measured vault, and query latency where measured.
+  - **Choosing**: harrier-270m for most users, granite-97m for small hosts or a fast first index, harrier-0.6b where quality matters more than index time. Ukrainian vs English quality in a sentence each, from the numbers.
+  - **Configuring**: `--model <key>` in the MCP client config (one JSON example for Claude Desktop / Claude Code, `args`); the same `--model` for `neuro-vault-mcp index` (pre-warming); the cache directory and `XDG_CACHE_HOME`; `ONNXRUNTIME_NODE_INSTALL=skip` on CPU-only Linux.
+  - **Switching models**: one corpus per vault, so a switch discards and rebuilds it (the stderr line the server prints, `semantic_status: indexing` meanwhile, lexical search unaffected). Keep the server and `index` on the same `--model`, or they rebuild against each other. An unknown key fails, listing the keys.
+  - **Similarity thresholds per model**: the calibrated table (six defaults × three profiles) from `calibration.md` ("Chosen values"), one sentence on how they were derived (link ADR-0017), and the advice that an explicit `threshold` is on that model's scale and does not carry over to another.
+  - **Benchmarks**: semantic MRR / hit@3 overall, UA and EN per profile, plus fused for the default. Measured on the owner's private vault (≈ 950 notes, 25 golden queries: 21 UA, 4 EN). Each EN query is worth up to 0.25 of EN MRR. State the measurement date and point at `eval/README.md`'s reproduction procedure (`neuro-vault-mcp index --model <key>`, then the eval run on a copy) rather than SHAs. Aggregates only, from `calibration.md`; no note paths.
+- [ ] **Step 2: Link it** from `docs/guide/README.md`, `README.md` and `configuration.md`, and check that `docs/README.md`'s description of `guide/` still covers it.
+- [ ] **Step 3: Commit**
+
+```bash
+git add docs/guide README.md
+git commit -m "docs(guide): add a page on choosing and configuring the embedding model
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 14.1–14.4: Delivery (strictly in this order)
 
 - [ ] **14.1 Verify** — run `/opsx:verify` for `embedding-model-profiles`; it writes `verify.md` with the gates (`npm test` count vs PR 3, `npm run lint`, `npm run typecheck`, `npm run build`), the acceptance numbers from `calibration.md`, and a spec-by-spec check. Re-run until no blocking issue remains.

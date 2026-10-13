@@ -122,6 +122,7 @@ Parallel-safe among themselves; after 12.
 - [ ] 13.1 `docs/adr/0017-embedding-model-profiles.md` (design D14) with the calibrated numbers; `docs/adr/INDEX.md` row; 0013 marked "refined in part by 0017".
 - [ ] 13.2 Architecture sweep: `embedding-pipeline.md`, `own-corpus.md` (constants, formula, manifest v2, tokenizer-cap section, benchmarks), `semantic-backend.md`, `retrieval-policy.md` (thresholds per profile + calibration), `mcp-parameter-dictionary.md`, `module-structure.md`, `cli-startup.md`, `docs/architecture/README.md`.
 - [ ] 13.3 Guide + top-level sweep: `docs/guide/finding-notes.md` (threshold guidance per profile), `configuration.md`, `installation.md` (download sizes, RAM, cold-index cost, upgrade re-index), `README.md`, `AGENTS.md` (stale Smart Connections line). Grep `docs/`, `README.md`, `eval/README.md` for `bge`, `xenova`, `1894`, `3.7`, `0.35`, `0.3 `, `~40 MB` and resolve every hit outside `docs/research/` and accepted ADRs.
+- [ ] 13.4 Guide page `docs/guide/embedding-models.md` (owner's request in PR 4): profiles table (purpose, download, RAM, cold-index time), how to choose, how to configure `--model` for the server and `index`, what a switch does, per-profile calibrated thresholds, and benchmarks (semantic MRR/hit@3 per profile, UA/EN, aggregates from `calibration.md`). Linked from the guide index, `README.md` and `configuration.md`.
 
 ## 14. Delivery (PR 4)
 
