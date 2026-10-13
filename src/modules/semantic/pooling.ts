@@ -60,11 +60,11 @@ export function poolAndNormalize(
 
     if (method === 'cls') return normalize(at(real[0]));
     if (method === 'last_token') return normalize(at(real[real.length - 1]));
+    // Summed straight from the output: a copy per token is one throwaway array per position.
     const sum = new Array<number>(hidden).fill(0);
     for (const position of real) {
-      at(position).forEach((v, i) => {
-        sum[i] += v;
-      });
+      const start = (b * seq + position) * hidden;
+      for (let i = 0; i < hidden; i++) sum[i] += Number(output.data[start + i]);
     }
     return normalize(sum.map((v) => v / real.length));
   });

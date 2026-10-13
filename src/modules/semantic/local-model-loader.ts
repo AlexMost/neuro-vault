@@ -7,8 +7,6 @@ import type { ModelOutput } from './pooling.js';
 /** The tokenizer surface the provider uses — a structural slice of transformers.js's. */
 export interface TokenizerHandle {
   encode(text: string, options: { add_special_tokens: boolean }): number[];
-  readonly padding_side: string;
-  readonly pad_token_id?: number;
 }
 
 /** A loaded profile: its tokenizer, and a forward pass over already-padded id rows. */
@@ -27,6 +25,7 @@ interface OutputTensor {
 interface RawModel {
   (inputs: Record<string, unknown>): Promise<Record<string, OutputTensor | undefined>>;
   sessions: Record<string, { inputNames: string[]; outputNames: string[] }>;
+  config?: { max_position_embeddings?: number };
 }
 
 /** The slice of `@huggingface/transformers` the loader touches — the seam tests replace. */
@@ -129,6 +128,14 @@ export function createLocalModelLoader(
       }
     }
     const output = pickOutput(profile, session.outputNames);
+    // The model's position window, not the tokenizer's declared one: bge-micro's
+    // tokenizer declares an effectively unbounded window over a 512-position model.
+    const window = model.config?.max_position_embeddings;
+    if (typeof window === 'number' && window < profile.maxTokens) {
+      throw new Error(
+        `model "${profile.key}": maxTokens ${profile.maxTokens} exceeds the model's ${window}-position window`,
+      );
+    }
 
     return {
       tokenizer,

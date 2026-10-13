@@ -333,7 +333,7 @@ function describeVector(value: unknown): string {
  */
 export function isManifestCompatible(
   stored: CorpusManifest | null,
-  expected: Omit<CorpusManifest, 'created'>,
+  expected: CorpusIdentity,
   hasShards: boolean,
 ): boolean {
   if (stored === null) return !hasShards;

@@ -3,7 +3,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { EmbeddingService } from '../src/modules/semantic/embedding-service.js';
-import { DEFAULT_MODEL_KEY, resolveModelProfile } from '../src/modules/semantic/model-profiles.js';
+import { corpusIdentityOf } from '../src/lib/obsidian/corpus/identity.js';
+import {
+  DEFAULT_MODEL_KEY,
+  identityOf,
+  resolveModelProfile,
+} from '../src/modules/semantic/model-profiles.js';
 import { BackendError, loadSnapshot } from './backends.js';
 import { GoldenSetError, goldenSetPath, loadGoldenSet } from './golden.js';
 import { aggregate, scoreQuery, type QueryScore } from './metrics.js';
@@ -66,7 +71,7 @@ export async function runEval(
   // model/corpus work), then the backend snapshot.
   const entries = await loadGoldenSet(vaultRoot);
   const profile = resolveModelProfile(DEFAULT_MODEL_KEY);
-  const sources = await loadSnapshot(vaultRoot, profile.dims);
+  const sources = await loadSnapshot(vaultRoot, corpusIdentityOf(identityOf(profile)));
   const embed =
     deps.embed ??
     (() => {

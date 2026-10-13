@@ -346,7 +346,14 @@ describe('createCorpusBackend', () => {
       identity: TEST_IDENTITY,
       store: fakeStore({ compatible: false, shards: 2 }),
       loadSnapshot: async () => EMPTY,
-      reconcile: async () => summary({ embedded: 1, reused: 0 }),
+      // Stands in for reconcileCorpus finding the mismatch and discarding the shards.
+      reconcile: async (opts) => {
+        opts?.onRebuild?.({
+          stored: { ...TEST_IDENTITY, model_key: 'other', embed_version: 99, created: 'x' },
+          active: TEST_IDENTITY,
+        });
+        return summary({ embedded: 1, reused: 0 });
+      },
       warn,
     });
     await backend.whenSettled();

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CorpusStore } from '../../src/lib/obsidian/corpus/shard-store.js';
-import { TEST_DIMS } from '../_identity.js';
+import { TEST_DIMS, TEST_IDENTITY } from '../_identity.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
 import { GoldenSetError } from '../../eval/golden.js';
 import { UsageError, parseEvalArgs, runEval } from '../../eval/run.js';
@@ -57,6 +57,7 @@ describe('runEval end-to-end (stub embedder)', () => {
       await writeFile(path.join(vaultRoot, note), text);
     }
     const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
+    await store.ensureManifest(TEST_IDENTITY);
     await store.writeShard({
       path: 'Notes/target.md',
       content_hash: 'h1',

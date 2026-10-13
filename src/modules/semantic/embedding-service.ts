@@ -28,6 +28,13 @@ export class EmbeddingService implements EmbeddingProvider {
   private initialization: Promise<void> | null = null;
 
   constructor(options: EmbeddingServiceOptions) {
+    // `embed` has no query/document distinction yet (design D4, PR 2), so a
+    // prefix would be silently dropped. Refuse the profile instead.
+    if (options.profile.queryPrefix !== '' || options.profile.documentPrefix !== '') {
+      throw new Error(
+        `model "${options.profile.key}": query/document prefixes are not supported yet`,
+      );
+    }
     this.profile = options.profile;
     this.loader = options.loader ?? createLocalModelLoader();
     this.identity = identityOf(options.profile);

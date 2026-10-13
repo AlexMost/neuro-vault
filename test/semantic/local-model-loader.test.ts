@@ -24,6 +24,7 @@ function fakeTransformers(
     inputNames?: string[];
     outputNames?: string[];
     outputs?: Record<string, { data: number[]; dims: number[] }>;
+    maxPositions?: number;
   } = {},
 ) {
   const forward: Array<Record<string, FakeTensor>> = [];
@@ -39,9 +40,10 @@ function fakeTransformers(
           outputNames: opts.outputNames ?? ['last_hidden_state'],
         },
       },
+      config: { max_position_embeddings: opts.maxPositions },
     },
   );
-  const tokenizer = { encode: () => [1], padding_side: 'right', pad_token_id: 0 };
+  const tokenizer = { encode: () => [1] };
   const tf = {
     env: { cacheDir: null as string | null, logLevel: undefined as unknown },
     LogLevel: { ERROR: 'error-level' },
@@ -111,6 +113,22 @@ describe('createLocalModelLoader', () => {
     await expect(
       createLocalModelLoader({ importTransformers: async () => module, cacheDir: '/m' })(granite),
     ).rejects.toThrow('model "granite-97m": export has no usable output (has: logits)');
+  });
+
+  it('fails naming the profile when maxTokens exceeds the model window', async () => {
+    const { module } = fakeTransformers({ maxPositions: 256 });
+    await expect(
+      createLocalModelLoader({ importTransformers: async () => module, cacheDir: '/m' })(granite),
+    ).rejects.toThrow(
+      'model "granite-97m": maxTokens 512 exceeds the model\'s 256-position window',
+    );
+  });
+
+  it('loads a profile whose maxTokens equals the model window', async () => {
+    const { module } = fakeTransformers({ maxPositions: 512 });
+    await expect(
+      createLocalModelLoader({ importTransformers: async () => module, cacheDir: '/m' })(granite),
+    ).resolves.toBeDefined();
   });
 
   it('runs a forward pass on int64 tensors and returns token states', async () => {

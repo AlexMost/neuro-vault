@@ -19,7 +19,7 @@ function fakeModel(encodeImpl?: (text: string) => number[]) {
     return options.add_special_tokens ? [101, ...body, 102] : body;
   });
   const model: LocalModel = {
-    tokenizer: { encode, padding_side: 'right', pad_token_id: 0 },
+    tokenizer: { encode },
     run: async (ids, mask) => {
       runs.push({ ids, mask });
       const data: number[] = [];
@@ -45,6 +45,12 @@ describe('EmbeddingService', () => {
   it('reports the identity of its profile', () => {
     const { service } = serviceFor(granite, fakeModel().model);
     expect(service.identity).toEqual(identityOf(granite));
+  });
+
+  it('refuses a profile with a prefix it cannot apply yet', () => {
+    expect(() => new EmbeddingService({ profile: { ...bge, queryPrefix: 'query: ' } })).toThrow(
+      'model "bge-micro-v2": query/document prefixes are not supported yet',
+    );
   });
 
   it('loads the model once, shared by concurrent embeds', async () => {

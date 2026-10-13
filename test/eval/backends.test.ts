@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { CorpusStore } from '../../src/lib/obsidian/corpus/shard-store.js';
-import { TEST_DIMS } from '../_identity.js';
+import { TEST_DIMS, TEST_IDENTITY } from '../_identity.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
 import { BackendError, loadSnapshot } from '../../eval/backends.js';
 
@@ -20,6 +20,7 @@ describe('own backend snapshot', () => {
   it('decodes shards into SmartSource entries and skips vectorless notes', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-own-'));
     const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
+    await store.ensureManifest(TEST_IDENTITY);
     await store.writeShard({
       path: 'Notes/a.md',
       content_hash: 'h1',
@@ -37,7 +38,7 @@ describe('own backend snapshot', () => {
       blocks: [],
     });
 
-    const sources = await loadSnapshot(vaultRoot, TEST_DIMS);
+    const sources = await loadSnapshot(vaultRoot, TEST_IDENTITY);
     expect([...sources.keys()]).toEqual(['Notes/a.md']);
     const a = sources.get('Notes/a.md')!;
     expect(a.embedding[0]).toBe(1);
@@ -48,8 +49,26 @@ describe('own backend snapshot', () => {
 
   it('fails an empty corpus pointing at the index command', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-own-empty-'));
-    const err = await loadSnapshot(vaultRoot, TEST_DIMS).catch((e: unknown) => e);
+    const err = await loadSnapshot(vaultRoot, TEST_IDENTITY).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BackendError);
+    expect((err as Error).message).toContain('neuro-vault-mcp index');
+  });
+
+  it('fails a corpus indexed with another model, naming both identities', async () => {
+    vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-own-other-'));
+    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
+    await store.ensureManifest({ ...TEST_IDENTITY, model_key: 'granite-97m', model_id: 'other' });
+    await store.writeShard({
+      path: 'Notes/a.md',
+      content_hash: 'h1',
+      mtime: 1,
+      size: 10,
+      embedding: encodeVector(unitVec(0)),
+      blocks: [],
+    });
+    const err = await loadSnapshot(vaultRoot, TEST_IDENTITY).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BackendError);
+    expect((err as Error).message).toContain('was indexed with granite-97m (embed_version 1)');
     expect((err as Error).message).toContain('neuro-vault-mcp index');
   });
 });
