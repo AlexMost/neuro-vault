@@ -7,6 +7,7 @@ import {
   computeGuards,
   DEFAULT_KEYS,
   passRate,
+  POPULATION_OF,
   quantiles,
   thresholdForPassRate,
 } from '../../eval/stats.js';
@@ -61,6 +62,10 @@ describe('DEFAULT_KEYS', () => {
   it('names every similarity default exactly once', () => {
     expect([...DEFAULT_KEYS].sort()).toEqual(Object.keys(TEST_SIMILARITY).sort());
   });
+
+  it('is exactly the set of defaults POPULATION_OF assigns a population to', () => {
+    expect(Object.keys(POPULATION_OF).sort()).toEqual([...DEFAULT_KEYS].sort());
+  });
 });
 
 function score(over: Partial<QueryScore>): QueryScore {
@@ -105,14 +110,32 @@ describe('collectPopulations + computeCalibrationStats', () => {
     ['b.md', { path: 'b.md', embedding: [0.8, 0.6], blocks: [] }],
     ['c.md', { path: 'c.md', embedding: [0, 1], blocks: [] }],
   ]);
-  const shape = { seedPool: 1, expansionLimit: 1, topK: 3 };
+  // topK 2 < the three notes, so the ranked and unranked populations differ.
+  const shape = { seedPool: 1, expansionLimit: 1, topK: 2 };
 
-  it('collects the four populations', () => {
+  it('collects the ranked and the unranked populations', () => {
     const p = collectPopulations({ queryVectors: [[1, 0]], sources, ...shape });
-    expect(p.query_candidates).toHaveLength(3);
+    expect(p.query_candidates).toHaveLength(2);
+    expect(p.query_all).toHaveLength(3);
     expect(p.expansion_neighbours).toEqual([expect.closeTo(0.8)]);
+    // Seed a.md against b and c, never against itself.
+    expect([...p.seed_all].sort()).toEqual([expect.closeTo(0), expect.closeTo(0.8)]);
     expect(p.note_max).toHaveLength(3);
     expect(p.note_top10).toHaveLength(6);
+    expect(p.note_all).toHaveLength(6); // 3 sources × 2 others, ordered pairs
+  });
+
+  it('reports a quantile summary for every population', () => {
+    const populations = collectPopulations({ queryVectors: [[1, 0]], sources, ...shape });
+    const stats = computeCalibrationStats({
+      populations,
+      similarity: TEST_SIMILARITY,
+      perQuery: [],
+      deepPool: 8,
+    });
+    expect(Object.keys(stats.populations).sort()).toEqual(Object.keys(populations).sort());
+    expect(stats.populations.query_all.n).toBe(3);
+    expect(stats.populations.note_all.n).toBe(6);
   });
 
   it('reports, per default, the threshold and pass rate over its own population', () => {
@@ -124,14 +147,16 @@ describe('collectPopulations + computeCalibrationStats', () => {
       deepPool: 8,
     });
     expect(stats.pass_rates.deep).toEqual({
-      population: 'query_candidates',
+      population: 'query_all',
       threshold: TEST_SIMILARITY.deep,
-      pass_rate: passRate(populations.query_candidates, TEST_SIMILARITY.deep),
+      pass_rate: passRate(populations.query_all, TEST_SIMILARITY.deep),
     });
     expect(stats.pass_rates.expansionFloor).toMatchObject({
-      population: 'expansion_neighbours',
-      pass_rate: 1, // the one neighbour, 0.8, clears 0.35
+      population: 'seed_all',
+      pass_rate: 0.5, // of the seed's two neighbours (0.8 and 0), only 0.8 clears 0.35
     });
+    expect(stats.pass_rates.similarNotes.population).toBe('note_all');
+    expect(stats.pass_rates.duplicates.population).toBe('note_max');
     expect(stats.populations.note_max.n).toBe(3);
     expect(stats.suggested).toBeUndefined();
   });
@@ -164,10 +189,10 @@ describe('collectPopulations + computeCalibrationStats', () => {
     const suggested = again.suggested;
     expect(suggested?.deep.baseline_pass_rate).toBe(baseline.pass_rates.deep.pass_rate);
     expect(suggested?.deep.threshold).toBeCloseTo(
-      thresholdForPassRate(shifted.query_candidates, baseline.pass_rates.deep.pass_rate)!,
+      thresholdForPassRate(shifted.query_all, baseline.pass_rates.deep.pass_rate)!,
     );
     // The suggested threshold reproduces the baseline's pass rate on the new population.
-    expect(passRate(shifted.query_candidates, suggested?.deep.threshold ?? NaN)).toBeCloseTo(
+    expect(passRate(shifted.query_all, suggested?.deep.threshold ?? NaN)).toBeCloseTo(
       baseline.pass_rates.deep.pass_rate,
     );
   });
@@ -181,7 +206,7 @@ describe('collectPopulations + computeCalibrationStats', () => {
       deepPool: 8,
     });
     const again = computeCalibrationStats({
-      populations: { ...populations, expansion_neighbours: [] },
+      populations: { ...populations, seed_all: [] },
       similarity: TEST_SIMILARITY,
       perQuery: [],
       deepPool: 8,

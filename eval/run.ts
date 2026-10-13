@@ -30,6 +30,7 @@ import {
   collectPopulations,
   computeCalibrationStats,
   DEFAULT_KEYS,
+  POPULATION_OF,
   type CalibrationStats,
 } from './stats.js';
 
@@ -126,6 +127,14 @@ async function readBaseline(file: string): Promise<Baseline> {
     if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0 || rate > 1) {
       throw new UsageError(
         `--baseline ${file}: pass_rates.${key}.pass_rate must be a number in [0, 1], got ${JSON.stringify(rate) ?? 'nothing'}`,
+      );
+    }
+    // A pass rate only means something on the population it was measured on.
+    const population = (stats.pass_rates as Record<string, { population?: unknown }>)[key]
+      .population;
+    if (population !== POPULATION_OF[key]) {
+      throw new UsageError(
+        `--baseline ${file}: ${key} was measured on ${JSON.stringify(population) ?? 'nothing'}, this build measures it on "${POPULATION_OF[key]}" — re-capture the baseline with --stats`,
       );
     }
   }
@@ -243,7 +252,7 @@ function formatStats(stats: CalibrationStats): string[] {
         : suggested.threshold === null
           ? '  → no suggestion (empty population)'
           : `  → suggested ${suggested.threshold.toFixed(3)}`;
-    return `${key}: threshold=${rate.threshold.toFixed(3)} pass=${rate.pass_rate.toFixed(3)}${tail}`;
+    return `${key}: population=${rate.population} threshold=${rate.threshold.toFixed(3)} pass=${rate.pass_rate.toFixed(3)}${tail}`;
   });
   lines.push(
     `guard deep_filtered_first_relevant=${stats.guards.deep_filtered_first_relevant} (target 0)`,

@@ -25,6 +25,23 @@ export interface Populations {
   note_top10: number[];
   /** Every note's maximum similarity to any other note. */
   note_max: number[];
+  /**
+   * Each golden query vector against every source — unranked. The ranked
+   * `query_candidates` pass 100 % at five of six defaults on bge-micro, which
+   * pins no threshold (design D11).
+   */
+  query_all: number[];
+  /**
+   * Each seed against every source that is not one of that query's seeds —
+   * unranked, so the expansion floor is matched on more than the top few
+   * neighbours (design D11).
+   */
+  seed_all: number[];
+  /**
+   * Each source against every other source (ordered pairs) — unranked, where
+   * `note_top10` keeps only each note's ten nearest (design D11).
+   */
+  note_all: number[];
 }
 
 export interface Guards {
@@ -54,13 +71,17 @@ export interface CalibrationStats {
   };
 }
 
-/** Which population each default filters (design D11). */
-const POPULATION_OF: Record<DefaultKey, keyof Populations> = {
-  quick: 'query_candidates',
-  deep: 'query_candidates',
-  fallback: 'query_candidates',
-  expansionFloor: 'expansion_neighbours',
-  similarNotes: 'note_top10',
+/**
+ * Which population each default is calibrated on (design D11): unranked
+ * wherever a ranked one exists, because the ranked ones pass 100 % at five of
+ * six defaults on bge-micro and so cannot tell two thresholds apart.
+ */
+export const POPULATION_OF: Record<DefaultKey, keyof Populations> = {
+  quick: 'query_all',
+  deep: 'query_all',
+  fallback: 'query_all',
+  expansionFloor: 'seed_all',
+  similarNotes: 'note_all',
   duplicates: 'note_max',
 };
 
@@ -123,47 +144,54 @@ export function collectPopulations(args: {
 }): Populations {
   const { sources } = args;
   const query_candidates: number[] = [];
+  const query_all: number[] = [];
   const expansion_neighbours: number[] = [];
+  const seed_all: number[] = [];
+  // Each vector is ranked once over every source; the ranked populations are slices of it.
   for (const queryVector of args.queryVectors) {
-    const ranked = findNeighbors({
-      queryVector,
-      sources: sources.values(),
-      threshold: -1,
-      limit: args.topK,
-    });
+    const all = findNeighbors({ queryVector, sources: sources.values(), threshold: -1 });
+    query_all.push(...all.map((r) => r.similarity));
+    const ranked = all.slice(0, args.topK);
     query_candidates.push(...ranked.map((r) => r.similarity));
     const seeds = ranked.slice(0, args.seedPool);
     const seedSet = new Set(seeds.map((s) => s.path));
     for (const seed of seeds) {
       const source = sources.get(seed.path);
       if (!source) continue;
-      // Mirrors the production expansion leg, minus its floor.
-      const neighbours = findNeighbors({
+      const others = findNeighbors({
         queryVector: source.embedding,
         sources: sources.values(),
         threshold: -1,
-        limit: args.expansionLimit + seedSet.size,
-      })
-        .filter((n) => !seedSet.has(n.path))
-        .slice(0, args.expansionLimit);
-      expansion_neighbours.push(...neighbours.map((n) => n.similarity));
+      }).filter((n) => !seedSet.has(n.path));
+      seed_all.push(...others.map((n) => n.similarity));
+      // Mirrors the production expansion leg, minus its floor.
+      expansion_neighbours.push(...others.slice(0, args.expansionLimit).map((n) => n.similarity));
     }
   }
+  const note_all: number[] = [];
   const note_top10: number[] = [];
   const note_max: number[] = [];
   for (const source of sources.values()) {
-    const neighbours = findNeighbors({
+    const others = findNeighbors({
       queryVector: source.embedding,
       sources: sources.values(),
       threshold: -1,
-      limit: 10,
       excludePath: source.path,
     });
-    note_top10.push(...neighbours.map((n) => n.similarity));
-    const [nearest] = neighbours;
+    note_all.push(...others.map((n) => n.similarity));
+    note_top10.push(...others.slice(0, 10).map((n) => n.similarity));
+    const [nearest] = others;
     if (nearest) note_max.push(nearest.similarity);
   }
-  return { query_candidates, expansion_neighbours, note_top10, note_max };
+  return {
+    query_candidates,
+    expansion_neighbours,
+    note_top10,
+    note_max,
+    query_all,
+    seed_all,
+    note_all,
+  };
 }
 
 /**
@@ -218,12 +246,13 @@ export function computeCalibrationStats(args: {
     }),
   ) as CalibrationStats['pass_rates'];
   const stats: CalibrationStats = {
-    populations: {
-      query_candidates: quantiles(args.populations.query_candidates),
-      expansion_neighbours: quantiles(args.populations.expansion_neighbours),
-      note_top10: quantiles(args.populations.note_top10),
-      note_max: quantiles(args.populations.note_max),
-    },
+    // Iterates the `Populations` keys, so a new population cannot go unsummarised.
+    populations: Object.fromEntries(
+      (Object.keys(args.populations) as (keyof Populations)[]).map((key) => [
+        key,
+        quantiles(args.populations[key]),
+      ]),
+    ) as CalibrationStats['populations'],
     pass_rates,
     guards: computeGuards(args.perQuery, args.similarity, args.deepPool),
   };

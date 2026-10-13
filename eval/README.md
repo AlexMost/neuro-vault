@@ -253,15 +253,29 @@ metric (the harness ranks at threshold 0, so positions give a threshold nothing
 to maximise).
 
 A `--stats` run adds a `stats` object to the report and prints a summary. It
-measures four populations, each summarised by quantiles (`n`, `min`, `p05`,
-`p10`, `p25`, `p50`, `p75`, `p90`, `p95`, `max`):
+measures seven populations, each summarised by quantiles (`n`, `min`, `p05`,
+`p10`, `p25`, `p50`, `p75`, `p90`, `p95`, `max`). Three are ranked (cut to a
+top-k), three are their unranked counterparts, and `note_max` is one value per
+note:
 
-| population             | what it holds                                                        | thresholds it feeds         |
-| ---------------------- | -------------------------------------------------------------------- | --------------------------- |
-| `query_candidates`     | query↔note similarities of each golden query's top-10 candidates     | `quick`, `deep`, `fallback` |
-| `expansion_neighbours` | seed↔neighbour similarities the expansion leg sees, before its floor | `expansionFloor`            |
-| `note_top10`           | every note's top-10 neighbour similarities                           | `similarNotes`              |
-| `note_max`             | every note's maximum similarity to any other note                    | `duplicates`                |
+| population             | what it holds                                                                          | thresholds it feeds         |
+| ---------------------- | -------------------------------------------------------------------------------------- | --------------------------- |
+| `query_candidates`     | query↔note similarities of each golden query's top-10 candidates (ranked)              | none (diagnostic)           |
+| `expansion_neighbours` | seed↔neighbour similarities the expansion leg sees, before its floor (ranked)          | none (diagnostic)           |
+| `note_top10`           | every note's top-10 neighbour similarities (ranked)                                    | none (diagnostic)           |
+| `query_all`            | each golden query against every note (unranked)                                        | `quick`, `deep`, `fallback` |
+| `seed_all`             | each seed against every note that is not one of that query's seeds (unranked)          | `expansionFloor`            |
+| `note_all`             | each note against every other note, ordered pairs (unranked)                           | `similarNotes`              |
+| `note_max`             | every note's maximum similarity to any other note                                      | `duplicates`                |
+
+The defaults are matched on the **unranked** populations. On `bge-micro-v2` five
+of the six defaults passed 100 % of the ranked top-10 populations: a cut to the
+ten nearest keeps only values above every threshold, so the pass rate says
+nothing and two different thresholds look identical. The unranked populations
+include the values a threshold exists to reject, so a pass rate below 100 % is
+what they report. The ranked populations stay in the report for comparison. See
+design D11 in
+[`openspec/changes/embedding-model-profiles/design.md`](../openspec/changes/embedding-model-profiles/design.md).
 
 For each of the six defaults on the selected profile, `pass_rates` records its
 threshold, the population it filters and the share of that population at or
@@ -308,7 +322,11 @@ baseline's, the more permissive one on an exact tie. On an empty population
 there is nothing to match: `threshold` is `null` and the printout says so.
 
 The baseline's pass rates are validated up front: each of the six must be a
-number in [0, 1], otherwise the run fails naming the file and the key. The new
+number in [0, 1], otherwise the run fails naming the file and the key. Each must
+also have been measured on the population this build uses for that default
+(`pass_rates.<key>.population`): a baseline captured on the ranked populations
+is refused, naming the file, the key and both populations, because its pass
+rates mean something else — re-capture it with `--stats`. The new
 report records which baseline the suggestions came from as `stats.baseline`
 (`file` (the resolved path), `model_key`, `vault_sha`, `code_sha`). If the baseline's
 `vault_sha` differs from this run's, or either is unknown or `-dirty`, the run
