@@ -24,9 +24,15 @@ export async function loadSnapshot(
   const corpusDir = path.join(vaultRoot, '.neuro-vault/corpus');
   const rebuild = `neuro-vault-mcp index --vault ${shellQuote(vaultRoot)} --model ${expected.model_key}`;
   const store = new CorpusStore(vaultRoot, { dims: expected.dims });
-  // Before listing: shards of another width would each fail validation loudly,
-  // and vectors of another model can share the width yet score as noise.
+  // Both refusals come before listing: shards of another width would each fail
+  // validation loudly and decode to nothing, and vectors of another model can
+  // share the width yet score as noise.
   const manifest = await store.readManifest();
+  if (manifest === null && (await store.hasAnyShards())) {
+    throw new BackendError(
+      `own corpus at ${corpusDir} has no readable manifest — rebuild it with: ${rebuild}`,
+    );
+  }
   if (manifest !== null && !isManifestCompatible(manifest, expected, true)) {
     throw new BackendError(
       `own corpus at ${corpusDir} was indexed with ${formatIdentity(manifest)}, not ${formatIdentity(expected)} — rebuild it for this model with: ${rebuild}`,
@@ -36,11 +42,6 @@ export async function loadSnapshot(
   if (snapshot.sources.size === 0) {
     throw new BackendError(
       `own corpus at ${corpusDir} is missing or empty — build it with: ${rebuild}`,
-    );
-  }
-  if (manifest === null) {
-    throw new BackendError(
-      `own corpus at ${corpusDir} has no readable manifest — rebuild it with: ${rebuild}`,
     );
   }
   return snapshot.sources;

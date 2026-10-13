@@ -205,7 +205,8 @@ export class CorpusStore {
     return { rebuilt: !compatible && hasShards, previous: stored };
   }
 
-  private async hasAnyShards(): Promise<boolean> {
+  /** Whether any shard file exists — a directory listing, never a read or decode. */
+  async hasAnyShards(): Promise<boolean> {
     try {
       const entries = await this.readdir(this.notesDir);
       return entries.some((entry) => entry.endsWith('.json'));
