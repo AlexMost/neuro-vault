@@ -136,17 +136,61 @@ describe('createQueuedEmbedder — batching', () => {
     expect(log).toEqual(['d:aa,aa', 'q:q', 'd:bbbbbbbbbb,bbbbbbbbbb']);
   });
 
-  it('gives two concurrent callers their own vectors when their buckets interleave', async () => {
+  it('gives two concurrent callers their own vectors, in their own input order, while both are in flight', async () => {
     const { provider, releaseNext } = gatedProvider();
     const embedder = createQueuedEmbedder(provider);
-    const a = embedder.embedDocuments(['a1', 'a2', 'aaaaaaa3']);
-    const b = embedder.embedDocuments(['b', 'bbbbbbbbbbbb']);
+    const a = embedder.embedDocuments(['aaaaaaa3', 'a1', 'a2']);
+    await flush(); // a's first bucket is in the provider
+    const b = embedder.embedDocuments(['bbbbbbbbbbbb', 'b']);
     for (let i = 0; i < 4; i++) {
       await flush();
       releaseNext();
     }
-    expect(await a).toEqual([[2], [2], [8]]);
-    expect(await b).toEqual([[1], [12]]);
+    expect(await a).toEqual([[8], [2], [2]]);
+    expect(await b).toEqual([[12], [1]]);
+  });
+
+  it('rejects the caller whose bucket failed while a concurrent caller still succeeds', async () => {
+    const gates: Array<() => void> = [];
+    const embedder = createQueuedEmbedder({
+      identity: TEST_EMBEDDING_IDENTITY,
+      maxBatchSize: 2,
+      initialize: async () => {},
+      embedQuery: async () => [0],
+      embedDocuments: async (ts) => {
+        await new Promise<void>((resolve) => gates.push(resolve));
+        if (ts.includes('bad')) throw new Error('bad bucket');
+        return ts.map((t) => [t.length]);
+      },
+    });
+    const a = embedder.embedDocuments(['bad']);
+    const aRejected = expect(a).rejects.toThrow('bad bucket');
+    await flush(); // a's bucket is in the provider
+    const b = embedder.embedDocuments(['good', 'fine']);
+    for (let i = 0; i < 2; i++) {
+      await flush();
+      gates.shift()?.();
+    }
+    await aRejected;
+    expect(await b).toEqual([[4], [4]]);
+  });
+
+  it('survives a provider that throws synchronously', async () => {
+    let calls = 0;
+    const embedder = createQueuedEmbedder({
+      identity: TEST_EMBEDDING_IDENTITY,
+      maxBatchSize: 8,
+      initialize: async () => {},
+      embedQuery: async () => [7],
+      embedDocuments: (ts) => {
+        calls += 1;
+        if (calls === 1) throw new Error('sync boom');
+        return Promise.resolve(ts.map(() => [1]));
+      },
+    });
+    await expect(embedder.embedDocuments(['x'])).rejects.toThrow('sync boom');
+    await expect(embedder.embedQuery('q')).resolves.toEqual([7]);
+    await expect(embedder.embedDocuments(['y'])).resolves.toEqual([[1]]);
   });
 
   it('a failed bucket rejects only its own call', async () => {

@@ -64,7 +64,10 @@ export function createQueuedEmbedder(provider: EmbeddingProvider): QueuedEmbedde
 
   function enqueue<T>(lane: QueueEntry[], work: () => Promise<T>): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      lane.push({ work: () => work().then(resolve, reject) });
+      // The Promise executor runs `work` synchronously and turns a synchronous
+      // throw into a rejection, so `entry.work()` itself never throws and `pump`
+      // can never be left with `running` stuck on.
+      lane.push({ work: () => new Promise<T>((done) => done(work())).then(resolve, reject) });
       pump();
     });
   }
