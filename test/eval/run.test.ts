@@ -130,7 +130,29 @@ describe('runEval end-to-end (stub embedder)', () => {
       id: 'q001',
       first_relevant_rank: 1,
     });
-    expect(report.config).toMatchObject({ top_k: 10, semantic_threshold: 0 });
+    expect(report.config).toMatchObject({
+      top_k: 10,
+      semantic_threshold: 0,
+      expansion_floor: GRANITE.similarity.expansionFloor,
+    });
+  });
+
+  it('records the profile and the evidence behind each ranking', async () => {
+    await makeVault(GOLDEN);
+    const { report, reportFile } = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
+      { embed: () => Promise.resolve(unitVec(0)), resultsDir },
+    );
+    expect(report.model_key).toBe('granite-97m');
+    expect(report.identity).toEqual(identityOf(GRANITE));
+    expect(report.model_id).toBe(report.identity.model_id);
+    expect(path.basename(reportFile)).toMatch(/-granite-97m-semantic\.json$/);
+    expect(report.per_query[0]).toMatchObject({
+      top: ['Notes/target.md', 'Notes/other.md'],
+      top_scores: [1, 0],
+      relevant_ranks: [1],
+      best_relevant_similarity: 1,
+    });
   });
 
   // `code_sha` answers "which checkout produced these numbers", so it must

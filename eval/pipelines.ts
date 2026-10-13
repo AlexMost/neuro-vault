@@ -50,27 +50,44 @@ export async function createFusedContext(vaultRoot: string): Promise<FusedContex
   return { lexical: new LexicalIndex({ vaultRoot, reader }), graph };
 }
 
-async function rankSemantic(
-  query: string,
+export interface RankedPath {
+  path: string;
+  score: number;
+}
+
+/**
+ * Best cosine between the query and any relevant note, ranked or not — the
+ * evidence a threshold calibration needs for notes the top list never reached.
+ */
+export function bestRelevantSimilarity(
+  queryVector: number[],
+  relevant: string[],
   sources: Map<string, SmartSource>,
-  embed: EmbedFn,
-): Promise<string[]> {
-  const queryVector = await embed(query);
+): number | null {
+  const candidates = relevant.flatMap((p) => {
+    const source = sources.get(p);
+    return source ? [source] : [];
+  });
+  const [best] = findNeighbors({ queryVector, sources: candidates, threshold: -1, limit: 1 });
+  return best?.similarity ?? null;
+}
+
+function rankSemantic(queryVector: number[], sources: Map<string, SmartSource>): RankedPath[] {
   return findNeighbors({
     queryVector,
     sources: sources.values(),
     threshold: EVAL_CONFIG.semantic_threshold,
     limit: EVAL_TOP_K,
-  }).map((r) => r.path);
+  }).map((r) => ({ path: r.path, score: r.similarity }));
 }
 
 async function rankFused(
   query: string,
+  queryVector: number[],
   sources: Map<string, SmartSource>,
-  embed: EmbedFn,
   context: FusedContext,
   similarity: SimilarityDefaults,
-): Promise<string[]> {
+): Promise<RankedPath[]> {
   // The production legs, verbatim (design D5): executeRetrieval at deep
   // effort (pool 8, expansion on) with an explicit threshold 0, the lexical
   // index with the real wikilink graph for its backlink tie-break, then the
@@ -86,7 +103,10 @@ async function rankFused(
     expansionLimit: EVAL_CONFIG.expansion_limit,
     expansionFloor: EVAL_CONFIG.expansion_floor,
     sources,
-    embeddingProvider: { initialize: () => Promise.resolve(), embedQuery: embed },
+    embeddingProvider: {
+      initialize: () => Promise.resolve(),
+      embedQuery: () => Promise.resolve(queryVector),
+    },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     similarity,
   });
@@ -106,22 +126,24 @@ async function rankFused(
     totalNotes: lexical.totalNotes,
   })
     .slice(0, EVAL_TOP_K)
-    .map((c) => c.path);
+    .map((c) => ({ path: c.path, score: c.score }));
 }
 
 export async function rankQuery(args: {
   pipeline: PipelineId;
+  /** The query text — the lexical leg of `fused` searches it; `semantic` ignores it. */
   query: string;
+  /** The query embedded once by the caller, so both pipelines rank the same vector. */
+  queryVector: number[];
   sources: Map<string, SmartSource>;
-  embed: EmbedFn;
   fusedContext?: FusedContext;
   similarity: SimilarityDefaults;
-}): Promise<string[]> {
+}): Promise<RankedPath[]> {
   if (args.pipeline === 'semantic') {
-    return rankSemantic(args.query, args.sources, args.embed);
+    return rankSemantic(args.queryVector, args.sources);
   }
   if (!args.fusedContext) {
     throw new Error('fused pipeline requires a FusedContext');
   }
-  return rankFused(args.query, args.sources, args.embed, args.fusedContext, args.similarity);
+  return rankFused(args.query, args.queryVector, args.sources, args.fusedContext, args.similarity);
 }

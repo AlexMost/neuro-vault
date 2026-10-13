@@ -123,15 +123,16 @@ describe('fused pipeline pins the production fused ordering', () => {
     const expected = production.matches.map((m) => m.path);
 
     const fusedContext = await createFusedContext(vaultRoot);
-    const actual = await rankQuery({
+    const ranked = await rankQuery({
       pipeline: 'fused',
       query: QUERY,
+      queryVector: QUERY_VECTOR,
       sources: fixture.sources,
-      embed,
       fusedContext,
       similarity: TEST_SIMILARITY,
     });
 
+    const actual = ranked.map((r) => r.path);
     expect(actual).toEqual(expected);
 
     // Non-vacuity: the fixture must actually exercise all three legs and a

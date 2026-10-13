@@ -16,6 +16,7 @@ import { GoldenSetError, goldenSetPath, loadGoldenSet } from './golden.js';
 import { aggregate, scoreQuery, type QueryScore } from './metrics.js';
 import {
   EVAL_CONFIG,
+  bestRelevantSimilarity,
   createFusedContext,
   rankQuery,
   type EmbedFn,
@@ -94,14 +95,15 @@ const DEFAULT_RESULTS_DIR = path.join(MODULE_DIR, 'results');
 
 export async function runEval(
   args: EvalArgs,
-  deps: { embed?: EmbedFn; resultsDir?: string; modelId?: string } = {},
+  deps: { embed?: EmbedFn; resultsDir?: string } = {},
 ): Promise<{ reportFile: string; report: EvalReport }> {
   const vaultRoot = path.resolve(args.vault);
   // Validation gates the run: golden set first (its failures must precede any
   // model/corpus work), then the backend snapshot.
   const entries = await loadGoldenSet(vaultRoot);
   const profile = args.model; // the only profile this run sees
-  const sources = await loadSnapshot(vaultRoot, corpusIdentityOf(identityOf(profile)));
+  const identity = identityOf(profile);
+  const sources = await loadSnapshot(vaultRoot, corpusIdentityOf(identity));
   const embed =
     deps.embed ??
     (() => {
@@ -113,21 +115,26 @@ export async function runEval(
 
   const per_query: QueryScore[] = [];
   for (const entry of entries) {
-    const top = await rankQuery({
+    const queryVector = await embed(entry.query);
+    const ranked = await rankQuery({
       pipeline: args.pipeline,
       query: entry.query,
+      queryVector,
       sources,
-      embed,
       fusedContext,
       similarity: profile.similarity,
     });
-    per_query.push(scoreQuery(entry, top));
+    per_query.push(
+      scoreQuery(entry, ranked, bestRelevantSimilarity(queryVector, entry.relevant, sources)),
+    );
   }
 
   const report: EvalReport = {
     code_sha: await gitSha(MODULE_DIR),
     vault_sha: await gitSha(vaultRoot),
-    model_id: deps.modelId ?? profile.repo,
+    model_id: identity.model_id,
+    model_key: profile.key,
+    identity,
     pipeline: args.pipeline,
     config: { ...EVAL_CONFIG },
     golden: { path: goldenSetPath(vaultRoot), count: entries.length },
@@ -146,7 +153,7 @@ async function main(): Promise<void> {
   try {
     const args = parseEvalArgs(process.argv.slice(2));
     const { report, reportFile } = await runEval(args);
-    console.log(`pipeline=${report.pipeline}`);
+    console.log(`model=${report.model_key} pipeline=${report.pipeline}`);
     console.log(`code_sha=${report.code_sha ?? 'n/a'} vault_sha=${report.vault_sha ?? 'n/a'}`);
     console.log(formatSlice('overall', report.metrics.overall));
     console.log(formatSlice('ua', report.metrics.ua));
