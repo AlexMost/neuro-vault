@@ -378,3 +378,19 @@ Measured cost on this vault (949 notes, 888 note vectors; Apple M5, CPU, int8; t
 | `granite-97m`  | 3.5 min    | 1.20 GB                |
 | `harrier-0.6b` | 35.5 min   | 2.40 GB                |
 
+# Acceptance (PR 4, Task 12.2)
+
+On a fresh, corpus-less clone of the same vault copy (`vault_sha` `98b8364…`), with the committed calibration (`code_sha` `f31b3fe`, clean) and no `--model` anywhere, so the default profile is what gets exercised.
+
+**Cold index, default profile (`harrier-270m`)**: 7.9 min wall (475.5 s), max RSS 1.58 GB, `total=949 embedded=949 failed=0`. The manifest it wrote is v2 with the full producing identity (`embed_version 2`, `provider transformers.js`, `model_key harrier-270m`, the pinned revision, `dtype q8`, `dims 640`, `pooling last_token`, `max_tokens 512`, `strategy token-window-v1`).
+
+| pipeline | slice   | n  | p@3   | MRR   | hit@3 | bar      |
+| -------- | ------- | -- | ----- | ----- | ----- | -------- |
+| semantic | overall | 25 | 0.373 | 0.709 | 0.800 |          |
+| semantic | ua      | 21 | 0.365 | 0.694 | 0.810 | ≥ 0.600 ✅ |
+| semantic | en      | 4  | 0.417 | 0.786 | 0.750 | ≥ 0.800 ❌ (one query; see harrier-270m) |
+| fused    | overall | 25 | 0.440 | 0.792 | 0.920 |          |
+| fused    | ua      | 21 | 0.429 | 0.752 | 0.905 |          |
+| fused    | en      | 4  | 0.500 | 1.000 | 1.000 |          |
+
+**`--model granite-97m` end to end.** `index --model granite-97m` on that clone first printed `rebuilding Obsidian: corpus was indexed with harrier-270m (embed_version 2); active model is granite-97m (embed_version 2)`, then completed with `failed=0`. A stdio server started with `--model granite-97m` then answered `initialize` and a `search_notes` call (`["векторний пошук", "embeddings"]`) with `semantic_status: ready` and 5 matches, 3 of them with semantic provenance. Every stdout line was JSON-RPC, and stderr had no rebuild line.
