@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -78,6 +78,18 @@ describe('own backend snapshot', () => {
     ).rejects.toThrow(
       `was indexed with granite-97m (embed_version 1), not harrier-270m (embed_version 1) — rebuild it for this model with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
     );
+  });
+
+  it('quotes a vault path containing spaces or quotes in the suggested index command', async () => {
+    const base = await mkdtemp(path.join(tmpdir(), 'eval-quote-'));
+    vaultRoot = base;
+    const spaced = path.join(base, "My Vault's copy");
+    await mkdir(spaced);
+    const err = await loadSnapshot(spaced, TEST_IDENTITY).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BackendError);
+    const quoted = `'${spaced.replaceAll("'", `'\\''`)}'`;
+    expect((err as Error).message).toContain(`--vault ${quoted} --model bge-micro-v2`);
+    expect((err as Error).message).toContain(`--vault '${base}/My Vault'\\''s copy'`);
   });
 
   it('refuses shards whose manifest is missing', async () => {

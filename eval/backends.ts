@@ -7,6 +7,12 @@ import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
 
 export class BackendError extends Error {}
 
+/** POSIX shell quoting: bare when safe, otherwise single-quoted (`'` → `'\''`). */
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./~+-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
+
 /**
  * The corpus the server owns, decoded — but only if it was built by the
  * profile this run embeds queries with. Eval never rebuilds (design D12).
@@ -16,7 +22,7 @@ export async function loadSnapshot(
   expected: CorpusIdentity,
 ): Promise<Map<string, SmartSource>> {
   const corpusDir = path.join(vaultRoot, '.neuro-vault/corpus');
-  const rebuild = `neuro-vault-mcp index --vault ${vaultRoot} --model ${expected.model_key}`;
+  const rebuild = `neuro-vault-mcp index --vault ${shellQuote(vaultRoot)} --model ${expected.model_key}`;
   const store = new CorpusStore(vaultRoot, { dims: expected.dims });
   // Before listing: shards of another width would each fail validation loudly,
   // and vectors of another model can share the width yet score as noise.
