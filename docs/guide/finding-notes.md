@@ -92,12 +92,12 @@ Every call returns `{ matches, truncated, semantic_status }`, plus `query_stats`
       "vault": "Obsidian",
       "backlink_count": 4,
       "found_in": ["semantic", "lexical:title"],
-      "similarity": 0.82,
+      "similarity": 0.61,
       "blocks": [
         {
           "heading": "Notes/embeddings.md#What is an embedding",
           "lines": [3, 20],
-          "similarity": 0.71
+          "similarity": 0.54
         }
       ],
       "lexical": [{ "matched_in": "title", "snippet": "embeddings" }]
@@ -107,7 +107,7 @@ Every call returns `{ matches, truncated, semantic_status }`, plus `query_stats`
       "vault": "Obsidian",
       "backlink_count": 2,
       "found_in": ["expansion"],
-      "expansion_similarity": 0.89
+      "expansion_similarity": 0.77
     }
   ],
   "truncated": false

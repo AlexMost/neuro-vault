@@ -224,7 +224,7 @@ To run another model, put `--model` in the server's `args`:
 }
 ```
 
-Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault, or after upgrading — an upgrade from a release with a different default model rebuilds every index once):
+Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault, or after upgrading — an upgrade from a release with a different default model rebuilds every index once; an explicit `threshold` or `expansion_floor` you tuned on the old model, say `0.5`, is on a different scale under `harrier-270m` — its query-to-note similarities sit mostly below about 0.44 on the measured vault — so re-tune or drop it):
 
 ```bash
 neuro-vault-mcp index --vault /absolute/path/to/your/vault --model granite-97m

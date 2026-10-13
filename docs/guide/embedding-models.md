@@ -10,11 +10,11 @@ A model is chosen by a **profile key**. The set is closed — three keys — bec
 
 | Key | For | Hugging Face repo | Dims | Pooling | Download | Cold index¹ | Peak RAM while indexing¹ | Query latency² |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `harrier-270m` | **default** — balanced quality and cost | `onnx-community/harrier-oss-v1-270m-ONNX` | 640 | last token | ≈ 344 MB | 8.8 min | 1.32 GB | ~54 ms |
+| `harrier-270m` | **default** — balanced quality and cost | `onnx-community/harrier-oss-v1-270m-ONNX` | 640 | last token | ≈ 344 MB | 8.8 min | 1.3–1.6 GB | ~54 ms |
 | `granite-97m` | **lite** — small hosts, fast first index | `onnx-community/granite-embedding-97m-multilingual-r2-ONNX` | 384 | CLS | ≈ 98 MB | 3.5 min | 1.20 GB | ~2 ms |
 | `harrier-0.6b` | **quality** — when retrieval quality matters more than index time | `onnx-community/harrier-oss-v1-0.6b-ONNX` | 1024 | last token | ≈ 706 MB | 35.5 min | 2.40 GB | ~189 ms |
 
-¹ Measured on a copy of the author's private vault (949 notes, 888 with a note vector), Apple M5 (4 performance + 6 efficiency cores), CPU only, int8 weights. The indexing runs overlapped other CPU work, so read the times as upper-side. Cost scales with the number of vectors (one per note plus one per section): extrapolating from a separate benchmark, a vault of about 56,000 vectors takes roughly 24 minutes with `granite-97m` and 55–100 minutes with `harrier-270m`.
+¹ Measured on a copy of the author's private vault (949 notes, 888 with a note vector), Apple M5 (4 performance + 6 efficiency cores), CPU only, int8 weights. The indexing runs overlapped other CPU work, so read the times as upper-side. The default's memory is a range because two separate cold indexes of this vault peaked at 1.32 GB (the per-profile run) and 1.58 GB (the acceptance run). Cost scales with the number of vectors (one per note plus one per section): extrapolating from a separate benchmark, a vault of about 56,000 vectors takes roughly 24 minutes with `granite-97m` and 55–100 minutes with `harrier-270m`.
 
 ² Median, single query, CPU. Taken from the [bake-off report](../research/2026-10-embedding-model-bakeoff.md), not from the measurement run behind the other columns.
 
@@ -85,6 +85,7 @@ Two practical rules:
 
 - **Keep the server and `index` on the same `--model`.** If they differ, each rebuilds the other's corpus every time it runs.
 - **Upgrading from a release with a different default model rebuilds every vault once**, for the same reason. Run `neuro-vault-mcp index --vault <path>` after upgrading if you would rather pay that cost ahead of time.
+- **Re-tune or drop an explicit `threshold` or `expansion_floor` when you switch models.** A value tuned on the old model (say `0.5`) is on a different scale under another one: on the measured vault, `harrier-270m` query-to-note similarities sit mostly below about 0.44 (95th percentile 0.440), so a `threshold` of 0.5 would cut nearly everything. Omit the parameter to get the active model's calibrated default.
 
 An unknown key fails at startup with an error that lists the valid keys.
 

@@ -279,7 +279,7 @@ Cold index of a corpus-less clone of the vault copy (same `vault_sha` as the bas
 
 Guards at the chosen values: `deep_filtered_first_relevant` = 0 (target 0), `quick_hit_at_3_drop` = 0 (target ≤ 1). No adjustment was needed.
 
-**English slice below the acceptance bar.** EN MRR is 0.786, against the 0.8 bar, bge's 0.800 and the bake-off's 0.812 for the same model. With n = 4 that is one query: its relevant note ranks 7th here and 4th in the bake-off. A diagnosis ruled out a code cause. Every note in that query's top 10 has a stored vector identical to a fresh single embed (cosine 1.000000), so batching, padding and pooling don't distort it. UA, which exercises the same path, reproduces the bake-off (0.694 vs 0.695). The six notes ranked above it are topically close (similarities 0.416–0.453 against the relevant note's 0.415). So this is a near-tie on one query, not a regression. It is left for the owner to judge at review.
+**English slice below the acceptance bar.** EN MRR is 0.786, against the 0.8 bar, bge's 0.800 and the bake-off's 0.812 for the same model. With n = 4 that is one query: its relevant note ranks 7th here and 4th in the bake-off. A diagnosis ruled out a code cause. Every note in that query's top 10 has a stored vector identical to a fresh single embed (cosine 1.000000), so batching, padding and pooling don't distort it. UA, which exercises the same path, reproduces the bake-off (0.694 vs 0.695). The six notes ranked above it are topically close (similarities 0.416–0.453 against the relevant note's 0.415). So this is a near-tie on one query, not a regression. It is submitted for the owner's ruling at PR review.
 
 ## granite-97m
 

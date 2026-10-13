@@ -135,6 +135,8 @@ Cold-index cost depends on the profile: a larger model embeds fewer vectors per 
 | Cold index | 3.5 min | 8.8 min | 35.5 min |
 | Max RSS while indexing | 1.20 GB | 1.32 GB | 2.40 GB |
 
+The default's 1.32 GB is from this per-profile run; a separate acceptance run of the same vault peaked at 1.58 GB, so expect about 1.3–1.6 GB for `harrier-270m`.
+
 A cold index is minutes for the two smaller profiles and over half an hour for `harrier-0.6b`, so it can never block server startup. After it, only notes that changed are re-embedded. The per-profile retrieval quality that goes with these costs is in [`retrieval-policy.md` § Calibration](./retrieval-policy.md#calibration).
 
 ## Boundaries

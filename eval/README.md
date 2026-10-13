@@ -281,6 +281,12 @@ For each of the six defaults on the selected profile, `pass_rates` records its
 threshold, the population it filters and the share of that population at or
 above the threshold.
 
+`note_all` holds N·(N−1) similarities for N in-scope notes with a vector (787 656
+for the 888-vector vault measured here), and the run keeps them in memory, so
+memory use grows with the square of the vault. JavaScript arrays are capped at
+2^27 elements, so `--stats` fails on vaults above roughly 11 000 note vectors:
+it is a calibration tool for vault-sized samples, not for very large vaults.
+
 ### Guards
 
 Two golden-set checks guard a threshold against costing recall where labels
