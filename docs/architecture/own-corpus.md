@@ -15,7 +15,7 @@ Four pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any i
 | `shard-store.ts` | Reads, writes, lists and deletes shards and the manifest; atomic writes; `.gitignore` upkeep. |
 | `reconcile.ts` | Brings the corpus into agreement with the vault. |
 
-`types.ts` holds the shapes and the constants that fix how text becomes vectors: `MIN_CHARS` (200), `EMBED_CHAR_BUDGET` (1894), `SC_PARITY_STRATEGY` and `EMBED_VERSION`. It holds **no model constants**: which model made the vectors is not the corpus's to know. The embedding provider reports an `EmbeddingIdentity` (`model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens` — see [`embedding-pipeline.md`](./embedding-pipeline.md)), and `identity.ts` derives the corpus identity from it: `corpusIdentityOf` keeps `embed_version`, `model_key`, `model_id`, `dims` and `strategy`, and `formatIdentity` names an identity (`<model_key> (embed_version <n>)`) in rebuild messages.
+`types.ts` holds the shapes and the constants that fix how text becomes vectors: `MIN_CHARS` (200), `EMBED_CHAR_BUDGET` (1894), `SC_PARITY_STRATEGY` and `EMBED_VERSION`. It holds **no model constants**: which model made the vectors is not the corpus's to know. The embedding provider reports an `EmbeddingIdentity` (`model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens` — see [`embedding-pipeline.md`](./embedding-pipeline.md)), and `identity.ts` derives the corpus identity from it: `corpusIdentityOf` projects exactly five fields — `model_key`, `model_id` and `dims` from the provider, plus `embed_version` and `strategy` from this build's corpus constants — and `formatIdentity` names an identity (`<model_key> (embed_version <n>)`) in rebuild messages.
 
 ## Extraction
 
@@ -69,7 +69,7 @@ Some tokenizers declare no real window — `bge-micro-v2` ships `model_max_lengt
 
 ```
 <vault>/.neuro-vault/corpus/
-  manifest.json                # { embed_version, model_key, model_id, dims, strategy, created }  (the provider's identity)
+  manifest.json                # { embed_version, model_key, model_id, dims, strategy, created }  (a five-field projection of the provider's identity)
   notes/<sha256(path)[:32]>.json
 ```
 
@@ -119,7 +119,7 @@ Both embed-text formulas carry path breadcrumbs, so reusing a vector across a re
 
 ### A model change is a rebuild, and never silent
 
-Switching `--model` (or any other field of the identity) makes the stored manifest incompatible, so the whole corpus is discarded and re-embedded — vectors from two models do not share a space. The rebuild is announced where the user will see it. The server logs one line to stderr at startup — `neuro-vault corpus: vault "<name>" was indexed with <stored> (embed_version <n>); active model is <active> (embed_version <m>) — discarding the corpus and re-indexing in the background` — and `index` prints `rebuilding <name>: corpus was indexed with …; active model is …` before its progress. Only an actual discard is reported: a fresh vault with no corpus yet is not a rebuild. Run `index` and the server with the same `--model`, or each will rebuild the other's corpus.
+Switching `--model` changes the manifest's `model_key`, `model_id` and (when the profiles differ) `dims`, and a bump of `embed_version` or `strategy` changes the rest; any difference in those five fields makes the stored manifest incompatible, so the whole corpus is discarded and re-embedded — vectors from two models do not share a space. The other fields the provider reports (`provider`, `revision`, `dtype`, `pooling`, `max_tokens`) are not recorded or compared yet, so a change to only one of them (say a profile moving to a new pinned revision under the same key) does not trigger a rebuild. The rebuild is announced where the user will see it. The server logs one line to stderr at startup — `neuro-vault corpus: vault "<name>" was indexed with <stored> (embed_version <n>); active model is <active> (embed_version <m>) — discarding the corpus and re-indexing in the background` — and `index` prints `rebuilding <name>: corpus was indexed with …; active model is …` before its progress. Only an actual discard is reported: a fresh vault with no corpus yet is not a rebuild. Run `index` and the server with the same `--model`, or each will rebuild the other's corpus.
 
 ## Measured numbers
 

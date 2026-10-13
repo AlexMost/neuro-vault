@@ -75,7 +75,7 @@ The global `--no-semantic` flag outranks this: it turns the semantic module off 
 
 ## Troubleshooting
 
-**Semantic results are missing or thin right after startup** — a vault with no embedding index yet indexes in the background; check `semantic_status` on the `search_notes` response (`state: "indexing"` means it is still building, `indexed`/`total` show progress). Either wait for it to finish, or warm it ahead of time with `neuro-vault-mcp index --vault <path>` (add the same `--model` the server runs with; see [Installation → First-run behavior](./installation.md#first-run-behavior)).
+**Semantic results are missing or thin right after startup** — a vault with no embedding index yet indexes in the background; check `semantic_status` on the `search_notes` response (`state: "indexing"` means it is still building, `indexed`/`total` show progress). Either wait for it to finish, or warm it ahead of time with `neuro-vault-mcp index --vault <path> --model <key>` (the same `--model` the server runs with; omit it for the default; see [Installation → First-run behavior](./installation.md#first-run-behavior)).
 
 **First startup is slow** — the embedding model is downloading (`bge-micro-v2` ≈ 17 MB, `granite-97m` ≈ 98 MB) into `~/.cache/neuro-vault/models` (or `$XDG_CACHE_HOME/neuro-vault/models`). Subsequent starts use the cached model.
 
@@ -88,7 +88,8 @@ The global `--no-semantic` flag outranks this: it turns the semantic module off 
 - In-memory search only — no persistent database; the on-disk corpus under `.neuro-vault/corpus/` is the persistence, reloaded into memory on startup and kept current by the per-vault watcher.
 - stdio transport only — not HTTP or SSE.
 - Local vault path only — no remote vaults.
-- One embedding model per process, chosen with `--model` — every registered vault uses it. Switching models re-indexes each vault. Embedding model loaded at startup; first run can be slow.
+- One embedding model per process, chosen with `--model` — every registered vault uses it. Switching models re-indexes each vault.
+- The embedding model is warmed up in the background after the server connects (skipped when every vault has semantic search disabled), and a failed load is retried on the next query. The first run also downloads it, so it can be slow.
 - All vault operations (`read_notes`, `create_note`, `edit_note`, properties, tags, daily notes) read and write the vault directory directly on disk. No Obsidian installation or running instance is required — the server runs fully headless.
 
 ## Lenient input coercion

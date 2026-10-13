@@ -8,11 +8,11 @@ How the server turns a query string into a vector that can be compared against t
 
 To embed, the service:
 
-1. Loads the profile's tokenizer and model through [`local-model-loader.ts`](../../src/modules/semantic/local-model-loader.ts), which drives `@huggingface/transformers` (pinned to exactly 4.3.1) directly: `AutoTokenizer` and `AutoModel` at the profile's pinned `revision`, `dtype: 'q8'`, CPU. The loader sets a global cache directory — `$XDG_CACHE_HOME/neuro-vault/models` when `XDG_CACHE_HOME` is an absolute path (a relative one is ignored, as the XDG spec requires), else `~/.cache/neuro-vault/models` — and the library's log level to `error`, so nothing the library prints can reach stdout, which the MCP transport owns.
+1. Loads the profile's tokenizer and model through [`local-model-loader.ts`](../../src/modules/semantic/local-model-loader.ts), which drives `@huggingface/transformers` (pinned to exactly 4.3.1) directly: `AutoTokenizer` and `AutoModel` at the profile's pinned `revision`, `dtype: 'q8'`, CPU. The loader sets a global cache directory — `$XDG_CACHE_HOME/neuro-vault/models` when `XDG_CACHE_HOME` is an absolute path (a relative one is ignored, as the XDG spec requires), else `~/.cache/neuro-vault/models` — and the library's log level to `error`, which keeps the library's own logging off stdout, the channel the MCP transport owns.
 2. Encodes the trimmed text **with** special tokens, then cuts the id sequence to `maxTokens`. This is the encoding the transformers.js 2 pipeline the server used before produced, kept on purpose so corpora already built with `bge-micro-v2` stay valid (no `embed_version` bump).
 3. Pools the model's output by the attention mask ([`pooling.ts`](../../src/modules/semantic/pooling.ts)) and normalizes to unit length.
 
-The service also exposes `identity` (provider, `model_key`, repo, revision, `dtype`, `dims`, pooling, `max_tokens`) — what produced these vectors. The corpus records it and compares against it; see [`own-corpus.md`](./own-corpus.md) for what a mismatch does (discard and rebuild).
+The service also exposes `identity` (`provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens`) — what produced these vectors. The corpus records a five-field projection of it (`model_key`, `model_id`, `dims`, plus its own `embed_version` and `strategy`) and compares only those; see [`own-corpus.md`](./own-corpus.md) for what a mismatch does (discard and rebuild). `revision`, `dtype`, `pooling` and `max_tokens` are reported but not yet part of that comparison.
 
 ## Why it exists
 
