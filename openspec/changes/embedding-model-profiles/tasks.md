@@ -66,7 +66,7 @@ Sequential; depends on 4.1.
 - [x] 7.1 Add `harrier-270m` and `harrier-0.6b` to the registry (default unchanged). Registry tests updated.
 - [x] 7.2 `test/integration/profile-tokenizers.test.ts` (skipped unless `NEURO_VAULT_HF_TESTS=1`) and a `profile-tokenizers` CI job caching the model cache dir (design D15): per profile, derived template, padding side, > `max_tokens` input encodes to exactly `max_tokens` ending in the suffix.
 - [x] 7.3 Docs: `embedding-pipeline.md` (tokenisation, pooling, prefixes, batching), `semantic-backend.md` (query waits for one batch), `own-corpus.md` (document-embed port, batching), `docs/guide/configuration.md` (`--model` choices).
-- [ ] 7.4 Verify on the vault copy: gates; `index --model harrier-270m` cold-index wall time batched vs unbatched recorded; bge-micro drift for capped inputs measured (cosine old vs new); PR description states the drift. Open PR 2 (`Refs #98`). **Stop for review.**
+- [x] 7.4 Verify on the vault copy: gates; `index --model harrier-270m` cold-index wall time batched vs unbatched recorded; bge-micro drift for capped inputs measured (cosine old vs new); PR description states the drift. Open PR 2 (`Refs #98`). **Stop for review.**
 
 ---
 
