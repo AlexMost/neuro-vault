@@ -3,13 +3,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CorpusStore } from '../../src/lib/obsidian/corpus/shard-store.js';
-import { TEST_DIMS, TEST_IDENTITY } from '../_identity.js';
+import { TEST_DIMS } from '../_identity.js';
+import { corpusIdentityOf } from '../../src/lib/obsidian/corpus/identity.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
 import { GoldenSetError } from '../../eval/golden.js';
 import { UsageError, parseEvalArgs, runEval } from '../../eval/run.js';
 import { BackendError } from '../../eval/backends.js';
 import {
   DEFAULT_MODEL_KEY,
+  identityOf,
   resolveModelProfile,
 } from '../../src/modules/semantic/model-profiles.js';
 
@@ -58,7 +60,8 @@ describe('parseEvalArgs', () => {
 });
 
 describe('runEval end-to-end (stub embedder)', () => {
-  const BGE = resolveModelProfile('bge-micro-v2');
+  // Named explicitly (not the default) so the fixtures survive a change of default profile.
+  const GRANITE = resolveModelProfile('granite-97m');
   let vaultRoot: string;
   let resultsDir: string;
   afterEach(async () => {
@@ -83,7 +86,7 @@ describe('runEval end-to-end (stub embedder)', () => {
       await writeFile(path.join(vaultRoot, note), text);
     }
     const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
-    await store.ensureManifest(TEST_IDENTITY);
+    await store.ensureManifest(corpusIdentityOf(identityOf(GRANITE)));
     await store.writeShard({
       path: 'Notes/target.md',
       content_hash: 'h1',
@@ -115,7 +118,7 @@ describe('runEval end-to-end (stub embedder)', () => {
   it('runs semantic and writes a correct report', async () => {
     await makeVault(GOLDEN);
     const { report, reportFile } = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: BGE, stats: false },
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     expect(reportFile).toContain('semantic');
@@ -139,7 +142,7 @@ describe('runEval end-to-end (stub embedder)', () => {
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(outside);
     try {
       const { report } = await runEval(
-        { vault: vaultRoot, pipeline: 'semantic', model: BGE, stats: false },
+        { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
         { embed: () => Promise.resolve(unitVec(0)), resultsDir },
       );
       expect(report.code_sha).not.toBeNull();
@@ -153,7 +156,7 @@ describe('runEval end-to-end (stub embedder)', () => {
     await makeVault(`${GOLDEN}- id: q002\n  query: x\n  lang: en\n  relevant: [Gone/nope.md]\n`);
     await expect(
       runEval(
-        { vault: vaultRoot, pipeline: 'semantic', model: BGE, stats: false },
+        { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
         { embed: () => Promise.reject(new Error('embed must not run')), resultsDir },
       ),
     ).rejects.toThrow(GoldenSetError);
@@ -163,7 +166,7 @@ describe('runEval end-to-end (stub embedder)', () => {
   it('fused also completes on the fixture', async () => {
     await makeVault(GOLDEN);
     const { report } = await runEval(
-      { vault: vaultRoot, pipeline: 'fused', model: BGE, stats: false },
+      { vault: vaultRoot, pipeline: 'fused', model: GRANITE, stats: false },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     expect(report.metrics.overall.n).toBe(1);
@@ -171,19 +174,19 @@ describe('runEval end-to-end (stub embedder)', () => {
   });
 
   it('hands the selected profile to the corpus gate before any query is embedded', async () => {
-    await makeVault(GOLDEN); // the fixture corpus is bge-micro-v2's
+    await makeVault(GOLDEN); // the fixture corpus is granite-97m's
     const embed = vi.fn(() => Promise.reject(new Error('embed must not run')));
     const run = runEval(
       {
         vault: vaultRoot,
         pipeline: 'semantic',
-        model: resolveModelProfile('granite-97m'),
+        model: resolveModelProfile('harrier-270m'),
         stats: false,
       },
       { embed, resultsDir },
     );
     await expect(run).rejects.toThrow(BackendError);
-    await expect(run).rejects.toThrow(/granite-97m/);
+    await expect(run).rejects.toThrow(/not harrier-270m/);
     expect(embed).not.toHaveBeenCalled();
   });
 });

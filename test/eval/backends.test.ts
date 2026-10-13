@@ -52,23 +52,47 @@ describe('own backend snapshot', () => {
     const err = await loadSnapshot(vaultRoot, TEST_IDENTITY).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BackendError);
     expect((err as Error).message).toContain('neuro-vault-mcp index');
+    expect((err as Error).message).toContain('--model bge-micro-v2');
   });
 
-  it('fails a corpus indexed with another model, naming both identities', async () => {
-    vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-own-other-'));
-    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
-    await store.ensureManifest({ ...TEST_IDENTITY, model_key: 'granite-97m', model_id: 'other' });
-    await store.writeShard({
-      path: 'Notes/a.md',
-      content_hash: 'h1',
+  it('refuses a corpus built by another profile before listing shards, naming the index command', async () => {
+    vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
+    // A 640-wide shard under a granite manifest: the manifest must be what refuses it.
+    const wide = new CorpusStore(vaultRoot, { dims: 640 });
+    await wide.writeManifest({
+      ...TEST_IDENTITY,
+      model_key: 'granite-97m',
+      dims: 640,
+      created: 'x',
+    });
+    await wide.writeShard({
+      path: 'a.md',
+      content_hash: 'h',
       mtime: 1,
-      size: 10,
+      size: 1,
+      embedding: encodeVector(new Array<number>(640).fill(0.01)),
+      blocks: [],
+    });
+    await expect(
+      loadSnapshot(vaultRoot, { ...TEST_IDENTITY, model_key: 'harrier-270m' }),
+    ).rejects.toThrow(
+      `was indexed with granite-97m (embed_version 1), not harrier-270m (embed_version 1) — rebuild it for this model with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
+    );
+  });
+
+  it('refuses shards whose manifest is missing', async () => {
+    vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
+    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
+    await store.writeShard({
+      path: 'a.md',
+      content_hash: 'h',
+      mtime: 1,
+      size: 1,
       embedding: encodeVector(unitVec(0)),
       blocks: [],
     });
-    const err = await loadSnapshot(vaultRoot, TEST_IDENTITY).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(BackendError);
-    expect((err as Error).message).toContain('was indexed with granite-97m (embed_version 1)');
-    expect((err as Error).message).toContain('neuro-vault-mcp index');
+    await expect(loadSnapshot(vaultRoot, TEST_IDENTITY)).rejects.toThrow(
+      `has no readable manifest — rebuild it with: neuro-vault-mcp index --vault ${vaultRoot} --model bge-micro-v2`,
+    );
   });
 });
