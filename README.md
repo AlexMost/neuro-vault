@@ -246,6 +246,7 @@ User guide lives in [`docs/guide/`](./docs/guide/README.md):
 - [Finding Notes](./docs/guide/finding-notes.md) — `search_notes` (hybrid semantic + lexical), structured queries (`query_notes`), `get_similar_notes`, `find_duplicates`, `get_note_links`
 - [Reading & Modifying](./docs/guide/reading-and-modifying.md) — note CRUD, daily notes, properties, tags, vault snapshot (`get_vault_overview`)
 - [Routing Between Tools](./docs/guide/routing.md)
+- [Embedding Models](./docs/guide/embedding-models.md) — choosing and configuring the embedding model (`--model`), switching cost, per-model thresholds, benchmarks
 - [Configuration](./docs/guide/configuration.md) — CLI args, vault conventions for external agents, troubleshooting, limitations, development
 
 Architecture / internals: [`docs/architecture/`](./docs/architecture/).
