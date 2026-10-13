@@ -91,4 +91,27 @@ describe('poolAndNormalize', () => {
   it('rejects a row with no real tokens', () => {
     expect(() => poolAndNormalize(states(1, 2), [[0, 0]], 'cls')).toThrow(/no real tokens/);
   });
+
+  it('mean ignores left pads on a later row', () => {
+    const vectors = poolAndNormalize(
+      states(2, 3),
+      [
+        [1, 1, 1],
+        [0, 1, 1],
+      ],
+      'mean',
+    );
+    expect(vectors[1]).toEqual(unit([12.5, 1]));
+  });
+
+  it('rejects a zero vector', () => {
+    const zero: ModelOutput = { kind: 'pooled', data: [0, 0], dims: [1, 2] };
+    expect(() => poolAndNormalize(zero, [[1]], 'cls')).toThrow(/zero vector/);
+  });
+
+  it('rejects a mask row whose length disagrees with the sequence', () => {
+    expect(() => poolAndNormalize(states(1, 3), [[1, 1]], 'cls')).toThrow(
+      /2 mask positions for 3 token states/,
+    );
+  });
 });

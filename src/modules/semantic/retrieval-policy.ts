@@ -1,6 +1,6 @@
 import type {
   BlockMatch,
-  EmbeddingProvider,
+  QueryEmbedder,
   NoteResultNode,
   RelatedNote,
   SearchEngine,
@@ -79,7 +79,7 @@ export interface RetrievalInput {
   expansionLimit?: number;
   expansionFloor?: number;
   sources: Map<string, SmartSource>;
-  embeddingProvider: EmbeddingProvider;
+  embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
 }
 
@@ -147,7 +147,7 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   // the only new signal carried out of this step.
   const perQueryOutputs = await Promise.all(
     queries.map(async (query) => {
-      const queryVector = await embeddingProvider.embed(query);
+      const queryVector = await embeddingProvider.embedQuery(query);
       let neighbors = searchEngine.findNeighbors({
         queryVector,
         sources: sources.values(),

@@ -84,7 +84,7 @@ async function rankFused(
     expansionLimit: EVAL_CONFIG.expansion_limit,
     expansionFloor: EVAL_CONFIG.expansion_floor,
     sources,
-    embeddingProvider: { initialize: () => Promise.resolve(), embed },
+    embeddingProvider: { initialize: () => Promise.resolve(), embedQuery: embed },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
   });
   const lexical = await context.lexical.search({

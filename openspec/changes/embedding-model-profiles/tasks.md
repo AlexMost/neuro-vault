@@ -42,31 +42,31 @@ Sequential; each task lands with every call site it breaks (typecheck gate). Dep
 
 Sequential; 4.1 lands with all its call sites.
 
-- [ ] 4.1 New `EmbeddingProvider` (design D4): `identity`, `maxBatchSize`, `initialize`, `embedQuery`, `embedDocuments`. Rename `embed` → `embedQuery` across the retrieval policy, pipeline, tools, eval pipelines and every test helper/fake in the same task. The queue's `asProvider()` maps `embedQuery`; `embedIndex` remains single-text until 6.1. Tests: existing suites green under the rename; queue query lane uses `embedQuery`.
+- [x] 4.1 New `EmbeddingProvider` (design D4): `identity`, `maxBatchSize`, `initialize`, `embedQuery`, `embedDocuments`. Rename `embed` → `embedQuery` across the retrieval policy, pipeline, tools, eval pipelines and every test helper/fake in the same task. The queue's `asProvider()` maps `embedQuery`; `embedIndex` remains single-text until 6.1. Tests: existing suites green under the rename; queue query lane uses `embedQuery`.
 
 ## 5. Template-aware tokenisation
 
 5.1 then 5.2 (one file, `tokenization.ts`; pure, fake inputs only). 5.3 depends on both.
 
-- [ ] 5.1 `deriveTemplate(tokenizer)` → `{ prefix, suffix }` from a sentinel encoded with and without special tokens. Tests: `[2] … [1]` (harrier-270m shape), suffix-only `… [151643]` (harrier-0.6b shape), `[179934] … [179938]` (granite shape), no template; a tokenizer whose output does not contain the raw run throws.
-- [ ] 5.2 `encodeRow({ content, queryPrefix, template, maxTokens, encode })` with the `max_tokens × 32` character work bound applied before tokenising, and `padBatch(rows, padId, side)` → `{ ids, mask }`. Tests: short input unchanged; long input is exactly `maxTokens` and ends with the template suffix (**the EOS regression test** — it fails against "special tokens, then truncate"); the query prefix survives truncation; the work bound cuts a 5 MB string before tokenising; right and left padding; a pad id equal to the suffix id still yields a mask that marks the suffix as real.
-- [ ] 5.3 Switch `EmbeddingService` to template-aware rows: derive the template at load, `embedQuery` (query prefix) / `embedDocuments` (≤ `maxBatchSize`, padded on the tokenizer's side), read token states, or the export's pooled output when it has no token states (loader, 1.4). Tests through the service with a fake loader: batch invariance (same text alone vs batched with longer texts), query prefix only on queries, EOS present for an over-long document under right padding.
+- [x] 5.1 `deriveTemplate(tokenizer)` → `{ prefix, suffix }` from a sentinel encoded with and without special tokens. Tests: `[2] … [1]` (harrier-270m shape), suffix-only `… [151643]` (harrier-0.6b shape), `[179934] … [179938]` (granite shape), no template; a tokenizer whose output does not contain the raw run throws.
+- [x] 5.2 `encodeRow({ content, queryPrefix, template, maxTokens, encode })` with the `max_tokens × 32` character work bound applied before tokenising, and `padBatch(rows, padId, side)` → `{ ids, mask }`. Tests: short input unchanged; long input is exactly `maxTokens` and ends with the template suffix (**the EOS regression test** — it fails against "special tokens, then truncate"); the query prefix survives truncation; the work bound cuts a 5 MB string before tokenising; right and left padding; a pad id equal to the suffix id still yields a mask that marks the suffix as real.
+- [x] 5.3 Switch `EmbeddingService` to template-aware rows: derive the template at load, `embedQuery` (query prefix) / `embedDocuments` (≤ `maxBatchSize`, padded on the tokenizer's side), read token states, or the export's pooled output when it has no token states (loader, 1.4). Tests through the service with a fake loader: batch invariance (same text alone vs batched with longer texts), query prefix only on queries, EOS present for an over-long document under right padding.
 
 ## 6. Batching
 
 Sequential; depends on 4.1.
 
-- [ ] 6.1 Queue `embedDocuments(texts)` (design D6): length-sorted buckets of ≤ `maxBatchSize` with longest ≤ 2× shortest, one index-lane entry per bucket, results in input order; a query submitted mid-run runs after the in-flight bucket and before queued ones; a failed bucket rejects only its call. Tests with a controllable provider.
-- [ ] 6.2 Corpus port `EmbedFn` → `EmbedDocumentsFn`; `embedNote` makes one call per note; wire `asDocumentEmbedFn()` in the server and `index`. Tests: one call per note with note text + blocks in order; a rejected call fails only that note and keeps its old shard.
+- [x] 6.1 Queue `embedDocuments(texts)` (design D6): length-sorted buckets of ≤ `maxBatchSize` with longest ≤ 2× shortest, one index-lane entry per bucket, results in input order; a query submitted mid-run runs after the in-flight bucket and before queued ones; a failed bucket rejects only its call. Tests with a controllable provider.
+- [x] 6.2 Corpus port `EmbedFn` → `EmbedDocumentsFn`; `embedNote` makes one call per note; wire `asDocumentEmbedFn()` in the server and `index`. Tests: one call per note with note text + blocks in order; a rejected call fails only that note and keeps its old shard.
 
 ## 7. Harrier profiles, CI check, docs, delivery (PR 2)
 
 7.1 and 7.2 are parallel-safe; 7.3 after both; 7.4 last.
 
-- [ ] 7.1 Add `harrier-270m` and `harrier-0.6b` to the registry (default unchanged). Registry tests updated.
-- [ ] 7.2 `test/integration/profile-tokenizers.test.ts` (skipped unless `NEURO_VAULT_HF_TESTS=1`) and a `profile-tokenizers` CI job caching the model cache dir (design D15): per profile, derived template, padding side, > `max_tokens` input encodes to exactly `max_tokens` ending in the suffix.
-- [ ] 7.3 Docs: `embedding-pipeline.md` (tokenisation, pooling, prefixes, batching), `semantic-backend.md` (query waits for one batch), `own-corpus.md` (document-embed port, batching), `docs/guide/configuration.md` (`--model` choices).
-- [ ] 7.4 Verify on the vault copy: gates; `index --model harrier-270m` cold-index wall time batched vs unbatched recorded; bge-micro drift for capped inputs measured (cosine old vs new); PR description states the drift. Open PR 2 (`Refs #98`). **Stop for review.**
+- [x] 7.1 Add `harrier-270m` and `harrier-0.6b` to the registry (default unchanged). Registry tests updated.
+- [x] 7.2 `test/integration/profile-tokenizers.test.ts` (skipped unless `NEURO_VAULT_HF_TESTS=1`) and a `profile-tokenizers` CI job caching the model cache dir (design D15): per profile, derived template, padding side, > `max_tokens` input encodes to exactly `max_tokens` ending in the suffix.
+- [x] 7.3 Docs: `embedding-pipeline.md` (tokenisation, pooling, prefixes, batching), `semantic-backend.md` (query waits for one batch), `own-corpus.md` (document-embed port, batching), `docs/guide/configuration.md` (`--model` choices).
+- [x] 7.4 Verify on the vault copy: gates; `index --model harrier-270m` cold-index wall time batched vs unbatched recorded; bge-micro drift for capped inputs measured (cosine old vs new); PR description states the drift. Open PR 2 (`Refs #98`). **Stop for review.**
 
 ---
 

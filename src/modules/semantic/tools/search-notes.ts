@@ -18,7 +18,7 @@ import {
 } from '../tool-helpers.js';
 import type {
   BlockMatch,
-  EmbeddingProvider,
+  QueryEmbedder,
   NoteFilter,
   SearchChannelMode,
   SearchEffort,
@@ -133,7 +133,7 @@ function toStatusField(status: BackendStatus | undefined): SemanticStatusField {
 
 export interface SearchNotesDeps {
   registry: IVaultRegistry;
-  embeddingProvider: EmbeddingProvider;
+  embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
   modelKey: string;
   /** Defaults to console.error — diagnostics must never touch stdout (the MCP transport). */

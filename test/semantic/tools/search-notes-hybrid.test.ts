@@ -331,7 +331,7 @@ describe('search_notes input axes (SDK gate)', () => {
   async function makeTool() {
     const { deps, cleanup } = await makeSearchDeps({
       sources: new Map(),
-      embeddingProvider: { initialize: vi.fn(), embed: vi.fn().mockResolvedValue([1, 0]) },
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
       searchEngine: makeMockEngine(),
       modelKey: 'k',
     });
@@ -488,7 +488,9 @@ describe('query_stats', () => {
       { 'пошук note.md': 'зміст нотатки' },
       { sources, engine },
     );
-    deps.embeddingProvider.embed = vi.fn(async (q: string) => (q === 'пошук' ? [1, 0] : [0, 1]));
+    deps.embeddingProvider.embedQuery = vi.fn(async (q: string) =>
+      q === 'пошук' ? [1, 0] : [0, 1],
+    );
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
       const out = await callTool<SearchNotesOutput>(reg, { query: ['пошук', 'Мобі'] });
@@ -516,7 +518,9 @@ describe('query_stats', () => {
       findDuplicates: vi.fn().mockReturnValue([]),
     };
     const { deps, cleanup } = await makeLexicalVault({ [notePath]: '' }, { sources, engine });
-    deps.embeddingProvider.embed = vi.fn(async (q: string) => (q === 'vector' ? [1, 0] : [0, 1]));
+    deps.embeddingProvider.embedQuery = vi.fn(async (q: string) =>
+      q === 'vector' ? [1, 0] : [0, 1],
+    );
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
       const out = await callTool<SearchNotesOutput>(reg, {
@@ -590,7 +594,7 @@ describe('query_stats', () => {
       { [noteA]: '', [noteB]: '' },
       { sources, engine },
     );
-    deps.embeddingProvider.embed = vi.fn(async (q: string) => (q === 'q1' ? [1, 0] : [0, 1]));
+    deps.embeddingProvider.embedQuery = vi.fn(async (q: string) => (q === 'q1' ? [1, 0] : [0, 1]));
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
       const out = await callTool<SearchNotesOutput>(reg, {
@@ -734,7 +738,7 @@ describe('query_stats', () => {
       findDuplicates: vi.fn().mockReturnValue([]),
     };
     const { deps, cleanup } = await makeLexicalVault({ 'note.md': 'зміст' }, { sources, engine });
-    deps.embeddingProvider.embed = vi.fn(async () => [1, 0]);
+    deps.embeddingProvider.embedQuery = vi.fn(async () => [1, 0]);
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
       const out = await callTool<SearchNotesOutput>(reg, { query: ['щось'] });

@@ -50,6 +50,9 @@ export function poolAndNormalize(
   const seq = output.dims[1] ?? 0;
   const hidden = output.dims[2] ?? 0;
   return mask.map((rowMask, b) => {
+    if (rowMask.length !== seq) {
+      throw new Error(`input ${b} has ${rowMask.length} mask positions for ${seq} token states`);
+    }
     const real: number[] = [];
     rowMask.forEach((m, j) => {
       if (m === 1) real.push(j);

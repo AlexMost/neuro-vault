@@ -60,7 +60,7 @@ function makeDeps(overrides: Partial<RetrievalPipelineDeps> = {}): RetrievalPipe
     filterExisting: (paths) => Promise.resolve(new Set(paths)),
     embeddingProvider: {
       initialize: () => Promise.resolve(),
-      embed: () => Promise.resolve(QUERY_VECTOR),
+      embedQuery: () => Promise.resolve(QUERY_VECTOR),
     },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     ...overrides,

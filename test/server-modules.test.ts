@@ -91,7 +91,7 @@ async function startWithBackendStatus(
     },
     {
       semantic: {
-        embeddingServiceFactory: () => ({ initialize, embed: vi.fn() }),
+        embeddingServiceFactory: () => ({ initialize, embedQuery: vi.fn() }),
       },
       vaultEntryDeps: {
         semanticBackendFactory: () => ({
@@ -149,7 +149,7 @@ async function startForShutdown(opts: {
     },
     {
       semantic: {
-        embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
+        embeddingServiceFactory: () => ({ initialize: vi.fn(), embedQuery: vi.fn() }),
       },
       serverFactory: () => server as never,
       transportFactory: () => transport as never,
@@ -192,7 +192,7 @@ async function startOverPipedStdin(opts: {
     },
     {
       semantic: {
-        embeddingServiceFactory: () => ({ initialize: vi.fn(), embed: vi.fn() }),
+        embeddingServiceFactory: () => ({ initialize: vi.fn(), embedQuery: vi.fn() }),
       },
       serverFactory: (instructions: string) => {
         const mcp = new McpServer({ name: 'test', version: '0.0.0' }, { instructions });
@@ -537,7 +537,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         semantic: {
           embeddingServiceFactory: () => ({
             initialize: vi.fn().mockResolvedValue(undefined),
-            embed: vi.fn(),
+            embedQuery: vi.fn(),
           }),
         },
         serverFactory: (_instructions: string) => server,

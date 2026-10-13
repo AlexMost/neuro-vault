@@ -26,7 +26,10 @@ import { makeTestRegistry } from './_helpers.js';
 function builtTool() {
   return buildSearchNotesTool({
     registry: makeTestRegistry([]),
-    embeddingProvider: { initialize: () => Promise.resolve(), embed: () => Promise.resolve([1]) },
+    embeddingProvider: {
+      initialize: () => Promise.resolve(),
+      embedQuery: () => Promise.resolve([1]),
+    },
     searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     modelKey: 'k',
   });

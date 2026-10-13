@@ -6,11 +6,18 @@
 | ---------------- | -------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--vault`        | yes      | —          | Absolute path to an Obsidian vault directory. Repeat the flag to register additional vaults. The MCP-side alias is always the directory basename; there is no override. |
 | `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip)                                                                                                                 |
-| `--model`        | no       | `bge-micro-v2` | Embedding model profile, one per process: `bge-micro-v2` (≈ 17 MB) or `granite-97m` (lite, multilingual, ≈ 98 MB). Applies to `index` too — use the same value for both, or the server rebuilds the corpus `index` built. The default similarity thresholds are tuned for `bge-micro-v2` — see the note below. |
+| `--model`        | no       | `bge-micro-v2` | Embedding model profile, one per process: `bge-micro-v2` (current default, English-centred, ≈ 17 MB), `granite-97m` (lite, multilingual, ≈ 98 MB), `harrier-270m` (multilingual, ≈ 344 MB) or `harrier-0.6b` (highest quality, ≈ 706 MB, ~4× slower to index than `harrier-270m`). Applies to `index` too — use the same value for both, or the server rebuilds the corpus `index` built. The default similarity thresholds are tuned for `bge-micro-v2` — see the note below. |
 | `--help`         | no       | —          | Show help                                                                                                                                                               |
 | `--version`      | no       | —          | Print the installed version and exit                                                                                                                                    |
 
-**Similarity thresholds are tuned for `bge-micro-v2`.** The built-in defaults — `search_notes` (`threshold` and its fallback retry, `expansion_floor`), `get_similar_notes` (`threshold`) and `find_duplicates` (`threshold`) — are calibrated to `bge-micro-v2`'s cosine-score scale. `granite-97m` scores sit on a different (higher) scale, so under it the defaults filter differently; if results look too loose or too tight, pass an explicit `threshold` (and `expansion_floor` for `search_notes`). A later release recalibrates the defaults per profile.
+The `--model` profiles:
+
+- `bge-micro-v2` — the current default; small and fast, English-centred.
+- `granite-97m` — lite multilingual, ≈ 98 MB.
+- `harrier-270m` — multilingual, ≈ 344 MB.
+- `harrier-0.6b` — highest quality, ≈ 706 MB, ~4× slower to index than `harrier-270m`.
+
+**Similarity thresholds are tuned for `bge-micro-v2`.** The built-in defaults — `search_notes` (`threshold` and its fallback retry, `expansion_floor`), `get_similar_notes` (`threshold`) and `find_duplicates` (`threshold`) — are calibrated to `bge-micro-v2`'s cosine-score scale. The other profiles score on different scales (`granite-97m` higher), so under them the defaults filter differently; if results look too loose or too tight, pass an explicit `threshold` (and `expansion_floor` for `search_notes`). A later release recalibrates the defaults per profile.
 
 The vault's directory basename is the MCP-side alias used by the `vault` parameter on multi-vault tool calls. If a tool call fails with `VAULT_NOT_FOUND`, the `vault` value passed does not match any registered `--vault name:path` alias — check the flags the server was started with.
 
@@ -79,7 +86,7 @@ The global `--no-semantic` flag outranks this: it turns the semantic module off 
 
 **Semantic results are missing or thin right after startup** — a vault with no embedding index yet indexes in the background; check `semantic_status` on the `search_notes` response (`state: "indexing"` means it is still building, `indexed`/`total` show progress). Either wait for it to finish, or warm it ahead of time with `neuro-vault-mcp index --vault <path> --model <key>` (the same `--model` the server runs with; omit it for the default; see [Installation → First-run behavior](./installation.md#first-run-behavior)).
 
-**First startup is slow** — the embedding model is downloading (`bge-micro-v2` ≈ 17 MB, `granite-97m` ≈ 98 MB) into `~/.cache/neuro-vault/models` (or `$XDG_CACHE_HOME/neuro-vault/models`). Subsequent starts use the cached model.
+**First startup is slow** — the embedding model is downloading (`bge-micro-v2` ≈ 17 MB, `granite-97m` ≈ 98 MB, `harrier-270m` ≈ 344 MB, `harrier-0.6b` ≈ 706 MB) into `~/.cache/neuro-vault/models` (or `$XDG_CACHE_HOME/neuro-vault/models`). Subsequent starts use the cached model.
 
 **The server log says it is discarding the corpus and re-indexing** — the vault's corpus was built with a different embedding model (or an older extraction version) than the one now active, so it is rebuilt from scratch in the background; `search_notes` answers from its lexical leg meanwhile. It usually means the server and `neuro-vault-mcp index` were given different `--model` values — use the same one for both.
 

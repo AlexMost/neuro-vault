@@ -19,13 +19,9 @@ export interface ModelProfile {
   readonly dtype: 'q8';
   readonly dims: number;
   readonly pooling: Pooling;
-  /**
-   * Prepended to every query by the provider; callers never add it. Not
-   * applied until `embedQuery` lands (design D4) — EmbeddingService refuses a
-   * non-empty one until then.
-   */
+  /** Prepended to every query by the provider; callers never add it. */
   readonly queryPrefix: string;
-  /** Prepended to every document by the provider. Same staging as `queryPrefix`. */
+  /** Prepended to every document by the provider. */
   readonly documentPrefix: string;
   /** Input window in tokens of this profile's tokenizer, special tokens included. */
   readonly maxTokens: number;
@@ -58,9 +54,39 @@ const GRANITE_97M: ModelProfile = {
   maxTokens: 512,
 };
 
+/** harrier's retrieval instruction (model card); documents take no prompt. */
+const HARRIER_QUERY_PREFIX =
+  'Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: ';
+
+const HARRIER_270M: ModelProfile = {
+  key: 'harrier-270m',
+  repo: 'onnx-community/harrier-oss-v1-270m-ONNX',
+  revision: 'd59c919d0159aea2c19ed7d04288fcdd048d0f9c',
+  dtype: 'q8',
+  dims: 640,
+  pooling: 'last_token',
+  queryPrefix: HARRIER_QUERY_PREFIX,
+  documentPrefix: '',
+  maxTokens: 512,
+};
+
+const HARRIER_0_6B: ModelProfile = {
+  key: 'harrier-0.6b',
+  repo: 'onnx-community/harrier-oss-v1-0.6b-ONNX',
+  revision: 'e4daffa011e666dcd2ff2a3c6c05084090ac314d',
+  dtype: 'q8',
+  dims: 1024,
+  pooling: 'last_token',
+  queryPrefix: HARRIER_QUERY_PREFIX,
+  documentPrefix: '',
+  maxTokens: 512,
+};
+
 export const MODEL_PROFILES: Readonly<Record<string, ModelProfile>> = Object.freeze({
   [BGE_MICRO_V2.key]: BGE_MICRO_V2,
   [GRANITE_97M.key]: GRANITE_97M,
+  [HARRIER_270M.key]: HARRIER_270M,
+  [HARRIER_0_6B.key]: HARRIER_0_6B,
 });
 
 export const DEFAULT_MODEL_KEY = BGE_MICRO_V2.key;

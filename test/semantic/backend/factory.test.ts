@@ -8,7 +8,9 @@ import type { CorpusBackend } from '../../../src/modules/semantic/backend/corpus
 import { createOwnCorpusBackendFactory } from '../../../src/modules/semantic/backend/index.js';
 import { TEST_IDENTITY } from '../../_identity.js';
 
-const embedder = { asIndexEmbedFn: () => async () => [1] } as never;
+const embedder = {
+  asDocumentEmbedFn: () => async (ts: string[]) => ts.map(() => [1]),
+} as never;
 const reader = { scan: async () => [] } as never;
 const scope = { ignorePatterns: [], isExcluded: () => false };
 

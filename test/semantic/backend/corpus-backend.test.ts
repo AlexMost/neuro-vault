@@ -13,7 +13,7 @@ import {
   type ReconcileSummary,
 } from '../../../src/lib/obsidian/corpus/reconcile.js';
 import { loadCorpusSnapshot } from '../../../src/lib/obsidian/corpus/snapshot.js';
-import type { EmbedFn } from '../../../src/lib/obsidian/corpus/types.js';
+import type { EmbedDocumentsFn } from '../../../src/lib/obsidian/corpus/types.js';
 import { TEST_DIMS, TEST_IDENTITY } from '../../_identity.js';
 
 const EMPTY: CorpusSnapshot = { sources: new Map(), basenameIndex: buildBasenameIndex([]) };
@@ -383,7 +383,7 @@ describe('createCorpusBackend', () => {
 });
 
 /**
- * `reconcileCorpus` is deliberately per-note tolerant: a rejected `embed` is
+ * `reconcileCorpus` is deliberately per-note tolerant: a rejected `embedDocuments` is
  * counted in `summary.failed`, warned about, and the pass returns normally.
  * "The pass did not throw" is therefore not the same as "the index is good",
  * so these tests drive the real reconcile against a real store and the real
@@ -397,7 +397,7 @@ describe('createCorpusBackend over a real reconcile', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-'));
     const store = new CorpusStore(root, { dims: TEST_DIMS });
     // Swapped per pass, so a vault that recovers can be exercised too.
-    let embed: EmbedFn = () => {
+    let embed: EmbedDocumentsFn = () => {
       throw new Error('ONNX model failed to load');
     };
     // Two separate mocks on purpose: reconcile's per-note warnings would
@@ -418,7 +418,7 @@ describe('createCorpusBackend over a real reconcile', () => {
             scan: async () => Object.keys(files).sort(),
             stat: async (p) => ({ mtime: 1, size: files[p].length }),
             readNote: async (p) => ({ content: files[p], mtime: 1, size: files[p].length }),
-            embed: (text) => embed(text),
+            embedDocuments: (texts) => embed(texts),
             identity: TEST_IDENTITY,
             store,
             warn: reconcileWarn,
@@ -432,7 +432,7 @@ describe('createCorpusBackend over a real reconcile', () => {
       backendWarn,
       reconcileWarn,
       repairEmbed: () => {
-        embed = async () => new Array<number>(TEST_DIMS).fill(0.1);
+        embed = async (texts) => texts.map(() => new Array<number>(TEST_DIMS).fill(0.1));
       },
       cleanup: () => rm(root, { recursive: true, force: true }),
     };
@@ -462,8 +462,8 @@ describe('createCorpusBackend over a real reconcile', () => {
 
   it('stays unavailable when the only note that indexed is below the size gate', async () => {
     // `stub.md` is under MIN_CHARS: `buildEmbedInputs` gives it no note vector
-    // and no qualifying block, so `embedNote` calls `embed` zero times, writes
-    // a shard with `embedding: null`, and still counts as `embedded` — while
+    // and no qualifying block, so `embedNote` calls `embedDocuments` zero times,
+    // writes a shard with `embedding: null`, and still counts as `embedded` — while
     // contributing no source to the decoded snapshot. A guard that required
     // `embedded === 0` would stay silent on this routine vault shape.
     const { backend, cleanup } = await coldVault({
@@ -542,7 +542,8 @@ describe('createCorpusBackend over a real reconcile', () => {
                 if (p === 'bad.md') throw new Error('EACCES');
                 return { content: files[p], mtime: 1, size: files[p].length };
               },
-              embed: async () => new Array<number>(TEST_DIMS).fill(0.1),
+              embedDocuments: async (texts: string[]) =>
+                texts.map(() => new Array<number>(TEST_DIMS).fill(0.1)),
               identity: TEST_IDENTITY,
               store,
               warn: vi.fn(),

@@ -20,6 +20,7 @@ function fakeModel(encodeImpl?: (text: string) => number[]) {
   });
   const model: LocalModel = {
     tokenizer: { encode },
+    template: { prefix: [101], suffix: [102] },
     run: async (ids, mask) => {
       runs.push({ ids, mask });
       const data: number[] = [];
@@ -47,46 +48,49 @@ describe('EmbeddingService', () => {
     expect(service.identity).toEqual(identityOf(granite));
   });
 
-  it('refuses a profile with a prefix it cannot apply yet', () => {
-    expect(() => new EmbeddingService({ profile: { ...bge, queryPrefix: 'query: ' } })).toThrow(
-      'model "bge-micro-v2": query/document prefixes are not supported yet',
-    );
+  it('constructs for a profile with a query prefix and reports its identity', () => {
+    const harrier = resolveModelProfile('harrier-270m');
+    const service = new EmbeddingService({
+      profile: harrier,
+      loader: vi.fn(async () => fakeModel().model),
+    });
+    expect(service.identity).toEqual(identityOf(harrier));
   });
 
   it('loads the model once, shared by concurrent embeds', async () => {
     const { service, loader } = serviceFor(granite, fakeModel().model);
-    await Promise.all([service.embed('a'), service.embed('b'), service.initialize()]);
+    await Promise.all([service.embedQuery('a'), service.embedQuery('b'), service.initialize()]);
     expect(loader).toHaveBeenCalledTimes(1);
     expect(loader).toHaveBeenCalledWith(granite);
   });
 
   it('rejects blank text before loading the model', async () => {
     const { service, loader } = serviceFor(granite, fakeModel().model);
-    await expect(service.embed('   ')).rejects.toThrow(/blank/i);
+    await expect(service.embedQuery('   ')).rejects.toThrow(/blank/i);
     expect(loader).not.toHaveBeenCalled();
   });
 
   it('pools the first token for a CLS profile', async () => {
     const { service } = serviceFor(granite, fakeModel().model);
-    expect(await service.embed('ab')).toEqual(unit([101, 1]));
+    expect(await service.embedQuery('ab')).toEqual(unit([101, 1]));
   });
 
   it('pools the mean for a mean profile', async () => {
     const { service } = serviceFor(bge, fakeModel(() => [3]).model);
-    expect(await service.embed('x')).toEqual(unit([(101 + 3 + 102) / 3, 1]));
+    expect(await service.embedQuery('x')).toEqual(unit([(101 + 3 + 102) / 3, 1]));
   });
 
   it('cuts an over-long input to the profile window and still returns a vector', async () => {
     const { model, runs } = fakeModel(() => Array.from({ length: 600 }, (_, i) => i + 1000));
     const { service } = serviceFor(bge, model);
-    const vector = await service.embed('long');
+    const vector = await service.embedQuery('long');
     const ids = runs[0].ids[0];
     expect(ids).toHaveLength(bge.maxTokens);
-    // v2 semantics: encode with special tokens, then slice. The leading [101]
-    // stays, and the trailing [102] is dropped rather than re-attached — body
-    // ids 1000.. fill the remaining 511 slots, so the last kept id is 1510.
+    // The template is re-attached after the cut: 510 body ids (1000…1509)
+    // sit between the leading [101] and the trailing [102].
     expect(ids[0]).toBe(101);
-    expect(ids[ids.length - 1]).toBe(1510);
+    expect(ids.at(-1)).toBe(102);
+    expect(ids.at(-2)).toBe(1509);
     expect(runs[0].mask[0]).toHaveLength(bge.maxTokens);
     expect(runs[0].mask[0].every((m) => m === 1)).toBe(true);
     expect(vector).toHaveLength(2);
@@ -96,8 +100,140 @@ describe('EmbeddingService', () => {
     const { model } = fakeModel();
     const loader = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(model);
     const service = new EmbeddingService({ profile: granite, loader });
-    await expect(service.embed('a')).rejects.toThrow('offline');
-    await expect(service.embed('a')).resolves.toHaveLength(2);
+    await expect(service.embedQuery('a')).rejects.toThrow('offline');
+    await expect(service.embedQuery('a')).resolves.toHaveLength(2);
     expect(loader).toHaveBeenCalledTimes(2);
+  });
+
+  it('splits query and document embedding, with at most maxBatchSize documents per call', async () => {
+    const { service } = serviceFor(granite, fakeModel().model);
+    expect(service.maxBatchSize).toBe(8);
+    expect(await service.embedQuery('ab')).toEqual(unit([101, 1]));
+    expect(await service.embedDocuments(['ab', 'cd'])).toHaveLength(2);
+    await expect(service.embedDocuments(Array.from({ length: 9 }, () => 'x'))).rejects.toThrow(
+      'embedDocuments takes at most 8 texts, got 9',
+    );
+  });
+});
+
+const lastTokenProfile: ModelProfile = {
+  key: 'test-last-token',
+  repo: 'test/repo',
+  revision: '0'.repeat(40),
+  dtype: 'q8',
+  dims: 2,
+  pooling: 'last_token',
+  queryPrefix: 'Q: ',
+  documentPrefix: '',
+  maxTokens: 8,
+};
+
+/** bos=2 / eos=1 tokenizer padding with 0 on `side`; token state at each position is [id, 1]. */
+function templatedModel(side: 'left' | 'right' = 'right') {
+  const runs: Array<{ ids: number[][]; mask: number[][] }> = [];
+  const encode = vi.fn((text: string, { add_special_tokens }: { add_special_tokens: boolean }) => {
+    const raw = Array.from(text, (c) => c.charCodeAt(0));
+    return add_special_tokens ? [2, ...raw, 1] : raw;
+  });
+  const model: LocalModel = {
+    tokenizer: { encode, padding_side: side, pad_token_id: 0 },
+    template: { prefix: [2], suffix: [1] },
+    run: async (ids, mask) => {
+      runs.push({ ids, mask });
+      const data: number[] = [];
+      for (const row of ids) for (const id of row) data.push(id, 1);
+      return { kind: 'token_states', data, dims: [ids.length, ids[0].length, 2] };
+    },
+  };
+  return { model, runs, encode };
+}
+
+/**
+ * Like harrier's ONNX export: a right-padding tokenizer and an in-graph pooled
+ * output that reads position `sum(mask) − 1` — correct only under right
+ * padding (spike 1.1). The pooled vector is [id at that position, 1].
+ */
+function rightOnlyPooledModel(): LocalModel {
+  const { model } = templatedModel('right');
+  return {
+    ...model,
+    run: async (ids, mask) => {
+      const data: number[] = [];
+      ids.forEach((row, b) => {
+        const position = mask[b].reduce((sum, m) => sum + m, 0) - 1;
+        data.push(row[position], 1);
+      });
+      return { kind: 'pooled', data, dims: [ids.length, 2] };
+    },
+  };
+}
+
+describe('EmbeddingService — template-aware batches', () => {
+  it('keeps the end-of-sequence token of an over-long document', async () => {
+    const { model, runs } = templatedModel();
+    const service = new EmbeddingService({ profile: lastTokenProfile, loader: async () => model });
+    const [vector] = await service.embedDocuments(['abcdefghijklmnop']);
+    expect(runs[0].ids[0]).toEqual([2, 97, 98, 99, 100, 101, 102, 1]);
+    expect(vector).toEqual(unit([1, 1]));
+  });
+
+  it('gives a text the same vector alone and in a batch with longer texts', async () => {
+    const { model } = templatedModel('right');
+    const service = new EmbeddingService({ profile: lastTokenProfile, loader: async () => model });
+    const [alone] = await service.embedDocuments(['ab']);
+    const [batched] = await service.embedDocuments(['ab', 'abcdef']);
+    expect(batched).toEqual(alone);
+  });
+
+  it('pads on the side the tokenizer declares', async () => {
+    const { model, runs } = templatedModel('left');
+    const service = new EmbeddingService({ profile: lastTokenProfile, loader: async () => model });
+    await service.embedDocuments(['ab', 'abcd']);
+    expect(runs[0].ids[0]).toEqual([0, 0, 2, 97, 98, 1]);
+  });
+
+  it('pads on the right when the tokenizer declares right', async () => {
+    const { model, runs } = templatedModel('right');
+    const service = new EmbeddingService({ profile: lastTokenProfile, loader: async () => model });
+    await service.embedDocuments(['ab', 'abcd']);
+    expect(runs[0].ids[0]).toEqual([2, 97, 98, 1, 0, 0]);
+    expect(runs[0].mask[0]).toEqual([1, 1, 1, 1, 0, 0]);
+  });
+
+  it('gives a pooled-export text the same vector alone and in a batch', async () => {
+    // An in-graph last-token pool that assumes right padding reads a pad
+    // under left padding: this pins the side harrier's exports depend on.
+    const service = new EmbeddingService({
+      profile: lastTokenProfile,
+      loader: async () => rightOnlyPooledModel(),
+    });
+    const [alone] = await service.embedDocuments(['ab']);
+    const [batched] = await service.embedDocuments(['ab', 'abcdef']);
+    expect(alone).toEqual(unit([1, 1]));
+    expect(batched).toEqual(alone);
+  });
+
+  it('applies the query prefix to queries only', async () => {
+    const { model, encode } = templatedModel();
+    const service = new EmbeddingService({ profile: lastTokenProfile, loader: async () => model });
+    await service.embedQuery('x');
+    await service.embedDocuments(['x']);
+    const raw = encode.mock.calls.filter(([, o]) => !o.add_special_tokens).map(([t]) => t);
+    expect(raw).toContain('Q: x');
+    expect(raw).toContain('x');
+  });
+
+  it('rejects a blank document, naming its index, before loading', async () => {
+    const loader = vi.fn(async () => templatedModel().model);
+    const service = new EmbeddingService({ profile: lastTokenProfile, loader });
+    await expect(service.embedDocuments(['ok', '   '])).rejects.toThrow('document 1 is blank');
+    expect(loader).not.toHaveBeenCalled();
+  });
+
+  it('returns no vectors for no documents without loading', async () => {
+    const loader = vi.fn(async () => templatedModel().model);
+    const service = new EmbeddingService({ profile: lastTokenProfile, loader });
+    expect(await service.embedDocuments([])).toEqual([]);
+    expect(loader).not.toHaveBeenCalled();
   });
 });

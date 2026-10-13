@@ -76,7 +76,7 @@ export function createOwnCorpusBackendFactory(
   return ({ vaultRoot, vaultName, reader, scope, enabled }): SemanticBackend => {
     const store = new CorpusStore(vaultRoot, { warn, dims: deps.identity.dims });
     const fsDeps = buildReconcileFsDeps({ vaultRoot, reader });
-    const embed = deps.embedder.asIndexEmbedFn();
+    const embedDocuments = deps.embedder.asDocumentEmbedFn();
 
     const backend = createBackend({
       vaultRoot,
@@ -90,7 +90,7 @@ export function createOwnCorpusBackendFactory(
           isExcluded: (relPath) => scope.isExcluded(relPath),
         }),
       reconcile: (opts) =>
-        reconcileCorpus({ ...fsDeps, embed, store, warn, identity: deps.identity }, opts),
+        reconcileCorpus({ ...fsDeps, embedDocuments, store, warn, identity: deps.identity }, opts),
       warn,
     });
 

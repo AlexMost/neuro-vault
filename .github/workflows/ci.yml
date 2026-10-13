@@ -54,3 +54,25 @@ jobs:
       - name: Validate pushed commit messages
         if: github.event_name == 'push'
         run: npx commitlint --from "${{ github.event.before }}" --to "${{ github.sha }}" --verbose
+
+  profile-tokenizers:
+    name: Profile tokenizers (pinned revisions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEURO_VAULT_HF_TESTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/neuro-vault/models
+          key: profile-tokenizers-${{ hashFiles('src/modules/semantic/model-profiles.ts') }}
+      - name: Verify each profile's tokenizer
+        run: npx vitest run test/integration/profile-tokenizers.test.ts

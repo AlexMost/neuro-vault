@@ -2,6 +2,7 @@ import type { ModelProfile } from './modules/semantic/model-profiles.js';
 
 export type {
   EmbeddingProvider,
+  QueryEmbedder,
   SearchEngine,
   SearchMode,
   SearchNotesInput,

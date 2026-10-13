@@ -3,7 +3,7 @@ import { EFFORT_PROFILES, LEXICAL_PER_NOTE_CAP } from './effort-profiles.js';
 import { flattenExpansion, fuseRanks, type ExpansionCandidate } from './rank-fusion.js';
 import { executeRetrieval } from './retrieval-policy.js';
 import type {
-  EmbeddingProvider,
+  QueryEmbedder,
   NoteResultNode,
   SearchEffort,
   SearchEngine,
@@ -21,7 +21,7 @@ export interface RetrievalPipelineDeps {
   lexical: Pick<LexicalIndex, 'search'>;
   getBacklinkCount: (path: string) => number;
   filterExisting: (paths: string[]) => Promise<Set<string>>;
-  embeddingProvider: EmbeddingProvider;
+  embeddingProvider: QueryEmbedder;
   searchEngine: SearchEngine;
 }
 
