@@ -103,6 +103,7 @@ Sequential after 8.1 (EVAL_CONFIG reads the profile's floor). 9.5 is parallel-sa
 
 Sequential.
 
+- [ ] 11.0 Unranked calibration populations (design D11): `--stats` adds query↔every note, seed↔every note and note↔every note; each default's pass rate is measured on its unranked population; `--baseline` refuses a report measured on another population. Re-capture the bge-micro baseline on them **before 11.3**, while bge is in the registry; if any bge default still passes 1.0, stop for the owner. Tests: populations, population mapping, refusal.
 - [ ] 11.1 Manifest v2 (design D8): `CorpusManifest` gains `provider`, `revision`, `dtype`, `pooling`, `max_tokens`; `EMBED_VERSION` = 2; strategy `token-window-v1`; compatibility compares every field but `created`; a legacy manifest parses as incompatible and is named in rebuild messages. Tests: legacy bge manifest → rebuild report names `bge-micro-v2` and 1; each new field's mismatch rebuilds.
 - [ ] 11.2 Remove `EMBED_CHAR_BUDGET`: the note formula is breadcrumbs + full text. Tests: embed-text and types tests updated; a 5 000-character note's embed text is untruncated.
 - [ ] 11.3 Default → `harrier-270m`; remove `bge-micro-v2` from the registry. Tests: default, key set, `--model bge-micro-v2` rejected.
@@ -111,7 +112,7 @@ Sequential.
 
 Sequential; manual runs on the vault copy, results committed as aggregates.
 
-- [ ] 12.1 Confirm `calibration.md` holds the bge-micro baseline. Index the copy with each profile; `eval --stats` per profile; set every similarity default by design D11 (quantile matching + golden guard); record values, pass rates and guard results in `calibration.md`; put the values in the registry. Test: registry pin of the calibrated values.
+- [ ] 12.1 Confirm `calibration.md` holds the bge-micro baseline on the unranked populations (11.0). Index the copy with each profile; `eval --stats` per profile; set every similarity default by design D11 (quantile matching + golden guard); record values, pass rates and guard results in `calibration.md`; put the values in the registry. Test: registry pin of the calibrated values.
 - [ ] 12.2 Acceptance: default-profile cold index wall time (minutes); `npm run eval -- --pipeline semantic` UA MRR ≥ 0.6 and EN MRR ≥ 0.8; `fused` recorded; `--model granite-97m` end-to-end through the server. Results into `calibration.md`.
 
 ## 13. ADR and docs sweep

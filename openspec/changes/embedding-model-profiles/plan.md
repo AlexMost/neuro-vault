@@ -4473,6 +4473,131 @@ Fresh worktree off `origin/main` (PR 3 merged), branch `feat/embedding-model-pro
 - **(g) Calibration populations.** On bge, five of the six defaults pass 100 % of the top-10 populations, so literal D11 degenerates. The decision is to measure pass rates on **unranked** populations, recorded in design D11 by its own `docs(openspec)` commit. The new Task 11.0 implements those populations and re-captures the bge baseline on them **before** Task 11.3 removes the profile. Task 12.1 reads them.
 - **Environment** (as in PR 3): the worktree guard blocks the bare word `eval` and any compound command (pipe, subshell, `;`) on a path containing the scratchpad. Real-data steps therefore run one simple command each, or a `.mjs`/`.mts` driver in the scratchpad (top-level `await` only in `.mts`). The vault copy lives in the scratchpad: `<scratchpad>/vault-bge/Obsidian`, with per-profile copies cloned from it so every copy shares one `vault_sha`.
 
+### Task 11.0: Unranked calibration populations; re-capture the bge baseline
+
+Design D11 as decided for PR 4. Runs **before** Task 11.3: its last step needs `bge-micro-v2` in the registry.
+
+**Files:**
+- Modify: `eval/stats.ts`, `eval/run.ts` (`readBaseline`, `formatStats`), `eval/README.md` (Calibration), `openspec/changes/embedding-model-profiles/calibration.md`
+- Test: `test/eval/stats.test.ts`, `test/eval/run.test.ts`
+
+**Interfaces:**
+- `Populations` gains `query_all` (each query vector against every source), `seed_all` (each seed against every source that is not one of that query's seeds) and `note_all` (each source against every other source, ordered pairs). The four ranked/max populations stay.
+- `POPULATION_OF` (now exported): `quick`, `deep`, `fallback` → `query_all`; `expansionFloor` → `seed_all`; `similarNotes` → `note_all`; `duplicates` → `note_max`.
+- `CalibrationStats.populations` holds quantiles for all seven keys, built by iterating the `Populations` keys so a new one cannot be missed.
+- `readBaseline` refuses a baseline whose `pass_rates.<key>.population` differs from `POPULATION_OF[key]`. The PR 3 baseline was measured on the ranked populations, and its pass rates mean something else. The message names the file, the key and both populations, and says to re-capture with `--stats`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`test/eval/stats.test.ts`: the population test uses `topK: 2` over the three-note fixture, so ranked and unranked differ. It asserts `query_candidates` has 2 values and `query_all` has 3. With seed `a.md` (one seed), `seed_all` is `[0.8, 0]` in either order: `b` and `c`, never the seed itself. `note_all` has 6 values (3 × 2) and `note_top10` still has 6. `pass_rates.deep.population` is `'query_all'`, `expansionFloor`'s is `seed_all`, `similarNotes`'s is `note_all`, `duplicates`'s is `note_max`. Add a test that `POPULATION_OF` covers exactly `DEFAULT_KEYS`, and update the existing assertions that name `query_candidates` / `expansion_neighbours` as a default's population.
+
+`test/eval/run.test.ts`, next to the other `--baseline` refusals:
+
+```ts
+  it('refuses a --baseline that measured a default on another population, before embedding anything', async () => {
+    const first = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed, resultsDir },
+    );
+    const ranked = structuredClone(first.report);
+    ranked.stats!.pass_rates.deep.population = 'query_candidates';
+    const rankedFile = path.join(resultsDir, 'ranked-baseline.json');
+    await writeFile(rankedFile, JSON.stringify(ranked));
+    const embedSpy = vi.fn(embed);
+    const run = runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: rankedFile },
+      { embed: embedSpy, resultsDir },
+    );
+    await expect(run).rejects.toThrow(/ranked-baseline\.json.*deep.*query_candidates.*query_all/s);
+    expect(embedSpy).not.toHaveBeenCalled();
+  });
+```
+
+(Use the file's existing harness names.) Run: `npx vitest run test/ev[a]l` — Expected: FAIL.
+
+- [ ] **Step 2: Implement**
+
+`collectPopulations` ranks once per vector and slices, so the unranked populations cost no extra pass:
+
+```ts
+  for (const queryVector of args.queryVectors) {
+    const all = findNeighbors({ queryVector, sources: sources.values(), threshold: -1 });
+    query_all.push(...all.map((r) => r.similarity));
+    const ranked = all.slice(0, args.topK);
+    query_candidates.push(...ranked.map((r) => r.similarity));
+    const seeds = ranked.slice(0, args.seedPool);
+    const seedSet = new Set(seeds.map((s) => s.path));
+    for (const seed of seeds) {
+      const source = sources.get(seed.path);
+      if (!source) continue;
+      const others = findNeighbors({
+        queryVector: source.embedding,
+        sources: sources.values(),
+        threshold: -1,
+      }).filter((n) => !seedSet.has(n.path));
+      seed_all.push(...others.map((n) => n.similarity));
+      // Mirrors the production expansion leg, minus its floor.
+      expansion_neighbours.push(...others.slice(0, args.expansionLimit).map((n) => n.similarity));
+    }
+  }
+  for (const source of sources.values()) {
+    const others = findNeighbors({
+      queryVector: source.embedding,
+      sources: sources.values(),
+      threshold: -1,
+      excludePath: source.path,
+    });
+    note_all.push(...others.map((n) => n.similarity));
+    note_top10.push(...others.slice(0, 10).map((n) => n.similarity));
+    const [nearest] = others;
+    if (nearest) note_max.push(nearest.similarity);
+  }
+```
+
+Doc comments on the three new `Populations` fields say what they hold and that they are unranked, and why: on bge-micro the ranked populations pass 100 % at five defaults (design D11). In `readBaseline`, after the pass-rate validation:
+
+```ts
+    const population = (stats.pass_rates as Record<string, { population?: unknown }>)[key].population;
+    if (population !== POPULATION_OF[key]) {
+      throw new UsageError(
+        `--baseline ${file}: ${key} was measured on ${JSON.stringify(population) ?? 'nothing'}, this build measures it on "${POPULATION_OF[key]}" — re-capture the baseline with --stats`,
+      );
+    }
+```
+
+`formatStats` prints each default's population (`deep: population=query_all threshold=… pass=…`). In `eval/README.md` § Calibration, the populations table gets seven rows: three ranked, three unranked, and `note_max`. Then add a short paragraph on why the defaults are matched on the unranked ones, linking design D11. In § Baseline, add a sentence on the new population refusal.
+
+- [ ] **Step 3: Run, then commit**
+
+Run: `npm test && npm run typecheck && npm run lint` — Expected: PASS.
+
+```bash
+git add ./ev[a]l test/ev[a]l
+git commit -m "feat(eval): match similarity defaults on unranked populations
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+- [ ] **Step 4: Re-capture the bge baseline** (bge-micro-v2 must still be in the registry)
+
+On `<scratchpad>/vault-bge/Obsidian`, a fresh rsync of the live vault (one simple command each):
+
+1. Confirm the copy's `.neuro-vault/corpus/manifest.json` is `bge-micro-v2`, `embed_version 1`.
+2. `npm run build`, then `node dist/cli.js index --vault <copy> --model bge-micro-v2`. This brings the corpus up to the copy's notes. Expected: no `rebuilding` line, `failed=0`.
+3. `npx tsx ./eval/run.ts --vault <copy> --model bge-micro-v2 --pipeline semantic --stats`.
+4. **Decision rule (design D11):** each of `quick`, `deep`, `fallback`, `expansionFloor` and `similarNotes` must pass **< 1.0** of its unranked population. If any passes 1.0, stop and ask the owner. Do not proceed to Task 11.3.
+5. Copy the full report to the main checkout's gitignored `eval/results/baseline-bge-micro-v2-unranked.json` (absolute path, no `cd`). PR 3's `baseline-bge-micro-v2.json` stays as it is.
+6. `calibration.md`: replace the "open question" section with a short "Resolved" note pointing at design D11. Add "Baseline — bge-micro-v2, unranked populations" with metrics, the seven populations' quantiles, the pass rates and the guards, plus the raw aggregates block (`{ code_sha, vault_sha, model_key, identity, config, metrics, stats }`, with `stats.baseline` absent and no `per_query`). Keep PR 3's section as history and mark it superseded for calibration.
+
+```bash
+git add openspec/changes/embedding-model-profiles/calibration.md
+git commit -m "docs(openspec): re-capture the bge-micro baseline on unranked populations
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 11.1: Manifest v2 records the producing identity
 
 **Files:**

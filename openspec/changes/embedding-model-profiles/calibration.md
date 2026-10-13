@@ -102,6 +102,8 @@ Overall MRR is 0.398, the same as PR 1, so moving the thresholds into the profil
 
 ## Reading the baseline — open question for PR 4
 
+> **Decided in PR 4** (design D11): pass rates are measured on unranked populations: query↔every note for `quick`, `deep` and `fallback`, seed↔every note for `expansionFloor`, note↔every note for `similarNotes`, and `note_max` for `duplicates`. The baseline is re-captured on them (Task 11.0). The text below is the question as PR 3 left it.
+
 **On bge-micro-v2, five of the six defaults filter nothing in the population they govern.** bge-micro's similarities are compressed into a narrow, high band. The lowest of the 250 top-10 query candidates scores 0.559, above `quick` (0.50). The lowest expansion neighbour scores 0.766, against an `expansionFloor` of 0.35. Only `duplicates` cuts anything: 67.5 % of notes have a neighbour at 0.90 or above.
 
 D11's quantile matching therefore degenerates for those five. Reproducing a pass rate of 1.0 means "the population minimum on the new profile", so on any profile:
