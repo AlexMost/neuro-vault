@@ -10,14 +10,16 @@ The CLI SHALL provide an `index` subcommand that, for each vault named by
 server, connecting no stdio transport, and starting no watcher. The subcommand
 SHALL contain no indexing logic of its own: membership, hashing, rename
 detection and failure containment come from the internal reconcile function,
-so the corpus it produces is the one that function produces.
+so the corpus it produces is the one that function produces. It SHALL embed
+with the profile selected by `--model`, building one embedding provider from
+that profile for the whole run.
 
 #### Scenario: Cold index builds the corpus
 
 - **WHEN** `index --vault <path>` runs against a vault with no
   `.neuro-vault/corpus/`
 - **THEN** the corpus is created with a shard per in-scope note and a
-  manifest, and the process exits with code 0
+  manifest recording the default profile, and the process exits with code 0
 
 #### Scenario: A second run is an idempotent no-op
 
@@ -30,13 +32,20 @@ so the corpus it produces is the one that function produces.
 
 - **WHEN** the `index` subcommand runs
 - **THEN** no MCP server is constructed and no stdio transport is connected;
-  stdout carries only progress and summary output
+  stdout carries only progress, rebuild and summary output
 
 #### Scenario: Multiple vaults reconcile sequentially
 
 - **WHEN** `index` is invoked with several `--vault` paths
 - **THEN** each vault is reconciled in the order given, each with its own
-  progress and summary, sharing one embedding service instance
+  progress and summary, sharing one embedding provider instance built from
+  the selected profile
+
+#### Scenario: A selected profile builds the corpus
+
+- **WHEN** `index --vault <path> --model granite-97m` runs against a vault
+  with no corpus
+- **THEN** the manifest it writes names `granite-97m` and 384 dimensions
 
 ---
 
@@ -107,4 +116,46 @@ that completed and fatal errors written to stderr.
 
 - **WHEN** every named vault reconciles with zero failed notes
 - **THEN** the process exits with code 0
+
+### Requirement: The index subcommand's model option matches server semantics
+
+The `--model` option of the `index` subcommand SHALL accept the same profile
+keys the server invocation accepts, default to the same profile, and reject
+the same values with the same message, via the same option definition, so a
+model argument is copyable between the two invocations unchanged.
+
+#### Scenario: An unknown model is rejected with the allowed keys
+
+- **WHEN** `index --vault <path> --model bge-m3` is invoked
+- **THEN** the process exits non-zero, nothing is indexed, and the error lists
+  `harrier-270m`, `granite-97m` and `harrier-0.6b`
+
+#### Scenario: Omitting the option selects the server's default
+
+- **WHEN** `index --vault <path>` is invoked without `--model`
+- **THEN** the corpus is built with the same profile a server started without
+  `--model` would serve
+
+---
+
+### Requirement: A corpus rebuild is announced before it runs
+
+The `index` subcommand SHALL print one line on stdout for a vault whose stored
+corpus was built with a different identity than the selected profile, before
+that vault's progress output, naming the stored model and embedding version
+and the active ones and stating that the corpus is being rebuilt.
+
+#### Scenario: Switching profiles announces the rebuild
+
+- **WHEN** `index --vault <path> --model granite-97m` runs against a vault
+  whose corpus was built with `harrier-270m`
+- **THEN** stdout carries a line for that vault naming `harrier-270m` as the
+  stored model and `granite-97m` as the active one, followed by its progress
+  and summary
+
+#### Scenario: A matching corpus is not announced
+
+- **WHEN** `index` runs against a vault whose corpus matches the selected
+  profile
+- **THEN** no rebuild line is printed for that vault
 

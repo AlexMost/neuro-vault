@@ -6,7 +6,7 @@ export type Pooling = 'mean' | 'cls' | 'last_token';
 /**
  * Default similarity thresholds, on this profile's own similarity scale
  * (design D10). Each profile carries values calibrated on its own corpus
- * (design D11; numbers in openspec/changes/embedding-model-profiles/calibration.md).
+ * (design D11; numbers in openspec/changes/archive/2026-10-13-embedding-model-profiles/calibration.md).
  */
 export interface SimilarityDefaults {
   /** `search_notes` semantic floor at effort "quick". */

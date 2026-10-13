@@ -209,7 +209,7 @@ Golden-set guards at these values (targets: `deep_filtered_first_relevant` = 0, 
 
 ### Method
 
-The thresholds were set so that each profile treats the same share of the vault as related that the bge-micro-v2 defaults did on the bge-micro-v2 scale, then checked against labelled queries. The full rationale is design decision D11 of the `embedding-model-profiles` change; the aggregates behind the table are in `openspec/changes/embedding-model-profiles/calibration.md`, and the decision is recorded in [ADR-0017](../adr/0017-embedding-model-profiles.md).
+The thresholds were set so that each profile treats the same share of the vault as related that the bge-micro-v2 defaults did on the bge-micro-v2 scale, then checked against labelled queries. The full rationale is design decision D11 of the `embedding-model-profiles` change; the aggregates behind the table are in `openspec/changes/archive/2026-10-13-embedding-model-profiles/calibration.md`, and the decision is recorded in [ADR-0017](../adr/0017-embedding-model-profiles.md).
 
 1. **Baseline on unranked populations.** A pass rate is only informative on a population that holds pairs a user never sees as well as those they do, so a threshold has something to cut. Each default is matched on its own population:
 

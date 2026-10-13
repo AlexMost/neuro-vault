@@ -275,7 +275,7 @@ nothing and two different thresholds look identical. The unranked populations
 include the values a threshold exists to reject, so a pass rate below 100 % is
 what they report. The ranked populations stay in the report for comparison. See
 design D11 in
-[`openspec/changes/embedding-model-profiles/design.md`](../openspec/changes/embedding-model-profiles/design.md).
+[`openspec/changes/archive/2026-10-13-embedding-model-profiles/design.md`](../openspec/changes/archive/2026-10-13-embedding-model-profiles/design.md).
 
 For each of the six defaults on the selected profile, `pass_rates` records its
 threshold, the population it filters and the share of that population at or
