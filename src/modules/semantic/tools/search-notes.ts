@@ -527,7 +527,7 @@ export function buildSearchNotesTool(
         .max(1)
         .optional()
         .describe(
-          `Min seed↔note similarity 0-1 for the expansion leg (deep effort only), on a note-to-note scale that typically runs far higher than query scores. Default ${similarity.expansionFloor}, and \`threshold\` never affects it.`,
+          `Min seed↔note similarity 0-1 for the expansion leg (deep effort only); distinct from the query-to-note \`threshold\`. Default ${similarity.expansionFloor}, and \`threshold\` never affects it.`,
         ),
       filter: filterSchema.optional(),
     },
