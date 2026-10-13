@@ -209,4 +209,39 @@ describe('createQueuedEmbedder — batching', () => {
     await expect(embedder.embedDocuments(['x'])).rejects.toThrow('onnx exploded');
     await expect(embedder.embedDocuments(['y'])).resolves.toEqual([[1]]);
   });
+
+  it("names a blank document by its index in the caller's input, before any provider call", async () => {
+    let calls = 0;
+    const embedder = createQueuedEmbedder({
+      identity: TEST_EMBEDDING_IDENTITY,
+      maxBatchSize: 8,
+      initialize: async () => {},
+      embedQuery: async () => [0],
+      embedDocuments: async (ts) => (calls++, ts.map(() => [1])),
+    });
+    await expect(embedder.embedDocuments(['x'.repeat(500), 'longer text', '   '])).rejects.toThrow(
+      'document 2 is blank',
+    );
+    expect(calls).toBe(0);
+  });
+
+  it("skips a failed call's still-queued buckets", async () => {
+    const seen: string[][] = [];
+    const embedder = createQueuedEmbedder({
+      identity: TEST_EMBEDDING_IDENTITY,
+      maxBatchSize: 1,
+      initialize: async () => {},
+      embedQuery: async () => [0],
+      embedDocuments: async (ts) => {
+        seen.push(ts);
+        throw new Error('first bucket failed');
+      },
+    });
+    await expect(embedder.embedDocuments(['a', 'bb', 'ccc'])).rejects.toThrow(
+      'first bucket failed',
+    );
+    // Let the queue drain the remaining entries.
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    expect(seen).toEqual([['a']]);
+  });
 });

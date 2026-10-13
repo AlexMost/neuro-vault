@@ -77,18 +77,32 @@ export function createQueuedEmbedder(provider: EmbeddingProvider): QueuedEmbedde
   }
 
   async function embedDocuments(texts: string[]): Promise<number[][]> {
+    // Checked here, not left to the provider: it sees bucket-local indices.
+    const blank = texts.findIndex((text) => text.trim() === '');
+    if (blank !== -1) throw new Error(`document ${blank} is blank`);
+
     const vectors = new Array<number[]>(texts.length);
+    // Once one bucket fails the call has failed: its still-queued buckets skip
+    // the forward pass instead of computing vectors nobody will read.
+    let failed = false;
     await Promise.all(
       bucketByLength(texts, provider.maxBatchSize).map(async (bucket) => {
-        const batch = await enqueue(indexLane, () =>
-          provider.embedDocuments(bucket.map((i) => texts[i])),
-        );
-        if (batch.length !== bucket.length) {
-          throw new Error(`provider returned ${batch.length} vectors for ${bucket.length} texts`);
+        try {
+          const batch = await enqueue(indexLane, () =>
+            failed
+              ? Promise.reject(new Error('skipped: another batch of this call failed'))
+              : provider.embedDocuments(bucket.map((i) => texts[i])),
+          );
+          if (batch.length !== bucket.length) {
+            throw new Error(`provider returned ${batch.length} vectors for ${bucket.length} texts`);
+          }
+          bucket.forEach((textIndex, k) => {
+            vectors[textIndex] = batch[k]!;
+          });
+        } catch (error) {
+          failed = true;
+          throw error;
         }
-        bucket.forEach((textIndex, k) => {
-          vectors[textIndex] = batch[k]!;
-        });
       }),
     );
     return vectors;

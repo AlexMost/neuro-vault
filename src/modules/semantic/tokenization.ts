@@ -37,8 +37,9 @@ export function deriveTemplate(encoder: Encoder): SpecialTokenTemplate {
 
 /**
  * Characters of content handed to the tokenizer per token of window: a bound
- * on tokenizer work for multi-megabyte notes, not a budget. Real text runs
- * 1.6–2.9 characters per token, so it cannot bind before the token limit.
+ * on tokenizer work for multi-megabyte notes, not a budget. Prose runs
+ * 1.6–2.9 characters per token, so the token limit binds first; only text that
+ * tokenises to almost nothing (long whitespace runs) can hit this bound first.
  */
 export const CHARS_PER_TOKEN_WORK_BOUND = 32;
 
