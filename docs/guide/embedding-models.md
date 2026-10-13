@@ -81,7 +81,7 @@ What you will see:
 - While the rebuild runs, `search_notes` reports `semantic_status: { state: "indexing", indexed, total }` and keeps answering from its **lexical leg** — lexical search is unaffected. `get_similar_notes` and `find_duplicates` return `SEMANTIC_INDEX_BUILDING` until it finishes.
 - A fresh vault with no corpus is not a rebuild, just a first index.
 
-Two practical rules:
+Three practical rules:
 
 - **Keep the server and `index` on the same `--model`.** If they differ, each rebuilds the other's corpus every time it runs.
 - **Upgrading from a release with a different default model rebuilds every vault once**, for the same reason. Run `neuro-vault-mcp index --vault <path>` after upgrading if you would rather pay that cost ahead of time.
