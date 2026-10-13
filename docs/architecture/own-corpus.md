@@ -15,7 +15,7 @@ Four pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any i
 | `shard-store.ts` | Reads, writes, lists and deletes shards and the manifest; atomic writes; `.gitignore` upkeep. |
 | `reconcile.ts` | Brings the corpus into agreement with the vault. |
 
-`types.ts` holds the shapes and the constants that fix the corpus's identity: `MIN_CHARS` (200), `MAX_TOKENS` (512), `EMBED_CHAR_BUDGET` (1894), `MODEL_KEY` (`bge-micro-v2` — the corpus's record of which model made the vectors), `MODEL_ID` (`TaylorAI/bge-micro-v2` — the repo a pipeline is loaded from), `MODEL_DIMS` (384), `SC_PARITY_STRATEGY` and `EMBED_VERSION`.
+`types.ts` holds the shapes and the constants that fix how text becomes vectors: `MIN_CHARS` (200), `EMBED_CHAR_BUDGET` (1894), `SC_PARITY_STRATEGY` and `EMBED_VERSION`. It holds **no model constants**: which model made the vectors is not the corpus's to know. The embedding provider reports an `EmbeddingIdentity` (`model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens` — see [`embedding-pipeline.md`](./embedding-pipeline.md)), and `identity.ts` derives the corpus identity from it: `corpusIdentityOf` keeps `embed_version`, `model_key`, `model_id`, `dims` and `strategy`, and `formatIdentity` names an identity (`<model_key> (embed_version <n>)`) in rebuild messages.
 
 ## Extraction
 
@@ -57,19 +57,19 @@ Extraction reproduces the replaced corpus 1:1 so that the one diagnostic run com
 1. `excluded_headings` is not implemented.
 2. Membership comes from vault scope, not the plugin's anchored-prefix exclusion quirks.
 3. `.md` only.
-4. Over-long **block** inputs are capped by tokens (below) rather than by the plugin's character cut at the last whitespace; both land at ≈512 tokens. Note-level inputs are cut at 1894 characters exactly as the plugin cuts them.
+4. Over-long **block** inputs are capped by tokens (below) rather than by the plugin's character cut at the last whitespace; both land at ≈512 tokens (the active profile's `maxTokens`). Note-level inputs are cut at 1894 characters exactly as the plugin cuts them.
 5. Block keys are unique within a note. The plugin suffixes only a repeated *top-level* heading, leaving two identical sibling sub-headings able to collide — and a collision silently drops a block.
 6. Block boundaries come from the CommonMark AST rather than the plugin's line regexes.
 
-### The tokenizer cap
+### The token window
 
-`bge-micro-v2` ships `model_max_length = 1e15` in its tokenizer config, which makes the pipeline's own `truncation: true` a no-op — and any input over 512 tokens then crashes inside ONNX. `EmbeddingService` caps the tokenizer at the model's real window after creating the pipeline (`Math.min(declared, MAX_TOKENS)`, and `MAX_TOKENS` when the field is missing or infinite). The query path never hit this because queries are short; the indexer hits it on the first long note.
+Some tokenizers declare no real window — `bge-micro-v2` ships `model_max_length = 1e15` in its tokenizer config — and any input over the model's real window crashes inside ONNX. The corpus does not rely on the tokenizer's own limit: `EmbeddingService` encodes with special tokens and cuts the ids to the profile's `maxTokens` (512 for both shipped profiles) before the forward pass. The query path never hit this because queries are short; the indexer hits it on the first long note.
 
 ## On-disk layout
 
 ```
 <vault>/.neuro-vault/corpus/
-  manifest.json                # { embed_version, model_key, model_id, dims, strategy, created }
+  manifest.json                # { embed_version, model_key, model_id, dims, strategy, created }  (the provider's identity)
   notes/<sha256(path)[:32]>.json
 ```
 
@@ -98,13 +98,13 @@ The corpus lives inside the vault so it travels with it and multi-vault needs no
 
 Every shard and manifest write goes through `write-file-atomic` (temp file + rename), so a reader sees either the previous file or the complete new one. On the read side, a shard that fails to read, fails to parse, fails validation, carries a `path` that does not hash back to its filename, or holds a vector whose byte length disagrees with `dims × 4` reads as **absent** and is warned about — the note is simply re-embedded on the next pass. The note on disk is the ground truth, so no corpus damage is fatal.
 
-The one case that throws instead is writing a vector of the wrong dimension: the manifest gate cannot catch it (both sides read the same constant), so it would be written, read back as `null`, and re-embedded forever. Reconcile contains that per-note failure like any other.
+The one case that throws instead is writing a vector of the wrong dimension: the manifest gate cannot catch it (the store's `dims` and the manifest's `dims` both come from the same provider identity), so it would be written, read back as `null`, and re-embedded forever. Reconcile contains that per-note failure like any other.
 
 ## Reconcile
 
 `reconcileCorpus(deps, opts)` takes ports — `scan`, `stat`, `readNote`, `embed`, a `CorpusStore` — and returns `{ total, embedded, reused, renamed, deleted, failed }`. In order:
 
-1. `ensureManifest` compares the stored manifest against the running configuration (`embed_version`, `model_key`, `model_id`, `dims`, `strategy`). A mismatch, or a missing manifest while shards exist, discards every shard and rebuilds. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
+1. `ensureManifest` compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (`embed_version`, `model_key`, `model_id`, `dims`, `strategy`). A mismatch, or a missing manifest while shards exist, discards every shard and rebuilds. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
 2. Take the scoped path set from `scan()` and the shard map from `listShards()`. Reconcile applies no exclusion rule of its own.
 3. Shards whose path is not in scope become deletion candidates, indexed by content hash — the only place a rename can be recognised.
 4. For each path in scope: equal `mtime` **and** `size` → reused, without opening the note. Otherwise read it; an equal `content_hash` → rewrite the shard's metadata and keep the vectors (**reused**); otherwise embed (**embedded**). A path with no shard whose hash matches a deletion candidate is a **rename**: the old shard is unlinked and the note is re-embedded under its new path.
@@ -117,9 +117,13 @@ Progress is reported once per processed note as `{ indexed, total }` counted in 
 
 Both embed-text formulas carry path breadcrumbs, so reusing a vector across a rename would leave the old path inside it until the note's text next changed — and a corpus maintained incrementally would then differ from one built from scratch. A rename therefore re-embeds, and two notes with identical content at different paths get different vectors. The payoff is a testable invariant: **any sequence of incremental reconciles ending in a given vault state produces the same corpus as a from-scratch index of that state**, modulo `mtime`/`size`.
 
+### A model change is a rebuild, and never silent
+
+Switching `--model` (or any other field of the identity) makes the stored manifest incompatible, so the whole corpus is discarded and re-embedded — vectors from two models do not share a space. The rebuild is announced where the user will see it. The server logs one line to stderr at startup — `neuro-vault corpus: vault "<name>" was indexed with <stored> (embed_version <n>); active model is <active> (embed_version <m>) — discarding the corpus and re-indexing in the background` — and `index` prints `rebuilding <name>: corpus was indexed with …; active model is …` before its progress. Only an actual discard is reported: a fresh vault with no corpus yet is not a rebuild. Run `index` and the server with the same `--model`, or each will rebuild the other's corpus.
+
 ## Measured numbers
 
-On an 842-note vault (Apple silicon, `bge-micro-v2` quantized, batch 1):
+On an 842-note vault (Apple silicon, `bge-micro-v2` quantized, batch 1; measured before the move to `@huggingface/transformers` 4):
 
 | | |
 | --- | --- |

@@ -209,13 +209,15 @@ Then ask your assistant:
 
 > "What did I write about building AI agents?"
 
-On first run the embedding model downloads automatically (~40 MB). Subsequent starts are fast.
+On first run the embedding model downloads automatically (bge-micro-v2 ≈ 17 MB, granite-97m ≈ 98 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `bge-micro-v2`; add `--model granite-97m` for the lite multilingual one.
 
 Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault):
 
 ```bash
 neuro-vault-mcp index --vault /absolute/path/to/your/vault
 ```
+
+Give `index` the same `--model` the server runs with (`--model granite-97m` here and in the server's `args`, or neither) — a vault indexed with another model is rebuilt, never silently mixed.
 
 For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./docs/guide/installation.md).
 

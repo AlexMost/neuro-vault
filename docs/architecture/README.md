@@ -16,7 +16,7 @@ These are living documents. Update the relevant file in the same change that alt
 - [retrieval-policy.md](./retrieval-policy.md) — search modes, default-only threshold fallback, expansion with its own `expansion_floor` scale
 - [lexical-search.md](./lexical-search.md) — `search_notes`'s lexical leg: mdast block extraction, normalization, tiered ranking, mtime cache
 - [rank-fusion.md](./rank-fusion.md) — `search_notes`'s merge layer: RRF over semantic/lexical/expansion, adaptive k, tie-breaks, truncated observability
-- [embedding-pipeline.md](./embedding-pipeline.md) — `@xenova/transformers` lazy initialization and value normalization
+- [embedding-pipeline.md](./embedding-pipeline.md) — the local embedding provider: model profiles, `@huggingface/transformers` loading and cache, mask-aware pooling, lazy initialization
 - [search-engine.md](./search-engine.md) — cosine similarity, neighbor / block / duplicate search
 - [module-structure.md](./module-structure.md) — how `src/modules/{semantic,operations}/` plug into the server
 - [vault-provider.md](./vault-provider.md) — the operations-module write abstraction, implemented by `FsVaultProvider` directly against the vault directory

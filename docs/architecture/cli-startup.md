@@ -4,15 +4,18 @@ How the process interprets `argv`, and how it decides whether to start the MCP s
 
 ## What it is
 
-`src/cli.ts` exports `main(argv, deps)`, the async function the entrypoint calls. `main` does exactly two things in sequence: call `parseConfig(argv)` (`src/config.ts`), then either return immediately or call `startNeuroVaultServer(config, deps)` (`src/server.ts`) with the config that parsing produced.
+`src/cli.ts` exports `main(argv, deps)`, the async function the entrypoint calls. `main` does exactly two things in sequence: call `parseConfig(argv)` (`src/config.ts`), then either return immediately, run the `index` command (`runIndexCommand`, `src/cli-index.ts`), or call `startNeuroVaultServer(config, deps)` (`src/server.ts`) with the config that parsing produced.
 
-`parseConfig` wraps `yargs`, declaring the `--vault` and `--semantic` options plus `.help()` and `.version(packageMeta.version)`. It returns a `ParsedCli`:
+`parseConfig` wraps `yargs`, declaring the `--vault`, `--semantic` and `--model` options plus `.help()` and `.version(packageMeta.version)`. It returns a `ParsedCli`:
 
 ```typescript
-type ParsedCli = { kind: 'run'; config: ServerConfig } | { kind: 'handled' };
+type ParsedCli =
+  | { kind: 'run'; config: ServerConfig }
+  | { kind: 'index'; options: IndexCliOptions }
+  | { kind: 'handled' };
 ```
 
-`kind: 'run'` carries a validated `ServerConfig` — the normal case. `kind: 'handled'` means yargs itself fully satisfied the invocation (it printed `--help` or `--version` output) and there is nothing left to run.
+`kind: 'run'` carries a validated `ServerConfig` — the normal case. `kind: 'index'` carries the options of the `index` subcommand (the vaults and the model profile). `kind: 'handled'` means yargs itself fully satisfied the invocation (it printed `--help` or `--version` output) and there is nothing left to run.
 
 ## Why it exists
 
@@ -39,15 +42,25 @@ config.ts: parseConfig(argv)
   │     └─ return { kind: 'handled' }
   │
   └─ otherwise: run the --vault guard, build IVaultConfig[], detect
-     case-insensitive basename collisions
-        └─ return { kind: 'run', config }
+     case-insensitive basename collisions, resolve --model to its ModelProfile
+        ├─ `index` subcommand → return { kind: 'index', options }
+        └─ otherwise          → return { kind: 'run', config }
   │
   ▼
 cli.ts: main() branches on parsed.kind
   │
   ├─ 'handled' → return (startNeuroVaultServer is never called)
+  ├─ 'index'   → runIndexCommand(parsed.options), exit code from its result
   └─ 'run'     → startNeuroVaultServer(parsed.config, deps)
 ```
+
+### Both invocations
+
+The server command and `index` are two commands over the same vaults, so they share `--vault` and `--model`. Each option is declared once (`VAULT_OPTION`, `MODEL_OPTION` in `config.ts`) and attached to both commands, so the two can never drift apart in spelling, default, or validation. `--semantic` belongs to the server command only.
+
+`--model` takes a profile key from the closed registry in `src/modules/semantic/model-profiles.ts` (`bge-micro-v2`, the default, or `granite-97m`). yargs `choices` rejects an unknown key with the allowed list before any vault is opened, and `parseConfig` resolves the key to its `ModelProfile` (`resolveModelProfile`), so nothing downstream handles an unknown key — `ServerConfig.semantic.model` and `IndexCliOptions.model` are already profiles. A repeated `--model` is rejected (`--model may be given only once`) rather than silently picking one of the values. The selection holds for the whole process: one model per run, no per-vault override.
+
+Because a corpus records the model that produced its vectors, the server and `index` must be started with the same `--model`; a vault indexed with another model is discarded and rebuilt (see [`own-corpus.md`](./own-corpus.md)).
 
 `main`'s own `run()` wrapper (the top-level `catch`) still applies on top of this: an error thrown out of `parseConfig` (an invalid `--vault` path, a duplicate basename) or out of `startNeuroVaultServer` is caught there, printed to stderr, and turned into `process.exitCode = 1`. `{ kind: 'handled' }` bypasses that path entirely — a successful `--help`/`--version` invocation exits 0.
 

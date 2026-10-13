@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Node.js 20+
+- Node.js 20.9+
 - A vault — a directory of Markdown notes. An Obsidian vault is one, but Obsidian itself is not required: no plugin, no running app.
 
 Vault operations (`create_note`, `read_daily`, `edit_note`, properties, tags) read and write the vault directory directly on disk — no Obsidian installation or running instance is required. The server runs headless. The embedding index the semantic leg searches is one the server builds itself from your notes; see [First-run behavior](#first-run-behavior) below.
@@ -100,7 +100,8 @@ Ask your assistant:
 
 ## First-run behavior
 
-- The embedding model (`TaylorAI/bge-micro-v2`, ~40 MB) is downloaded on first run and cached by `@xenova/transformers`. Subsequent starts are fast.
+- The embedding model is downloaded on first run into `~/.cache/neuro-vault/models` (or `$XDG_CACHE_HOME/neuro-vault/models` when `XDG_CACHE_HOME` is an absolute path) and shared across upgrades. The default, `bge-micro-v2`, is ≈ 17 MB; `granite-97m` (`--model granite-97m`, a lite multilingual model) is ≈ 98 MB. Subsequent starts are fast. Pick the model with `--model`; see [Configuration](./configuration.md#cli-arguments).
+- On a CPU-only Linux x64 machine, set `ONNXRUNTIME_NODE_INSTALL=skip` when installing (`ONNXRUNTIME_NODE_INSTALL=skip npm install -g neuro-vault-mcp`) to skip the CUDA provider download that onnxruntime's install script otherwise starts on that platform. Other platforms download nothing extra.
 - A vault with no embedding index yet starts indexing in the background as soon as the server boots — it does not block startup. While that first pass runs, `search_notes` still answers immediately from its lexical leg alone and reports `semantic_status: { state: "indexing", indexed, total }`; the embeddings-only tools (`get_similar_notes`, `find_duplicates`) return `SEMANTIC_INDEX_BUILDING` for that vault until the pass finishes. No restart is needed — the vault is promoted to `ready` live.
 - If the `--vault` directory itself does not exist, the server exits immediately with an error before starting.
 
@@ -111,5 +112,7 @@ To skip that degraded first window — useful before a demo, or for a large vaul
 ```bash
 neuro-vault-mcp index --vault /absolute/path/to/your/vault
 ```
+
+If you run the server with `--model granite-97m`, pass the same flag here (`neuro-vault-mcp index --model granite-97m --vault …`): a vault indexed with a different model is discarded and rebuilt the next time the other command touches it.
 
 Repeat `--vault` to warm several vaults in one run. It prints per-vault progress and a summary (`indexed`, `embedded`, `reused`, `renamed`, `deleted`, `failed`), and exits non-zero if any note failed to embed. Re-running it later is cheap: an unchanged vault reconciles in well under a second, since only notes that changed since the last pass are re-embedded.
