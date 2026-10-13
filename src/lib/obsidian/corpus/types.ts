@@ -63,6 +63,22 @@ export interface CorpusManifest {
   created: string;
 }
 
+/**
+ * What produced a corpus's vectors, as the embedding provider reports it
+ * (design D4). The corpus records this; it never derives it from constants
+ * of its own, so a remote provider can describe itself the same way.
+ */
+export interface EmbeddingIdentity {
+  provider: string;
+  model_key: string;
+  model_id: string;
+  revision: string;
+  dtype: string;
+  dims: number;
+  pooling: string;
+  max_tokens: number;
+}
+
 /** The indexer's only view of the embedding model (design D1). */
 export type EmbedFn = (text: string) => Promise<number[]>;
 
