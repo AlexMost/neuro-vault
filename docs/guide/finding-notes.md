@@ -256,7 +256,7 @@ How to use them, whatever the model:
 - **Leave `threshold` out** unless you have a reason. The defaults are calibrated so a normal call keeps the relevant notes, and the fallback retry rescues a call that would otherwise come back empty.
 - **Raise it above the default to tighten** — the notes that remain are the more confident ones; expect more misses. `quick` is the stricter default (it is never lower than `deep`), so `deep` is the broader net.
 - **Lower it below the default only to look at weaker matches.** The `fallback` value is already the floor the server retries at when a default finds nothing; passing it explicitly makes it a hard floor with no further rescue.
-- **A value is only meaningful on one model's scale.** A `threshold` that works on `harrier-270m` (0.2-ish) would filter nearly everything out on `granite-97m` (0.7-ish), and the reverse lets almost everything through. Re-tune when you switch `--model`; read the active numbers from the tool description.
+- **A value is only meaningful on one model's scale.** A `threshold` that works on `harrier-270m` (0.2-ish) lets nearly everything through on `granite-97m` (0.7-ish), and the reverse filters nearly everything out. Re-tune when you switch `--model`; read the active numbers from the tool description.
 - **`semantic_fallback: true` tells you when the retry fired** — those hits cleared only the fallback floor, so treat them as weaker than a normal result.
 
 There is no equivalent knob for the lexical leg — an exact/substring match either exists or it doesn't; use `filter` to narrow scope instead of a threshold.

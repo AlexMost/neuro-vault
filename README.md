@@ -209,7 +209,7 @@ Then ask your assistant:
 
 > "What did I write about building AI agents?"
 
-On first run the embedding model downloads automatically (`harrier-270m` ≈ 344 MB, `granite-97m` ≈ 98 MB, `harrier-0.6b` ≈ 706 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `harrier-270m`, a multilingual model that handles Ukrainian and English notes well; add `--model granite-97m` for the lite one (smaller, faster to index, a good fit for small hosts), or `--model harrier-0.6b` when quality matters more than index time ([which to pick, with benchmarks](./docs/guide/embedding-models.md); [bake-off report](./docs/research/2026-10-embedding-model-bakeoff.md)). 🎚️ Similarity thresholds are calibrated per model, so switching needs no tuning — and switching rebuilds the vault's index once.
+On first run the embedding model downloads automatically (`harrier-270m` ≈ 344 MB, `granite-97m` ≈ 98 MB, `harrier-0.6b` ≈ 706 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `harrier-270m`, a multilingual model that is markedly better than the lite one on Ukrainian notes; add `--model granite-97m` for the lite one (smaller, faster to index, a good fit for small hosts), or `--model harrier-0.6b` when quality matters more than index time ([which to pick, with benchmarks](./docs/guide/embedding-models.md); [bake-off report](./docs/research/2026-10-embedding-model-bakeoff.md)). 🎚️ Similarity thresholds are calibrated per model, so switching needs no tuning — and switching rebuilds the vault's index once.
 
 To run another model, put `--model` in the server's `args`:
 

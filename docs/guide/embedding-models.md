@@ -16,7 +16,7 @@ A model is chosen by a **profile key**. The set is closed — three keys — bec
 
 ¹ Measured on a copy of the author's private vault (949 notes, 888 with a note vector), Apple M5 (4 performance + 6 efficiency cores), CPU only, int8 weights. The indexing runs overlapped other CPU work, so read the times as upper-side. Cost scales with the number of vectors (one per note plus one per section): extrapolating from a separate benchmark, a vault of about 56,000 vectors takes roughly 24 minutes with `granite-97m` and 55–100 minutes with `harrier-270m`.
 
-² Median, single query, CPU.
+² Median, single query, CPU. Taken from the [bake-off report](../research/2026-10-embedding-model-bakeoff.md), not from the measurement run behind the other columns.
 
 All profiles run quantised (`q8`) with a 512-token input window, and all are multilingual. Day-to-day cost is small whatever you pick: after the first index, only notes that changed are re-embedded.
 
@@ -24,7 +24,7 @@ How the pipeline works: [`docs/architecture/embedding-pipeline.md`](../architect
 
 ## Choosing
 
-- **`harrier-270m` — most people.** Much better on Ukrainian notes than the lite model, comparable on the few English queries measured, and a first index measured in minutes on a vault of about a thousand notes. It is the default for that reason.
+- **`harrier-270m` — most people.** Much better on Ukrainian notes than the lite model, slightly behind on the four English queries measured (too few to rank models on), and a first index measured in minutes on a vault of about a thousand notes. It is the default for that reason.
 - **`granite-97m` — small hosts or a fast first index.** Under a third of the download, about 40 % of the indexing time, and the lowest memory and query latency of the three. On this benchmark its Ukrainian retrieval is clearly behind the harrier models (see [Benchmarks](#benchmarks)), so choose it when resources, not recall, are the constraint.
 - **`harrier-0.6b` — quality first.** The largest model: use it when you do not mind a long first index and have the RAM and download to spare.
 
