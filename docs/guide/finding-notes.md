@@ -242,12 +242,12 @@ For more on the semantic pipeline (merge, cap, per-seed expansion, orphan-block 
 
 | Default | `harrier-270m` (default) | `granite-97m` | `harrier-0.6b` | Governs |
 | --- | --- | --- | --- | --- |
-| `quick` | 0.20 | 0.71 | TBD-12.1 | `search_notes` semantic floor, `effort: "quick"` |
-| `deep` | 0.13 | 0.66 | TBD-12.1 | `search_notes` semantic floor, `effort: "deep"`; also the block-evidence floor |
-| `fallback` | 0.05 | 0.65 | TBD-12.1 | the one-shot retry when a default finds nothing |
-| `expansionFloor` | 0.20 | 0.65 | TBD-12.1 | `expansion_floor` default (seed↔note scale) |
-| `similarNotes` | 0.22 | 0.67 | TBD-12.1 | `get_similar_notes` default `threshold` |
-| `duplicates` | 0.77 | 0.90 | TBD-12.1 | `find_duplicates` default `threshold` |
+| `quick` | 0.20 | 0.71 | 0.25 | `search_notes` semantic floor, `effort: "quick"` |
+| `deep` | 0.13 | 0.66 | 0.19 | `search_notes` semantic floor, `effort: "deep"`; also the block-evidence floor |
+| `fallback` | 0.05 | 0.65 | 0.15 | the one-shot retry when a default finds nothing |
+| `expansionFloor` | 0.20 | 0.65 | 0.25 | `expansion_floor` default (seed↔note scale) |
+| `similarNotes` | 0.22 | 0.67 | 0.29 | `get_similar_notes` default `threshold` |
+| `duplicates` | 0.77 | 0.90 | 0.76 | `find_duplicates` default `threshold` |
 
 Same table, with the derivation, on the model page: [Embedding models → Similarity thresholds per model](./embedding-models.md#similarity-thresholds-per-model). The `search_notes` tool description quotes the active model's `quick` / `deep` / `fallback` / `expansionFloor`, so your assistant sees the numbers that apply to the running server.
 

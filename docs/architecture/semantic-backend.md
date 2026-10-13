@@ -86,7 +86,7 @@ Three tools, two different postures:
   | --- | --- | --- |
   | `indexing` | `SEMANTIC_INDEX_BUILDING` | `{ vault, indexed, total }` |
   | `disabled` | `SEMANTIC_DISABLED` | `{ vault, hint }` naming the config key |
-  | `unavailable`, or `entry.backend` absent | `SEMANTIC_INDEX_NOT_FOUND` | `{ vault, reason, hint }` — the backend's reason, and a hint naming `neuro-vault-mcp index --vault <path>` (to be run with the same `--model` as the server) |
+  | `unavailable`, or `entry.backend` absent | `SEMANTIC_INDEX_NOT_FOUND` | `{ vault, reason, hint }` — the backend's reason, and a `hint` whose text is `build it with: neuro-vault-mcp index --vault <path>`, with no `--model`; a reader running it adds their server's own `--model`, so that `index` and the server agree |
   | `ready` | — call proceeds | — |
 
   An absent backend (semantic module off server-wide) is folded into the same `unavailable` branch with a fixed reason, rather than a fourth code — from a caller's point of view "no backend" and "a backend that never became usable" need the same response.

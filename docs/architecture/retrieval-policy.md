@@ -176,7 +176,7 @@ The final step (`retrieval-policy.ts:278-285`) maps each capped seed to a `NoteR
 
 ## Calibration
 
-Every similarity default is data on the active `ModelProfile` (`ModelProfile.similarity`, [`model-profiles.ts`](../../src/modules/semantic/model-profiles.ts)), because a model's similarity scale is its own: an encoder with CLS pooling and a decoder with last-token pooling do not spread their scores over the same range, so one threshold set would be wrong for most profiles. The record holds six values, and each is read in exactly one place:
+Every similarity default is data on the active `ModelProfile` (`ModelProfile.similarity`, [`model-profiles.ts`](../../src/modules/semantic/model-profiles.ts)), because a model's similarity scale is its own: an encoder with CLS pooling and a decoder with last-token pooling do not spread their scores over the same range, so one threshold set would be wrong for most profiles. The record holds six values, and the table shows where each is applied (`deep` in two steps of `executeRetrieval`, the rest in one):
 
 | Default | Governs | Read by |
 | --- | --- | --- |
@@ -193,19 +193,19 @@ The `search_notes` descriptions for `threshold` and `expansion_floor` interpolat
 
 | Default | `harrier-270m` (default) | `granite-97m` | `harrier-0.6b` |
 | --- | --- | --- | --- |
-| `quick` | TBD-12.1 | TBD-12.1 | TBD-12.1 |
-| `deep` | TBD-12.1 | TBD-12.1 | TBD-12.1 |
-| `fallback` | TBD-12.1 | TBD-12.1 | TBD-12.1 |
-| `expansionFloor` | TBD-12.1 | TBD-12.1 | TBD-12.1 |
-| `similarNotes` | TBD-12.1 | TBD-12.1 | TBD-12.1 |
-| `duplicates` | TBD-12.1 | TBD-12.1 | TBD-12.1 |
+| `quick` | 0.20 | 0.71 | 0.25 |
+| `deep` | 0.13 | 0.66 | 0.19 |
+| `fallback` | 0.05 | 0.65 | 0.15 |
+| `expansionFloor` | 0.20 | 0.65 | 0.25 |
+| `similarNotes` | 0.22 | 0.67 | 0.29 |
+| `duplicates` | 0.77 | 0.90 | 0.76 |
 
 Golden-set guards at these values (targets: `deep_filtered_first_relevant` = 0, `quick_hit_at_3_drop` ≤ 1):
 
 | Guard | `harrier-270m` | `granite-97m` | `harrier-0.6b` |
 | --- | --- | --- | --- |
-| `deep_filtered_first_relevant` | TBD-12.1 | TBD-12.1 | TBD-12.1 |
-| `quick_hit_at_3_drop` | TBD-12.1 | TBD-12.1 | TBD-12.1 |
+| `deep_filtered_first_relevant` | 0 | 0 | 0 |
+| `quick_hit_at_3_drop` | 0 | 0 | 0 |
 
 ### Method
 

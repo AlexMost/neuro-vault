@@ -127,16 +127,15 @@ The rebuild is announced where the user will see it. The server logs one line to
 
 ## Measured numbers
 
-Cold-index cost depends on the profile: a larger model embeds fewer vectors per second and writes larger vectors. Measured on Apple silicon with quantized weights, on the same vault for every profile:
+Cold-index cost depends on the profile: a larger model embeds fewer vectors per second, needs more memory while it does, and writes larger vectors. Measured on Apple silicon (CPU, quantized weights) on one vault for every profile, each profile cold-indexing its own corpus-less clone; the runs shared the CPU with other work, so the times are upper-side:
 
 | | `granite-97m` | `harrier-270m` (default) | `harrier-0.6b` |
 | --- | --- | --- | --- |
-| Vault indexed (notes / vectors) | TBD-12.1 | TBD-12.1 | TBD-12.1 |
-| Cold index | TBD-12.1 | TBD-12.1 | TBD-12.1 |
-| No-op reconcile of the same vault | TBD-12.1 | TBD-12.1 | TBD-12.1 |
-| Corpus on disk | TBD-12.1 | TBD-12.1 | TBD-12.1 |
+| Vault indexed (notes / notes with a note vector) | 949 / 888 | 949 / 888 | 949 / 888 |
+| Cold index | 3.5 min | 8.8 min | 35.5 min |
+| Max RSS while indexing | 1.20 GB | 1.32 GB | 2.40 GB |
 
-A cold index is minutes, so it can never block server startup; an incremental pass is free enough to run on every save. The per-profile retrieval quality that goes with these costs is in [`retrieval-policy.md` § Calibration](./retrieval-policy.md#calibration).
+A cold index is minutes for the two smaller profiles and over half an hour for `harrier-0.6b`, so it can never block server startup. After it, only notes that changed are re-embedded. The per-profile retrieval quality that goes with these costs is in [`retrieval-policy.md` § Calibration](./retrieval-policy.md#calibration).
 
 ## Boundaries
 
