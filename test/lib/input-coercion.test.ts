@@ -365,3 +365,60 @@ describe('wrapSchemaWithCoercion — meaningful coerce errors', () => {
     if (result.success) expect(result.data).toEqual({ limit: 5 });
   });
 });
+
+describe('wrapSchemaWithCoercion — wrapper layers survive the rebuild', () => {
+  // `registerTool` advertises the wrapped schema, and the MCP SDK converts it
+  // for `tools/list` with `pipeStrategy: 'input'` — mirror that here.
+  function advertised(schema: z.ZodTypeAny) {
+    return z.toJSONSchema(wrapSchemaWithCoercion(schema), { io: 'input' }) as {
+      properties: Record<string, { description?: string; default?: unknown }>;
+      required?: string[];
+    };
+  }
+
+  it('keeps a description attached outside .optional()', () => {
+    const schema = z.object({ threshold: z.number().optional().describe('min similarity') });
+    expect(advertised(schema).properties.threshold?.description).toBe('min similarity');
+  });
+
+  it('keeps a description attached inside .optional()', () => {
+    const schema = z.object({ threshold: z.number().describe('min similarity').optional() });
+    expect(advertised(schema).properties.threshold?.description).toBe('min similarity');
+  });
+
+  it('keeps the outermost description when several layers carry one', () => {
+    const schema = z.object({
+      x: z.number().describe('inner').nullable().describe('middle').optional().describe('outer'),
+    });
+    expect(advertised(schema).properties.x?.description).toBe('outer');
+  });
+
+  it('keeps .nullable(): null still parses, and coercion still runs', () => {
+    const wrapped = wrapSchemaWithCoercion(z.object({ x: z.number().nullable().optional() }));
+    expect(wrapped.safeParse({ x: null })).toMatchObject({ success: true, data: { x: null } });
+    expect(wrapped.safeParse({ x: '5' })).toMatchObject({ success: true, data: { x: 5 } });
+  });
+
+  it('keeps .default(): an omitted field gets the default, and stays out of required', () => {
+    const schema = z.object({ limit: z.number().int().default(10).describe('page size') });
+    const wrapped = wrapSchemaWithCoercion(schema);
+    expect(wrapped.safeParse({})).toMatchObject({ success: true, data: { limit: 10 } });
+    expect(wrapped.safeParse({ limit: '3' })).toMatchObject({ success: true, data: { limit: 3 } });
+    // Not asserted: the advertised `default` key. zod drops `default` from an
+    // input-mode JSON Schema of any transforming schema, and the coercion
+    // preprocess is one — the default is honoured at parse time only.
+    const json = advertised(schema);
+    expect(json.required ?? []).not.toContain('limit');
+    expect(json.properties.limit?.description).toBe('page size');
+  });
+
+  it('keeps a function default fresh per parse', () => {
+    const wrapped = wrapSchemaWithCoercion(
+      z.object({ tags: z.array(z.string()).default(() => []) }),
+    );
+    const a = wrapped.parse({}) as { tags: string[] };
+    const b = wrapped.parse({}) as { tags: string[] };
+    expect(a.tags).toEqual([]);
+    expect(a.tags).not.toBe(b.tags);
+  });
+});
