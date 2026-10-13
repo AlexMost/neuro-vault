@@ -1927,12 +1927,22 @@ Commit the change folder if anything in it changed, push, and open the PR with `
 
 # PR 2 — template-aware tokenisation, batching, harrier profiles (`Refs #98`)
 
-Fresh worktree off `origin/main` (PR 1 merged), branch `feat/embedding-model-profiles-2`. Re-read Tasks 4.1–7.4 against `main` first.
+Fresh worktree off `origin/main` (PR 1 merged), branch `feat/embedding-model-profiles-pr2`. Re-read Tasks 4.1–7.4 against `main` first.
+
+**Reconciled against `main` @ `a049634` (PR 1 as merged).** PR 1's review changed code these snippets lean on; the tasks below already carry the fixes:
+
+- **(a) `TokenizerHandle` lost `padding_side` / `pad_token_id`.** Task 5.3 Step 0 restores both (optional, read-only) together with the loader-test fake; 5.3's `padId` / `padSide` and 7.2's `tokenizer.padding_side` depend on them.
+- **(b) `EmbeddingService`'s constructor refuses a non-empty `queryPrefix` / `documentPrefix`.** Task 4.1 keeps the refusal (`embedQuery` does not apply prefixes yet); Task 5.3 — where `embedRows` starts applying them — deletes it, its test, and the "not applied until" wording in `ModelProfile`'s doc comments. Without that, Task 7.1's harrier profiles would throw at construction.
+- **(c) The loader refuses `model.config.max_position_embeddings < profile.maxTokens`.** Both harrier configs at their pinned revisions declare `max_position_embeddings: 32768` (checked in the model cache), so `maxTokens: 512` loads. Nothing to change in 7.1 / 7.2.
+- **(d) The server's rebuild announcement lives in `createCorpusBackend`'s reconcile call (`onRebuild` in the options it passes to `deps.reconcile`).** Task 6.2's `backend/index.ts` change must keep forwarding `opts` to `reconcileCorpus` unchanged, and `test/semantic/backend/factory.test.ts` (fakes `asIndexEmbedFn`) moves to `asDocumentEmbedFn`.
+- **(e) `eval/backends.ts` `loadSnapshot(vaultRoot, identity)` refuses another model's corpus.** PR 2 does not touch `eval/backends.ts`; Task 4.1 only renames `service.embed` → `service.embedQuery` in `eval/run.ts` and the provider literal in `eval/pipelines.ts`. `eval/pipelines.ts` has its **own** query-side `EmbedFn` type — it is not the corpus port and stays; Task 6.2's grep is scoped to `src test` for that reason.
+- **Deferred PR 1 minors that land here:** pooling — `rowMask.length === dims[1]` check (reachable once rows are padded), mean under left padding at `b > 0`, zero-vector rejection (Task 5.3 Step 0); loader — dispose the model when export validation fails, tests for "no inference session", "forward pass returned no …" and the `token_embeddings` alias (Task 5.3 Step 0).
+- **Environment:** the worktree guard blocks the bare word `eval` in commands. Run the harness as `npx tsx ./eval/run.ts`, and in greps write the directory as `./ev[a]l`.
 
 ### Task 4.1: Split query and document embedding in the provider contract
 
 **Files:**
-- Modify: `src/modules/semantic/types.ts`, `src/modules/semantic/embedding-service.ts`, `src/modules/semantic/embed-queue.ts`, `src/modules/semantic/retrieval-policy.ts:150`, `src/modules/semantic/retrieval-pipeline.ts`, `src/modules/semantic/tools/{index,search-notes,get-similar-notes,find-duplicates}.ts` (dep types), `src/modules/semantic/index.ts`, `src/cli-index.ts`, `eval/pipelines.ts`, `eval/run.ts`
+- Modify: `src/modules/semantic/types.ts` (incl. `ToolHandlerDependencies.embeddingProvider`), `src/types.ts` (re-export `QueryEmbedder` beside `EmbeddingProvider`), `src/modules/semantic/embedding-service.ts`, `src/modules/semantic/embed-queue.ts`, `src/modules/semantic/retrieval-policy.ts:150`, `src/modules/semantic/retrieval-pipeline.ts`, `src/modules/semantic/tools/{index,search-notes,get-similar-notes,find-duplicates}.ts` (dep types), `src/modules/semantic/index.ts`, `src/cli-index.ts`, `eval/pipelines.ts`, `eval/run.ts` (not `eval/backends.ts`)
 - Test: every file holding an `EmbeddingProvider` fake — `test/lib/explicit-vault-prose.test.ts`, `test/lib/fan-out-prose.test.ts`, `test/semantic/retrieval-pipeline.test.ts`, `test/semantic/retrieval-policy.test.ts`, `test/semantic/tools/_calibration-fixture.ts`, `test/semantic/tools/_helpers.ts`, `test/semantic/tools/_hybrid-helpers.ts`, `test/semantic/tools/{get-similar-notes,index,search-notes-description,search-notes-filter,search-notes-hybrid,search-notes}.test.ts`, `test/server-modules.test.ts`, `test/semantic/embed-queue.test.ts`, `test/semantic/embedding-service.test.ts`, `test/eval/*.test.ts`
 
 **Interfaces:**
@@ -1954,7 +1964,7 @@ Append to `test/semantic/embedding-service.test.ts`:
   });
 ```
 
-and rename every `service.embed(` in that file to `service.embedQuery(`. In `test/semantic/embed-queue.test.ts`, make `controllableProvider().provider` a full `EmbeddingProvider`:
+and rename every `service.embed(` in that file to `service.embedQuery(`. In `test/semantic/embed-queue.test.ts` (import `TEST_EMBEDDING_IDENTITY` from `../_identity.js`), make `controllableProvider().provider` a full `EmbeddingProvider`:
 
 ```ts
     provider: {
@@ -2027,7 +2037,7 @@ export interface EmbeddingProvider extends QueryEmbedder {
 }
 ```
 
-`src/modules/semantic/embedding-service.ts` — rename `embed` to a private `embedOne(text: string)`, and add:
+`src/modules/semantic/embedding-service.ts` — rename `embed` to a private `embedOne(text: string)` (keep the constructor's prefix refusal: `embedOne` still applies no prefix; Task 5.3 removes it), and add:
 
 ```ts
   readonly maxBatchSize = 8;
@@ -2060,13 +2070,13 @@ Run `npm run typecheck`. Every error of the form "Property 'embedQuery' is missi
 
 - [ ] **Step 4: Run everything**
 
-Run: `npm test && npm run typecheck && npm run lint && grep -rn "embeddingProvider.embed(\|\.embed(query" src eval`
+Run: `npm test && npm run typecheck && npm run lint && grep -rn "embeddingProvider.embed(\|\.embed(query" src ./ev[a]l`
 Expected: PASS, clean, grep prints nothing.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add -A src eval test
+git add -A src ./ev[a]l test
 git commit -m "refactor(semantic): split query and document embedding in the provider contract
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -2340,14 +2350,55 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 5.3: `EmbeddingService` embeds template-aware batches
 
 **Files:**
-- Modify: `src/modules/semantic/embedding-service.ts`
-- Test: `test/semantic/embedding-service.test.ts`
+- Modify: `src/modules/semantic/embedding-service.ts`, `src/modules/semantic/local-model-loader.ts`, `src/modules/semantic/pooling.ts`, `src/modules/semantic/model-profiles.ts` (doc comments only)
+- Test: `test/semantic/embedding-service.test.ts`, `test/semantic/local-model-loader.test.ts`, `test/semantic/pooling.test.ts`
 
 **Interfaces:**
 - Consumes: `deriveTemplate`, `encodeRow`, `padBatch` (5.1–5.2); `poolAndNormalize` (1.3); `LocalModel` (1.4).
-- Produces: same public surface as Task 4.1; `embedDocuments` now runs one forward pass per call.
+- Produces: same public surface as Task 4.1; `embedDocuments` now runs one forward pass per call. `TokenizerHandle` regains `readonly padding_side?: string; readonly pad_token_id?: number | null`.
+
+- [ ] **Step 0: Loader and pooling — restore pad metadata, land PR 1's deferred hardening**
+
+PR 1's review dropped the tokenizer's pad metadata from `TokenizerHandle` (nothing read it yet); this task reads it. `src/modules/semantic/local-model-loader.ts`:
+
+```ts
+/** The tokenizer surface the provider uses — a structural slice of transformers.js's. */
+export interface TokenizerHandle {
+  encode(text: string, options: { add_special_tokens: boolean }): number[];
+  /** The side the tokenizer pads on; transformers.js defaults to right when its config is silent. */
+  readonly padding_side?: string;
+  /** May equal a template id (harrier-0.6b pads with its suffix) — pooling reads the mask, never ids. */
+  readonly pad_token_id?: number | null;
+}
+```
+
+`RawModel` gains `dispose?(): Promise<unknown>;`. Wrap the session / input / output / window checks so a failed validation releases the ONNX session before rethrowing (`await model.dispose?.().catch(() => undefined); throw error;`) — a rejected export must not keep hundreds of MB of weights alive until GC.
+
+`src/modules/semantic/pooling.ts` — in the token-state branch, per row, before reading positions:
+
+```ts
+    if (rowMask.length !== seq) {
+      throw new Error(`input ${b} has ${rowMask.length} mask positions for ${seq} token states`);
+    }
+```
+
+Tests. `test/semantic/local-model-loader.test.ts`: the fake's tokenizer becomes `{ encode: () => [1], padding_side: 'right', pad_token_id: 0 }`; the fake model gets `dispose: vi.fn(async () => {})` (returned from `fakeTransformers`), and an option to replace `sessions` (for `{}`). Add:
+- `passes the tokenizer's padding side and pad id through` — `(await load(granite)).tokenizer` has `padding_side: 'right'`, `pad_token_id: 0`;
+- `fails naming the profile when no inference session was loaded` — `sessions: {}` → `'model "granite-97m": no inference session was loaded'`;
+- `disposes the model when export validation fails` — `outputNames: ['logits']` rejects and `dispose` was called once; a successful load does not call it;
+- `fails naming the profile when the forward pass returns no output` — `outputNames: ['last_hidden_state']`, `outputs: {}` → `run` rejects with `'model "granite-97m": forward pass returned no "last_hidden_state"'`;
+- `accepts token_embeddings as token states` — `outputNames: ['token_embeddings']`, `outputs: { token_embeddings: { data: [1, 2], dims: [1, 1, 2] } }` → `kind: 'token_states'`.
+
+`test/semantic/pooling.test.ts`: add
+- `mean ignores left pads on a later row` — `poolAndNormalize(states(2, 3), [[1, 1, 1], [0, 1, 1]], 'mean')[1]` equals `unit([12.5, 1])`;
+- `rejects a zero vector` — `{ kind: 'pooled', data: [0, 0], dims: [1, 2] }` → `/zero vector/`;
+- `rejects a mask row whose length disagrees with the sequence` — `poolAndNormalize(states(1, 3), [[1, 1]], 'cls')` → `/2 mask positions for 3 token states/`.
+
+Run: `npx vitest run test/semantic/local-model-loader.test.ts test/semantic/pooling.test.ts` — Expected: FAIL first, PASS after the change. This step may be its own commit (`fix(semantic): dispose a rejected export; check mask width in pooling`).
 
 - [ ] **Step 1: Write the failing tests**
+
+Delete the `refuses a profile with a prefix it cannot apply yet` test: from this task on the service applies prefixes (the constructor's refusal goes in Step 2).
 
 Add to `test/semantic/embedding-service.test.ts` (a self-contained fixture, separate from Task 1.5's `fakeModel`):
 
@@ -2433,7 +2484,7 @@ describe('EmbeddingService — template-aware batches', () => {
 });
 ```
 
-Update Task 1.5's `cuts an over-long input to the profile window` test: the row is now `maxTokens` long **ending in `102`** — assert `expect(runs[0].ids[0].at(-1)).toBe(102)`. Run: `npx vitest run test/semantic/embedding-service.test.ts` — Expected: FAIL.
+Update Task 1.5's `cuts an over-long input to the profile window` test (now via `embedQuery`): the row is still `maxTokens` long but **ends in `102`** — assert `expect(ids.at(-1)).toBe(102)` and `expect(ids.at(-2)).toBe(1509)` (510 body ids, 1000…1509), and replace its "v2 semantics" comment: the template is re-attached after the cut. Run: `npx vitest run test/semantic/embedding-service.test.ts` — Expected: FAIL.
 
 - [ ] **Step 2: Implement**
 
@@ -2498,7 +2549,7 @@ and `getLoaded()` replaces `getModel()` — same shared-initialisation/retry sha
         })
 ```
 
-Delete `embedOne`.
+Delete `embedOne`. Delete the constructor's `query/document prefixes are not supported yet` refusal (and its comment) — `embedRows` applies both prefixes now, and Task 7.1's harrier profiles would otherwise throw at construction. In `model-profiles.ts`, drop the "Not applied until `embedQuery` lands … refuses a non-empty one until then" sentence from `queryPrefix`'s doc comment and the "Same staging" one from `documentPrefix`'s.
 
 - [ ] **Step 3: Run the tests and the gates**
 
@@ -2507,7 +2558,7 @@ Run: `npm test && npm run typecheck && npm run lint` — Expected: PASS.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/modules/semantic/embedding-service.ts test/semantic/embedding-service.test.ts
+git add src/modules/semantic test/semantic
 git commit -m "feat(semantic): template-aware truncation and batched forward passes
 
 The provider now truncates raw token ids and re-attaches the tokenizer's
@@ -2770,7 +2821,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `src/lib/obsidian/corpus/types.ts` (`EmbedFn` → `EmbedDocumentsFn`), `src/lib/obsidian/corpus/reconcile.ts`, `src/modules/semantic/embed-queue.ts` (remove `asIndexEmbedFn`), `src/modules/semantic/backend/index.ts`, `src/cli-index.ts`
-- Test: `test/lib/obsidian/corpus/reconcile.test.ts`, `test/semantic/backend/corpus-backend.test.ts`, `test/cli-index.test.ts`, `test/semantic/embed-queue.test.ts`
+- Test: `test/lib/obsidian/corpus/reconcile.test.ts`, `test/semantic/backend/corpus-backend.test.ts`, `test/semantic/backend/factory.test.ts` (its embedder fake `{ asIndexEmbedFn: … }` becomes `{ asDocumentEmbedFn: () => async (ts: string[]) => ts.map(() => [1]) }`), `test/cli-index.test.ts`, `test/semantic/embed-queue.test.ts`
 
 **Interfaces:**
 - Produces: `type EmbedDocumentsFn = (texts: string[]) => Promise<number[][]>`; `ReconcileDeps.embedDocuments: EmbedDocumentsFn` (replaces `embed`); `IndexEmbedder = { identity: EmbeddingIdentity; embedDocuments: EmbedDocumentsFn }`.
@@ -2864,7 +2915,7 @@ async function embedNote(
 }
 ```
 
-`backend/index.ts` — `const embedDocuments = deps.embedder.asDocumentEmbedFn();` and `reconcileCorpus({ ...fsDeps, embedDocuments, store, warn, identity: deps.identity }, opts)`.
+`backend/index.ts` — `const embedDocuments = deps.embedder.asDocumentEmbedFn();` and `reconcileCorpus({ ...fsDeps, embedDocuments, store, warn, identity: deps.identity }, opts)`. Keep forwarding `opts` untouched: since PR 1's review, `createCorpusBackend` passes the server's stderr rebuild announcement as `opts.onRebuild` (and `onProgress`/`signal`) through this call — dropping `opts` silently loses the announcement. The existing `corpus-backend.test.ts` rebuild-line tests must stay green.
 
 `cli-index.ts` — `IndexEmbedder.embedDocuments: EmbedDocumentsFn`; the default wraps the service in the queue so `index` gets the same bucketing as the server:
 
@@ -2883,8 +2934,8 @@ Run `npm run typecheck`; in `corpus-backend.test.ts` replace `EmbedFn` fakes `as
 
 - [ ] **Step 4: Run everything**
 
-Run: `npm test && npm run typecheck && npm run lint && grep -rn "EmbedFn\b\|asIndexEmbedFn\|embedIndex" src eval test`
-Expected: PASS, clean, grep prints nothing.
+Run: `npm test && npm run typecheck && npm run lint && grep -rn "EmbedFn\b\|asIndexEmbedFn\|embedIndex" src test`
+Expected: PASS, clean, grep prints nothing. (Not `eval/`: `eval/pipelines.ts` declares its own query-side `EmbedFn`, which is not the corpus port and stays.)
 
 - [ ] **Step 5: Commit**
 
@@ -2976,7 +3027,7 @@ const HARRIER_0_6B: ModelProfile = {
 };
 ```
 
-and add both to `MODEL_PROFILES` after `GRANITE_97M` (insertion order is the order `MODEL_KEYS` and `--help` list them).
+and add both to `MODEL_PROFILES` after `GRANITE_97M` (insertion order is the order `MODEL_KEYS` and `--help` list them). The loader's window check (`max_position_embeddings < maxTokens` → refuse) passes: both pinned configs declare `max_position_embeddings: 32768`. The constructor no longer refuses prefixes (Task 5.3), so `new EmbeddingService({ profile: resolveModelProfile('harrier-270m') })` must construct — add that as a test in `test/semantic/embedding-service.test.ts`.
 
 - [ ] **Step 3: Run everything**
 
@@ -2985,7 +3036,7 @@ Run: `npm test && npm run typecheck && npm run lint` — Expected: PASS (the con
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/modules/semantic/model-profiles.ts test/semantic/model-profiles.test.ts
+git add src/modules/semantic/model-profiles.ts test/semantic/model-profiles.test.ts test/semantic/embedding-service.test.ts
 git commit -m "feat(semantic): add the harrier-270m and harrier-0.6b profiles
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -3205,11 +3256,28 @@ rm probe-unbatched.ts
 
 Record both wall times and the batched run's max RSS. Expected: batched faster than unbatched, and within "minutes" (bake-off: 6–11 min for ~6k vectors). If batched is not faster, or exceeds ~15 min, record it and open a follow-up issue for cross-note batching (design D6) — do not change scope inside this PR.
 
-- [ ] **Step 4: Open PR 2**
+Run the batched index **last** (or re-run it after the probe) so the copy ends with a product-built harrier-270m corpus for Step 4.
 
-`gh pr create --base main --title "feat: embedding model profiles — template-aware tokenisation, batching, harrier (2/4)"`. Body: what landed (Tasks 4.1–7.3); the EOS regression test named explicitly; the drift numbers and why there is no `embed_version` bump here (design D5 "Cost"); the timing table; the new CI job; `Refs #98`; footer `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Bind with the ccd_pr tools.
+- [ ] **Step 4: The server with `--model harrier-270m` answers with semantic hits; stdout stays JSON-RPC**
 
-- [ ] **Step 5: STOP** — wait for review and merge before Task 8.1.
+Same `REQ` as Task 3.2 Step 3:
+
+```bash
+(printf '%s\n' "$REQ"; sleep 60) | node dist/cli.js --vault "$VAULT_COPY" --model harrier-270m > "$SCRATCH/pr2-harrier.jsonl" 2> "$SCRATCH/pr2-harrier-stderr.txt"
+node -e 'for (const l of require("fs").readFileSync(process.argv[1], "utf8").split("\n").filter(Boolean)) JSON.parse(l); console.log("stdout is JSON-RPC only")' "$SCRATCH/pr2-harrier.jsonl"
+grep -c '"semantic' "$SCRATCH/pr2-harrier.jsonl"
+grep -c "was indexed with" "$SCRATCH/pr2-harrier-stderr.txt" || true
+```
+
+Expected: "stdout is JSON-RPC only"; semantic provenance count ≥ 1; no rebuild line (the corpus already matches). Do **not** measure harrier's retrieval quality with the eval harness here: it still queries with the default profile and refuses a harrier corpus (`eval --model` is PR 3).
+
+- [ ] **Step 5: Review Focus 3, 4, 5 are closed by tests** — confirm by name: 3 → Task 5.2 `ends with the real suffix even when content contains the suffix id at the cut`; 4 → Task 6.1 `gives two concurrent callers their own vectors when their buckets interleave`; 5 → Task 5.3 `rejects a blank document, naming its index, before loading`.
+
+- [ ] **Step 6: Open PR 2**
+
+`gh pr create --base main --title "feat: embedding model profiles — template-aware tokenisation, batching, harrier (2/4)"`. Body: what landed (Tasks 4.1–7.3); the EOS regression test named explicitly; the drift numbers and why there is no `embed_version` bump here (design D5 "Cost"); the timing table; the new CI job; `harrier-270m` and `harrier-0.6b` are opt-in, the default stays `bge-micro-v2`; no existing corpus is invalidated; `Refs #98`; footer `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Bind with the ccd_pr tools.
+
+- [ ] **Step 7: STOP** — wait for review and merge before Task 8.1.
 
 ---
 
