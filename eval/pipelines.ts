@@ -21,21 +21,26 @@ export type EmbedFn = (text: string) => Promise<number[]>;
 
 export const EVAL_TOP_K = 10;
 
-// Every knob in effect, echoed verbatim into the report's `config` (design
-// D5/D7): a run with different knobs must be distinguishable. Semantic legs
-// run at threshold 0 — production thresholds are model-scale-bound and eval
-// counts positions only. Everything else mirrors production deep effort.
-export const EVAL_CONFIG = {
-  top_k: EVAL_TOP_K,
-  semantic_threshold: 0,
-  semantic_pool: 8,
-  expansion_limit: 3,
-  expansion_floor: 0.35,
-  lexical_note_cap: 10,
-  lexical_per_note_cap: 3,
-  expansion_weight: EXPANSION_WEIGHT,
-  k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
-} as const;
+/**
+ * Every knob in effect, echoed into the report's `config` (design D5/D7): a
+ * run with different knobs must be distinguishable. Query-side thresholds are
+ * 0 — eval counts positions. The expansion floor is the profile's own default,
+ * so `fused` stays the production pipeline for that profile (design D12).
+ * Everything else mirrors production deep effort.
+ */
+export function evalConfig(similarity: SimilarityDefaults) {
+  return {
+    top_k: EVAL_TOP_K,
+    semantic_threshold: 0,
+    semantic_pool: 8,
+    expansion_limit: 3,
+    expansion_floor: similarity.expansionFloor,
+    lexical_note_cap: 10,
+    lexical_per_note_cap: 3,
+    expansion_weight: EXPANSION_WEIGHT,
+    k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
+  } as const;
+}
 
 export interface FusedContext {
   lexical: LexicalIndex;
@@ -72,11 +77,15 @@ export function bestRelevantSimilarity(
   return best?.similarity ?? null;
 }
 
-function rankSemantic(queryVector: number[], sources: Map<string, SmartSource>): RankedPath[] {
+function rankSemantic(
+  queryVector: number[],
+  sources: Map<string, SmartSource>,
+  similarity: SimilarityDefaults,
+): RankedPath[] {
   return findNeighbors({
     queryVector,
     sources: sources.values(),
-    threshold: EVAL_CONFIG.semantic_threshold,
+    threshold: evalConfig(similarity).semantic_threshold,
     limit: EVAL_TOP_K,
   }).map((r) => ({ path: r.path, score: r.similarity }));
 }
@@ -95,13 +104,14 @@ async function rankFused(
   // Every knob is passed explicitly, including the two that merely match
   // `MODE_DEFAULTS.deep` today: `config` is the report's comparability record,
   // and a silent lie there is worse than the drift it would hide.
+  const config = evalConfig(similarity);
   const semantic = await executeRetrieval({
     queries: [query],
     mode: 'deep',
-    limit: EVAL_CONFIG.semantic_pool,
-    threshold: EVAL_CONFIG.semantic_threshold,
-    expansionLimit: EVAL_CONFIG.expansion_limit,
-    expansionFloor: EVAL_CONFIG.expansion_floor,
+    limit: config.semantic_pool,
+    threshold: config.semantic_threshold,
+    expansionLimit: config.expansion_limit,
+    expansionFloor: config.expansion_floor,
     sources,
     embeddingProvider: {
       initialize: () => Promise.resolve(),
@@ -112,8 +122,8 @@ async function rankFused(
   });
   const lexical = await context.lexical.search({
     queries: [query],
-    noteCap: EVAL_CONFIG.lexical_note_cap,
-    perNoteCap: EVAL_CONFIG.lexical_per_note_cap,
+    noteCap: config.lexical_note_cap,
+    perNoteCap: config.lexical_per_note_cap,
     getBacklinkCount: (p) => context.graph.getBacklinkCount(p),
   });
   const expansion = flattenExpansion(semantic.results);
@@ -140,7 +150,7 @@ export async function rankQuery(args: {
   similarity: SimilarityDefaults;
 }): Promise<RankedPath[]> {
   if (args.pipeline === 'semantic') {
-    return rankSemantic(args.queryVector, args.sources);
+    return rankSemantic(args.queryVector, args.sources, args.similarity);
   }
   if (!args.fusedContext) {
     throw new Error('fused pipeline requires a FusedContext');

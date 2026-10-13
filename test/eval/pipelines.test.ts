@@ -8,7 +8,7 @@ import {
   EVAL_TOP_K,
   bestRelevantSimilarity,
   createFusedContext,
-  EVAL_CONFIG,
+  evalConfig,
   rankQuery,
 } from '../../eval/pipelines.js';
 
@@ -91,9 +91,9 @@ describe('bestRelevantSimilarity', () => {
   });
 });
 
-describe('EVAL_CONFIG', () => {
+describe('evalConfig', () => {
   it('records every knob the run used', () => {
-    expect(EVAL_CONFIG).toMatchObject({
+    expect(evalConfig(TEST_SIMILARITY)).toMatchObject({
       top_k: 10,
       semantic_threshold: 0,
       semantic_pool: 8,
@@ -104,5 +104,11 @@ describe('EVAL_CONFIG', () => {
       expansion_weight: 0.85,
       k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
     });
+  });
+
+  it('reports the profile’s expansion floor and zero query thresholds', () => {
+    const config = evalConfig({ ...TEST_SIMILARITY, expansionFloor: 0.81 });
+    expect(config.expansion_floor).toBe(0.81);
+    expect(config.semantic_threshold).toBe(0);
   });
 });

@@ -15,9 +15,9 @@ import { BackendError, loadSnapshot } from './backends.js';
 import { GoldenSetError, goldenSetPath, loadGoldenSet } from './golden.js';
 import { aggregate, scoreQuery, type QueryScore } from './metrics.js';
 import {
-  EVAL_CONFIG,
   bestRelevantSimilarity,
   createFusedContext,
+  evalConfig,
   rankQuery,
   type EmbedFn,
   type FusedContext,
@@ -136,7 +136,7 @@ export async function runEval(
     model_key: profile.key,
     identity,
     pipeline: args.pipeline,
-    config: { ...EVAL_CONFIG },
+    config: { ...evalConfig(profile.similarity) },
     golden: { path: goldenSetPath(vaultRoot), count: entries.length },
     metrics: aggregate(per_query),
     per_query,
