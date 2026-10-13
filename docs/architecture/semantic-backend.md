@@ -39,8 +39,8 @@ interface SemanticBackend {
 | Condition | Outcome |
 | --- | --- |
 | `enabled: false` (module off or vault opted out) | `disabled`. No reconcile ever runs; nothing is read from or written under `.neuro-vault/corpus/`. |
-| Stored manifest is compatible with the running model/strategy identity, and shards exist | Snapshot decoded immediately, state `ready`; a reconcile still runs in the background to catch up on anything since the last write. |
-| No compatible manifest, or no shards | State `indexing`; a reconcile builds the corpus from scratch, promoting to `ready` when it finishes. When shards exist but the manifest is incompatible — typically because `--model` changed — the discard is announced on stderr first (`vault "<name>" was indexed with <stored>; active model is <active> — discarding the corpus and re-indexing in the background`); a vault with no corpus yet logs nothing. |
+| Stored manifest is compatible with the active embedding identity (every manifest field but `created`), and shards exist | Snapshot decoded immediately, state `ready`; a reconcile still runs in the background to catch up on anything since the last write. |
+| No compatible manifest, or no shards | State `indexing`; a reconcile builds the corpus from scratch, promoting to `ready` when it finishes. When shards exist but the manifest is incompatible — typically because `--model` changed — the discard is announced on stderr first (`neuro-vault corpus: vault "<name>" was indexed with <model_key> (embed_version <n>); active model is <model_key> (embed_version <m>) — discarding the corpus and re-indexing in the background`; a missing or unparsable manifest reads `an unreadable or missing manifest` on the stored side); a vault with no corpus yet logs nothing. |
 | A reconcile pass throws | State `unavailable`, with `reason` set from the error. The vault keeps whatever snapshot it already had — an empty one if it never had any. |
 | A reconcile pass returns, having left nothing rankable to serve | State `unavailable`, with a `reason` naming the counts. `reconcileCorpus` is per-note tolerant — a rejected `embedDocuments` call is counted in `summary.failed` and the pass returns normally — so a cold vault with no reachable embedding model would otherwise be promoted to `ready` over an empty corpus. The guard is exactly three clauses: the decoded snapshot is empty _and_ `total > 0` _and_ `failed > 0`. An empty vault has no `total`; a healthy vault whose notes are all below the size gate has no `failed`; a healthy incremental pass that lost one note has a non-empty snapshot, because a failed note keeps the shard it already had. Note the guard deliberately does _not_ require `embedded === 0`: a below-gate note calls `embedDocuments` zero times and still counts as `embedded`, so one stub note would otherwise mask a wholly failed pass — durably, since the stub is `reused` from the next pass on. |
 
@@ -86,7 +86,7 @@ Three tools, two different postures:
   | --- | --- | --- |
   | `indexing` | `SEMANTIC_INDEX_BUILDING` | `{ vault, indexed, total }` |
   | `disabled` | `SEMANTIC_DISABLED` | `{ vault, hint }` naming the config key |
-  | `unavailable`, or `entry.backend` absent | `SEMANTIC_INDEX_NOT_FOUND` | `{ vault, reason, hint }` — the backend's reason, and a hint naming `neuro-vault-mcp index --vault <path>` |
+  | `unavailable`, or `entry.backend` absent | `SEMANTIC_INDEX_NOT_FOUND` | `{ vault, reason, hint }` — the backend's reason, and a hint naming `neuro-vault-mcp index --vault <path>` (to be run with the same `--model` as the server) |
   | `ready` | — call proceeds | — |
 
   An absent backend (semantic module off server-wide) is folded into the same `unavailable` branch with a fixed reason, rather than a fourth code — from a caller's point of view "no backend" and "a backend that never became usable" need the same response.
