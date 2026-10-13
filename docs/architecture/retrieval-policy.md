@@ -6,7 +6,7 @@ This document covers the **semantic leg** of `search_notes` only. The lexical le
 
 ## What it is
 
-`src/modules/semantic/retrieval-policy.ts` exports a single function, `executeRetrieval(input)`, that takes `queries: string[]` and runs one pipeline over it — there is no separate single-query entry point. A single-query call is the degenerate case of the array form: the tool handler always wraps a scalar `query` into a one-element array before calling in (`src/modules/semantic/tools/search-notes.ts:299-306` — `queries = [normalizeQuery(input.query)]` when `input.query` is a string), and the policy itself has no branch on array length. Query arity is a surfacing concern the tool layer decides afterwards (whether `matched_queries` and `query_stats` reach the MCP response), not a retrieval-path concern.
+`src/modules/semantic/retrieval-policy.ts` exports a single function, `executeRetrieval(input)`, that takes `queries: string[]` and runs one pipeline over it — there is no separate single-query entry point. A single-query call is the degenerate case of the array form: the tool handler always wraps a scalar `query` into a one-element array before calling in (`src/modules/semantic/tools/search-notes.ts:312-318` — `queries = [normalizeQuery(input.query)]` when `input.query` is a string), and the policy itself has no branch on array length. Query arity is a surfacing concern the tool layer decides afterwards (whether `matched_queries` and `query_stats` reach the MCP response), not a retrieval-path concern.
 
 The pipeline:
 
@@ -160,7 +160,7 @@ Crucially, there is **no global dedup across seeds**: the same neighbour path ma
 
 ## Assembling the tree
 
-The final step (`retrieval-policy.ts:278-285`) maps each capped seed to a `NoteResultNode` (`types.ts:37-47`): `{ path, similarity, matched_queries, blocks, related }`. `matched_queries` is always populated at this layer — for a single-query call it is `[query]`, since that query is the only one that could have produced the seed. Whether `matched_queries` reaches the MCP response is decided by the tool layer's `isMulti` flag (`search-notes.ts:310-317` for how `isMulti` is set, `search-notes.ts:421-434` for the conditional spread that includes it only `if (matchedQueries !== undefined)`) — a purely cosmetic decision about the response shape, made after retrieval has already finished.
+The final step (`retrieval-policy.ts:278-285`) maps each capped seed to a `NoteResultNode` (`types.ts:37-47`): `{ path, similarity, matched_queries, blocks, related }`. `matched_queries` is always populated at this layer — for a single-query call it is `[query]`, since that query is the only one that could have produced the seed. Whether `matched_queries` reaches the MCP response is decided by the tool layer's `isMulti` flag (`search-notes.ts:312-318` for how `isMulti` is set, `search-notes.ts:421-434` for the conditional spread that includes it only `if (matchedQueries !== undefined)`) — a purely cosmetic decision about the response shape, made after retrieval has already finished.
 
 ## Invariants
 
@@ -187,7 +187,7 @@ Every similarity default is data on the active `ModelProfile` (`ModelProfile.sim
 | `similarNotes` | default `threshold` of `get_similar_notes` | `get_similar_notes` |
 | `duplicates` | default `threshold` of `find_duplicates` | `find_duplicates` |
 
-The tool descriptions interpolate the active profile's values, so what the model is told matches what the server applies. The registry test pins the ordering `quick ≥ deep > fallback` on every profile.
+The `search_notes` descriptions for `threshold` and `expansion_floor` interpolate the active profile's `quick`, `deep`, `fallback` and `expansionFloor`, so what the model is told matches what the server applies; `get_similar_notes` and `find_duplicates` apply `similarNotes` and `duplicates` without quoting a number. The registry test pins the ordering `quick ≥ deep > fallback` on every profile.
 
 ### Calibrated values
 
