@@ -209,7 +209,7 @@ Then ask your assistant:
 
 > "What did I write about building AI agents?"
 
-On first run the embedding model downloads automatically (bge-micro-v2 ≈ 17 MB, granite-97m ≈ 98 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `bge-micro-v2`; add `--model granite-97m` for the lite multilingual one. ⚖️ The default similarity thresholds are tuned for `bge-micro-v2`; under `granite-97m`, pass explicit `threshold`s if results look too loose or too tight ([details](./docs/guide/configuration.md#cli-arguments)).
+On first run the embedding model downloads automatically (bge-micro-v2 ≈ 17 MB, granite-97m ≈ 98 MB, harrier-270m ≈ 344 MB, harrier-0.6b ≈ 706 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `bge-micro-v2`; add `--model granite-97m` for the lite multilingual one, or `--model harrier-270m` / `--model harrier-0.6b` for higher-quality multilingual retrieval (`harrier-0.6b` is ~4× slower to index). ⚖️ The default similarity thresholds are tuned for `bge-micro-v2`; under any other model, pass explicit `threshold`s if results look too loose or too tight ([details](./docs/guide/configuration.md#cli-arguments)).
 
 Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault):
 
@@ -217,7 +217,7 @@ Indexing then runs in the background — the server boots immediately and `searc
 neuro-vault-mcp index --vault /absolute/path/to/your/vault --model bge-micro-v2
 ```
 
-Give `index` the same `--model` the server runs with (`bge-micro-v2` is the default; for `granite-97m`, put it in the server's `args` and here) — a vault indexed with another model is rebuilt, never silently mixed.
+Give `index` the same `--model` the server runs with (`bge-micro-v2` is the default; for any other model, put the same `--model` in the server's `args` and here) — a vault indexed with another model is rebuilt, never silently mixed.
 
 For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./docs/guide/installation.md).
 

@@ -82,7 +82,7 @@ At the tool boundary this axis is called `effort` (`search_notes({ effort: "quic
 
 ```
 for each query, concurrently:
-  query_vector = embeddingProvider.embed(query)
+  query_vector = embeddingProvider.embedQuery(query)
   neighbors = findNeighbors(threshold, limit: limit+1)
   if neighbors is empty AND NOT explicitThreshold AND threshold > 0.3:
       neighbors = findNeighbors(0.3, limit: limit+1)
@@ -91,7 +91,7 @@ for each query, concurrently:
   neighbors = neighbors.slice(0, limit)
 ```
 
-`embeddingProvider.embed(query)` is called directly, with no `try`/`catch` anywhere in this file (`retrieval-policy.ts` has none) — if any one query's embed call rejects, the surrounding `Promise.all` (`retrieval-policy.ts:142`) rejects too, and the whole `executeRetrieval` call throws: there is no partial result and no per-query error isolation, even though embedding itself runs per query. The policy lets that rejection bubble all the way up; what the caller does with it differs per tool. `search_notes` wraps the whole semantic leg — the snapshot read, `executeRetrieval`, and the existence check — in one `try` whose `catch` **degrades rather than throws**: the lexical matches are already in hand, so the call returns them, writes the cause to stderr, and reports `semantic_status: { state: "unavailable" }`. `get_similar_notes` and `find_duplicates` have no second leg, so there the rejection still surfaces as a `DEPENDENCY_ERROR` `ToolHandlerError` — `get_similar_notes` through its own `wrapDependencyError` (which preserves the cause), `find_duplicates` by constructing the error directly.
+`embeddingProvider.embedQuery(query)` is called directly, with no `try`/`catch` anywhere in this file (`retrieval-policy.ts` has none) — if any one query's embed call rejects, the surrounding `Promise.all` (`retrieval-policy.ts:142`) rejects too, and the whole `executeRetrieval` call throws: there is no partial result and no per-query error isolation, even though embedding itself runs per query. The policy lets that rejection bubble all the way up; what the caller does with it differs per tool. `search_notes` wraps the whole semantic leg — the snapshot read, `executeRetrieval`, and the existence check — in one `try` whose `catch` **degrades rather than throws**: the lexical matches are already in hand, so the call returns them, writes the cause to stderr, and reports `semantic_status: { state: "unavailable" }`. `get_similar_notes` and `find_duplicates` have no second leg, so there the rejection still surfaces as a `DEPENDENCY_ERROR` `ToolHandlerError` — `get_similar_notes` through its own `wrapDependencyError` (which preserves the cause), `find_duplicates` by constructing the error directly.
 
 `threshold` and `explicitThreshold` are computed once for the whole call (`input.threshold !== undefined`), not per query — every query in the array is filtered by the same threshold value:
 
@@ -190,7 +190,7 @@ That filter is one per-vault adapter (`src/lib/obsidian/existing-paths.ts`), bou
 
 When `search_notes` receives a `filter` parameter, the tool handler computes an allowed-paths set via `listMatchingPaths(filter)` (lib/obsidian/query) and narrows the `sources` Map before invoking `executeRetrieval`. The retrieval policy itself is unchanged — expansion, multi-query merge, and block search all operate on the narrowed Map and therefore inherit the filter for free.
 
-Empty allowed set short-circuits to an empty result without invoking `embeddingProvider.embed` or `searchEngine`. Errors from `listMatchingPaths` map as: `INVALID_FILTER` → `INVALID_ARGUMENT`; anything else → `DEPENDENCY_ERROR`.
+Empty allowed set short-circuits to an empty result without invoking `embeddingProvider.embedQuery` or `searchEngine`. Errors from `listMatchingPaths` map as: `INVALID_FILTER` → `INVALID_ARGUMENT`; anything else → `DEPENDENCY_ERROR`.
 
 Path_prefix-only filters use a fast-path inside `listMatchingPaths` that calls `vaultReader.scan({ pathPrefix })` and skips frontmatter reads entirely. The paths that scan returns are already scope-filtered — every result runs through the vault's `VaultScope.isExcluded` predicate, prefixed scans included — so the fast-path needs no exclusion logic of its own. See [`vault-scope.md`](vault-scope.md).
 

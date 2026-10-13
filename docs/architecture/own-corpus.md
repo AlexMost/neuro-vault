@@ -6,7 +6,7 @@ Keeping this corpus fresh once the server is running — the per-vault watcher, 
 
 ## What it is
 
-Four pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any import from `src/modules/` — the indexer sees the embedding model only through a one-function port, `EmbedFn = (text: string) => Promise<number[]>`:
+Four pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any import from `src/modules/` — the indexer sees the embedding model only through a one-function port, `EmbedDocumentsFn = (texts: string[]) => Promise<number[][]>`, called once per note with the note-level text and every block text, vectors back in input order. A failed call fails only that note:
 
 | File | Responsibility |
 | --- | --- |
@@ -63,7 +63,7 @@ Extraction reproduces the replaced corpus 1:1 so that the one diagnostic run com
 
 ### The token window
 
-Some tokenizers declare no real window — `bge-micro-v2` ships `model_max_length = 1e15` in its tokenizer config — and any input over the model's real window crashes inside ONNX. The corpus does not rely on the tokenizer's own limit: `EmbeddingService` encodes with special tokens and cuts the ids to the profile's `maxTokens` (512 for both shipped profiles) before the forward pass. The query path never hit this because queries are short; the indexer hits it on the first long note.
+Some tokenizers declare no real window — `bge-micro-v2` ships `model_max_length = 1e15` in its tokenizer config — and any input over the model's real window crashes inside ONNX. The corpus does not rely on the tokenizer's own limit: `EmbeddingService` cuts every input to the profile's `maxTokens` (512 for all shipped profiles) before the forward pass, keeping the model's special-token template intact. The query path never hit this because queries are short; the indexer hits it on the first long note. How the cut works is in [`embedding-pipeline.md` § Tokenisation](./embedding-pipeline.md#tokenisation).
 
 ## On-disk layout
 
@@ -102,7 +102,7 @@ The one case that throws instead is writing a vector of the wrong dimension: the
 
 ## Reconcile
 
-`reconcileCorpus(deps, opts)` takes ports — `scan`, `stat`, `readNote`, `embed`, a `CorpusStore` — and returns `{ total, embedded, reused, renamed, deleted, failed }`. In order:
+`reconcileCorpus(deps, opts)` takes ports — `scan`, `stat`, `readNote`, `embedDocuments`, a `CorpusStore` — and returns `{ total, embedded, reused, renamed, deleted, failed }`. In order:
 
 1. `ensureManifest` compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (`embed_version`, `model_key`, `model_id`, `dims`, `strategy`). A mismatch, or a missing manifest while shards exist, discards every shard and rebuilds. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
 2. Take the scoped path set from `scan()` and the shard map from `listShards()`. Reconcile applies no exclusion rule of its own.
