@@ -334,6 +334,28 @@ describe('runEval end-to-end (stub embedder)', () => {
     expect(embed).not.toHaveBeenCalled();
   });
 
+  it('refuses a --baseline that lacks one of the defaults, before embedding anything', async () => {
+    await makeVault(GOLDEN);
+    await addExtraNotes();
+    const embed = vi.fn(() => Promise.resolve(unitVec(0)));
+    const first = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed, resultsDir },
+    );
+    // An older report, written before a default existed.
+    const older = JSON.parse(await readFile(first.reportFile, 'utf8')) as EvalReport;
+    delete (older.stats!.pass_rates as Partial<Record<string, unknown>>).duplicates;
+    const olderFile = path.join(resultsDir, 'older-baseline.json');
+    await writeFile(olderFile, JSON.stringify(older));
+    embed.mockClear();
+    const run = runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: olderFile },
+      { embed, resultsDir },
+    );
+    await expect(run).rejects.toThrow(/older-baseline\.json: pass_rates\.duplicates/);
+    expect(embed).not.toHaveBeenCalled();
+  });
+
   it('refuses a --baseline that is not a --stats report, before embedding anything', async () => {
     await makeVault(GOLDEN);
     const plain = await runEval(

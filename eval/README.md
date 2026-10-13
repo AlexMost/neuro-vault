@@ -300,7 +300,12 @@ embedded). For each of the six defaults it reads the baseline's pass rate and
 adds a `suggested` entry to the new report: the threshold on _this_ run's
 population at which that same share passes (`baseline_pass_rate` and
 `threshold`). The printout appends `→ suggested <threshold>` to each line. The
-suggestion matches distributions only — it does not look at the guards.
+suggestion matches distributions only — it does not look at the guards. A
+threshold passes every value at or above it, so tied values (the note
+populations always hold them: a mutual-nearest pair counts twice) move
+together; the suggestion is the threshold whose pass rate comes closest to the
+baseline's, the more permissive one on an exact tie. On an empty population
+there is nothing to match: `threshold` is `null` and the printout says so.
 
 The baseline's pass rates are validated up front: each of the six must be a
 number in [0, 1], otherwise the run fails naming the file and the key. The new

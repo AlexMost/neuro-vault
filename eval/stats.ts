@@ -34,7 +34,7 @@ export interface Guards {
   quick_hit_at_3_drop: number;
 }
 
-type DefaultKey = keyof SimilarityDefaults;
+export type DefaultKey = keyof SimilarityDefaults;
 
 export interface CalibrationStats {
   populations: Record<keyof Populations, Quantiles>;
@@ -43,7 +43,8 @@ export interface CalibrationStats {
     { population: keyof Populations; threshold: number; pass_rate: number }
   >;
   guards: Guards;
-  suggested?: Record<DefaultKey, { baseline_pass_rate: number; threshold: number }>;
+  /** `threshold` is null when this run's population is empty — there is nothing to match. */
+  suggested?: Record<DefaultKey, { baseline_pass_rate: number; threshold: number | null }>;
   /** The report `suggested` was derived from; present exactly when `suggested` is. */
   baseline?: {
     file: string;
@@ -62,6 +63,9 @@ const POPULATION_OF: Record<DefaultKey, keyof Populations> = {
   similarNotes: 'note_top10',
   duplicates: 'note_max',
 };
+
+/** Every default `--stats` reports on — derived, so a new `SimilarityDefaults` key cannot be missed. */
+export const DEFAULT_KEYS = Object.keys(POPULATION_OF) as DefaultKey[];
 
 export function quantiles(values: number[]): Quantiles {
   const sorted = [...values].sort((a, b) => a - b);
@@ -85,14 +89,29 @@ export function passRate(values: number[], threshold: number): number {
   return values.filter((v) => v >= threshold).length / values.length;
 }
 
-/** The threshold at which `rate` of `values` pass — the inverse of {@link passRate}. */
-export function thresholdForPassRate(values: number[], rate: number): number {
+/**
+ * The threshold at which `rate` of `values` pass — the inverse of
+ * {@link passRate}, or null for an empty population. A threshold passes every
+ * value at or above it, so a run of tied values passes or fails as a whole
+ * (note populations always hold ties: a mutual-nearest pair contributes its
+ * similarity twice). The candidates are therefore "above every value" and each
+ * distinct value; the one whose pass count is closest to `rate` wins, the
+ * more permissive on an exact tie (as `Math.round` would).
+ */
+export function thresholdForPassRate(values: number[], rate: number): number | null {
   const descending = [...values].sort((a, b) => b - a);
   const [highest] = descending;
-  if (highest === undefined) throw new Error('cannot calibrate against an empty population');
-  const count = Math.round(rate * descending.length);
-  if (count <= 0) return highest + 1e-6;
-  return descending[Math.min(count, descending.length) - 1] ?? highest;
+  if (highest === undefined) return null;
+  const target = rate * descending.length;
+  let best = { threshold: highest + 1e-6, passing: 0 };
+  for (let i = 0; i < descending.length; i += 1) {
+    if (descending[i + 1] === descending[i]) continue; // not yet the end of a tied run
+    const passing = i + 1;
+    if (Math.abs(passing - target) <= Math.abs(best.passing - target)) {
+      best = { threshold: descending[i], passing };
+    }
+  }
+  return best.threshold;
 }
 
 export function collectPopulations(args: {
@@ -188,9 +207,8 @@ export function computeCalibrationStats(args: {
   deepPool: number;
   baseline?: CalibrationStats;
 }): CalibrationStats {
-  const keys = Object.keys(POPULATION_OF) as DefaultKey[];
   const pass_rates = Object.fromEntries(
-    keys.map((key) => {
+    DEFAULT_KEYS.map((key) => {
       const population = POPULATION_OF[key];
       const threshold = args.similarity[key];
       return [
@@ -212,7 +230,7 @@ export function computeCalibrationStats(args: {
   const { baseline } = args;
   if (baseline) {
     stats.suggested = Object.fromEntries(
-      keys.map((key) => {
+      DEFAULT_KEYS.map((key) => {
         const rate = baseline.pass_rates[key].pass_rate;
         return [
           key,

@@ -26,7 +26,12 @@ import {
   type PipelineId,
 } from './pipelines.js';
 import { gitSha, writeReport, type EvalReport } from './report.js';
-import { collectPopulations, computeCalibrationStats, type CalibrationStats } from './stats.js';
+import {
+  collectPopulations,
+  computeCalibrationStats,
+  DEFAULT_KEYS,
+  type CalibrationStats,
+} from './stats.js';
 
 export class UsageError extends Error {}
 
@@ -95,8 +100,6 @@ export function parseEvalArgs(argv: string[]): EvalArgs {
 // its numbers.
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_RESULTS_DIR = path.join(MODULE_DIR, 'results');
-
-const DEFAULT_KEYS = ['quick', 'deep', 'fallback', 'expansionFloor', 'similarNotes', 'duplicates'];
 
 /** A `--stats` report read back as the calibration baseline, with its provenance. */
 interface Baseline {
@@ -234,7 +237,12 @@ function formatSlice(name: string, m: EvalReport['metrics']['overall']): string 
 function formatStats(stats: CalibrationStats): string[] {
   const lines = Object.entries(stats.pass_rates).map(([key, rate]) => {
     const suggested = stats.suggested?.[key as keyof typeof stats.pass_rates];
-    const tail = suggested ? `  → suggested ${suggested.threshold.toFixed(3)}` : '';
+    const tail =
+      suggested === undefined
+        ? ''
+        : suggested.threshold === null
+          ? '  → no suggestion (empty population)'
+          : `  → suggested ${suggested.threshold.toFixed(3)}`;
     return `${key}: threshold=${rate.threshold.toFixed(3)} pass=${rate.pass_rate.toFixed(3)}${tail}`;
   });
   lines.push(

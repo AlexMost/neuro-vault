@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CorpusStore } from '../../src/lib/obsidian/corpus/shard-store.js';
 import { TEST_DIMS, TEST_IDENTITY } from '../_identity.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
@@ -106,5 +106,28 @@ describe('own backend snapshot', () => {
     await expect(loadSnapshot(vaultRoot, TEST_IDENTITY)).rejects.toThrow(
       `has no readable manifest — rebuild it with: neuro-vault-mcp index --vault ${vaultRoot} --model bge-micro-v2`,
     );
+  });
+
+  it('refuses manifest-less shards of another width on the manifest, without decoding them', async () => {
+    vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
+    const wide = new CorpusStore(vaultRoot, { dims: 640 });
+    await wide.writeShard({
+      path: 'a.md',
+      content_hash: 'h',
+      mtime: 1,
+      size: 1,
+      embedding: encodeVector(new Array<number>(640).fill(0.01)),
+      blocks: [],
+    });
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await expect(loadSnapshot(vaultRoot, TEST_IDENTITY)).rejects.toThrow(
+        'has no readable manifest',
+      );
+      // Decoding would have warned once per shard and then read as "missing or empty".
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

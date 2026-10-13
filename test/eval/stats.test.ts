@@ -5,6 +5,7 @@ import {
   collectPopulations,
   computeCalibrationStats,
   computeGuards,
+  DEFAULT_KEYS,
   passRate,
   quantiles,
   thresholdForPassRate,
@@ -27,12 +28,38 @@ describe('passRate / thresholdForPassRate', () => {
 
   it('thresholdForPassRate inverts passRate', () => {
     expect(thresholdForPassRate(values, 0.6)).toBe(0.6);
-    expect(passRate(values, thresholdForPassRate(values, 0.6))).toBe(0.6);
+    expect(passRate(values, thresholdForPassRate(values, 0.6)!)).toBe(0.6);
     expect(thresholdForPassRate(values, 1)).toBe(0.2);
   });
 
   it('a zero pass rate yields a threshold above every value', () => {
     expect(thresholdForPassRate(values, 0)).toBeGreaterThan(1.0);
+  });
+
+  it('treats a run of tied values as one step, picking the closest achievable pass rate', () => {
+    // A threshold of 0.9 passes all three 0.9s (rate 0.75), not one; passing
+    // none (rate 0) is the closer match to 0.25.
+    const tied = [0.9, 0.5, 0.9, 0.9];
+    const t = thresholdForPassRate(tied, 0.25)!;
+    expect(t).toBeGreaterThan(0.9);
+    expect(passRate(tied, t)).toBe(0);
+  });
+
+  it('on an exact tie between two pass counts, picks the more permissive', () => {
+    // Mutual-nearest pairs: every similarity appears twice. Rate 0.5 → 3 of 6,
+    // which sits exactly between 2 (0.95) and 4 (0.9).
+    const pairs = [0.95, 0.95, 0.9, 0.9, 0.8, 0.8];
+    expect(thresholdForPassRate(pairs, 0.5)).toBe(0.9);
+  });
+
+  it('has no threshold for an empty population', () => {
+    expect(thresholdForPassRate([], 0.5)).toBeNull();
+  });
+});
+
+describe('DEFAULT_KEYS', () => {
+  it('names every similarity default exactly once', () => {
+    expect([...DEFAULT_KEYS].sort()).toEqual(Object.keys(TEST_SIMILARITY).sort());
   });
 });
 
@@ -137,11 +164,30 @@ describe('collectPopulations + computeCalibrationStats', () => {
     const suggested = again.suggested;
     expect(suggested?.deep.baseline_pass_rate).toBe(baseline.pass_rates.deep.pass_rate);
     expect(suggested?.deep.threshold).toBeCloseTo(
-      thresholdForPassRate(shifted.query_candidates, baseline.pass_rates.deep.pass_rate),
+      thresholdForPassRate(shifted.query_candidates, baseline.pass_rates.deep.pass_rate)!,
     );
     // The suggested threshold reproduces the baseline's pass rate on the new population.
     expect(passRate(shifted.query_candidates, suggested?.deep.threshold ?? NaN)).toBeCloseTo(
       baseline.pass_rates.deep.pass_rate,
     );
+  });
+
+  it('suggests nothing, rather than failing, for a default whose population is empty', () => {
+    const populations = collectPopulations({ queryVectors: [[1, 0]], sources, ...shape });
+    const baseline = computeCalibrationStats({
+      populations,
+      similarity: TEST_SIMILARITY,
+      perQuery: [],
+      deepPool: 8,
+    });
+    const again = computeCalibrationStats({
+      populations: { ...populations, expansion_neighbours: [] },
+      similarity: TEST_SIMILARITY,
+      perQuery: [],
+      deepPool: 8,
+      baseline,
+    });
+    expect(again.suggested?.expansionFloor.threshold).toBeNull();
+    expect(again.suggested?.deep.threshold).not.toBeNull();
   });
 });
