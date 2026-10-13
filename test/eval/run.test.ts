@@ -7,13 +7,35 @@ import { TEST_DIMS, TEST_IDENTITY } from '../_identity.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
 import { GoldenSetError } from '../../eval/golden.js';
 import { UsageError, parseEvalArgs, runEval } from '../../eval/run.js';
+import { BackendError } from '../../eval/backends.js';
+import {
+  DEFAULT_MODEL_KEY,
+  resolveModelProfile,
+} from '../../src/modules/semantic/model-profiles.js';
 
 describe('parseEvalArgs', () => {
-  it('parses the two flags', () => {
+  it('parses value flags and defaults model and stats', () => {
     expect(parseEvalArgs(['--vault', '/v', '--pipeline', 'fused'])).toEqual({
       vault: '/v',
       pipeline: 'fused',
+      model: resolveModelProfile(DEFAULT_MODEL_KEY),
+      stats: false,
     });
+  });
+
+  it('selects a model and turns statistics on', () => {
+    const args = parseEvalArgs([
+      '--vault',
+      '/v',
+      '--model',
+      'granite-97m',
+      '--stats',
+      '--baseline',
+      '/r.json',
+    ]);
+    expect(args.model.key).toBe('granite-97m');
+    expect(args.stats).toBe(true);
+    expect(args.baseline).toBe('/r.json');
   });
 
   it.each([
@@ -21,6 +43,9 @@ describe('parseEvalArgs', () => {
     [['--vault', '/v', '--pipeline', 'reranked'], /semantic.*fused/s],
     [['--vault', '/v', '--pipeline', 'semantic', '--bogus'], /--bogus/],
     [['--vault', '--pipeline'], /--vault/],
+    [['--vault', '/v', '--model', 'text-embedding-3-small'], /bge-micro-v2.*granite-97m/s],
+    [['--vault', '/v', '--baseline', '/r.json'], /--baseline requires --stats/],
+    [['--vault', '/v', '--pipeline', 'fused', '--stats'], /--stats measures the semantic pipeline/],
   ])('rejects %j naming what is supported', (argv, pattern) => {
     expect(() => parseEvalArgs(argv)).toThrow(UsageError);
     expect(() => parseEvalArgs(argv)).toThrow(pattern);
@@ -33,6 +58,7 @@ describe('parseEvalArgs', () => {
 });
 
 describe('runEval end-to-end (stub embedder)', () => {
+  const BGE = resolveModelProfile('bge-micro-v2');
   let vaultRoot: string;
   let resultsDir: string;
   afterEach(async () => {
@@ -89,7 +115,7 @@ describe('runEval end-to-end (stub embedder)', () => {
   it('runs semantic and writes a correct report', async () => {
     await makeVault(GOLDEN);
     const { report, reportFile } = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic' },
+      { vault: vaultRoot, pipeline: 'semantic', model: BGE, stats: false },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     expect(reportFile).toContain('semantic');
@@ -113,7 +139,7 @@ describe('runEval end-to-end (stub embedder)', () => {
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(outside);
     try {
       const { report } = await runEval(
-        { vault: vaultRoot, pipeline: 'semantic' },
+        { vault: vaultRoot, pipeline: 'semantic', model: BGE, stats: false },
         { embed: () => Promise.resolve(unitVec(0)), resultsDir },
       );
       expect(report.code_sha).not.toBeNull();
@@ -127,7 +153,7 @@ describe('runEval end-to-end (stub embedder)', () => {
     await makeVault(`${GOLDEN}- id: q002\n  query: x\n  lang: en\n  relevant: [Gone/nope.md]\n`);
     await expect(
       runEval(
-        { vault: vaultRoot, pipeline: 'semantic' },
+        { vault: vaultRoot, pipeline: 'semantic', model: BGE, stats: false },
         { embed: () => Promise.reject(new Error('embed must not run')), resultsDir },
       ),
     ).rejects.toThrow(GoldenSetError);
@@ -137,10 +163,27 @@ describe('runEval end-to-end (stub embedder)', () => {
   it('fused also completes on the fixture', async () => {
     await makeVault(GOLDEN);
     const { report } = await runEval(
-      { vault: vaultRoot, pipeline: 'fused' },
+      { vault: vaultRoot, pipeline: 'fused', model: BGE, stats: false },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     expect(report.metrics.overall.n).toBe(1);
     expect(report.per_query[0].top).toContain('Notes/target.md');
+  });
+
+  it('hands the selected profile to the corpus gate before any query is embedded', async () => {
+    await makeVault(GOLDEN); // the fixture corpus is bge-micro-v2's
+    const embed = vi.fn(() => Promise.reject(new Error('embed must not run')));
+    const run = runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        model: resolveModelProfile('granite-97m'),
+        stats: false,
+      },
+      { embed, resultsDir },
+    );
+    await expect(run).rejects.toThrow(BackendError);
+    await expect(run).rejects.toThrow(/granite-97m/);
+    expect(embed).not.toHaveBeenCalled();
   });
 });

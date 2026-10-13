@@ -7,7 +7,9 @@ import { corpusIdentityOf } from '../src/lib/obsidian/corpus/identity.js';
 import {
   DEFAULT_MODEL_KEY,
   identityOf,
+  MODEL_KEYS,
   resolveModelProfile,
+  type ModelProfile,
 } from '../src/modules/semantic/model-profiles.js';
 import { BackendError, loadSnapshot } from './backends.js';
 import { GoldenSetError, goldenSetPath, loadGoldenSet } from './golden.js';
@@ -27,24 +29,35 @@ export class UsageError extends Error {}
 export interface EvalArgs {
   vault: string;
   pipeline: PipelineId;
+  model: ModelProfile;
+  stats: boolean;
+  baseline?: string;
 }
 
-const USAGE = 'usage: npm run eval -- --vault <path> --pipeline <semantic|fused>';
+const USAGE =
+  'usage: npm run eval -- --vault <path> [--pipeline <semantic|fused>] [--model <key>] [--stats [--baseline <report.json>]]';
+const VALUE_FLAGS = ['--vault', '--pipeline', '--model', '--baseline'];
 
 export function parseEvalArgs(argv: string[]): EvalArgs {
   const values = new Map<string, string>();
-  for (let i = 0; i < argv.length; i += 2) {
+  let stats = false;
+  for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
-    const value = argv[i + 1];
-    if (!['--vault', '--pipeline'].includes(flag)) {
+    if (flag === '--stats') {
+      stats = true;
+      continue;
+    }
+    if (!VALUE_FLAGS.includes(flag)) {
       throw new UsageError(`unknown argument "${flag}"\n${USAGE}`);
     }
-    // A value token that is itself a recognized flag means the real value was
-    // omitted and the next flag got silently swallowed as this one's value.
+    const value = argv[i + 1];
+    // A value token that is itself a flag means the real value was omitted and
+    // the next flag got silently swallowed as this one's value.
     if (value === undefined || value.startsWith('--')) {
       throw new UsageError(`${flag} is missing its value\n${USAGE}`);
     }
     values.set(flag, value);
+    i += 1;
   }
   const vault = values.get('--vault');
   if (vault === undefined) throw new UsageError(`--vault is required\n${USAGE}`);
@@ -52,7 +65,24 @@ export function parseEvalArgs(argv: string[]): EvalArgs {
   if (pipeline !== 'semantic' && pipeline !== 'fused') {
     throw new UsageError(`unknown pipeline "${pipeline}" — supported: semantic, fused`);
   }
-  return { vault, pipeline };
+  const modelKey = values.get('--model') ?? DEFAULT_MODEL_KEY;
+  if (!MODEL_KEYS.includes(modelKey)) {
+    throw new UsageError(`unknown model "${modelKey}" — supported: ${MODEL_KEYS.join(', ')}`);
+  }
+  const baseline = values.get('--baseline');
+  if (baseline !== undefined && !stats) {
+    throw new UsageError(`--baseline requires --stats\n${USAGE}`);
+  }
+  if (stats && pipeline !== 'semantic') {
+    throw new UsageError('--stats measures the semantic pipeline; drop --pipeline fused');
+  }
+  return {
+    vault,
+    pipeline,
+    model: resolveModelProfile(modelKey),
+    stats,
+    ...(baseline !== undefined ? { baseline } : {}),
+  };
 }
 
 // "This repo" is the checkout the harness code came from — not the cwd the
@@ -70,7 +100,7 @@ export async function runEval(
   // Validation gates the run: golden set first (its failures must precede any
   // model/corpus work), then the backend snapshot.
   const entries = await loadGoldenSet(vaultRoot);
-  const profile = resolveModelProfile(DEFAULT_MODEL_KEY);
+  const profile = args.model; // the only profile this run sees
   const sources = await loadSnapshot(vaultRoot, corpusIdentityOf(identityOf(profile)));
   const embed =
     deps.embed ??
