@@ -4,6 +4,8 @@ Similarity defaults are calibrated per profile by design D11: each default is se
 
 ## Baseline — bge-micro-v2
 
+> **Superseded for calibration** by [Baseline — bge-micro-v2, unranked populations](#baseline--bge-micro-v2-unranked-populations). This section is kept as history: it is the ranked-population baseline whose degeneracy led to design D11's choice.
+
 Captured in PR 3 (Task 10.1), before any other profile indexed the vault. The capture ran on a copy of the owner's vault, over its existing bge-micro-v2 corpus (manifest `bge-micro-v2`, `embed_version 1`, 888 notes with a note vector). The golden set has 25 queries: 21 `ua`, 4 `en`.
 
 ```bash
@@ -112,3 +114,126 @@ D11's quantile matching therefore degenerates for those five. Reproducing a pass
 - Each threshold would sit exactly at a sample minimum. That says nothing about where the new model's score for "unrelated" begins.
 
 What the baseline does transfer: these defaults never cut a top-10 candidate (query side) or a top-10 neighbour (note side), and the guards pass at 0 / 0. PR 4 Task 12.1 has to decide how to keep that behaviour on a wider-spread scale. Options include: matching the bge pass rate of a deeper population (e.g. ranks beyond 10); anchoring on the bge threshold's position relative to the bge distribution instead of its pass rate; or keeping "filters nothing in the top 10" as the target and choosing values below the new population's minimum with the ordering preserved. Only `duplicates` can be matched as D11 describes. This is a design decision for review before PR 4, not something PR 3 settles.
+
+## Baseline — bge-micro-v2, unranked populations
+
+Captured in PR 4 (Task 11.0), before Task 11.3 removed `bge-micro-v2` from the registry. Design D11 matches each default on an unranked population, and this is the baseline for that. It ran on a fresh copy of the owner's vault. The copy's bge-micro-v2 corpus (`embed_version 1`) was first reconciled with `index --model bge-micro-v2`: 949 notes, 0 re-embedded, no rebuild. 888 notes have a note vector. The vault state is the same commit as PR 3's capture (`vault_sha` `98b8364…`, clean), and the metrics reproduce exactly.
+
+```bash
+npx tsx ./eval/run.ts --vault <vault copy> --model bge-micro-v2 --pipeline semantic --stats
+```
+
+The full report lives outside git, in the main checkout's gitignored `eval/results/baseline-bge-micro-v2-unranked.json`. Task 12.1 passes it to `--baseline`.
+
+### Retrieval quality
+
+| slice   | n  | p@3   | MRR   | hit@3 |
+| ------- | -- | ----- | ----- | ----- |
+| overall | 25 | 0.240 | 0.398 | 0.400 |
+| ua      | 21 | 0.206 | 0.321 | 0.333 |
+| en      | 4  | 0.417 | 0.800 | 0.750 |
+
+### Populations (quantiles)
+
+| population             | kind     | n       | min   | p05   | p10   | p25   | p50   | p75   | p90   | p95   | max   |
+| ---------------------- | -------- | ------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| `query_candidates`     | ranked   | 250     | 0.559 | 0.635 | 0.664 | 0.743 | 0.798 | 0.821 | 0.838 | 0.855 | 0.878 |
+| `expansion_neighbours` | ranked   | 600     | 0.766 | 0.831 | 0.855 | 0.885 | 0.905 | 0.925 | 0.951 | 0.959 | 0.993 |
+| `note_top10`           | ranked   | 8 880   | 0.685 | 0.803 | 0.823 | 0.855 | 0.887 | 0.921 | 0.955 | 0.985 | 0.999 |
+| `query_all`            | unranked | 22 200  | 0.337 | 0.475 | 0.512 | 0.626 | 0.681 | 0.724 | 0.755 | 0.772 | 0.878 |
+| `seed_all`             | unranked | 176 000 | 0.471 | 0.659 | 0.685 | 0.726 | 0.766 | 0.799 | 0.828 | 0.848 | 0.993 |
+| `note_all`             | unranked | 787 656 | 0.465 | 0.640 | 0.663 | 0.700 | 0.738 | 0.776 | 0.815 | 0.854 | 0.999 |
+| `note_max`             | max      | 888     | 0.734 | 0.840 | 0.861 | 0.891 | 0.916 | 0.951 | 0.980 | 0.995 | 0.999 |
+
+### Pass rates of the bge defaults
+
+| default          | population  | threshold | pass rate | cut                |
+| ---------------- | ----------- | --------- | --------- | ------------------ |
+| `quick`          | `query_all` | 0.50      | 0.9177    | 1 828 of 22 200    |
+| `deep`           | `query_all` | 0.35      | 0.9991    | 19 of 22 200       |
+| `fallback`       | `query_all` | 0.30      | 1.0000    | none               |
+| `expansionFloor` | `seed_all`  | 0.35      | 1.0000    | none               |
+| `similarNotes`   | `note_all`  | 0.50      | 0.99974   | 208 of 787 656     |
+| `duplicates`     | `note_max`  | 0.90      | 0.6745    | 289 of 888         |
+
+Guards at these defaults: `deep_filtered_first_relevant` = 0 (target 0), `quick_hit_at_3_drop` = 0 (target ≤ 1).
+
+### Reading it
+
+D11's decision rule tripped. `fallback` and `expansionFloor` pass 1.0 even here. Both sit below every pair on the vault: 0.30 against a `query_all` minimum of 0.337, and 0.35 against a `seed_all` minimum of 0.471. On bge they cut nothing at all. The owner ruled (design D11, "Outcome of the rule"): on each profile, each is set just below the minimum of its own unranked population, rounded down to 0.05, keeping `fallback < deep`.
+
+`quick` and `duplicates` sit well inside their distributions and match cleanly. `deep` and `similarNotes` pass less than 1.0 but come from the far tail (0.09 % and 0.03 % cut). They are matched as D11 step 2 says, but their suggested values rest on a few dozen and a few hundred extreme pairs respectively, so they are sensitive to those pairs.
+
+### Raw aggregates
+
+```json
+{
+  "code_sha": "8a70ec46a06168a660c058b66d4f29d11a85f7a0",
+  "vault_sha": "98b836447954abb13915cc4cfa239179a0d2416f",
+  "model_key": "bge-micro-v2",
+  "identity": {
+    "provider": "transformers.js",
+    "model_key": "bge-micro-v2",
+    "model_id": "TaylorAI/bge-micro-v2",
+    "revision": "3edf6d7de0faa426b09780416fe61009f26ae589",
+    "dtype": "q8",
+    "dims": 384,
+    "pooling": "mean",
+    "max_tokens": 512
+  },
+  "config": {
+    "top_k": 10,
+    "semantic_threshold": 0,
+    "semantic_pool": 8,
+    "expansion_limit": 3,
+    "expansion_floor": 0.35,
+    "lexical_note_cap": 10,
+    "lexical_per_note_cap": 3,
+    "expansion_weight": 0.85,
+    "k_policy": "round(sqrt(totalNotes)) clamped 5..60"
+  },
+  "metrics": {
+    "overall": {
+      "n": 25,
+      "precision_at_3": 0.24,
+      "mrr": 0.39799999999999996,
+      "hit_at_3": 0.4
+    },
+    "ua": {
+      "n": 21,
+      "precision_at_3": 0.20634920634920634,
+      "mrr": 0.32142857142857145,
+      "hit_at_3": 0.3333333333333333
+    },
+    "en": {
+      "n": 4,
+      "precision_at_3": 0.41666666666666663,
+      "mrr": 0.8,
+      "hit_at_3": 0.75
+    }
+  },
+  "stats": {
+    "populations": {
+      "query_candidates": { "n": 250, "min": 0.558838722603341, "p05": 0.6353039518255856, "p10": 0.6640367171148182, "p25": 0.7433776108519242, "p50": 0.7979223047344187, "p75": 0.8213063429363009, "p90": 0.8382240751314861, "p95": 0.8549883593110302, "max": 0.878022769341645 },
+      "expansion_neighbours": { "n": 600, "min": 0.7662285414373137, "p05": 0.8308032195055297, "p10": 0.8548569057873131, "p25": 0.8851065897954393, "p50": 0.9053151468699506, "p75": 0.9252331916370912, "p90": 0.9512324216085868, "p95": 0.9585419358794726, "max": 0.9928306389792437 },
+      "note_top10": { "n": 8880, "min": 0.6847494500179815, "p05": 0.8027520477629199, "p10": 0.8233549512855788, "p25": 0.8547533419557873, "p50": 0.8874378568734028, "p75": 0.9208182517789848, "p90": 0.9552090757724966, "p95": 0.9854147817666774, "max": 0.9986376997885361 },
+      "note_max": { "n": 888, "min": 0.733659023561025, "p05": 0.8398299949744025, "p10": 0.8607434904717507, "p25": 0.890930712952584, "p50": 0.9163755560612419, "p75": 0.9512233540617443, "p90": 0.9796635466541768, "p95": 0.9952186905146794, "max": 0.9986376997885361 },
+      "query_all": { "n": 22200, "min": 0.3373590604341732, "p05": 0.47488587855998315, "p10": 0.5115163431391109, "p25": 0.6257858101250481, "p50": 0.6813787302189057, "p75": 0.7239331826330291, "p90": 0.7546138256126038, "p95": 0.7723772973305827, "max": 0.878022769341645 },
+      "seed_all": { "n": 176000, "min": 0.4713849645093297, "p05": 0.6586371840603993, "p10": 0.6848709339384976, "p25": 0.7260863744499952, "p50": 0.7662907729834841, "p75": 0.7992066860977239, "p90": 0.8283248204073671, "p95": 0.8477623254040767, "max": 0.9928306389792437 },
+      "note_all": { "n": 787656, "min": 0.4653488103192912, "p05": 0.6403686066296372, "p10": 0.6629164866373898, "p25": 0.7000253644661983, "p50": 0.7384234180059196, "p75": 0.7755526290608034, "p90": 0.814876676389674, "p95": 0.8537019052652149, "max": 0.9986376997885361 }
+    },
+    "pass_rates": {
+      "quick": { "population": "query_all", "threshold": 0.5, "pass_rate": 0.9176576576576576 },
+      "deep": { "population": "query_all", "threshold": 0.35, "pass_rate": 0.9991441441441441 },
+      "fallback": { "population": "query_all", "threshold": 0.3, "pass_rate": 1 },
+      "expansionFloor": { "population": "seed_all", "threshold": 0.35, "pass_rate": 1 },
+      "similarNotes": { "population": "note_all", "threshold": 0.5, "pass_rate": 0.9997359253278081 },
+      "duplicates": { "population": "note_max", "threshold": 0.9, "pass_rate": 0.6745495495495496 }
+    },
+    "guards": {
+      "deep_filtered_first_relevant": 0,
+      "quick_hit_at_3_drop": 0
+    }
+  }
+}
+```
