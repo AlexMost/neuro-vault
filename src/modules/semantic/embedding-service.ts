@@ -1,59 +1,40 @@
-import { pipeline } from '@xenova/transformers';
+import type { EmbeddingIdentity } from '../../lib/obsidian/corpus/types.js';
 
-// The corpus library owns the model's identity: EMBED_CHAR_BUDGET is derived
-// from the same token window, so the two must never drift apart.
-import { MAX_TOKENS, MODEL_ID } from '../../lib/obsidian/corpus/types.js';
-
+import {
+  createLocalModelLoader,
+  type LocalModel,
+  type LocalModelLoader,
+} from './local-model-loader.js';
+import { identityOf, type ModelProfile } from './model-profiles.js';
+import { poolAndNormalize } from './pooling.js';
 import type { EmbeddingProvider } from './types.js';
 
-const EMBEDDING_TASK = 'feature-extraction';
-
-type CappableTokenizer = { model_max_length?: number };
-
-function capTokenizer(embeddingPipeline: unknown): void {
-  const tokenizer = (embeddingPipeline as { tokenizer?: CappableTokenizer } | null)?.tokenizer;
-  if (!tokenizer) return;
-  // A tokenizer config that declares an effectively unbounded window — or omits
-  // the field, turning the pipeline's truncation math into NaN — disables
-  // truncation and makes any input over the real window throw inside ONNX. A
-  // genuine window smaller than MAX_TOKENS must survive: raising it would
-  // reintroduce the same overflow.
-  const declared = tokenizer.model_max_length;
-  tokenizer.model_max_length =
-    typeof declared === 'number' && Number.isFinite(declared)
-      ? Math.min(declared, MAX_TOKENS)
-      : MAX_TOKENS;
-}
-
-type RawPipeline = (
-  text: string,
-  options: { pooling: 'mean'; normalize: true },
-) => Promise<unknown>;
-
-type PipelineFactory = (task: string, model: string) => Promise<RawPipeline>;
-
 export interface EmbeddingServiceOptions {
-  /** A transformers.js repo id (e.g. MODEL_ID) — a corpus model key cannot be loaded. */
-  modelId?: string;
-  pipelineFactory?: PipelineFactory;
+  profile: ModelProfile;
+  /** Injected by tests; production loads through transformers.js. */
+  loader?: LocalModelLoader;
 }
 
+/** The local, in-process embedding provider for one model profile. */
 export class EmbeddingService implements EmbeddingProvider {
-  private readonly modelId: string;
+  readonly identity: EmbeddingIdentity;
 
-  private readonly pipelineFactory: PipelineFactory;
+  private readonly profile: ModelProfile;
 
-  private pipeline?: RawPipeline;
+  private readonly loader: LocalModelLoader;
+
+  private model?: LocalModel;
 
   private initialization: Promise<void> | null = null;
 
-  constructor(options: EmbeddingServiceOptions = {}) {
-    this.modelId = options.modelId ?? MODEL_ID;
-    this.pipelineFactory = options.pipelineFactory ?? (pipeline as unknown as PipelineFactory);
+  constructor(options: EmbeddingServiceOptions) {
+    this.profile = options.profile;
+    this.loader = options.loader ?? createLocalModelLoader();
+    this.identity = identityOf(options.profile);
   }
 
   async initialize(): Promise<void> {
-    await this.getPipeline();
+    await this.getModel();
   }
 
   async embed(text: string): Promise<number[]> {
@@ -62,75 +43,37 @@ export class EmbeddingService implements EmbeddingProvider {
       throw new Error('Embedding text must not be blank');
     }
 
-    const embeddingPipeline = await this.getPipeline();
-    const result = await embeddingPipeline(normalizedText, {
-      pooling: 'mean',
-      normalize: true,
-    });
-    return this.normalizeEmbedding(result);
+    const model = await this.getModel();
+    // The encoding v2's pipeline used: special tokens first, then the cut to
+    // the window. It drops the trailing special token of an over-long input,
+    // which mean and CLS pooling tolerate — and it keeps vectors comparable
+    // with corpora that v2 built (design D5, "Staging").
+    const ids = model.tokenizer
+      .encode(normalizedText, { add_special_tokens: true })
+      .slice(0, this.profile.maxTokens);
+    const mask = [ids.map(() => 1)];
+    const [vector] = poolAndNormalize(await model.run([ids], mask), mask, this.profile.pooling);
+    if (vector === undefined) throw new Error('Embedding model returned no vector');
+    return vector;
   }
 
-  private async getPipeline(): Promise<RawPipeline> {
-    if (this.pipeline) {
-      return this.pipeline;
-    }
+  private async getModel(): Promise<LocalModel> {
+    if (this.model) return this.model;
 
     if (!this.initialization) {
-      this.initialization = this.pipelineFactory(EMBEDDING_TASK, this.modelId)
-        .then((embeddingPipeline) => {
-          capTokenizer(embeddingPipeline);
-          this.pipeline = embeddingPipeline;
+      this.initialization = this.loader(this.profile)
+        .then((model) => {
+          this.model = model;
         })
         .catch((error: unknown) => {
+          // A failed load must not be cached: the next call retries.
           this.initialization = null;
           throw error;
         });
     }
 
     await this.initialization;
-
-    if (!this.pipeline) {
-      throw new Error('Embedding pipeline failed to initialize');
-    }
-
-    return this.pipeline;
-  }
-
-  private normalizeEmbedding(embedding: unknown): number[] {
-    if (Array.isArray(embedding)) {
-      return embedding.map((value, index) =>
-        this.normalizeEmbeddingValue(value, `embedding[${index}]`),
-      );
-    }
-
-    if (ArrayBuffer.isView(embedding)) {
-      return Array.from(embedding as unknown as ArrayLike<unknown>, (value, index) =>
-        this.normalizeEmbeddingValue(value, `embedding[${index}]`),
-      );
-    }
-
-    if (
-      embedding !== null &&
-      typeof embedding === 'object' &&
-      'data' in embedding &&
-      ArrayBuffer.isView(embedding.data)
-    ) {
-      return Array.from((embedding as { data: ArrayLike<unknown> }).data, (value, index) =>
-        this.normalizeEmbeddingValue(value, `embedding.data[${index}]`),
-      );
-    }
-
-    throw new Error('Embedding pipeline returned an unsupported value');
-  }
-
-  private normalizeEmbeddingValue(value: unknown, label: string): number {
-    const numericValue =
-      typeof value === 'number' ? value : typeof value === 'bigint' ? Number(value) : NaN;
-
-    if (!Number.isFinite(numericValue)) {
-      throw new Error(`Embedding pipeline returned a non-finite value at ${label}`);
-    }
-
-    return numericValue;
+    if (!this.model) throw new Error('Embedding model failed to initialize');
+    return this.model;
   }
 }

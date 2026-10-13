@@ -4,6 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createSemanticModule, type ISemanticModuleDeps } from './modules/semantic/index.js';
 import { createQueuedEmbedder, type QueuedEmbedder } from './modules/semantic/embed-queue.js';
 import { EmbeddingService } from './modules/semantic/embedding-service.js';
+import { resolveModelProfile } from './modules/semantic/model-profiles.js';
 import { createOwnCorpusBackendFactory } from './modules/semantic/backend/index.js';
 import { createOperationsModule } from './modules/operations/index.js';
 import { VaultRegistry, type IVaultEntryDeps } from './lib/vault-registry.js';
@@ -119,7 +120,9 @@ export async function startNeuroVaultServer(
 ): Promise<() => Promise<void>> {
   // One model, one embed in flight process-wide (design D7): every vault's
   // indexing and every query share this queue, with queries jumping ahead.
-  const embedder = createQueuedEmbedder(new EmbeddingService({ modelId: config.semantic.modelId }));
+  const embedder = createQueuedEmbedder(
+    new EmbeddingService({ profile: resolveModelProfile(config.semantic.modelKey) }),
+  );
 
   const registry = await VaultRegistry.create(
     {

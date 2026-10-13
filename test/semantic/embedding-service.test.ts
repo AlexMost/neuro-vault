@@ -1,130 +1,89 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-const { mockPipeline, pipelineFactory } = vi.hoisted(() => ({
-  mockPipeline: vi.fn(),
-  pipelineFactory: vi.fn(),
-}));
-
-pipelineFactory.mockResolvedValue(mockPipeline);
-
-vi.mock('@xenova/transformers', () => ({
-  pipeline: pipelineFactory,
-}));
-
-import { MAX_TOKENS, MODEL_ID, MODEL_KEY } from '../../src/lib/obsidian/corpus/types.js';
 import { EmbeddingService } from '../../src/modules/semantic/embedding-service.js';
+import type { LocalModel } from '../../src/modules/semantic/local-model-loader.js';
+import {
+  identityOf,
+  resolveModelProfile,
+  type ModelProfile,
+} from '../../src/modules/semantic/model-profiles.js';
 
-describe('EmbeddingService', () => {
-  beforeEach(() => {
-    pipelineFactory.mockClear();
-    mockPipeline.mockClear();
-    pipelineFactory.mockResolvedValue(mockPipeline);
+const bge = resolveModelProfile('bge-micro-v2');
+const granite = resolveModelProfile('granite-97m');
+
+/** A model whose token state at each position is [id, 1]; the tokenizer wraps chars in [101 … 102]. */
+function fakeModel(encodeImpl?: (text: string) => number[]) {
+  const runs: Array<{ ids: number[][]; mask: number[][] }> = [];
+  const encode = vi.fn((text: string, options: { add_special_tokens: boolean }) => {
+    const body = encodeImpl ? encodeImpl(text) : Array.from(text, (c) => c.charCodeAt(0));
+    return options.add_special_tokens ? [101, ...body, 102] : body;
   });
-
-  it('defaults to the model repo id, not the corpus model key', async () => {
-    // MODEL_KEY is the corpus's record of which model produced its vectors;
-    // loading it as a transformers.js repo id 404s on Hugging Face. A default
-    // that cannot load would strand every caller that constructs the service
-    // without options (the indexer CLI, slice #5's wiring).
-    mockPipeline.mockResolvedValue({ data: new Float32Array([0.5]) });
-    const service = new EmbeddingService({ pipelineFactory });
-
-    await service.embed('text');
-
-    expect(pipelineFactory).toHaveBeenCalledWith('feature-extraction', MODEL_ID);
-    expect(MODEL_ID).not.toBe(MODEL_KEY);
-    expect(MODEL_ID).toContain('/');
-  });
-
-  it('exposes initialize() and embed(text)', () => {
-    const service = new EmbeddingService({ pipelineFactory });
-
-    expect(typeof service.initialize).toBe('function');
-    expect(typeof service.embed).toBe('function');
-  });
-
-  it('rejects blank query text before model invocation on a cold start', async () => {
-    const service = new EmbeddingService({ pipelineFactory });
-
-    await expect(service.embed('   ')).rejects.toThrow(/blank/i);
-    expect(pipelineFactory).not.toHaveBeenCalled();
-    expect(mockPipeline).not.toHaveBeenCalled();
-  });
-
-  it('calls the transformers pipeline with mean pooling and normalized output', async () => {
-    const mockVector = { data: new Float32Array([0.25, 0.75]) };
-    mockPipeline.mockResolvedValue(mockVector);
-    const service = new EmbeddingService({ pipelineFactory });
-
-    await service.initialize();
-    const embedding = await service.embed('semantic query');
-
-    expect(pipelineFactory).toHaveBeenCalledTimes(1);
-    expect(pipelineFactory).toHaveBeenCalledWith('feature-extraction', MODEL_ID);
-    expect(mockPipeline).toHaveBeenCalledTimes(1);
-    expect(mockPipeline).toHaveBeenCalledWith('semantic query', {
-      pooling: 'mean',
-      normalize: true,
-    });
-    expect(embedding).toEqual([0.25, 0.75]);
-  });
-
-  it('rejects non-finite embedding values from the model output', async () => {
-    mockPipeline.mockResolvedValue([1, Number.NaN]);
-    const service = new EmbeddingService({ pipelineFactory });
-
-    await service.initialize();
-
-    await expect(service.embed('semantic query')).rejects.toThrow(/non-finite/i);
-  });
-
-  it('initializes the model once even if initialize() is called repeatedly', async () => {
-    const service = new EmbeddingService({ pipelineFactory });
-
-    await service.initialize();
-    await service.initialize();
-    await service.initialize();
-
-    expect(pipelineFactory).toHaveBeenCalledTimes(1);
-  });
-});
-
-function fakePipeline() {
-  const pipe = vi.fn(async () => ({ data: new Float32Array(384) }));
-  return Object.assign(pipe, { tokenizer: { model_max_length: 1e15 } });
+  const model: LocalModel = {
+    tokenizer: { encode, padding_side: 'right', pad_token_id: 0 },
+    run: async (ids, mask) => {
+      runs.push({ ids, mask });
+      const data: number[] = [];
+      for (const row of ids) for (const id of row) data.push(id, 1);
+      return { kind: 'token_states', data, dims: [ids.length, ids[0].length, 2] };
+    },
+  };
+  return { model, runs, encode };
 }
 
-describe('EmbeddingService tokenizer cap', () => {
-  it('caps the tokenizer at the model window after initialization', async () => {
-    const pipe = fakePipeline();
-    const service = new EmbeddingService({ pipelineFactory: async () => pipe });
-    await service.embed('hello');
-    // Asserted against the shared constant (the cap and EMBED_CHAR_BUDGET must
-    // stay the same number) *and* against its literal value (the real window).
-    expect(pipe.tokenizer.model_max_length).toBe(MAX_TOKENS);
-    expect(pipe.tokenizer.model_max_length).toBe(512);
+/** Same arithmetic as the implementation's normalisation, so float results compare exactly. */
+const unit = (v: number[]) => {
+  const norm = Math.sqrt(v.reduce((sum, x) => sum + x * x, 0));
+  return v.map((x) => x / norm);
+};
+
+function serviceFor(profile: ModelProfile, model: LocalModel) {
+  const loader = vi.fn(async () => model);
+  return { service: new EmbeddingService({ profile, loader }), loader };
+}
+
+describe('EmbeddingService', () => {
+  it('reports the identity of its profile', () => {
+    const { service } = serviceFor(granite, fakeModel().model);
+    expect(service.identity).toEqual(identityOf(granite));
   });
 
-  it('does not throw when the pipeline exposes no tokenizer', async () => {
-    const pipe = vi.fn(async () => ({ data: new Float32Array(384) }));
-    const service = new EmbeddingService({ pipelineFactory: async () => pipe });
-    await expect(service.embed('hello')).resolves.toHaveLength(384);
+  it('loads the model once, shared by concurrent embeds', async () => {
+    const { service, loader } = serviceFor(granite, fakeModel().model);
+    await Promise.all([service.embed('a'), service.embed('b'), service.initialize()]);
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(loader).toHaveBeenCalledWith(granite);
   });
 
-  it('never raises a genuine window smaller than the cap', async () => {
-    const pipe = vi.fn(async () => ({ data: new Float32Array(384) }));
-    const capped = Object.assign(pipe, { tokenizer: { model_max_length: 128 } });
-    const service = new EmbeddingService({ pipelineFactory: async () => capped });
-    await service.embed('hello');
-    expect(capped.tokenizer.model_max_length).toBe(128);
+  it('rejects blank text before loading the model', async () => {
+    const { service, loader } = serviceFor(granite, fakeModel().model);
+    await expect(service.embed('   ')).rejects.toThrow(/blank/i);
+    expect(loader).not.toHaveBeenCalled();
   });
 
-  it('installs the cap when the tokenizer config omits the window entirely', async () => {
-    const pipe = vi.fn(async () => ({ data: new Float32Array(384) }));
-    const tokenizer: { model_max_length?: number } = {};
-    const bare = Object.assign(pipe, { tokenizer });
-    const service = new EmbeddingService({ pipelineFactory: async () => bare });
-    await service.embed('hello');
-    expect(bare.tokenizer.model_max_length).toBe(MAX_TOKENS);
+  it('pools the first token for a CLS profile', async () => {
+    const { service } = serviceFor(granite, fakeModel().model);
+    expect(await service.embed('ab')).toEqual(unit([101, 1]));
+  });
+
+  it('pools the mean for a mean profile', async () => {
+    const { service } = serviceFor(bge, fakeModel(() => [3]).model);
+    expect(await service.embed('x')).toEqual(unit([(101 + 3 + 102) / 3, 1]));
+  });
+
+  it('cuts an over-long input to the profile window and still returns a vector', async () => {
+    const { model, runs } = fakeModel(() => Array.from({ length: 600 }, (_, i) => i + 1000));
+    const { service } = serviceFor(bge, model);
+    const vector = await service.embed('long');
+    expect(runs[0].ids[0]).toHaveLength(bge.maxTokens);
+    expect(vector).toHaveLength(2);
+  });
+
+  it('retries a failed load on the next call', async () => {
+    const { model } = fakeModel();
+    const loader = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(model);
+    const service = new EmbeddingService({ profile: granite, loader });
+    await expect(service.embed('a')).rejects.toThrow('offline');
+    await expect(service.embed('a')).resolves.toHaveLength(2);
+    expect(loader).toHaveBeenCalledTimes(2);
   });
 });

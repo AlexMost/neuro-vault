@@ -12,6 +12,7 @@ import {
 } from './lib/obsidian/corpus/reconcile.js';
 import type { EmbedFn } from './lib/obsidian/corpus/types.js';
 import { EmbeddingService } from './modules/semantic/embedding-service.js';
+import { DEFAULT_MODEL_KEY, resolveModelProfile } from './modules/semantic/model-profiles.js';
 
 interface OutStream {
   isTTY?: boolean;
@@ -27,7 +28,7 @@ export interface IndexCommandDeps {
 }
 
 function defaultEmbed(): EmbedFn {
-  const service = new EmbeddingService();
+  const service = new EmbeddingService({ profile: resolveModelProfile(DEFAULT_MODEL_KEY) });
   return (text) => service.embed(text);
 }
 

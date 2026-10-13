@@ -1,4 +1,5 @@
 import { EmbeddingService } from './embedding-service.js';
+import { resolveModelProfile } from './model-profiles.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
 import { buildSemanticTools, type ISemanticToolDeps } from './tools/index.js';
 import type { EmbeddingProvider, SearchEngine } from './types.js';
@@ -26,7 +27,8 @@ export function createSemanticModule(
   deps: ISemanticModuleDeps = {},
 ): ISemanticModule {
   const embeddingServiceFactory =
-    deps.embeddingServiceFactory ?? ((modelId: string) => new EmbeddingService({ modelId }));
+    deps.embeddingServiceFactory ??
+    (() => new EmbeddingService({ profile: resolveModelProfile(config.modelKey) }));
   const searchEngine = deps.searchEngine ?? { findNeighbors, findBlockNeighbors, findDuplicates };
   const embeddingService = embeddingServiceFactory(config.modelId);
 

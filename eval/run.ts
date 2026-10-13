@@ -2,8 +2,8 @@ import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { MODEL_ID } from '../src/lib/obsidian/corpus/types.js';
 import { EmbeddingService } from '../src/modules/semantic/embedding-service.js';
+import { DEFAULT_MODEL_KEY, resolveModelProfile } from '../src/modules/semantic/model-profiles.js';
 import { BackendError, loadSnapshot } from './backends.js';
 import { GoldenSetError, goldenSetPath, loadGoldenSet } from './golden.js';
 import { aggregate, scoreQuery, type QueryScore } from './metrics.js';
@@ -66,10 +66,11 @@ export async function runEval(
   // model/corpus work), then the backend snapshot.
   const entries = await loadGoldenSet(vaultRoot);
   const sources = await loadSnapshot(vaultRoot);
+  const profile = resolveModelProfile(DEFAULT_MODEL_KEY);
   const embed =
     deps.embed ??
     (() => {
-      const service = new EmbeddingService();
+      const service = new EmbeddingService({ profile });
       return (text: string) => service.embed(text);
     })();
   const fusedContext: FusedContext | undefined =
@@ -90,7 +91,7 @@ export async function runEval(
   const report: EvalReport = {
     code_sha: await gitSha(MODULE_DIR),
     vault_sha: await gitSha(vaultRoot),
-    model_id: deps.modelId ?? MODEL_ID,
+    model_id: deps.modelId ?? profile.repo,
     pipeline: args.pipeline,
     config: { ...EVAL_CONFIG },
     golden: { path: goldenSetPath(vaultRoot), count: entries.length },
