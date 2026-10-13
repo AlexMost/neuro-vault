@@ -76,7 +76,7 @@ describe('own backend snapshot', () => {
     await expect(
       loadSnapshot(vaultRoot, { ...TEST_IDENTITY, model_key: 'harrier-270m' }),
     ).rejects.toThrow(
-      `was indexed with granite-97m (embed_version 1), not harrier-270m (embed_version 1) — rebuild it for this model with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
+      `was indexed with granite-97m (embed_version 2), not harrier-270m (embed_version 2) — rebuild it for this model with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
     );
   });
 

@@ -55,13 +55,29 @@ export interface CorpusShard {
 
 export interface CorpusManifest {
   embed_version: number;
+  /** Everything below up to `max_tokens` is what produced the vectors (design D8). */
+  provider: string;
   model_key: string;
-  /** The repo id the vectors were produced from — changing it alone must rebuild. */
+  /** The repo id the vectors were produced from. */
   model_id: string;
+  revision: string;
+  dtype: string;
   dims: number;
+  pooling: string;
+  max_tokens: number;
   strategy: string;
   created: string;
 }
+
+/** Producer fields a manifest written before embed_version 2 lacks. */
+export type ProducerField = 'provider' | 'revision' | 'dtype' | 'pooling' | 'max_tokens';
+
+/**
+ * A manifest as read from disk: one this build wrote, or a legacy one without
+ * the producer fields — still readable so a rebuild can name what it replaces.
+ */
+export type StoredManifest = Omit<CorpusManifest, ProducerField> &
+  Partial<Pick<CorpusManifest, ProducerField>>;
 
 /**
  * What produced a corpus's vectors, as the embedding provider reports it
@@ -86,5 +102,5 @@ export type EmbedDocumentsFn = (texts: string[]) => Promise<number[][]>;
 export const MIN_CHARS = 200;
 /** Note embed text is cut here — the Smart Connections parity formula, 512 tokens × 3.7. */
 export const EMBED_CHAR_BUDGET = 1894;
-export const SC_PARITY_STRATEGY = 'sc-parity-v1';
-export const EMBED_VERSION = 1;
+export const EMBED_STRATEGY = 'token-window-v1';
+export const EMBED_VERSION = 2;

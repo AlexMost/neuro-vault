@@ -164,7 +164,7 @@ describe('runIndexCommand', () => {
     const deps = makeDeps(reconcile);
     await runIndexCommand({ vaults: [vaultA], model: profile }, deps);
     expect(deps.stdout.chunks[0]).toBe(
-      'rebuilding VaultA: corpus was indexed with harrier-270m (embed_version 2); active model is bge-micro-v2 (embed_version 1)\n',
+      'rebuilding VaultA: corpus was indexed with harrier-270m (embed_version 2); active model is bge-micro-v2 (embed_version 2)\n',
     );
   });
 

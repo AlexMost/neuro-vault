@@ -1,6 +1,6 @@
 import {
+  EMBED_STRATEGY,
   EMBED_VERSION,
-  SC_PARITY_STRATEGY,
   type CorpusManifest,
   type EmbeddingIdentity,
 } from './types.js';
@@ -10,17 +10,21 @@ export type CorpusIdentity = Omit<CorpusManifest, 'created'>;
 
 /**
  * The corpus identity of vectors produced by `embedding` under this build's
- * text extraction. Until the manifest records the full producer (design D8),
- * it keeps exactly the five fields existing manifests carry, so no corpus is
- * invalidated by this refactor.
+ * text extraction: every field the embedding provider reports (design D8),
+ * plus this build's extraction version and strategy.
  */
 export function corpusIdentityOf(embedding: EmbeddingIdentity): CorpusIdentity {
   return {
     embed_version: EMBED_VERSION,
+    provider: embedding.provider,
     model_key: embedding.model_key,
     model_id: embedding.model_id,
+    revision: embedding.revision,
+    dtype: embedding.dtype,
     dims: embedding.dims,
-    strategy: SC_PARITY_STRATEGY,
+    pooling: embedding.pooling,
+    max_tokens: embedding.max_tokens,
+    strategy: EMBED_STRATEGY,
   };
 }
 

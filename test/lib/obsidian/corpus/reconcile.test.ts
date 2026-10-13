@@ -8,6 +8,7 @@ import {
   reconcileCorpus,
   type ReconcileOptions,
 } from '../../../../src/lib/obsidian/corpus/reconcile.js';
+import { formatIdentity } from '../../../../src/lib/obsidian/corpus/identity.js';
 import { CorpusStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
 import { buildEmbedInputs } from '../../../../src/lib/obsidian/corpus/embed-text.js';
 import { TEST_DIMS, TEST_IDENTITY } from '../../../_identity.js';
@@ -235,17 +236,35 @@ describe('reconcileCorpus', () => {
     const { run, store, embed } = await harness({ 'A.md': body('A') });
     await run();
     await store.writeManifest({
-      embed_version: 1,
+      ...TEST_IDENTITY,
       model_key: 'other',
       model_id: 'other/other',
-      dims: TEST_DIMS,
-      strategy: 'sc-parity-v1',
       created: '2026-01-01T00:00:00.000Z',
     });
     embed.mockClear();
 
     expect(await run()).toMatchObject({ embedded: 1, reused: 0 });
     expect(embed).toHaveBeenCalled();
+  });
+
+  it('names a legacy bge-micro-v2 corpus when it rebuilds it', async () => {
+    const { run, root } = await harness({ 'A.md': body('A') });
+    await run();
+    await writeFile(
+      path.join(root, '.neuro-vault/corpus/manifest.json'),
+      JSON.stringify({
+        embed_version: 1,
+        model_key: 'bge-micro-v2',
+        model_id: 'TaylorAI/bge-micro-v2',
+        dims: 384,
+        strategy: 'sc-parity-v1',
+        created: 'x',
+      }),
+    );
+    const rebuilds: string[] = [];
+    const summary = await run({ onRebuild: ({ stored }) => rebuilds.push(formatIdentity(stored)) });
+    expect(rebuilds).toEqual(['bge-micro-v2 (embed_version 1)']);
+    expect(summary.embedded).toBe(1);
   });
 
   it('re-embeds a renamed note and removes its old shard', async () => {

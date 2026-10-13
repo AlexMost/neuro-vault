@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { buildEmbedInputs } from './embed-text.js';
 import type { CorpusIdentity } from './identity.js';
 import { CorpusStore, ensureCorpusGitignored } from './shard-store.js';
-import type { CorpusBlock, CorpusManifest, CorpusShard, EmbedDocumentsFn } from './types.js';
+import type { CorpusBlock, CorpusShard, EmbedDocumentsFn, StoredManifest } from './types.js';
 import { encodeVector } from './vector-codec.js';
 
 export interface NoteStat {
@@ -53,7 +53,7 @@ export interface ReconcileOptions {
    * (design D8). A stale manifest with no shards discards nothing and is not
    * reported.
    */
-  onRebuild?: (rebuild: { stored: CorpusManifest | null; active: CorpusIdentity }) => void;
+  onRebuild?: (rebuild: { stored: StoredManifest | null; active: CorpusIdentity }) => void;
 }
 
 export interface ReconcileSummary {

@@ -16,11 +16,16 @@ describe('corpusIdentityOf', () => {
         max_tokens: 512,
       }),
     ).toEqual({
-      embed_version: 1,
+      embed_version: 2,
+      provider: 'transformers.js',
       model_key: 'bge-micro-v2',
       model_id: 'TaylorAI/bge-micro-v2',
+      revision: '3edf6d7de0faa426b09780416fe61009f26ae589',
+      dtype: 'q8',
       dims: 384,
-      strategy: 'sc-parity-v1',
+      pooling: 'mean',
+      max_tokens: 512,
+      strategy: 'token-window-v1',
     });
   });
 });

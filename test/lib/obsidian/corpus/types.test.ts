@@ -5,7 +5,8 @@ import path from 'node:path';
 import {
   EMBED_CHAR_BUDGET,
   MIN_CHARS,
-  SC_PARITY_STRATEGY,
+  EMBED_STRATEGY,
+  EMBED_VERSION,
 } from '../../../../src/lib/obsidian/corpus/types.js';
 
 describe('corpus parity constants', () => {
@@ -18,7 +19,8 @@ describe('corpus parity constants', () => {
   });
 
   it('names the extraction strategy', () => {
-    expect(SC_PARITY_STRATEGY).toBe('sc-parity-v1');
+    expect(EMBED_STRATEGY).toBe('token-window-v1');
+    expect(EMBED_VERSION).toBe(2);
   });
 
   it('never imports from src/modules', () => {
