@@ -19,13 +19,9 @@ export interface ModelProfile {
   readonly dtype: 'q8';
   readonly dims: number;
   readonly pooling: Pooling;
-  /**
-   * Prepended to every query by the provider; callers never add it. Not
-   * applied until `embedQuery` lands (design D4) — EmbeddingService refuses a
-   * non-empty one until then.
-   */
+  /** Prepended to every query by the provider; callers never add it. */
   readonly queryPrefix: string;
-  /** Prepended to every document by the provider. Same staging as `queryPrefix`. */
+  /** Prepended to every document by the provider. */
   readonly documentPrefix: string;
   /** Input window in tokens of this profile's tokenizer, special tokens included. */
   readonly maxTokens: number;
