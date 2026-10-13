@@ -58,6 +58,7 @@ jobs:
   profile-tokenizers:
     name: Profile tokenizers (pinned revisions)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       NEURO_VAULT_HF_TESTS: '1'
     steps:

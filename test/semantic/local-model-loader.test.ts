@@ -26,6 +26,7 @@ function fakeTransformers(
     outputs?: Record<string, { data: number[]; dims: number[] }>;
     maxPositions?: number;
     sessions?: Record<string, { inputNames: string[]; outputNames: string[] }>;
+    encode?: (text: string, options: { add_special_tokens: boolean }) => number[];
   } = {},
 ) {
   const forward: Array<Record<string, FakeTensor>> = [];
@@ -45,7 +46,7 @@ function fakeTransformers(
       dispose: vi.fn(async () => {}),
     },
   );
-  const tokenizer = { encode: () => [1], padding_side: 'right', pad_token_id: 0 };
+  const tokenizer = { encode: opts.encode ?? (() => [1]), padding_side: 'right', pad_token_id: 0 };
   const tf = {
     env: { cacheDir: null as string | null, logLevel: undefined as unknown },
     LogLevel: { ERROR: 'error-level' },
@@ -131,6 +132,27 @@ describe('createLocalModelLoader', () => {
     await expect(
       createLocalModelLoader({ importTransformers: async () => module, cacheDir: '/m' })(granite),
     ).resolves.toBeDefined();
+  });
+
+  it('derives the special-token template and returns it', async () => {
+    const { module } = fakeTransformers({
+      encode: (_text, { add_special_tokens }) => (add_special_tokens ? [101, 7, 102] : [7]),
+    });
+    const model = await createLocalModelLoader({
+      importTransformers: async () => module,
+      cacheDir: '/m',
+    })(granite);
+    expect(model.template).toEqual({ prefix: [101], suffix: [102] });
+  });
+
+  it('fails naming the profile, and releases the model, when the template cannot be derived', async () => {
+    const { model, module } = fakeTransformers({
+      encode: (_text, { add_special_tokens }) => (add_special_tokens ? [9, 9] : [7]),
+    });
+    await expect(
+      createLocalModelLoader({ importTransformers: async () => module, cacheDir: '/m' })(granite),
+    ).rejects.toThrow(/^model "granite-97m": cannot derive the special-token template/);
+    expect(model.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('runs a forward pass on int64 tensors and returns token states', async () => {

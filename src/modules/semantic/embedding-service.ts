@@ -7,7 +7,7 @@ import {
 } from './local-model-loader.js';
 import { identityOf, type ModelProfile } from './model-profiles.js';
 import { poolAndNormalize } from './pooling.js';
-import { deriveTemplate, encodeRow, padBatch, type SpecialTokenTemplate } from './tokenization.js';
+import { encodeRow, padBatch } from './tokenization.js';
 import type { EmbeddingProvider } from './types.js';
 
 export interface EmbeddingServiceOptions {
@@ -18,7 +18,6 @@ export interface EmbeddingServiceOptions {
 
 interface Loaded {
   model: LocalModel;
-  template: SpecialTokenTemplate;
   padId: number;
   padSide: 'left' | 'right';
 }
@@ -67,19 +66,17 @@ export class EmbeddingService implements EmbeddingProvider {
       if (!content) throw new Error(`document ${index} is blank`);
       return content;
     });
-    // `return await`, not a bare return: the method must stay async so the
-    // validation throws above reject instead of throwing synchronously.
-    return await this.embedRows(contents, this.profile.documentPrefix);
+    return this.embedRows(contents, this.profile.documentPrefix);
   }
 
   /** Template-aware rows, padded on the tokenizer's side, pooled by mask (design D5). */
   private async embedRows(contents: string[], prefix: string): Promise<number[][]> {
-    const { model, template, padId, padSide } = await this.getLoaded();
+    const { model, padId, padSide } = await this.getLoaded();
     const rows = contents.map((content) =>
       encodeRow({
         prefix,
         content,
-        template,
+        template: model.template,
         maxTokens: this.profile.maxTokens,
         encoder: model.tokenizer,
       }),
@@ -96,7 +93,6 @@ export class EmbeddingService implements EmbeddingProvider {
         .then((model) => {
           this.loaded = {
             model,
-            template: deriveTemplate(model.tokenizer),
             padId: model.tokenizer.pad_token_id ?? 0,
             padSide: model.tokenizer.padding_side === 'left' ? 'left' : 'right',
           };

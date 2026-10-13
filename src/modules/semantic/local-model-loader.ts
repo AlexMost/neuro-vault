@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import type { ModelProfile } from './model-profiles.js';
 import type { ModelOutput } from './pooling.js';
+import { deriveTemplate, type SpecialTokenTemplate } from './tokenization.js';
 
 /** The tokenizer surface the provider uses — a structural slice of transformers.js's. */
 export interface TokenizerHandle {
@@ -16,6 +17,8 @@ export interface TokenizerHandle {
 /** A loaded profile: its tokenizer, and a forward pass over already-padded id rows. */
 export interface LocalModel {
   tokenizer: TokenizerHandle;
+  /** Read off the tokenizer at load, so a tokenizer that cannot yield one fails the load. */
+  template: SpecialTokenTemplate;
   run(ids: number[][], mask: number[][]): Promise<ModelOutput>;
 }
 
@@ -125,6 +128,7 @@ export function createLocalModelLoader(
     // rejected export must not keep its weights alive until GC, so the session
     // is released before the error propagates.
     let output: { name: string; kind: ModelOutput['kind'] };
+    let template: SpecialTokenTemplate;
     try {
       const session = Object.values(model.sessions)[0];
       if (session === undefined)
@@ -145,6 +149,13 @@ export function createLocalModelLoader(
           `model "${profile.key}": maxTokens ${profile.maxTokens} exceeds the model's ${window}-position window`,
         );
       }
+      try {
+        template = deriveTemplate(tokenizer);
+      } catch (error) {
+        throw new Error(
+          `model "${profile.key}": ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     } catch (error) {
       await model.dispose?.().catch(() => undefined);
       throw error;
@@ -152,6 +163,7 @@ export function createLocalModelLoader(
 
     return {
       tokenizer,
+      template,
       run: async (ids, mask) => {
         const result = await model({ input_ids: int64(tf, ids), attention_mask: int64(tf, mask) });
         const tensor = result[output.name];

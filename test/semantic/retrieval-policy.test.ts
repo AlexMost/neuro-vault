@@ -10,7 +10,7 @@ import type {
 import { executeRetrieval } from '../../src/modules/semantic/retrieval-policy.js';
 
 // The vector every fixture below embeds every query to. A single shared ARRAY
-// INSTANCE on purpose: `embed` is mocked with `mockResolvedValue(QUERY_VECTOR)`,
+// INSTANCE on purpose: `embedQuery` is mocked with `mockResolvedValue(QUERY_VECTOR)`,
 // so a `findNeighbors` call whose `queryVector` is this exact instance is a
 // seed-pass call, while any other instance is a seed's own `embedding` — i.e.
 // the per-seed expansion leg. Routing on identity rather than call order is

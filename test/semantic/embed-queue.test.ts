@@ -139,14 +139,14 @@ describe('createQueuedEmbedder — batching', () => {
   it('gives two concurrent callers their own vectors, in their own input order, while both are in flight', async () => {
     const { provider, releaseNext } = gatedProvider();
     const embedder = createQueuedEmbedder(provider);
-    const a = embedder.embedDocuments(['aaaaaaa3', 'a1', 'a2']);
+    const a = embedder.embedDocuments(['aaaaaaa3', 'a1', 'a22']);
     await flush(); // a's first bucket is in the provider
     const b = embedder.embedDocuments(['bbbbbbbbbbbb', 'b']);
     for (let i = 0; i < 4; i++) {
       await flush();
       releaseNext();
     }
-    expect(await a).toEqual([[8], [2], [2]]);
+    expect(await a).toEqual([[8], [2], [3]]);
     expect(await b).toEqual([[12], [1]]);
   });
 

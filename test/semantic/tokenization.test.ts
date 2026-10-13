@@ -88,7 +88,18 @@ describe('encodeRow', () => {
       encoder: tricky,
     });
     expect(row).toEqual([2, 5, 5, 5, 5, 5, 1, 1]);
-    expect(padBatch([row], 0, 'right').mask[0]).toEqual([1, 1, 1, 1, 1, 1, 1, 1]);
+    const shorter = encodeRow({
+      prefix: '',
+      content: 'a',
+      template: bosEos,
+      maxTokens: 8,
+      encoder: tricky,
+    });
+    const { ids, mask } = padBatch([shorter, row], 0, 'right');
+    expect(mask[1]).toEqual([1, 1, 1, 1, 1, 1, 1, 1]);
+    expect(mask[0]).toEqual([1, 1, 1, 0, 0, 0, 0, 0]);
+    expect(ids[1][mask[1].lastIndexOf(1)]).toBe(1);
+    expect(ids[1][7]).toBe(1);
   });
 
   it('bounds tokenizer work on a huge input before tokenising', () => {

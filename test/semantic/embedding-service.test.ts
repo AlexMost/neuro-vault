@@ -20,6 +20,7 @@ function fakeModel(encodeImpl?: (text: string) => number[]) {
   });
   const model: LocalModel = {
     tokenizer: { encode },
+    template: { prefix: [101], suffix: [102] },
     run: async (ids, mask) => {
       runs.push({ ids, mask });
       const data: number[] = [];
@@ -136,6 +137,7 @@ function templatedModel(side: 'left' | 'right' = 'right') {
   });
   const model: LocalModel = {
     tokenizer: { encode, padding_side: side, pad_token_id: 0 },
+    template: { prefix: [2], suffix: [1] },
     run: async (ids, mask) => {
       runs.push({ ids, mask });
       const data: number[] = [];
