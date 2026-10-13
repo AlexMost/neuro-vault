@@ -140,6 +140,14 @@ export function collectPopulations(args: {
   return { query_candidates, expansion_neighbours, note_top10, note_max };
 }
 
+/**
+ * Preconditions: `top_scores` must be cosine similarities (a `semantic` run —
+ * fused RRF scores mean nothing against a similarity threshold), and the filter
+ * is modelled as a plain threshold, NOT production's one-shot retry at
+ * `fallback`. A query whose best hit sits between `fallback` and the threshold
+ * therefore counts as lost though production would recover it: conservative,
+ * never an under-report.
+ */
 export function computeGuards(
   perQuery: QueryScore[],
   similarity: SimilarityDefaults,

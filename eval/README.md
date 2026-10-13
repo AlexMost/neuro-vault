@@ -66,16 +66,66 @@ re-run.
 ## Running
 
 ```sh
-npm run eval -- --vault <path> --pipeline semantic|fused
+npm run eval -- --vault <path> [--pipeline semantic|fused] [--model <key>] [--stats [--baseline <report.json>]]
 ```
 
-`--pipeline` defaults to `semantic`. An unrecognized flag, a missing value, or
-an unknown `--pipeline` value fails immediately with the supported values.
+- `--pipeline` defaults to `semantic`.
+- `--model` names an embedding model profile and defaults to the registry
+  default (see [Axis: model](#axis-model)).
+- `--stats` adds the calibration statistics to the report and the printout
+  (see [Calibration](#calibration)); it works on the `semantic` pipeline only.
+- `--baseline` names an earlier `--stats` report to calibrate against, and is
+  only valid together with `--stats`.
+
+An unrecognized flag, a missing value, an unknown `--pipeline` or `--model`
+value, `--baseline` without `--stats`, or `--stats` with `--pipeline fused` fails
+immediately — naming the supported values where there are any.
 
 The run reads `<vault>/.neuro-vault/corpus/` — the shard store this server
-owns and reconciles. It must already exist: run
-`neuro-vault-mcp index --vault <path>` first, or the run fails naming that
-command.
+owns and reconciles. It never builds or rebuilds it: the corpus must already
+exist **and have been built by the profile you pass to `--model`**, or the run
+fails naming the `neuro-vault-mcp index` command that fixes it (see below).
+
+## Axis: model
+
+- **`--model <key>`** — which embedding model profile the run uses. One profile
+  per run: the same profile embeds every golden query (through the same provider
+  the server uses, so a profile's query prefix is applied) and supplies the
+  similarity defaults the run reads (the `fused` expansion floor, and the
+  thresholds `--stats` reports on). An unknown key fails with the list of
+  supported ones.
+
+The corpus holds vectors from exactly one model, and a query vector is only
+meaningful against vectors from the same model — different models can even share
+a width and then score as noise rather than fail. So before any query is
+embedded, the runner compares the corpus manifest with the selected profile
+(embedding version, model key and id, dimensions and indexing strategy) and
+refuses to run on a mismatch. It reads the manifest ahead of listing shards, so
+a corpus of another width is refused on its manifest instead of failing shard
+by shard. There are three refusals, each naming the command that fixes it:
+
+- the corpus was indexed with another profile — the message names both the
+  stored and the requested model;
+- the corpus is missing or empty;
+- the corpus has no readable manifest.
+
+The command is `neuro-vault-mcp index --vault <vault> --model <key>`, with
+the resolved vault root and the key you passed to `--model`.
+
+**Reproducing a model comparison** (a bake-off) means, for each profile:
+
+```sh
+neuro-vault-mcp index --vault <copy> --model <key>
+npm run eval -- --vault <copy> --model <key>
+```
+
+This is destructive to that vault's corpus by design: a vault has one corpus
+directory, so indexing it for another profile discards and rebuilds it. Run the
+loop against a **copy** of the vault (the copy keeps its `.git`, so `vault_sha`
+stays meaningful, and its golden set), never against one a live server is
+using — a server started with a different `--model` would rebuild the corpus
+against your runs. Compare the resulting reports on `--pipeline semantic` (see
+[Scoring](#scoring)).
 
 ## Axis: pipeline
 
@@ -84,7 +134,7 @@ command.
     (`findNeighbors`, threshold 0, top 10).
   - `fused` — the production RRF pipeline, run at deep effort: `executeRetrieval`
     (semantic leg at threshold 0, pool 8; expansion leg on, per-seed limit 3,
-    expansion floor 0.35) + `LexicalIndex.search`
+    expansion floor from the selected profile) + `LexicalIndex.search`
     (note cap 10, per-note cap 3, real wikilink-graph backlink tie-break) +
     `flattenExpansion` + `fuseRanks` (expansion weight 0.85). This is the same
     sequence `search_notes` calls internally to assemble its unified list,
@@ -98,24 +148,28 @@ command.
 
 Every query is scored against its pipeline's **top-10** ranked paths, computed
 at **query-side similarity threshold 0** — positions only, no score filtering.
-Production's query↔note thresholds (0.5/0.35 plus the 0.3 fallback) are
-calibrated to one embedding model's similarity scale, so they're not
-meaningful across models; the harness zeroes them rather than let threshold
-tuning masquerade as ranking quality.
+Production's query↔note thresholds (the profile's `quick` and `deep` defaults
+plus its `fallback`) sit on one embedding model's similarity scale, so they
+aren't comparable across models; the harness zeroes them rather than let
+threshold tuning masquerade as ranking quality. The ranked list still carries
+each path's score, so a threshold can be judged afterwards (see
+[Calibration](#calibration)).
 
-The expansion leg's floor is the deliberate exception: **`expansion_floor`
-stays at the production value 0.35**. It is a similarity threshold too, but on
-the seed↔note scale rather than the query↔note one, and zeroing it would stop
-the `fused` pipeline from being the production pipeline — which is the whole
-point of that pipeline. The cost is a caveat, worth stating plainly:
+The expansion leg's floor is the deliberate exception: **`expansion_floor` is
+the selected profile's own default** (`ModelProfile.similarity.expansionFloor`).
+It is a similarity threshold too, but on the seed↔note scale rather than the
+query↔note one, and zeroing it would stop the `fused` pipeline from being the
+production pipeline for that profile — which is the whole point of that
+pipeline. The cost is a caveat, worth stating plainly:
 
-> A cross-model comparison of `fused` is not clean. Under a model upgrade the
+> A cross-model comparison of `fused` is not clean. Under a model change the
 > expansion leg's membership shifts with the new model's similarity
-> distribution while the semantic leg's (threshold 0) does not, so part of a
-> `fused` metric delta can come from the floor rather than from ranking
-> quality. **`--pipeline semantic` is the clean cross-model read.** The floor
-> actually in effect is always recorded as `config.expansion_floor`, so a
-> report never hides which value produced its numbers.
+> distribution and with its own floor, while the semantic leg's (threshold 0)
+> does not, so part of a `fused` metric delta can come from the floor rather
+> than from ranking quality. **`--pipeline semantic` is the clean cross-model
+> read.** The floor actually in effect is always recorded as
+> `config.expansion_floor`, so a report never hides which value produced its
+> numbers.
 
 Within one model — an RRF re-tuning, for instance — the floor is a constant
 across runs and the caveat doesn't apply.
@@ -133,20 +187,34 @@ From that top-10, three metrics are computed, each over three slices
 
 Each run writes one JSON file to `eval/results/` (gitignored — reports are
 machine-generated and tied to a code SHA, not durable artifacts), named
-`<yyyy-mm-ddThh-mm-ss>-<pipeline>.json`. It carries:
+`<yyyy-mm-ddThh-mm-ss>-<model_key>-<pipeline>.json`. It carries:
 
 - `code_sha`, `vault_sha` — `git rev-parse HEAD` in this repo and in the
   vault, respectively, with a `-dirty` suffix when the working tree has
   uncommitted changes. Either is `null` when that directory isn't a git
   repository, or git was unavailable — never a fabricated value.
-- `model_id`, `pipeline` — which combination produced this report.
-- `config` — every knob in effect (pool sizes, thresholds, fusion weight, the
-  adaptive-`k` policy), so a run with different knobs is distinguishable at a
-  glance.
+- `model_key`, `model_id`, `identity`, `pipeline` — which combination produced
+  this report. `model_key` is the profile the run was invoked with; `identity`
+  is the full embedding identity the corpus was gated against and the queries
+  were embedded under (provider, model key and id, revision, dtype, dimensions,
+  pooling, max tokens); `model_id` repeats `identity.model_id`.
+- `config` — every knob in effect (pool sizes, thresholds, the profile's
+  expansion floor, fusion weight, the adaptive-`k` policy), so a run with
+  different knobs is distinguishable at a glance.
 - `golden` — the golden set's path and entry count.
 - `metrics` — the three slices described above.
-- `per_query` — each query's ranked top list and first-relevant-rank, for
-  diffing individual queries between two runs.
+- `per_query` — for each query: its ranked top list (`top`) with the score each
+  path was ranked by (`top_scores`, parallel to `top`), the 1-based ranks of
+  every relevant path inside it (`relevant_ranks`), the first of them
+  (`first_relevant_rank`, `null` when none), the per-query metric values, and
+  `best_relevant_similarity` — the best cosine between the query and any of its
+  relevant notes **whether or not that note was ranked** (`null` when none of
+  them has a vector). It is the evidence a threshold needs for notes the top
+  list never reached. `top_scores` are cosine similarities for `semantic` and
+  fused RRF scores for `fused`; `best_relevant_similarity` is a cosine either
+  way. Together they let two runs be diffed query by query.
+- `stats` — the calibration statistics; present only on a `--stats` run (see
+  [Calibration](#calibration)).
 
 **Two reports are comparable if and only if their `vault_sha` values are
 equal and clean** (both non-null, neither `-dirty`). This is the harness's
@@ -170,6 +238,84 @@ Since reports are gitignored and local, there's no built-in history. Durable
 baseline numbers are meant to be transcribed by hand into wherever they need
 to live for the long term — a vault task note — rather than kept as a growing
 pile of JSON files.
+
+## Calibration
+
+`--stats` answers a question the ranking metrics can't: *where do this
+profile's similarity thresholds sit on its own scale?* A threshold is only
+meaningful against the distribution it filters, and models differ in that
+distribution. With no labelled data for most thresholds, the defensible target
+is to **reproduce the behaviour a threshold had on a model it was tuned for** —
+the same share of its population passing — rather than to maximise a golden-set
+metric (the harness ranks at threshold 0, so positions give a threshold nothing
+to maximise).
+
+A `--stats` run adds a `stats` object to the report and prints a summary. It
+measures four populations, each summarised by quantiles (`n`, `min`, `p05`,
+`p10`, `p25`, `p50`, `p75`, `p90`, `p95`, `max`):
+
+| population             | what it holds                                                        | thresholds it feeds         |
+| ---------------------- | -------------------------------------------------------------------- | --------------------------- |
+| `query_candidates`     | query↔note similarities of each golden query's top-10 candidates     | `quick`, `deep`, `fallback` |
+| `expansion_neighbours` | seed↔neighbour similarities the expansion leg sees, before its floor | `expansionFloor`            |
+| `note_top10`           | every note's top-10 neighbour similarities                           | `similarNotes`              |
+| `note_max`             | every note's maximum similarity to any other note                    | `duplicates`                |
+
+For each of the six defaults on the selected profile, `pass_rates` records its
+threshold, the population it filters and the share of that population at or
+above the threshold.
+
+### Guards
+
+Two golden-set checks guard a threshold against costing recall where labels
+exist. They are reported under `guards`:
+
+- `deep_filtered_first_relevant` — queries whose first relevant hit lies inside
+  the deep pool but scores below the profile's `deep` default. **Target: 0.**
+- `quick_hit_at_3_drop` — queries that have a relevant note in the top-3 at
+  threshold 0 but lose it once the ranking is filtered at the profile's `quick`
+  default. **Target: ≤ 1.**
+
+Two properties of the guards are worth knowing:
+
+1. They read `top_scores` as **cosine similarities**. That is why `--stats` is
+   `semantic`-pipeline only — a `fused` run's scores are RRF scores, and
+   comparing them with a similarity threshold is meaningless.
+2. They model a **plain threshold filter**, not production's one-shot fallback
+   retry. Production retries once at `fallback` when a default threshold finds
+   nothing; the guards don't. A query whose best hit sits between `fallback` and
+   `quick` therefore counts as lost, although production would recover it. The
+   guards are conservative: they never under-report a loss.
+
+The harness only reports the guards; lowering a threshold until they pass is the
+operator's step.
+
+### Baseline and suggested thresholds
+
+`--baseline <report.json>` takes an earlier `--stats` report (anything else — an
+unreadable file or a report without `stats` — fails before any query is
+embedded). For each of the six defaults it reads the baseline's pass rate and
+adds a `suggested` entry to the new report: the threshold on _this_ run's
+population at which that same share passes (`baseline_pass_rate` and
+`threshold`). The printout appends `→ suggested <threshold>` to each line. The
+suggestion matches distributions only — it does not look at the guards.
+
+### Procedure
+
+1. **Take the baseline first.** On the profile whose thresholds you want to
+   reproduce, against a corpus built by it, run
+   `npm run eval -- --vault <copy> --model <key> --stats` and keep the report.
+   A vault has one corpus directory, so once it is re-indexed for another
+   profile this baseline can no longer be reproduced.
+2. **Per profile:** index the vault copy with it, then run
+   `npm run eval -- --vault <copy> --model <key> --stats --baseline <baseline report>`.
+   Set each threshold to its `suggested` value.
+3. **Check the guards** on that same run. If either misses its target, lower
+   the threshold (`deep` for the first, `quick` for the second) until it passes
+   and record the adjustment.
+4. **Record** the baseline pass rates, the per-profile values and the guard
+   results where the decision lives (an ADR and the retrieval-policy
+   architecture doc), not in a growing pile of local reports.
 
 ## Pointers
 
