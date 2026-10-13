@@ -74,7 +74,15 @@ describe('EmbeddingService', () => {
     const { model, runs } = fakeModel(() => Array.from({ length: 600 }, (_, i) => i + 1000));
     const { service } = serviceFor(bge, model);
     const vector = await service.embed('long');
-    expect(runs[0].ids[0]).toHaveLength(bge.maxTokens);
+    const ids = runs[0].ids[0];
+    expect(ids).toHaveLength(bge.maxTokens);
+    // v2 semantics: encode with special tokens, then slice. The leading [101]
+    // stays, and the trailing [102] is dropped rather than re-attached — body
+    // ids 1000.. fill the remaining 511 slots, so the last kept id is 1510.
+    expect(ids[0]).toBe(101);
+    expect(ids[ids.length - 1]).toBe(1510);
+    expect(runs[0].mask[0]).toHaveLength(bge.maxTokens);
+    expect(runs[0].mask[0].every((m) => m === 1)).toBe(true);
     expect(vector).toHaveLength(2);
   });
 
