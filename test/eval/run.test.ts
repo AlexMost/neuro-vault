@@ -7,7 +7,12 @@ import { TEST_DIMS } from '../_identity.js';
 import { corpusIdentityOf } from '../../src/lib/obsidian/corpus/identity.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
 import { GoldenSetError } from '../../eval/golden.js';
-import { UsageError, parseEvalArgs, runEval } from '../../eval/run.js';
+import {
+  UsageError,
+  baselineComparabilityWarning,
+  parseEvalArgs,
+  runEval,
+} from '../../eval/run.js';
 import { BackendError } from '../../eval/backends.js';
 import type { EvalReport } from '../../eval/report.js';
 import {
@@ -74,6 +79,21 @@ describe('runEval end-to-end (stub embedder)', () => {
     const v = new Array<number>(TEST_DIMS).fill(0);
     v[hot] = 1;
     return v;
+  }
+
+  // More notes than the seed pool, so the expansion leg has non-seed neighbours to measure.
+  async function addExtraNotes(): Promise<void> {
+    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
+    for (let i = 1; i <= 10; i += 1) {
+      await store.writeShard({
+        path: `Notes/extra-${i}.md`,
+        content_hash: `x${i}`,
+        mtime: i,
+        size: 30,
+        embedding: encodeVector(unitVec(10 + i)),
+        blocks: [],
+      });
+    }
   }
 
   async function makeVault(golden: string): Promise<void> {
@@ -239,18 +259,7 @@ describe('runEval end-to-end (stub embedder)', () => {
 
   it('with --baseline, suggests thresholds reproducing the baseline report pass rates', async () => {
     await makeVault(GOLDEN);
-    // More notes than the seed pool, so the expansion leg has non-seed neighbours to measure.
-    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
-    for (let i = 1; i <= 10; i += 1) {
-      await store.writeShard({
-        path: `Notes/extra-${i}.md`,
-        content_hash: `x${i}`,
-        mtime: i,
-        size: 30,
-        embedding: encodeVector(unitVec(10 + i)),
-        blocks: [],
-      });
-    }
+    await addExtraNotes();
     const embed = () => Promise.resolve(unitVec(0));
     const first = await runEval(
       { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
@@ -269,6 +278,60 @@ describe('runEval end-to-end (stub embedder)', () => {
     expect(first.report.stats?.pass_rates.deep.pass_rate).toBe(0.1); // one of the ten candidates scores 1, the rest 0
     expect(report.stats?.suggested?.deep.baseline_pass_rate).toBe(0.1);
     expect(report.stats?.suggested?.deep.threshold).toBe(1);
+  });
+
+  it('records which baseline produced the suggested thresholds', async () => {
+    await makeVault(GOLDEN);
+    await addExtraNotes();
+    const embed = () => Promise.resolve(unitVec(0));
+    const first = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed, resultsDir },
+    );
+    const { report } = await runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        model: GRANITE,
+        stats: true,
+        baseline: path.relative(process.cwd(), first.reportFile),
+      },
+      { embed, resultsDir },
+    );
+    expect(report.stats?.baseline).toEqual({
+      file: first.reportFile, // resolved, though it was passed relative
+      model_key: first.report.model_key,
+      vault_sha: first.report.vault_sha,
+      code_sha: first.report.code_sha,
+    });
+    expect(first.report.stats?.baseline).toBeUndefined();
+  });
+
+  it.each([
+    ['above 1', 1.5],
+    ['negative', -0.1],
+    ['non-finite (serialised as null)', null],
+    ['not a number', '0.5'],
+  ])('refuses a --baseline whose pass rate is %s, naming the file and key', async (_name, bad) => {
+    await makeVault(GOLDEN);
+    await addExtraNotes();
+    const embed = vi.fn(() => Promise.resolve(unitVec(0)));
+    const first = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed, resultsDir },
+    );
+    const broken = JSON.parse(await readFile(first.reportFile, 'utf8')) as EvalReport;
+    (broken.stats!.pass_rates.similarNotes as { pass_rate: unknown }).pass_rate = bad;
+    const brokenFile = path.join(resultsDir, 'broken-baseline.json');
+    await writeFile(brokenFile, JSON.stringify(broken));
+    embed.mockClear();
+    const run = runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: brokenFile },
+      { embed, resultsDir },
+    );
+    await expect(run).rejects.toThrow(UsageError);
+    await expect(run).rejects.toThrow(/broken-baseline\.json.*similarNotes/);
+    expect(embed).not.toHaveBeenCalled();
   });
 
   it('refuses a --baseline that is not a --stats report, before embedding anything', async () => {
@@ -324,5 +387,36 @@ describe('runEval end-to-end (stub embedder)', () => {
     await expect(run).rejects.toThrow(BackendError);
     await expect(run).rejects.toThrow(/not harrier-270m/);
     expect(embed).not.toHaveBeenCalled();
+  });
+});
+
+describe('baselineComparabilityWarning', () => {
+  const report = (vault_sha: string | null, baselineSha: string | null): EvalReport =>
+    ({
+      vault_sha,
+      stats: {
+        baseline: { file: '/b.json', model_key: 'k', vault_sha: baselineSha, code_sha: null },
+      },
+    }) as unknown as EvalReport;
+
+  it('is silent when both vault states are the same clean commit', () => {
+    expect(baselineComparabilityWarning(report('abc', 'abc'))).toBeUndefined();
+  });
+
+  it('is silent when no baseline was used', () => {
+    expect(baselineComparabilityWarning({ vault_sha: 'abc' } as EvalReport)).toBeUndefined();
+  });
+
+  it.each([
+    ['differ', 'abc', 'def'],
+    ['are unknown', null, null],
+    ['are dirty', 'abc-dirty', 'abc-dirty'],
+    ['has a dirty baseline', 'abc', 'abc-dirty'],
+    ['has an unknown baseline', 'abc', null],
+  ])('warns once when the vault states %s', (_name, current, baseline) => {
+    const warning = baselineComparabilityWarning(report(current, baseline));
+    expect(warning).toMatch(/not comparable/);
+    expect(warning).toContain('/b.json');
+    expect(warning).not.toContain('\n');
   });
 });

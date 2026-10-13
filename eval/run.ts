@@ -96,19 +96,57 @@ export function parseEvalArgs(argv: string[]): EvalArgs {
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_RESULTS_DIR = path.join(MODULE_DIR, 'results');
 
-async function readBaseline(file: string): Promise<CalibrationStats> {
-  let report: { stats?: CalibrationStats };
+const DEFAULT_KEYS = ['quick', 'deep', 'fallback', 'expansionFloor', 'similarNotes', 'duplicates'];
+
+/** A `--stats` report read back as the calibration baseline, with its provenance. */
+interface Baseline {
+  stats: CalibrationStats;
+  provenance: NonNullable<CalibrationStats['baseline']>;
+}
+
+async function readBaseline(file: string): Promise<Baseline> {
+  let report: Partial<EvalReport>;
   try {
-    report = JSON.parse(await readFile(file, 'utf8')) as { stats?: CalibrationStats };
+    report = JSON.parse(await readFile(file, 'utf8')) as Partial<EvalReport>;
   } catch (error) {
     throw new UsageError(
       `--baseline ${file} cannot be read: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  if (report.stats?.pass_rates === undefined) {
+  const stats = report.stats;
+  if (stats?.pass_rates === undefined || typeof report.model_key !== 'string') {
     throw new UsageError(`--baseline ${file} is not a --stats report`);
   }
-  return report.stats;
+  for (const key of DEFAULT_KEYS) {
+    const rate = (stats.pass_rates as Record<string, { pass_rate?: unknown } | undefined>)[key]
+      ?.pass_rate;
+    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0 || rate > 1) {
+      throw new UsageError(
+        `--baseline ${file}: pass_rates.${key}.pass_rate must be a number in [0, 1], got ${JSON.stringify(rate) ?? 'nothing'}`,
+      );
+    }
+  }
+  return {
+    stats,
+    provenance: {
+      file: path.resolve(file),
+      model_key: report.model_key,
+      vault_sha: report.vault_sha ?? null,
+      code_sha: report.code_sha ?? null,
+    },
+  };
+}
+
+/**
+ * One line when the baseline and this run are not a paired comparison (see the
+ * README's comparability rule): the vault states differ, or either is unknown or dirty.
+ */
+export function baselineComparabilityWarning(report: EvalReport): string | undefined {
+  const baseline = report.stats?.baseline;
+  if (baseline === undefined) return undefined;
+  const clean = (sha: string | null): sha is string => sha !== null && !sha.endsWith('-dirty');
+  if (clean(report.vault_sha) && report.vault_sha === baseline.vault_sha) return undefined;
+  return `warning: baseline ${baseline.file} (vault_sha ${baseline.vault_sha ?? 'n/a'}) and this run (vault_sha ${report.vault_sha ?? 'n/a'}) are not comparable — their vault states differ or are unknown/dirty, so the suggested thresholds may reflect the data rather than the model`;
 }
 
 export async function runEval(
@@ -167,8 +205,9 @@ export async function runEval(
       similarity: profile.similarity,
       perQuery: per_query,
       deepPool: config.semantic_pool,
-      baseline,
+      baseline: baseline?.stats,
     });
+    if (baseline) stats.baseline = baseline.provenance;
   }
 
   const report: EvalReport = {
@@ -209,6 +248,8 @@ async function main(): Promise<void> {
   try {
     const args = parseEvalArgs(process.argv.slice(2));
     const { report, reportFile } = await runEval(args);
+    const warning = baselineComparabilityWarning(report);
+    if (warning !== undefined) console.error(warning);
     console.log(`model=${report.model_key} pipeline=${report.pipeline}`);
     console.log(`code_sha=${report.code_sha ?? 'n/a'} vault_sha=${report.vault_sha ?? 'n/a'}`);
     console.log(formatSlice('overall', report.metrics.overall));

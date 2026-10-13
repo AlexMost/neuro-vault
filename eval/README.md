@@ -301,6 +301,15 @@ population at which that same share passes (`baseline_pass_rate` and
 `threshold`). The printout appends `→ suggested <threshold>` to each line. The
 suggestion matches distributions only — it does not look at the guards.
 
+The baseline's pass rates are validated up front: each of the six must be a
+number in [0, 1], otherwise the run fails naming the file and the key. The new
+report records which baseline the suggestions came from as `stats.baseline`
+(`file` — resolved —, `model_key`, `vault_sha`, `code_sha`). If the baseline's
+`vault_sha` differs from this run's, or either is unknown or `-dirty`, the run
+prints one warning line to stderr that the two reports are not comparable (see
+[Reports and comparability](#reports-and-comparability)) — the run still
+completes, and the suggestions are then only as good as the vaults are alike.
+
 ### Procedure
 
 1. **Take the baseline first.** On the profile whose thresholds you want to

@@ -44,6 +44,13 @@ export interface CalibrationStats {
   >;
   guards: Guards;
   suggested?: Record<DefaultKey, { baseline_pass_rate: number; threshold: number }>;
+  /** The report `suggested` was derived from; present exactly when `suggested` is. */
+  baseline?: {
+    file: string;
+    model_key: string;
+    vault_sha: string | null;
+    code_sha: string | null;
+  };
 }
 
 /** Which population each default filters (design D11). */
