@@ -6,7 +6,36 @@ import {
   MODEL_KEYS,
   identityOf,
   resolveModelProfile,
+  type SimilarityDefaults,
 } from '../../src/modules/semantic/model-profiles.js';
+
+/** Copied from calibration.md, "Chosen values". A retune edits the profile, this pin and that table together. */
+const CALIBRATED_SIMILARITY: Record<string, SimilarityDefaults> = {
+  'harrier-270m': {
+    quick: 0.2,
+    deep: 0.13,
+    fallback: 0.05,
+    expansionFloor: 0.2,
+    similarNotes: 0.22,
+    duplicates: 0.77,
+  },
+  'granite-97m': {
+    quick: 0.71,
+    deep: 0.66,
+    fallback: 0.65,
+    expansionFloor: 0.65,
+    similarNotes: 0.67,
+    duplicates: 0.9,
+  },
+  'harrier-0.6b': {
+    quick: 0.25,
+    deep: 0.19,
+    fallback: 0.15,
+    expansionFloor: 0.25,
+    similarNotes: 0.29,
+    duplicates: 0.76,
+  },
+};
 
 describe('model profile registry', () => {
   it('holds exactly the verified profiles, harrier-270m by default', () => {
@@ -97,17 +126,10 @@ describe('model profile registry', () => {
     }
   });
 
-  it("pins every profile's similarity defaults", () => {
-    // Values unchanged from the pre-profile constants until PR 4 calibrates each profile.
-    for (const key of MODEL_KEYS) {
-      expect(resolveModelProfile(key).similarity).toEqual({
-        quick: 0.5,
-        deep: 0.35,
-        fallback: 0.3,
-        expansionFloor: 0.35,
-        similarNotes: 0.5,
-        duplicates: 0.9,
-      });
-    }
+  it('pins the calibrated similarity defaults (calibration.md, "Chosen values")', () => {
+    const chosen = Object.fromEntries(
+      MODEL_KEYS.map((key) => [key, resolveModelProfile(key).similarity]),
+    );
+    expect(chosen).toEqual(CALIBRATED_SIMILARITY);
   });
 });

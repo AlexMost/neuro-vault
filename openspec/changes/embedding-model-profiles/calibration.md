@@ -237,3 +237,144 @@ D11's decision rule tripped. `fallback` and `expansionFloor` pass 1.0 even here.
   }
 }
 ```
+
+# Per-profile calibration (PR 4, Task 12.1)
+
+Each profile was cold-indexed on its own clone of the vault copy the unranked bge baseline was taken on (same `vault_sha` `98b8364…`, clean), then measured with `--stats --baseline baseline-bge-micro-v2-unranked.json`, then re-measured with the chosen values written into the profile (`--stats`, no re-index). Method: design D11 and its "Outcome of the rule". The reports' `code_sha` reads `-dirty` because the chosen values were in the working tree, not yet committed, while they were being verified. Index-time code was the committed HEAD.
+
+## harrier-270m
+
+Cold index of a corpus-less clone of the vault copy (same `vault_sha` as the baseline): **8.8 min** wall (525.7 s), max RSS **1.32 GB**, `failed=0`. Other CPU work (test runs, review agents) overlapped the run, so the time is upper-side.
+
+### Retrieval quality (semantic)
+
+| slice   | n  | p@3   | MRR   | hit@3 |
+| ------- | -- | ----- | ----- | ----- |
+| overall | 25 | 0.373 | 0.709 | 0.800 |
+| ua      | 21 | 0.365 | 0.694 | 0.810 |
+| en      | 4  | 0.417 | 0.786 | 0.750 |
+
+### Populations (quantiles)
+
+| population             | n       | min   | p05   | p10   | p25   | p50   | p75   | p90   | p95   | max   |
+| ---------------------- | ------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| `query_candidates`     | 250     | 0.322 | 0.337 | 0.361 | 0.407 | 0.460 | 0.522 | 0.591 | 0.620 | 0.747 |
+| `expansion_neighbours` | 600     | 0.545 | 0.646 | 0.674 | 0.699 | 0.738 | 0.768 | 0.803 | 0.828 | 0.949 |
+| `note_top10`           | 8 880   | 0.506 | 0.611 | 0.642 | 0.690 | 0.734 | 0.807 | 0.912 | 0.938 | 0.993 |
+| `note_max`             | 888     | 0.558 | 0.689 | 0.716 | 0.761 | 0.808 | 0.885 | 0.946 | 0.965 | 0.993 |
+| `query_all`            | 22 200  | 0.100 | 0.193 | 0.215 | 0.255 | 0.310 | 0.365 | 0.411 | 0.440 | 0.747 |
+| `seed_all`             | 176 000 | 0.202 | 0.348 | 0.375 | 0.430 | 0.489 | 0.544 | 0.597 | 0.630 | 0.949 |
+| `note_all`             | 787 656 | 0.194 | 0.335 | 0.365 | 0.422 | 0.485 | 0.546 | 0.613 | 0.675 | 0.993 |
+
+### Defaults: baseline pass rate → suggested → chosen
+
+| default          | population  | bge pass rate | suggested | chosen | pass rate at chosen | how chosen |
+| ---------------- | ----------- | ------------- | --------- | ------ | ------------------- | ---------- |
+| `quick`          | `query_all` | 0.9177 | 0.2088 | 0.20 | 0.9365 | suggested, rounded down to 2 decimals |
+| `deep`           | `query_all` | 0.9991 | 0.1354 | 0.13 | 0.9995 | suggested, rounded down to 2 decimals |
+| `fallback`       | `query_all` | 1.0000 | 0.0997 | 0.05 | 1.0000 | below the population minimum (0.0997), rounded down to 0.05 |
+| `expansionFloor` | `seed_all` | 1.0000 | 0.2015 | 0.20 | 1.0000 | below the population minimum (0.2015), rounded down to 0.05 |
+| `similarNotes`   | `note_all` | 0.9997 | 0.2242 | 0.22 | 0.9999 | suggested, rounded down to 2 decimals |
+| `duplicates`     | `note_max` | 0.6745 | 0.7782 | 0.77 | 0.7140 | suggested, rounded down to 2 decimals |
+
+Guards at the chosen values: `deep_filtered_first_relevant` = 0 (target 0), `quick_hit_at_3_drop` = 0 (target ≤ 1). No adjustment was needed.
+
+**English slice below the acceptance bar.** EN MRR is 0.786, against the 0.8 bar, bge's 0.800 and the bake-off's 0.812 for the same model. With n = 4 that is one query: its relevant note ranks 7th here and 4th in the bake-off. A diagnosis ruled out a code cause. Every note in that query's top 10 has a stored vector identical to a fresh single embed (cosine 1.000000), so batching, padding and pooling don't distort it. UA, which exercises the same path, reproduces the bake-off (0.694 vs 0.695). The six notes ranked above it are topically close (similarities 0.416–0.453 against the relevant note's 0.415). So this is a near-tie on one query, not a regression. It is left for the owner to judge at review.
+
+## granite-97m
+
+Cold index of a corpus-less clone of the vault copy (same `vault_sha` as the baseline): **3.5 min** wall (210.7 s), max RSS **1.20 GB**, `failed=0`. Other CPU work (test runs, review agents) overlapped the run, so the time is upper-side.
+
+### Retrieval quality (semantic)
+
+| slice   | n  | p@3   | MRR   | hit@3 |
+| ------- | -- | ----- | ----- | ----- |
+| overall | 25 | 0.280 | 0.549 | 0.600 |
+| ua      | 21 | 0.238 | 0.463 | 0.524 |
+| en      | 4  | 0.500 | 1.000 | 1.000 |
+
+### Populations (quantiles)
+
+| population             | n       | min   | p05   | p10   | p25   | p50   | p75   | p90   | p95   | max   |
+| ---------------------- | ------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| `query_candidates`     | 250     | 0.769 | 0.779 | 0.786 | 0.796 | 0.811 | 0.847 | 0.866 | 0.881 | 0.924 |
+| `expansion_neighbours` | 600     | 0.800 | 0.848 | 0.862 | 0.876 | 0.890 | 0.905 | 0.924 | 0.934 | 0.960 |
+| `note_top10`           | 8 880   | 0.786 | 0.832 | 0.845 | 0.864 | 0.885 | 0.919 | 0.975 | 0.985 | 0.997 |
+| `note_max`             | 888     | 0.817 | 0.864 | 0.875 | 0.897 | 0.919 | 0.954 | 0.986 | 0.993 | 0.997 |
+| `query_all`            | 22 200  | 0.652 | 0.704 | 0.713 | 0.729 | 0.746 | 0.766 | 0.786 | 0.800 | 0.924 |
+| `seed_all`             | 176 000 | 0.657 | 0.727 | 0.738 | 0.756 | 0.778 | 0.802 | 0.826 | 0.842 | 0.960 |
+| `note_all`             | 787 656 | 0.649 | 0.727 | 0.737 | 0.755 | 0.776 | 0.800 | 0.830 | 0.858 | 0.997 |
+
+### Defaults: baseline pass rate → suggested → chosen
+
+| default          | population  | bge pass rate | suggested | chosen | pass rate at chosen | how chosen |
+| ---------------- | ----------- | ------------- | --------- | ------ | ------------------- | ---------- |
+| `quick`          | `query_all` | 0.9177 | 0.7106 | 0.71 | 0.9212 | suggested, rounded down to 2 decimals |
+| `deep`           | `query_all` | 0.9991 | 0.6649 | 0.66 | 0.9997 | suggested, rounded down to 2 decimals |
+| `fallback`       | `query_all` | 1.0000 | 0.6515 | 0.65 | 1.0000 | below the population minimum (0.6515), rounded down to 0.05 |
+| `expansionFloor` | `seed_all` | 1.0000 | 0.6565 | 0.65 | 1.0000 | below the population minimum (0.6565), rounded down to 0.05 |
+| `similarNotes`   | `note_all` | 0.9997 | 0.6738 | 0.67 | 0.9998 | suggested, rounded down to 2 decimals |
+| `duplicates`     | `note_max` | 0.6745 | 0.9032 | 0.90 | 0.7038 | suggested, rounded down to 2 decimals |
+
+Guards at the chosen values: `deep_filtered_first_relevant` = 0 (target 0), `quick_hit_at_3_drop` = 0 (target ≤ 1). No adjustment was needed.
+
+granite-97m reproduces the bake-off's numbers exactly (UA 0.463, EN 1.000, overall 0.549). Its scale is narrow and high: every query↔note similarity lies in 0.652–0.924. So `fallback` (0.65) sits only 0.01 under `deep` (0.66). The ordering holds, but on this vault the fallback retry and the `deep` floor are nearly the same filter.
+
+## harrier-0.6b
+
+Cold index of a corpus-less clone of the vault copy (same `vault_sha` as the baseline): **35.5 min** wall (2127.6 s), max RSS **2.40 GB**, `failed=0`. Other CPU work (test runs, review agents) overlapped the run, so the time is upper-side.
+
+### Retrieval quality (semantic)
+
+| slice   | n  | p@3   | MRR   | hit@3 |
+| ------- | -- | ----- | ----- | ----- |
+| overall | 25 | 0.400 | 0.769 | 0.880 |
+| ua      | 21 | 0.381 | 0.749 | 0.857 |
+| en      | 4  | 0.500 | 0.875 | 1.000 |
+
+### Populations (quantiles)
+
+| population             | n       | min   | p05   | p10   | p25   | p50   | p75   | p90   | p95   | max   |
+| ---------------------- | ------- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+| `query_candidates`     | 250     | 0.343 | 0.371 | 0.395 | 0.423 | 0.475 | 0.538 | 0.609 | 0.624 | 0.722 |
+| `expansion_neighbours` | 600     | 0.473 | 0.626 | 0.647 | 0.689 | 0.727 | 0.768 | 0.798 | 0.822 | 0.911 |
+| `note_top10`           | 8 880   | 0.462 | 0.589 | 0.620 | 0.666 | 0.714 | 0.796 | 0.891 | 0.926 | 0.989 |
+| `note_max`             | 888     | 0.520 | 0.659 | 0.696 | 0.749 | 0.795 | 0.880 | 0.939 | 0.960 | 0.989 |
+| `query_all`            | 22 200  | 0.171 | 0.248 | 0.263 | 0.289 | 0.327 | 0.371 | 0.413 | 0.438 | 0.722 |
+| `seed_all`             | 176 000 | 0.269 | 0.379 | 0.400 | 0.441 | 0.488 | 0.537 | 0.585 | 0.615 | 0.911 |
+| `note_all`             | 787 656 | 0.260 | 0.377 | 0.397 | 0.433 | 0.479 | 0.531 | 0.594 | 0.655 | 0.989 |
+
+### Defaults: baseline pass rate → suggested → chosen
+
+| default          | population  | bge pass rate | suggested | chosen | pass rate at chosen | how chosen |
+| ---------------- | ----------- | ------------- | --------- | ------ | ------------------- | ---------- |
+| `quick`          | `query_all` | 0.9177 | 0.2583 | 0.25 | 0.9448 | suggested, rounded down to 2 decimals |
+| `deep`           | `query_all` | 0.9991 | 0.1955 | 0.19 | 0.9995 | suggested, rounded down to 2 decimals |
+| `fallback`       | `query_all` | 1.0000 | 0.1706 | 0.15 | 1.0000 | below the population minimum (0.1706), rounded down to 0.05 |
+| `expansionFloor` | `seed_all` | 1.0000 | 0.2689 | 0.25 | 1.0000 | below the population minimum (0.2689), rounded down to 0.05 |
+| `similarNotes`   | `note_all` | 0.9997 | 0.2942 | 0.29 | 0.9998 | suggested, rounded down to 2 decimals |
+| `duplicates`     | `note_max` | 0.6745 | 0.7621 | 0.76 | 0.6892 | suggested, rounded down to 2 decimals |
+
+Guards at the chosen values: `deep_filtered_first_relevant` = 0 (target 0), `quick_hit_at_3_drop` = 0 (target ≤ 1). No adjustment was needed.
+
+harrier-0.6b is close to the bake-off: UA 0.749 vs 0.758, EN 0.875 (equal), overall 0.769 vs 0.777. The cold index took 35.5 min, about 4× harrier-270m, as the bake-off predicted. It shared the CPU with documentation agents for most of the run.
+
+# Chosen values
+
+The values each profile carries in `src/modules/semantic/model-profiles.ts`, pinned by `test/semantic/model-profiles.test.ts`. A deliberate retune edits the profile, the pin and this table together.
+
+| profile        | quick | deep | fallback | expansionFloor | similarNotes | duplicates | semantic MRR overall / UA / EN | guards (deep / quick) |
+| -------------- | ----- | ---- | -------- | -------------- | ------------ | ---------- | ------------------------------ | --------------------- |
+| `harrier-270m` | 0.20  | 0.13 | 0.05     | 0.20           | 0.22         | 0.77       | 0.709 / 0.694 / 0.786          | 0 / 0                 |
+| `granite-97m`  | 0.71  | 0.66 | 0.65     | 0.65           | 0.67         | 0.90       | 0.549 / 0.463 / 1.000          | 0 / 0                 |
+| `harrier-0.6b` | 0.25  | 0.19 | 0.15     | 0.25           | 0.29         | 0.76       | 0.769 / 0.749 / 0.875          | 0 / 0                 |
+| bge-micro-v2 (retired; reference) | 0.50 | 0.35 | 0.30 | 0.35        | 0.50         | 0.90       | 0.398 / 0.321 / 0.800          | 0 / 0                 |
+
+Measured cost on this vault (949 notes, 888 note vectors; Apple M5, CPU, int8; times upper-side, see each section):
+
+| profile        | cold index | max RSS while indexing |
+| -------------- | ---------- | ---------------------- |
+| `harrier-270m` | 8.8 min    | 1.32 GB                |
+| `granite-97m`  | 3.5 min    | 1.20 GB                |
+| `harrier-0.6b` | 35.5 min   | 2.40 GB                |
+

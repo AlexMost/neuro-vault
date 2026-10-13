@@ -3,7 +3,11 @@ import type { EmbeddingIdentity } from '../../lib/obsidian/corpus/types.js';
 /** How a model's token states become one vector. */
 export type Pooling = 'mean' | 'cls' | 'last_token';
 
-/** Default similarity thresholds, on this profile's own similarity scale (design D10). */
+/**
+ * Default similarity thresholds, on this profile's own similarity scale
+ * (design D10). Each profile carries values calibrated on its own corpus
+ * (design D11; numbers in openspec/changes/embedding-model-profiles/calibration.md).
+ */
 export interface SimilarityDefaults {
   /** `search_notes` semantic floor at effort "quick". */
   readonly quick: number;
@@ -18,20 +22,6 @@ export interface SimilarityDefaults {
   /** `find_duplicates` default threshold. */
   readonly duplicates: number;
 }
-
-/**
- * The set calibrated on the similarity scale of the bge-micro model, which
- * has left the registry. Every remaining profile carries it until it is
- * recalibrated against its own scale (design D11).
- */
-const BGE_SCALE_SIMILARITY: SimilarityDefaults = Object.freeze({
-  quick: 0.5,
-  deep: 0.35,
-  fallback: 0.3,
-  expansionFloor: 0.35,
-  similarNotes: 0.5,
-  duplicates: 0.9,
-});
 
 /**
  * Everything model-specific, in one record (design D2). A profile joins the
@@ -72,7 +62,14 @@ const GRANITE_97M: ModelProfile = {
   queryPrefix: '',
   documentPrefix: '',
   maxTokens: 512,
-  similarity: BGE_SCALE_SIMILARITY,
+  similarity: Object.freeze({
+    quick: 0.71,
+    deep: 0.66,
+    fallback: 0.65,
+    expansionFloor: 0.65,
+    similarNotes: 0.67,
+    duplicates: 0.9,
+  }),
 };
 
 /** harrier's retrieval instruction (model card); documents take no prompt. */
@@ -89,7 +86,14 @@ const HARRIER_270M: ModelProfile = {
   queryPrefix: HARRIER_QUERY_PREFIX,
   documentPrefix: '',
   maxTokens: 512,
-  similarity: BGE_SCALE_SIMILARITY,
+  similarity: Object.freeze({
+    quick: 0.2,
+    deep: 0.13,
+    fallback: 0.05,
+    expansionFloor: 0.2,
+    similarNotes: 0.22,
+    duplicates: 0.77,
+  }),
 };
 
 const HARRIER_0_6B: ModelProfile = {
@@ -102,7 +106,14 @@ const HARRIER_0_6B: ModelProfile = {
   queryPrefix: HARRIER_QUERY_PREFIX,
   documentPrefix: '',
   maxTokens: 512,
-  similarity: BGE_SCALE_SIMILARITY,
+  similarity: Object.freeze({
+    quick: 0.25,
+    deep: 0.19,
+    fallback: 0.15,
+    expansionFloor: 0.25,
+    similarNotes: 0.29,
+    duplicates: 0.76,
+  }),
 };
 
 export const MODEL_PROFILES: Readonly<Record<string, ModelProfile>> = Object.freeze({
