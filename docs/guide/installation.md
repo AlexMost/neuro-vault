@@ -100,7 +100,9 @@ Ask your assistant:
 
 ## First-run behavior
 
-- The embedding model is downloaded on first run into `~/.cache/neuro-vault/models` (or `$XDG_CACHE_HOME/neuro-vault/models` when `XDG_CACHE_HOME` is an absolute path) and shared across upgrades. The default, `bge-micro-v2`, is ≈ 17 MB; `granite-97m` (`--model granite-97m`, a lite multilingual model) is ≈ 98 MB, `harrier-270m` ≈ 344 MB and `harrier-0.6b` ≈ 706 MB. Subsequent starts are fast. Pick the model with `--model`; see [Configuration](./configuration.md#cli-arguments). The default similarity thresholds are tuned for `bge-micro-v2`, so under any other model pass explicit thresholds if results look too loose or too tight.
+- The embedding model is downloaded on first run into `~/.cache/neuro-vault/models` (or `$XDG_CACHE_HOME/neuro-vault/models` when `XDG_CACHE_HOME` is an absolute path) and shared across upgrades. The default, `harrier-270m`, is ≈ 344 MB; `granite-97m` (`--model granite-97m`, a lite multilingual model) is ≈ 98 MB and `harrier-0.6b` ≈ 706 MB. Subsequent starts are fast. Pick the model with `--model`; see [Configuration](./configuration.md#cli-arguments) and [Embedding models](./embedding-models.md). The similarity thresholds are calibrated per model, so no tuning is needed when you switch.
+- **Plan for memory and time on the first index.** With the default `harrier-270m`, indexing a vault of about a thousand notes took minutes (≈ 9 on the measured vault) and peaked near 1.3 GB of RAM; a vault of about 50,000 vectors takes roughly an hour. `granite-97m` is the light option — about 3.5 minutes on the same thousand-note vault, 1.2 GB peak, and roughly 25 minutes on a 50,000-vector vault. Later runs only re-embed the notes that changed. Measurements and the full table: [Embedding models](./embedding-models.md#benchmarks).
+- **Upgrading from a release whose default was a different model rebuilds every vault's corpus once**, in the background, the first time the new version starts (the on-disk corpus format changed with the model). `search_notes` answers from its lexical leg meanwhile. To take that cost ahead of time — before a demo, or on a large vault — run `neuro-vault-mcp index --vault <path>` once after upgrading (see below).
 - On a CPU-only Linux x64 machine, set `ONNXRUNTIME_NODE_INSTALL=skip` when installing (`ONNXRUNTIME_NODE_INSTALL=skip npm install -g neuro-vault-mcp`) to skip the CUDA provider download that onnxruntime's install script otherwise starts on that platform. According to onnxruntime-node's install script, other platforms download nothing extra.
 - A vault with no embedding index yet starts indexing in the background as soon as the server boots — it does not block startup. While that first pass runs, `search_notes` still answers immediately from its lexical leg alone and reports `semantic_status: { state: "indexing", indexed, total }`; the embeddings-only tools (`get_similar_notes`, `find_duplicates`) return `SEMANTIC_INDEX_BUILDING` for that vault until the pass finishes. No restart is needed — the vault is promoted to `ready` live.
 - If the `--vault` directory itself does not exist, the server exits immediately with an error before starting.
@@ -110,9 +112,9 @@ Ask your assistant:
 To skip that degraded first window — useful before a demo, or for a large vault — build the index ahead of time and exit:
 
 ```bash
-neuro-vault-mcp index --vault /absolute/path/to/your/vault --model bge-micro-v2
+neuro-vault-mcp index --vault /absolute/path/to/your/vault
 ```
 
-Pass the same `--model` the server runs with (`bge-micro-v2` is the default; if the server starts with another model, pass that key here too): a vault indexed with a different model is discarded and rebuilt the next time the other command touches it.
+Pass the same `--model` the server runs with (`harrier-270m` is the default and needs no flag; if the server's `args` carry `--model granite-97m`, add `--model granite-97m` here too): a vault indexed with a different model is discarded and rebuilt the next time the other command touches it. The `SEMANTIC_INDEX_NOT_FOUND` hint prints `neuro-vault-mcp index --vault <path>` without `--model` — add yours if you run a non-default model.
 
 Repeat `--vault` to warm several vaults in one run. It prints per-vault progress and a summary (`indexed`, `embedded`, `reused`, `renamed`, `deleted`, `failed`), and exits non-zero if any note failed to embed. Re-running it later is cheap: an unchanged vault reconciles in well under a second, since only notes that changed since the last pass are re-embedded.
