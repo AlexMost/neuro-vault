@@ -230,7 +230,7 @@ Indexing then runs in the background — the server boots immediately and `searc
 neuro-vault-mcp index --vault /absolute/path/to/your/vault --model granite-97m
 ```
 
-Give `index` the same `--model` the server runs with (omit both for the default, `harrier-270m`) so it warms the index the server serves; each model keeps its own corpus in the vault, so another value builds a separate one and never mixes with it. Add `--prune` to delete the other models' corpora after indexing (it is skipped if the vault's indexing threw or indexed no note at all, so a failed run never leaves you without an index).
+Give `index` the same `--model` the server runs with (omit both for the default, `harrier-270m`) so it warms the index the server serves; each model keeps its own corpus in the vault, so another value builds a separate one and never mixes with it. Add `--prune` to delete the other models' corpora after indexing (it is skipped if the vault's indexing threw or indexed no note at all, and it refuses — failing that vault — if the selected model's corpus is missing when it runs, so neither a failed run nor a concurrent prune by another model ever leaves you without an index; if another process holds the vault, it prints the same waiting line as indexing).
 
 For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./docs/guide/installation.md).
 
