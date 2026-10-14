@@ -15,6 +15,8 @@ import type { DaemonCliOptions, ServerConfig, IVaultConfig } from './types.js';
 import { packageMeta } from './package-meta.js';
 
 export const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
+/** The largest idle timeout a Node timer holds: above 2^31−1 ms it fires after 1 ms. */
+export const MAX_IDLE_TIMEOUT_MINUTES = Math.floor((2 ** 31 - 1) / 60_000);
 const DAEMON_ACTIONS = ['status', 'stop'] as const;
 
 const VAULT_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -142,6 +144,9 @@ function readIdleTimeout(raw: unknown): number {
       `--idle-timeout: expected a non-negative integer of minutes, got "${String(raw)}"`,
     );
   }
+  if (minutes > MAX_IDLE_TIMEOUT_MINUTES) {
+    throw new Error(`--idle-timeout: at most ${MAX_IDLE_TIMEOUT_MINUTES} minutes; use 0 for never`);
+  }
   return minutes;
 }
 
@@ -173,7 +178,7 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
     )
     .command(
       'daemon [action]',
-      'Run the shared-services daemon (the server starts it on demand); `status` lists daemons, `stop` ends them',
+      'Run the shared-services daemon; `status` lists daemons, `stop` ends them',
       (y) =>
         y
           .positional('action', {

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { packageMeta } from '../src/package-meta.js';
-import { parseConfig } from '../src/config.js';
+import { MAX_IDLE_TIMEOUT_MINUTES, parseConfig } from '../src/config.js';
 import {
   DEFAULT_MODEL_KEY,
   MODEL_KEYS,
@@ -366,6 +366,32 @@ describe('parseConfig', () => {
       await expect(
         parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '1.5']),
       ).rejects.toThrow(/non-negative integer/);
+    });
+
+    it('caps --idle-timeout at 35791 minutes, the largest a Node timer holds', async () => {
+      expect(MAX_IDLE_TIMEOUT_MINUTES).toBe(35791);
+      expect(MAX_IDLE_TIMEOUT_MINUTES * 60_000).toBeLessThanOrEqual(2 ** 31 - 1);
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '35791']),
+      ).resolves.toMatchObject({ options: { idleTimeoutMinutes: 35791 } });
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '35792']),
+      ).rejects.toThrow('--idle-timeout: at most 35791 minutes; use 0 for never');
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '100000']),
+      ).rejects.toThrow(/at most 35791 minutes/);
+    });
+
+    it('describes what the daemon command does today in --help', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        await parseConfig(['node', 'cli.js', '--help']);
+        const help = String(log.mock.calls[0][0]).replace(/\s+/g, ' ');
+        expect(help).toContain('Run the shared-services daemon;');
+        expect(help).not.toContain('on demand');
+      } finally {
+        log.mockRestore();
+      }
     });
 
     it('rejects an empty or blank --idle-timeout instead of reading it as 0', async () => {
