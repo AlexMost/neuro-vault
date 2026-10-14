@@ -27,3 +27,9 @@ These tools are kept because each is the sole path to its capability; reach for 
 - Capability change → an OpenSpec opsx change; smaller work → a direct PR. Which one: [`.claude/rules/opsx-routing.md`](.claude/rules/opsx-routing.md). Full flow: [`docs/workflow.md`](docs/workflow.md).
 - Every opsx change is tracked by a GitHub issue; a direct PR gets one only when the work was planned ahead. PRs carry `Closes #<n>` in a change's last PR, `Refs #<n>` in earlier ones. Conventions: [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
 - PRs go to `main` via `gh pr create` — never push directly. Release: `npm run release` on `main`, after the PR merges. Pushing the tag auto-publishes the GitHub Release from the `CHANGELOG.md` section.
+
+## Commits
+
+- Conventional Commits: `type(scope): subject`; a breaking change is `type!:` plus a `BREAKING CHANGE:` footer. commitlint (`@commitlint/config-conventional`) checks **every commit** of a PR, not only the merge title, so one bad message fails the PR and only a history rewrite and force-push fixes it.
+- Wrap body lines at 100 characters or fewer — the rule that fails most often. Check a branch before pushing: `npx commitlint --from origin/main --to HEAD`.
+- End every commit with one `Co-Authored-By:` trailer naming the session's primary model.
