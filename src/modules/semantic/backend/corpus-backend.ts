@@ -1,4 +1,8 @@
 import { formatRebuild, type CorpusIdentity } from '../../../lib/obsidian/corpus/identity.js';
+import {
+  CorpusLockTimeoutError,
+  describeHolder,
+} from '../../../lib/obsidian/corpus/reconcile-lock.js';
 import type { ReconcileOptions, ReconcileSummary } from '../../../lib/obsidian/corpus/reconcile.js';
 import {
   isManifestCompatible,
@@ -86,6 +90,10 @@ function emptySnapshot(): CorpusSnapshot {
  * a restart — and without needing someone to edit a note first, which the
  * watcher-only wiring used to require.
  *
+ * A pass that waited for another process's lock reloads unconditionally; one that
+ * timed out on it restores the state the vault had before the pass, keeps its
+ * snapshot, and re-arms on the same backoff (design D7).
+ *
  * `enabled === false` is absolute: the vault reports `disabled` and no pass ever
  * runs, so nothing is read from or written under `.neuro-vault/corpus/`.
  */
@@ -118,6 +126,11 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
   /** The pending self-retry after a failed pass, and its current backoff. */
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let retryDelay = retryBaseMs;
+  /**
+   * The last pass gave up waiting for another process's lock (design D7). Not a
+   * failure: the vault keeps its state and snapshot, and re-arms like one.
+   */
+  let lockTimedOut = false;
 
   function clearRetry(): void {
     if (retryTimer === undefined) return;
@@ -155,6 +168,9 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
   }
 
   async function runPass(): Promise<void> {
+    lockTimedOut = false;
+    /** What the vault reported before this pass; a lock timeout restores it (design D7). */
+    const statusBefore = status;
     // A pass that follows a failure IS a build in flight, so say so. Without
     // this the vault would keep reporting `unavailable` for the whole rebuild —
     // no counters, and `get_similar_notes` telling the caller to run a second,
@@ -166,9 +182,16 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
     }
     const abort = new AbortController();
     passAbort = abort;
+    let waited = false;
     try {
       const summary = await deps.reconcile({
         signal: abort.signal,
+        // Another process held the lock and may have changed the corpus — a
+        // note it re-embedded is `reused` by this pass, so the counts alone
+        // would keep this snapshot stale (design D7).
+        onLockWait: () => {
+          waited = true;
+        },
         // Never silent (design D8), whichever pass finds the mismatch — the
         // startup one, or a later one after another `--model` rewrote the corpus.
         onRebuild: ({ stored, active }) => {
@@ -191,7 +214,7 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
       // decoded, or a vault whose startup load failed or was abandoned would
       // report `ready` over the empty placeholder, with the very pass that
       // should repair it declining because it changed nothing.
-      if (!snapshotLoaded || summary.embedded + summary.renamed + summary.deleted > 0) {
+      if (!snapshotLoaded || waited || summary.embedded + summary.renamed + summary.deleted > 0) {
         const loaded = await deps.loadSnapshot(deps.store);
         // A pass that returns is not a pass that worked. `reconcileCorpus` is
         // per-note tolerant by design: a rejected `embed` — an offline first
@@ -232,6 +255,21 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
       }
       status = { state: 'ready' };
     } catch (err) {
+      if (err instanceof CorpusLockTimeoutError) {
+        // Someone is still building; this vault is not broken. Reporting
+        // `unavailable` would take a serving vault off the air and tell callers
+        // to run a competing `index` (design D7).
+        // A retry pass from `unavailable` switched to `indexing` above; put the
+        // vault back as it was, reason included.
+        lockTimedOut = true;
+        status = statusBefore;
+        warn(
+          `neuro-vault corpus: vault "${deps.vaultName}": ${err.lockFile} is still held by ` +
+            `${describeHolder(err.holderPid, err.holderHost)} — ` +
+            `serving the current corpus and retrying later`,
+        );
+        return;
+      }
       fail(err);
     } finally {
       passAbort = null;
@@ -259,7 +297,7 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
       }
       // A pass that ended `unavailable` re-arms itself; any other outcome means
       // the vault recovered, so the backoff starts over.
-      if (status.state === 'unavailable') scheduleRetry();
+      if (status.state === 'unavailable' || lockTimedOut) scheduleRetry();
       else retryDelay = retryBaseMs;
     });
   }
