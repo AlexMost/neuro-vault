@@ -115,36 +115,41 @@ async function callOnce<T>(
   });
 }
 
+/** `raw` is the lock as judged (undefined = none), what `sweep` claims. */
 type Entry =
   | { kind: 'valid'; dir: string; info: DaemonInfo }
   | { kind: 'starting'; dir: string; name: string }
-  /** `raw` is the lock as judged (undefined = none), for `sweep`. */
-  | { kind: 'unreadable'; dir: string; name: string; raw: string | undefined };
+  | { kind: 'unreadable'; dir: string; name: string; raw: string | undefined }
+  | { kind: 'lockOnly'; dir: string; name: string; raw: string }
+  | { kind: 'empty'; dir: string; name: string };
+
+/** Every `daemons/*` directory name, sorted. */
+function scan(d: AdminDeps): string[] {
+  return d.fs.readdir(path.join(d.cacheBase, 'daemons')).sort();
+}
 
 /**
- * Every `daemons/*` directory with a daemon.json. An unreadable one under a
- * live lock is a daemon between taking the lock and writing its info; one
- * with no daemon.json at all is skipped for the same reason.
+ * What one `daemons/*` directory holds. An unreadable daemon.json, or a lock
+ * with no daemon.json, under a live lock is a daemon between taking the lock
+ * and writing its info: `starting`. Under a dead or unnamed holder it is stale.
+ * A directory with neither file is what a clean stop leaves behind. Undefined
+ * when daemon.json vanished while we read it: a daemon stopping.
  */
-function scan(d: AdminDeps): Entry[] {
-  const root = path.join(d.cacheBase, 'daemons');
-  const entries: Entry[] = [];
-  for (const name of d.fs.readdir(root).sort()) {
-    const dir = path.join(root, name);
-    const infoFile = path.join(dir, 'daemon.json');
-    if (!d.fs.exists(infoFile)) continue;
-    const info = d.readInfo(infoFile);
-    if (info !== undefined) {
-      entries.push({ kind: 'valid', dir, info });
-      continue;
-    }
-    if (!d.fs.exists(infoFile)) continue; // removed while we read it: a daemon stopping
-    const raw = d.fs.read(path.join(dir, 'daemon.lock'));
-    const holder = raw === undefined ? undefined : parseHolder(raw);
-    const live = holder !== undefined && d.isAlive(holder);
-    entries.push(live ? { kind: 'starting', dir, name } : { kind: 'unreadable', dir, name, raw });
+function classify(d: AdminDeps, name: string): Entry | undefined {
+  const dir = path.join(d.cacheBase, 'daemons', name);
+  const infoFile = path.join(dir, 'daemon.json');
+  if (!d.fs.exists(infoFile)) {
+    const { raw, holder } = readLock(d, dir);
+    if (raw === undefined) return { kind: 'empty', dir, name };
+    if (holder !== undefined && d.isAlive(holder)) return { kind: 'starting', dir, name };
+    return { kind: 'lockOnly', dir, name, raw };
   }
-  return entries;
+  const info = d.readInfo(infoFile);
+  if (info !== undefined) return { kind: 'valid', dir, info };
+  if (!d.fs.exists(infoFile)) return undefined;
+  const { raw, holder } = readLock(d, dir);
+  if (holder !== undefined && d.isAlive(holder)) return { kind: 'starting', dir, name };
+  return { kind: 'unreadable', dir, name, raw };
 }
 
 async function isListening(d: AdminDeps, socketPath: string): Promise<boolean> {
@@ -191,15 +196,22 @@ export async function runStatus(d: AdminDeps): Promise<number> {
     printed += 1;
     d.stdout.write(`${line}\n`);
   };
-  for (const entry of scan(d)) {
+  for (const name of scan(d)) {
+    const entry = classify(d, name);
+    if (entry === undefined) continue;
+    if (entry.kind === 'empty') {
+      sweep(d, entry.dir, undefined);
+      continue;
+    }
     if (entry.kind === 'starting') {
       print(`${entry.name}  starting`);
       continue;
     }
-    if (entry.kind === 'unreadable') {
+    if (entry.kind === 'unreadable' || entry.kind === 'lockOnly') {
+      const what = entry.kind === 'unreadable' ? 'unreadable daemon.json' : 'lock only';
       print(
         sweep(d, entry.dir, entry.raw)
-          ? `${entry.name}  stale (unreadable daemon.json)  (swept)`
+          ? `${entry.name}  stale (${what})  (swept)`
           : `${entry.name}  starting`,
       );
       continue;
@@ -240,7 +252,9 @@ async function waitGone(d: AdminDeps, infoFile: string): Promise<boolean> {
 }
 
 export async function runStop(d: AdminDeps): Promise<number> {
-  const valid = scan(d).filter((e) => e.kind === 'valid');
+  const valid = scan(d)
+    .map((name) => classify(d, name))
+    .filter((e) => e?.kind === 'valid');
   if (valid.length === 0) {
     d.stdout.write('no daemon known\n');
     return 0;

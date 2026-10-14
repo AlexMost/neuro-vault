@@ -508,14 +508,67 @@ describe('runDaemonCommand (status / stop)', () => {
     expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
   });
 
-  it('status skips a directory without daemon.json', async () => {
-    const h = harness();
+  it.each(['9', 'garbage'])(
+    'status sweeps a lock-only directory whose lock (%s) names no live holder',
+    async (raw) => {
+      const h = harness();
+      addKnown(h, 'aaaaaaaaaaaa', undefined);
+      h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, raw);
+      await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+      expect(h.out.join('')).toBe('aaaaaaaaaaaa  stale (lock only)  (swept)\n');
+      expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(false);
+      expect(h.files.has(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe(false);
+    },
+  );
+
+  it('status shows a lock-only directory under a live lock as starting and keeps it', async () => {
+    const h = harness({ isAlive: (pid) => pid === 9 });
     addKnown(h, 'aaaaaaaaaaaa', undefined);
     h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '9');
     await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
-    expect(h.out.join('')).not.toContain('aaaaaaaaaaaa');
-    expect(h.out.join('')).toMatch(/no daemon known/);
-    expect(h.files.has(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe(true);
+    expect(h.out.join('')).toBe('aaaaaaaaaaaa  starting\n');
+    expect(h.files.get(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe('9');
+  });
+
+  it('status keeps a lock-only directory whose lock a daemon takes before the claim', async () => {
+    const h = harness({ isAlive: (pid) => pid === 88 });
+    const lock = `${BASE}/aaaaaaaaaaaa/daemon.lock`;
+    addKnown(h, 'aaaaaaaaaaaa', undefined);
+    h.files.set(lock, '9');
+    const fs = h.deps.fs!;
+    let raced = false;
+    h.deps.fs = {
+      ...fs,
+      rename: (from, to) => {
+        if (from === lock && !raced) {
+          raced = true;
+          h.files.set(lock, '88');
+        }
+        return fs.rename(from, to);
+      },
+    };
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('')).toBe('aaaaaaaaaaaa  starting\n');
+    expect(h.files.get(lock)).toBe('88');
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
+  });
+
+  it('status removes a directory with neither file silently', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', undefined);
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toBe('no daemon known\n');
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(false);
+    expect(h.files.has(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe(false);
+  });
+
+  it('stop leaves a dead lock-only directory for status to sweep', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', undefined);
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '9');
+    await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.files.get(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe('9');
+    expect(h.deps.kill).not.toHaveBeenCalled();
   });
 
   it('status keeps a stale-looking entry whose lock names another live pid as starting', async () => {
