@@ -8,6 +8,8 @@ import {
   type JSONRPCMessage,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import { packageMeta } from '../package-meta.js';
+
 import type { DaemonInfo } from './info.js';
 import { claimLock, defaultLockFs, parseHolder, type LockFs } from './lock.js';
 import { probeSocket, type SocketConnect, type Timers } from './probe.js';
@@ -251,46 +253,69 @@ async function waitGone(d: AdminDeps, infoFile: string): Promise<boolean> {
   return !d.fs.exists(infoFile);
 }
 
+type Write = (line: string) => void;
+
+const notStopped = `starting — not stopped; run \`${packageMeta.name} daemon stop\` again`;
+
+/** Stop one valid entry. */
+async function stopOne(
+  d: AdminDeps,
+  dir: string,
+  info: DaemonInfo,
+  out: Write,
+  err: Write,
+): Promise<void> {
+  const label = `${info.version} (pid ${info.pid})`;
+  if (!(await isListening(d, info.socket))) {
+    const silent = judgeSilent(d, dir, info);
+    if (silent.kind === 'starting') {
+      out(`${info.version} (pid ${silent.holder})  ${notStopped}`);
+      return;
+    }
+    out(`${info.version}  pid ${info.pid}  not running`);
+    return;
+  }
+  const answered = await callOnce<Record<string, never>>(d, info.socket, 'daemon.shutdown');
+  if (answered === undefined) {
+    if (!d.isAlive(info.pid)) {
+      err(`daemon ${label} did not answer and its pid is not alive`);
+      return;
+    }
+    try {
+      d.kill(info.pid, 'SIGTERM');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      err(`could not signal daemon ${label}: ${message}`);
+      return;
+    }
+  }
+  if (await waitGone(d, path.join(dir, 'daemon.json'))) {
+    out(`stopped ${label}`);
+  } else {
+    err(`${info.version}  pid ${info.pid}  still running after ${STOP_WAIT_MS / 1000} s`);
+  }
+}
+
+/**
+ * Stop every alive daemon; report every starting one, which it cannot stop
+ * yet. Stale entries are left for `status` to sweep. `no daemon known` when
+ * there was nothing to report.
+ */
 export async function runStop(d: AdminDeps): Promise<number> {
-  const valid = scan(d)
-    .map((name) => classify(d, name))
-    .filter((e) => e?.kind === 'valid');
-  if (valid.length === 0) {
-    d.stdout.write('no daemon known\n');
-    return 0;
+  let reported = 0;
+  const out: Write = (line) => {
+    reported += 1;
+    d.stdout.write(`${line}\n`);
+  };
+  const err: Write = (line) => {
+    reported += 1;
+    d.stderr.write(`${line}\n`);
+  };
+  for (const name of scan(d)) {
+    const entry = classify(d, name);
+    if (entry?.kind === 'starting') out(`${entry.name}  ${notStopped}`);
+    if (entry?.kind === 'valid') await stopOne(d, entry.dir, entry.info, out, err);
   }
-  for (const { dir, info } of valid) {
-    const label = `${info.version} (pid ${info.pid})`;
-    if (!(await isListening(d, info.socket))) {
-      const silent = judgeSilent(d, dir, info);
-      if (silent.kind === 'starting') {
-        d.stdout.write(`${info.version}  pid ${silent.holder}  starting\n`);
-        continue;
-      }
-      d.stdout.write(`${info.version}  pid ${info.pid}  not running\n`);
-      continue;
-    }
-    const answered = await callOnce<Record<string, never>>(d, info.socket, 'daemon.shutdown');
-    if (answered === undefined) {
-      if (!d.isAlive(info.pid)) {
-        d.stderr.write(`daemon ${label} did not answer and its pid is not alive\n`);
-        continue;
-      }
-      try {
-        d.kill(info.pid, 'SIGTERM');
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        d.stderr.write(`could not signal daemon ${label}: ${message}\n`);
-        continue;
-      }
-    }
-    if (await waitGone(d, path.join(dir, 'daemon.json'))) {
-      d.stdout.write(`stopped ${label}\n`);
-    } else {
-      d.stderr.write(
-        `${info.version}  pid ${info.pid}  still running after ${STOP_WAIT_MS / 1000} s\n`,
-      );
-    }
-  }
+  if (reported === 0) out('no daemon known');
   return 0;
 }

@@ -693,8 +693,48 @@ describe('runDaemonCommand (status / stop)', () => {
     h.deps.connect = () => Promise.reject(errno('ECONNREFUSED'));
     await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
     expect(h.deps.kill).not.toHaveBeenCalled();
-    expect(h.out.join('')).toBe('18.0.0  pid 77  starting\n');
+    expect(h.out.join('')).toBe(
+      '18.0.0 (pid 77)  starting — not stopped; run `neuro-vault-mcp daemon stop` again\n',
+    );
     expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
+  });
+
+  it.each([
+    ['an unreadable daemon.json', '{not json'],
+    ['a lock and no daemon.json', undefined],
+  ])('stop reports a daemon starting with %s instead of no daemon known', async (_, info) => {
+    const h = harness({ isAlive: (pid) => pid === 9 });
+    addKnown(h, 'aaaaaaaaaaaa', info);
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '9');
+    await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toBe(
+      'aaaaaaaaaaaa  starting — not stopped; run `neuro-vault-mcp daemon stop` again\n',
+    );
+    expect(h.deps.kill).not.toHaveBeenCalled();
+    expect(h.files.get(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe('9');
+  });
+
+  it('stop stops an alive daemon and reports a starting one beside it', async () => {
+    const h = harness({ isAlive: (pid) => pid === 9 });
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({}));
+    addKnown(h, 'bbbbbbbbbbbb', undefined);
+    h.files.set(`${BASE}/bbbbbbbbbbbb/daemon.lock`, '9');
+    h.deps.connect = () =>
+      Promise.resolve(
+        fakeInfoSocket(
+          { version: '18.0.0', pid: 1, clients: 0, loaded: [] },
+          {
+            onRequest: (method) => {
+              if (method === 'daemon.shutdown') h.files.delete(`${BASE}/aaaaaaaaaaaa/daemon.json`);
+            },
+          },
+        ),
+      );
+    await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toBe(
+      'stopped 18.0.0 (pid 1)\n' +
+        'bbbbbbbbbbbb  starting — not stopped; run `neuro-vault-mcp daemon stop` again\n',
+    );
   });
 
   it('status with nothing known says so and exits 0', async () => {
