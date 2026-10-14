@@ -737,6 +737,65 @@ describe('runDaemonCommand (status / stop)', () => {
     );
   });
 
+  /** Reading this entry's lock fails as an unreadable file would (EACCES). */
+  function lockUnreadable(h: Harness, name: string): void {
+    const fs = h.deps.fs!;
+    h.deps.fs = {
+      ...fs,
+      read: (f) => {
+        if (f === `${BASE}/${name}/daemon.lock`) throw errno('EACCES');
+        return fs.read(f);
+      },
+    };
+  }
+
+  it.each([
+    ['a stale-looking daemon.json', infoJson({ pid: 1 })],
+    ['no daemon.json', undefined],
+  ])(
+    'status reports an entry with %s whose lock cannot be read on stderr and goes on',
+    async (_, info) => {
+      const h = harness();
+      addKnown(h, 'aaaaaaaaaaaa', info);
+      h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '9');
+      addKnown(h, 'bbbbbbbbbbbb', infoJson({ pid: 2, version: '17.0.0', socket: '/tmp/b.sock' }));
+      lockUnreadable(h, 'aaaaaaaaaaaa');
+      await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+      expect(h.err.join('')).toBe('aaaaaaaaaaaa: EACCES\n');
+      expect(h.out.join('')).toBe('17.0.0  pid 2  stale  (swept)\n');
+      expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
+      expect(h.files.get(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe('9');
+      expect(h.dirs.has(`${BASE}/bbbbbbbbbbbb`)).toBe(false);
+    },
+  );
+
+  it('stop reports an entry whose lock cannot be read on stderr and stops the next', async () => {
+    const h = harness({ isAlive: () => true });
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 1, socket: '/tmp/a.sock' }));
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '1');
+    addKnown(h, 'bbbbbbbbbbbb', infoJson({ pid: 2, socket: '/tmp/b.sock' }));
+    lockUnreadable(h, 'aaaaaaaaaaaa');
+    h.deps.connect = (p) =>
+      p === '/tmp/b.sock'
+        ? Promise.resolve(
+            fakeInfoSocket(
+              { version: '18.0.0', pid: 2, clients: 0, loaded: [] },
+              {
+                onRequest: (method) => {
+                  if (method === 'daemon.shutdown') {
+                    h.files.delete(`${BASE}/bbbbbbbbbbbb/daemon.json`);
+                  }
+                },
+              },
+            ),
+          )
+        : Promise.reject(errno('ECONNREFUSED'));
+    await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.err.join('')).toBe('aaaaaaaaaaaa: EACCES\n');
+    expect(h.out.join('')).toBe('stopped 18.0.0 (pid 2)\n');
+    expect(h.deps.kill).not.toHaveBeenCalled();
+  });
+
   it('status with nothing known says so and exits 0', async () => {
     const h = harness();
     await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);

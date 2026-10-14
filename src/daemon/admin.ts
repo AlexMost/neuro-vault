@@ -192,55 +192,89 @@ function judgeSilent(d: AdminDeps, dir: string, info: DaemonInfo): Silent {
   return { kind: 'stale', raw };
 }
 
-export async function runStatus(d: AdminDeps): Promise<number> {
-  let printed = 0;
-  const print = (line: string): void => {
-    printed += 1;
-    d.stdout.write(`${line}\n`);
+type Write = (line: string) => void;
+
+/** stdout and stderr lines, counted, so a run that reported nothing can say so. */
+function reporter(d: AdminDeps): { out: Write; err: Write; reported: () => number } {
+  let reported = 0;
+  return {
+    out: (line) => {
+      reported += 1;
+      d.stdout.write(`${line}\n`);
+    },
+    err: (line) => {
+      reported += 1;
+      d.stderr.write(`${line}\n`);
+    },
+    reported: () => reported,
   };
+}
+
+/**
+ * Run `work` for every `daemons/*` entry. One that throws (an unreadable lock:
+ * EACCES, EISDIR) is reported on stderr as `<dir name>: <message>` and the rest
+ * go on; it is never swept, since the throw comes before any claim.
+ */
+async function forEachEntry(
+  d: AdminDeps,
+  err: Write,
+  work: (entry: Entry) => Promise<void>,
+): Promise<void> {
   for (const name of scan(d)) {
-    const entry = classify(d, name);
-    if (entry === undefined) continue;
-    if (entry.kind === 'empty') {
-      sweep(d, entry.dir, undefined);
-      continue;
+    try {
+      const entry = classify(d, name);
+      if (entry !== undefined) await work(entry);
+    } catch (error) {
+      err(`${name}: ${error instanceof Error ? error.message : String(error)}`);
     }
-    if (entry.kind === 'starting') {
-      print(`${entry.name}  starting`);
-      continue;
-    }
-    if (entry.kind === 'unreadable' || entry.kind === 'lockOnly') {
-      const what = entry.kind === 'unreadable' ? 'unreadable daemon.json' : 'lock only';
-      print(
-        sweep(d, entry.dir, entry.raw)
-          ? `${entry.name}  stale (${what})  (swept)`
-          : `${entry.name}  starting`,
-      );
-      continue;
-    }
-    const { info, dir } = entry;
-    if (!(await isListening(d, info.socket))) {
-      const silent = judgeSilent(d, dir, info);
-      if (silent.kind === 'stale' && sweep(d, dir, silent.raw)) {
-        print(`${info.version}  pid ${info.pid}  stale  (swept)`);
-        continue;
-      }
-      // Live holder, or the lock changed before we could claim it: whoever holds it now.
-      const holder = silent.kind === 'starting' ? silent.holder : readLock(d, dir).holder;
-      print(`${info.version}  pid ${holder ?? '?'}  starting`);
-      continue;
-    }
-    const live = await callOnce<DaemonInfoResult>(d, info.socket, 'daemon.info');
-    if (live === undefined) {
-      print(`${info.version}  pid ${info.pid}  busy (no answer)  ${info.socket}`);
-      continue;
-    }
-    const loaded = live.services.embed.loaded.join(', ');
-    print(
-      `${live.version}  pid ${live.pid}  clients ${live.clients}  loaded [${loaded}]  alive  ${info.socket}`,
-    );
   }
-  if (printed === 0) print('no daemon known');
+}
+
+async function statusOne(d: AdminDeps, entry: Entry, print: Write): Promise<void> {
+  if (entry.kind === 'empty') {
+    sweep(d, entry.dir, undefined);
+    return;
+  }
+  if (entry.kind === 'starting') {
+    print(`${entry.name}  starting`);
+    return;
+  }
+  if (entry.kind === 'unreadable' || entry.kind === 'lockOnly') {
+    const what = entry.kind === 'unreadable' ? 'unreadable daemon.json' : 'lock only';
+    print(
+      sweep(d, entry.dir, entry.raw)
+        ? `${entry.name}  stale (${what})  (swept)`
+        : `${entry.name}  starting`,
+    );
+    return;
+  }
+  const { info, dir } = entry;
+  if (!(await isListening(d, info.socket))) {
+    const silent = judgeSilent(d, dir, info);
+    if (silent.kind === 'stale' && sweep(d, dir, silent.raw)) {
+      print(`${info.version}  pid ${info.pid}  stale  (swept)`);
+      return;
+    }
+    // Live holder, or the lock changed before we could claim it: whoever holds it now.
+    const holder = silent.kind === 'starting' ? silent.holder : readLock(d, dir).holder;
+    print(`${info.version}  pid ${holder ?? '?'}  starting`);
+    return;
+  }
+  const live = await callOnce<DaemonInfoResult>(d, info.socket, 'daemon.info');
+  if (live === undefined) {
+    print(`${info.version}  pid ${info.pid}  busy (no answer)  ${info.socket}`);
+    return;
+  }
+  const loaded = live.services.embed.loaded.join(', ');
+  print(
+    `${live.version}  pid ${live.pid}  clients ${live.clients}  loaded [${loaded}]  alive  ${info.socket}`,
+  );
+}
+
+export async function runStatus(d: AdminDeps): Promise<number> {
+  const { out, err, reported } = reporter(d);
+  await forEachEntry(d, err, (entry) => statusOne(d, entry, out));
+  if (reported() === 0) out('no daemon known');
   return 0;
 }
 
@@ -252,8 +286,6 @@ async function waitGone(d: AdminDeps, infoFile: string): Promise<boolean> {
   }
   return !d.fs.exists(infoFile);
 }
-
-type Write = (line: string) => void;
 
 const notStopped = `starting — not stopped; run \`${packageMeta.name} daemon stop\` again`;
 
@@ -302,20 +334,11 @@ async function stopOne(
  * there was nothing to report.
  */
 export async function runStop(d: AdminDeps): Promise<number> {
-  let reported = 0;
-  const out: Write = (line) => {
-    reported += 1;
-    d.stdout.write(`${line}\n`);
-  };
-  const err: Write = (line) => {
-    reported += 1;
-    d.stderr.write(`${line}\n`);
-  };
-  for (const name of scan(d)) {
-    const entry = classify(d, name);
-    if (entry?.kind === 'starting') out(`${entry.name}  ${notStopped}`);
-    if (entry?.kind === 'valid') await stopOne(d, entry.dir, entry.info, out, err);
-  }
-  if (reported === 0) out('no daemon known');
+  const { out, err, reported } = reporter(d);
+  await forEachEntry(d, err, async (entry) => {
+    if (entry.kind === 'starting') out(`${entry.name}  ${notStopped}`);
+    if (entry.kind === 'valid') await stopOne(d, entry.dir, entry.info, out, err);
+  });
+  if (reported() === 0) out('no daemon known');
   return 0;
 }
