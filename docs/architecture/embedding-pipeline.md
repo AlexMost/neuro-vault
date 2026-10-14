@@ -103,4 +103,4 @@ The contract: **positions come from the attention mask, never from token ids.** 
 ## Boundaries
 
 - The service does not store or cache embeddings. Caching would be wrong: queries are short-lived and the corpus already holds its own pre-computed embeddings.
-- `--model` picks the profile; the service never has a default of its own. The caller passes a `ModelProfile`, and the corpus — not the caller — is responsible for noticing that the stored vectors came from another model or configuration (via `identity`), so a vault indexed with a different profile is rebuilt instead of mixing vector spaces. See [`own-corpus.md`](./own-corpus.md).
+- `--model` picks the profile; the service never has a default of its own. The caller passes a `ModelProfile`, and the corpus — not the caller — is responsible for noticing that the stored vectors came from another model or configuration (via `identity`), so vector spaces are never mixed: another profile reads and writes its own directory in the vault, and only an identity change within one model (a new revision, `embed_version`, …) rebuilds that model's directory. See [`own-corpus.md`](./own-corpus.md).
