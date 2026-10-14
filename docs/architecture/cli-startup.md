@@ -15,7 +15,7 @@ type ParsedCli =
   | { kind: 'handled' };
 ```
 
-`kind: 'run'` carries a validated `ServerConfig` — the normal case. `kind: 'index'` carries the options of the `index` subcommand (the vaults and the model profile). `kind: 'handled'` means yargs itself fully satisfied the invocation (it printed `--help` or `--version` output) and there is nothing left to run.
+`kind: 'run'` carries a validated `ServerConfig` — the normal case. `kind: 'index'` carries the options of the `index` subcommand (the vaults, the model profile and the `--prune` flag). `kind: 'handled'` means yargs itself fully satisfied the invocation (it printed `--help` or `--version` output) and there is nothing left to run.
 
 ## Why it exists
 
@@ -60,7 +60,14 @@ The server command and `index` are two commands over the same vaults, so they sh
 
 `--model` takes a profile key from the closed registry in `src/modules/semantic/model-profiles.ts` (`harrier-270m`, the default, `granite-97m` or `harrier-0.6b`; see [`embedding-pipeline.md`](./embedding-pipeline.md#profiles)). yargs `choices` rejects an unknown key with the allowed list before any vault is opened, and `parseConfig` resolves the key to its `ModelProfile` (`resolveModelProfile`), so nothing downstream handles an unknown key — `ServerConfig.semantic.model` and `IndexCliOptions.model` are already profiles. A repeated `--model` is rejected (`--model may be given only once`) rather than silently picking one of the values. The selection holds for the whole process: one model per run, no per-vault override.
 
-Because a corpus records the model that produced its vectors, the server and `index` must be started with the same `--model`; a vault indexed with another model is discarded and rebuilt (see [`own-corpus.md`](./own-corpus.md#a-model-change-is-a-rebuild-and-never-silent)). The first run with a profile downloads its weights into the model cache (see [`embedding-pipeline.md`](./embedding-pipeline.md)).
+Each model keeps its own corpus directory in a vault, so another `--model` selects another directory and discards nothing; only a change of identity within one model (a new pinned revision, say) rebuilds, and only that model's directory (see [`own-corpus.md`](./own-corpus.md#an-identity-change-within-a-model-is-a-rebuild-and-never-silent)). Give `index` the server's `--model` so it pre-warms the corpus the server serves; any other value builds a separate corpus beside it. The first run with a profile downloads its weights into the model cache (see [`embedding-pipeline.md`](./embedding-pipeline.md)).
+
+### `index` flags and output
+
+`index` takes `--vault` and `--model` (above) and one flag of its own, `--prune` (boolean, default off; `IndexCliOptions.prune`). It runs for each vault in turn, then exits non-zero if any vault failed.
+
+- **`--prune`** removes the other models' corpora once the vault's reconcile has finished: every directory under `<vault>/.neuro-vault/corpus/` except the selected model's, and a leftover single-corpus `notes/` and `manifest.json` (see [`own-corpus.md`](./own-corpus.md#pruning-other-models-corpora)). It runs under the vault's reconcile lock, so it never deletes from beside a pass in progress, and it reports on stdout `pruned <vault>: removed <a>, <b>` or `pruned <vault>: nothing to remove`. A vault whose reconcile threw, or returned having indexed nothing (every note failed, as in an offline first run of a new model), is not pruned: stderr says `not pruning <vault>: …` and the other corpora stay. An error while pruning is that vault's fatal error.
+- **Waiting for another process.** Passes over one vault are serialised across processes by a lock. When `index` finds it held it writes `waiting for another neuro-vault process (pid <n>[ on <host>]) to finish with <vault>…` on stderr once for that vault — a diagnostic, kept off the stdout that carries progress, rebuild, summary and prune lines. After waiting 30 minutes it gives up on that vault with a stderr error and a non-zero exit; re-run it once the other process is done (see [`own-corpus.md`](./own-corpus.md#concurrency-the-reconcile-lock)).
 
 `main`'s own `run()` wrapper (the top-level `catch`) still applies on top of this: an error thrown out of `parseConfig` (an invalid `--vault` path, a duplicate basename) or out of `startNeuroVaultServer` is caught there, printed to stderr, and turned into `process.exitCode = 1`. `{ kind: 'handled' }` bypasses that path entirely — a successful `--help`/`--version` invocation exits 0.
 

@@ -24,7 +24,7 @@ To embed, the service:
 2. Turns each trimmed text into a model input row made of exactly the tokens the model was trained on — special-token template included, cut to `maxTokens` without losing the template's end (see [Tokenisation](#tokenisation)).
 3. Pads the rows of a call into one batch, runs a single forward pass, pools the output by the attention mask ([`pooling.ts`](../../src/modules/semantic/pooling.ts)) and normalizes each vector to unit length.
 
-The service also exposes `identity` (`provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens`) — everything that determines the vectors it produces. The corpus records that identity in its manifest, adds its own `embed_version` and `strategy`, and compares every field on startup; see [`own-corpus.md`](./own-corpus.md) for what a mismatch does (discard and rebuild).
+The service also exposes `identity` (`provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens`) — everything that determines the vectors it produces. The corpus records that identity in its manifest, adds its own `embed_version` and `strategy`, and compares every field on startup; see [`own-corpus.md`](./own-corpus.md) for what a mismatch does (discard and rebuild that model's directory — each model keeps its own).
 
 ## Why it exists
 

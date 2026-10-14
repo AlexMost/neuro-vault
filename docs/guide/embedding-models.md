@@ -89,7 +89,7 @@ Three practical rules:
 
 An unknown key fails at startup with an error that lists the valid keys.
 
-More on why a model change is a rebuild: [`docs/architecture/own-corpus.md`](../architecture/own-corpus.md#a-model-change-is-a-rebuild-and-never-silent).
+More on why a model change is a rebuild: [`docs/architecture/own-corpus.md`](../architecture/own-corpus.md#an-identity-change-within-a-model-is-a-rebuild-and-never-silent).
 
 ## Similarity thresholds per model
 
