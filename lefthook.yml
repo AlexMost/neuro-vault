@@ -1,0 +1,14 @@
+# Git hooks, installed by lefthook's postinstall on `npm install` / `npm ci`.
+# CI runs the same checks (.github/workflows/ci.yml); these catch them before a push.
+
+pre-commit:
+  jobs:
+    - name: lint
+      run: npm run lint
+    - name: format
+      run: npm run format
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: npx --no -- commitlint --edit {1}

@@ -31,5 +31,5 @@ These tools are kept because each is the sole path to its capability; reach for 
 ## Commits
 
 - Conventional Commits: `type(scope): subject`; a breaking change is `type!:` plus a `BREAKING CHANGE:` footer. commitlint (`@commitlint/config-conventional`) checks **every commit** of a PR, not only the merge title, so one bad message fails the PR and only a history rewrite and force-push fixes it.
-- Wrap body lines at 100 characters or fewer — the rule that fails most often. Check a branch before pushing: `npx commitlint --from origin/main --to HEAD`.
+- Wrap body lines at 100 characters or fewer — the rule that fails most often. The lefthook `commit-msg` hook ([`lefthook.yml`](lefthook.yml), installed by `npm install`) runs commitlint on each commit; for commits made around it (`--no-verify`, cherry-picks), check the branch before pushing: `npx commitlint --from origin/main --to HEAD`.
 - End every commit with one `Co-Authored-By:` trailer naming the session's primary model.
