@@ -14,11 +14,11 @@ Every MCP session runs its own reconcile over one shared `<vault>/.neuro-vault/c
 
 **Cross-process reconcile lock**
 - From: N processes over one vault each run full passes concurrently.
-- To: `corpus/reconcile.lock` (pid, exclusive create) serialises passes per vault across processes; a dead holder is replaced, a live one waited on for at most 10 minutes; a pass that waited reads the corpus afresh, so it reuses what the holder built.
+- To: `corpus/reconcile.lock` (host, pid, exclusive create) serialises passes per vault across processes; a dead holder on this host is replaced, a live one — or any holder on another host — waited on for at most 30 minutes; a pass that waited reads the corpus afresh, so it reuses what the holder built.
 - Impact: non-breaking; a waiting server keeps serving its snapshot, and reloads it after a pass that waited.
 
 **`neuro-vault-mcp index --prune`**
-- New flag: after reconciling a vault, deletes every other model's corpus directory (and a leftover legacy root corpus) under the lock and reports what it removed. Never the selected model's.
+- New flag: after a vault's reconcile indexed at least one note, deletes every other model's corpus directory (and a leftover legacy root corpus) under the lock and reports what it removed. Never the selected model's.
 
 **Eval**
 - No longer destructive by design: `index --model X` → `eval --model X` → `index --model Y` keeps both corpora. Eval reads the selected model's directory, keeps its manifest-vs-profile gate, and names the corpora that do exist when the selected one is missing.

@@ -16,8 +16,9 @@
 - A fresh worktree needs `npm ci` before type-aware lint works.
 - **Never run `npm run build` in the owner's main checkout** (`/Users/amostovenko/git/neuro-vault`): the global `neuro-vault-mcp` is a symlink into it and live MCP sessions execute its `dist/`. Build only inside the worktree.
 - Never write to or delete the repo's `.scratch/` directory. Throwaway files go in the session scratchpad.
-- Lock constants, verbatim: lock file `reconcile.lock` directly under `<vault>/.neuro-vault/corpus/`; poll starts at **50 ms**, doubles, capped at **2 000 ms**; total wait bound **600 000 ms (10 min)**; unparseable-content grace **1 000 ms**.
-- Model directory name: `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` and not `notes`.
+- Lock constants, verbatim: lock file `reconcile.lock` directly under `<vault>/.neuro-vault/corpus/`; poll starts at **50 ms**, doubles, capped at **2 000 ms**; total wait bound **1 800 000 ms (30 min)**; unparseable-content grace **1 000 ms**. Lock content `{ host, pid, token, acquired }`; a holder on another host is always live; release removes only the exact content this acquisition wrote.
+- Model directory name: `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, and, compared lower-cased, none of `notes`, `manifest.json`, `reconcile.lock`.
+- Parallel-safe tasks run in parallel only with one worktree per task (see `tasks.md`); otherwise sequentially.
 - The `.gitignore` entry stays exactly `.neuro-vault/corpus/`.
 - `src/lib/obsidian/corpus/` never imports from `src/modules/`. `layout.ts` and `errno.ts` import nothing from other corpus modules.
 - Nothing in `src/` writes to stdout except the CLI's own help/version/`index` output; library warnings go through an injected `warn` defaulting to `console.error`.
@@ -27,7 +28,7 @@
 
 ## Review Focus
 
-1. **A lock left by a dead process whose pid this process inherited** (the lock names our own pid): expect it replaced at once, not waited on for 10 minutes. → test in Task 2.2.
+1. **A lock left by a dead process whose pid this process inherited** (the lock names our own pid): expect it replaced at once, not waited on for 30 minutes. → test in Task 2.2.
 2. **A lock caught mid-create** (`wx` created the file, content not yet written): expect the waiter to treat it as held, not delete it, and acquire only after the holder releases. → test in Task 2.2.
 3. **A legacy manifest whose `model_key` is a path (`../../outside`)**: expect nothing moved, nothing created outside `.neuro-vault/corpus/`. → test in Task 2.1.
 4. **A symlink under `.neuro-vault/corpus/` pointing at a directory elsewhere**, then `--prune`: expect the link left alone and the target directory untouched. → test in Task 2.3.
@@ -40,11 +41,11 @@
 | File | Responsibility | Task |
 | --- | --- | --- |
 | `src/lib/obsidian/corpus/errno.ts` (new) | `hasErrnoCode(err, code)` | 1.1 |
-| `src/lib/obsidian/corpus/layout.ts` (new) | `CORPUS_DIR`, legacy names, `isModelDirName`, `corpusRootOf`, `modelCorpusDir` | 1.1 |
+| `src/lib/obsidian/corpus/layout.ts` (new) | `CORPUS_DIR`, legacy names, `LOCK_FILE`, `RESERVED_ROOT_NAMES`, `isModelDirName`, `corpusRootOf`, `modelCorpusDir` | 1.1 |
 | `src/lib/obsidian/corpus/identity.ts` | gains `isStoredManifest` (moved from `shard-store.ts`) | 1.1 |
 | `src/lib/obsidian/corpus/shard-store.ts` | `CorpusStore` requires `modelKey`; imports layout + validator | 1.1, 1.2 |
 | `src/lib/obsidian/corpus/legacy-migration.ts` (new) | `migrateLegacyCorpus` | 2.1 |
-| `src/lib/obsidian/corpus/reconcile-lock.ts` (new) | `acquireCorpusLock`, `CorpusLock`, `CorpusLockTimeoutError`, `isProcessAlive`, constants | 2.2 |
+| `src/lib/obsidian/corpus/reconcile-lock.ts` (new) | `acquireCorpusLock`, `CorpusLock`, `CorpusLockTimeoutError`, `describeHolder`, `isProcessAlive`, timing constants | 2.2 |
 | `src/lib/obsidian/corpus/prune.ts` (new) | `listModelCorpora`, `pruneOtherCorpora` | 2.3 |
 | `src/lib/obsidian/corpus/reconcile.ts` | lock + migration around the pass; `onLockWait` | 3.1 |
 | `src/modules/semantic/backend/corpus-backend.ts` | reload after a waited pass; timeout handling | 3.2 |
@@ -67,7 +68,7 @@
 - Consumes: `StoredManifest` from `src/lib/obsidian/corpus/types.ts`.
 - Produces:
   - `hasErrnoCode(err: unknown, code: string): boolean` (`errno.ts`)
-  - `CORPUS_DIR = '.neuro-vault/corpus'`, `LEGACY_NOTES_DIR = 'notes'`, `LEGACY_MANIFEST_FILE = 'manifest.json'`, `isModelDirName(name: string): boolean`, `corpusRootOf(vaultRoot: string): string`, `modelCorpusDir(vaultRoot: string, modelKey: string): string` (throws `Error` containing `"<key>" is not a valid model directory name`) (`layout.ts`)
+  - `CORPUS_DIR = '.neuro-vault/corpus'`, `LEGACY_NOTES_DIR = 'notes'`, `LEGACY_MANIFEST_FILE = 'manifest.json'`, `LOCK_FILE = 'reconcile.lock'`, `RESERVED_ROOT_NAMES: ReadonlySet<string>`, `isModelDirName(name: string): boolean`, `corpusRootOf(vaultRoot: string): string`, `modelCorpusDir(vaultRoot: string, modelKey: string): string` (throws `Error` containing `"<key>" is not a valid model directory name`) (`layout.ts`)
   - `isStoredManifest(value: unknown): value is StoredManifest` (`identity.ts`)
 
 - [ ] **Step 1: Write the failing tests**
@@ -95,7 +96,23 @@ describe('corpus layout', () => {
     },
   );
 
-  it.each(['', '.', '..', '.hidden', 'a/b', 'a\\b', 'notes', '-x', 'x'.repeat(65), 'naïve'])(
+  it.each([
+    '',
+    '.',
+    '..',
+    '.hidden',
+    'a/b',
+    'a\\b',
+    'notes',
+    'Notes',
+    'manifest.json',
+    'Manifest.JSON',
+    'reconcile.lock',
+    'RECONCILE.LOCK',
+    '-x',
+    'x'.repeat(65),
+    'naïve',
+  ])(
     'rejects %j as a model directory name',
     (name) => {
       expect(isModelDirName(name)).toBe(false);
@@ -191,15 +208,29 @@ export const CORPUS_DIR = '.neuro-vault/corpus';
 export const LEGACY_NOTES_DIR = 'notes';
 export const LEGACY_MANIFEST_FILE = 'manifest.json';
 
+/** The cross-process reconcile lock, one per vault, beside the model directories (design D5). */
+export const LOCK_FILE = 'reconcile.lock';
+
 /**
- * One path segment, never `.`/`..` or a dot-directory, never the legacy shard
- * directory. A legacy manifest's `model_key` is data read off disk and becomes
- * a path segment during migration, so it is checked like any other input.
+ * Entries the corpus root keeps for itself, lower-cased. A model directory
+ * named after one would alias it — `Notes` is `notes` on a case-insensitive
+ * filesystem — or make migration stat through a file (design D2).
+ */
+export const RESERVED_ROOT_NAMES: ReadonlySet<string> = new Set([
+  LEGACY_NOTES_DIR,
+  LEGACY_MANIFEST_FILE,
+  LOCK_FILE,
+]);
+
+/**
+ * One path segment, never `.`/`..` or a dot-directory, never a reserved root
+ * entry. A legacy manifest's `model_key` is data read off disk and becomes a
+ * path segment during migration, so it is checked like any other input.
  */
 const MODEL_DIR_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export function isModelDirName(name: string): boolean {
-  return MODEL_DIR_RE.test(name) && name !== LEGACY_NOTES_DIR;
+  return MODEL_DIR_RE.test(name) && !RESERVED_ROOT_NAMES.has(name.toLowerCase());
 }
 
 /** `<vaultRoot>/.neuro-vault/corpus` — holds every model's directory and the reconcile lock. */
@@ -421,7 +452,7 @@ import { modelCorpusDir } from '../src/lib/obsidian/corpus/layout.js';
   const store = new CorpusStore(vaultRoot, { modelKey: expected.model_key, dims: expected.dims });
 ```
 
-Also change the docstring line `The corpus the server owns, decoded` to `The selected model's corpus the server owns, decoded`.
+Delete `import path from 'node:path';` — `corpusDir` was its only use, and an unused import fails `npm run lint` at this commit. Also change the docstring line `The corpus the server owns, decoded` to `The selected model's corpus the server owns, decoded`.
 
 - [ ] **Step 5: Update the test call sites**
 
@@ -521,7 +552,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 Create `test/lib/obsidian/corpus/legacy-migration.test.ts`:
 
 ```ts
-import { mkdir, mkdtemp, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -579,6 +610,31 @@ describe('migrateLegacyCorpus', () => {
     await migrateLegacyCorpus(root, { warn: vi.fn() });
     expect((await readdir(corpus)).sort()).toEqual(['bge-micro-v2']);
   });
+
+  it('moves a manifest-only legacy corpus', async () => {
+    const { root, corpus } = await legacyVault(manifestFor('harrier-270m'));
+    await rm(path.join(corpus, 'notes'), { recursive: true });
+    expect(await migrateLegacyCorpus(root, { warn: vi.fn() })).toEqual({
+      kind: 'migrated',
+      modelKey: 'harrier-270m',
+    });
+    expect(await readdir(corpus)).toEqual(['harrier-270m']);
+    expect(await readdir(path.join(corpus, 'harrier-270m'))).toEqual(['manifest.json']);
+  });
+
+  it.each(['reconcile.lock', 'manifest.json', 'Notes'])(
+    'leaves a manifest naming the reserved entry %s alone, pass after pass',
+    async (key) => {
+      const { root, corpus } = await legacyVault(manifestFor(key));
+      for (let pass = 0; pass < 2; pass += 1) {
+        expect(await migrateLegacyCorpus(root, { warn: vi.fn() })).toEqual({
+          kind: 'skipped',
+          reason: 'unreadable',
+        });
+      }
+      expect((await readdir(corpus)).sort()).toEqual(['manifest.json', 'notes']);
+    },
+  );
 
   it('reports none when there is no root manifest', async () => {
     const { root, corpus } = await legacyVault(null);
@@ -829,13 +885,14 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `test/lib/obsidian/corpus/reconcile-lock.test.ts`
 
 **Interfaces:**
-- Consumes: `hasErrnoCode` (`errno.ts`).
+- Consumes: `hasErrnoCode` (`errno.ts`); `LOCK_FILE` (`layout.ts`, Task 1.1).
 - Produces:
-  - `LOCK_FILE = 'reconcile.lock'`, `LOCK_POLL_MIN_MS = 50`, `LOCK_POLL_MAX_MS = 2_000`, `LOCK_MAX_WAIT_MS = 600_000`, `LOCK_UNREADABLE_GRACE_MS = 1_000`
+  - `LOCK_POLL_MIN_MS = 50`, `LOCK_POLL_MAX_MS = 2_000`, `LOCK_MAX_WAIT_MS = 1_800_000`, `LOCK_UNREADABLE_GRACE_MS = 1_000`
   - `interface CorpusLock { release(): Promise<void> }`
-  - `interface CorpusLockDeps { pid?; isAlive?; createExclusive?; readFile?; unlink?; mkdir?; sleep?; now?; maxWaitMs?; warn? }`
-  - `interface AcquireOptions { signal?: AbortSignal; onWait?: (wait: { holderPid: number | null }) => void }`
-  - `class CorpusLockTimeoutError extends Error { lockFile: string; holderPid: number | null; waitedMs: number }`
+  - `interface LockHolder { pid: number | null; host: string | null }`
+  - `interface CorpusLockDeps { pid?; host?; token?; isAlive?; createExclusive?; readFile?; unlink?; mkdir?; sleep?; now?; maxWaitMs?; warn? }`
+  - `interface AcquireOptions { signal?: AbortSignal; onWait?: (wait: { holderPid: number | null; holderHost: string | null }) => void }`
+  - `class CorpusLockTimeoutError extends Error { lockFile: string; holderPid: number | null; waitedMs: number; holderHost: string | null }`. Constructor `(lockFile, holderPid, waitedMs, holderHost = null)`.
   - `isProcessAlive(pid: number, kill?: (pid: number, signal: 0) => void): boolean`
   - `acquireCorpusLock(corpusRoot: string, deps?: CorpusLockDeps, opts?: AcquireOptions): Promise<CorpusLock>`
 
@@ -850,15 +907,19 @@ import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { LOCK_FILE } from '../../../../src/lib/obsidian/corpus/layout.js';
 import {
   acquireCorpusLock,
   CorpusLockTimeoutError,
   isProcessAlive,
-  LOCK_FILE,
+  LOCK_MAX_WAIT_MS,
 } from '../../../../src/lib/obsidian/corpus/reconcile-lock.js';
 
 const ME = 1001;
 const HOLDER = 4242;
+const HERE = 'here.local';
+/** This process's identity in every test: a fixed pid and host. */
+const SELF = { pid: ME, host: HERE };
 
 async function corpusDir(): Promise<string> {
   return path.join(await mkdtemp(path.join(tmpdir(), 'nv-lock-')), '.neuro-vault/corpus');
@@ -871,7 +932,8 @@ async function writeLock(dir: string, content: string): Promise<string> {
   return file;
 }
 
-const holderContent = (pid: number) => JSON.stringify({ pid, acquired: 'x' });
+const holderContent = (pid: number, host = HERE, token = 'theirs') =>
+  JSON.stringify({ host, pid, token, acquired: 'x' });
 
 /** A fake clock whose sleeps advance it; `onSleep` runs after each sleep is recorded. */
 function fakeClock(onSleep: (count: number) => Promise<void> | void = () => {}) {
@@ -895,33 +957,38 @@ const gone = async (p: string) =>
   );
 
 describe('acquireCorpusLock', () => {
-  it('creates the corpus root if needed and records its pid', async () => {
+  it('creates the corpus root if needed and records host, pid and token', async () => {
     const dir = await corpusDir();
-    const lock = await acquireCorpusLock(dir, { pid: ME });
-    const content = JSON.parse(await readFile(path.join(dir, LOCK_FILE), 'utf8')) as {
-      pid: number;
-    };
-    expect(content.pid).toBe(ME);
+    const lock = await acquireCorpusLock(dir, { ...SELF, token: 'mine' });
+    expect(JSON.parse(await readFile(path.join(dir, LOCK_FILE), 'utf8'))).toMatchObject({
+      host: HERE,
+      pid: ME,
+      token: 'mine',
+    });
     await lock.release();
     expect(await gone(path.join(dir, LOCK_FILE))).toBe(true);
   });
 
-  it('release leaves a lock that now names another process', async () => {
-    const dir = await corpusDir();
-    const lock = await acquireCorpusLock(dir, { pid: ME });
-    const file = await writeLock(dir, holderContent(HOLDER));
-    await lock.release();
-    expect(await readFile(file, 'utf8')).toBe(holderContent(HOLDER));
+  it('bounds the wait at 30 minutes by default', () => {
+    expect(LOCK_MAX_WAIT_MS).toBe(30 * 60 * 1000);
   });
 
-  it('replaces a dead holder without sleeping', async () => {
+  it('release leaves a lock that now holds another acquisition, even one with its own pid', async () => {
+    const dir = await corpusDir();
+    const lock = await acquireCorpusLock(dir, { ...SELF, token: 'mine' });
+    const file = await writeLock(dir, holderContent(ME, HERE, 'someone-else'));
+    await lock.release();
+    expect(await readFile(file, 'utf8')).toBe(holderContent(ME, HERE, 'someone-else'));
+  });
+
+  it('replaces a dead holder on this host without sleeping', async () => {
     const dir = await corpusDir();
     await writeLock(dir, holderContent(HOLDER));
     const clock = fakeClock();
     const onWait = vi.fn();
     const lock = await acquireCorpusLock(
       dir,
-      { pid: ME, isAlive: () => false, ...clock },
+      { ...SELF, isAlive: () => false, ...clock },
       { onWait },
     );
     expect(clock.sleeps).toEqual([]);
@@ -929,11 +996,35 @@ describe('acquireCorpusLock', () => {
     await lock.release();
   });
 
-  it('replaces a lock naming its own pid — a leftover of a dead predecessor', async () => {
+  it('replaces a lock naming its own pid on its own host — a dead predecessor’s leftover', async () => {
     const dir = await corpusDir();
     await writeLock(dir, holderContent(ME));
     const clock = fakeClock();
-    const lock = await acquireCorpusLock(dir, { pid: ME, isAlive: () => true, ...clock });
+    const lock = await acquireCorpusLock(dir, { ...SELF, isAlive: () => true, ...clock });
+    expect(clock.sleeps).toEqual([]);
+    await lock.release();
+  });
+
+  it('never takes over a holder on another host, even when its pid is not running here', async () => {
+    const dir = await corpusDir();
+    const file = await writeLock(dir, holderContent(ME, 'container-b')); // even our own pid
+    const isAlive = vi.fn(() => false);
+    const clock = fakeClock(async (count) => {
+      if (count === 2) await rm(file);
+    });
+    const onWait = vi.fn();
+    const lock = await acquireCorpusLock(dir, { ...SELF, isAlive, ...clock }, { onWait });
+    expect(clock.sleeps).toEqual([50, 100]);
+    expect(isAlive).not.toHaveBeenCalled();
+    expect(onWait).toHaveBeenCalledWith({ holderPid: ME, holderHost: 'container-b' });
+    await lock.release();
+  });
+
+  it('reads a lock without a host as this host’s', async () => {
+    const dir = await corpusDir();
+    await writeLock(dir, JSON.stringify({ pid: HOLDER, acquired: 'x' }));
+    const clock = fakeClock();
+    const lock = await acquireCorpusLock(dir, { ...SELF, isAlive: () => false, ...clock });
     expect(clock.sleeps).toEqual([]);
     await lock.release();
   });
@@ -947,13 +1038,13 @@ describe('acquireCorpusLock', () => {
     const onWait = vi.fn();
     const lock = await acquireCorpusLock(
       dir,
-      { pid: ME, isAlive: () => true, ...clock },
+      { ...SELF, isAlive: () => true, ...clock },
       { onWait },
     );
     expect(clock.sleeps).toEqual([50, 100, 200]);
     expect(onWait).toHaveBeenCalledTimes(1);
-    expect(onWait).toHaveBeenCalledWith({ holderPid: HOLDER });
-    expect((JSON.parse(await readFile(file, 'utf8')) as { pid: number }).pid).toBe(ME);
+    expect(onWait).toHaveBeenCalledWith({ holderPid: HOLDER, holderHost: HERE });
+    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ pid: ME });
     await lock.release();
   });
 
@@ -963,25 +1054,25 @@ describe('acquireCorpusLock', () => {
     const clock = fakeClock(async (count) => {
       if (count === 9) await rm(file);
     });
-    const lock = await acquireCorpusLock(dir, { pid: ME, isAlive: () => true, ...clock });
+    const lock = await acquireCorpusLock(dir, { ...SELF, isAlive: () => true, ...clock });
     expect(clock.sleeps).toEqual([50, 100, 200, 400, 800, 1600, 2000, 2000, 2000]);
     await lock.release();
   });
 
-  it('gives up after the bound, naming the lock file and the holder, leaving its lock', async () => {
+  it('gives up after the bound, naming the lock file, host and holder, leaving its lock', async () => {
     const dir = await corpusDir();
     const file = await writeLock(dir, holderContent(HOLDER));
     const clock = fakeClock();
     const err = await acquireCorpusLock(dir, {
-      pid: ME,
+      ...SELF,
       isAlive: () => true,
       maxWaitMs: 1_000,
       ...clock,
     }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CorpusLockTimeoutError);
-    expect(err).toMatchObject({ lockFile: file, holderPid: HOLDER });
+    expect(err).toMatchObject({ lockFile: file, holderPid: HOLDER, holderHost: HERE });
     expect((err as Error).message).toContain(LOCK_FILE);
-    expect((err as Error).message).toContain(`pid ${HOLDER}`);
+    expect((err as Error).message).toContain(`pid ${HOLDER} on ${HERE}`);
     expect(clock.sleeps).toEqual([50, 100, 200, 400, 800]);
     expect(await readFile(file, 'utf8')).toBe(holderContent(HOLDER));
   });
@@ -997,11 +1088,11 @@ describe('acquireCorpusLock', () => {
     const onWait = vi.fn();
     const lock = await acquireCorpusLock(
       dir,
-      { pid: ME, isAlive: () => true, unlink, ...clock },
+      { ...SELF, isAlive: () => true, unlink, ...clock },
       { onWait },
     );
     expect(unlink).not.toHaveBeenCalled();
-    expect(onWait).toHaveBeenCalledWith({ holderPid: null });
+    expect(onWait).toHaveBeenCalledWith({ holderPid: null, holderHost: null });
     await lock.release();
   });
 
@@ -1009,7 +1100,7 @@ describe('acquireCorpusLock', () => {
     const dir = await corpusDir();
     await writeLock(dir, 'garbage');
     const clock = fakeClock();
-    const lock = await acquireCorpusLock(dir, { pid: ME, isAlive: () => true, ...clock });
+    const lock = await acquireCorpusLock(dir, { ...SELF, isAlive: () => true, ...clock });
     expect(clock.sleeps).toEqual([50, 100, 200, 400, 800]); // 1550 ms ≥ 1000 ms grace
     await lock.release();
   });
@@ -1021,7 +1112,7 @@ describe('acquireCorpusLock', () => {
     setTimeout(() => controller.abort(), 20);
     // The default sleep: proves the real timer honours the signal.
     await expect(
-      acquireCorpusLock(dir, { pid: ME, isAlive: () => true }, { signal: controller.signal }),
+      acquireCorpusLock(dir, { ...SELF, isAlive: () => true }, { signal: controller.signal }),
     ).rejects.toThrow();
     expect(await readFile(file, 'utf8')).toBe(holderContent(HOLDER));
   });
@@ -1031,7 +1122,7 @@ describe('acquireCorpusLock', () => {
     const denied = Object.assign(new Error('EACCES'), { code: 'EACCES' });
     await expect(
       acquireCorpusLock(dir, {
-        pid: ME,
+        ...SELF,
         createExclusive: async () => {
           throw denied;
         },
@@ -1067,35 +1158,50 @@ Expected: FAIL — cannot resolve `reconcile-lock.js`.
 Create `src/lib/obsidian/corpus/reconcile-lock.ts`:
 
 ```ts
+import { randomUUID } from 'node:crypto';
 import {
   mkdir as fsMkdir,
   readFile as fsReadFile,
   unlink as fsUnlink,
   writeFile as fsWriteFile,
 } from 'node:fs/promises';
+import { hostname } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { hasErrnoCode } from './errno.js';
+import { LOCK_FILE } from './layout.js';
 
-/** Directly under the corpus root: one lock per vault, shared by every model (design D5). */
-export const LOCK_FILE = 'reconcile.lock';
 export const LOCK_POLL_MIN_MS = 50;
 export const LOCK_POLL_MAX_MS = 2_000;
-/** An incremental pass is seconds; a default-profile cold index of ~950 notes is ~9 min. */
-export const LOCK_MAX_WAIT_MS = 600_000;
+/**
+ * About three times the measured default-profile cold index of a ~950-note
+ * vault (7.9–8.8 min), which a holder may also spend part of downloading its
+ * model on a first run (design D5).
+ */
+export const LOCK_MAX_WAIT_MS = 1_800_000;
 /** How long an unparseable lock counts as "being written" before it counts as stale. */
 export const LOCK_UNREADABLE_GRACE_MS = 1_000;
 
 export interface CorpusLock {
-  /** Removes the lock if it is still this process's. Never throws. */
+  /** Removes the lock if it still holds exactly what this acquisition wrote. Never throws. */
   release(): Promise<void>;
+}
+
+/** Who a lock file names. `host` is null for a lock written without one (read as this host). */
+export interface LockHolder {
+  pid: number;
+  host: string | null;
 }
 
 export interface CorpusLockDeps {
   /** Defaults to `process.pid`. */
   pid?: number;
-  /** Defaults to {@link isProcessAlive}. */
+  /** Defaults to `os.hostname()`. */
+  host?: string;
+  /** Unique per acquisition; defaults to `randomUUID()`. */
+  token?: string;
+  /** Defaults to {@link isProcessAlive}. Only ever asked about a pid on this host. */
   isAlive?: (pid: number) => boolean;
   /** Creates the file only if absent, rejecting with `EEXIST` otherwise. */
   createExclusive?: (p: string, data: string) => Promise<void>;
@@ -1113,25 +1219,31 @@ export interface CorpusLockDeps {
 
 export interface AcquireOptions {
   signal?: AbortSignal;
-  /** Called once, when a live holder is first seen; `holderPid` is null while its content is unreadable. */
-  onWait?: (wait: { holderPid: number | null }) => void;
+  /** Called once, when a live holder is first seen; both fields are null while its content is unreadable. */
+  onWait?: (wait: { holderPid: number | null; holderHost: string | null }) => void;
 }
 
-/** The lock stayed held by a live process for the whole bound. */
+/** The lock stayed held for the whole bound. */
 export class CorpusLockTimeoutError extends Error {
   constructor(
     readonly lockFile: string,
     readonly holderPid: number | null,
     readonly waitedMs: number,
+    readonly holderHost: string | null = null,
   ) {
-    const holder = holderPid === null ? 'an unknown process' : `pid ${holderPid}`;
     super(
-      `neuro-vault corpus: ${lockFile} has been held by ${holder} for ` +
-        `${Math.round(waitedMs / 1000)} s — giving up this pass (delete the file if that ` +
+      `neuro-vault corpus: ${lockFile} has been held by ${describeHolder(holderPid, holderHost)} ` +
+        `for ${Math.round(waitedMs / 1000)} s — giving up this pass (delete the file if that ` +
         `process is not a neuro-vault server or index run)`,
     );
     this.name = 'CorpusLockTimeoutError';
   }
+}
+
+/** `pid 42 on host-a`, `pid 42`, or `an unknown process` — for messages. */
+export function describeHolder(pid: number | null, host: string | null): string {
+  if (pid === null) return 'an unknown process';
+  return host === null ? `pid ${pid}` : `pid ${pid} on ${host}`;
 }
 
 /** `kill(pid, 0)`: `ESRCH` means no such process; `EPERM` means it exists under another user. */
@@ -1152,15 +1264,18 @@ export function isProcessAlive(
 /**
  * Takes the vault's reconcile lock, waiting for a live holder (design D5).
  *
- * The lock is a file created exclusively with the holder's pid. A holder whose
- * pid is not running, or is this process's own (passes over one vault never
- * overlap within a process, so that is a dead predecessor's pid), is stale and
- * replaced — only if the file still holds what was judged stale. A file whose
- * content does not parse is treated as being written for
- * {@link LOCK_UNREADABLE_GRACE_MS}, then as stale. A live holder is polled with
- * a doubling backoff ({@link LOCK_POLL_MIN_MS}..{@link LOCK_POLL_MAX_MS}) for at
- * most `maxWaitMs`, then {@link CorpusLockTimeoutError}. An abort rejects the
- * wait and leaves the holder's lock alone.
+ * The lock is a file created exclusively with this host's name, the pid and a
+ * token unique to the acquisition. A holder on another host — another machine,
+ * or another container's pid namespace — is always live: `kill(pid, 0)` says
+ * nothing about it here. On this host, a holder whose pid is not running, or
+ * is this process's own (passes over one vault never overlap within a process,
+ * so that is a dead predecessor's pid), is stale and replaced — only if the
+ * file still holds what was judged stale. A file whose content does not parse
+ * is treated as being written for {@link LOCK_UNREADABLE_GRACE_MS}, then as
+ * stale. A live holder is polled with a doubling backoff
+ * ({@link LOCK_POLL_MIN_MS}..{@link LOCK_POLL_MAX_MS}) for at most `maxWaitMs`,
+ * then {@link CorpusLockTimeoutError}. An abort rejects the wait and leaves the
+ * holder's lock alone.
  */
 export async function acquireCorpusLock(
   corpusRoot: string,
@@ -1168,6 +1283,8 @@ export async function acquireCorpusLock(
   opts: AcquireOptions = {},
 ): Promise<CorpusLock> {
   const pid = deps.pid ?? process.pid;
+  const host = deps.host ?? hostname();
+  const token = deps.token ?? randomUUID();
   const isAlive = deps.isAlive ?? ((p: number) => isProcessAlive(p));
   const createExclusive =
     deps.createExclusive ?? ((p: string, data: string) => fsWriteFile(p, data, { flag: 'wx' }));
@@ -1182,7 +1299,7 @@ export async function acquireCorpusLock(
 
   const lockFile = path.join(corpusRoot, LOCK_FILE);
   await mkdir(corpusRoot);
-  const content = `${JSON.stringify({ pid, acquired: new Date(now()).toISOString() })}\n`;
+  const content = `${JSON.stringify({ host, pid, token, acquired: new Date(now()).toISOString() })}\n`;
   const started = now();
   let pause = LOCK_POLL_MIN_MS;
   let announced = false;
@@ -1192,7 +1309,7 @@ export async function acquireCorpusLock(
     opts.signal?.throwIfAborted();
     try {
       await createExclusive(lockFile, content);
-      return { release: () => releaseLock(lockFile, pid, readFile, unlink, warn) };
+      return { release: () => releaseLock(lockFile, content, readFile, unlink, warn) };
     } catch (err) {
       if (!hasErrnoCode(err, 'EEXIST')) throw err;
     }
@@ -1201,26 +1318,31 @@ export async function acquireCorpusLock(
     // Released between our create and our read: try again at once.
     if (raw === null) continue;
 
-    const holderPid = parseHolderPid(raw);
+    const holder = parseHolder(raw);
     let stale: boolean;
-    if (holderPid === null) {
+    if (holder === null) {
       unreadableSince ??= now();
       stale = now() - unreadableSince >= LOCK_UNREADABLE_GRACE_MS;
     } else {
       unreadableSince = null;
-      stale = holderPid === pid || !isAlive(holderPid);
+      const sameHost = holder.host === null || holder.host === host;
+      stale = sameHost && (holder.pid === pid || !isAlive(holder.pid));
     }
     if (stale) {
       await removeIfUnchanged(readFile, unlink, lockFile, raw);
       continue;
     }
 
+    const holderPid = holder?.pid ?? null;
+    const holderHost = holder?.host ?? null;
     if (!announced) {
       announced = true;
-      opts.onWait?.({ holderPid });
+      opts.onWait?.({ holderPid, holderHost });
     }
     const waited = now() - started;
-    if (waited >= maxWaitMs) throw new CorpusLockTimeoutError(lockFile, holderPid, waited);
+    if (waited >= maxWaitMs) {
+      throw new CorpusLockTimeoutError(lockFile, holderPid, waited, holderHost);
+    }
     await sleep(pause, opts.signal);
     pause = Math.min(pause * 2, LOCK_POLL_MAX_MS);
   }
@@ -1228,15 +1350,15 @@ export async function acquireCorpusLock(
 
 async function releaseLock(
   lockFile: string,
-  pid: number,
+  content: string,
   readFile: (p: string) => Promise<string>,
   unlink: (p: string) => Promise<void>,
   warn: (message: string) => void,
 ): Promise<void> {
   try {
-    const raw = await readOrNull(readFile, lockFile);
-    // Someone judged us dead and took over — theirs now, not ours to remove.
-    if (raw === null || parseHolderPid(raw) !== pid) return;
+    // Exactly what this acquisition wrote, token included: anything else is
+    // another holder's lock, even one with this process's pid.
+    if ((await readOrNull(readFile, lockFile)) !== content) return;
     await unlink(lockFile);
   } catch (err) {
     if (hasErrnoCode(err, 'ENOENT')) return;
@@ -1272,7 +1394,7 @@ async function readOrNull(
   }
 }
 
-function parseHolderPid(raw: string): number | null {
+function parseHolder(raw: string): LockHolder | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -1280,8 +1402,9 @@ function parseHolderPid(raw: string): number | null {
     return null;
   }
   if (typeof parsed !== 'object' || parsed === null) return null;
-  const pid = (parsed as { pid?: unknown }).pid;
-  return typeof pid === 'number' && Number.isInteger(pid) && pid > 0 ? pid : null;
+  const { pid, host } = parsed as { pid?: unknown; host?: unknown };
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return null;
+  return { pid, host: typeof host === 'string' ? host : null };
 }
 ```
 
@@ -1296,9 +1419,10 @@ Expected: PASS.
 git add src/lib/obsidian/corpus/reconcile-lock.ts test/lib/obsidian/corpus/reconcile-lock.test.ts
 git commit -m "feat(corpus): add a cross-process reconcile lock
 
-corpus/reconcile.lock is created exclusively with the holder's pid; dead or
-self-pid holders are replaced, live ones waited on (50 ms doubling to 2 s,
-10 min bound), and an abort stops the wait.
+corpus/reconcile.lock is created exclusively with host, pid and a token;
+dead or self-pid holders on this host are replaced, live or remote ones
+waited on (50 ms doubling to 2 s, 30 min bound), and an abort stops the
+wait. Release removes only this acquisition's own content.
 
 Refs #146
 
@@ -1512,7 +1636,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Produces:
   - `ReconcileDeps.acquireLock?: (opts: AcquireOptions) => Promise<CorpusLock>`
   - `ReconcileDeps.migrateLegacy?: () => Promise<unknown>`
-  - `ReconcileOptions.onLockWait?: (wait: { holderPid: number | null }) => void`
+  - `ReconcileOptions.onLockWait?: (wait: { holderPid: number | null; holderHost: string | null }) => void`
   - `reconcileCorpus` throws `CorpusLockTimeoutError` (unchanged type, from Task 2.2) when the bound expires; returns the empty summary when aborted while waiting.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1624,7 +1748,7 @@ describe('reconcileCorpus across processes', () => {
       { 'A.md': body('A') },
       {
         acquireLock: async ({ signal, onWait }) => {
-          onWait?.({ holderPid: 4242 });
+          onWait?.({ holderPid: 4242, holderHost: null });
           controller.abort();
           signal?.throwIfAborted();
           throw new Error('unreachable');
@@ -1640,7 +1764,7 @@ describe('reconcileCorpus across processes', () => {
       { 'A.md': body('A') },
       {
         acquireLock: async ({ onWait }) => {
-          onWait?.({ holderPid: 4242 });
+          onWait?.({ holderPid: 4242, holderHost: null });
           return { release: async () => {} };
         },
       },
@@ -1649,7 +1773,7 @@ describe('reconcileCorpus across processes', () => {
       throw new Error('caller bug');
     });
     expect(await run({ onLockWait })).toMatchObject({ embedded: 1, failed: 0 });
-    expect(onLockWait).toHaveBeenCalledWith({ holderPid: 4242 });
+    expect(onLockWait).toHaveBeenCalledWith({ holderPid: 4242, holderHost: null });
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('onLockWait callback threw'));
   });
 
@@ -1785,9 +1909,10 @@ Add to `ReconcileOptions` (after `onRebuild`):
   /**
    * Called once, before anything is read, when another live process holds the
    * vault's lock and this pass starts waiting for it (design D7, D9).
-   * `holderPid` is null while the lock's content is unreadable.
+   * Both fields are null while the lock's content is unreadable; `holderHost`
+   * is null for a lock written without one.
    */
-  onLockWait?: (wait: { holderPid: number | null }) => void;
+  onLockWait?: (wait: { holderPid: number | null; holderHost: string | null }) => void;
 ```
 
 Replace the body of `reconcileCorpus` up to (not including) `const { rebuilt, previous } = await store.ensureManifest(...)` with the lock wrapper, and move the rest of the existing body — from `// First, so an incompatible corpus identity …` through `return summary;` — unchanged into a new `reconcileLocked`:
@@ -1895,7 +2020,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `test/semantic/backend/corpus-backend.test.ts`
 
 **Interfaces:**
-- Consumes: `ReconcileOptions.onLockWait` (Task 3.1); `CorpusLockTimeoutError` (Task 2.2).
+- Consumes: `ReconcileOptions.onLockWait` (Task 3.1); `CorpusLockTimeoutError`, `describeHolder` (Task 2.2).
 - Produces: no new exports. Behaviour: reload after a waited pass; a lock timeout keeps `status`/`snapshot`, warns, and schedules a retry.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1919,7 +2044,7 @@ and append inside `describe('createCorpusBackend', …)`:
       store: fakeStore({ compatible: true, shards: 1 }),
       loadSnapshot,
       reconcile: async ({ onLockWait }) => {
-        onLockWait?.({ holderPid: 4242 });
+        onLockWait?.({ holderPid: 4242, holderHost: null });
         return summary();
       },
     });
@@ -1933,7 +2058,7 @@ and append inside `describe('createCorpusBackend', …)`:
     const reconcile = vi
       .fn()
       .mockRejectedValueOnce(
-        new CorpusLockTimeoutError('/v/.neuro-vault/corpus/reconcile.lock', 4242, 600_000),
+        new CorpusLockTimeoutError('/v/.neuro-vault/corpus/reconcile.lock', 4242, 1_800_000),
       )
       .mockResolvedValueOnce(summary());
     const backend = createCorpusBackend({
@@ -1965,6 +2090,52 @@ and append inside `describe('createCorpusBackend', …)`:
     expect(backend.status()).toEqual({ state: 'ready' });
   });
 
+  it('stays unavailable, with its reason, when a retry pass times out on the lock', async () => {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const reconcile = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('no model on disk'))
+      .mockRejectedValueOnce(
+        new CorpusLockTimeoutError('/v/.neuro-vault/corpus/reconcile.lock', 4242, 1_800_000),
+      );
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore({ compatible: false, shards: 0 }),
+      loadSnapshot: async () => snapshotWith(['a.md']),
+      reconcile,
+      warn: vi.fn(),
+      retryBaseMs: 1_000,
+      ...fakeTimers(timers),
+    });
+    await backend.whenSettled();
+    const unavailable = backend.status();
+    expect(unavailable).toMatchObject({ state: 'unavailable' });
+
+    timers[0].fn(); // the retry pass switches to `indexing` while it runs, then times out
+    await backend.whenSettled();
+
+    expect(backend.status()).toEqual(unavailable);
+    expect(timers).toHaveLength(2); // re-armed again
+  });
+
+  it('does not reload after a pass that did not wait and changed nothing', async () => {
+    const loadSnapshot = vi.fn(async () => snapshotWith(['a.md']));
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore({ compatible: true, shards: 1 }),
+      loadSnapshot,
+      reconcile: async () => summary(),
+    });
+    await backend.whenSettled();
+    expect(loadSnapshot).toHaveBeenCalledTimes(1); // the startup load only
+  });
+
   it('stays indexing, not unavailable, when a cold vault’s pass times out on the lock', async () => {
     const timers: Array<{ fn: () => void; ms: number }> = [];
     const backend = createCorpusBackend({
@@ -1975,7 +2146,7 @@ and append inside `describe('createCorpusBackend', …)`:
       store: fakeStore({ compatible: false, shards: 0 }),
       loadSnapshot: async () => snapshotWith(['a.md']),
       reconcile: async () => {
-        throw new CorpusLockTimeoutError('/v/.neuro-vault/corpus/reconcile.lock', 4242, 600_000);
+        throw new CorpusLockTimeoutError('/v/.neuro-vault/corpus/reconcile.lock', 4242, 1_800_000);
       },
       warn: vi.fn(),
       retryBaseMs: 1_000,
@@ -1997,7 +2168,10 @@ Expected: FAIL — `loadSnapshot` called once; status `unavailable` after the ti
 In `src/modules/semantic/backend/corpus-backend.ts`, add the import:
 
 ```ts
-import { CorpusLockTimeoutError } from '../../../lib/obsidian/corpus/reconcile-lock.js';
+import {
+  CorpusLockTimeoutError,
+  describeHolder,
+} from '../../../lib/obsidian/corpus/reconcile-lock.js';
 ```
 
 Add beside `let retryDelay = retryBaseMs;`:
@@ -2010,7 +2184,15 @@ Add beside `let retryDelay = retryBaseMs;`:
   let lockTimedOut = false;
 ```
 
-In `runPass`, set `lockTimedOut = false;` as the first statement, then change the `deps.reconcile` call and the reload condition:
+In `runPass`, make these the first two statements — before the existing `if (status.state === 'unavailable')` switch to `indexing` — so a timeout can put the vault back exactly as it was:
+
+```ts
+    lockTimedOut = false;
+    /** What the vault reported before this pass; a lock timeout restores it (design D7). */
+    const statusBefore = status;
+```
+
+Then change the `deps.reconcile` call and the reload condition:
 
 ```ts
     let waited = false;
@@ -2042,10 +2224,13 @@ and the `catch`:
         // Someone is still building; this vault is not broken. Reporting
         // `unavailable` would take a serving vault off the air and tell callers
         // to run a competing `index` (design D7).
+        // A retry pass from `unavailable` switched to `indexing` above; put the
+        // vault back as it was, reason included.
         lockTimedOut = true;
+        status = statusBefore;
         warn(
           `neuro-vault corpus: vault "${deps.vaultName}": ${err.lockFile} is still held by ` +
-            `${err.holderPid === null ? 'an unknown process' : `pid ${err.holderPid}`} — ` +
+            `${describeHolder(err.holderPid, err.holderHost)} — ` +
             `serving the current corpus and retrying later`,
         );
         return;
@@ -2061,7 +2246,7 @@ In `kick`'s `.finally`, change the re-arm condition:
       else retryDelay = retryBaseMs;
 ```
 
-Add one sentence to the `createCorpusBackend` doc comment: `A pass that waited for another process's lock reloads unconditionally; one that timed out on it keeps the vault's state and snapshot and re-arms on the same backoff (design D7).`
+Add one sentence to the `createCorpusBackend` doc comment: `A pass that waited for another process's lock reloads unconditionally; one that timed out on it restores the state the vault had before the pass, keeps its snapshot, and re-arms on the same backoff (design D7).`
 
 - [ ] **Step 4: Run tests, lint, typecheck**
 
@@ -2074,8 +2259,9 @@ Expected: PASS.
 git add src/modules/semantic/backend/corpus-backend.ts test/semantic/backend/corpus-backend.test.ts
 git commit -m "feat(semantic): keep serving while another process holds the corpus lock
 
-Reload after a pass that waited; a lock timeout keeps the vault's state
-and snapshot and retries on the backoff instead of reporting unavailable.
+Reload after a pass that waited; a lock timeout restores the vault's state,
+keeps its snapshot and retries on the backoff instead of reporting
+unavailable.
 
 Refs #146
 
@@ -2092,7 +2278,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `test/config.test.ts`, `test/cli-index.test.ts`
 
 **Interfaces:**
-- Consumes: `acquireCorpusLock` (2.2), `pruneOtherCorpora` (2.3), `corpusRootOf` (1.1), `ReconcileOptions.onLockWait` (3.1).
+- Consumes: `acquireCorpusLock`, `describeHolder` (2.2), `pruneOtherCorpora` (2.3), `corpusRootOf` (1.1), `ReconcileOptions.onLockWait` (3.1).
 - Produces: `IndexCliOptions.prune: boolean`; `IndexCommandDeps.prune?: (vaultRoot: string, keepModelKey: string) => Promise<string[]>`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -2153,6 +2339,28 @@ Expected from the grep: no output (fix any remaining call by hand). `ReconcileDe
     expect(prune).not.toHaveBeenCalled();
   });
 
+  it('does not prune a vault whose reconcile failed every note, and says why', async () => {
+    // The real offline-first-run shape: reconcile contains embed failures and returns.
+    const reconcile = vi.fn(async () => okSummary({ total: 3, embedded: 0, failed: 3 }));
+    const prune = vi.fn(async () => ['granite-97m']);
+    const deps = { ...makeDeps(reconcile), prune };
+    const code = await runIndexCommand({ vaults: [vaultA], model: profile, prune: true }, deps);
+    expect(code).toBe(1);
+    expect(prune).not.toHaveBeenCalled();
+    expect(deps.stderr.chunks.join('')).toContain('not pruning VaultA: no note was indexed');
+    expect(deps.stdout.chunks.join('')).not.toContain('pruned');
+  });
+
+  it('still prunes a vault with no notes in scope', async () => {
+    const reconcile = vi.fn(async () => okSummary({ total: 0, embedded: 0 }));
+    const prune = vi.fn(async () => ['granite-97m']);
+    const deps = { ...makeDeps(reconcile), prune };
+    expect(
+      await runIndexCommand({ vaults: [vaultA], model: profile, prune: true }, deps),
+    ).toBe(0);
+    expect(prune).toHaveBeenCalledTimes(1);
+  });
+
   it('does not prune a vault whose reconcile threw', async () => {
     const reconcile = vi.fn(async (d: ReconcileDeps) => {
       if (d.vaultRoot === '/abs/VaultA') throw new Error('model download failed');
@@ -2187,7 +2395,7 @@ Expected from the grep: no output (fix any remaining call by hand). `ReconcileDe
   it('a lock held past the bound fails that vault, naming the lock file and holder', async () => {
     const reconcile = vi.fn(async (d: ReconcileDeps) => {
       if (d.vaultRoot === '/abs/VaultA') {
-        throw new CorpusLockTimeoutError('/abs/VaultA/.neuro-vault/corpus/reconcile.lock', 4242, 600_000);
+        throw new CorpusLockTimeoutError('/abs/VaultA/.neuro-vault/corpus/reconcile.lock', 4242, 1_800_000);
       }
       return okSummary();
     });
@@ -2206,7 +2414,7 @@ Expected from the grep: no output (fix any remaining call by hand). `ReconcileDe
 
   it('reports a wait for another process on stderr, not stdout', async () => {
     const reconcile = vi.fn(async (_d: ReconcileDeps, opts?: ReconcileOptions) => {
-      opts?.onLockWait?.({ holderPid: 4242 });
+      opts?.onLockWait?.({ holderPid: 4242, holderHost: null });
       return okSummary();
     });
     const deps = makeDeps(reconcile);
@@ -2273,7 +2481,8 @@ Imports:
 ```ts
 import { corpusRootOf } from './lib/obsidian/corpus/layout.js';
 import { pruneOtherCorpora } from './lib/obsidian/corpus/prune.js';
-import { acquireCorpusLock } from './lib/obsidian/corpus/reconcile-lock.js';
+import { acquireCorpusLock, describeHolder } from './lib/obsidian/corpus/reconcile-lock.js';
+import { hostname } from 'node:os';
 ```
 
 `IndexCommandDeps` gains:
@@ -2311,12 +2520,13 @@ function writePruned(stdout: OutStream, vaultName: string, removed: string[]): v
 `reconcileOne` takes `stderr` and reports the wait (add `stderr: OutStream` as its last parameter):
 
 ```ts
-      onLockWait: ({ holderPid }) => {
+      onLockWait: ({ holderPid, holderHost }) => {
         // Before any progress output, so it never splits a TTY progress line.
+        // The host only when it is not this one.
+        const host = holderHost === hostname() ? null : holderHost;
         stderr.write(
-          `waiting for another neuro-vault process (${
-            holderPid === null ? 'pid unknown' : `pid ${holderPid}`
-          }) to finish with ${vault.name}…\n`,
+          `waiting for another neuro-vault process (${describeHolder(holderPid, host)}) ` +
+            `to finish with ${vault.name}…\n`,
         );
       },
 ```
@@ -2333,10 +2543,19 @@ function writePruned(stdout: OutStream, vaultName: string, removed: string[]): v
       writeSummary(stdout, vault.name, summary);
       if (summary.failed > 0) complete = false;
       // After the reconcile, so the selected model's corpus is current before the
-      // others go; a reconcile that threw skips this — never leave a vault with
-      // nothing to serve (design D8).
+      // others go. Skipped when it threw (the catch below) and when it indexed
+      // nothing: reconcile contains per-note embed failures and returns, so an
+      // offline first run of a new model must be caught here — never leave a
+      // vault with nothing to serve (design D8).
       if (options.prune) {
-        writePruned(stdout, vault.name, await prune(vault.path, embedder.identity.model_key));
+        if (summary.total > 0 && summary.embedded + summary.reused + summary.renamed === 0) {
+          stderr.write(
+            `not pruning ${vault.name}: no note was indexed with ${embedder.identity.model_key}, ` +
+              `so the other models' corpora are kept\n`,
+          );
+        } else {
+          writePruned(stdout, vault.name, await prune(vault.path, embedder.identity.model_key));
+        }
       }
     } catch (error) {
 ```
@@ -2512,7 +2731,7 @@ and add after it a paragraph: one directory per model key (readable, stable acro
 
 - [ ] **Step 2: new subsection "Migration from the single-corpus layout"** under On-disk layout — design D3/D4 in prose: when (first pass, under the lock), how (rename notes then manifest), the three skip cases, that a pre-per-model build still running rebuilds at the root once, and that `--prune` removes leftovers.
 - [ ] **Step 3: § "A model change is a rebuild, and never silent"** — retitle `An identity change within a model is a rebuild, and never silent`; replace "switching `--model`" in the list of mismatch causes with the note that another `--model` selects another directory and discards nothing; replace the closing "Run `index` and the server with the same `--model`, or each will rebuild the other's corpus." with "Give `index` the server's `--model` so it pre-warms the corpus the server serves; any other value builds a separate corpus beside it."
-- [ ] **Step 4: new section "Concurrency: the reconcile lock"** before § Measured numbers — design D5–D7, D9: the file, exclusive create, the three stale rules, the backoff and 10-minute bound, what the server and `index` do on timeout, reload after a waited pass, abort; the residual risks (simultaneous stale-steal; pid reuse) from design § Risks.
+- [ ] **Step 4: new section "Concurrency: the reconcile lock"** before § Measured numbers — design D5–D7, D9: the file and its content (host, pid, token), exclusive create, the stale rules (same host only; a remote holder is always live), release by exact content, the backoff and 30-minute bound, what the server and `index` do on timeout, reload after a waited pass, abort; the residual risks (simultaneous stale-steal; pid reuse; a dead holder on another host) from design § Risks.
 - [ ] **Step 5: § Reconcile, step list** — insert `0. Take the vault's lock, then migrate a single-corpus layout (see Concurrency, Migration).` before step 1.
 - [ ] **Step 6: § Boundaries** — replace the last two sentences ("Cross-process locking is still out of scope …") with: passes over one vault are serialised across processes by `reconcile.lock`; sharing one reconcile or watcher between processes is still out of scope (#145's daemon).
 - [ ] **Step 7: `semantic-backend.md`** — in the state table add a row `A pass times out waiting for another process's lock | State and snapshot unchanged; one stderr line names the holder's pid and the lock file; re-armed on the retry backoff.`; in the snapshot paragraph (line ~55) add "or when the pass had to wait for another process's lock" to the reload conditions, with the reason (design D7).
@@ -2618,7 +2837,7 @@ Expected: no `rebuilding` line; `granite-97m/manifest.json: OK`; `ls` shows `gra
 - [ ] **Step 5: A dead holder's lock is replaced** (macOS pids stop at 99 998, so 999 999 is never alive):
 
 ```bash
-printf '{"pid":999999,"acquired":"x"}\n' > "$C/reconcile.lock"
+printf '{"host":"%s","pid":999999,"token":"stale","acquired":"x"}\n' "$(hostname)" > "$C/reconcile.lock"
 npm run --silent dev -- index --vault "$V" --model harrier-270m 2>&1 | grep -c "waiting for another" ; ls "$C"
 ```
 

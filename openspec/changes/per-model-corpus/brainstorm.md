@@ -71,10 +71,10 @@ Settled: bounded wait on a live holder. Realistic waits: an incremental pass is 
 
 **Decision:**
 
-- Poll with a backoff starting at 50 ms, doubling, capped at 2 s; give up after **10 minutes** in total (`LOCK_MAX_WAIT_MS`). One stat-and-read per poll is negligible.
+- Poll with a backoff starting at 50 ms, doubling, capped at 2 s; give up after **10 minutes** in total (revised to 30 — see § Revisions after review) (`LOCK_MAX_WAIT_MS`). One stat-and-read per poll is negligible.
 - A timeout throws `CorpusLockTimeoutError`, naming the lock file, the holder's pid and the wait.
 - The **server** treats a timeout as "still contended", not as a failure: the vault keeps its status and its snapshot (a `ready` vault stays `ready`), one stderr line names the holder and the lock file, and the backend re-arms itself through its existing retry backoff. So a server never gives up on its own corpus, and the bound only decides how often it says so.
-- **`index`** fails that vault (stderr, non-zero exit) after 10 minutes. A user who started `index` while a server cold-indexes a large profile can re-run it.
+- **`index`** fails that vault (stderr, non-zero exit) once the bound expires. A user who started `index` while a server cold-indexes a large profile can re-run it.
 - The wait is abortable: the pass's `AbortSignal` (server shutdown, design D10 of the backend) cancels the sleep, and the aborted pass returns the empty summary exactly as an abort before any I/O does today.
 
 ### Q6. Which locks are stale?
@@ -123,5 +123,19 @@ Today "built by another profile" is a manifest mismatch. Under per-model directo
 - **Directory per identity hash** (settled against): unreadable on disk and in `--prune` output, and a revision bump would orphan a directory instead of rebuilding it in place.
 - **Copy instead of rename for migration** (settled against): doubles disk for no reader.
 - **Migrating in the backend's startup selection** (Q4): it runs outside the lock, beside the backend's own first pass; two processes would race the renames.
-- **Unbounded wait**: a stale lock from a reused pid would hang passes silently forever; the bound turns it into a stderr line every 10 minutes.
+- **Unbounded wait**: a stale lock from a reused pid would hang passes silently forever; the bound turns it into a stderr line every bound-length interval.
 - **Reloading after every pass** (Q8): a full decode on every debounced tick, to fix a case only a waited pass makes common.
+
+## Revisions after review (2026-10-14)
+
+A `/code-review medium` of the first draft of these artifacts found ten problems; every one held up and is fixed in design, specs, tasks and plan:
+
+1. **Prune after a failed reconcile (Q9).** `reconcileCorpus` contains per-note embed failures and *returns*, so "skip prune when the reconcile threw" does not cover an offline first run of a new model — every note fails, nothing throws, and the other models' corpora would be deleted. Prune now also skips when `total > 0` and nothing was embedded, reused or renamed, and says so on stderr. The test drives the returning shape.
+2. **The lock across hosts and containers (Q6).** `kill(pid, 0)` only means something on the holder's host and in its pid namespace. The lock now records `os.hostname()`; a lock naming another host is always live (dead remote holders surface through the timeout line, like pid reuse), and the own-pid rule applies only on the same host.
+3. **The bound (Q5): 10 → 30 minutes.** Ten was ~10 % above the measured default cold index of the owner's vault, and the holder also keeps the lock through a first-run model download. Thirty is about three times it; the server re-arms past it either way.
+4. **Reserved directory names (Q2).** `manifest.json` and `reconcile.lock` passed the name rule and would make migration fail every pass (`ENOTDIR` statting through a file); `Notes` aliases `notes` on case-insensitive filesystems. The rule now rejects the root's reserved names compared lower-cased.
+5. **Release by content, not pid.** The lock carries a per-acquisition `randomUUID()` token; release unlinks only the exact content it wrote, so two holders can never remove each other's lock.
+6. **A timeout from `unavailable`.** A retry pass switches `unavailable` → `indexing` before it runs; a lock timeout now restores the state the vault had before the pass.
+7. **`semantic-backend-lifecycle` startup requirement.** Its existing text announced a rebuild when the stored corpus named a different model; under per-model directories another model's corpus is never read. It is now MODIFIED in this change's delta, not left to contradict the layout after archive.
+8. **Plan hygiene.** Task 1.2 left `path` unused in `eval/backends.ts` (lint would fail at that commit); two promised tests were missing (a non-waited pass does not reload; a manifest-only legacy corpus migrates).
+9. **Parallel groups.** "Parallel-safe" tasks touch disjoint files, but each runs project-wide gates and commits; in one shared worktree they would break each other's gates. `tasks.md` now allows parallel dispatch only with a worktree per task.

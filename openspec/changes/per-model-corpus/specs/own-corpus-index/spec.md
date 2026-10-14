@@ -2,7 +2,7 @@
 
 ### Requirement: The server builds and owns an embedding corpus stored inside the vault
 
-The server SHALL build its own embedding corpus and SHALL store it under `<vault>/.neuro-vault/corpus/<model_key>/`, one directory per vault per embedding model profile, named by the profile's model key, so a vault carries its corpora with it and processes serving different models never read, rewrite or discard each other's corpus. A model directory's name SHALL be a single path segment that starts with an ASCII letter or digit and contains only ASCII letters, digits, `.`, `_` and `-`, at most 64 characters, and SHALL NOT be `notes`. The corpus directory SHALL be a dot-path, and therefore unconditionally excluded from vault scope. This supersedes the earlier decision that the server never writes embeddings; consuming a third-party corpus read-only is no longer the only source of vectors.
+The server SHALL build its own embedding corpus and SHALL store it under `<vault>/.neuro-vault/corpus/<model_key>/`, one directory per vault per embedding model profile, named by the profile's model key, so a vault carries its corpora with it and processes serving different models never read, rewrite or discard each other's corpus. A model directory's name SHALL be a single path segment that starts with an ASCII letter or digit and contains only ASCII letters, digits, `.`, `_` and `-`, at most 64 characters, and SHALL NOT equal, compared case-insensitively, any name the corpus root reserves for itself: `notes`, `manifest.json` or `reconcile.lock`. The corpus directory SHALL be a dot-path, and therefore unconditionally excluded from vault scope. This supersedes the earlier decision that the server never writes embeddings; consuming a third-party corpus read-only is no longer the only source of vectors.
 
 #### Scenario: Corpus writes land under the model's directory
 
@@ -21,7 +21,7 @@ The server SHALL build its own embedding corpus and SHALL store it under `<vault
 
 #### Scenario: An unsafe model key is refused
 
-- **WHEN** a corpus store is opened for a model key containing a path separator or starting with a dot
+- **WHEN** a corpus store is opened for a model key containing a path separator, starting with a dot, or equal to `Notes`, `manifest.json` or `reconcile.lock`
 - **THEN** opening fails with an error naming the key, and nothing is read or written
 
 ### Requirement: The manifest records corpus identity and gates a rebuild
@@ -74,9 +74,19 @@ On a reconcile pass, while holding the vault's reconcile lock and before compari
 - **WHEN** the root-level `manifest.json` is not valid JSON
 - **THEN** nothing is moved or deleted, and the pass builds the active model's corpus in its own directory
 
+#### Scenario: A legacy manifest naming a reserved entry is left alone
+
+- **WHEN** the root-level manifest records the model key `reconcile.lock`, `manifest.json` or `Notes`
+- **THEN** nothing is moved, the pass completes normally, and later passes do too
+
+#### Scenario: A manifest-only legacy corpus is moved
+
+- **WHEN** the root-level `manifest.json` records `harrier-270m` and there is no root-level `notes/`
+- **THEN** the manifest is moved into `.neuro-vault/corpus/harrier-270m/` and the pass completes normally
+
 ### Requirement: Reconcile passes over one vault are serialised across processes
 
-A reconcile pass SHALL hold the vault's reconcile lock — the file `<vault>/.neuro-vault/corpus/reconcile.lock`, shared by every model — from before it migrates or reads the manifest until it ends, and SHALL release it when it ends, whether it completed, failed, or was aborted. The lock SHALL be acquired by exclusive creation of that file with content naming the holder's process id. When the file exists, the pass SHALL treat it as stale and replace it if the process it names is not running, if it names the pass's own process, or if its content has been unparseable for more than one second; it SHALL replace a stale lock only if the file still holds the content judged stale. Otherwise the pass SHALL wait for the holder, polling with a backoff that starts at 50 milliseconds, doubles, and is capped at 2 seconds, for at most 10 minutes in total, after which it SHALL fail with an error naming the lock file and the holder's process id. A pass that finds a live holder SHALL report it once to its caller, naming the holder's process id, and a pass that is aborted while waiting SHALL stop waiting and return without reading or writing the corpus. Because the manifest and the shard listing are read only after the lock is held, a pass that waited SHALL reuse every shard the previous holder wrote that matches the vault.
+A reconcile pass SHALL hold the vault's reconcile lock — the file `<vault>/.neuro-vault/corpus/reconcile.lock`, shared by every model — from before it migrates or reads the manifest until it ends, and SHALL release it when it ends, whether it completed, failed, or was aborted. The lock SHALL be acquired by exclusive creation of that file with content naming the holder's host name, its process id and a token unique to that acquisition, and SHALL be released only while the file still holds that exact content. When the file exists, the pass SHALL treat it as stale and replace it if it names the pass's own host and either a process that is not running there or the pass's own process, or if its content has been unparseable for more than one second; it SHALL replace a stale lock only if the file still holds the content judged stale. A lock naming another host SHALL be treated as live, since its process cannot be checked from here. Otherwise the pass SHALL wait for the holder, polling with a backoff that starts at 50 milliseconds, doubles, and is capped at 2 seconds, for at most 30 minutes in total, after which it SHALL fail with an error naming the lock file, the holder's host and the holder's process id. A pass that finds a live holder SHALL report it once to its caller, naming the holder's process id, and a pass that is aborted while waiting SHALL stop waiting and return without reading or writing the corpus. Because the manifest and the shard listing are read only after the lock is held, a pass that waited SHALL reuse every shard the previous holder wrote that matches the vault.
 
 #### Scenario: Two concurrent passes do the work once
 
@@ -93,10 +103,15 @@ A reconcile pass SHALL hold the vault's reconcile lock — the file `<vault>/.ne
 - **WHEN** the lock file names a process id that is no longer running
 - **THEN** the pass replaces the lock without waiting and runs
 
+#### Scenario: A holder on another host is never taken over
+
+- **WHEN** the lock names another host, with a process id that does not exist on this host
+- **THEN** the pass waits for it rather than replacing it
+
 #### Scenario: A live holder past the bound fails the pass
 
-- **WHEN** the lock is held by a running process for longer than 10 minutes while a pass waits
-- **THEN** the waiting pass fails with an error naming `reconcile.lock` and the holder's process id, having read and written nothing in the corpus
+- **WHEN** the lock is held by a running process for longer than 30 minutes while a pass waits
+- **THEN** the waiting pass fails with an error naming `reconcile.lock`, the holder's host and its process id, having read and written nothing in the corpus
 
 #### Scenario: The lock is released after a failure
 

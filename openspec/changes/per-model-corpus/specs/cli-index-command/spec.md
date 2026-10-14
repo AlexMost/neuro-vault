@@ -101,13 +101,16 @@ nothing is discarded.
 
 The `index` subcommand SHALL accept a boolean `--prune` option, absent from
 the server invocation, defaulting to off. With `--prune`, after a vault's
-reconcile returns — whether or not it counted failed notes — the subcommand
-SHALL, while holding that vault's reconcile lock, delete every directory
-directly under `<vault>/.neuro-vault/corpus/` other than the selected
-profile's, including a legacy root-level `notes/`, and a legacy root-level
-`manifest.json`. It SHALL NOT delete the selected profile's directory, the
-reconcile lock file, or any other file, and SHALL NOT prune a vault whose
-reconcile threw. It SHALL print one line per pruned vault on stdout naming
+reconcile returns having indexed at least one in-scope note, or with no
+in-scope notes at all, the subcommand SHALL, while holding that vault's
+reconcile lock, delete every directory directly under
+`<vault>/.neuro-vault/corpus/` other than the selected profile's, including a
+legacy root-level `notes/`, and a legacy root-level `manifest.json`. It SHALL
+NOT delete the selected profile's directory, the reconcile lock file, or any
+other file. It SHALL NOT prune a vault whose reconcile threw, nor one whose
+reconcile failed every in-scope note — an offline first run of a new profile
+must never cost the vault the corpora it can still be served from — and SHALL
+then say on stderr that the vault was not pruned and why. It SHALL print one line per pruned vault on stdout naming
 every removed entry in sorted order, or stating that there was nothing to
 remove. A failure to prune SHALL be that vault's fatal error. Without
 `--prune`, the subcommand SHALL delete nothing outside the selected profile's
@@ -139,6 +142,14 @@ directory.
 - **WHEN** `--prune` runs and the vault's reconcile throws
 - **THEN** no corpus directory of that vault is deleted, the error is written
   to stderr, and the process exits non-zero
+
+#### Scenario: A reconcile that failed every note is not pruned
+
+- **WHEN** `--prune` runs for a profile whose model cannot be loaded, so the
+  vault's reconcile returns with every in-scope note failed, while another
+  profile's corpus exists
+- **THEN** that other corpus is not deleted, stderr says the vault was not
+  pruned because no note was indexed, and the process exits non-zero
 
 #### Scenario: The server rejects the option
 
