@@ -76,7 +76,7 @@ Stakeholders: the owner running several Claude Code / Cursor / desktop-app sessi
 
 ### D8: ADR-0018 and the architecture file
 
-- **Proposal (needs the user's ack before it is written, in PR 1)**: `docs/adr/0018-shared-services-daemon.md` — "A shared-services daemon per installed version over a unix socket; the embedding provider is its first client; per-version keying instead of killing". `docs/architecture/shared-daemon.md` is the living concept file (lifecycle, paths, protocol, service registry, the facade, how a new service attaches); `embedding-pipeline.md` gains the provider factory; `semantic-backend.md` and `cli-startup.md` get pointers.
+- **Proposal (needs the user's ack before it is written, in PR 1)**: `docs/adr/0018-shared-services-daemon.md` — "A shared-services daemon per installed build over a unix socket; the embedding provider is its first client; per-build keying instead of killing" (written and accepted in PR 1). `docs/architecture/shared-daemon.md` is the living concept file (lifecycle, paths, protocol, service registry, the facade, how a new service attaches); `embedding-pipeline.md` gains the provider factory; `semantic-backend.md` and `cli-startup.md` get pointers.
 
 ### D9: How a remote embedding provider fits later (shape only, not built)
 
