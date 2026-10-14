@@ -1,5 +1,6 @@
 import { formatIdentity, type CorpusIdentity } from '../src/lib/obsidian/corpus/identity.js';
 import { modelCorpusDir } from '../src/lib/obsidian/corpus/layout.js';
+import { listModelCorpora } from '../src/lib/obsidian/corpus/prune.js';
 import { CorpusStore, isManifestCompatible } from '../src/lib/obsidian/corpus/shard-store.js';
 import { loadCorpusSnapshot } from '../src/lib/obsidian/corpus/snapshot.js';
 import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
@@ -14,7 +15,8 @@ function shellQuote(value: string): string {
 
 /**
  * The selected model's corpus the server owns, decoded — but only if it was built by the
- * profile this run embeds queries with. Eval never rebuilds (design D12).
+ * profile this run embeds queries with. Eval never builds, migrates, locks or deletes a
+ * corpus (design D10), so evaluating one model leaves every model's corpus as it found it.
  */
 export async function loadSnapshot(
   vaultRoot: string,
@@ -39,8 +41,12 @@ export async function loadSnapshot(
   }
   const snapshot = await loadCorpusSnapshot(store);
   if (snapshot.sources.size === 0) {
+    // Another model's corpus is the usual reason, and naming it says so.
+    const others = (await listModelCorpora(vaultRoot)).filter((key) => key !== expected.model_key);
+    const present =
+      others.length === 0 ? '' : ` (this vault has corpora for: ${others.join(', ')})`;
     throw new BackendError(
-      `own corpus at ${corpusDir} is missing or empty — build it with: ${rebuild}`,
+      `own corpus at ${corpusDir} is missing or empty${present} — build it with: ${rebuild}`,
     );
   }
   return snapshot.sources;

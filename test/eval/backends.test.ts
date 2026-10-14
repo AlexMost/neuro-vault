@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -136,5 +136,50 @@ describe('own backend snapshot', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('names the other models present when the selected one has no corpus, and leaves them alone', async () => {
+    vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
+    const granite = new CorpusStore(vaultRoot, { modelKey: 'granite-97m', dims: TEST_DIMS });
+    await granite.ensureManifest({ ...TEST_IDENTITY, model_key: 'granite-97m' });
+    await granite.writeShard({
+      path: 'a.md',
+      content_hash: 'h',
+      mtime: 1,
+      size: 1,
+      embedding: encodeVector(unitVec(0)),
+      blocks: [],
+    });
+    const manifest = path.join(vaultRoot, '.neuro-vault/corpus/granite-97m/manifest.json');
+    const before = await readFile(manifest, 'utf8');
+
+    const err = await loadSnapshot(vaultRoot, {
+      ...TEST_IDENTITY,
+      model_key: 'harrier-270m',
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BackendError);
+    expect((err as Error).message).toContain(
+      `${path.join(vaultRoot, '.neuro-vault/corpus/harrier-270m')} is missing or empty (this vault has corpora for: granite-97m)`,
+    );
+    expect((err as Error).message).toContain('--model harrier-270m');
+    expect(await readFile(manifest, 'utf8')).toBe(before);
+    expect([...(await granite.listShards()).keys()]).toEqual(['a.md']);
+  });
+
+  it('neither migrates nor locks: a legacy root corpus is reported missing and left in place', async () => {
+    vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
+    const corpus = path.join(vaultRoot, '.neuro-vault/corpus');
+    await mkdir(path.join(corpus, 'notes'), { recursive: true });
+    await writeFile(
+      path.join(corpus, 'manifest.json'),
+      JSON.stringify({ ...TEST_IDENTITY, created: 'x' }),
+    );
+
+    await expect(loadSnapshot(vaultRoot, TEST_IDENTITY)).rejects.toThrow('is missing or empty');
+    expect((await stat(path.join(corpus, 'manifest.json'))).isFile()).toBe(true);
+    await expect(stat(path.join(corpus, 'reconcile.lock'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 });

@@ -454,7 +454,7 @@ describe('runEval end-to-end (stub embedder)', () => {
     );
     await expect(run).rejects.toThrow(BackendError);
     await expect(run).rejects.toThrow(
-      `own corpus at ${modelCorpusDir(vaultRoot, 'harrier-270m')} is missing or empty — build it with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
+      `own corpus at ${modelCorpusDir(vaultRoot, 'harrier-270m')} is missing or empty (this vault has corpora for: granite-97m) — build it with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
     );
     expect(embed).not.toHaveBeenCalled();
   });
