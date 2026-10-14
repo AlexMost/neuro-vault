@@ -1,4 +1,4 @@
-import { readdir as fsReaddir, rm as fsRm } from 'node:fs/promises';
+import { readdir as fsReaddir, rm as fsRm, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { hasErrnoCode } from './errno.js';
@@ -13,6 +13,18 @@ export interface CorpusEntry {
 export interface PruneDeps {
   list?: (dir: string) => Promise<CorpusEntry[]>;
   remove?: (p: string) => Promise<void>;
+  /** Whether a path exists; defaults to `stat`, with `ENOENT` meaning no. */
+  exists?: (p: string) => Promise<boolean>;
+}
+
+async function defaultExists(p: string): Promise<boolean> {
+  try {
+    await fsStat(p);
+    return true;
+  } catch (err) {
+    if (hasErrnoCode(err, 'ENOENT')) return false;
+    throw err;
+  }
 }
 
 async function defaultList(dir: string): Promise<CorpusEntry[]> {
@@ -47,6 +59,10 @@ export async function listModelCorpora(vaultRoot: string, deps: PruneDeps = {}):
  * plus a legacy root `manifest.json` (design D8). Leaves the reconcile lock and
  * every other file. Returns what it removed, sorted. The caller holds the
  * vault's reconcile lock, so no other process is mid-pass in what goes.
+ *
+ * Refuses, removing nothing, unless `keepModelKey`'s corpus has a manifest: a
+ * concurrent prune by another model, between this run's reconcile and its
+ * prune, may have removed it, and pruning then would leave nothing to serve.
  */
 export async function pruneOtherCorpora(
   vaultRoot: string,
@@ -54,6 +70,19 @@ export async function pruneOtherCorpora(
   deps: PruneDeps = {},
 ): Promise<string[]> {
   const remove = deps.remove ?? ((p: string) => fsRm(p, { recursive: true, force: true }));
+  const exists = deps.exists ?? defaultExists;
+  if (!isModelDirName(keepModelKey)) {
+    throw new Error(
+      `neuro-vault corpus: not pruning ${vaultRoot}: "${keepModelKey}" is not a valid model ` +
+        `directory name`,
+    );
+  }
+  if (!(await exists(path.join(corpusRootOf(vaultRoot), keepModelKey, 'manifest.json')))) {
+    throw new Error(
+      `neuro-vault corpus: not pruning ${vaultRoot}: the ${keepModelKey} corpus has no manifest, ` +
+        `so nothing would be left to serve`,
+    );
+  }
   const entries = await listCorpusRoot(vaultRoot, deps.list ?? defaultList);
   const doomed = entries
     .filter((entry) =>

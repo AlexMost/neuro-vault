@@ -112,9 +112,12 @@ reconcile failed every in-scope note — an offline first run of a new profile
 must never cost the vault the corpora it can still be served from — and SHALL
 then say on stderr that the vault was not pruned and why. It SHALL print one line per pruned vault on stdout naming
 every removed entry in sorted order, or stating that there was nothing to
-remove. A failure to prune SHALL be that vault's fatal error. Without
-`--prune`, the subcommand SHALL delete nothing outside the selected profile's
-directory.
+remove. It SHALL delete nothing when, at prune time, the selected profile's
+directory holds no manifest — a concurrent prune by another profile may have
+removed it — so a vault is never left with no corpus to serve; that vault
+SHALL then fail with an error naming the profile. A failure to prune SHALL be
+that vault's fatal error. Without `--prune`, the subcommand SHALL delete
+nothing outside the selected profile's directory.
 
 #### Scenario: Other models' corpora are removed and reported
 
@@ -150,6 +153,14 @@ directory.
   profile's corpus exists
 - **THEN** that other corpus is not deleted, stderr says the vault was not
   pruned because no note was indexed, and the process exits non-zero
+
+#### Scenario: The kept model's corpus vanished before the prune
+
+- **WHEN** `index --vault <path> --model harrier-270m --prune` reconciles the
+  vault, and before its prune takes the lock a concurrent
+  `index --model granite-97m --prune` deletes `harrier-270m/`
+- **THEN** nothing is removed, so `granite-97m/` is intact; stderr carries an
+  error for that vault naming `harrier-270m`, and the process exits non-zero
 
 #### Scenario: The server rejects the option
 

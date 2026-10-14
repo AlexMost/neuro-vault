@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, readdir, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { listModelCorpora, pruneOtherCorpora } from '../../../../src/lib/obsidian/corpus/prune.js';
 
@@ -39,12 +39,66 @@ describe('pruneOtherCorpora', () => {
   it('removes nothing when only the kept model is present', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-prune-'));
     await mkdir(path.join(root, '.neuro-vault/corpus/harrier-270m'), { recursive: true });
+    await writeFile(path.join(root, '.neuro-vault/corpus/harrier-270m/manifest.json'), '{}');
     expect(await pruneOtherCorpora(root, 'harrier-270m')).toEqual([]);
   });
 
-  it('returns nothing for a vault with no corpus', async () => {
+  it('refuses a vault with no corpus: nothing would be left to serve', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-prune-'));
-    expect(await pruneOtherCorpora(root, 'harrier-270m')).toEqual([]);
+    await expect(pruneOtherCorpora(root, 'harrier-270m')).rejects.toThrow(
+      `neuro-vault corpus: not pruning ${root}: the harrier-270m corpus has no manifest, ` +
+        'so nothing would be left to serve',
+    );
+  });
+
+  it('refuses, removing nothing, when the kept model’s corpus vanished (a concurrent prune)', async () => {
+    const { root, corpus } = await crowdedVault();
+    await rm(path.join(corpus, 'harrier-270m'), { recursive: true });
+    const remove = vi.fn(async () => {});
+    await expect(pruneOtherCorpora(root, 'harrier-270m', { remove })).rejects.toThrow(
+      `neuro-vault corpus: not pruning ${root}: the harrier-270m corpus has no manifest, ` +
+        'so nothing would be left to serve',
+    );
+    expect(remove).not.toHaveBeenCalled();
+    expect((await readdir(corpus)).sort()).toEqual([
+      '.DS_Store',
+      'granite-97m',
+      'manifest.json',
+      'notes',
+      'reconcile.lock',
+    ]);
+  });
+
+  it('refuses, removing nothing, when the kept model’s directory has no manifest', async () => {
+    const { root, corpus } = await crowdedVault();
+    await rm(path.join(corpus, 'harrier-270m/manifest.json'));
+    const remove = vi.fn(async () => {});
+    await expect(pruneOtherCorpora(root, 'harrier-270m', { remove })).rejects.toThrow(
+      'the harrier-270m corpus has no manifest',
+    );
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('asks the injected exists about the kept model’s manifest', async () => {
+    const { root, corpus } = await crowdedVault();
+    const exists = vi.fn(async () => false);
+    const remove = vi.fn(async () => {});
+    await expect(pruneOtherCorpora(root, 'harrier-270m', { exists, remove })).rejects.toThrow(
+      'has no manifest',
+    );
+    expect(exists).toHaveBeenCalledWith(path.join(corpus, 'harrier-270m/manifest.json'));
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it('refuses an invalid model key, removing nothing', async () => {
+    const { root } = await crowdedVault();
+    const remove = vi.fn(async () => {});
+    for (const key of ['notes', '../escape', '']) {
+      await expect(pruneOtherCorpora(root, key, { remove })).rejects.toThrow(
+        `neuro-vault corpus: not pruning ${root}: "${key}" is not a valid model directory name`,
+      );
+    }
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it('never follows or removes a symlink to a directory elsewhere', async () => {
