@@ -12,6 +12,7 @@ import type { DaemonInfo } from './info.js';
 import { defaultLockFs, parseHolder, type LockFs } from './lock.js';
 import { probeSocket, type SocketConnect, type Timers } from './probe.js';
 import type { DaemonInfoResult } from './protocol.js';
+import type { SocketDirFs } from './socket-dir.js';
 
 /** How long `status` / `stop` wait for one JSON-RPC answer. */
 export const CALL_TIMEOUT_MS = 2_000;
@@ -23,11 +24,10 @@ export interface OutStream {
   write(chunk: string): boolean;
 }
 
-export interface DaemonFs extends LockFs {
+export interface DaemonFs extends LockFs, SocketDirFs {
   /** Entry names in `dir`; empty when it does not exist. */
   readdir(dir: string): string[];
   rmrf(dir: string): void;
-  chmod(p: string, mode: number): void;
   exists(p: string): boolean;
 }
 
@@ -44,6 +44,7 @@ export function defaultDaemonFs(): DaemonFs {
     rmrf: (dir) => fs.rmSync(dir, { recursive: true, force: true }),
     chmod: (p, mode) => fs.chmodSync(p, mode),
     exists: (p) => fs.existsSync(p),
+    lstat: (p) => fs.lstatSync(p),
   };
 }
 
@@ -147,6 +148,19 @@ async function isListening(d: AdminDeps, socketPath: string): Promise<boolean> {
   return (await probeSocket(socketPath, { connect: d.connect, timers: d.timers })) === 'listening';
 }
 
+/**
+ * The pid of another live process holding this entry's lock, if any. A daemon
+ * that died without cleaning up leaves its daemon.json behind; a new daemon for
+ * the same key takes the lock and replaces the socket before it writes its own
+ * info. Until then the old entry looks stale, but it is the new daemon's.
+ */
+function newerHolder(d: AdminDeps, dir: string, info: DaemonInfo): number | undefined {
+  const raw = d.fs.read(path.join(dir, 'daemon.lock'));
+  const holder = raw === undefined ? undefined : parseHolder(raw);
+  if (holder === undefined || holder === info.pid || !d.isAlive(holder)) return undefined;
+  return holder;
+}
+
 export async function runStatus(d: AdminDeps): Promise<number> {
   let printed = 0;
   const print = (line: string): void => {
@@ -165,6 +179,11 @@ export async function runStatus(d: AdminDeps): Promise<number> {
     }
     const { info, dir } = entry;
     if (!(await isListening(d, info.socket))) {
+      const holder = newerHolder(d, dir, info);
+      if (holder !== undefined) {
+        print(`${info.version}  pid ${holder}  starting`);
+        continue;
+      }
       print(`${info.version}  pid ${info.pid}  stale  (swept)`);
       d.fs.rmrf(dir);
       continue;
@@ -201,6 +220,11 @@ export async function runStop(d: AdminDeps): Promise<number> {
   for (const { dir, info } of valid) {
     const label = `${info.version} (pid ${info.pid})`;
     if (!(await isListening(d, info.socket))) {
+      const holder = newerHolder(d, dir, info);
+      if (holder !== undefined) {
+        d.stdout.write(`${info.version}  pid ${holder}  starting\n`);
+        continue;
+      }
       d.stdout.write(`${info.version}  pid ${info.pid}  not running\n`);
       continue;
     }

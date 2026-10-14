@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { Duplex, PassThrough } from 'node:stream';
 
 import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
@@ -113,6 +114,10 @@ function harness(overrides: Partial<DaemonCommandDeps> = {}) {
       },
       chmod,
       exists: (p) => files.has(p) || dirs.has(p),
+      lstat: (p) => {
+        if (!dirs.has(p)) throw errno('ENOENT');
+        return { isDirectory: () => true, isSymbolicLink: () => false, uid: 501 };
+      },
     },
     isAlive: () => false,
     connect: () => Promise.reject(errno('ENOENT')),
@@ -224,6 +229,8 @@ describe('runDaemonCommand (run)', () => {
     h.files.set(stateFile(h, 'daemon.lock'), '7');
     await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(1);
     expect(h.err.join('')).toMatch(/already running \(pid 7\)/);
+    expect(h.err.join('')).toContain(stateFile(h, 'daemon.lock'));
+    expect(h.err.join('')).toContain('run `neuro-vault-mcp daemon status` to check');
     expect(h.startServer).not.toHaveBeenCalled();
     expect(h.files.get(stateFile(h, 'daemon.lock'))).toBe('7');
   });
@@ -243,6 +250,84 @@ describe('runDaemonCommand (run)', () => {
     expect(h.err.join('')).toContain(socketOf(h));
     expect(h.files.has(stateFile(h, 'daemon.lock'))).toBe(false);
     expect(h.unlink).not.toHaveBeenCalledWith(socketOf(h));
+  });
+
+  it.each([
+    ['a symlink', { isDirectory: () => false, isSymbolicLink: () => true, uid: 501 }, 'a symlink'],
+    [
+      'owned by another uid',
+      { isDirectory: () => true, isSymbolicLink: () => false, uid: 0 },
+      'uid 0',
+    ],
+    [
+      'not a directory',
+      { isDirectory: () => false, isSymbolicLink: () => false, uid: 501 },
+      'not a directory',
+    ],
+  ])(
+    'refuses a socket directory that is %s: releases the lock, one stderr line, exit 1',
+    async (_, found, why) => {
+      const h = harness();
+      h.deps.fs = { ...h.deps.fs!, lstat: () => found };
+      await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(1);
+      expect(h.startServer).not.toHaveBeenCalled();
+      expect(h.files.has(stateFile(h, 'daemon.lock'))).toBe(false);
+      expect(h.err).toHaveLength(1);
+      expect(h.err[0]).toContain('/tmp/neuro-vault-501');
+      expect(h.err[0]).toContain(why);
+      expect(h.unlink).not.toHaveBeenCalledWith(socketOf(h));
+    },
+  );
+
+  it('exits 1 through the failure path when the socket directory cannot be chmodded', async () => {
+    const h = harness();
+    h.chmod.mockImplementation(() => {
+      throw errno('EPERM');
+    });
+    await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(1);
+    expect(h.startServer).not.toHaveBeenCalled();
+    expect(h.files.has(stateFile(h, 'daemon.lock'))).toBe(false);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toMatch(/failed to start: .*\/tmp\/neuro-vault-501.*EPERM/);
+  });
+
+  it('does not check the socket directory on Windows', async () => {
+    const h = harness({ platform: 'win32' });
+    const lstat = vi.fn(() => {
+      throw new Error('lstat called');
+    });
+    h.deps.fs = { ...h.deps.fs!, lstat };
+    await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(0);
+    expect(lstat).not.toHaveBeenCalled();
+  });
+
+  it('resolves the uid without os.userInfo (no passwd entry in a container)', async () => {
+    const userInfo = vi.spyOn(os, 'userInfo').mockImplementation(() => {
+      throw new Error('ENOENT: no such file or directory, uv_os_get_passwd');
+    });
+    try {
+      const h = harness({ uid: undefined });
+      await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+      const run = harness({ uid: undefined });
+      run.deps.fs = {
+        ...run.deps.fs!,
+        lstat: () => ({
+          isDirectory: () => true,
+          isSymbolicLink: () => false,
+          uid: process.getuid?.() ?? -1,
+        }),
+      };
+      await expect(runDaemonCommand(RUN, run.deps)).resolves.toBe(0);
+      const expectedUid = process.getuid?.() ?? -1;
+      expect(run.startServer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          socketPath: expect.stringContaining(`/neuro-vault-${expectedUid}/`),
+        }),
+      );
+      expect(userInfo).not.toHaveBeenCalled();
+    } finally {
+      userInfo.mockRestore();
+    }
   });
 
   it('releases the lock and exits 1 when listening fails', async () => {
@@ -431,6 +516,46 @@ describe('runDaemonCommand (status / stop)', () => {
     expect(h.out.join('')).not.toContain('aaaaaaaaaaaa');
     expect(h.out.join('')).toMatch(/no daemon known/);
     expect(h.files.has(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe(true);
+  });
+
+  it('status keeps a stale-looking entry whose lock names another live pid as starting', async () => {
+    const h = harness({ isAlive: (pid) => pid === 77 });
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 1 }));
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '77');
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toBe('18.0.0  pid 77  starting\n');
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
+    expect(h.files.has(`${BASE}/aaaaaaaaaaaa/daemon.json`)).toBe(true);
+    expect(h.files.get(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe('77');
+  });
+
+  it('status sweeps a stale entry whose lock names its own pid, even if that pid is alive', async () => {
+    const h = harness({ isAlive: () => true });
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 1 }));
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '1');
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('')).toMatch(/18\.0\.0 {2}pid 1 {2}stale {2}\(swept\)/);
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(false);
+  });
+
+  it('status sweeps a stale entry whose lock names another dead pid', async () => {
+    const h = harness({ isAlive: (pid) => pid === 1 });
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 1 }));
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '77');
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('')).toMatch(/pid 1 {2}stale {2}\(swept\)/);
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(false);
+  });
+
+  it('stop skips a stale-looking entry whose lock names another live pid', async () => {
+    const h = harness({ isAlive: (pid) => pid === 77 });
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 1 }));
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '77');
+    h.deps.connect = () => Promise.reject(errno('ECONNREFUSED'));
+    await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.deps.kill).not.toHaveBeenCalled();
+    expect(h.out.join('')).toBe('18.0.0  pid 77  starting\n');
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
   });
 
   it('status with nothing known says so and exits 0', async () => {

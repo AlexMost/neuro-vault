@@ -22,6 +22,7 @@ import {
 import { ServiceRegistry } from './daemon/protocol.js';
 import { createDaemonService } from './daemon/services/daemon.js';
 import { createEmbedService } from './daemon/services/embed.js';
+import { ensurePrivateSocketDir } from './daemon/socket-dir.js';
 import { startDaemonServer, type DaemonServerHandle } from './daemon/socket-server.js';
 import { neuroVaultCacheBase } from './lib/cache-dir.js';
 import type { ModelProfile } from './modules/semantic/model-profiles.js';
@@ -67,7 +68,8 @@ function resolveDeps(deps: DaemonCommandDeps) {
   const home = deps.home ?? os.homedir();
   return {
     platform: deps.platform ?? process.platform,
-    uid: deps.uid ?? os.userInfo().uid,
+    // Not os.userInfo(): it throws when the uid has no passwd entry (docker --user, k8s runAsUser).
+    uid: deps.uid ?? process.getuid?.() ?? -1,
     version: deps.version ?? packageMeta.version,
     cacheBase: neuroVaultCacheBase(env, home),
     pid: deps.pid ?? process.pid,
@@ -140,7 +142,10 @@ async function runDaemon(options: DaemonCliOptions, r: Resolved): Promise<number
 
   const lock = acquireLock(paths.lockFile, { pid: r.pid, isAlive: r.isAlive, fs: r.fs });
   if (lock.kind === 'held') {
-    r.stderr.write(`${name} daemon is already running (pid ${lock.pid})\n`);
+    r.stderr.write(
+      `${name} daemon is already running (pid ${lock.pid}); lock ${paths.lockFile} — ` +
+        `run \`${name} daemon status\` to check\n`,
+    );
     return 1;
   }
   if (lock.kind === 'contended') {
@@ -173,15 +178,13 @@ async function runDaemon(options: DaemonCliOptions, r: Resolved): Promise<number
 }
 
 /**
- * POSIX: create the socket directory 0700 (and tighten a looser one left by an
- * older run), then unlink a socket file nobody answers on. True when something
- * already listens there.
+ * POSIX: make sure the socket directory is a real 0700 directory of ours (it
+ * sits in shared `/tmp`), then unlink a socket file nobody answers on. True
+ * when something already listens there.
  */
 async function prepareSocket(paths: DaemonPaths, r: Resolved): Promise<boolean> {
   if (r.platform !== 'win32') {
-    const dir = path.posix.dirname(paths.socketPath);
-    r.fs.mkdirp(dir);
-    r.fs.chmod(dir, 0o700);
+    ensurePrivateSocketDir(path.posix.dirname(paths.socketPath), { fs: r.fs, uid: r.uid });
   }
   const cleaned = await cleanStaleSocket(paths.socketPath, {
     connect: r.connect,

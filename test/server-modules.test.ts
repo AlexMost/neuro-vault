@@ -629,6 +629,7 @@ describe('informational flags', () => {
             linkExclusive: nothing,
             rmrf: nothing,
             chmod: nothing,
+            lstat: nothing,
           },
           readInfo: () => undefined,
           stdout: { write: (s: string) => (out.push(s), true) },
