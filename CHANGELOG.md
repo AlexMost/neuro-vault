@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [17.0.0](https://github.com/AlexMost/neuro-vault/compare/v16.0.0...v17.0.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* the default embedding model is now harrier-oss-v1-270m
+(int8, ~344 MB, ~2 GB peak RSS) and bge-micro-v2 is no longer a profile.
+Every vault's corpus is discarded and rebuilt once on upgrade (manifest v2).
+
+### Features
+
+* embedding model profiles — eval model axis, thresholds as profile data (3/4) ([#141](https://github.com/AlexMost/neuro-vault/issues/141)) ([2ffd2ee](https://github.com/AlexMost/neuro-vault/commit/2ffd2ee79f83f2bb1585a5c7f69b4c8bf7d373b0))
+* embedding model profiles — harrier-270m default, calibrated thresholds (4/4) ([#143](https://github.com/AlexMost/neuro-vault/issues/143)) ([44e0003](https://github.com/AlexMost/neuro-vault/commit/44e0003b2826ef2e36e6b70b65909240bcc2f2aa)), closes [#98](https://github.com/AlexMost/neuro-vault/issues/98)
+* embedding model profiles — template-aware tokenisation, batching, harrier (2/4) ([#140](https://github.com/AlexMost/neuro-vault/issues/140)) ([ce6b57b](https://github.com/AlexMost/neuro-vault/commit/ce6b57bdc50397f45ce42df8c99bfe36f786da0c)), closes [#98](https://github.com/AlexMost/neuro-vault/issues/98) [#98](https://github.com/AlexMost/neuro-vault/issues/98) [#98](https://github.com/AlexMost/neuro-vault/issues/98) [#98](https://github.com/AlexMost/neuro-vault/issues/98) [#98](https://github.com/AlexMost/neuro-vault/issues/98)
+* embedding model profiles — transformers.js 4, registry, --model (1/4) ([#135](https://github.com/AlexMost/neuro-vault/issues/135)) ([a049634](https://github.com/AlexMost/neuro-vault/commit/a04963448bd63cf318bee9ad62b9bdcc6a01874b)), closes [#98](https://github.com/AlexMost/neuro-vault/issues/98) [#98](https://github.com/AlexMost/neuro-vault/issues/98) [#98](https://github.com/AlexMost/neuro-vault/issues/98) [#98](https://github.com/AlexMost/neuro-vault/issues/98) [#98](https://github.com/AlexMost/neuro-vault/issues/98)
+
+
+### Bug Fixes
+
+* **operations:** map edit_note write failures to WRITE_FAILED ([#116](https://github.com/AlexMost/neuro-vault/issues/116)) ([57e1ede](https://github.com/AlexMost/neuro-vault/commit/57e1eded7b8c9aa1d8d6d068f37baf07fba99e83)), closes [#113](https://github.com/AlexMost/neuro-vault/issues/113)
+* **tools:** keep field descriptions through input coercion ([#142](https://github.com/AlexMost/neuro-vault/issues/142)) ([0a451fd](https://github.com/AlexMost/neuro-vault/commit/0a451fda42e1ae4bc9bc2c82e09012a082d00daa))
+
 ## [16.0.0](https://github.com/AlexMost/neuro-vault/compare/v15.5.0...v16.0.0) (2026-08-25)
 
 
