@@ -38,21 +38,42 @@ export interface IndexCommandDeps {
   createEmbedder?: (profile: ModelProfile) => IndexEmbedder;
   /**
    * Deletes every other model's corpus under the vault while holding its lock,
-   * returning what it removed (design D8). Defaults to {@link defaultPrune}.
+   * returning what it removed (design D8); calls `onLockWait` once if it has
+   * to wait for that lock. Defaults to {@link defaultPrune}.
    */
-  prune?: (vaultRoot: string, keepModelKey: string) => Promise<string[]>;
+  prune?: (
+    vaultRoot: string,
+    keepModelKey: string,
+    opts?: { onLockWait?: LockWaitFn },
+  ) => Promise<string[]>;
   stdout?: OutStream;
   stderr?: OutStream;
 }
 
-async function defaultPrune(vaultRoot: string, keepModelKey: string): Promise<string[]> {
+type LockWaitFn = NonNullable<ReconcileOptions['onLockWait']>;
+
+async function defaultPrune(
+  vaultRoot: string,
+  keepModelKey: string,
+  opts: { onLockWait?: LockWaitFn } = {},
+): Promise<string[]> {
   // Under the lock, so no other process is mid-pass in a directory that goes.
-  const lock = await acquireCorpusLock(corpusRootOf(vaultRoot));
+  const lock = await acquireCorpusLock(corpusRootOf(vaultRoot), {}, { onWait: opts.onLockWait });
   try {
     return await pruneOtherCorpora(vaultRoot, keepModelKey);
   } finally {
     await lock.release();
   }
+}
+
+/** The stderr line `index` writes when a vault's lock is held by another process (design D9). */
+function lockWaitLine(stderr: OutStream, vaultName: string): LockWaitFn {
+  return ({ holderPid, holderHost }) => {
+    // The host only when it is not this one; no holder at all while its pid is unknown.
+    const host = holderHost === hostname() ? null : holderHost;
+    const holder = holderPid === null ? '' : ` (${describeHolder(holderPid, host)})`;
+    stderr.write(`waiting for another neuro-vault process${holder} to finish with ${vaultName}…\n`);
+  };
 }
 
 function writePruned(stdout: OutStream, vaultName: string, removed: string[]): void {
@@ -115,15 +136,8 @@ async function reconcileOne(
     },
     {
       onProgress: createProgressRenderer(stdout, vault.name),
-      onLockWait: ({ holderPid, holderHost }) => {
-        // Before any progress output, so it never splits a TTY progress line.
-        // The host only when it is not this one.
-        const host = holderHost === hostname() ? null : holderHost;
-        stderr.write(
-          `waiting for another neuro-vault process (${describeHolder(holderPid, host)}) ` +
-            `to finish with ${vault.name}…\n`,
-        );
-      },
+      // Before any progress output, so it never splits a TTY progress line.
+      onLockWait: lockWaitLine(stderr, vault.name),
       onRebuild: ({ stored, active }) => {
         const named = formatRebuild(stored, active);
         stdout.write(
@@ -162,7 +176,10 @@ export async function runIndexCommand(
               `so the other models' corpora are kept\n`,
           );
         } else {
-          writePruned(stdout, vault.name, await prune(vault.path, embedder.identity.model_key));
+          const removed = await prune(vault.path, embedder.identity.model_key, {
+            onLockWait: lockWaitLine(stderr, vault.name),
+          });
+          writePruned(stdout, vault.name, removed);
         }
       }
     } catch (error) {

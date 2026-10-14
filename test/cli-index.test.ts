@@ -1,4 +1,6 @@
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { hostname, tmpdir } from 'node:os';
+import path from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -198,7 +200,9 @@ describe('runIndexCommand', () => {
     const code = await runIndexCommand({ vaults: [vaultA], model: profile, prune: true }, deps);
     expect(code).toBe(0);
     expect(order).toEqual(['reconcile', 'prune']);
-    expect(prune).toHaveBeenCalledWith('/abs/VaultA', TEST_EMBEDDING_IDENTITY.model_key);
+    expect(prune).toHaveBeenCalledWith('/abs/VaultA', TEST_EMBEDDING_IDENTITY.model_key, {
+      onLockWait: expect.any(Function),
+    });
     expect(deps.stdout.chunks.at(-1)).toBe('pruned VaultA: removed granite-97m, notes\n');
   });
 
@@ -248,7 +252,9 @@ describe('runIndexCommand', () => {
     );
     expect(code).toBe(1);
     expect(prune).toHaveBeenCalledTimes(1);
-    expect(prune).toHaveBeenCalledWith('/abs/VaultB', TEST_EMBEDDING_IDENTITY.model_key);
+    expect(prune).toHaveBeenCalledWith('/abs/VaultB', TEST_EMBEDDING_IDENTITY.model_key, {
+      onLockWait: expect.any(Function),
+    });
   });
 
   it('a prune failure is fatal for that vault only', async () => {
@@ -301,6 +307,88 @@ describe('runIndexCommand', () => {
       'waiting for another neuro-vault process (pid 4242) to finish with VaultA…\n',
     ]);
     expect(deps.stdout.chunks.join('')).not.toContain('waiting');
+  });
+
+  it('names the holder’s host when it is not this one', async () => {
+    const reconcile = vi.fn(async (_d: ReconcileDeps, opts?: ReconcileOptions) => {
+      opts?.onLockWait?.({ holderPid: 4242, holderHost: 'other-host' });
+      return okSummary();
+    });
+    const deps = makeDeps(reconcile);
+    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    expect(deps.stderr.chunks).toEqual([
+      'waiting for another neuro-vault process (pid 4242 on other-host) to finish with VaultA…\n',
+    ]);
+  });
+
+  it('omits the host when the holder is on this one', async () => {
+    const reconcile = vi.fn(async (_d: ReconcileDeps, opts?: ReconcileOptions) => {
+      opts?.onLockWait?.({ holderPid: 4242, holderHost: hostname() });
+      return okSummary();
+    });
+    const deps = makeDeps(reconcile);
+    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    expect(deps.stderr.chunks).toEqual([
+      'waiting for another neuro-vault process (pid 4242) to finish with VaultA…\n',
+    ]);
+  });
+
+  it('names no holder when its pid is unknown', async () => {
+    const reconcile = vi.fn(async (_d: ReconcileDeps, opts?: ReconcileOptions) => {
+      opts?.onLockWait?.({ holderPid: null, holderHost: null });
+      return okSummary();
+    });
+    const deps = makeDeps(reconcile);
+    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    expect(deps.stderr.chunks).toEqual([
+      'waiting for another neuro-vault process to finish with VaultA…\n',
+    ]);
+  });
+
+  it('hands the prune the same wait line', async () => {
+    const prune = vi.fn(
+      async (
+        _root: string,
+        _keep: string,
+        opts?: Parameters<NonNullable<IndexCommandDeps['prune']>>[2],
+      ) => {
+        opts?.onLockWait?.({ holderPid: 4242, holderHost: null });
+        return [];
+      },
+    );
+    const deps = { ...makeDeps(vi.fn(async () => okSummary())), prune };
+    await runIndexCommand({ vaults: [vaultA], model: profile, prune: true }, deps);
+    expect(deps.stderr.chunks).toEqual([
+      'waiting for another neuro-vault process (pid 4242) to finish with VaultA…\n',
+    ]);
+  });
+
+  it('announces a prune that waits for the lock, then prunes once it is free', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'nv-index-prune-'));
+    const corpus = path.join(root, '.neuro-vault/corpus');
+    const keep = TEST_EMBEDDING_IDENTITY.model_key;
+    for (const dir of [keep, 'granite-97m']) {
+      await mkdir(path.join(corpus, dir), { recursive: true });
+      await writeFile(path.join(corpus, dir, 'manifest.json'), '{}');
+    }
+    // A holder on another host is always live; it releases shortly.
+    const lockFile = path.join(corpus, 'reconcile.lock');
+    await writeFile(lockFile, JSON.stringify({ host: 'other-host', pid: 4242, token: 't' }));
+    const released = new Promise<void>((resolve) =>
+      setTimeout(() => void rm(lockFile).then(resolve), 120),
+    );
+    const deps = makeDeps(vi.fn(async () => okSummary()));
+    const code = await runIndexCommand(
+      { vaults: [{ name: 'VaultA', path: root }], model: profile, prune: true },
+      deps,
+    );
+    await released;
+    expect(code).toBe(0);
+    expect(deps.stderr.chunks).toEqual([
+      'waiting for another neuro-vault process (pid 4242 on other-host) to finish with VaultA…\n',
+    ]);
+    expect(deps.stdout.chunks.at(-1)).toBe('pruned VaultA: removed granite-97m\n');
+    expect((await readdir(corpus)).sort()).toEqual([keep]);
   });
 
   it('the index module never imports the server module', async () => {
