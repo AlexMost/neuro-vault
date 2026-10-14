@@ -47,6 +47,32 @@ function fakeClock(onSleep: (count: number) => Promise<void> | void = () => {}) 
   };
 }
 
+const errno = (code: string) => Object.assign(new Error(code), { code });
+
+/**
+ * An in-memory lock file: `content` null means absent. `createExclusive`
+ * rejects with EEXIST while it exists; `unlinked` records what each unlink removed.
+ */
+function fakeLockFile(initial: string | null) {
+  const state = { content: initial, unlinked: [] as string[] };
+  return {
+    state,
+    createExclusive: async (_p: string, data: string) => {
+      if (state.content !== null) throw errno('EEXIST');
+      state.content = data;
+    },
+    readFile: async () => {
+      if (state.content === null) throw errno('ENOENT');
+      return state.content;
+    },
+    unlink: async () => {
+      if (state.content === null) throw errno('ENOENT');
+      state.unlinked.push(state.content);
+      state.content = null;
+    },
+  };
+}
+
 const gone = async (p: string) =>
   stat(p).then(
     () => false,
@@ -169,7 +195,11 @@ describe('acquireCorpusLock', () => {
     expect(err).toBeInstanceOf(CorpusLockTimeoutError);
     expect(err).toMatchObject({ lockFile: file, holderPid: HOLDER, holderHost: HERE });
     expect((err as Error).message).toContain(LOCK_FILE);
-    expect((err as Error).message).toContain(`pid ${HOLDER} on ${HERE}`);
+    expect((err as Error).message).toBe(
+      `neuro-vault corpus: waited 2 s for ${file} (last held by pid ${HOLDER} on ${HERE}) — ` +
+        'giving up this pass (delete the file if that process is not a neuro-vault server ' +
+        'or index run)',
+    );
     expect(clock.sleeps).toEqual([50, 100, 200, 400, 800]);
     expect(await readFile(file, 'utf8')).toBe(holderContent(HOLDER));
   });
@@ -202,6 +232,130 @@ describe('acquireCorpusLock', () => {
     await lock.release();
   });
 
+  it('times the grace afresh for a new unparseable lock caught after a stale removal', async () => {
+    const lockFile = fakeLockFile('garbage');
+    let replacedAt = -1;
+    const unlink = async () => {
+      await lockFile.unlink();
+      if (replacedAt < 0) {
+        // Another process creates the lock right after the removal, not yet written.
+        lockFile.state.content = '';
+        replacedAt = clock.sleeps.length;
+      }
+    };
+    const clock = fakeClock((count) => {
+      if (replacedAt < 0) return;
+      if (count === replacedAt + 1) lockFile.state.content = holderContent(HOLDER);
+      if (count === replacedAt + 2) lockFile.state.content = null;
+    });
+    const lock = await acquireCorpusLock('/vault/.neuro-vault/corpus', {
+      ...SELF,
+      isAlive: () => true,
+      mkdir: async () => {},
+      ...lockFile,
+      unlink,
+      ...clock,
+    });
+    expect(lockFile.state.unlinked).toEqual(['garbage']);
+    expect(clock.sleeps).toEqual([50, 100, 200, 400, 800, 1600, 2000]);
+    await lock.release();
+  });
+
+  it('times the grace afresh for an unparseable lock seen after the file vanished', async () => {
+    const lockFile = fakeLockFile('garbage');
+    let vanishing = false;
+    let vanishedAt = -1;
+    const createExclusive = async (p: string, data: string) => {
+      // The old file is gone and a racing create wins: our create fails, our read misses.
+      if (vanishing) throw errno('EEXIST');
+      await lockFile.createExclusive(p, data);
+    };
+    const readFile = async () => {
+      if (vanishing) {
+        vanishing = false;
+        lockFile.state.content = ''; // the racer's file, not yet written
+        throw errno('ENOENT');
+      }
+      return lockFile.readFile();
+    };
+    const clock = fakeClock((count) => {
+      if (count === 4) {
+        lockFile.state.content = null;
+        vanishing = true;
+        vanishedAt = count;
+      }
+      if (vanishedAt < 0) return;
+      if (count === vanishedAt + 2) lockFile.state.content = holderContent(HOLDER);
+      if (count === vanishedAt + 3) lockFile.state.content = null;
+    });
+    const lock = await acquireCorpusLock('/vault/.neuro-vault/corpus', {
+      ...SELF,
+      isAlive: () => true,
+      mkdir: async () => {},
+      ...lockFile,
+      createExclusive,
+      readFile,
+      ...clock,
+    });
+    expect(lockFile.state.unlinked).toEqual([]);
+    await lock.release();
+  });
+
+  it('leaves a stale-judged lock alone when it changed before the unlink, and waits on the new holder', async () => {
+    const LIVE = 777;
+    const lockFile = fakeLockFile(holderContent(HOLDER, HERE, 'dead'));
+    let reads = 0;
+    const readFile = async () => {
+      const content = await lockFile.readFile();
+      // Between the judging read and the re-read, the dead holder's lock is
+      // replaced by a live process's.
+      if (++reads === 1) lockFile.state.content = holderContent(LIVE, HERE, 'live');
+      return content;
+    };
+    const clock = fakeClock((count) => {
+      if (count === 1) lockFile.state.content = null; // the live holder releases
+    });
+    const onWait = vi.fn();
+    const lock = await acquireCorpusLock(
+      '/vault/.neuro-vault/corpus',
+      {
+        ...SELF,
+        isAlive: (p) => p === LIVE,
+        mkdir: async () => {},
+        ...lockFile,
+        readFile,
+        ...clock,
+      },
+      { onWait },
+    );
+    expect(lockFile.state.unlinked).toEqual([]);
+    expect(onWait).toHaveBeenCalledWith({ holderPid: LIVE, holderHost: HERE });
+    expect(clock.sleeps).toEqual([50]);
+    await lock.release();
+  });
+
+  it('bounds and backs off a lock path that exists but cannot be read (a dangling symlink)', async () => {
+    let reads = 0;
+    const clock = fakeClock();
+    const err = await acquireCorpusLock('/vault/.neuro-vault/corpus', {
+      ...SELF,
+      mkdir: async () => {},
+      createExclusive: async () => {
+        throw errno('EEXIST');
+      },
+      readFile: async () => {
+        // A spinning loop never yields to timers; fail loudly instead of hanging.
+        if (++reads > 1_000) throw new Error('spinning without sleeping');
+        throw errno('ENOENT');
+      },
+      maxWaitMs: 1_000,
+      ...clock,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CorpusLockTimeoutError);
+    expect(err).toMatchObject({ holderPid: null, holderHost: null });
+    expect(clock.sleeps).toEqual([50, 100, 200, 400, 800]);
+  });
+
   it('stops waiting when aborted, leaving the holder’s lock', async () => {
     const dir = await corpusDir();
     const file = await writeLock(dir, holderContent(HOLDER));
@@ -225,6 +379,46 @@ describe('acquireCorpusLock', () => {
         },
       }),
     ).rejects.toBe(denied);
+  });
+});
+
+describe('CorpusLock.release', () => {
+  async function acquired(overrides: {
+    readFile?: () => Promise<string>;
+    unlink?: () => Promise<void>;
+  }) {
+    const lockFile = fakeLockFile(null);
+    const warn = vi.fn();
+    const lock = await acquireCorpusLock('/vault/.neuro-vault/corpus', {
+      ...SELF,
+      mkdir: async () => {},
+      ...lockFile,
+      ...overrides,
+      warn,
+    });
+    return { lock, warn };
+  }
+
+  it('warns once, naming the lock file, and resolves when the unlink fails', async () => {
+    const { lock, warn } = await acquired({
+      unlink: async () => {
+        throw errno('EACCES');
+      },
+    });
+    await expect(lock.release()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain(path.join('/vault/.neuro-vault/corpus', LOCK_FILE));
+  });
+
+  it('warns once, naming the lock file, and resolves when the read fails', async () => {
+    const { lock, warn } = await acquired({
+      readFile: async () => {
+        throw errno('EIO');
+      },
+    });
+    await expect(lock.release()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toContain(path.join('/vault/.neuro-vault/corpus', LOCK_FILE));
   });
 });
 

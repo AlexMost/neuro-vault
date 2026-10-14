@@ -63,7 +63,10 @@ export interface AcquireOptions {
   onWait?: (wait: { holderPid: number | null; holderHost: string | null }) => void;
 }
 
-/** The lock stayed held for the whole bound. */
+/**
+ * The lock stayed held for the whole bound. `holderPid`/`holderHost` name the
+ * last holder seen; several may have taken turns during `waitedMs`.
+ */
 export class CorpusLockTimeoutError extends Error {
   constructor(
     readonly lockFile: string,
@@ -72,9 +75,9 @@ export class CorpusLockTimeoutError extends Error {
     readonly holderHost: string | null = null,
   ) {
     super(
-      `neuro-vault corpus: ${lockFile} has been held by ${describeHolder(holderPid, holderHost)} ` +
-        `for ${Math.round(waitedMs / 1000)} s — giving up this pass (delete the file if that ` +
-        `process is not a neuro-vault server or index run)`,
+      `neuro-vault corpus: waited ${Math.round(waitedMs / 1000)} s for ${lockFile} ` +
+        `(last held by ${describeHolder(holderPid, holderHost)}) — giving up this pass ` +
+        `(delete the file if that process is not a neuro-vault server or index run)`,
     );
     this.name = 'CorpusLockTimeoutError';
   }
@@ -114,8 +117,9 @@ export function isProcessAlive(
  * is treated as being written for {@link LOCK_UNREADABLE_GRACE_MS}, then as
  * stale. A live holder is polled with a doubling backoff
  * ({@link LOCK_POLL_MIN_MS}..{@link LOCK_POLL_MAX_MS}) for at most `maxWaitMs`,
- * then {@link CorpusLockTimeoutError}. An abort rejects the wait and leaves the
- * holder's lock alone.
+ * then {@link CorpusLockTimeoutError}. A path that exists but keeps reading as
+ * absent (a dangling symlink) is retried once at once, then waited on the same
+ * way. An abort rejects the wait and leaves the holder's lock alone.
  */
 export async function acquireCorpusLock(
   corpusRoot: string,
@@ -145,6 +149,17 @@ export async function acquireCorpusLock(
   let pause = LOCK_POLL_MIN_MS;
   let announced = false;
   let unreadableSince: number | null = null;
+  // An existing path that reads as absent (a dangling symlink) would otherwise spin.
+  let vanishedInARow = 0;
+
+  const waitOrGiveUp = async (holderPid: number | null, holderHost: string | null) => {
+    const waited = now() - started;
+    if (waited >= maxWaitMs) {
+      throw new CorpusLockTimeoutError(lockFile, holderPid, waited, holderHost);
+    }
+    await sleep(pause, opts.signal);
+    pause = Math.min(pause * 2, LOCK_POLL_MAX_MS);
+  };
 
   for (;;) {
     opts.signal?.throwIfAborted();
@@ -156,8 +171,15 @@ export async function acquireCorpusLock(
     }
 
     const raw = await readOrNull(readFile, lockFile);
-    // Released between our create and our read: try again at once.
-    if (raw === null) continue;
+    if (raw === null) {
+      // Whatever is created next is a new file: its grace starts when we see it.
+      unreadableSince = null;
+      // Released between our create and our read: try again at once — but a
+      // path that keeps reading as absent is waited on like a live holder.
+      if (++vanishedInARow > 1) await waitOrGiveUp(null, null);
+      continue;
+    }
+    vanishedInARow = 0;
 
     const holder = parseHolder(raw);
     let stale: boolean;
@@ -171,6 +193,7 @@ export async function acquireCorpusLock(
     }
     if (stale) {
       await removeIfUnchanged(readFile, unlink, lockFile, raw);
+      unreadableSince = null;
       continue;
     }
 
@@ -180,12 +203,7 @@ export async function acquireCorpusLock(
       announced = true;
       opts.onWait?.({ holderPid, holderHost });
     }
-    const waited = now() - started;
-    if (waited >= maxWaitMs) {
-      throw new CorpusLockTimeoutError(lockFile, holderPid, waited, holderHost);
-    }
-    await sleep(pause, opts.signal);
-    pause = Math.min(pause * 2, LOCK_POLL_MAX_MS);
+    await waitOrGiveUp(holderPid, holderHost);
   }
 }
 
