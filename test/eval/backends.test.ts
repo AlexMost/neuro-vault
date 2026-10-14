@@ -19,7 +19,10 @@ describe('own backend snapshot', () => {
 
   it('decodes shards into SmartSource entries and skips vectorless notes', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-own-'));
-    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
+    const store = new CorpusStore(vaultRoot, {
+      modelKey: TEST_IDENTITY.model_key,
+      dims: TEST_DIMS,
+    });
     await store.ensureManifest(TEST_IDENTITY);
     await store.writeShard({
       path: 'Notes/a.md',
@@ -55,14 +58,15 @@ describe('own backend snapshot', () => {
     expect((err as Error).message).toContain('--model bge-micro-v2');
   });
 
-  it('refuses a corpus built by another profile before listing shards, naming the index command', async () => {
+  it('refuses a model corpus built with another identity before listing shards, naming the index command', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
-    // A 640-wide shard under a granite manifest: the manifest must be what refuses it.
-    const wide = new CorpusStore(vaultRoot, { dims: 640 });
+    // A 640-wide shard under a manifest of another embed_version: the manifest must refuse it.
+    const wide = new CorpusStore(vaultRoot, { modelKey: 'harrier-270m', dims: 640 });
     await wide.writeManifest({
       ...TEST_IDENTITY,
-      model_key: 'granite-97m',
+      model_key: 'harrier-270m',
       dims: 640,
+      embed_version: TEST_IDENTITY.embed_version + 1,
       created: 'x',
     });
     await wide.writeShard({
@@ -76,7 +80,7 @@ describe('own backend snapshot', () => {
     await expect(
       loadSnapshot(vaultRoot, { ...TEST_IDENTITY, model_key: 'harrier-270m' }),
     ).rejects.toThrow(
-      `was indexed with granite-97m (embed_version 2), not harrier-270m (embed_version 2) — rebuild it for this model with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
+      `was indexed with harrier-270m (embed_version ${TEST_IDENTITY.embed_version + 1}), not harrier-270m (embed_version ${TEST_IDENTITY.embed_version}) — rebuild it for this model with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
     );
   });
 
@@ -94,7 +98,10 @@ describe('own backend snapshot', () => {
 
   it('refuses shards whose manifest is missing', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
-    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
+    const store = new CorpusStore(vaultRoot, {
+      modelKey: TEST_IDENTITY.model_key,
+      dims: TEST_DIMS,
+    });
     await store.writeShard({
       path: 'a.md',
       content_hash: 'h',
@@ -110,7 +117,7 @@ describe('own backend snapshot', () => {
 
   it('refuses manifest-less shards of another width on the manifest, without decoding them', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
-    const wide = new CorpusStore(vaultRoot, { dims: 640 });
+    const wide = new CorpusStore(vaultRoot, { modelKey: TEST_IDENTITY.model_key, dims: 640 });
     await wide.writeShard({
       path: 'a.md',
       content_hash: 'h',

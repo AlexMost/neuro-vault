@@ -76,7 +76,7 @@ async function reconcileOne(
   const scope = await loadVaultScope(vault.path);
   const reader = new FsVaultReader({ vaultRoot: vault.path, scope });
   const identity = corpusIdentityOf(embedder.identity);
-  const store = new CorpusStore(vault.path, { dims: identity.dims });
+  const store = new CorpusStore(vault.path, { modelKey: identity.model_key, dims: identity.dims });
   return reconcile(
     {
       ...buildReconcileFsDeps({ vaultRoot: vault.path, reader }),

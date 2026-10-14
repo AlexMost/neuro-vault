@@ -381,7 +381,7 @@ describe('createCorpusBackend over a real reconcile', () => {
   /** A cold vault on disk, wired to the production reconcile/store/loader. */
   async function coldVault(files: Record<string, string>) {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-'));
-    const store = new CorpusStore(root, { dims: TEST_DIMS });
+    const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
     // Swapped per pass, so a vault that recovers can be exercised too.
     let embed: EmbedDocumentsFn = () => {
       throw new Error('ONNX model failed to load');
@@ -509,7 +509,7 @@ describe('createCorpusBackend over a real reconcile', () => {
   it('reports ready when only some notes fail and the rest are served', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-partial-'));
     try {
-      const store = new CorpusStore(root, { dims: TEST_DIMS });
+      const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
       const files: Record<string, string> = { 'good.md': body('good'), 'bad.md': body('bad') };
       const backend = createCorpusBackend({
         vaultRoot: root,

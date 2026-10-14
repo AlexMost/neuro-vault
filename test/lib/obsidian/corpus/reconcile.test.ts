@@ -68,7 +68,7 @@ async function harness(files: Record<string, string>) {
   const root = await mkdtemp(path.join(tmpdir(), 'nv-reconcile-'));
   const vault = fakeVault(files);
   const embed = fakeEmbedDocuments();
-  const store = new CorpusStore(root, { dims: TEST_DIMS });
+  const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
   const warn = vi.fn();
   const run = (opts: ReconcileOptions = {}) =>
     reconcileCorpus(
@@ -251,7 +251,7 @@ describe('reconcileCorpus', () => {
     const { run, root } = await harness({ 'A.md': body('A') });
     await run();
     await writeFile(
-      path.join(root, '.neuro-vault/corpus/manifest.json'),
+      path.join(root, '.neuro-vault/corpus/bge-micro-v2/manifest.json'),
       JSON.stringify({
         embed_version: 1,
         model_key: 'bge-micro-v2',
@@ -335,7 +335,7 @@ describe('reconcileCorpus', () => {
         readNote: vault.readNote,
         embedDocuments: fakeEmbedDocuments(),
         identity: TEST_IDENTITY,
-        store: new CorpusStore(root, { dims: TEST_DIMS }),
+        store: new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS }),
       },
       { onProgress: (p) => seen.push({ ...p }) },
     );
@@ -352,7 +352,7 @@ describe('reconcileCorpus', () => {
       if (texts.some((t) => t.includes('Bad'))) throw new Error('model exploded');
       return texts.map(() => new Array<number>(TEST_DIMS).fill(0.1));
     });
-    const store = new CorpusStore(root, { dims: TEST_DIMS });
+    const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
     const warn = vi.fn();
 
     const summary = await reconcileCorpus({
@@ -479,7 +479,7 @@ describe('reconcileCorpus', () => {
     await run();
     const shardFile = path.join(
       root,
-      '.neuro-vault/corpus/notes',
+      '.neuro-vault/corpus/bge-micro-v2/notes',
       CorpusStore.shardFileName('A.md'),
     );
     await mkdir(path.dirname(shardFile), { recursive: true });

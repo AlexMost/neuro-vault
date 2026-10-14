@@ -10,7 +10,7 @@ import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
 import { IDENTITY_FIELDS, isStoredManifest, type CorpusIdentity } from './identity.js';
-import { CORPUS_DIR } from './layout.js';
+import { CORPUS_DIR, modelCorpusDir } from './layout.js';
 import type { CorpusBlock, CorpusManifest, CorpusShard, StoredManifest } from './types.js';
 
 /**
@@ -21,6 +21,14 @@ import type { CorpusBlock, CorpusManifest, CorpusShard, StoredManifest } from '.
 const SHARD_READ_CONCURRENCY = 64;
 
 export interface CorpusStoreDeps {
+  /**
+   * The model profile key. The store lives in
+   * `<vault>/.neuro-vault/corpus/<modelKey>/` and never reads or writes outside
+   * it (design D1), so processes serving different models cannot discard each
+   * other's corpus. Required: a store that fell back to the corpus root would
+   * recreate the shared directory.
+   */
+  modelKey: string;
   /** Defaults to write-file-atomic (temp + rename). */
   writeFile?: (p: string, data: string) => Promise<void>;
   readFile?: (p: string) => Promise<string>;
@@ -33,7 +41,7 @@ export interface CorpusStoreDeps {
   dims: number;
 }
 
-/** Reads, writes, lists, and deletes per-note shards under `<vaultRoot>/.neuro-vault/corpus/notes/`. */
+/** Reads, writes, lists, and deletes per-note shards under `<vaultRoot>/.neuro-vault/corpus/<modelKey>/notes/`. */
 export class CorpusStore {
   private readonly corpusRoot: string;
   private readonly notesDir: string;
@@ -47,7 +55,8 @@ export class CorpusStore {
   private readonly warn: (message: string) => void;
 
   constructor(vaultRoot: string, deps: CorpusStoreDeps) {
-    const root = path.join(vaultRoot, CORPUS_DIR);
+    // Throws on an unsafe key before any I/O.
+    const root = modelCorpusDir(vaultRoot, deps.modelKey);
     this.corpusRoot = root;
     this.notesDir = path.join(root, 'notes');
     this.manifestFile = path.join(root, 'manifest.json');
