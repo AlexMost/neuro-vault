@@ -368,6 +368,24 @@ describe('parseConfig', () => {
       ).rejects.toThrow(/non-negative integer/);
     });
 
+    it('rejects an empty or blank --idle-timeout instead of reading it as 0', async () => {
+      await expect(parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', ''])).rejects.toThrow(
+        /non-negative integer/,
+      );
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '  ']),
+      ).rejects.toThrow(/non-negative integer/);
+    });
+
+    it('does not accept --idle-timeout on the server or index commands', async () => {
+      await expect(
+        parseConfig(['node', 'cli.js', '--vault', vaultPath, '--idle-timeout', '5']),
+      ).rejects.toThrow(/Unknown argument/);
+      await expect(
+        parseConfig(['node', 'cli.js', 'index', '--vault', vaultPath, '--idle-timeout', '5']),
+      ).rejects.toThrow(/Unknown argument/);
+    });
+
     it('rejects --idle-timeout given twice', async () => {
       await expect(
         parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '1', '--idle-timeout', '2']),

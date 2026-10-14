@@ -120,7 +120,7 @@ function readModel(raw: unknown): ModelProfile {
 }
 
 const IDLE_TIMEOUT_OPTION = {
-  type: 'number',
+  type: 'string',
   default: DEFAULT_IDLE_TIMEOUT_MINUTES,
   describe: 'Minutes without a connected client before the daemon exits (0 = never).',
 } as const;
@@ -128,7 +128,15 @@ const IDLE_TIMEOUT_OPTION = {
 function readIdleTimeout(raw: unknown): number {
   // yargs turns a repeated flag into an array; picking one silently would hide a mistake.
   if (Array.isArray(raw)) throw new Error('--idle-timeout may be given only once');
-  const minutes = Number(raw);
+  // Declared as a string option on purpose: yargs' number coercion turns `''` (an empty shell
+  // variable) into 0, which would silently mean "never exit on idle". Parse it strictly here.
+  const text = typeof raw === 'string' ? raw.trim() : raw;
+  const minutes =
+    typeof text === 'number'
+      ? text
+      : typeof text === 'string' && /^\d+$/.test(text)
+        ? Number(text)
+        : NaN;
   if (!Number.isInteger(minutes) || minutes < 0) {
     throw new Error(
       `--idle-timeout: expected a non-negative integer of minutes, got "${String(raw)}"`,
