@@ -324,4 +324,77 @@ describe('parseConfig', () => {
       }
     });
   });
+
+  describe('daemon command', () => {
+    let errorLog: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      errorLog.mockRestore();
+    });
+
+    it('parses `daemon` with the default idle timeout and no vault', async () => {
+      const parsed = await parseConfig(['node', 'cli.js', 'daemon']);
+      expect(parsed).toEqual({
+        kind: 'daemon',
+        options: { action: undefined, idleTimeoutMinutes: 30 },
+      });
+    });
+
+    it('parses `daemon status` and `daemon stop`', async () => {
+      await expect(parseConfig(['node', 'cli.js', 'daemon', 'status'])).resolves.toMatchObject({
+        kind: 'daemon',
+        options: { action: 'status' },
+      });
+      await expect(parseConfig(['node', 'cli.js', 'daemon', 'stop'])).resolves.toMatchObject({
+        kind: 'daemon',
+        options: { action: 'stop' },
+      });
+    });
+
+    it('parses --idle-timeout and rejects bad values', async () => {
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '0']),
+      ).resolves.toMatchObject({ options: { idleTimeoutMinutes: 0 } });
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '-1']),
+      ).rejects.toThrow(/non-negative integer/);
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', 'soon']),
+      ).rejects.toThrow(/non-negative integer/);
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '1.5']),
+      ).rejects.toThrow(/non-negative integer/);
+    });
+
+    it('rejects --idle-timeout given twice', async () => {
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '1', '--idle-timeout', '2']),
+      ).rejects.toThrow(/may be given only once/);
+    });
+
+    it('rejects an unknown daemon action and vault/model options', async () => {
+      await expect(parseConfig(['node', 'cli.js', 'daemon', 'restart'])).rejects.toThrow(
+        /status, stop/,
+      );
+      await expect(parseConfig(['node', 'cli.js', 'daemon', '--vault', vaultPath])).rejects.toThrow(
+        /vault/,
+      );
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--model', 'granite-97m']),
+      ).rejects.toThrow(/model/);
+    });
+
+    it('lets --help short-circuit before the daemon branch', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        await expect(parseConfig(['node', 'cli.js', 'daemon', '--help'])).resolves.toEqual({
+          kind: 'handled',
+        });
+      } finally {
+        log.mockRestore();
+      }
+    });
+  });
 });

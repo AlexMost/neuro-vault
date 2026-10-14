@@ -31,3 +31,10 @@ export interface ServerConfig {
     model: ModelProfile;
   };
 }
+
+export interface DaemonCliOptions {
+  /** Absent: run the daemon. */
+  action?: 'status' | 'stop';
+  /** 0 = never exit on idle. */
+  idleTimeoutMinutes: number;
+}
