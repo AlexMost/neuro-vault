@@ -1,6 +1,6 @@
 # ADR-0017 — Embedding models are a closed set of verified profiles
 
-- **Status**: Accepted
+- **Status**: Accepted; per-profile corpus directories adopted 2026-10-14 (see Revisited)
 - **Date**: 2026-10-13
 
 ## Context
@@ -60,7 +60,7 @@ Acceptance of the default profile on the vault copy, with no `--model` anywhere,
 
 **Operations.**
 
-- A server and an `index` run given different `--model` values on one vault discard and rebuild each other's corpus. The stderr lines make it visible, and the docs say to keep the two equal. The corpus keeps one directory per vault, so comparing profiles on a vault re-indexes it each time.
+- *(Superseded 2026-10-14 — see Revisited.)* A server and an `index` run given different `--model` values on one vault used to discard and rebuild each other's corpus.
 - The `SEMANTIC_INDEX_NOT_FOUND` hint (`src/lib/resolve-vault.ts`) still says `neuro-vault-mcp index --vault <path>` without `--model`. It does not carry the active profile yet; this is a known gap, left as a follow-up.
 - The local loader sets a stable model cache (`$XDG_CACHE_HOME/neuro-vault/models`, else `~/.cache/neuro-vault/models`) and silences library logging so it stays off the MCP stdout. `engines.node` is `>=20.9.0` because transformers.js 4.x depends on `sharp`.
 - A real tokenizer's behaviour cannot be observed from source-level tests, so a CI job (`profile-tokenizers`, `test/integration/profile-tokenizers.test.ts`) loads every profile's tokenizer at its pinned revision and asserts the derived template, the padding side, and that a >512-token input encodes to exactly `max_tokens` ids ending in the template suffix. It downloads tokenizers only, not weights, and caches them. A deleted or rewritten upstream revision fails it loudly.
@@ -75,3 +75,5 @@ Acceptance of the default profile on the vault copy, with no `--model` anywhere,
 - **Per-profile corpus directories** — stale corpora would accumulate unseen, and one profile per process makes switching rare; discarding and rebuilding is simpler and is the lever ADR-0013 already established.
 - **One threshold set for all profiles** — wrong for at least two of three scales, and `--model granite-97m` would not work end to end.
 - **Keeping the feature-extraction pipeline** — it truncates after the post-processor and pools by physical position, so the lost-EOS defect cannot be fixed from outside; the truncated sequence is already gone.
+
+**Revisited 2026-10-14 — per-profile corpus directories adopted.** The rejection above assumed one profile per vault at a time. It did not hold: every MCP session runs its own server process, and on 2026-10-14 sessions on the pre-v17 build (`bge-micro-v2`) and on v17 (`harrier-270m`) shared the owner's 953-note vault. Each trigger made the out-of-sync side discard and rebuild every shard; the manifest flipped three times in an afternoon, one process accumulated 78 CPU-minutes, and the directory ended up holding 384- and 640-dimension shards side by side. Five same-model sessions meanwhile ran the same rebuild concurrently and deleted each other's fresh shards. The corpus is now one directory per model key (`<vault>/.neuro-vault/corpus/<model_key>/`), with the manifest inside still gating the rest of the identity; the accumulation concern is answered by `neuro-vault-mcp index --prune`; concurrent passes are serialised by a per-vault `reconcile.lock`. The Operations bullet above about discarding each other's corpus no longer applies. Details: `docs/architecture/own-corpus.md` and the `per-model-corpus` change (#146).
