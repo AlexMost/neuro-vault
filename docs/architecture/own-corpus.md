@@ -15,7 +15,7 @@ Four pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any i
 | `shard-store.ts` | Reads, writes, lists and deletes shards and the manifest; atomic writes; `.gitignore` upkeep. |
 | `reconcile.ts` | Brings the corpus into agreement with the vault. |
 
-`types.ts` holds the shapes and the constants that fix how text becomes vectors: `MIN_CHARS` (200), `EMBED_CHAR_BUDGET` (1894), `SC_PARITY_STRATEGY` and `EMBED_VERSION`. It holds **no model constants**: which model made the vectors is not the corpus's to know. The embedding provider reports an `EmbeddingIdentity` (`model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens` — see [`embedding-pipeline.md`](./embedding-pipeline.md)), and `identity.ts` derives the corpus identity from it: `corpusIdentityOf` projects exactly five fields — `model_key`, `model_id` and `dims` from the provider, plus `embed_version` and `strategy` from this build's corpus constants — and `formatIdentity` names an identity (`<model_key> (embed_version <n>)`) in rebuild messages.
+`types.ts` holds the shapes and the three constants that fix how text becomes vectors: `MIN_CHARS` (200), `EMBED_STRATEGY` (`token-window-v1`: notes and blocks are bounded by the profile's token window, not by a character budget) and `EMBED_VERSION` (2). It holds **no model constants**: which model made the vectors is not the corpus's to know. The embedding provider reports an `EmbeddingIdentity` (`provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens` — see [`embedding-pipeline.md`](./embedding-pipeline.md)), and `identity.ts` derives the corpus identity from it: `corpusIdentityOf` takes every field the provider reports and adds `embed_version` and `strategy` from this build's constants — exactly the fields of the manifest below, minus `created` — and `formatIdentity` names an identity (`<model_key> (embed_version <n>)`) in rebuild messages.
 
 ## Extraction
 
@@ -39,16 +39,16 @@ Spans are 1-based and inclusive, and a heading block's span covers its whole sec
 
 ```
 block:  breadcrumbs(notePath + blockKey, last heading segment dropped) + "\n" + block text
-note:   breadcrumbs(notePath) + ":\n" + full note text        → cut to EMBED_CHAR_BUDGET chars
+note:   breadcrumbs(notePath) + ":\n" + full note text
 ```
 
-Breadcrumbs replace `/` and `#` with ` > ` and drop a trailing `.md`. Both formulas carry the note's path — the fact the whole reconcile design turns on.
+Breadcrumbs replace `/` and `#` with ` > ` and drop a trailing `.md`. Both formulas carry the note's path — the fact the whole reconcile design turns on. Neither is cut here: how much of a long text reaches the model is decided in tokens by the active profile's tokenizer (see [The token window](#the-token-window)).
 
 ### The size gate
 
 A note or block is embedded only when its text reaches `MIN_CHARS` (200). A heading block whose span is entirely accounted for by kept sub-blocks is dropped, so a pure container heading is not embedded twice; a heading that also holds text of its own stays. Below-gate notes are still members of the vault and still get a shard — they simply carry no note-level vector.
 
-The gate and the truncation are **content** rules: they decide what text of an included note is embedded, never which notes are included. Membership is [vault scope](vault-scope.md) alone.
+The gate and the token bound are **content** rules: they decide what text of an included note is embedded, never which notes are included. Membership is [vault scope](vault-scope.md) alone.
 
 ### Named divergences from the corpus being replaced
 
@@ -57,19 +57,19 @@ Extraction reproduces the replaced corpus 1:1 so that the one diagnostic run com
 1. `excluded_headings` is not implemented.
 2. Membership comes from vault scope, not the plugin's anchored-prefix exclusion quirks.
 3. `.md` only.
-4. Over-long **block** inputs are capped by tokens (below) rather than by the plugin's character cut at the last whitespace; both land at ≈512 tokens (the active profile's `maxTokens`). Note-level inputs are cut at 1894 characters exactly as the plugin cuts them.
+4. Over-long inputs, note-level and block-level alike, are bounded in tokens by the active profile's tokenizer (below) rather than by the plugin's character cuts.
 5. Block keys are unique within a note. The plugin suffixes only a repeated *top-level* heading, leaving two identical sibling sub-headings able to collide — and a collision silently drops a block.
 6. Block boundaries come from the CommonMark AST rather than the plugin's line regexes.
 
 ### The token window
 
-Some tokenizers declare no real window — `bge-micro-v2` ships `model_max_length = 1e15` in its tokenizer config — and any input over the model's real window crashes inside ONNX. The corpus does not rely on the tokenizer's own limit: `EmbeddingService` cuts every input to the profile's `maxTokens` (512 for all shipped profiles) before the forward pass, keeping the model's special-token template intact. The query path never hit this because queries are short; the indexer hits it on the first long note. How the cut works is in [`embedding-pipeline.md` § Tokenisation](./embedding-pipeline.md#tokenisation).
+A tokenizer can declare no real window (a `model_max_length` of 1e15, say), and any input over the model's real window crashes inside ONNX. The corpus does not rely on the tokenizer's own limit, and it does not guess a character budget either: characters per token vary with language and content, so no single character budget fits every note. `EmbeddingService` cuts every input to the profile's `maxTokens` (512 for all shipped profiles) before the forward pass, keeping the model's special-token template intact, and only a work bound of `maxTokens × 32` characters is applied ahead of tokenisation, to keep tokenizer cost finite on multi-megabyte notes. How the cut works is in [`embedding-pipeline.md` § Tokenisation](./embedding-pipeline.md#tokenisation).
 
 ## On-disk layout
 
 ```
 <vault>/.neuro-vault/corpus/
-  manifest.json                # { embed_version, model_key, model_id, dims, strategy, created }  (a five-field projection of the provider's identity)
+  manifest.json                # { embed_version, provider, model_key, model_id, revision, dtype, dims, pooling, max_tokens, strategy, created }  (manifest v2)
   notes/<sha256(path)[:32]>.json
 ```
 
@@ -104,7 +104,7 @@ The one case that throws instead is writing a vector of the wrong dimension: the
 
 `reconcileCorpus(deps, opts)` takes ports — `scan`, `stat`, `readNote`, `embedDocuments`, a `CorpusStore` — and returns `{ total, embedded, reused, renamed, deleted, failed }`. In order:
 
-1. `ensureManifest` compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (`embed_version`, `model_key`, `model_id`, `dims`, `strategy`). A mismatch, or a missing manifest while shards exist, discards every shard and rebuilds. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
+1. `ensureManifest` compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (every manifest field except `created`). A mismatch, or a missing manifest while shards exist, discards every shard and rebuilds. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
 2. Take the scoped path set from `scan()` and the shard map from `listShards()`. Reconcile applies no exclusion rule of its own.
 3. Shards whose path is not in scope become deletion candidates, indexed by content hash — the only place a rename can be recognised.
 4. For each path in scope: equal `mtime` **and** `size` → reused, without opening the note. Otherwise read it; an equal `content_hash` → rewrite the shard's metadata and keep the vectors (**reused**); otherwise embed (**embedded**). A path with no shard whose hash matches a deletion candidate is a **rename**: the old shard is unlinked and the note is re-embedded under its new path.
@@ -119,21 +119,25 @@ Both embed-text formulas carry path breadcrumbs, so reusing a vector across a re
 
 ### A model change is a rebuild, and never silent
 
-Switching `--model` changes the manifest's `model_key`, `model_id` and (when the profiles differ) `dims`, and a bump of `embed_version` or `strategy` changes the rest; any difference in those five fields makes the stored manifest incompatible, so the whole corpus is discarded and re-embedded — vectors from two models do not share a space. The other fields the provider reports (`provider`, `revision`, `dtype`, `pooling`, `max_tokens`) are not recorded or compared yet, so a change to only one of them (say a profile moving to a new pinned revision under the same key) does not trigger a rebuild. The rebuild is announced where the user will see it. The server logs one line to stderr at startup — `neuro-vault corpus: vault "<name>" was indexed with <stored> (embed_version <n>); active model is <active> (embed_version <m>) — discarding the corpus and re-indexing in the background` — and `index` prints `rebuilding <name>: corpus was indexed with …; active model is …` before its progress. Only an actual discard is reported: a fresh vault with no corpus yet is not a rebuild. Run `index` and the server with the same `--model`, or each will rebuild the other's corpus.
+The manifest records everything that determines a stored vector (manifest v2): `embed_version`, `provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens` and `strategy`, plus the informational `created`. `isManifestCompatible` compares every field except `created`, so switching `--model`, moving a profile to a new pinned `revision`, changing its `dtype`, `pooling` or token window, or bumping `embed_version` or `strategy` each make the stored manifest incompatible. The whole corpus is then discarded and re-embedded — vectors from two models, or from the same model under two configurations, do not share a space. The query prefix is not in the manifest: it changes no stored vector.
+
+A manifest written before manifest v2 lacks the producer fields (`provider`, `revision`, `dtype`, `pooling`, `max_tokens`). It still parses, as a `StoredManifest` with those fields absent, and it compares as incompatible — so it triggers a rebuild, and the rebuild message can name the `model_key` and `embed_version` it replaces instead of reporting an unreadable manifest. A manifest that cannot be parsed at all, or a missing manifest while shards exist, is named as `an unreadable or missing manifest`.
+
+The rebuild is announced where the user will see it. The server logs one line to stderr at startup — `neuro-vault corpus: vault "<name>" was indexed with <model_key> (embed_version <n>); active model is <model_key> (embed_version <m>) — discarding the corpus and re-indexing in the background` — and `index` prints `rebuilding <name>: corpus was indexed with …; active model is …` (the same two descriptions) before its progress. Only an actual discard is reported: a fresh vault with no corpus yet is not a rebuild. Run `index` and the server with the same `--model`, or each will rebuild the other's corpus.
 
 ## Measured numbers
 
-On an 842-note vault (Apple silicon, `bge-micro-v2` quantized, batch 1; measured before the move to `@huggingface/transformers` 4):
+Cold-index cost depends on the profile: a larger model embeds fewer vectors per second, needs more memory while it does, and writes larger vectors. Measured on Apple silicon (CPU, quantized weights) on one vault for every profile, each profile cold-indexing its own corpus-less clone; the runs shared the CPU with other work, so the times are upper-side:
 
-| | |
-| --- | --- |
-| Cold index | **138 s** for 842 notes / 5 423 vectors, ~40 vectors/s |
-| No-op reconcile of the same vault | **0.09 s**, 842 reused, 0 embedded |
-| Corpus on disk | ~13 MB |
+| | `granite-97m` | `harrier-270m` (default) | `harrier-0.6b` |
+| --- | --- | --- | --- |
+| Vault indexed (notes / notes with a note vector) | 949 / 888 | 949 / 888 | 949 / 888 |
+| Cold index | 3.5 min | 8.8 min | 35.5 min |
+| Max RSS while indexing | 1.20 GB | 1.32 GB | 2.40 GB |
 
-Two figures from the pre-design benchmarks of the same execution path, not from this run: ~90 ms to re-embed one median note on a warm model, and 68 ms to cold-load 2 500 shards from a synthetic corpus.
+The default's 1.32 GB is from this per-profile run; a separate acceptance run of the same vault peaked at 1.58 GB, so expect about 1.3–1.6 GB for `harrier-270m`.
 
-A cold index is minutes, so it can never block server startup; an incremental pass is free enough to run on every save.
+A cold index is minutes for the two smaller profiles and over half an hour for `harrier-0.6b`, so it can never block server startup. After it, only notes that changed are re-embedded. The per-profile retrieval quality that goes with these costs is in [`retrieval-policy.md` § Calibration](./retrieval-policy.md#calibration).
 
 ## Boundaries
 

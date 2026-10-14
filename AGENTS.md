@@ -1,6 +1,6 @@
 # Agent Working Notes
 
-`neuro-vault-mcp` is an MCP server that gives an AI assistant two things over an Obsidian vault: semantic search (over a Smart Connections embedding corpus) and direct vault operations (notes, properties, tags, structured queries). TypeScript, ESM, Node ≥ 20.9.
+`neuro-vault-mcp` is an MCP server that gives an AI assistant two things over an Obsidian vault: semantic search (over the server's own embedding corpus) and direct vault operations (notes, properties, tags, structured queries). TypeScript, ESM, Node ≥ 20.9.
 
 This is a cheat sheet for working in the repo — deeper docs live under `docs/` (map: [`docs/README.md`](docs/README.md)), decisions in [`docs/adr/`](docs/adr/INDEX.md). It does not repeat them.
 
@@ -27,3 +27,9 @@ These tools are kept because each is the sole path to its capability; reach for 
 - Capability change → an OpenSpec opsx change; smaller work → a direct PR. Which one: [`.claude/rules/opsx-routing.md`](.claude/rules/opsx-routing.md). Full flow: [`docs/workflow.md`](docs/workflow.md).
 - Every opsx change is tracked by a GitHub issue; a direct PR gets one only when the work was planned ahead. PRs carry `Closes #<n>` in a change's last PR, `Refs #<n>` in earlier ones. Conventions: [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
 - PRs go to `main` via `gh pr create` — never push directly. Release: `npm run release` on `main`, after the PR merges. Pushing the tag auto-publishes the GitHub Release from the `CHANGELOG.md` section.
+
+## Commits
+
+- Conventional Commits: `type(scope): subject`; a breaking change is `type!:` plus a `BREAKING CHANGE:` footer. commitlint (`@commitlint/config-conventional`) checks **every commit** of a PR, not only the merge title, so one bad message fails the PR and only a history rewrite and force-push fixes it.
+- Wrap body lines at 100 characters or fewer — the rule that fails most often. The lefthook `commit-msg` hook ([`lefthook.yml`](lefthook.yml), installed by `npm install`) runs commitlint on each commit; for commits made around it (`--no-verify`, cherry-picks), check the branch before pushing: `npx commitlint --from origin/main --to HEAD`.
+- End every commit with one `Co-Authored-By:` trailer naming the session's primary model.

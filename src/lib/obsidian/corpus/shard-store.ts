@@ -9,8 +9,8 @@ import path from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
 
-import type { CorpusIdentity } from './identity.js';
-import type { CorpusBlock, CorpusManifest, CorpusShard } from './types.js';
+import { IDENTITY_FIELDS, type CorpusIdentity } from './identity.js';
+import type { CorpusBlock, CorpusManifest, CorpusShard, StoredManifest } from './types.js';
 
 /** Corpus root, relative to the vault root. */
 export const CORPUS_DIR = '.neuro-vault/corpus';
@@ -122,7 +122,7 @@ export class CorpusStore {
     return result;
   }
 
-  async readManifest(): Promise<CorpusManifest | null> {
+  async readManifest(): Promise<StoredManifest | null> {
     let raw: string;
     try {
       raw = await this.readFile(this.manifestFile);
@@ -195,7 +195,7 @@ export class CorpusStore {
    */
   async ensureManifest(
     expected: CorpusIdentity,
-  ): Promise<{ rebuilt: boolean; previous: CorpusManifest | null }> {
+  ): Promise<{ rebuilt: boolean; previous: StoredManifest | null }> {
     const stored = await this.readManifest();
     const hasShards = await this.hasAnyShards();
     const compatible = isManifestCompatible(stored, expected, hasShards);
@@ -333,30 +333,31 @@ function describeVector(value: unknown): string {
  * vectors of unknown provenance.
  */
 export function isManifestCompatible(
-  stored: CorpusManifest | null,
+  stored: StoredManifest | null,
   expected: CorpusIdentity,
   hasShards: boolean,
 ): boolean {
   if (stored === null) return !hasShards;
-  return (
-    stored.embed_version === expected.embed_version &&
-    stored.model_key === expected.model_key &&
-    stored.model_id === expected.model_id &&
-    stored.dims === expected.dims &&
-    stored.strategy === expected.strategy
-  );
+  return IDENTITY_FIELDS.every((field) => stored[field] === expected[field]);
 }
 
-function isValidManifest(value: unknown): value is CorpusManifest {
+function isValidManifest(value: unknown): value is StoredManifest {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
+  const optional = (key: string, type: 'string' | 'number') =>
+    v[key] === undefined || typeof v[key] === type;
   return (
     typeof v.embed_version === 'number' &&
     typeof v.model_key === 'string' &&
     typeof v.model_id === 'string' &&
     typeof v.dims === 'number' &&
     typeof v.strategy === 'string' &&
-    typeof v.created === 'string'
+    typeof v.created === 'string' &&
+    optional('provider', 'string') &&
+    optional('revision', 'string') &&
+    optional('dtype', 'string') &&
+    optional('pooling', 'string') &&
+    optional('max_tokens', 'number')
   );
 }
 

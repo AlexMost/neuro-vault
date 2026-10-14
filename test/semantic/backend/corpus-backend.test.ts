@@ -49,22 +49,8 @@ function fakeStore(opts: { compatible: boolean; shards: number }): CorpusStore {
   return {
     readManifest: async () =>
       opts.compatible
-        ? {
-            embed_version: 1,
-            model_key: 'bge-micro-v2',
-            model_id: 'TaylorAI/bge-micro-v2',
-            dims: 384,
-            strategy: 'sc-parity-v1',
-            created: 'now',
-          }
-        : {
-            embed_version: 99,
-            model_key: 'other',
-            model_id: 'other',
-            dims: 1,
-            strategy: 'x',
-            created: 'now',
-          },
+        ? { ...TEST_IDENTITY, created: 'now' }
+        : { ...TEST_IDENTITY, model_key: 'other', embed_version: 99, created: 'now' },
     listShards: async () =>
       new Map(Array.from({ length: opts.shards }, (_, i) => [`n${i}.md`, {}])) as never,
   } as unknown as CorpusStore;
@@ -358,7 +344,7 @@ describe('createCorpusBackend', () => {
     });
     await backend.whenSettled();
     expect(warn).toHaveBeenCalledWith(
-      'neuro-vault corpus: vault "Notes" was indexed with other (embed_version 99); active model is bge-micro-v2 (embed_version 1) — discarding the corpus and re-indexing in the background',
+      'neuro-vault corpus: vault "Notes" was indexed with other (embed_version 99); active model is bge-micro-v2 (embed_version 2) — discarding the corpus and re-indexing in the background',
     );
   });
 

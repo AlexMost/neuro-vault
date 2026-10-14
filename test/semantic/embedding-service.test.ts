@@ -9,8 +9,9 @@ import {
   type ModelProfile,
 } from '../../src/modules/semantic/model-profiles.js';
 
-const bge = resolveModelProfile('bge-micro-v2');
 const granite = resolveModelProfile('granite-97m');
+/** No registry profile pools by mean; this fixture keeps that branch covered. */
+const meanFixture: ModelProfile = { ...granite, key: 'mean-fixture', pooling: 'mean' };
 
 /** A model whose token state at each position is [id, 1]; the tokenizer wraps chars in [101 … 102]. */
 function fakeModel(encodeImpl?: (text: string) => number[]) {
@@ -77,22 +78,22 @@ describe('EmbeddingService', () => {
   });
 
   it('pools the mean for a mean profile', async () => {
-    const { service } = serviceFor(bge, fakeModel(() => [3]).model);
+    const { service } = serviceFor(meanFixture, fakeModel(() => [3]).model);
     expect(await service.embedQuery('x')).toEqual(unit([(101 + 3 + 102) / 3, 1]));
   });
 
   it('cuts an over-long input to the profile window and still returns a vector', async () => {
     const { model, runs } = fakeModel(() => Array.from({ length: 600 }, (_, i) => i + 1000));
-    const { service } = serviceFor(bge, model);
+    const { service } = serviceFor(meanFixture, model);
     const vector = await service.embedQuery('long');
     const ids = runs[0].ids[0];
-    expect(ids).toHaveLength(bge.maxTokens);
+    expect(ids).toHaveLength(meanFixture.maxTokens);
     // The template is re-attached after the cut: 510 body ids (1000…1509)
     // sit between the leading [101] and the trailing [102].
     expect(ids[0]).toBe(101);
     expect(ids.at(-1)).toBe(102);
     expect(ids.at(-2)).toBe(1509);
-    expect(runs[0].mask[0]).toHaveLength(bge.maxTokens);
+    expect(runs[0].mask[0]).toHaveLength(meanFixture.maxTokens);
     expect(runs[0].mask[0].every((m) => m === 1)).toBe(true);
     expect(vector).toHaveLength(2);
   });

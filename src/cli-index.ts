@@ -4,7 +4,7 @@ import { loadVaultScope } from './lib/obsidian/vault-scope-config.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { buildReconcileFsDeps } from './lib/obsidian/corpus/fs-deps.js';
 import { CorpusStore } from './lib/obsidian/corpus/shard-store.js';
-import { corpusIdentityOf, formatIdentity } from './lib/obsidian/corpus/identity.js';
+import { corpusIdentityOf, formatRebuild } from './lib/obsidian/corpus/identity.js';
 import {
   reconcileCorpus,
   type ReconcileDeps,
@@ -87,8 +87,9 @@ async function reconcileOne(
     {
       onProgress: createProgressRenderer(stdout, vault.name),
       onRebuild: ({ stored, active }) => {
+        const named = formatRebuild(stored, active);
         stdout.write(
-          `rebuilding ${vault.name}: corpus was indexed with ${formatIdentity(stored)}; active model is ${formatIdentity(active)}\n`,
+          `rebuilding ${vault.name}: corpus was indexed with ${named.stored}; active model is ${named.active}\n`,
         );
       },
     },

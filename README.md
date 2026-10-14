@@ -209,15 +209,28 @@ Then ask your assistant:
 
 > "What did I write about building AI agents?"
 
-On first run the embedding model downloads automatically (bge-micro-v2 ≈ 17 MB, granite-97m ≈ 98 MB, harrier-270m ≈ 344 MB, harrier-0.6b ≈ 706 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `bge-micro-v2`; add `--model granite-97m` for the lite multilingual one, or `--model harrier-270m` / `--model harrier-0.6b` for higher-quality multilingual retrieval ([bake-off report](./docs/research/2026-10-embedding-model-bakeoff.md); `harrier-0.6b` is ~4× slower to index than `harrier-270m`). ⚖️ The default similarity thresholds are tuned for `bge-micro-v2`; under any other model, pass explicit `threshold`s if results look too loose or too tight ([details](./docs/guide/configuration.md#cli-arguments)).
+On first run the embedding model downloads automatically (`harrier-270m` ≈ 344 MB, `granite-97m` ≈ 98 MB, `harrier-0.6b` ≈ 706 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `harrier-270m`, a multilingual model that is markedly better than the lite one on Ukrainian notes; add `--model granite-97m` for the lite one (smaller, faster to index, a good fit for small hosts), or `--model harrier-0.6b` when quality matters more than index time ([which to pick, with benchmarks](./docs/guide/embedding-models.md); [bake-off report](./docs/research/2026-10-embedding-model-bakeoff.md)). 🎚️ Similarity thresholds are calibrated per model, so switching needs no tuning — and switching rebuilds the vault's index once.
 
-Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault):
+To run another model, put `--model` in the server's `args`:
 
-```bash
-neuro-vault-mcp index --vault /absolute/path/to/your/vault --model bge-micro-v2
+```json
+{
+  "mcpServers": {
+    "neuro-vault": {
+      "command": "neuro-vault-mcp",
+      "args": ["--vault", "/absolute/path/to/your/vault", "--model", "granite-97m"]
+    }
+  }
+}
 ```
 
-Give `index` the same `--model` the server runs with (`bge-micro-v2` is the default; for any other model, put the same `--model` in the server's `args` and here) — a vault indexed with another model is rebuilt, never silently mixed.
+Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault, or after upgrading — an upgrade from a release with a different default model rebuilds every index once; an explicit `threshold` or `expansion_floor` you tuned on the old model, say `0.5`, is on a different scale under `harrier-270m` — its query-to-note similarities sit mostly below about 0.44 on the measured vault — so re-tune or drop it):
+
+```bash
+neuro-vault-mcp index --vault /absolute/path/to/your/vault --model granite-97m
+```
+
+Give `index` the same `--model` the server runs with (omit both for the default, `harrier-270m`) — a vault indexed with another model is rebuilt, never silently mixed.
 
 For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./docs/guide/installation.md).
 
@@ -233,6 +246,7 @@ User guide lives in [`docs/guide/`](./docs/guide/README.md):
 - [Finding Notes](./docs/guide/finding-notes.md) — `search_notes` (hybrid semantic + lexical), structured queries (`query_notes`), `get_similar_notes`, `find_duplicates`, `get_note_links`
 - [Reading & Modifying](./docs/guide/reading-and-modifying.md) — note CRUD, daily notes, properties, tags, vault snapshot (`get_vault_overview`)
 - [Routing Between Tools](./docs/guide/routing.md)
+- [Embedding Models](./docs/guide/embedding-models.md) — choosing and configuring the embedding model (`--model`), switching cost, per-model thresholds, benchmarks
 - [Configuration](./docs/guide/configuration.md) — CLI args, vault conventions for external agents, troubleshooting, limitations, development
 
 Architecture / internals: [`docs/architecture/`](./docs/architecture/).

@@ -3,7 +3,11 @@ import type { EmbeddingIdentity } from '../../lib/obsidian/corpus/types.js';
 /** How a model's token states become one vector. */
 export type Pooling = 'mean' | 'cls' | 'last_token';
 
-/** Default similarity thresholds, on this profile's own similarity scale (design D10). */
+/**
+ * Default similarity thresholds, on this profile's own similarity scale
+ * (design D10). Each profile carries values calibrated on its own corpus
+ * (design D11; numbers in openspec/changes/archive/2026-10-13-embedding-model-profiles/calibration.md).
+ */
 export interface SimilarityDefaults {
   /** `search_notes` semantic floor at effort "quick". */
   readonly quick: number;
@@ -18,19 +22,6 @@ export interface SimilarityDefaults {
   /** `find_duplicates` default threshold. */
   readonly duplicates: number;
 }
-
-/**
- * The values calibrated on bge-micro-v2's similarity scale. Every profile
- * carries them until it is recalibrated against its own scale (design D11).
- */
-const BGE_SCALE_SIMILARITY: SimilarityDefaults = Object.freeze({
-  quick: 0.5,
-  deep: 0.35,
-  fallback: 0.3,
-  expansionFloor: 0.35,
-  similarNotes: 0.5,
-  duplicates: 0.9,
-});
 
 /**
  * Everything model-specific, in one record (design D2). A profile joins the
@@ -61,19 +52,6 @@ export interface ModelProfile {
 /** The provider name every identity of this package's local provider carries. */
 export const LOCAL_PROVIDER = 'transformers.js';
 
-const BGE_MICRO_V2: ModelProfile = {
-  key: 'bge-micro-v2',
-  repo: 'TaylorAI/bge-micro-v2',
-  revision: '3edf6d7de0faa426b09780416fe61009f26ae589',
-  dtype: 'q8',
-  dims: 384,
-  pooling: 'mean',
-  queryPrefix: '',
-  documentPrefix: '',
-  maxTokens: 512,
-  similarity: BGE_SCALE_SIMILARITY,
-};
-
 const GRANITE_97M: ModelProfile = {
   key: 'granite-97m',
   repo: 'onnx-community/granite-embedding-97m-multilingual-r2-ONNX',
@@ -84,7 +62,14 @@ const GRANITE_97M: ModelProfile = {
   queryPrefix: '',
   documentPrefix: '',
   maxTokens: 512,
-  similarity: BGE_SCALE_SIMILARITY,
+  similarity: Object.freeze({
+    quick: 0.71,
+    deep: 0.66,
+    fallback: 0.65,
+    expansionFloor: 0.65,
+    similarNotes: 0.67,
+    duplicates: 0.9,
+  }),
 };
 
 /** harrier's retrieval instruction (model card); documents take no prompt. */
@@ -101,7 +86,14 @@ const HARRIER_270M: ModelProfile = {
   queryPrefix: HARRIER_QUERY_PREFIX,
   documentPrefix: '',
   maxTokens: 512,
-  similarity: BGE_SCALE_SIMILARITY,
+  similarity: Object.freeze({
+    quick: 0.2,
+    deep: 0.13,
+    fallback: 0.05,
+    expansionFloor: 0.2,
+    similarNotes: 0.22,
+    duplicates: 0.77,
+  }),
 };
 
 const HARRIER_0_6B: ModelProfile = {
@@ -114,17 +106,23 @@ const HARRIER_0_6B: ModelProfile = {
   queryPrefix: HARRIER_QUERY_PREFIX,
   documentPrefix: '',
   maxTokens: 512,
-  similarity: BGE_SCALE_SIMILARITY,
+  similarity: Object.freeze({
+    quick: 0.25,
+    deep: 0.19,
+    fallback: 0.15,
+    expansionFloor: 0.25,
+    similarNotes: 0.29,
+    duplicates: 0.76,
+  }),
 };
 
 export const MODEL_PROFILES: Readonly<Record<string, ModelProfile>> = Object.freeze({
-  [BGE_MICRO_V2.key]: BGE_MICRO_V2,
-  [GRANITE_97M.key]: GRANITE_97M,
   [HARRIER_270M.key]: HARRIER_270M,
+  [GRANITE_97M.key]: GRANITE_97M,
   [HARRIER_0_6B.key]: HARRIER_0_6B,
 });
 
-export const DEFAULT_MODEL_KEY = BGE_MICRO_V2.key;
+export const DEFAULT_MODEL_KEY = HARRIER_270M.key;
 
 export const MODEL_KEYS: readonly string[] = Object.freeze(Object.keys(MODEL_PROFILES));
 

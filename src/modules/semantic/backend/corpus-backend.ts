@@ -1,4 +1,4 @@
-import { formatIdentity, type CorpusIdentity } from '../../../lib/obsidian/corpus/identity.js';
+import { formatRebuild, type CorpusIdentity } from '../../../lib/obsidian/corpus/identity.js';
 import type { ReconcileOptions, ReconcileSummary } from '../../../lib/obsidian/corpus/reconcile.js';
 import {
   isManifestCompatible,
@@ -172,9 +172,10 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
         // Never silent (design D8), whichever pass finds the mismatch — the
         // startup one, or a later one after another `--model` rewrote the corpus.
         onRebuild: ({ stored, active }) => {
+          const named = formatRebuild(stored, active);
           warn(
-            `neuro-vault corpus: vault "${deps.vaultName}" was indexed with ${formatIdentity(stored)}; ` +
-              `active model is ${formatIdentity(active)} — discarding the corpus and re-indexing in the background`,
+            `neuro-vault corpus: vault "${deps.vaultName}" was indexed with ${named.stored}; ` +
+              `active model is ${named.active} — discarding the corpus and re-indexing in the background`,
           );
         },
         onProgress: (progress) => {

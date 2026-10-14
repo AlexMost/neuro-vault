@@ -4452,7 +4452,151 @@ Commit `calibration.md`; `gh pr create --base main --title "feat: embedding mode
 
 # PR 4 — default switch, manifest v2, calibration, ADR, docs (`Closes #98`)
 
-Fresh worktree off `origin/main` (PR 3 merged), branch `feat/embedding-model-profiles-4`. Re-read Tasks 11.1–14.4 against `main` first. Confirm `/Users/amostovenko/git/neuro-vault/eval/results/baseline-bge-micro-v2.json` exists and that `calibration.md` holds the baseline aggregates — without them Task 12.1 cannot run (the profile that produced them is removed in Task 11.3).
+Fresh worktree off `origin/main` (PR 3 merged), branch `feat/embedding-model-profiles-pr4`. Re-read Tasks 11.1–14.4 against `main` first. Confirm `/Users/amostovenko/git/neuro-vault/eval/results/baseline-bge-micro-v2.json` exists and that `calibration.md` holds the baseline aggregates — without them Task 12.1 cannot run (the profile that produced them is removed in Task 11.3).
+
+**Reconciled against `main` @ `2ffd2ee` (PR 3 as merged, with #142 and the PR 3 review fixes of 6d38e06).** The tasks below already carry these fixes:
+
+- **(a) Thresholds already live in `ModelProfile.similarity`**, every profile on the shared `BGE_SCALE_SIMILARITY`. `test/semantic/model-profiles.test.ts` has a test, "pins every profile's similarity defaults", that fixes those bge values on every profile. Task 12.1 Step 3 **replaces** that test with the pin of the calibrated values; it does not add a second pin beside it. The `quick ≥ deep > fallback` ordering test stays as it is.
+- **(b) #142: field descriptions reach the MCP client.** `test/semantic/tools/search-notes-description.test.ts` checks the post-gate schema and builds the tool from `TEST_SIMILARITY`, so calibrated profile values never reach it. No PR 4 snippet changes. No `src/` file outside `model-profiles.ts` holds a threshold literal (grep for `0.35`, `0.9`, `0.3`, `0.5` in `src/` is empty).
+- **(c) The eval harness as merged.** `loadSnapshot(vaultRoot, expected)` in `eval/backends.ts` is the only manifest gate. `--stats` and `--baseline` exist. A `--stats --baseline` report records `stats.baseline` (`file`, `model_key`, `vault_sha`, `code_sha`). A default whose population is empty gets `suggested.<key>.threshold: null`, and Task 12.1 treats null as "stop, nothing to match", never as 0. Task 12.1 has no rsync step: the bge baseline is re-captured in Task 11.0 on the **same** vault copy the profiles are calibrated on, so `vault_sha` matches and no comparability warning fires. Re-syncing between the baseline and the profile runs would break that pairing. Every harness command is `npx tsx ./eval/run.ts …`.
+- **(d) A baseline from a removed profile must stay readable.** `readBaseline` (`eval/run.ts`) checks only `typeof report.model_key === 'string'`; it never resolves the key against the registry. A `bge-micro-v2` baseline therefore still reads after Task 11.3. Task 11.3 pins this with a test.
+- **(e) What Task 11.3's switch breaks, found by grep on `main`:**
+  - `test/semantic/embedding-service.test.ts` resolves `bge-micro-v2` for its mean-pooling cases. No remaining profile pools by mean, so those cases build a local fixture profile (`{ ...resolveModelProfile('granite-97m'), key: 'mean-fixture', pooling: 'mean' }`) instead.
+  - `test/eval/run.test.ts` has an unknown-model regex `/bge-micro-v2.*granite-97m/s`.
+  - The `bge-micro-v2` row in `test/integration/profile-tokenizers.test.ts`.
+  - `test/config.test.ts`'s duplicate-flag value.
+  - The expected rebuild and announcement lines in `test/cli-index.test.ts` and `test/semantic/backend/corpus-backend.test.ts`. After 11.1 they read `active model is bge-micro-v2 (embed_version 2)`; the cli-index test resolves `DEFAULT_MODEL_KEY`, so after 11.3 its line reads `harrier-270m (embed_version 2)`.
+  - `eval/README.md`'s "currently `bge-micro-v2`".
+
+  `TEST_IDENTITY` and the tool fixtures' `modelKey: 'bge-micro-v2'` stay. They are fixture identities and never resolve against the registry.
+- **(f) Task 11.2 changes what the `bucketByLength` comment claims** (`src/modules/semantic/embed-queue.ts`) and what design D6 says ("while `EMBED_CHAR_BUDGET` caps it"). Both get rewritten in 11.2's commit (see that task).
+- **(g) Calibration populations.** On bge, five of the six defaults pass 100 % of the top-10 populations, so literal D11 degenerates. The decision is to measure pass rates on **unranked** populations, recorded in design D11 by its own `docs(openspec)` commit. The new Task 11.0 implements those populations and re-captures the bge baseline on them **before** Task 11.3 removes the profile. Task 12.1 reads them.
+- **Environment** (as in PR 3): the worktree guard blocks the bare word `eval` and any compound command (pipe, subshell, `;`) on a path containing the scratchpad. Real-data steps therefore run one simple command each, or a `.mjs`/`.mts` driver in the scratchpad (top-level `await` only in `.mts`). The vault copy lives in the scratchpad: `<scratchpad>/vault-bge/Obsidian`, with per-profile copies cloned from it so every copy shares one `vault_sha`.
+
+### Task 11.0: Unranked calibration populations; re-capture the bge baseline
+
+Design D11 as decided for PR 4. Runs **before** Task 11.3: its last step needs `bge-micro-v2` in the registry.
+
+**Files:**
+- Modify: `eval/stats.ts`, `eval/run.ts` (`readBaseline`, `formatStats`), `eval/README.md` (Calibration), `openspec/changes/embedding-model-profiles/calibration.md`
+- Test: `test/eval/stats.test.ts`, `test/eval/run.test.ts`
+
+**Interfaces:**
+- `Populations` gains `query_all` (each query vector against every source), `seed_all` (each seed against every source that is not one of that query's seeds) and `note_all` (each source against every other source, ordered pairs). The four ranked/max populations stay.
+- `POPULATION_OF` (now exported): `quick`, `deep`, `fallback` → `query_all`; `expansionFloor` → `seed_all`; `similarNotes` → `note_all`; `duplicates` → `note_max`.
+- `CalibrationStats.populations` holds quantiles for all seven keys, built by iterating the `Populations` keys so a new one cannot be missed.
+- `readBaseline` refuses a baseline whose `pass_rates.<key>.population` differs from `POPULATION_OF[key]`. The PR 3 baseline was measured on the ranked populations, and its pass rates mean something else. The message names the file, the key and both populations, and says to re-capture with `--stats`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`test/eval/stats.test.ts`: the population test uses `topK: 2` over the three-note fixture, so ranked and unranked differ. It asserts `query_candidates` has 2 values and `query_all` has 3. With seed `a.md` (one seed), `seed_all` is `[0.8, 0]` in either order: `b` and `c`, never the seed itself. `note_all` has 6 values (3 × 2) and `note_top10` still has 6. `pass_rates.deep.population` is `'query_all'`, `expansionFloor`'s is `seed_all`, `similarNotes`'s is `note_all`, `duplicates`'s is `note_max`. Add a test that `POPULATION_OF` covers exactly `DEFAULT_KEYS`, and update the existing assertions that name `query_candidates` / `expansion_neighbours` as a default's population.
+
+`test/eval/run.test.ts`, next to the other `--baseline` refusals:
+
+```ts
+  it('refuses a --baseline that measured a default on another population, before embedding anything', async () => {
+    const first = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed, resultsDir },
+    );
+    const ranked = structuredClone(first.report);
+    ranked.stats!.pass_rates.deep.population = 'query_candidates';
+    const rankedFile = path.join(resultsDir, 'ranked-baseline.json');
+    await writeFile(rankedFile, JSON.stringify(ranked));
+    const embedSpy = vi.fn(embed);
+    const run = runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: rankedFile },
+      { embed: embedSpy, resultsDir },
+    );
+    await expect(run).rejects.toThrow(/ranked-baseline\.json.*deep.*query_candidates.*query_all/s);
+    expect(embedSpy).not.toHaveBeenCalled();
+  });
+```
+
+(Use the file's existing harness names.) Run: `npx vitest run test/ev[a]l` — Expected: FAIL.
+
+- [ ] **Step 2: Implement**
+
+`collectPopulations` ranks once per vector and slices, so the unranked populations cost no extra pass:
+
+```ts
+  for (const queryVector of args.queryVectors) {
+    const all = findNeighbors({ queryVector, sources: sources.values(), threshold: -1 });
+    query_all.push(...all.map((r) => r.similarity));
+    const ranked = all.slice(0, args.topK);
+    query_candidates.push(...ranked.map((r) => r.similarity));
+    const seeds = ranked.slice(0, args.seedPool);
+    const seedSet = new Set(seeds.map((s) => s.path));
+    for (const seed of seeds) {
+      const source = sources.get(seed.path);
+      if (!source) continue;
+      const others = findNeighbors({
+        queryVector: source.embedding,
+        sources: sources.values(),
+        threshold: -1,
+      }).filter((n) => !seedSet.has(n.path));
+      seed_all.push(...others.map((n) => n.similarity));
+      // Mirrors the production expansion leg, minus its floor.
+      expansion_neighbours.push(...others.slice(0, args.expansionLimit).map((n) => n.similarity));
+    }
+  }
+  for (const source of sources.values()) {
+    const others = findNeighbors({
+      queryVector: source.embedding,
+      sources: sources.values(),
+      threshold: -1,
+      excludePath: source.path,
+    });
+    note_all.push(...others.map((n) => n.similarity));
+    note_top10.push(...others.slice(0, 10).map((n) => n.similarity));
+    const [nearest] = others;
+    if (nearest) note_max.push(nearest.similarity);
+  }
+```
+
+Doc comments on the three new `Populations` fields say what they hold and that they are unranked, and why: on bge-micro the ranked populations pass 100 % at five defaults (design D11). In `readBaseline`, after the pass-rate validation:
+
+```ts
+    const population = (stats.pass_rates as Record<string, { population?: unknown }>)[key].population;
+    if (population !== POPULATION_OF[key]) {
+      throw new UsageError(
+        `--baseline ${file}: ${key} was measured on ${JSON.stringify(population) ?? 'nothing'}, this build measures it on "${POPULATION_OF[key]}" — re-capture the baseline with --stats`,
+      );
+    }
+```
+
+`formatStats` prints each default's population (`deep: population=query_all threshold=… pass=…`). In `eval/README.md` § Calibration, the populations table gets seven rows: three ranked, three unranked, and `note_max`. Then add a short paragraph on why the defaults are matched on the unranked ones, linking design D11. In § Baseline, add a sentence on the new population refusal.
+
+- [ ] **Step 3: Run, then commit**
+
+Run: `npm test && npm run typecheck && npm run lint` — Expected: PASS.
+
+```bash
+git add ./ev[a]l test/ev[a]l
+git commit -m "feat(eval): match similarity defaults on unranked populations
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+- [ ] **Step 4: Re-capture the bge baseline** (bge-micro-v2 must still be in the registry)
+
+On `<scratchpad>/vault-bge/Obsidian`, a fresh rsync of the live vault (one simple command each):
+
+1. Confirm the copy's `.neuro-vault/corpus/manifest.json` is `bge-micro-v2`, `embed_version 1`.
+2. `npm run build`, then `node dist/cli.js index --vault <copy> --model bge-micro-v2`. This brings the corpus up to the copy's notes. Expected: no `rebuilding` line, `failed=0`.
+3. `npx tsx ./eval/run.ts --vault <copy> --model bge-micro-v2 --pipeline semantic --stats`.
+4. **Decision rule (design D11):** each of `quick`, `deep`, `fallback`, `expansionFloor` and `similarNotes` must pass **< 1.0** of its unranked population. If any passes 1.0, stop and ask the owner. Do not proceed to Task 11.3.
+5. Copy the full report to the main checkout's gitignored `eval/results/baseline-bge-micro-v2-unranked.json` (absolute path, no `cd`). PR 3's `baseline-bge-micro-v2.json` stays as it is.
+6. `calibration.md`: replace the "open question" section with a short "Resolved" note pointing at design D11. Add "Baseline — bge-micro-v2, unranked populations" with metrics, the seven populations' quantiles, the pass rates and the guards, plus the raw aggregates block (`{ code_sha, vault_sha, model_key, identity, config, metrics, stats }`, with `stats.baseline` absent and no `per_query`). Keep PR 3's section as history and mark it superseded for calibration.
+
+```bash
+git add openspec/changes/embedding-model-profiles/calibration.md
+git commit -m "docs(openspec): re-capture the bge-micro baseline on unranked populations
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
 
 ### Task 11.1: Manifest v2 records the producing identity
 
@@ -4675,12 +4819,28 @@ import { MIN_CHARS, type ChunkedBlock, type NoteEmbedInputs } from './types.js';
 
 `types.ts`: delete `EMBED_CHAR_BUDGET` and its comment.
 
+`src/modules/semantic/embed-queue.ts`: `bucketByLength`'s doc comment justifies sorting with "`EMBED_CHAR_BUDGET` caps it and not them, so a long block can outrun it". That is no longer true. Now the note text holds every block uncut, so it is usually the longest input. It is not always the longest: a block's embed text carries its heading breadcrumbs, which can make it outrun a note that is little more than that block. Blocks also differ widely in length among themselves. Rewrite the comment to say that, and nothing about a budget:
+
+```ts
+/**
+ * Groups text indices shortest-first into buckets of at most `maxBatchSize`
+ * whose longest text is at most twice the shortest (design D6), so no input is
+ * padded to one far longer. A note's inputs differ widely in length — its
+ * blocks among themselves, and the note text (which holds them all) from each
+ * of them — and which one is longest is not fixed: a block's heading
+ * breadcrumbs can make it outrun a note that is little more than that block.
+ * So the buckets come from measured lengths, not from input order.
+ */
+```
+
+In the same commit, rewrite design D6's "Why bucketing" bullet to the same effect. Drop the `EMBED_CHAR_BUDGET` clause and the 349-of-888 figure, which measured the capped text.
+
 - [ ] **Step 3: Run, then commit**
 
 Run: `npm test && npm run typecheck && npm run lint && grep -rn "EMBED_CHAR_BUDGET\|1894" src eval test` — Expected: PASS, grep empty.
 
 ```bash
-git add src/lib/obsidian/corpus test/lib/obsidian/corpus
+git add src/lib/obsidian/corpus src/modules/semantic/embed-queue.ts test/lib/obsidian/corpus openspec/changes/embedding-model-profiles/design.md
 git commit -m "feat(corpus): bound note text by tokens, not a character budget
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -4720,7 +4880,26 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     });
 ```
 
-and change the duplicate-flag test's second value to `harrier-0.6b`. Run — Expected: FAIL.
+and change the duplicate-flag test's second value to `harrier-0.6b`. In `test/eval/run.test.ts`, the unknown-model regex becomes `/harrier-270m.*granite-97m.*harrier-0\.6b/s`, and this test pins reconciliation note (d), next to the other `--baseline` tests:
+
+```ts
+  it('reads a baseline whose profile has left the registry', async () => {
+    const first = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed, resultsDir },
+    );
+    const retired = path.join(resultsDir, 'retired-baseline.json');
+    await writeFile(retired, JSON.stringify({ ...first.report, model_key: 'bge-micro-v2' }));
+    const { report } = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: retired },
+      { embed, resultsDir },
+    );
+    expect(report.stats?.baseline?.model_key).toBe('bge-micro-v2');
+    expect(report.stats?.suggested).toBeDefined();
+  });
+```
+
+(Use the file's existing harness names for the vault, embedder and results directory.) Run — Expected: FAIL. This new test passes already, and is a regression pin.
 
 - [ ] **Step 2: Implement**
 
@@ -4728,14 +4907,14 @@ In `model-profiles.ts`: delete `BGE_MICRO_V2`; order the registry `HARRIER_270M`
 
 - [ ] **Step 3: Fix what the switch breaks**
 
-Run `npm test`. Tests that resolved `DEFAULT_MODEL_KEY` only to get *a* profile keep working; tests that depend on 384-dim fixtures and the default profile switch to `resolveModelProfile('granite-97m')` explicitly. `TEST_IDENTITY` keeps its `bge-micro-v2` key on purpose — it is a fixture identity, never resolved against the registry.
+Run `npm test`. Tests that resolve `DEFAULT_MODEL_KEY` only to get *a* profile keep working. Tests that depend on 384-dim fixtures and the default profile switch to `resolveModelProfile('granite-97m')` explicitly. Then fix the known breakages from reconciliation note (e): the embedding-service mean-pooling cases move to a local `mean-fixture` profile; the cli-index rebuild line and the corpus-backend announcement name `harrier-270m (embed_version 2)` wherever they resolve the default; `eval/README.md` names `harrier-270m` as the current default. `TEST_IDENTITY` keeps its `bge-micro-v2` key on purpose: it is a fixture identity and never resolves against the registry.
 
 - [ ] **Step 4: Run, then commit**
 
 Run: `npm test && npm run typecheck && npm run lint && grep -rn "bge-micro-v2" src` — Expected: PASS; grep prints nothing in `src/`.
 
 ```bash
-git add -A src test
+git add -A src test eval/README.md
 git commit -m "feat(semantic)!: default to the harrier-270m embedding profile
 
 BREAKING CHANGE: the default embedding model is now harrier-oss-v1-270m
@@ -4759,33 +4938,26 @@ Data-producing task: the numbers it writes come from the runs below. Aggregates 
 
 - [ ] **Step 1: Build and set up**
 
+`npm run build`. `BASELINE` is the baseline Task 11.0 re-captured, on the same vault copy. Do **not** re-sync the copy: the profile runs must share the baseline's `vault_sha`. Each profile `KEY` gets its own clone of the bge copy, `<scratchpad>/vault-$KEY/Obsidian` (`rsync -a --exclude .neuro-vault/corpus <scratchpad>/vault-bge/Obsidian/ <scratchpad>/vault-$KEY/Obsidian/`), so the corpora sit side by side and a guard re-run never needs a re-index.
+
+- [ ] **Step 2: Per profile — index, measure, choose, verify** (once per `KEY` in `harrier-270m`, `granite-97m`, `harrier-0.6b`; each line is one simple command, per the environment note)
+
 ```bash
-npm run build
-BASELINE=/Users/amostovenko/git/neuro-vault/eval/results/baseline-bge-micro-v2.json
-test -f "$BASELINE" && echo "baseline present"
-rsync -a --delete /Users/amostovenko/Obsidian/ "$VAULT_COPY/"
+/usr/bin/time -l node dist/cli.js index --vault <scratchpad>/vault-$KEY/Obsidian --model $KEY
+npx tsx ./eval/run.ts --vault <scratchpad>/vault-$KEY/Obsidian --model $KEY --pipeline semantic --stats --baseline $BASELINE
 ```
 
-- [ ] **Step 2: Per profile — index, measure, choose, verify** (run this block once per `KEY` in `harrier-270m`, `granite-97m`, `harrier-0.6b`)
+The index run is cold: the clone has no corpus. Its last stdout line ends `failed=0`; `/usr/bin/time` gives wall time and max RSS on stderr. From the report the eval prints, take `stats.suggested.<default>.threshold` for `quick`, `deep`, `similarNotes` and `duplicates`. A `null` means an empty population: stop and investigate, never read it as 0. Choose each value by rounding **down** to two decimals (a floor rounded down never filters more than the baseline did). `fallback` and `expansionFloor` follow the owner's ruling in design D11 ("Outcome of the rule"): on bge they passed 1.0 of their unranked population. Set each just below the minimum of its own unranked population on this profile (`stats.populations.query_all.min`, `stats.populations.seed_all.min`), rounded **down to 0.05**. Enforce `quick ≥ deep > fallback`; if the rounded `fallback` is not below `deep`, step it down another 0.05 and note it. Write the six values into that profile's `similarity` as its own frozen object (replacing `BGE_SCALE_SIMILARITY` for that profile). Then re-measure with the chosen values. There is no rebuild; the corpus is still this profile's:
 
 ```bash
-KEY=harrier-270m
-rm -rf "$VAULT_COPY/.neuro-vault/corpus"
-/usr/bin/time -l node dist/cli.js index --vault "$VAULT_COPY" --model "$KEY" 2> "$SCRATCH/index-$KEY-time.txt" | tail -1
-npm run eval -- --vault "$VAULT_COPY" --model "$KEY" --pipeline semantic --stats --baseline "$BASELINE" | tee "$SCRATCH/eval-$KEY-suggested.txt"
-```
-
-From the report (`ls -t eval/results/*-$KEY-semantic.json | head -1`), take `stats.suggested.<default>.threshold` for all six defaults and choose each value by rounding **down** to two decimals (a floor rounded down never filters more than the baseline did). Enforce `quick ≥ deep > fallback`; if the suggestion violates it, set `fallback = deep − 0.01` and note it. Write the six values into that profile's `similarity` as its own frozen object (replacing `BGE_SCALE_SIMILARITY` for that profile), then re-measure with the chosen values — no rebuild, the corpus is still this profile's:
-
-```bash
-npm run eval -- --vault "$VAULT_COPY" --model "$KEY" --pipeline semantic --stats | tee "$SCRATCH/eval-$KEY-chosen.txt"
+npx tsx ./eval/run.ts --vault <scratchpad>/vault-$KEY/Obsidian --model $KEY --pipeline semantic --stats
 ```
 
 Guards: `deep_filtered_first_relevant` must be `0` and `quick_hit_at_3_drop` at most `1`. If a guard fails, lower that threshold by 0.01 and re-run this command until it passes; record each adjustment. Then record in `calibration.md`, section "<KEY>": cold-index wall time and max RSS, the semantic metrics (overall/UA/EN MRR and hit@3), the population quantiles, each default's baseline pass rate → suggested → chosen value, and the final guards.
 
 - [ ] **Step 3: Remove the shared bge-scale constant and pin the chosen values**
 
-Once all three profiles carry their own values, delete `BGE_SCALE_SIMILARITY`. Add to `test/semantic/model-profiles.test.ts`, with the literal copied from `calibration.md`'s "Chosen values" table (one row per profile):
+Once all three profiles carry their own values, delete `BGE_SCALE_SIMILARITY`. In `test/semantic/model-profiles.test.ts`, **replace** the test "pins every profile's similarity defaults" (which fixes the bge values on every profile) with the following. Copy the literal from `calibration.md`'s "Chosen values" table, one row per profile:
 
 ```ts
   it('pins the calibrated similarity defaults (calibration.md, "Chosen values")', () => {
@@ -4813,28 +4985,20 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Default profile, cold index and semantic quality**
 
+This runs on a fresh clone of the bge copy with no corpus: `<scratchpad>/vault-accept/Obsidian`. No `--model` anywhere, so the default is what gets exercised. Each line is one simple command:
+
 ```bash
 npm run build
-rm -rf "$VAULT_COPY/.neuro-vault/corpus"
-/usr/bin/time -l node dist/cli.js index --vault "$VAULT_COPY" 2> "$SCRATCH/accept-index-time.txt" | tail -1
-npm run eval -- --vault "$VAULT_COPY" --pipeline semantic | tee "$SCRATCH/accept-semantic.txt"
-npm run eval -- --vault "$VAULT_COPY" --pipeline fused | tee "$SCRATCH/accept-fused.txt"
+/usr/bin/time -l node dist/cli.js index --vault <scratchpad>/vault-accept/Obsidian
+npx tsx ./eval/run.ts --vault <scratchpad>/vault-accept/Obsidian --pipeline semantic
+npx tsx ./eval/run.ts --vault <scratchpad>/vault-accept/Obsidian --pipeline fused
 ```
 
-Expected: the index line ends `failed=0` and wall time is minutes (bake-off: 6–11 min for ~6k vectors); semantic `ua mrr ≥ 0.600` and `en mrr ≥ 0.800`. If either MRR misses, stop and investigate with `superpowers:systematic-debugging` (query prefix applied? EOS kept? pooling from the mask?) — the bake-off measured 0.695 / 0.812 on the same golden set.
+Expected: the index line ends `failed=0` and wall time is in minutes (bake-off: 6–11 min for ~6k vectors). Semantic `ua mrr ≥ 0.600` and `en mrr ≥ 0.800`. Remember en has n = 4, so one query moves en MRR by up to 0.25. If either MRR misses, stop and investigate with `superpowers:systematic-debugging` (query prefix applied? EOS kept? pooling from the mask?). The bake-off measured 0.695 / 0.812 on the same golden set.
 
 - [ ] **Step 2: granite-97m end to end through the server**
 
-```bash
-node dist/cli.js index --vault "$VAULT_COPY" --model granite-97m | head -1
-REQ='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_notes","arguments":{"query":["векторний пошук","embeddings"]}}}'
-(printf '%s\n' "$REQ"; sleep 30) | node dist/cli.js --vault "$VAULT_COPY" --model granite-97m > "$SCRATCH/accept-granite.jsonl" 2> "$SCRATCH/accept-granite-stderr.txt"
-grep -c '"semantic' "$SCRATCH/accept-granite.jsonl"
-```
-
-Expected: the first index line announces the rebuild from `harrier-270m (embed_version 2)`; the search response carries semantic provenance; stderr has no rebuild line.
+Re-index the acceptance clone with `--model granite-97m`. Expected: the first stdout line announces the rebuild from `harrier-270m (embed_version 2)`. Then drive the stdio server from a scratchpad driver, `<scratchpad>/accept-granite.mjs`. It spawns `node dist/cli.js --vault <clone> --model granite-97m`, writes `initialize`, `notifications/initialized` and a `tools/call` of `search_notes` with `{"query":["векторний пошук","embeddings"]}`, and waits for the response with id 2. It asserts that every stdout line parses as JSON-RPC, that the response carries semantic hits, and that stderr has no rebuild line. Run it with `node <scratchpad>/accept-granite.mjs`.
 
 - [ ] **Step 3: Record and commit**
 
@@ -4916,6 +5080,33 @@ Expected: every remaining hit is historical (ADR-0017's context, the bake-off li
 ```bash
 git add README.md AGENTS.md docs
 git commit -m "docs: sweep the guide and README for the harrier default and profile thresholds
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 13.4: Guide page — choosing and configuring an embedding model (owner's request)
+
+The owner asked, during PR 4, for one user-facing page that explains how to run a given model, with benchmarks alongside.
+
+**Files:**
+- Create: `docs/guide/embedding-models.md`
+- Modify: `docs/guide/README.md` (add it to the list), `README.md` (§ user guide list; the model sentence links here), `docs/guide/configuration.md` (the `--model` row links here)
+
+- [ ] **Step 1: Write the page.** Model-agnostic and current-state (no history), with these sections:
+  - **The profiles**: a table with key, what it is for (default / lite / quality), repo, dims, pooling, download size, peak RSS while indexing, cold-index time on the measured vault, and query latency where measured.
+  - **Choosing**: harrier-270m for most users, granite-97m for small hosts or a fast first index, harrier-0.6b where quality matters more than index time. Ukrainian vs English quality in a sentence each, from the numbers.
+  - **Configuring**: `--model <key>` in the MCP client config (one JSON example for Claude Desktop / Claude Code, `args`); the same `--model` for `neuro-vault-mcp index` (pre-warming); the cache directory and `XDG_CACHE_HOME`; `ONNXRUNTIME_NODE_INSTALL=skip` on CPU-only Linux.
+  - **Switching models**: one corpus per vault, so a switch discards and rebuilds it (the stderr line the server prints, `semantic_status: indexing` meanwhile, lexical search unaffected). Keep the server and `index` on the same `--model`, or they rebuild against each other. An unknown key fails, listing the keys.
+  - **Similarity thresholds per model**: the calibrated table (six defaults × three profiles) from `calibration.md` ("Chosen values"), one sentence on how they were derived (link ADR-0017), and the advice that an explicit `threshold` is on that model's scale and does not carry over to another.
+  - **Benchmarks**: semantic MRR / hit@3 overall, UA and EN per profile, plus fused for the default. Measured on the owner's private vault (≈ 950 notes, 25 golden queries: 21 UA, 4 EN). Each EN query is worth up to 0.25 of EN MRR. State the measurement date and point at `eval/README.md`'s reproduction procedure (`neuro-vault-mcp index --model <key>`, then the eval run on a copy) rather than SHAs. Aggregates only, from `calibration.md`; no note paths.
+- [ ] **Step 2: Link it** from `docs/guide/README.md`, `README.md` and `configuration.md`, and check that `docs/README.md`'s description of `guide/` still covers it.
+- [ ] **Step 3: Commit**
+
+```bash
+git add docs/guide README.md
+git commit -m "docs(guide): add a page on choosing and configuring the embedding model
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```

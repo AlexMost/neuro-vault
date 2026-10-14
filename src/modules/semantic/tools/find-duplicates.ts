@@ -32,7 +32,14 @@ export function buildFindDuplicatesTool(
     description: 'Identify note pairs with high embedding similarity.',
     semantic: true,
     inputShape: {
-      threshold: z.number().min(0).max(1).optional(),
+      threshold: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe(
+          `Min note↔note similarity 0-1 for a pair to count as a duplicate. Default ${similarity.duplicates}, on the active embedding model's scale.`,
+        ),
     },
     runForEntry: async (entry, input) => {
       const backend = entry.backend;

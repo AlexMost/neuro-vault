@@ -51,7 +51,10 @@ describe('parseEvalArgs', () => {
     [['--vault', '/v', '--pipeline', 'reranked'], /semantic.*fused/s],
     [['--vault', '/v', '--pipeline', 'semantic', '--bogus'], /--bogus/],
     [['--vault', '--pipeline'], /--vault/],
-    [['--vault', '/v', '--model', 'text-embedding-3-small'], /bge-micro-v2.*granite-97m/s],
+    [
+      ['--vault', '/v', '--model', 'text-embedding-3-small'],
+      /harrier-270m.*granite-97m.*harrier-0\.6b/s,
+    ],
     [['--vault', '/v', '--baseline', '/r.json'], /--baseline requires --stats/],
     [['--vault', '/v', '--pipeline', 'fused', '--stats'], /--stats measures the semantic pipeline/],
   ])('rejects %j naming what is supported', (argv, pattern) => {
@@ -275,8 +278,10 @@ describe('runEval end-to-end (stub embedder)', () => {
       },
       { embed, resultsDir },
     );
-    expect(first.report.stats?.pass_rates.deep.pass_rate).toBe(0.1); // one of the ten candidates scores 1, the rest 0
-    expect(report.stats?.suggested?.deep.baseline_pass_rate).toBe(0.1);
+    const rate = first.report.stats!.pass_rates.deep.pass_rate;
+    expect(first.report.stats?.populations.query_all.n).toBe(12); // every source, not just the top-k
+    expect(rate).toBeCloseTo(1 / 12); // one source scores 1, the rest 0
+    expect(report.stats?.suggested?.deep.baseline_pass_rate).toBe(rate);
     expect(report.stats?.suggested?.deep.threshold).toBe(1);
   });
 
@@ -307,6 +312,24 @@ describe('runEval end-to-end (stub embedder)', () => {
     expect(first.report.stats?.baseline).toBeUndefined();
   });
 
+  it('reads a baseline whose profile has left the registry', async () => {
+    await makeVault(GOLDEN);
+    await addExtraNotes();
+    const embed = () => Promise.resolve(unitVec(0));
+    const first = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed, resultsDir },
+    );
+    const retired = path.join(resultsDir, 'retired-baseline.json');
+    await writeFile(retired, JSON.stringify({ ...first.report, model_key: 'bge-micro-v2' }));
+    const { report } = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: retired },
+      { embed, resultsDir },
+    );
+    expect(report.stats?.baseline?.model_key).toBe('bge-micro-v2');
+    expect(report.stats?.suggested).toBeDefined();
+  });
+
   it.each([
     ['above 1', 1.5],
     ['negative', -0.1],
@@ -331,6 +354,28 @@ describe('runEval end-to-end (stub embedder)', () => {
     );
     await expect(run).rejects.toThrow(UsageError);
     await expect(run).rejects.toThrow(/broken-baseline\.json.*similarNotes/);
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it('refuses a --baseline that measured a default on another population, before embedding anything', async () => {
+    await makeVault(GOLDEN);
+    await addExtraNotes();
+    const embed = vi.fn(() => Promise.resolve(unitVec(0)));
+    const first = await runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      { embed, resultsDir },
+    );
+    const ranked = structuredClone(first.report);
+    ranked.stats!.pass_rates.deep.population = 'query_candidates';
+    const rankedFile = path.join(resultsDir, 'ranked-baseline.json');
+    await writeFile(rankedFile, JSON.stringify(ranked));
+    embed.mockClear();
+    const run = runEval(
+      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: rankedFile },
+      { embed, resultsDir },
+    );
+    await expect(run).rejects.toThrow(UsageError);
+    await expect(run).rejects.toThrow(/ranked-baseline\.json.*deep.*query_candidates.*query_all/s);
     expect(embed).not.toHaveBeenCalled();
   });
 

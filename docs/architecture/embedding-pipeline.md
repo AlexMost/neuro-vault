@@ -4,7 +4,19 @@ How the server turns a query string or a document into a vector that can be comp
 
 ## What it is
 
-`src/modules/semantic/embedding-service.ts` is the local, in-process implementation of the `EmbeddingProvider` interface (`src/modules/semantic/types.ts`). It is built from one `ModelProfile` — a record in [`model-profiles.ts`](../../src/modules/semantic/model-profiles.ts) that holds everything model-specific: the Hugging Face repo, the pinned revision, `dtype`, output dimension, pooling method, query/document prefixes and the token window (`maxTokens`). The registry is closed — `bge-micro-v2` (the default, mean pooling, 384 dims, ≈ 17 MB), `granite-97m` (a lite multilingual model, CLS pooling, 384 dims, ≈ 98 MB), `harrier-270m` (multilingual, last-token pooling, 640 dims, ≈ 344 MB) and `harrier-0.6b` (highest quality, last-token pooling, 1024 dims, ≈ 706 MB) — and `--model <key>` picks one per process (see [`cli-startup.md`](./cli-startup.md)).
+`src/modules/semantic/embedding-service.ts` is the local, in-process implementation of the `EmbeddingProvider` interface (`src/modules/semantic/types.ts`). It is built from one `ModelProfile` — a record in [`model-profiles.ts`](../../src/modules/semantic/model-profiles.ts) that holds everything model-specific: the Hugging Face repo, the pinned revision, `dtype`, output dimension, pooling method, query/document prefixes, the token window (`maxTokens`) and the profile's default similarity thresholds (see [`retrieval-policy.md`](./retrieval-policy.md#calibration)). The decision behind the registry is [ADR-0017](../adr/0017-embedding-model-profiles.md).
+
+## Profiles
+
+The registry is closed: no input ever names a repository directly, so a profile joins it only after it has been measured on the retrieval eval and verified against the pinned `@huggingface/transformers` version. `--model <key>` picks one per process (see [`cli-startup.md`](./cli-startup.md)); `harrier-270m` is the default.
+
+| Key | Role | Pooling | Dims | Query prefix | Download | Pinned revision |
+| --- | --- | --- | --- | --- | --- | --- |
+| `harrier-270m` (default) | multilingual, balanced | last token | 640 | retrieval instruction | ≈ 344 MB | `d59c919` |
+| `granite-97m` | lite multilingual | CLS | 384 | none | ≈ 98 MB | `536a9f2` |
+| `harrier-0.6b` | highest quality | last token | 1024 | retrieval instruction | ≈ 706 MB | `e4daffa` |
+
+All three run quantized (`dtype: 'q8'`) with a 512-token window and no document prefix. Each `revision` is the exact repository commit the profile was verified against, never a branch. Downloaded weights live in the model cache (see step 1 below), so a profile is fetched once per machine.
 
 To embed, the service:
 
@@ -12,7 +24,7 @@ To embed, the service:
 2. Turns each trimmed text into a model input row made of exactly the tokens the model was trained on — special-token template included, cut to `maxTokens` without losing the template's end (see [Tokenisation](#tokenisation)).
 3. Pads the rows of a call into one batch, runs a single forward pass, pools the output by the attention mask ([`pooling.ts`](../../src/modules/semantic/pooling.ts)) and normalizes each vector to unit length.
 
-The service also exposes `identity` (`provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens`) — what produced these vectors. The corpus records a five-field projection of it (`model_key`, `model_id`, `dims`, plus its own `embed_version` and `strategy`) and compares only those; see [`own-corpus.md`](./own-corpus.md) for what a mismatch does (discard and rebuild). `revision`, `dtype`, `pooling` and `max_tokens` are reported but not yet part of that comparison.
+The service also exposes `identity` (`provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens`) — everything that determines the vectors it produces. The corpus records that identity in its manifest, adds its own `embed_version` and `strategy`, and compares every field on startup; see [`own-corpus.md`](./own-corpus.md) for what a mismatch does (discard and rebuild).
 
 ## Why it exists
 
@@ -56,7 +68,7 @@ When the model finishes loading, the service derives the special-token template 
 5. **Pad on the declared side.** The rows of a call are padded to the longest with the tokenizer's pad id, on the side the tokenizer declares (`padding_side`; right when it is silent). The attention mask marks real tokens with 1.
 6. **Pool by the mask.** See [Pooling](#pooling).
 
-**Why not the library's own encode.** `@huggingface/transformers` truncates **after** the post-processor has run, so an over-long input loses its trailing special token. A mean- or CLS-pooling model shrugs that off; a last-token model (harrier) pools exactly that token, and would silently embed an arbitrary mid-sentence position instead. Cutting first and re-attaching the template gives every profile one truncation semantics. It also keeps an over-long block from crashing inside ONNX — some tokenizers declare no real window (`bge-micro-v2` ships `model_max_length = 1e15`), so the profile's `maxTokens` is the only limit. An input that fits the window encodes exactly as the library would encode it.
+**Why not the library's own encode.** `@huggingface/transformers` truncates **after** the post-processor has run, so an over-long input loses its trailing special token. A mean- or CLS-pooling model shrugs that off; a last-token model (harrier) pools exactly that token, and would silently embed an arbitrary mid-sentence position instead. Cutting first and re-attaching the template gives every profile one truncation semantics. It also keeps an over-long block from crashing inside ONNX — a tokenizer can declare no real window (a `model_max_length` of 1e15, say), so the profile's `maxTokens` is the only limit. An input that fits the window encodes exactly as the library would encode it.
 
 The derived template and padding side of every profile at its pinned revision are checked against the real tokenizer by the `profile-tokenizers` job in [`ci.yml`](../../.github/workflows/ci.yml) (`test/integration/profile-tokenizers.test.ts`, skipped unless `NEURO_VAULT_HF_TESTS=1`): a mis-pinned revision fails CI, not retrieval.
 
@@ -64,7 +76,7 @@ The derived template and padding side of every profile at its pinned revision ar
 
 The provider has two entry points because the two inputs are not the same kind of text:
 
-- `embedQuery(text)` applies the profile's `queryPrefix` and embeds one text. harrier's prefix is its retrieval instruction (`Instruct: Given a web search query, retrieve relevant passages that answer the query`, a newline, `Query: `); `bge-micro-v2` and `granite-97m` have none.
+- `embedQuery(text)` applies the profile's `queryPrefix` and embeds one text. harrier's prefix is its retrieval instruction (`Instruct: Given a web search query, retrieve relevant passages that answer the query`, a newline, `Query: `); `granite-97m` has none.
 - `embedDocuments(texts)` applies the profile's `documentPrefix` (empty for every shipped profile) and embeds at most `maxBatchSize` (8) texts in one call, returning vectors in input order. A larger batch is rejected. So is a blank text, naming its index, **before** any model call — embedding the bare template would return a plausible-looking vector for nothing. An empty list returns `[]`.
 
 **No caller ever adds a prefix.** The prefix is part of what makes a vector a query vector or a document vector, so it lives with the profile and is applied in this one place; the retrieval path, the corpus indexer and the tests all hand the provider plain text.
@@ -91,4 +103,4 @@ The contract: **positions come from the attention mask, never from token ids.** 
 ## Boundaries
 
 - The service does not store or cache embeddings. Caching would be wrong: queries are short-lived and the corpus already holds its own pre-computed embeddings.
-- `--model` picks the profile; the service never has a default of its own. The caller passes a `ModelProfile`, and the corpus — not the caller — is responsible for noticing that the stored vectors came from another model (via `identity`), so a vault indexed with a different model is rebuilt instead of mixing vector spaces. See [`own-corpus.md`](./own-corpus.md).
+- `--model` picks the profile; the service never has a default of its own. The caller passes a `ModelProfile`, and the corpus — not the caller — is responsible for noticing that the stored vectors came from another model or configuration (via `identity`), so a vault indexed with a different profile is rebuilt instead of mixing vector spaces. See [`own-corpus.md`](./own-corpus.md).

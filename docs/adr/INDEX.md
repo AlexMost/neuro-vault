@@ -20,7 +20,8 @@ Template: [0000-template.md](0000-template.md).
 | 0010 | [Context reaches agents through tool descriptions and responses](0010-context-delivery-channels.md)   | Accepted |
 | 0011 | [Four doc altitudes; the frozen pre-OpenSpec record is retired](0011-retire-frozen-doc-layer.md)       | Accepted |
 | 0012 | [Vault conventions leave the `instructions` channel](0012-conventions-leave-the-instructions-channel.md) | Accepted |
-| 0013 | [The server builds and owns its embedding corpus](0013-own-embedding-corpus.md)                        | Accepted |
+| 0013 | [The server builds and owns its embedding corpus](0013-own-embedding-corpus.md)                        | Accepted; model identity and text bound refined in part by [0017](0017-embedding-model-profiles.md) |
 | 0014 | [Background corpus freshness, and the removal it enabled](0014-background-corpus-freshness.md)         | Accepted |
 | 0015 | [The registration gate owns schema validation; `INVALID_ARGUMENT` is for semantic faults](0015-input-gate-owns-schema-validation.md) | Accepted |
 | 0016 | [One disk module owns note writes; `VaultProvider` survives only as a test seam](0016-one-disk-module-owns-note-writes.md) | Accepted |
+| 0017 | [Embedding models are a closed set of verified profiles](0017-embedding-model-profiles.md) | Accepted |

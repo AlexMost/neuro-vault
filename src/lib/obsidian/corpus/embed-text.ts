@@ -1,5 +1,5 @@
 import { chunkNote } from './chunker.js';
-import { EMBED_CHAR_BUDGET, MIN_CHARS, type ChunkedBlock, type NoteEmbedInputs } from './types.js';
+import { MIN_CHARS, type ChunkedBlock, type NoteEmbedInputs } from './types.js';
 
 export function pathBreadcrumbs(notePath: string): string {
   return notePath.split('/').join(' > ').replace(/\.md$/, '');
@@ -49,9 +49,8 @@ export function buildEmbedInputs(notePath: string, content: string): NoteEmbedIn
     ...block,
     embedText: `${blockBreadcrumbs(notePath, block.key)}\n${block.text}`,
   }));
-  const note =
-    content.length >= MIN_CHARS
-      ? `${pathBreadcrumbs(notePath)}:\n${content}`.slice(0, EMBED_CHAR_BUDGET)
-      : null;
+  // No character budget: how much reaches the model is decided in tokens by
+  // the active profile's tokenizer (design D9), never by an assumed ratio.
+  const note = content.length >= MIN_CHARS ? `${pathBreadcrumbs(notePath)}:\n${content}` : null;
   return { path: notePath, note, blocks };
 }

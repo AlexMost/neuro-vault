@@ -8,7 +8,7 @@ import {
   ensureCorpusGitignored,
   isManifestCompatible,
 } from '../../../../src/lib/obsidian/corpus/shard-store.js';
-import { TEST_DIMS } from '../../../_identity.js';
+import { TEST_DIMS, TEST_IDENTITY } from '../../../_identity.js';
 import type { CorpusShard } from '../../../../src/lib/obsidian/corpus/types.js';
 
 /** A dims-sized placeholder vector: TEST_DIMS float32 values, all zero. */
@@ -27,13 +27,7 @@ async function tempVault() {
   return mkdtemp(path.join(tmpdir(), 'nv-corpus-'));
 }
 
-const expected = {
-  embed_version: 1,
-  model_key: 'bge-micro-v2',
-  model_id: 'TaylorAI/bge-micro-v2',
-  dims: 384,
-  strategy: 'sc-parity-v1',
-};
+const expected = TEST_IDENTITY;
 const stored = { ...expected, created: '2026-08-24T00:00:00.000Z' };
 
 describe('CorpusStore', () => {
@@ -266,23 +260,59 @@ describe('isManifestCompatible', () => {
     expect(isManifestCompatible(stored, expected, true)).toBe(true);
   });
 
-  it.each(['embed_version', 'model_key', 'model_id', 'dims', 'strategy'] as const)(
-    'rejects a manifest differing in %s',
-    (field) => {
-      const changed = {
-        ...stored,
-        [field]: field === 'dims' || field === 'embed_version' ? 999 : 'other',
-      };
-      expect(isManifestCompatible(changed, expected, true)).toBe(false);
-    },
-  );
-
   it('rejects a missing manifest when shards exist', () => {
     expect(isManifestCompatible(null, expected, true)).toBe(false);
   });
 
   it('accepts a missing manifest on an empty corpus', () => {
     expect(isManifestCompatible(null, expected, false)).toBe(true);
+  });
+});
+
+describe('manifest identity v2', () => {
+  it.each([
+    'embed_version',
+    'provider',
+    'model_key',
+    'model_id',
+    'revision',
+    'dtype',
+    'dims',
+    'pooling',
+    'max_tokens',
+    'strategy',
+  ] as const)('a stored %s that differs is incompatible', (field) => {
+    const changed = {
+      ...TEST_IDENTITY,
+      created: 'x',
+      [field]: typeof TEST_IDENTITY[field] === 'number' ? 1234 : 'different',
+    };
+    expect(isManifestCompatible(changed, TEST_IDENTITY, true)).toBe(false);
+  });
+
+  it('a matching manifest is compatible regardless of created', () => {
+    expect(isManifestCompatible({ ...TEST_IDENTITY, created: 'any' }, TEST_IDENTITY, true)).toBe(
+      true,
+    );
+  });
+
+  it('reads a legacy embed_version 1 manifest instead of rejecting it', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'nv-legacy-'));
+    await mkdir(path.join(root, '.neuro-vault/corpus'), { recursive: true });
+    await writeFile(
+      path.join(root, '.neuro-vault/corpus/manifest.json'),
+      JSON.stringify({
+        embed_version: 1,
+        model_key: 'bge-micro-v2',
+        model_id: 'TaylorAI/bge-micro-v2',
+        dims: 384,
+        strategy: 'sc-parity-v1',
+        created: '2026-08-25T00:00:00.000Z',
+      }),
+    );
+    const manifest = await new CorpusStore(root, { dims: TEST_DIMS }).readManifest();
+    expect(manifest).toMatchObject({ model_key: 'bge-micro-v2', embed_version: 1 });
+    expect(isManifestCompatible(manifest, TEST_IDENTITY, true)).toBe(false);
   });
 });
 

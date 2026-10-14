@@ -6,17 +6,41 @@ import {
   MODEL_KEYS,
   identityOf,
   resolveModelProfile,
+  type SimilarityDefaults,
 } from '../../src/modules/semantic/model-profiles.js';
 
+/** Copied from calibration.md, "Chosen values". A retune edits the profile, this pin and that table together. */
+const CALIBRATED_SIMILARITY: Record<string, SimilarityDefaults> = {
+  'harrier-270m': {
+    quick: 0.2,
+    deep: 0.13,
+    fallback: 0.05,
+    expansionFloor: 0.2,
+    similarNotes: 0.22,
+    duplicates: 0.77,
+  },
+  'granite-97m': {
+    quick: 0.71,
+    deep: 0.66,
+    fallback: 0.65,
+    expansionFloor: 0.65,
+    similarNotes: 0.67,
+    duplicates: 0.9,
+  },
+  'harrier-0.6b': {
+    quick: 0.25,
+    deep: 0.19,
+    fallback: 0.15,
+    expansionFloor: 0.25,
+    similarNotes: 0.29,
+    duplicates: 0.76,
+  },
+};
+
 describe('model profile registry', () => {
-  it('holds exactly the verified profiles, bge-micro-v2 by default', () => {
-    expect([...MODEL_KEYS].sort()).toEqual([
-      'bge-micro-v2',
-      'granite-97m',
-      'harrier-0.6b',
-      'harrier-270m',
-    ]);
-    expect(DEFAULT_MODEL_KEY).toBe('bge-micro-v2');
+  it('holds exactly the verified profiles, harrier-270m by default', () => {
+    expect([...MODEL_KEYS].sort()).toEqual(['granite-97m', 'harrier-0.6b', 'harrier-270m']);
+    expect(DEFAULT_MODEL_KEY).toBe('harrier-270m');
   });
 
   it('pins every profile to an exact 40-hex revision, int8', () => {
@@ -29,7 +53,7 @@ describe('model profile registry', () => {
 
   it('rejects an unknown key, listing the allowed ones', () => {
     expect(() => resolveModelProfile('bge-m3')).toThrow(
-      'unknown model "bge-m3" — choose one of: bge-micro-v2, granite-97m, harrier-270m, harrier-0.6b',
+      'unknown model "bge-m3" — choose one of: harrier-270m, granite-97m, harrier-0.6b',
     );
   });
 
@@ -81,15 +105,15 @@ describe('model profile registry', () => {
     });
   });
 
-  it("reproduces today's corpus identity for bge-micro-v2", () => {
-    expect(identityOf(resolveModelProfile('bge-micro-v2'))).toEqual({
+  it('reports the corpus identity for harrier-270m', () => {
+    expect(identityOf(resolveModelProfile('harrier-270m'))).toEqual({
       provider: LOCAL_PROVIDER,
-      model_key: 'bge-micro-v2',
-      model_id: 'TaylorAI/bge-micro-v2',
-      revision: '3edf6d7de0faa426b09780416fe61009f26ae589',
+      model_key: 'harrier-270m',
+      model_id: 'onnx-community/harrier-oss-v1-270m-ONNX',
+      revision: 'd59c919d0159aea2c19ed7d04288fcdd048d0f9c',
       dtype: 'q8',
-      dims: 384,
-      pooling: 'mean',
+      dims: 640,
+      pooling: 'last_token',
       max_tokens: 512,
     });
   });
@@ -102,17 +126,10 @@ describe('model profile registry', () => {
     }
   });
 
-  it("pins every profile's similarity defaults", () => {
-    // Values unchanged from the pre-profile constants until PR 4 calibrates each profile.
-    for (const key of MODEL_KEYS) {
-      expect(resolveModelProfile(key).similarity).toEqual({
-        quick: 0.5,
-        deep: 0.35,
-        fallback: 0.3,
-        expansionFloor: 0.35,
-        similarNotes: 0.5,
-        duplicates: 0.9,
-      });
-    }
+  it('pins the calibrated similarity defaults (calibration.md, "Chosen values")', () => {
+    const chosen = Object.fromEntries(
+      MODEL_KEYS.map((key) => [key, resolveModelProfile(key).similarity]),
+    );
+    expect(chosen).toEqual(CALIBRATED_SIMILARITY);
   });
 });

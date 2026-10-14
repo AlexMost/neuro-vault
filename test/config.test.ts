@@ -252,9 +252,20 @@ describe('parseConfig', () => {
           '--model',
           'granite-97m',
           '--model',
-          'bge-micro-v2',
+          'harrier-0.6b',
         ]),
       ).rejects.toThrow('--model may be given only once');
+    });
+
+    it('rejects the retired bge-micro-v2 profile, listing the current keys', async () => {
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await expect(
+          parseConfig(['node', 'cli.js', '--vault', vaultPath, '--model', 'bge-micro-v2']),
+        ).rejects.toThrow(/Choices:.*"harrier-270m".*"granite-97m".*"harrier-0.6b"/s);
+      } finally {
+        errorLog.mockRestore();
+      }
     });
 
     it('accepts --model alongside --no-semantic', async () => {
@@ -278,7 +289,8 @@ describe('parseConfig', () => {
         const help = String(log.mock.calls[0][0]);
         expect(help).toContain('--model');
         for (const key of MODEL_KEYS) expect(help).toContain(key);
-        expect(help).toContain(`default: "${DEFAULT_MODEL_KEY}"`);
+        // yargs wraps the choices/default block at the terminal width.
+        expect(help.replace(/\s+/g, ' ')).toContain(`default: "${DEFAULT_MODEL_KEY}"`);
       } finally {
         log.mockRestore();
       }

@@ -13,5 +13,5 @@ Each answers one question, so they don't overlap:
 
 ## Also in `docs/`
 
-- [`guide/`](guide/README.md) — user-facing guide: installation, configuration, finding notes (hybrid search + structured queries), reading & modifying, tool routing.
+- [`guide/`](guide/README.md) — user-facing guide: installation, configuration, choosing and configuring the embedding model, finding notes (hybrid search + structured queries), reading & modifying, tool routing.
 - [`workflow.md`](workflow.md) — the idea → merged flow. Whether a change is an opsx change or a direct PR is decided by [`../.claude/rules/opsx-routing.md`](../.claude/rules/opsx-routing.md).
