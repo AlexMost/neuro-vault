@@ -1,5 +1,6 @@
 import os from 'node:os';
 import { Duplex, PassThrough } from 'node:stream';
+import { fileURLToPath } from 'node:url';
 
 import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
 import {
@@ -16,7 +17,7 @@ import {
   type DaemonCommandDeps,
 } from '../src/cli-daemon.js';
 import { parseDaemonInfo } from '../src/daemon/info.js';
-import { daemonKey } from '../src/daemon/paths.js';
+import { cliBuild, daemonKey } from '../src/daemon/paths.js';
 import type { Timers } from '../src/daemon/probe.js';
 import type { ServiceRegistry } from '../src/daemon/protocol.js';
 
@@ -356,6 +357,18 @@ describe('runDaemonCommand (run)', () => {
     expect(h.err.join('')).toContain('/nonexistent/neuro-vault/cli.js');
     expect(h.startServer).not.toHaveBeenCalled();
     expect(h.files.size).toBe(0);
+  });
+
+  it('resolves an injected CLI path through realpath before reading its build', async () => {
+    const real = fileURLToPath(import.meta.url);
+    const realpath = vi.fn((p: string) => (p === '/link/neuro-vault/cli.js' ? real : p));
+    const h = harness({ build: undefined, cliPath: '/link/neuro-vault/cli.js', realpath });
+    await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(0);
+    expect(realpath).toHaveBeenCalledWith('/link/neuro-vault/cli.js');
+    const key = daemonKey(h.deps.version!, cliBuild(real));
+    expect(h.startServer).toHaveBeenCalledWith(
+      expect.objectContaining({ socketPath: `/tmp/neuro-vault-501/${key}.sock` }),
+    );
   });
 
   it.each(['SIGTERM', 'SIGINT'])(

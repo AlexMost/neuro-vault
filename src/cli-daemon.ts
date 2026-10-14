@@ -43,8 +43,10 @@ export interface DaemonCommandDeps {
   home?: string;
   pid?: number;
   version?: string;
-  /** Realpath of the running CLI script; default `realpathSync(process.argv[1])`. */
+  /** Path of the running CLI script, resolved through `realpath`; default `process.argv[1]`. */
   cliPath?: string;
+  /** Default `fs.realpathSync`. */
+  realpath?: (p: string) => string;
   /** Size + mtime of the CLI script; default `cliBuild(cliPath)`. */
   build?: CliBuild;
   now?: () => Date;
@@ -74,6 +76,7 @@ function resolveDeps(deps: DaemonCommandDeps) {
     cacheBase: neuroVaultCacheBase(env, home),
     pid: deps.pid ?? process.pid,
     cliPath: deps.cliPath,
+    realpath: deps.realpath ?? ((p: string) => realpathSync(p)),
     build: deps.build,
     now: deps.now ?? (() => new Date()),
     fs: deps.fs ?? defaultDaemonFs(),
@@ -119,7 +122,7 @@ function identifyBuild(r: Resolved): CliBuild | string {
   const cliPath = r.cliPath ?? process.argv[1];
   if (cliPath === undefined) return 'cannot identify the CLI script: no script path';
   try {
-    return cliBuild(r.cliPath ?? realpathSync(cliPath));
+    return cliBuild(r.realpath(cliPath));
   } catch (error) {
     return `cannot identify the CLI script at ${cliPath}: ${messageOf(error)}`;
   }
