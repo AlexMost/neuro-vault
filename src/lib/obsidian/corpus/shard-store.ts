@@ -9,11 +9,9 @@ import path from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
 
-import { IDENTITY_FIELDS, type CorpusIdentity } from './identity.js';
+import { IDENTITY_FIELDS, isStoredManifest, type CorpusIdentity } from './identity.js';
+import { CORPUS_DIR } from './layout.js';
 import type { CorpusBlock, CorpusManifest, CorpusShard, StoredManifest } from './types.js';
-
-/** Corpus root, relative to the vault root. */
-export const CORPUS_DIR = '.neuro-vault/corpus';
 
 /**
  * Max shard files held open at once during a cold load. An unbounded fan-out
@@ -142,7 +140,7 @@ export class CorpusStore {
       return null;
     }
 
-    if (!isValidManifest(parsed)) {
+    if (!isStoredManifest(parsed)) {
       this.warn(`neuro-vault corpus: manifest ${this.manifestFile} failed validation`);
       return null;
     }
@@ -339,26 +337,6 @@ export function isManifestCompatible(
 ): boolean {
   if (stored === null) return !hasShards;
   return IDENTITY_FIELDS.every((field) => stored[field] === expected[field]);
-}
-
-function isValidManifest(value: unknown): value is StoredManifest {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Record<string, unknown>;
-  const optional = (key: string, type: 'string' | 'number') =>
-    v[key] === undefined || typeof v[key] === type;
-  return (
-    typeof v.embed_version === 'number' &&
-    typeof v.model_key === 'string' &&
-    typeof v.model_id === 'string' &&
-    typeof v.dims === 'number' &&
-    typeof v.strategy === 'string' &&
-    typeof v.created === 'string' &&
-    optional('provider', 'string') &&
-    optional('revision', 'string') &&
-    optional('dtype', 'string') &&
-    optional('pooling', 'string') &&
-    optional('max_tokens', 'number')
-  );
 }
 
 /** Literal `.gitignore` lines (trimmed) that already cover the corpus directory. */
