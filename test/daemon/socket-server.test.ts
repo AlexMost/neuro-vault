@@ -233,6 +233,54 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     expect(fs.existsSync(socketPath)).toBe(false);
   });
 
+  it('answers SHUTTING_DOWN to a request that arrives during shutdown', async () => {
+    let closing: Promise<void> | undefined;
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({
+        stop: async () => {
+          closing = handle?.close();
+          return {};
+        },
+        echo: async (p) => p,
+      }),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+    });
+    const a = await LineClient.connect(socketPath);
+    // One write, two lines: id 1 is in flight when close() starts, id 2 arrives during shutdown.
+    a.socket.write(
+      serializeMessage({ jsonrpc: '2.0', id: 1, method: 't.stop' }) +
+        serializeMessage({ jsonrpc: '2.0', id: 2, method: 't.echo', params: {} }),
+    );
+    const first = await a.next();
+    const second = await a.next();
+    expect(first).toMatchObject({ id: 1, error: { data: { code: 'SHUTTING_DOWN' } } });
+    expect(second).toMatchObject({ id: 2, error: { data: { code: 'SHUTTING_DOWN' } } });
+    await a.closed();
+    await closing;
+    handle = undefined;
+    expect(fs.existsSync(socketPath)).toBe(false);
+  });
+
+  it('does not idle out when a client connected in the same turn the timer fired', async () => {
+    const onIdle = vi.fn();
+    const { timers, armed } = fakeTimers();
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({}),
+      idleTimeoutMs: 60_000,
+      onIdle,
+      timers,
+    });
+    const a = await LineClient.connect(socketPath);
+    await tick();
+    // The timer armed at listen was cleared by the connect, but suppose its callback still runs.
+    armed[0]?.fn();
+    expect(onIdle).not.toHaveBeenCalled();
+    a.socket.destroy();
+  });
+
   it('close() is idempotent', async () => {
     handle = await startDaemonServer({
       socketPath,

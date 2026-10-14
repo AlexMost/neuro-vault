@@ -15,6 +15,11 @@ export interface DaemonServerOptions {
   timers?: Timers;
   /** A server-level error after listening; the default drops it rather than crash the process. */
   onError?: (error: Error) => void;
+  /**
+   * Runs `fn` one I/O turn later (default `setImmediate`). `close()` ends its
+   * connections through it, so lines already received are still answered.
+   */
+  defer?: (fn: () => void) => void;
 }
 
 export interface DaemonServerHandle {
@@ -40,6 +45,7 @@ interface InFlight {
  */
 export async function startDaemonServer(opts: DaemonServerOptions): Promise<DaemonServerHandle> {
   const timers = opts.timers ?? { setTimeout, clearTimeout };
+  const defer = opts.defer ?? ((fn: () => void): void => void setImmediate(fn));
   const connections = new Set<net.Socket>();
   const inFlight = new Set<InFlight>();
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -57,7 +63,10 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
   const armIdle = (): void => {
     disarmIdle();
     if (opts.idleTimeoutMs <= 0 || shuttingDown) return;
-    idleTimer = timers.setTimeout(() => opts.onIdle(), opts.idleTimeoutMs);
+    idleTimer = timers.setTimeout(() => {
+      // A connection accepted in the same loop turn as the timer wins the race.
+      if (connections.size === 0) opts.onIdle();
+    }, opts.idleTimeoutMs);
   };
 
   const server = net.createServer((socket) => {
@@ -111,18 +120,22 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
       closing ??= new Promise<void>((resolve) => {
         shuttingDown = true;
         disarmIdle();
+        // `server.close` stops accepting at once and unlinks the socket file
+        // once every connection is gone.
+        server.close(() => resolve());
         for (const entry of inFlight) {
           entry.answered = true;
           write(entry.socket, errorResponse(entry.id, 'SHUTTING_DOWN', 'daemon is stopping'));
         }
-        // `server.close` stops accepting at once and unlinks the socket file
-        // once every connection is gone. Each socket is ended (flushing the
-        // answer above) and destroyed only after its write side has finished.
-        server.close(() => resolve());
-        for (const socket of connections) {
-          if (socket.destroyed) continue;
-          socket.end(() => socket.destroy());
-        }
+        // Ending is deferred one I/O turn: a request already received on a
+        // connection is answered SHUTTING_DOWN (not dropped on an ended
+        // socket) first. Each socket is destroyed only after its write side
+        // has finished, so those answers are flushed.
+        defer(() => {
+          for (const socket of connections) {
+            if (!socket.destroyed) socket.end(() => socket.destroy());
+          }
+        });
       });
       return closing;
     },
