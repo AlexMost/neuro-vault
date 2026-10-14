@@ -47,7 +47,7 @@ Add `--model <key>` to the server's `args` in your MCP client config. For Claude
 
 Leave `--model` out to get the default, `harrier-270m`.
 
-**Pre-warming with `index`.** The first index of a vault runs in the background when the server starts, and `search_notes` answers from its lexical leg until it finishes. To do that work ahead of time, run the `index` subcommand with the same `--model`:
+**Pre-warming with `index`.** The first index of a vault runs in the background when the server starts, and `search_notes` answers from its lexical leg until it finishes. To do that work ahead of time, run the `index` subcommand with the server's `--model`, so it warms the corpus the server will serve:
 
 ```bash
 neuro-vault-mcp index --vault /absolute/path/to/your/vault --model harrier-0.6b
@@ -55,7 +55,7 @@ neuro-vault-mcp index --vault /absolute/path/to/your/vault --model harrier-0.6b
 
 The `SEMANTIC_INDEX_NOT_FOUND` error's hint prints `neuro-vault-mcp index --vault <path>` without `--model` — add yours when your server runs a non-default model.
 
-**Where the model lives.** Weights download on first use into `$XDG_CACHE_HOME/neuro-vault/models` when `XDG_CACHE_HOME` is an absolute path, otherwise `~/.cache/neuro-vault/models`. Each profile is fetched once per machine and shared across upgrades; switching back to a model you used before does not download it again.
+**Where the model lives.** Weights download on first use into `$XDG_CACHE_HOME/neuro-vault/models` when `XDG_CACHE_HOME` is an absolute path, otherwise `~/.cache/neuro-vault/models`. Each profile is fetched once per machine and shared across upgrades; switching back to a model you used before does not download it again, and does not re-index the vault either while that model's corpus is still on disk.
 
 **CPU-only Linux x64.** onnxruntime's install script starts a CUDA provider download on that platform. If you have no GPU, skip it when installing:
 
@@ -67,9 +67,9 @@ Other platforms download nothing extra. Install and first-run details: [Installa
 
 ## Switching models
 
-A vault has **one corpus, built by one model** — vectors from two models do not live in the same space, and two models of equal width would score as noise rather than fail. So changing `--model` discards the vault's corpus and re-indexes it from scratch. Nothing is ever mixed silently.
+Each model keeps **its own corpus** in a vault, in `<vault>/.neuro-vault/corpus/<model_key>/` — vectors from two models do not live in the same space, and two models of equal width would score as noise rather than fail, so they are never mixed. Changing `--model` selects another directory: the first time a vault meets a model it indexes it from scratch, beside the corpus of the model you came from, and switching back later finds that corpus waiting. Nothing is discarded, and nothing is mixed silently.
 
-What you will see:
+A model's own corpus is rebuilt only when its identity changes — a new pinned revision, say, or a bumped extraction version after an upgrade. What you will see then:
 
 - The server prints one line per vault on stderr:
 
@@ -78,18 +78,20 @@ What you will see:
   ```
 
   The `index` subcommand prints `rebuilding <name>: corpus was indexed with <stored>; active model is <active>` before its progress.
-- While the rebuild runs, `search_notes` reports `semantic_status: { state: "indexing", indexed, total }` and keeps answering from its **lexical leg** — lexical search is unaffected. `get_similar_notes` and `find_duplicates` return `SEMANTIC_INDEX_BUILDING` until it finishes.
-- A fresh vault with no corpus is not a rebuild, just a first index.
+- While a corpus is being built or rebuilt, `search_notes` reports `semantic_status: { state: "indexing", indexed, total }` and keeps answering from its **lexical leg** — lexical search is unaffected. `get_similar_notes` and `find_duplicates` return `SEMANTIC_INDEX_BUILDING` until it finishes.
+- A fresh vault with no corpus, or a model meeting a vault for the first time, is not a rebuild, just a first index.
+- Upgrading a vault that still has the older single-corpus layout moves that corpus into its model's directory on the first pass, with one stderr line and no re-embedding.
 
-Three practical rules:
+Four practical rules:
 
-- **Keep the server and `index` on the same `--model`.** If they differ, each rebuilds the other's corpus every time it runs.
-- **Upgrading from a release with a different default model rebuilds every vault once**, for the same reason. Run `neuro-vault-mcp index --vault <path>` after upgrading if you would rather pay that cost ahead of time.
+- **Keep `index` on the server's `--model`.** It is advice about pre-warming, not a guard against damage: `index` with that value warms the corpus the server serves, while any other value builds a separate corpus beside it that the server never reads.
+- **Upgrading from a release with a different default model indexes every vault once** with the new default, in the background. The old model's corpus stays where it is (migrated into its own directory). Run `neuro-vault-mcp index --vault <path>` after upgrading if you would rather pay that cost ahead of time.
+- **Corpora take disk, one per model, until you prune them.** A corpus is a few MB per thousand notes. `neuro-vault-mcp index --vault <path> --model <key> --prune` reindexes as usual and then removes every other model's corpus (and a leftover single-corpus layout), printing `pruned <vault>: removed <names>` or `pruned <vault>: nothing to remove`. It is skipped, with a `not pruning <vault>: …` line on stderr, if the indexing failed, so a failed first run of a new model cannot leave you with nothing. A server still serving a pruned model keeps answering from memory and rebuilds that corpus on its next pass.
 - **Re-tune or drop an explicit `threshold` or `expansion_floor` when you switch models.** A value tuned on the old model (say `0.5`) is on a different scale under another one: on the measured vault, `harrier-270m` query-to-note similarities sit mostly below about 0.44 (95th percentile 0.440), so a `threshold` of 0.5 would cut nearly everything. Omit the parameter to get the active model's calibrated default.
 
 An unknown key fails at startup with an error that lists the valid keys.
 
-More on why a model change is a rebuild: [`docs/architecture/own-corpus.md`](../architecture/own-corpus.md#an-identity-change-within-a-model-is-a-rebuild-and-never-silent).
+More on when a corpus is rebuilt: [`docs/architecture/own-corpus.md`](../architecture/own-corpus.md#an-identity-change-within-a-model-is-a-rebuild-and-never-silent).
 
 ## Similarity thresholds per model
 
@@ -127,4 +129,4 @@ For the default model, the full `search_notes` pipeline (semantic + lexical + ex
 
 **Read the English column with care.** It rests on four queries, and a single query moving from first place to seventh shifts English MRR by up to 0.25 (each English query is worth a quarter of the slice). `harrier-270m`'s 0.786 is exactly that: one query landing at rank 7 rather than near the top. The Ukrainian slice (21 queries) and the overall figures are the more reliable signal, and the vault is one person's, mostly Ukrainian — your notes may rank differently.
 
-Times are in [The profiles](#the-profiles). To reproduce the comparison on your own vault, use a copy (a vault has one corpus, and indexing it for another model discards the first), and follow the procedure in [`eval/README.md`](../../eval/README.md#axis-model): for each model run `neuro-vault-mcp index --vault <copy> --model <key>`, then the eval harness on the same copy with the same `--model`. The harness needs a golden set of your own queries; the format is described there. The research behind the model choice is in the [embedding bake-off report](../research/2026-10-embedding-model-bakeoff.md).
+Times are in [The profiles](#the-profiles). To reproduce the comparison on your own vault, follow the procedure in [`eval/README.md`](../../eval/README.md#axis-model): for each model run `neuro-vault-mcp index --vault <vault> --model <key>`, then the eval harness on the same vault with the same `--model`; each model's corpus is kept, so nothing is rebuilt between runs (a copy of the vault works equally well, if you would rather keep the extra corpora off your live one). The harness needs a golden set of your own queries; the format is described there. The research behind the model choice is in the [embedding bake-off report](../research/2026-10-embedding-model-bakeoff.md).
