@@ -70,7 +70,7 @@ Each connection SHALL carry JSON-RPC 2.0 messages, one per line, exactly as the 
 
 ### Requirement: The daemon exits after its last client has been gone for the idle timeout
 
-The daemon SHALL track live connections. When the last connection closes it SHALL start an idle timer of `--idle-timeout` minutes; a new connection SHALL cancel it; when it fires the daemon SHALL stop. With `--idle-timeout 0` it SHALL never stop on idle. A quiet but open connection SHALL NOT count as idle.
+The daemon SHALL track client connections: a connection becomes a client once it has sent a request to a service other than `daemon`, so `daemon status` and `daemon stop` neither count as clients nor reset the timer. The idle timer of `--idle-timeout` minutes SHALL start when the daemon begins listening and whenever the last client disconnects; a new client SHALL cancel it; when it fires the daemon SHALL stop. With `--idle-timeout 0` it SHALL never stop on idle. A quiet but open client connection SHALL NOT count as idle.
 
 #### Scenario: Idle exit
 
@@ -79,12 +79,12 @@ The daemon SHALL track live connections. When the last connection closes it SHAL
 
 #### Scenario: A quiet session keeps it alive
 
-- **WHEN** a client stays connected for longer than the idle timeout without sending a request
+- **WHEN** a client that has initialized a profile stays connected for longer than the idle timeout without sending another request
 - **THEN** the daemon keeps running
 
 #### Scenario: A new client cancels the timer
 
-- **WHEN** a client connects while the idle timer is running
+- **WHEN** a client sends its first `embed` request while the idle timer is running
 - **THEN** the timer is cancelled and the daemon serves the client
 
 ---
@@ -123,7 +123,7 @@ After listening, the daemon SHALL atomically write `daemon.json` with `pid`, `ve
 
 ### Requirement: daemon status and daemon stop are the operator surface
 
-`daemon status` SHALL read every `daemons/*/daemon.json`, probe each socket, call `daemon.info` on those that answer, print one line per daemon with version, pid, client count, loaded profiles and `alive`, and SHALL remove the state directory of every entry whose socket refuses the connection or is absent, printing it as `stale`; an entry whose socket accepts the connection but does not answer `daemon.info` in time SHALL be printed as `busy` and kept, and an entry whose lock names another live process SHALL be left alone. An unreadable `daemon.json` SHALL be treated as stale. `daemon stop` SHALL call `daemon.shutdown` on every alive daemon, falling back to `SIGTERM` when the call does not complete, and SHALL exit `0`. Both SHALL exit `0` when no daemon is known.
+`daemon status` SHALL read every `daemons/*/daemon.json`, probe each socket, call `daemon.info` on those that answer, print one line per daemon with version, pid, client count, loaded profiles and `alive`, and SHALL remove the state directory of every entry whose socket refuses the connection or is absent, printing it as `stale`; an entry whose socket accepts the connection but does not answer `daemon.info` in time SHALL be printed as `busy` and kept, and an entry whose lock names another live process SHALL be left alone and reported as `starting`, by `stop` as well. An entry SHALL be removed only after `status` has taken over its lock, so a daemon that takes the lock meanwhile keeps its state. An unreadable `daemon.json`, or a lock with no `daemon.json` whose holder is dead, SHALL be treated as stale. `daemon stop` SHALL call `daemon.shutdown` on every alive daemon, falling back to `SIGTERM` when the call does not complete, and SHALL exit `0`. Both SHALL exit `0` when no daemon is known.
 
 #### Scenario: Status lists live and stale daemons
 
