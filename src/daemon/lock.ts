@@ -114,7 +114,7 @@ export function parseHolder(raw: string): number | undefined {
  * and while the file exists only the holder it names can be reported `held`.
  * A lock is replaced only when its holder is dead or names no pid. Replacement
  * first renames the lock to a private path and checks what it actually moved;
- * a live lock moved by mistake is restored with a hard link.
+ * a live lock moved by mistake is restored with a hard link (`claimLock`).
  *
  * Not guaranteed: if another starter takes the slot in the window between that
  * mistaken move and the restore, the moved holder's lock is dropped rather than
@@ -127,30 +127,68 @@ export function acquireLock(
   deps: { pid: number; isAlive: (pid: number) => boolean; fs: LockFs },
 ): LockResult {
   deps.fs.mkdirp(path.dirname(lockFile));
-  const moved = `${lockFile}.stale.${deps.pid}`;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     if (deps.fs.openExclusive(lockFile, String(deps.pid))) return { kind: 'acquired' };
     const raw = deps.fs.read(lockFile);
     if (raw === undefined) continue; // released between our create and read: retry
     const holder = parseHolder(raw);
     if (holder !== undefined && deps.isAlive(holder)) return { kind: 'held', pid: holder };
-    // Dead or unnamed holder: move the lock aside instead of unlinking it, so we
-    // act on the file we inspected rather than whatever is there by now.
-    if (!deps.fs.rename(lockFile, moved)) continue; // someone else moved it: retry
-    const seized = deps.fs.read(moved);
-    if (seized === undefined) continue;
-    if (seized === raw) {
-      // We moved exactly the dead lock we judged. Drop it and retry the create.
-      deps.fs.unlink(moved);
-      continue;
-    }
-    // We moved a lock published after our read. Put it back if the slot is still free.
-    deps.fs.linkExclusive(moved, lockFile);
-    deps.fs.unlink(moved);
-    const seizedHolder = parseHolder(seized);
+    // Dead or unnamed holder: take it over if it is still the lock we judged.
+    const outcome = claim(lockFile, raw, deps);
+    if (outcome.kind === 'claimed') return { kind: 'acquired' };
+    if (outcome.kind === 'lost') continue; // someone else moved or created it: retry
+    const seizedHolder = parseHolder(outcome.content);
     return seizedHolder === undefined ? { kind: 'contended' } : { kind: 'held', pid: seizedHolder };
   }
   return { kind: 'contended' };
+}
+
+type ClaimOutcome =
+  | { kind: 'claimed' }
+  /** The judged lock was gone, or another process created one first. */
+  | { kind: 'lost' }
+  /** A lock published after the judgement was moved aside and put back. */
+  | { kind: 'restored'; content: string };
+
+function claim(
+  lockFile: string,
+  judged: string | undefined,
+  deps: { pid: number; fs: LockFs },
+): ClaimOutcome {
+  const create = (): ClaimOutcome =>
+    deps.fs.openExclusive(lockFile, String(deps.pid)) ? { kind: 'claimed' } : { kind: 'lost' };
+  if (judged === undefined) return create();
+  // Move the lock aside instead of unlinking it, so we act on the file we
+  // inspected rather than whatever is there by now.
+  const moved = `${lockFile}.stale.${deps.pid}`;
+  if (!deps.fs.rename(lockFile, moved)) return { kind: 'lost' };
+  const seized = deps.fs.read(moved);
+  if (seized === undefined) return { kind: 'lost' };
+  if (seized === judged) {
+    // We moved exactly the lock we judged. Drop it and create ours.
+    deps.fs.unlink(moved);
+    return create();
+  }
+  // We moved a lock published after our read. Put it back if the slot is still free.
+  deps.fs.linkExclusive(moved, lockFile);
+  deps.fs.unlink(moved);
+  return { kind: 'restored', content: seized };
+}
+
+/**
+ * Take the lock over if it still holds exactly `judged` (`undefined` = no lock
+ * file), recording our pid in it; true when we now hold it. The caller has
+ * already judged that `judged` names no live holder. A lock that changed since
+ * is left in place (put back if we moved it) and the result is false. Same
+ * window as `acquireLock`: a lock moved by mistake is dropped rather than put
+ * back if another process takes the slot before the restore.
+ */
+export function claimLock(
+  lockFile: string,
+  judged: string | undefined,
+  deps: { pid: number; fs: LockFs },
+): boolean {
+  return claim(lockFile, judged, deps).kind === 'claimed';
 }
 
 /**

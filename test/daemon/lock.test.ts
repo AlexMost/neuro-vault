@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   acquireLock,
+  claimLock,
   defaultLockFs,
   isPidAlive,
   releaseLock,
@@ -186,6 +187,50 @@ describe('acquireLock', () => {
     expect(acquireLock(LOCK, { pid: 42, isAlive: () => true, fs: never })).toEqual({
       kind: 'contended',
     });
+  });
+});
+
+describe('claimLock', () => {
+  it('creates the lock with our pid when it judged none and none is there', () => {
+    const fs = memFs();
+    expect(claimLock(LOCK, undefined, { pid: 42, fs })).toBe(true);
+    expect(fs.files.get(LOCK)).toBe('42');
+  });
+
+  it('fails and leaves the lock alone when it judged none but one appeared', () => {
+    const fs = memFs({ [LOCK]: '7' });
+    expect(claimLock(LOCK, undefined, { pid: 42, fs })).toBe(false);
+    expect(fs.files.get(LOCK)).toBe('7');
+  });
+
+  it('replaces exactly the lock it judged and leaves no stale file behind', () => {
+    const fs = memFs({ [LOCK]: '7' });
+    expect(claimLock(LOCK, '7', { pid: 42, fs })).toBe(true);
+    expect(fs.files.get(LOCK)).toBe('42');
+    expect([...fs.files.keys()]).toEqual([LOCK]);
+  });
+
+  it('restores a lock published after the judgement and fails', () => {
+    let published = false;
+    const fs: LockFs & { files: Map<string, string> } = memFs(
+      { [LOCK]: '7' },
+      {
+        beforeOp: (op) => {
+          if (op !== 'rename' || published) return;
+          published = true;
+          fs.files.set(LOCK, '88');
+        },
+      },
+    );
+    expect(claimLock(LOCK, '7', { pid: 42, fs })).toBe(false);
+    expect(fs.files.get(LOCK)).toBe('88');
+    expect([...fs.files.keys()]).toEqual([LOCK]);
+  });
+
+  it('fails when the judged lock is gone by the time it claims', () => {
+    const fs = memFs();
+    expect(claimLock(LOCK, '7', { pid: 42, fs })).toBe(false);
+    expect(fs.files.has(LOCK)).toBe(false);
   });
 });
 

@@ -547,6 +547,92 @@ describe('runDaemonCommand (status / stop)', () => {
     expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(false);
   });
 
+  it('status sweeps a stale entry only after taking its lock over', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 1 }));
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '9');
+    const fs = h.deps.fs!;
+    const order: string[] = [];
+    h.deps.fs = {
+      ...fs,
+      openExclusive: (f, c) => (order.push(`claim ${f} ${c}`), fs.openExclusive(f, c)),
+      rmrf: (d) => (order.push(`rmrf ${d}`), fs.rmrf(d)),
+    };
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('')).toBe('18.0.0  pid 1  stale  (swept)\n');
+    expect(order).toEqual([
+      `claim ${BASE}/aaaaaaaaaaaa/daemon.lock 42`,
+      `rmrf ${BASE}/aaaaaaaaaaaa`,
+    ]);
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(false);
+  });
+
+  it('status keeps a stale-looking entry whose lock a daemon takes before the claim', async () => {
+    const h = harness({ isAlive: (pid) => pid === 88 });
+    const lock = `${BASE}/aaaaaaaaaaaa/daemon.lock`;
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 1 }));
+    h.files.set(lock, '9');
+    const fs = h.deps.fs!;
+    let raced = false;
+    h.deps.fs = {
+      ...fs,
+      rename: (from, to) => {
+        // A new daemon replaces the dead holder's lock right after status judged it.
+        if (from === lock && !raced) {
+          raced = true;
+          h.files.set(lock, '88');
+        }
+        return fs.rename(from, to);
+      },
+    };
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toBe('18.0.0  pid 88  starting\n');
+    expect(h.files.get(lock)).toBe('88');
+    expect(h.files.has(`${BASE}/aaaaaaaaaaaa/daemon.json`)).toBe(true);
+    expect([...h.files.keys()].filter((f) => f.includes('.stale.'))).toEqual([]);
+  });
+
+  it('status keeps a lockless stale-looking entry when a daemon creates the lock first', async () => {
+    const h = harness({ isAlive: (pid) => pid === 88 });
+    const lock = `${BASE}/aaaaaaaaaaaa/daemon.lock`;
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 1 }));
+    const fs = h.deps.fs!;
+    h.deps.fs = {
+      ...fs,
+      openExclusive: (f, c) => {
+        if (f === lock && !h.files.has(lock)) h.files.set(lock, '88');
+        return fs.openExclusive(f, c);
+      },
+    };
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('')).toBe('18.0.0  pid 88  starting\n');
+    expect(h.files.get(lock)).toBe('88');
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
+  });
+
+  it('status keeps an unreadable daemon.json whose lock a daemon takes before the claim', async () => {
+    const h = harness({ isAlive: (pid) => pid === 88 });
+    const lock = `${BASE}/aaaaaaaaaaaa/daemon.lock`;
+    addKnown(h, 'aaaaaaaaaaaa', '{not json');
+    h.files.set(lock, '9');
+    const fs = h.deps.fs!;
+    let raced = false;
+    h.deps.fs = {
+      ...fs,
+      rename: (from, to) => {
+        if (from === lock && !raced) {
+          raced = true;
+          h.files.set(lock, '88');
+        }
+        return fs.rename(from, to);
+      },
+    };
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('')).toBe('aaaaaaaaaaaa  starting\n');
+    expect(h.files.get(lock)).toBe('88');
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
+  });
+
   it('stop skips a stale-looking entry whose lock names another live pid', async () => {
     const h = harness({ isAlive: (pid) => pid === 77 });
     addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 1 }));

@@ -9,7 +9,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import type { DaemonInfo } from './info.js';
-import { defaultLockFs, parseHolder, type LockFs } from './lock.js';
+import { claimLock, defaultLockFs, parseHolder, type LockFs } from './lock.js';
 import { probeSocket, type SocketConnect, type Timers } from './probe.js';
 import type { DaemonInfoResult } from './protocol.js';
 import type { SocketDirFs } from './socket-dir.js';
@@ -50,6 +50,8 @@ export function defaultDaemonFs(): DaemonFs {
 
 export interface AdminDeps {
   cacheBase: string;
+  /** This status/stop process's own pid: what it writes into a lock it takes over to sweep. */
+  pid: number;
   fs: DaemonFs;
   readInfo: (file: string) => DaemonInfo | undefined;
   connect: SocketConnect;
@@ -116,7 +118,8 @@ async function callOnce<T>(
 type Entry =
   | { kind: 'valid'; dir: string; info: DaemonInfo }
   | { kind: 'starting'; dir: string; name: string }
-  | { kind: 'unreadable'; dir: string; name: string };
+  /** `raw` is the lock as judged (undefined = none), for `sweep`. */
+  | { kind: 'unreadable'; dir: string; name: string; raw: string | undefined };
 
 /**
  * Every `daemons/*` directory with a daemon.json. An unreadable one under a
@@ -139,7 +142,7 @@ function scan(d: AdminDeps): Entry[] {
     const raw = d.fs.read(path.join(dir, 'daemon.lock'));
     const holder = raw === undefined ? undefined : parseHolder(raw);
     const live = holder !== undefined && d.isAlive(holder);
-    entries.push({ kind: live ? 'starting' : 'unreadable', dir, name });
+    entries.push(live ? { kind: 'starting', dir, name } : { kind: 'unreadable', dir, name, raw });
   }
   return entries;
 }
@@ -148,17 +151,38 @@ async function isListening(d: AdminDeps, socketPath: string): Promise<boolean> {
   return (await probeSocket(socketPath, { connect: d.connect, timers: d.timers })) === 'listening';
 }
 
-/**
- * The pid of another live process holding this entry's lock, if any. A daemon
- * that died without cleaning up leaves its daemon.json behind; a new daemon for
- * the same key takes the lock and replaces the socket before it writes its own
- * info. Until then the old entry looks stale, but it is the new daemon's.
- */
-function newerHolder(d: AdminDeps, dir: string, info: DaemonInfo): number | undefined {
+function readLock(d: AdminDeps, dir: string): { raw: string | undefined; holder?: number } {
   const raw = d.fs.read(path.join(dir, 'daemon.lock'));
-  const holder = raw === undefined ? undefined : parseHolder(raw);
-  if (holder === undefined || holder === info.pid || !d.isAlive(holder)) return undefined;
-  return holder;
+  return { raw, holder: raw === undefined ? undefined : parseHolder(raw) };
+}
+
+/**
+ * Remove an entry judged stale, but only once we hold its lock: `claimLock`
+ * takes it over only if it still holds `raw`, the lock we judged, so a daemon
+ * that took the lock meanwhile keeps it and its state. `rmrf` removes our own
+ * lock with the directory. False when the lock changed: the entry is kept.
+ */
+function sweep(d: AdminDeps, dir: string, raw: string | undefined): boolean {
+  if (!claimLock(path.join(dir, 'daemon.lock'), raw, { pid: d.pid, fs: d.fs })) return false;
+  d.fs.rmrf(dir);
+  return true;
+}
+
+type Silent = { kind: 'starting'; holder: number } | { kind: 'stale'; raw: string | undefined };
+
+/**
+ * A valid entry whose socket refuses or is absent. A daemon that died without
+ * cleaning up leaves its daemon.json behind; a new daemon for the same key
+ * takes the lock and replaces the socket before it writes its own info. Until
+ * then the old entry looks stale, but it is the new daemon's: `starting`. A
+ * lock naming the info's own pid is stale even if that pid is alive (reused).
+ */
+function judgeSilent(d: AdminDeps, dir: string, info: DaemonInfo): Silent {
+  const { raw, holder } = readLock(d, dir);
+  if (holder !== undefined && holder !== info.pid && d.isAlive(holder)) {
+    return { kind: 'starting', holder };
+  }
+  return { kind: 'stale', raw };
 }
 
 export async function runStatus(d: AdminDeps): Promise<number> {
@@ -173,19 +197,23 @@ export async function runStatus(d: AdminDeps): Promise<number> {
       continue;
     }
     if (entry.kind === 'unreadable') {
-      print(`${entry.name}  stale (unreadable daemon.json)  (swept)`);
-      d.fs.rmrf(entry.dir);
+      print(
+        sweep(d, entry.dir, entry.raw)
+          ? `${entry.name}  stale (unreadable daemon.json)  (swept)`
+          : `${entry.name}  starting`,
+      );
       continue;
     }
     const { info, dir } = entry;
     if (!(await isListening(d, info.socket))) {
-      const holder = newerHolder(d, dir, info);
-      if (holder !== undefined) {
-        print(`${info.version}  pid ${holder}  starting`);
+      const silent = judgeSilent(d, dir, info);
+      if (silent.kind === 'stale' && sweep(d, dir, silent.raw)) {
+        print(`${info.version}  pid ${info.pid}  stale  (swept)`);
         continue;
       }
-      print(`${info.version}  pid ${info.pid}  stale  (swept)`);
-      d.fs.rmrf(dir);
+      // Live holder, or the lock changed before we could claim it: whoever holds it now.
+      const holder = silent.kind === 'starting' ? silent.holder : readLock(d, dir).holder;
+      print(`${info.version}  pid ${holder ?? '?'}  starting`);
       continue;
     }
     const live = await callOnce<DaemonInfoResult>(d, info.socket, 'daemon.info');
@@ -220,9 +248,9 @@ export async function runStop(d: AdminDeps): Promise<number> {
   for (const { dir, info } of valid) {
     const label = `${info.version} (pid ${info.pid})`;
     if (!(await isListening(d, info.socket))) {
-      const holder = newerHolder(d, dir, info);
-      if (holder !== undefined) {
-        d.stdout.write(`${info.version}  pid ${holder}  starting\n`);
+      const silent = judgeSilent(d, dir, info);
+      if (silent.kind === 'starting') {
+        d.stdout.write(`${info.version}  pid ${silent.holder}  starting\n`);
         continue;
       }
       d.stdout.write(`${info.version}  pid ${info.pid}  not running\n`);
