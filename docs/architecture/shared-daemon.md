@@ -36,7 +36,7 @@ key = sha256("v1:" + version + ":" + cliSize + ":" + cliMtimeMs).hex[0..12]
 
 | Path | What |
 | --- | --- |
-| `/tmp/neuro-vault-<uid>/<key>.sock` | POSIX socket. The directory is created `0700`, and re-`chmod`ed `0700` on every start in case an older run left it looser; the socket file is `chmod`ed `0600` right after listening. |
+| `/tmp/neuro-vault-<uid>/<key>.sock` | POSIX socket. The directory is created `0700`, checked on every start (`ensurePrivateSocketDir`, below), and re-`chmod`ed `0700` in case an older run left it looser; the socket file is `chmod`ed `0600` right after listening. |
 | `\\.\pipe\neuro-vault-<uid>-<key>` | Windows named pipe. No file to go stale, so no probe and no unlink. |
 | `<cache>/neuro-vault/daemons/<key>/daemon.lock` | The holder's pid, created exclusively (see Lifecycle). The state directory is created `0700`. |
 | `<cache>/neuro-vault/daemons/<key>/daemon.json` | `{ pid, version, socket, started_at, cli_size, cli_mtime_ms }`, written atomically (`write-file-atomic`, temp + rename) after listening. |
@@ -46,6 +46,8 @@ key = sha256("v1:" + version + ":" + cliSize + ":" + cliMtimeMs).hex[0..12]
 
 The socket lives under `/tmp`, not `os.tmpdir()`. macOS caps a unix socket path at 103 bytes, and its per-user `$TMPDIR` is 48 bytes on its own; `/tmp/neuro-vault-501/<12 hex>.sock` is 38. A client computes the socket path from its own key; `daemon status`, which looks at every key, reads it from `daemon.json`.
 
+`/tmp` is shared, and the directory name is predictable, so another local user can create `/tmp/neuro-vault-<uid>` first, as a symlink to a directory they control or as a directory of their own. `mkdir -p` accepts both. `ensurePrivateSocketDir` (`src/daemon/socket-dir.ts`) therefore `lstat`s the path after creating it: it must be a real directory, not a symlink, owned by our uid, and the `chmod 0700` must succeed. Anything else and the daemon refuses to start, naming the path and what is wrong (`is a symlink`, `is owned by uid N`, `is not a directory`, or the `chmod` error). On Windows there is no directory and no check. The planned facade will run the same check before it connects or spawns.
+
 ## Lifecycle
 
 ### Start
@@ -53,13 +55,13 @@ The socket lives under `/tmp`, not `os.tmpdir()`. macOS caps a unix socket path 
 `runDaemon` in `src/cli-daemon.ts`, in order:
 
 1. **Identify the build.** `cliBuild(realpathSync(process.argv[1]))`. If the script cannot be read, exit 1 naming it.
-2. **Take the lock** (`acquireLock`, `src/daemon/lock.ts`). The lock is published atomically: the pid is written to a private temp file, which is then hard-linked into place, so `link(2)` fails with `EEXIST` if a lock exists and no reader ever sees a half-written file. An existing lock's pid is checked with `process.kill(pid, 0)` (`EPERM` counts as alive). A live holder → exit 1, `daemon is already running (pid N)`. A dead holder, or a lock that names no pid, is replaced by rename-and-verify: the lock is moved to a private path and its content compared with what was judged. If it is the same dead lock, it is dropped and the create retried. If another starter published a fresh lock in between, the moved file is put back with a hard link, and the result is `held` or `contended`. Three attempts; after that, `contended` → exit 1, "try again".
-3. **Prepare the socket** (POSIX only). Create and tighten the `/tmp/neuro-vault-<uid>` directory, then `cleanStaleSocket` (`src/daemon/probe.ts`). The probe deletes the socket file only after `ECONNREFUSED`: the file exists and nobody answers. `ENOENT` means there is nothing to delete. Every other outcome counts as listening: any other error code, a missing code, a synchronous throw, a connect that neither succeeds nor fails within 500 ms. An ambiguous answer must never lead to a live socket being unlinked. File size and age are never evidence; a live unix socket also has size 0. If something listens, the lock is released and the process exits 1, `already listening on <socket>`.
+2. **Take the lock** (`acquireLock`, `src/daemon/lock.ts`). The lock is published atomically: the pid is written to a private temp file, which is then hard-linked into place, so `link(2)` fails with `EEXIST` if a lock exists and no reader ever sees a half-written file. An existing lock's pid is checked with `process.kill(pid, 0)` (`EPERM` counts as alive). A live holder → exit 1, `daemon is already running (pid N)`, followed by the lock path and a pointer to `daemon status` (a crashed daemon whose pid was reused by another process keeps that message until its lock is removed). A dead holder, or a lock that names no pid, is replaced by rename-and-verify: the lock is moved to a private path and its content compared with what was judged. If it is the same dead lock, it is dropped and the create retried. If another starter published a fresh lock in between, the moved file is put back with a hard link, and the result is `held` or `contended`. Three attempts; after that, `contended` → exit 1, "try again".
+3. **Prepare the socket** (POSIX only). Create, check and tighten the `/tmp/neuro-vault-<uid>` directory (`ensurePrivateSocketDir`; a directory that fails the check is a startup failure, below), then `cleanStaleSocket` (`src/daemon/probe.ts`). The probe deletes the socket file only after `ECONNREFUSED`: the file exists and nobody answers. `ENOENT` means there is nothing to delete. Every other outcome counts as listening: any other error code, a missing code, a synchronous throw, a connect that neither succeeds nor fails within 500 ms. An ambiguous answer must never lead to a live socket being unlinked. File size and age are never evidence; a live unix socket also has size 0. If something listens, the lock is released and the process exits 1, `already listening on <socket>`.
 4. **Listen** (`startDaemonServer`, `src/daemon/socket-server.ts`), `chmod 0600` the socket (the `0700` directory covers the window between listen and chmod), write `daemon.json`, register the `SIGINT`/`SIGTERM` handlers, print the start line.
 
 Any failure after the lock is taken closes the server if it was listening, releases the lock and exits 1 with `daemon failed to start: …`. `releaseLock` removes the lock only when it names our own pid, so a failing starter never deletes the winner's lock.
 
-Two daemons racing for one key resolve themselves: the loser fails at the lock or at the live-socket probe and exits 1, without touching the winner's files.
+Two daemons racing for one key almost always resolve at the lock: the loser exits 1 without touching the winner's files. The lock is not airtight: `acquireLock` documents a narrow window, while it replaces a dead holder's lock, in which both starters can come away believing they hold it. The live-socket probe and `listen()`'s `EADDRINUSE` are the further lines of defence; either one sends the second starter down the failure path, and `releaseLock` leaves a lock naming another pid alone.
 
 ### Idle
 
@@ -89,14 +91,15 @@ Both live in `src/daemon/admin.ts`, print their reports to stdout and always exi
 | Situation | Printed | State directory |
 | --- | --- | --- |
 | Socket answers `daemon.info` | `<version>  pid <pid>  clients <n>  loaded [<profiles>]  alive  <socket>` | kept |
-| Socket refuses or is absent | `<version>  pid <pid>  stale  (swept)` | removed |
+| Socket refuses or is absent, lock names another live pid | `<version>  pid <holder>  starting` (a new daemon for the key has taken over a crashed one's entry and has not written its info yet) | kept |
+| Socket refuses or is absent otherwise | `<version>  pid <pid>  stale  (swept)` | removed |
 | Socket counts as listening but `daemon.info` gets no answer within 2 s (`CALL_TIMEOUT_MS`) | `<version>  pid <pid>  busy (no answer)  <socket>` | kept |
 | `daemon.json` unreadable, lock names a live pid | `<key>  starting` (a daemon between taking the lock and writing its info) | kept |
 | `daemon.json` unreadable otherwise | `<key>  stale (unreadable daemon.json)  (swept)` | removed |
 
 A directory with no `daemon.json` at all is skipped, for the same reason as `starting`.
 
-`daemon stop` acts on every readable `daemon.json`. It probes the socket first; a daemon that is not listening is reported `not running` and left for `status` to sweep. Otherwise it sends `daemon.shutdown`. If that gets no answer and the pid is alive, it sends `SIGTERM`. It then waits up to 6 s (`STOP_WAIT_MS`, the daemon's own 5 s deadline plus slack) for `daemon.json` to disappear, the last thing a stopping daemon does before releasing its lock, and prints `stopped <version> (pid N)`, or a `still running` line on stderr.
+`daemon stop` acts on every readable `daemon.json`. It probes the socket first; a daemon that is not listening is reported `not running` and left for `status` to sweep, or reported `starting` and skipped when its lock names another live pid. Otherwise it sends `daemon.shutdown`. If that gets no answer and the pid is alive, it sends `SIGTERM`. It then waits up to 6 s (`STOP_WAIT_MS`, the daemon's own 5 s deadline plus slack) for `daemon.json` to disappear, the last thing a stopping daemon does before releasing its lock, and prints `stopped <version> (pid N)`, or a `still running` line on stderr.
 
 ## Protocol
 
@@ -159,6 +162,6 @@ A remote provider would be a profile in the closed registry with its own `identi
 
 - **Nothing MCP-level lives here.** Every session is still a full stdio MCP server with its own `McpServer`, tools, vault registry, corpus snapshot, watcher and lexical cache ([`mcp-server-shape.md`](./mcp-server-shape.md), [`semantic-backend.md`](./semantic-backend.md)). The daemon never sees a tool call, and no tool contract or `ToolHandlerError` code depends on it.
 - **No vault paths, no secrets.** The daemon is keyed by build, not by vault, and `daemon.json` holds only the fields above. Vault paths would reach the daemon only through a later per-vault service's request params.
-- **Nothing network-reachable.** No TCP port, no HTTP, no authentication: access control is the socket file's mode inside a `0700` directory. A network-facing hub is a separate design (#127).
+- **Nothing network-reachable.** No TCP port, no HTTP, no authentication: access control is the socket file's mode inside a `0700` directory that `ensurePrivateSocketDir` has verified is ours. A network-facing hub is a separate design (#127).
 - **No stdout.** The daemon writes its diagnostics to stderr. Only `daemon status` and `daemon stop` print to stdout, and those are reports for a person.
 - **Not here:** model loading, tokenisation and pooling ([`embedding-pipeline.md`](./embedding-pipeline.md)); argv parsing and the `kind: 'daemon'` outcome ([`cli-startup.md`](./cli-startup.md)).
