@@ -134,15 +134,20 @@ function scan(d: AdminDeps): string[] {
  * What one `daemons/*` directory holds. An unreadable daemon.json, or a lock
  * with no daemon.json, under a live lock is a daemon between taking the lock
  * and writing its info: `starting`. Under a dead or unnamed holder it is stale.
- * A directory with neither file is what a clean stop leaves behind. Undefined
- * when daemon.json vanished while we read it: a daemon stopping.
+ * A directory with nothing in it at all is `empty`. Undefined when there is
+ * nothing to report: daemon.json vanished while we read it (a daemon
+ * stopping), or neither file is there but something else is, such as
+ * daemon.log, the last run's log or a spawner's log opened before its daemon
+ * takes the lock. That one is left alone.
  */
 function classify(d: AdminDeps, name: string): Entry | undefined {
   const dir = path.join(d.cacheBase, 'daemons', name);
   const infoFile = path.join(dir, 'daemon.json');
   if (!d.fs.exists(infoFile)) {
     const { raw, holder } = readLock(d, dir);
-    if (raw === undefined) return { kind: 'empty', dir, name };
+    if (raw === undefined) {
+      return d.fs.readdir(dir).length === 0 ? { kind: 'empty', dir, name } : undefined;
+    }
     if (holder !== undefined && d.isAlive(holder)) return { kind: 'starting', dir, name };
     return { kind: 'lockOnly', dir, name, raw };
   }

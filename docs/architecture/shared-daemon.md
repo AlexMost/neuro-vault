@@ -98,7 +98,8 @@ Both live in `src/daemon/admin.ts`, print their reports to stdout and always exi
 | `daemon.json` unreadable otherwise | `<key>  stale (unreadable daemon.json)  (swept)` | removed |
 | No `daemon.json`, lock names a live pid | `<key>  starting` (as above, or a daemon at the end of a clean stop) | kept |
 | No `daemon.json`, lock names a dead pid or none | `<key>  stale (lock only)  (swept)` | removed |
-| Neither `daemon.json` nor a lock | nothing (what a clean stop leaves) | removed |
+| Nothing in the directory at all | nothing | removed |
+| Neither `daemon.json` nor a lock, but other files (`daemon.log`: the last run's log, or a spawner's log opened before its daemon takes the lock) | nothing | kept, untouched |
 
 `clients` counts the daemon's clients, not its connections: `status`'s own connection is not one (see Idle).
 

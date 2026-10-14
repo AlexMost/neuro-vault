@@ -566,12 +566,28 @@ describe('runDaemonCommand (status / stop)', () => {
     expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
   });
 
-  it('status removes a directory with neither file silently', async () => {
+  it('status removes a truly empty directory silently', async () => {
     const h = harness();
     addKnown(h, 'aaaaaaaaaaaa', undefined);
     await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
     expect(h.out.join('')).toBe('no daemon known\n');
     expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(false);
+    expect(h.files.has(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe(false);
+  });
+
+  it('status leaves a directory holding only daemon.log alone, silently', async () => {
+    const h = harness();
+    const fs = h.deps.fs!;
+    const claimed: string[] = [];
+    h.deps.fs = { ...fs, openExclusive: (f, c) => (claimed.push(f), fs.openExclusive(f, c)) };
+    addKnown(h, 'aaaaaaaaaaaa', undefined);
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.log`, 'last run\n');
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toBe('no daemon known\n');
+    expect(h.err).toEqual([]);
+    expect(claimed).toEqual([]);
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
+    expect(h.files.get(`${BASE}/aaaaaaaaaaaa/daemon.log`)).toBe('last run\n');
     expect(h.files.has(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe(false);
   });
 
