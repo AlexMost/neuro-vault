@@ -39,14 +39,18 @@ interface InFlight {
  * parse as JSON-RPC is destroyed — its problem, nobody else's. Notifications
  * and responses a client sends are ignored: the daemon only serves requests.
  *
- * The idle timer is armed once listening succeeds (no connection yet counts
- * as idle), disarmed by each new connection, and re-armed when the last one
- * closes.
+ * A connection becomes a *client* with its first request outside the
+ * `daemon.` namespace; `clients()` counts clients only, so `daemon status`
+ * and `daemon stop` are not clients of the daemon they inspect. The idle timer
+ * is armed once listening succeeds (no client yet counts as idle), disarmed
+ * when the first client arrives, and re-armed when the last one closes. A
+ * connection that never becomes a client never touches it.
  */
 export async function startDaemonServer(opts: DaemonServerOptions): Promise<DaemonServerHandle> {
   const timers = opts.timers ?? { setTimeout, clearTimeout };
   const defer = opts.defer ?? ((fn: () => void): void => void setImmediate(fn));
   const connections = new Set<net.Socket>();
+  const clients = new Set<net.Socket>();
   const inFlight = new Set<InFlight>();
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let shuttingDown = false;
@@ -64,13 +68,18 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
     disarmIdle();
     if (opts.idleTimeoutMs <= 0 || shuttingDown) return;
     idleTimer = timers.setTimeout(() => {
-      // A connection accepted in the same loop turn as the timer wins the race.
-      if (connections.size === 0) opts.onIdle();
+      // A client that arrived in the same loop turn as the timer wins the race.
+      if (clients.size === 0) opts.onIdle();
     }, opts.idleTimeoutMs);
   };
 
+  const promote = (socket: net.Socket): void => {
+    if (clients.has(socket)) return;
+    clients.add(socket);
+    if (clients.size === 1) disarmIdle();
+  };
+
   const server = net.createServer((socket) => {
-    disarmIdle();
     connections.add(socket);
     const buffer = new ReadBuffer();
     socket.on('data', (chunk: Buffer) => {
@@ -89,6 +98,7 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
           write(socket, errorResponse(message.id, 'SHUTTING_DOWN', 'daemon is stopping'));
           continue;
         }
+        if (!message.method.startsWith('daemon.')) promote(socket);
         const entry: InFlight = { socket, id: message.id, answered: false };
         inFlight.add(entry);
         void opts.registry.dispatch(message).then((response) => {
@@ -100,7 +110,7 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
     socket.on('error', () => socket.destroy());
     socket.on('close', () => {
       connections.delete(socket);
-      if (connections.size === 0) armIdle();
+      if (clients.delete(socket) && clients.size === 0) armIdle();
     });
   });
 
@@ -115,7 +125,7 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
   armIdle();
 
   return {
-    clients: () => connections.size,
+    clients: () => clients.size,
     close: () => {
       closing ??= new Promise<void>((resolve) => {
         shuttingDown = true;

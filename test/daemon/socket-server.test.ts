@@ -93,7 +93,7 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     return { timers: timers as unknown as Timers, armed };
   }
 
-  it('answers requests from two clients and counts them', async () => {
+  it('answers requests from two clients and counts them once they send a request', async () => {
     handle = await startDaemonServer({
       socketPath,
       registry: registryWith({ echo: async (p) => p }),
@@ -103,13 +103,63 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     const a = await LineClient.connect(socketPath);
     const b = await LineClient.connect(socketPath);
     await tick();
-    expect(handle.clients()).toBe(2);
+    expect(handle.clients()).toBe(0);
     a.send({ jsonrpc: '2.0', id: 1, method: 't.echo', params: { text: 'line one\nline "two"' } });
     b.send({ jsonrpc: '2.0', id: 2, method: 't.echo', params: { n: 2 } });
     expect(await a.next()).toMatchObject({ id: 1, result: { text: 'line one\nline "two"' } });
     expect(await b.next()).toMatchObject({ id: 2, result: { n: 2 } });
+    expect(handle.clients()).toBe(2);
     a.socket.destroy();
+    await a.closed();
+    await tick();
+    expect(handle.clients()).toBe(1);
     b.socket.destroy();
+  });
+
+  /** `t.*` plus a `daemon` namespace whose `info` reports `clients()` as seen by its caller. */
+  function registryWithDaemon(): ServiceRegistry {
+    const registry = registryWith({ echo: async (p) => p });
+    registry.register('daemon', { info: async () => ({ clients: handle?.clients() }) });
+    return registry;
+  }
+
+  it('does not count a connection that only calls daemon.* methods', async () => {
+    const { timers, armed } = fakeTimers();
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWithDaemon(),
+      idleTimeoutMs: 60_000,
+      onIdle: () => {},
+      timers,
+    });
+    const admin = await LineClient.connect(socketPath);
+    admin.send({ jsonrpc: '2.0', id: 1, method: 'daemon.info' });
+    expect(await admin.next()).toMatchObject({ id: 1, result: { clients: 0 } });
+    expect(handle.clients()).toBe(0);
+    admin.socket.destroy();
+    await admin.closed();
+    await tick();
+    // Neither its arrival, its request nor its close touched the timer armed at listen.
+    expect(timers.setTimeout).toHaveBeenCalledTimes(1);
+    expect(timers.clearTimeout).not.toHaveBeenCalled();
+    expect(armed[0]?.cleared).toBe(false);
+  });
+
+  it('daemon.info counts the clients but not its own caller', async () => {
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWithDaemon(),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+    });
+    const client = await LineClient.connect(socketPath);
+    client.send({ jsonrpc: '2.0', id: 1, method: 't.echo', params: {} });
+    await client.next();
+    const admin = await LineClient.connect(socketPath);
+    admin.send({ jsonrpc: '2.0', id: 2, method: 'daemon.info' });
+    expect(await admin.next()).toMatchObject({ id: 2, result: { clients: 1 } });
+    client.socket.destroy();
+    admin.socket.destroy();
   });
 
   it('closes only the client that sends a bad line', async () => {
@@ -148,16 +198,20 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     const { timers, armed } = fakeTimers();
     handle = await startDaemonServer({
       socketPath,
-      registry: registryWith({}),
+      registry: registryWith({ echo: async (p) => p }),
       idleTimeoutMs: 60_000,
       onIdle,
       timers,
     });
-    // Armed once at listen (zero connections), before anyone connects.
+    // Armed once at listen (zero clients), before anyone connects.
     expect(timers.setTimeout).toHaveBeenCalledTimes(1);
     const a = await LineClient.connect(socketPath);
     await tick();
-    // A new connection disarms it.
+    // A connection is not a client until it sends a service request.
+    expect(timers.clearTimeout).not.toHaveBeenCalled();
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.echo', params: {} });
+    await a.next();
+    // The first client disarms it.
     expect(timers.clearTimeout).toHaveBeenCalledTimes(1);
     expect(armed[0]?.cleared).toBe(true);
     a.socket.destroy();
@@ -166,10 +220,34 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     // The last client leaving re-arms it.
     expect(timers.setTimeout).toHaveBeenCalledTimes(2);
     const b = await LineClient.connect(socketPath);
-    await tick();
+    b.send({ jsonrpc: '2.0', id: 2, method: 't.echo', params: {} });
+    await b.next();
     expect(timers.clearTimeout).toHaveBeenCalledTimes(2);
     expect(armed[1]?.cleared).toBe(true);
     expect(onIdle).not.toHaveBeenCalled();
+    b.socket.destroy();
+  });
+
+  it('a second client neither disarms nor re-arms the timer', async () => {
+    const { timers } = fakeTimers();
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({ echo: async (p) => p }),
+      idleTimeoutMs: 60_000,
+      onIdle: () => {},
+      timers,
+    });
+    const a = await LineClient.connect(socketPath);
+    const b = await LineClient.connect(socketPath);
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.echo', params: {} });
+    await a.next();
+    b.send({ jsonrpc: '2.0', id: 2, method: 't.echo', params: {} });
+    await b.next();
+    a.socket.destroy();
+    await a.closed();
+    await tick();
+    expect(timers.clearTimeout).toHaveBeenCalledTimes(1);
+    expect(timers.setTimeout).toHaveBeenCalledTimes(1);
     b.socket.destroy();
   });
 
@@ -263,19 +341,20 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     expect(fs.existsSync(socketPath)).toBe(false);
   });
 
-  it('does not idle out when a client connected in the same turn the timer fired', async () => {
+  it('does not idle out when a client arrived in the same turn the timer fired', async () => {
     const onIdle = vi.fn();
     const { timers, armed } = fakeTimers();
     handle = await startDaemonServer({
       socketPath,
-      registry: registryWith({}),
+      registry: registryWith({ echo: async (p) => p }),
       idleTimeoutMs: 60_000,
       onIdle,
       timers,
     });
     const a = await LineClient.connect(socketPath);
-    await tick();
-    // The timer armed at listen was cleared by the connect, but suppose its callback still runs.
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.echo', params: {} });
+    await a.next();
+    // The timer armed at listen was cleared by the first client, but suppose its callback still runs.
     armed[0]?.fn();
     expect(onIdle).not.toHaveBeenCalled();
     a.socket.destroy();
