@@ -12,3 +12,20 @@ commit-msg:
   jobs:
     - name: commitlint
       run: npx --no -- commitlint --edit {1}
+
+# Keep node_modules in step with package-lock.json after anything that moves HEAD:
+# a branch switch or new worktree, `git pull`, and `git pull --rebase` / `git rebase`.
+post-checkout:
+  jobs:
+    - name: sync-deps
+      run: sh scripts/sync-deps.sh checkout {1} {2} {3}
+
+post-merge:
+  jobs:
+    - name: sync-deps
+      run: sh scripts/sync-deps.sh merge
+
+post-rewrite:
+  jobs:
+    - name: sync-deps
+      run: sh scripts/sync-deps.sh rewrite {1}

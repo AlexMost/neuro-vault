@@ -9,6 +9,7 @@ This is a cheat sheet for working in the repo — deeper docs live under `docs/`
 - `npm test` — full vitest suite.
 - `npm run lint` — eslint.
 - `npm run typecheck` (`tsc --noEmit`) — typecheck. **Authoritative** — a `tsup` build alone is not enough (`isolatedModules`).
+- lefthook's `post-checkout` / `post-merge` / `post-rewrite` hooks run `npm ci` whenever HEAD moves to a different `package-lock.json` ([`scripts/sync-deps.sh`](scripts/sync-deps.sh)): a stale install makes type-aware lint report errors CI never sees.
 - `npm run build` (tsup) · `npm run dev` (`tsx src/cli.ts`) · `npm run spec` (OpenSpec CLI) · `npm run eval` (offline retrieval-quality harness — [`eval/README.md`](eval/README.md)).
 - Tool tests reach a tool through `registerTool(buildXTool(deps))` and the `callTool` / `expectToolError` helpers in [`test/_gate.ts`](test/_gate.ts) — never `buildXTool(deps).handler`. The registration gate coerces, closes the schema with `.strict()`, and fails as `INVALID_PARAMS`; a handler-direct call enters past all three. See [ADR-0015](docs/adr/0015-input-gate-owns-schema-validation.md).
 
