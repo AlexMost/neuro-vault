@@ -835,6 +835,7 @@ describe('runDaemonCommand (status / stop)', () => {
     const kill = vi.fn();
     const h = harness({ isAlive: () => true, kill });
     addKnown(h, 'aaaaaaaaaaaa', infoJson({}));
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '1');
     kill.mockImplementation(() => h.files.delete(`${BASE}/aaaaaaaaaaaa/daemon.json`));
     h.deps.connect = () =>
       Promise.resolve(
@@ -850,6 +851,34 @@ describe('runDaemonCommand (status / stop)', () => {
     expect(kill).toHaveBeenCalledWith(1, 'SIGTERM');
     expect(h.out.join('')).toMatch(/stopped 18\.0\.0 \(pid 1\)/);
   });
+
+  it.each([
+    ['names another pid', '77', '77'],
+    ['is missing', undefined, 'none'],
+  ])(
+    'stop does not signal a daemon that does not answer when its lock %s',
+    async (_, lock, named) => {
+      const h = harness({ isAlive: () => true });
+      addKnown(h, 'aaaaaaaaaaaa', infoJson({}));
+      if (lock !== undefined) h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, lock);
+      h.deps.connect = () =>
+        Promise.resolve(
+          fakeInfoSocket(
+            { version: '18.0.0', pid: 1, clients: 0, loaded: [] },
+            { answerShutdown: false },
+          ),
+        );
+      const done = runDaemonCommand({ action: 'stop', ...RUN }, h.deps);
+      await until(() => h.clock.has(CALL_TIMEOUT_MS));
+      h.clock.fire(CALL_TIMEOUT_MS);
+      await expect(done).resolves.toBe(0);
+      expect(h.deps.kill).not.toHaveBeenCalled();
+      expect(h.err.join('')).toBe(
+        `daemon 18.0.0 (pid 1) did not answer; not signalling pid 1 (lock names ${named})\n`,
+      );
+      expect(h.out).toEqual([]);
+    },
+  );
 
   it('stop leaves a stale entry alone: no shutdown, no signal', async () => {
     const h = harness({ isAlive: () => true });

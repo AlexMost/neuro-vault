@@ -309,8 +309,14 @@ async function stopOne(
   }
   const answered = await callOnce<Record<string, never>>(d, info.socket, 'daemon.shutdown');
   if (answered === undefined) {
-    if (!d.isAlive(info.pid)) {
-      err(`daemon ${label} did not answer and its pid is not alive`);
+    // daemon.json can be stale (pid reused, or a new daemon on this socket has
+    // not rewritten it yet): signal only the pid the lock confirms.
+    const { holder } = readLock(d, dir);
+    if (holder !== info.pid || !d.isAlive(holder)) {
+      err(
+        `daemon ${label} did not answer; not signalling pid ${info.pid} ` +
+          `(lock names ${holder ?? 'none'})`,
+      );
       return;
     }
     try {
