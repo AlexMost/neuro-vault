@@ -65,7 +65,7 @@ Two daemons racing for one key almost always resolve at the lock: the loser exit
 
 ### Idle
 
-The server tracks its live connections. The idle timer (`--idle-timeout`, default 30 minutes, `0` = never) is armed as soon as the server is listening, so a daemon nobody ever connects to also idles out. Each new connection disarms it, and the last connection to close re-arms it. A connection that stays open but sends nothing keeps the daemon alive: idle counts from the last client, not the last request, so a quiet session never loses its daemon underneath it. When the timer fires, the daemon checks the connection count once more (a connection accepted in the same loop turn wins) and stops.
+The server tracks its *clients*. A connection becomes a client with its first request outside the `daemon.` namespace (an `embed.*` call, say); one that only calls `daemon.info` or `daemon.shutdown`, as `daemon status` and `daemon stop` do, never becomes one. So polling a daemon with `status` neither keeps it alive nor shows up in its `clients` count, and `daemon.info` never counts the connection asking. The idle timer (`--idle-timeout`, default 30 minutes, `0` = never) is armed as soon as the server is listening, so a daemon nobody ever uses also idles out. The first client disarms it, and the last client to close re-arms it; a connection that never became a client touches it neither way. A client that stays open but sends nothing more keeps the daemon alive: idle counts from the last client, not the last request, so a quiet session never loses its daemon underneath it. When the timer fires, the daemon checks the client count once more (a client that arrived in the same loop turn wins) and stops.
 
 ### Stop
 
@@ -84,9 +84,9 @@ The stdio server deliberately handles no signals ([`mcp-server-shape.md`](./mcp-
 
 ### `daemon status` and `daemon stop`
 
-Both live in `src/daemon/admin.ts`, print their reports to stdout and always exit 0, printing `no daemon known` when there is nothing to report. They work across builds: they scan every `daemons/*` directory, not only the current key's.
+Both live in `src/daemon/admin.ts`, print their reports to stdout and always exit 0, printing `no daemon known` when there is nothing to report. They work across builds: they scan every `daemons/*` directory, not only the current key's. Each directory is handled on its own: one that cannot be read (a lock that fails with `EACCES` or `EISDIR`, say) is reported on stderr as `<key>: <message>`, is never swept, and the next one goes on.
 
-`daemon status` prints one line per directory that has a `daemon.json`:
+`daemon status` prints one line per directory:
 
 | Situation | Printed | State directory |
 | --- | --- | --- |
@@ -96,10 +96,17 @@ Both live in `src/daemon/admin.ts`, print their reports to stdout and always exi
 | Socket counts as listening but `daemon.info` gets no answer within 2 s (`CALL_TIMEOUT_MS`) | `<version>  pid <pid>  busy (no answer)  <socket>` | kept |
 | `daemon.json` unreadable, lock names a live pid | `<key>  starting` (a daemon between taking the lock and writing its info) | kept |
 | `daemon.json` unreadable otherwise | `<key>  stale (unreadable daemon.json)  (swept)` | removed |
+| No `daemon.json`, lock names a live pid | `<key>  starting` (as above, or a daemon at the end of a clean stop) | kept |
+| No `daemon.json`, lock names a dead pid or none | `<key>  stale (lock only)  (swept)` | removed |
+| Neither `daemon.json` nor a lock | nothing (what a clean stop leaves) | removed |
 
-A directory with no `daemon.json` at all is skipped, for the same reason as `starting`.
+`clients` counts the daemon's clients, not its connections: `status`'s own connection is not one (see Idle).
 
-`daemon stop` acts on every readable `daemon.json`. It probes the socket first; a daemon that is not listening is reported `not running` and left for `status` to sweep, or reported `starting` and skipped when its lock names another live pid. Otherwise it sends `daemon.shutdown`. If that gets no answer and the pid is alive, it sends `SIGTERM`. It then waits up to 6 s (`STOP_WAIT_MS`, the daemon's own 5 s deadline plus slack) for `daemon.json` to disappear, the last thing a stopping daemon does before releasing its lock, and prints `stopped <version> (pid N)`, or a `still running` line on stderr.
+A lock that names the `daemon.json` pid counts as stale even when that pid is alive: the daemon behind that entry is not listening, so a live process with its pid is a reused pid. A live lock under a no-`daemon.json` directory is always `starting`; a reused pid there keeps it until the process ends.
+
+**Sweeping happens under the lock.** Judging an entry stale and removing its directory are two steps, and a new daemon for the key can take the lock in between. So `status` first takes the lock over with `claimLock` (`src/daemon/lock.ts`), the same rename-and-verify `acquireLock` uses: it succeeds only if the lock still holds exactly what `status` judged (or, with no lock judged, if none has appeared), and writes `status`'s own pid into it. Only then is the directory removed, our lock with it. If the claim fails, the entry is kept and printed `starting` with whoever holds the lock now (`?` when the lock names no pid).
+
+`daemon stop` probes the socket of every readable `daemon.json`. A daemon that is not listening is reported `not running` and left for `status` to sweep, or, when its lock names another live pid, reported as `<version> (pid <holder>)  starting — not stopped; run \`neuro-vault-mcp daemon stop\` again`. Every other `starting` directory (unreadable `daemon.json` or no `daemon.json`, under a live lock) gets the same line with its key. Stale directories are left alone. A listening daemon gets `daemon.shutdown`. If that gets no answer, `stop` sends `SIGTERM` only when the lock names the `daemon.json` pid and that pid is alive; `daemon.json` can be stale (a reused pid, or a new daemon on the socket that has not rewritten it yet), so otherwise it writes `daemon <version> (pid N) did not answer; not signalling pid N (lock names <holder or none>)` to stderr and moves on. It then waits up to 6 s (`STOP_WAIT_MS`, the daemon's own 5 s deadline plus slack) for `daemon.json` to disappear, the last thing a stopping daemon does before releasing its lock, and prints `stopped <version> (pid N)`, or a `still running` line on stderr. `stop` prints `no daemon known` only when it reported nothing at all.
 
 ## Protocol
 
@@ -111,7 +118,7 @@ Methods are `<service>.<method>`, routed by `ServiceRegistry` (`src/daemon/proto
 
 | Method | Params | Result |
 | --- | --- | --- |
-| `daemon.info` | — | `{ name, version, pid, started_at, idle_timeout_min, clients, services: { embed: { loaded: [profileKey…] } } }` |
+| `daemon.info` | — | `{ name, version, pid, started_at, idle_timeout_min, clients, services: { embed: { loaded: [profileKey…] } } }`; `clients` counts client connections only (see Idle) |
 | `daemon.shutdown` | — | `{}`, then the daemon stops |
 | `embed.initialize` | `{ profile }` | `{ identity, max_batch_size }`, once the profile's provider is ready |
 | `embed.query` | `{ profile, text }` | `{ vector }` |
