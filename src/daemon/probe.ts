@@ -12,14 +12,28 @@ export type SocketConnect = (path: string) => Promise<Duplex>;
 export const defaultConnect: SocketConnect = (path) =>
   new Promise((resolve, reject) => {
     const socket = net.connect(path);
-    socket.once('connect', () => resolve(socket));
+    socket.once('connect', () => {
+      // Callers attach their own error handling once connected.
+      socket.off('error', reject);
+      resolve(socket);
+    });
     socket.once('error', reject);
   });
 
+/** Only a refused connect proves no one is listening; everything else is ambiguous. */
+function classify(error: unknown): ProbeResult {
+  const code = (error as { code?: unknown } | null | undefined)?.code;
+  if (code === 'ECONNREFUSED') return 'refused';
+  if (code === 'ENOENT') return 'absent';
+  return 'listening';
+}
+
 /**
- * Is something listening? A connect that neither succeeds nor fails within
- * the timeout counts as listening: an ambiguous answer must never lead to a
- * live socket being unlinked (the SvelteKit size-0 bug, in our terms).
+ * Is something listening? Only ECONNREFUSED (`refused`) and ENOENT (`absent`)
+ * are definite. Every other failure, a missing error code, a null rejection,
+ * a synchronous throw, and a connect that neither succeeds nor fails within
+ * the timeout all count as listening: an ambiguous answer must never lead to
+ * a live socket being unlinked (the SvelteKit size-0 bug, in our terms).
  *
  * A connect that settles after the timeout is still destroyed on success, so
  * a late socket never leaks.
@@ -34,16 +48,17 @@ export async function probeSocket(
   const timeout = new Promise<ProbeResult>((resolve) => {
     timer = timers.setTimeout(() => resolve('listening'), timeoutMs);
   });
-  const attempt = deps.connect(path).then(
-    (socket) => {
-      socket.destroy();
-      return 'listening' as const;
-    },
-    (error: unknown) => {
-      const code = (error as NodeJS.ErrnoException).code;
-      return code === 'ENOENT' ? ('absent' as const) : ('refused' as const);
-    },
-  );
+  // Starting the attempt inside a promise chain turns a synchronous throw from
+  // `connect` into a rejection, so it is classified like any other failure.
+  const attempt = Promise.resolve()
+    .then(() => deps.connect(path))
+    .then(
+      (socket) => {
+        socket.destroy();
+        return 'listening' as const;
+      },
+      (error: unknown) => classify(error),
+    );
   try {
     return await Promise.race([attempt, timeout]);
   } finally {
@@ -51,7 +66,11 @@ export async function probeSocket(
   }
 }
 
-/** Only ever unlinks after a `refused`/`absent` probe; the caller holds the lock. */
+/**
+ * Unlinks only after a `refused` probe: the socket file exists and nothing
+ * answers. `absent` has no file to remove, and `listening` (including any
+ * ambiguous failure) must never be unlinked. The caller holds the lock.
+ */
 export async function cleanStaleSocket(
   path: string,
   deps: {
@@ -64,6 +83,7 @@ export async function cleanStaleSocket(
   if (deps.platform === 'win32') return 'nothing';
   const result = await probeSocket(path, { connect: deps.connect, timers: deps.timers });
   if (result === 'listening') return 'listening';
+  if (result === 'absent') return 'nothing';
   deps.unlink(path);
   return 'cleaned';
 }
