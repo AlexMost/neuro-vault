@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, rename, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -6,8 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   reconcileCorpus,
+  type ReconcileDeps,
   type ReconcileOptions,
 } from '../../../../src/lib/obsidian/corpus/reconcile.js';
+import { acquireCorpusLock } from '../../../../src/lib/obsidian/corpus/reconcile-lock.js';
 import { formatIdentity } from '../../../../src/lib/obsidian/corpus/identity.js';
 import { CorpusStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
 import { buildEmbedInputs } from '../../../../src/lib/obsidian/corpus/embed-text.js';
@@ -64,7 +66,7 @@ function fakeVault(files: Record<string, string>) {
 
 const body = (marker: string) => `# ${marker}\n${'x'.repeat(300)}\n`;
 
-async function harness(files: Record<string, string>) {
+async function harness(files: Record<string, string>, extra: Partial<ReconcileDeps> = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'nv-reconcile-'));
   const vault = fakeVault(files);
   const embed = fakeEmbedDocuments();
@@ -81,6 +83,7 @@ async function harness(files: Record<string, string>) {
         identity: TEST_IDENTITY,
         store,
         warn,
+        ...extra,
       },
       opts,
     );
@@ -603,5 +606,202 @@ describe('reconcileCorpus', () => {
     await run({ onRebuild });
     expect(onRebuild).not.toHaveBeenCalled();
     expect((await store.readManifest())?.model_key).toBe(TEST_IDENTITY.model_key);
+  });
+});
+
+const EMPTY_SUMMARY = { total: 0, embedded: 0, reused: 0, renamed: 0, deleted: 0, failed: 0 };
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+describe('reconcileCorpus across processes', () => {
+  it('migrates under the lock, before reading the manifest, and releases last', async () => {
+    const calls: string[] = [];
+    const { store, run } = await harness(
+      { 'A.md': body('A') },
+      {
+        acquireLock: async () => {
+          calls.push('acquire');
+          return {
+            release: async () => {
+              calls.push('release');
+            },
+          };
+        },
+        migrateLegacy: async () => {
+          calls.push('migrate');
+        },
+      },
+    );
+    const readManifest = store.readManifest.bind(store);
+    vi.spyOn(store, 'readManifest').mockImplementation(async () => {
+      calls.push('manifest');
+      return readManifest();
+    });
+    await run();
+    expect(calls).toEqual(['acquire', 'migrate', 'manifest', 'release']);
+  });
+
+  it('reuses a single-corpus layout after moving it into the model directory', async () => {
+    const { root, run, embed, store } = await harness({ 'A.md': body('A'), 'B.md': body('B') });
+    await run();
+    const corpus = path.join(root, '.neuro-vault/corpus');
+    const modelDir = path.join(corpus, TEST_IDENTITY.model_key);
+    await rename(path.join(modelDir, 'notes'), path.join(corpus, 'notes'));
+    await rename(path.join(modelDir, 'manifest.json'), path.join(corpus, 'manifest.json'));
+    embed.mockClear();
+
+    expect(await run()).toMatchObject({ total: 2, embedded: 0, reused: 2, deleted: 0, failed: 0 });
+    expect(embed).not.toHaveBeenCalled();
+    expect((await readdir(corpus)).sort()).toEqual([TEST_IDENTITY.model_key]);
+    expect([...(await store.listShards()).keys()].sort()).toEqual(['A.md', 'B.md']);
+  });
+
+  it('releases the lock when the pass throws', async () => {
+    const { root, run } = await harness(
+      { 'A.md': body('A') },
+      {
+        scan: async () => {
+          throw new Error('scan failed');
+        },
+      },
+    );
+    await expect(run()).rejects.toThrow('scan failed');
+    await expect(stat(path.join(root, '.neuro-vault/corpus/reconcile.lock'))).rejects.toMatchObject(
+      {
+        code: 'ENOENT',
+      },
+    );
+  });
+
+  it('returns the empty summary when aborted while waiting for the lock', async () => {
+    const controller = new AbortController();
+    const { run, embed } = await harness(
+      { 'A.md': body('A') },
+      {
+        acquireLock: async ({ signal, onWait }) => {
+          onWait?.({ holderPid: 4242, holderHost: null });
+          controller.abort();
+          signal?.throwIfAborted();
+          throw new Error('unreachable');
+        },
+      },
+    );
+    expect(await run({ signal: controller.signal })).toEqual(EMPTY_SUMMARY);
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it('reports the wait, and survives an onLockWait callback that throws', async () => {
+    const { run, warn } = await harness(
+      { 'A.md': body('A') },
+      {
+        acquireLock: async ({ onWait }) => {
+          onWait?.({ holderPid: 4242, holderHost: null });
+          return { release: async () => {} };
+        },
+      },
+    );
+    const onLockWait = vi.fn(() => {
+      throw new Error('caller bug');
+    });
+    expect(await run({ onLockWait })).toMatchObject({ embedded: 1, failed: 0 });
+    expect(onLockWait).toHaveBeenCalledWith({ holderPid: 4242, holderHost: null });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('onLockWait callback threw'));
+  });
+
+  /**
+   * Two passes over one temp vault, as two processes would run them: distinct
+   * pids, the real lock file. The holder's embed is gated until the other pass
+   * has seen the lock held, so the test cannot pass by one finishing first.
+   */
+  async function twoPasses(
+    files: Record<string, string>,
+    prepare?: (root: string) => Promise<void>,
+  ) {
+    const root = await mkdtemp(path.join(tmpdir(), 'nv-reconcile-'));
+    await prepare?.(root);
+    const vault = fakeVault(files);
+    const gate = deferred();
+    const embed = vi.fn(async (texts: string[]) => {
+      await gate.promise;
+      return texts.map(vectorFor);
+    });
+    const waits: number[] = [];
+    const rebuilds: number[] = [];
+    const corpusRoot = path.join(root, '.neuro-vault/corpus');
+    const pass = (pid: number) =>
+      reconcileCorpus(
+        {
+          vaultRoot: root,
+          scan: vault.scan,
+          stat: vault.stat,
+          readNote: vault.readNote,
+          embedDocuments: embed,
+          identity: TEST_IDENTITY,
+          store: new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS }),
+          warn: vi.fn(),
+          acquireLock: (opts) =>
+            acquireCorpusLock(
+              corpusRoot,
+              {
+                pid,
+                isAlive: () => true,
+                sleep: () => new Promise((resolve) => setTimeout(resolve, 5)),
+              },
+              opts,
+            ),
+        },
+        {
+          onLockWait: () => {
+            waits.push(pid);
+            gate.resolve();
+          },
+          onRebuild: () => {
+            rebuilds.push(pid);
+          },
+        },
+      );
+    const results = await Promise.all([pass(1001), pass(1002)]);
+    return { results, embed, waits, rebuilds };
+  }
+
+  it('serialises two passes over one vault: the second reuses what the first embedded', async () => {
+    const { results, embed, waits } = await twoPasses({
+      'A.md': body('A'),
+      'B.md': body('B'),
+      'C.md': body('C'),
+    });
+    expect(waits).toHaveLength(1);
+    expect(results.map((r) => r.embedded).sort()).toEqual([0, 3]);
+    expect(results.map((r) => r.reused).sort()).toEqual([0, 3]);
+    expect(embed).toHaveBeenCalledTimes(3); // one call per note, across both passes
+  });
+
+  it('a pass that waited on a rebuild reads the new manifest and discards nothing', async () => {
+    const { results, rebuilds, waits } = await twoPasses({ 'A.md': body('A') }, async (root) => {
+      // A corpus of this model at another embed_version, with a shard to lose.
+      const stale = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+      await stale.writeManifest({
+        ...TEST_IDENTITY,
+        embed_version: TEST_IDENTITY.embed_version + 1,
+        created: 'x',
+      });
+      await stale.writeShard({
+        path: 'A.md',
+        content_hash: 'old',
+        mtime: 0,
+        size: 0,
+        embedding: null,
+        blocks: [],
+      });
+    });
+    expect(waits).toHaveLength(1);
+    expect(rebuilds).toHaveLength(1); // the holder rebuilt; the waiter found it compatible
+    expect(results.map((r) => r.embedded).sort()).toEqual([0, 1]);
   });
 });
