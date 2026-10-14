@@ -123,7 +123,7 @@ After listening, the daemon SHALL atomically write `daemon.json` with `pid`, `ve
 
 ### Requirement: daemon status and daemon stop are the operator surface
 
-`daemon status` SHALL read every `daemons/*/daemon.json`, probe each socket, call `daemon.info` on those that answer, print one line per daemon with version, pid, client count, loaded profiles and `alive`, and SHALL remove the state directory of every entry whose socket does not answer, printing it as `stale`. `daemon stop` SHALL call `daemon.shutdown` on every alive daemon, falling back to `SIGTERM` when the call does not complete, and SHALL exit `0`. Both SHALL exit `0` when no daemon is known.
+`daemon status` SHALL read every `daemons/*/daemon.json`, probe each socket, call `daemon.info` on those that answer, print one line per daemon with version, pid, client count, loaded profiles and `alive`, and SHALL remove the state directory of every entry whose socket refuses the connection or is absent, printing it as `stale`; an entry whose socket accepts the connection but does not answer `daemon.info` in time SHALL be printed as `busy` and kept, and an entry whose lock names another live process SHALL be left alone. An unreadable `daemon.json` SHALL be treated as stale. `daemon stop` SHALL call `daemon.shutdown` on every alive daemon, falling back to `SIGTERM` when the call does not complete, and SHALL exit `0`. Both SHALL exit `0` when no daemon is known.
 
 #### Scenario: Status lists live and stale daemons
 
