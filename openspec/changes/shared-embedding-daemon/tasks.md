@@ -6,7 +6,7 @@ Two PRs, in order. Groups are marked **sequential** or **parallel-safe**. Every 
 
 ### 1a. Lifecycle building blocks — parallel-safe (independent files, pure or DI-tested)
 
-- [ ] 1.1 `src/daemon/paths.ts`: `daemonKey(version)` (12-hex sha256 of `v1:<version>`), `daemonPaths({ version, uid, platform, cacheBase })` → `{ socketPath, stateDir, infoFile, logFile, lockFile }`, `daemonCacheBase(env, home)` (the model-cache rule); tests: deterministic key, POSIX socket path < 100 bytes, Windows pipe form, XDG rule
+- [ ] 1.1 `src/daemon/paths.ts`: `daemonKey(version, build)` (12-hex sha256 of `v1:<version>:<cliSize>:<cliMtimeMs>`), `daemonPaths({ version, build, uid, platform, cacheBase })` → `{ socketPath, stateDir, infoFile, logFile, lockFile }`, `daemonCacheBase(env, home)` (the model-cache rule); tests: deterministic key, POSIX socket path < 100 bytes, Windows pipe form, XDG rule
 - [ ] 1.2 `src/daemon/lock.ts`: `acquireLock(lockFile, { pid, isAlive, fs })` → `{ kind: 'acquired' } | { kind: 'held'; pid }`; `releaseLock`; tests: fresh, dead holder replaced, live holder refused, `wx` race (second create fails)
 - [ ] 1.3 `src/daemon/info.ts`: `DaemonInfo` type, `writeDaemonInfo` (atomic), `readDaemonInfo` (validates shape, returns `undefined` on any fault); tests
 - [ ] 1.4 `src/daemon/probe.ts`: `probeSocket(path, { connect, timeoutMs })` → `'listening' | 'refused' | 'absent'`; `cleanStaleSocket(path, deps)` (unlink only on refused/absent); tests with an injected `connect`
