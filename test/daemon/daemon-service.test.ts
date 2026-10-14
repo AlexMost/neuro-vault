@@ -1,0 +1,60 @@
+import { describe, expect, it, vi } from 'vitest';
+import { createDaemonService } from '../../src/daemon/services/daemon.js';
+
+// A factory, not a shared object: `requestShutdown` call counts must not leak between tests.
+function makeDeps() {
+  return {
+    name: 'neuro-vault-mcp',
+    version: '18.0.0',
+    pid: 42,
+    startedAt: '2026-10-14T10:00:00.000Z',
+    idleTimeoutMin: 30,
+    clients: vi.fn(() => 2),
+    embedLoaded: vi.fn((): string[] => ['granite-97m']),
+    requestShutdown: vi.fn(),
+  };
+}
+
+describe('daemon service', () => {
+  it('info reports identity, clients and services', async () => {
+    const deps = makeDeps();
+    const handlers = createDaemonService(deps);
+    await expect(handlers.info(undefined)).resolves.toEqual({
+      name: 'neuro-vault-mcp',
+      version: '18.0.0',
+      pid: 42,
+      started_at: deps.startedAt,
+      idle_timeout_min: 30,
+      clients: 2,
+      services: { embed: { loaded: ['granite-97m'] } },
+    });
+  });
+
+  it('info reads clients() and embedLoaded() at call time, not at construction', async () => {
+    const deps = makeDeps();
+    const handlers = createDaemonService(deps);
+
+    deps.clients.mockReturnValue(1);
+    deps.embedLoaded.mockReturnValue([]);
+    await expect(handlers.info(undefined)).resolves.toMatchObject({
+      clients: 1,
+      services: { embed: { loaded: [] } },
+    });
+
+    deps.clients.mockReturnValue(3);
+    deps.embedLoaded.mockReturnValue(['granite-97m', 'harrier-270m']);
+    await expect(handlers.info(undefined)).resolves.toMatchObject({
+      clients: 3,
+      services: { embed: { loaded: ['granite-97m', 'harrier-270m'] } },
+    });
+    expect(deps.clients).toHaveBeenCalledTimes(2);
+    expect(deps.embedLoaded).toHaveBeenCalledTimes(2);
+  });
+
+  it('shutdown answers then asks the server to stop', async () => {
+    const deps = makeDeps();
+    const handlers = createDaemonService(deps);
+    await expect(handlers.shutdown(undefined)).resolves.toEqual({});
+    expect(deps.requestShutdown).toHaveBeenCalledTimes(1);
+  });
+});
