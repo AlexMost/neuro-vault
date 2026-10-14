@@ -606,12 +606,42 @@ describe('informational flags', () => {
   it('`daemon status` never constructs a server or opens the transport', async () => {
     const serverFactory = vi.fn(() => createFakeServer());
     const transportFactory = vi.fn(() => ({}) as never);
+    const out: string[] = [];
+    const nothing = () => {
+      throw new Error('daemon status must only read');
+    };
+    const savedExitCode = process.exitCode;
 
-    await main(['node', 'cli.js', 'daemon', 'status'], {
-      server: { serverFactory, transportFactory },
-    });
+    try {
+      await main(['node', 'cli.js', 'daemon', 'status'], {
+        server: { serverFactory, transportFactory },
+        daemon: {
+          home: '/nonexistent-home',
+          env: {},
+          fs: {
+            readdir: () => [],
+            exists: () => false,
+            read: () => undefined,
+            mkdirp: nothing,
+            openExclusive: nothing,
+            unlink: nothing,
+            rename: nothing,
+            linkExclusive: nothing,
+            rmrf: nothing,
+            chmod: nothing,
+          },
+          readInfo: () => undefined,
+          stdout: { write: (s: string) => (out.push(s), true) },
+          stderr: { write: () => true },
+        },
+      });
 
-    expect(serverFactory).not.toHaveBeenCalled();
-    expect(transportFactory).not.toHaveBeenCalled();
+      expect(serverFactory).not.toHaveBeenCalled();
+      expect(transportFactory).not.toHaveBeenCalled();
+      expect(out.join('')).toMatch(/no daemon known/);
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = savedExitCode;
+    }
   });
 });

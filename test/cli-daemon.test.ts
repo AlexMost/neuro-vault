@@ -1,0 +1,560 @@
+import { Duplex, PassThrough } from 'node:stream';
+
+import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
+import {
+  isJSONRPCRequest,
+  isJSONRPCResultResponse,
+  type JSONRPCMessage,
+} from '@modelcontextprotocol/sdk/types.js';
+import { describe, expect, it, vi } from 'vitest';
+
+import {
+  CALL_TIMEOUT_MS,
+  runDaemonCommand,
+  STOP_DEADLINE_MS,
+  type DaemonCommandDeps,
+} from '../src/cli-daemon.js';
+import { parseDaemonInfo } from '../src/daemon/info.js';
+import { daemonKey } from '../src/daemon/paths.js';
+import type { Timers } from '../src/daemon/probe.js';
+import type { ServiceRegistry } from '../src/daemon/protocol.js';
+
+const BASE = '/home/u/.cache/neuro-vault/daemons';
+const BUILD = { size: 1000, mtimeMs: 1 };
+
+function errno(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(code), { code });
+}
+
+/** Timers that fire only when a test says so. */
+function fakeClock() {
+  let next = 1;
+  const pending = new Map<number, { fn: () => void; ms: number }>();
+  const timers = {
+    setTimeout: (fn: () => void, ms: number) => {
+      const id = next++;
+      pending.set(id, { fn, ms });
+      return id;
+    },
+    clearTimeout: (id: number) => {
+      pending.delete(id);
+    },
+  } as unknown as Timers;
+  return {
+    timers,
+    has: (ms: number) => [...pending.values()].some((t) => t.ms === ms),
+    fire(ms: number): void {
+      for (const [id, t] of [...pending]) {
+        if (t.ms !== ms) continue;
+        pending.delete(id);
+        t.fn();
+      }
+    },
+  };
+}
+
+const flush = (): Promise<void> => new Promise((r) => setImmediate(r));
+
+async function until(condition: () => boolean): Promise<void> {
+  for (let i = 0; i < 100 && !condition(); i += 1) await flush();
+  expect(condition()).toBe(true);
+}
+
+function harness(overrides: Partial<DaemonCommandDeps> = {}) {
+  const files = new Map<string, string>();
+  const dirs = new Set<string>();
+  const out: string[] = [];
+  const err: string[] = [];
+  const handle = { clients: vi.fn(() => 0), close: vi.fn(async () => {}) };
+  const startServer = vi.fn(async (_opts: unknown) => handle);
+  const signals = new Map<string, () => void>();
+  const exit = vi.fn();
+  const clock = fakeClock();
+  const unlink = vi.fn((f: string) => {
+    files.delete(f);
+  });
+  const chmod = vi.fn();
+  const children = (d: string): string[] =>
+    [...new Set([...dirs, ...files.keys()])]
+      .filter((x) => x.startsWith(d + '/') && !x.slice(d.length + 1).includes('/'))
+      .map((x) => x.slice(d.length + 1));
+  const deps: DaemonCommandDeps = {
+    platform: 'darwin',
+    uid: 501,
+    env: {},
+    home: '/home/u',
+    pid: 42,
+    version: '18.0.0',
+    build: BUILD,
+    now: () => new Date('2026-10-14T10:00:00.000Z'),
+    fs: {
+      mkdirp: (d) => {
+        dirs.add(d);
+      },
+      openExclusive: (f, c) => (files.has(f) ? false : (files.set(f, c), true)),
+      read: (f) => files.get(f),
+      unlink,
+      rename: (from, to) => {
+        const content = files.get(from);
+        if (content === undefined) return false;
+        files.delete(from);
+        files.set(to, content);
+        return true;
+      },
+      linkExclusive: (existing, newPath) => {
+        if (files.has(newPath)) return false;
+        files.set(newPath, files.get(existing)!);
+        return true;
+      },
+      readdir: children,
+      rmrf: (d) => {
+        for (const x of [...dirs]) if (x === d || x.startsWith(d + '/')) dirs.delete(x);
+        for (const f of [...files.keys()]) if (f.startsWith(d + '/')) files.delete(f);
+      },
+      chmod,
+      exists: (p) => files.has(p) || dirs.has(p),
+    },
+    isAlive: () => false,
+    connect: () => Promise.reject(errno('ENOENT')),
+    startServer,
+    createProvider: vi.fn(),
+    writeInfo: (f, info) => {
+      files.set(f, JSON.stringify(info));
+      return Promise.resolve();
+    },
+    readInfo: (f) => {
+      const raw = files.get(f);
+      return raw === undefined ? undefined : parseDaemonInfo(raw);
+    },
+    onSignal: (signal, h) => {
+      signals.set(signal, h);
+    },
+    exit,
+    timers: clock.timers,
+    stdout: { write: (s: string) => (out.push(s), true) },
+    stderr: { write: (s: string) => (err.push(s), true) },
+    kill: vi.fn(),
+    ...overrides,
+  };
+  return { deps, files, dirs, out, err, handle, startServer, signals, exit, clock, unlink, chmod };
+}
+
+type Harness = ReturnType<typeof harness>;
+
+function keyOf(h: Harness): string {
+  return daemonKey(h.deps.version!, h.deps.build!);
+}
+
+function stateFile(h: Harness, name: string): string {
+  return `${BASE}/${keyOf(h)}/${name}`;
+}
+
+function socketOf(h: Harness): string {
+  return `/tmp/neuro-vault-501/${keyOf(h)}.sock`;
+}
+
+function serverOptions(h: Harness): { registry: ServiceRegistry; onIdle: () => void } {
+  return h.startServer.mock.calls[0][0] as { registry: ServiceRegistry; onIdle: () => void };
+}
+
+const RUN = { idleTimeoutMinutes: 30 };
+
+function infoJson(over: Record<string, unknown>): string {
+  return JSON.stringify({
+    pid: 1,
+    version: '18.0.0',
+    socket: '/tmp/a.sock',
+    started_at: 'x',
+    cli_size: 1000,
+    cli_mtime_ms: 1,
+    ...over,
+  });
+}
+
+function addKnown(h: Harness, name: string, info: string | undefined): void {
+  h.dirs.add(`${BASE}/${name}`);
+  if (info !== undefined) h.files.set(`${BASE}/${name}/daemon.json`, info);
+}
+
+describe('runDaemonCommand (run)', () => {
+  it('locks, listens, chmods, writes daemon.json and announces on stderr', async () => {
+    const h = harness();
+    await expect(runDaemonCommand({ idleTimeoutMinutes: 30 }, h.deps)).resolves.toBe(0);
+    expect(h.startServer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        socketPath: expect.stringMatching(/^\/tmp\/neuro-vault-501\/[0-9a-f]{12}\.sock$/),
+        idleTimeoutMs: 30 * 60_000,
+      }),
+    );
+    expect(h.dirs.has('/tmp/neuro-vault-501')).toBe(true);
+    expect(h.chmod).toHaveBeenCalledWith('/tmp/neuro-vault-501', 0o700);
+    expect(h.chmod).toHaveBeenCalledWith(socketOf(h), 0o600);
+    expect(h.files.get(stateFile(h, 'daemon.lock'))).toBe('42');
+    expect(parseDaemonInfo(h.files.get(stateFile(h, 'daemon.json'))!)).toEqual({
+      pid: 42,
+      version: '18.0.0',
+      socket: socketOf(h),
+      started_at: '2026-10-14T10:00:00.000Z',
+      cli_size: 1000,
+      cli_mtime_ms: 1,
+    });
+    expect(h.err.join('')).toMatch(/neuro-vault-mcp v18\.0\.0 daemon listening/);
+    expect(h.out).toEqual([]);
+    expect(h.deps.createProvider).not.toHaveBeenCalled();
+    expect([...h.signals.keys()].sort()).toEqual(['SIGINT', 'SIGTERM']);
+  });
+
+  it('chmods the socket only after the server listens', async () => {
+    const h = harness();
+    const order: string[] = [];
+    h.chmod.mockImplementation((p: string) => order.push(`chmod ${p}`));
+    h.startServer.mockImplementation(async () => (order.push('listen'), h.handle));
+    await runDaemonCommand(RUN, h.deps);
+    expect(order).toEqual(['chmod /tmp/neuro-vault-501', 'listen', `chmod ${socketOf(h)}`]);
+  });
+
+  it('unlinks a socket file nobody answers on before listening', async () => {
+    const h = harness({ connect: () => Promise.reject(errno('ECONNREFUSED')) });
+    await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(0);
+    expect(h.unlink).toHaveBeenCalledWith(socketOf(h));
+  });
+
+  it('exits 1 when the lock is held by a live pid', async () => {
+    const h = harness({ isAlive: (pid) => pid === 7 });
+    h.files.set(stateFile(h, 'daemon.lock'), '7');
+    await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(1);
+    expect(h.err.join('')).toMatch(/already running \(pid 7\)/);
+    expect(h.startServer).not.toHaveBeenCalled();
+    expect(h.files.get(stateFile(h, 'daemon.lock'))).toBe('7');
+  });
+
+  it('exits 1 when the lock is contended', async () => {
+    const h = harness();
+    h.deps.fs = { ...h.deps.fs!, openExclusive: () => false, read: () => undefined };
+    await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(1);
+    expect(h.err.join('')).toMatch(/could not take the daemon lock \(contended\); try again/);
+    expect(h.startServer).not.toHaveBeenCalled();
+  });
+
+  it('exits 1 when something already listens on the socket, releasing the lock', async () => {
+    const h = harness({ connect: () => Promise.resolve(new PassThrough()) });
+    await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(1);
+    expect(h.startServer).not.toHaveBeenCalled();
+    expect(h.err.join('')).toContain(socketOf(h));
+    expect(h.files.has(stateFile(h, 'daemon.lock'))).toBe(false);
+    expect(h.unlink).not.toHaveBeenCalledWith(socketOf(h));
+  });
+
+  it('releases the lock and exits 1 when listening fails', async () => {
+    const h = harness();
+    h.startServer.mockRejectedValue(
+      Object.assign(new Error('listen EADDRINUSE'), { code: 'EADDRINUSE' }),
+    );
+    await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(1);
+    expect(h.files.has(stateFile(h, 'daemon.lock'))).toBe(false);
+    expect(h.err.join('')).toMatch(/EADDRINUSE/);
+    expect(h.out).toEqual([]);
+  });
+
+  it('closes the server and releases the lock when writing daemon.json fails', async () => {
+    const h = harness({ writeInfo: () => Promise.reject(new Error('disk full')) });
+    await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(1);
+    expect(h.handle.close).toHaveBeenCalled();
+    expect(h.files.has(stateFile(h, 'daemon.lock'))).toBe(false);
+    expect(h.err.join('')).toMatch(/disk full/);
+    expect(h.signals.size).toBe(0);
+  });
+
+  it('exits 1 naming the path when the CLI script cannot be identified', async () => {
+    const h = harness({ build: undefined, cliPath: '/nonexistent/neuro-vault/cli.js' });
+    await expect(runDaemonCommand(RUN, h.deps)).resolves.toBe(1);
+    expect(h.err.join('')).toContain('/nonexistent/neuro-vault/cli.js');
+    expect(h.startServer).not.toHaveBeenCalled();
+    expect(h.files.size).toBe(0);
+  });
+
+  it.each(['SIGTERM', 'SIGINT'])(
+    '%s closes the server, removes the files and exits 0',
+    async (sig) => {
+      const h = harness();
+      await runDaemonCommand(RUN, h.deps);
+      h.signals.get(sig)!();
+      await flush();
+      expect(h.handle.close).toHaveBeenCalledTimes(1);
+      expect(h.files.has(stateFile(h, 'daemon.json'))).toBe(false);
+      expect(h.files.has(stateFile(h, 'daemon.lock'))).toBe(false);
+      expect(h.unlink).toHaveBeenCalledWith(socketOf(h));
+      expect(h.exit).toHaveBeenCalledTimes(1);
+      expect(h.exit).toHaveBeenCalledWith(0);
+      expect(h.clock.has(STOP_DEADLINE_MS)).toBe(false);
+    },
+  );
+
+  it('a second signal during stop is a no-op', async () => {
+    const h = harness();
+    await runDaemonCommand(RUN, h.deps);
+    h.signals.get('SIGINT')!();
+    h.signals.get('SIGTERM')!();
+    await flush();
+    expect(h.handle.close).toHaveBeenCalledTimes(1);
+    expect(h.exit).toHaveBeenCalledTimes(1);
+  });
+
+  it('idle expiry stops it the same way', async () => {
+    const h = harness();
+    await runDaemonCommand({ idleTimeoutMinutes: 1 }, h.deps);
+    expect(h.startServer).toHaveBeenCalledWith(expect.objectContaining({ idleTimeoutMs: 60_000 }));
+    serverOptions(h).onIdle();
+    await flush();
+    expect(h.handle.close).toHaveBeenCalled();
+    expect(h.files.has(stateFile(h, 'daemon.json'))).toBe(false);
+    expect(h.exit).toHaveBeenCalledWith(0);
+  });
+
+  it('daemon.shutdown answers first and stops one tick later', async () => {
+    const h = harness();
+    await runDaemonCommand(RUN, h.deps);
+    const response = await serverOptions(h).registry.dispatch({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'daemon.shutdown',
+    });
+    expect(isJSONRPCResultResponse(response) && response.result).toEqual({});
+    await flush();
+    expect(h.handle.close).not.toHaveBeenCalled();
+    expect(h.clock.has(0)).toBe(true);
+    h.clock.fire(0);
+    await flush();
+    expect(h.handle.close).toHaveBeenCalled();
+    expect(h.exit).toHaveBeenCalledWith(0);
+  });
+
+  it('daemon.info reports the running daemon', async () => {
+    const h = harness();
+    h.handle.clients.mockReturnValue(3);
+    await runDaemonCommand(RUN, h.deps);
+    const response = await serverOptions(h).registry.dispatch({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'daemon.info',
+    });
+    expect(isJSONRPCResultResponse(response) && response.result).toEqual({
+      name: 'neuro-vault-mcp',
+      version: '18.0.0',
+      pid: 42,
+      started_at: '2026-10-14T10:00:00.000Z',
+      idle_timeout_min: 30,
+      clients: 3,
+      services: { embed: { loaded: [] } },
+    });
+  });
+
+  it('exits 0 at the deadline when close never finishes', async () => {
+    const h = harness();
+    h.handle.close.mockImplementation(() => new Promise<void>(() => {}));
+    await runDaemonCommand(RUN, h.deps);
+    h.signals.get('SIGTERM')!();
+    await flush();
+    expect(h.exit).not.toHaveBeenCalled();
+    h.clock.fire(STOP_DEADLINE_MS);
+    expect(h.exit).toHaveBeenCalledTimes(1);
+    expect(h.exit).toHaveBeenCalledWith(0);
+    expect(h.files.has(stateFile(h, 'daemon.lock'))).toBe(false);
+  });
+});
+
+describe('runDaemonCommand (status / stop)', () => {
+  it('status lists a live daemon and sweeps a stale one', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 1, socket: '/tmp/a.sock' }));
+    addKnown(h, 'bbbbbbbbbbbb', infoJson({ pid: 2, version: '17.0.0', socket: '/tmp/b.sock' }));
+    h.deps.connect = (p) =>
+      p === '/tmp/a.sock'
+        ? Promise.resolve(
+            fakeInfoSocket({ version: '18.0.0', pid: 1, clients: 2, loaded: ['granite-97m'] }),
+          )
+        : Promise.reject(errno('ECONNREFUSED'));
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    const report = h.out.join('');
+    expect(report).toMatch(/18\.0\.0 .*pid 1 .*clients 2 .*granite-97m.*alive.*\/tmp\/a\.sock/);
+    expect(report).toMatch(/17\.0\.0 .*pid 2 .*stale/);
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
+    expect(h.dirs.has(`${BASE}/bbbbbbbbbbbb`)).toBe(false);
+    expect(h.files.has(`${BASE}/bbbbbbbbbbbb/daemon.json`)).toBe(false);
+  });
+
+  it('status sweeps an entry whose socket file is gone', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({}));
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('')).toMatch(/18\.0\.0 .*pid 1 .*stale/);
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(false);
+  });
+
+  it('status reports a listening daemon that does not answer as busy and keeps it', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({}));
+    h.deps.connect = () => Promise.resolve(new PassThrough());
+    const done = runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    await until(() => h.clock.has(CALL_TIMEOUT_MS));
+    h.clock.fire(CALL_TIMEOUT_MS);
+    await expect(done).resolves.toBe(0);
+    expect(h.out.join('')).toMatch(/18\.0\.0 .*pid 1 .*busy \(no answer\).*\/tmp\/a\.sock/);
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
+  });
+
+  it('status sweeps an unreadable daemon.json whose lock holder is dead', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', '{not json');
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '9');
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toMatch(
+      /aaaaaaaaaaaa {2}stale \(unreadable daemon\.json\) {2}\(swept\)/,
+    );
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(false);
+  });
+
+  it('status shows an unreadable daemon.json under a live lock as starting', async () => {
+    const h = harness({ isAlive: (pid) => pid === 9 });
+    addKnown(h, 'aaaaaaaaaaaa', '{not json');
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '9');
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('')).toMatch(/aaaaaaaaaaaa {2}starting/);
+    expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
+  });
+
+  it('status skips a directory without daemon.json', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', undefined);
+    h.files.set(`${BASE}/aaaaaaaaaaaa/daemon.lock`, '9');
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('')).not.toContain('aaaaaaaaaaaa');
+    expect(h.out.join('')).toMatch(/no daemon known/);
+    expect(h.files.has(`${BASE}/aaaaaaaaaaaa/daemon.lock`)).toBe(true);
+  });
+
+  it('status with nothing known says so and exits 0', async () => {
+    const h = harness();
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toMatch(/no daemon known/);
+    expect(h.err).toEqual([]);
+  });
+
+  it('stop with nothing known says so and exits 0', async () => {
+    const h = harness();
+    await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toMatch(/no daemon known/);
+  });
+
+  it('stop sends daemon.shutdown and does not signal a daemon that answers', async () => {
+    const h = harness({ isAlive: () => true });
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({}));
+    const methods: string[] = [];
+    h.deps.connect = () =>
+      Promise.resolve(
+        fakeInfoSocket(
+          { version: '18.0.0', pid: 1, clients: 0, loaded: [] },
+          {
+            onRequest: (method) => {
+              methods.push(method);
+              if (method === 'daemon.shutdown') h.files.delete(`${BASE}/aaaaaaaaaaaa/daemon.json`);
+            },
+          },
+        ),
+      );
+    await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(methods).toEqual(['daemon.shutdown']);
+    expect(h.deps.kill).not.toHaveBeenCalled();
+    expect(h.out.join('')).toMatch(/stopped 18\.0\.0 \(pid 1\)/);
+  });
+
+  it('stop sends daemon.shutdown and falls back to SIGTERM when it does not answer', async () => {
+    const kill = vi.fn();
+    const h = harness({ isAlive: () => true, kill });
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({}));
+    kill.mockImplementation(() => h.files.delete(`${BASE}/aaaaaaaaaaaa/daemon.json`));
+    h.deps.connect = () =>
+      Promise.resolve(
+        fakeInfoSocket(
+          { version: '18.0.0', pid: 1, clients: 0, loaded: [] },
+          { answerShutdown: false },
+        ),
+      );
+    const done = runDaemonCommand({ action: 'stop', ...RUN }, h.deps);
+    await until(() => h.clock.has(CALL_TIMEOUT_MS));
+    h.clock.fire(CALL_TIMEOUT_MS);
+    await expect(done).resolves.toBe(0);
+    expect(kill).toHaveBeenCalledWith(1, 'SIGTERM');
+    expect(h.out.join('')).toMatch(/stopped 18\.0\.0 \(pid 1\)/);
+  });
+
+  it('stop leaves a stale entry alone: no shutdown, no signal', async () => {
+    const h = harness({ isAlive: () => true });
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({}));
+    h.deps.connect = () => Promise.reject(errno('ECONNREFUSED'));
+    await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.deps.kill).not.toHaveBeenCalled();
+    expect(h.out.join('')).toMatch(/18\.0\.0 .*pid 1 .*not running/);
+  });
+
+  it('stop reports a daemon that is still there after the wait on stderr', async () => {
+    const h = harness({ isAlive: () => true });
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({}));
+    h.deps.connect = () =>
+      Promise.resolve(fakeInfoSocket({ version: '18.0.0', pid: 1, clients: 0, loaded: [] }));
+    const done = runDaemonCommand({ action: 'stop', ...RUN }, h.deps);
+    let settled = false;
+    void done.finally(() => (settled = true));
+    for (let i = 0; i < 500 && !settled; i += 1) {
+      await flush();
+      h.clock.fire(100);
+    }
+    await expect(done).resolves.toBe(0);
+    expect(h.err.join('')).toMatch(/pid 1 .*still running/);
+  });
+});
+
+/**
+ * A connected socket that speaks the daemon's line protocol: `daemon.info`
+ * answers with `info`, `daemon.shutdown` with `{}` unless `answerShutdown` is false.
+ */
+function fakeInfoSocket(
+  info: { version: string; pid: number; clients: number; loaded: string[] },
+  opts: { answerShutdown?: boolean; onRequest?: (method: string) => void } = {},
+): Duplex {
+  const { answerShutdown = true } = opts;
+  const buffer = new ReadBuffer();
+  const socket = new Duplex({
+    read() {},
+    write(chunk: Buffer, _encoding, callback) {
+      buffer.append(chunk);
+      for (;;) {
+        const message = buffer.readMessage();
+        if (!message) break;
+        if (!isJSONRPCRequest(message)) continue;
+        opts.onRequest?.(message.method);
+        let reply: JSONRPCMessage | undefined;
+        if (message.method === 'daemon.info') {
+          reply = {
+            jsonrpc: '2.0',
+            id: message.id,
+            result: {
+              name: 'neuro-vault-mcp',
+              version: info.version,
+              pid: info.pid,
+              started_at: 'x',
+              idle_timeout_min: 30,
+              clients: info.clients,
+              services: { embed: { loaded: info.loaded } },
+            },
+          };
+        } else if (message.method === 'daemon.shutdown' && answerShutdown) {
+          reply = { jsonrpc: '2.0', id: message.id, result: {} };
+        }
+        if (reply) socket.push(serializeMessage(reply));
+      }
+      callback();
+    },
+  });
+  return socket;
+}

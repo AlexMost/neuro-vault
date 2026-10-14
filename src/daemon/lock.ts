@@ -100,7 +100,7 @@ export type LockResult =
 const MAX_ATTEMPTS = 3;
 
 /** A holder pid is a positive decimal integer; anything else names no holder. */
-function parseHolder(raw: string): number | undefined {
+export function parseHolder(raw: string): number | undefined {
   const text = raw.trim();
   if (!/^\d+$/.test(text)) return undefined;
   const pid = Number(text);
