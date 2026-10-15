@@ -151,4 +151,78 @@ describe('embed service', () => {
     await Promise.all([d1, d2, q]);
     expect(order).toEqual(['docs:one', 'query', 'docs:two']);
   });
+
+  describe('diagnostics', () => {
+    /** A clock that advances `step` ms per reading. */
+    function ticking(step: number): () => number {
+      let t = 1000;
+      return () => {
+        const now = t;
+        t += step;
+        return now;
+      };
+    }
+
+    it('logs one line per profile load, with its time, however many clients asked', async () => {
+      const log = vi.fn();
+      const service = createEmbedService({
+        createProvider: (p) => fakeProvider(p.key),
+        log,
+        now: ticking(812.4),
+      });
+      await Promise.all([
+        service.handlers.initialize({ profile: 'granite-97m' }),
+        service.handlers.query({ profile: 'granite-97m', text: 'x' }),
+      ]);
+      await service.handlers.initialize({ profile: 'granite-97m' });
+      expect(log.mock.calls).toEqual([['loaded granite-97m in 812 ms']]);
+    });
+
+    it('logs a load failure with its message, then the retry that loads', async () => {
+      const log = vi.fn();
+      let fail = true;
+      const service = createEmbedService({
+        createProvider: (p) => fakeProvider(p.key, { failInit: fail ? 'no weights' : undefined }),
+        log,
+        now: ticking(5),
+      });
+      await expect(service.handlers.query({ profile: 'granite-97m', text: 'x' })).rejects.toThrow();
+      fail = false;
+      await service.handlers.initialize({ profile: 'granite-97m' });
+      expect(log.mock.calls).toEqual([
+        ['failed to load granite-97m after 5 ms: no weights'],
+        ['loaded granite-97m in 5 ms'],
+      ]);
+    });
+
+    it('logs an EMBED_FAILED inference error with its method and profile, never the text', async () => {
+      const log = vi.fn();
+      const provider = fakeProvider('granite-97m');
+      provider.embedQuery = vi.fn(async () => {
+        throw new Error('onnx exploded');
+      });
+      provider.embedDocuments = vi.fn(async (texts: string[]) => texts.map(() => [Number.NaN]));
+      const service = createEmbedService({ createProvider: () => provider, log, now: ticking(1) });
+      await service.handlers.initialize({ profile: 'granite-97m' });
+      log.mockClear();
+      await expect(
+        service.handlers.query({ profile: 'granite-97m', text: 'secret note text' }),
+      ).rejects.toMatchObject({ code: 'EMBED_FAILED' });
+      await expect(
+        service.handlers.documents({ profile: 'granite-97m', texts: ['a', 'b'] }),
+      ).rejects.toMatchObject({ code: 'EMBED_FAILED' });
+      expect(log.mock.calls).toEqual([
+        ['embed.query failed for granite-97m: onnx exploded'],
+        ['embed.documents failed for granite-97m (2 texts): provider returned a non-finite vector'],
+      ]);
+    });
+
+    it('logs nothing for a request it rejects before embedding', async () => {
+      const log = vi.fn();
+      const service = createEmbedService({ createProvider: (p) => fakeProvider(p.key), log });
+      await expect(service.handlers.query({ profile: 'bge-m3', text: 'x' })).rejects.toThrow();
+      await expect(service.handlers.query({ profile: 'granite-97m', text: ' ' })).rejects.toThrow();
+      expect(log).not.toHaveBeenCalled();
+    });
+  });
 });

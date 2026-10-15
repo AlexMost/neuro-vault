@@ -223,7 +223,10 @@ async function startServing(
   r: Resolved,
   server: ServerSlot,
 ): Promise<() => void> {
-  const embed = createEmbedService({ createProvider: r.createProvider });
+  const embed = createEmbedService({
+    createProvider: r.createProvider,
+    log: (line) => void r.stderr.write(`${packageMeta.name} daemon: ${line}\n`),
+  });
   const registry = new ServiceRegistry();
   registry.register('embed', embed.handlers);
 
