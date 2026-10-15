@@ -365,7 +365,9 @@ describe('parseConfig', () => {
     });
 
     it('is rejected on the daemon command', async () => {
-      await expect(parseConfig(['node', 'cli.js', 'daemon', '--no-shared'])).rejects.toThrow();
+      await expect(parseConfig(['node', 'cli.js', 'daemon', '--no-shared'])).rejects.toThrow(
+        /Unknown argument/,
+      );
     });
 
     it('documents the flag and its default in --help for the server and index', async () => {

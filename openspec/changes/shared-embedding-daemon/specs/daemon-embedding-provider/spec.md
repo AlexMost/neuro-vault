@@ -85,7 +85,7 @@ On first use the facade SHALL probe the version-keyed socket; when nothing liste
 
 ### Requirement: Any failure to reach the daemon falls back once to the in-process provider
 
-When the facade cannot locate or start the daemon — the spawn throws, the poll times out, the CLI runs from a TypeScript source file, or the platform refuses the socket — it SHALL switch, once per process, to the in-process provider for the same profile, write exactly one stderr line naming the daemon log, and never touch the daemon again in that process. A daemon that answers but reports `EMBED_FAILED` SHALL NOT cause a fallback: the error is surfaced to the caller and the next call retries through the daemon. `--no-shared` SHALL select the in-process provider up front without any stderr line. The `index` command SHALL use the same factory and flag.
+When the facade cannot locate or start the daemon — the spawn throws, the poll times out, the CLI runs from a TypeScript source file, the CLI script changed since the session started (an upgrade or rebuild, whose daemon would listen on another key), or the platform refuses the socket — it SHALL switch, once per process, to the in-process provider for the same profile, write exactly one stderr line naming the reason and, when the session's build is known, the daemon log, and never touch the daemon again in that process. A daemon that answers but reports `EMBED_FAILED` SHALL NOT cause a fallback: the error is surfaced to the caller and the next call retries through the daemon. `--no-shared` SHALL select the in-process provider up front without any stderr line. The `index` command SHALL use the same factory and flag.
 
 #### Scenario: Spawn fails
 
@@ -96,6 +96,11 @@ When the facade cannot locate or start the daemon — the spawn throws, the poll
 
 - **WHEN** the CLI is started from `src/cli.ts` through a TypeScript runner
 - **THEN** the session embeds in-process and stderr carries one line explaining why
+
+#### Scenario: Upgraded under an open session
+
+- **WHEN** the installed CLI script is replaced by an upgrade or rebuild while a session is open, and that session's daemon then goes away
+- **THEN** the session does not spawn a daemon from the new script; it embeds in-process from then on and stderr carries one line saying the CLI script changed
 
 #### Scenario: Model load failure is not a fallback
 

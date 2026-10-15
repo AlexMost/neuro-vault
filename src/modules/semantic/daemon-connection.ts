@@ -8,7 +8,7 @@ import {
   type JSONRPCMessage,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import type { DaemonPaths } from '../../daemon/paths.js';
+import type { CliBuild, DaemonPaths } from '../../daemon/paths.js';
 import type { SocketConnect, Timers } from '../../daemon/probe.js';
 import { DaemonRpcError, type DaemonErrorCode } from '../../daemon/protocol.js';
 
@@ -43,13 +43,28 @@ export interface SpawnedDaemon {
 export type SpawnDaemon = (
   file: string,
   args: string[],
-  opts: { detached: true; stdio: ['ignore', number, number]; windowsHide: true },
+  opts: {
+    detached: true;
+    stdio: ['ignore', number, number];
+    windowsHide: true;
+    cwd: string;
+  },
 ) => SpawnedDaemon;
 
 export interface DaemonConnectionDeps {
   paths: DaemonPaths;
   /** Realpath of the running CLI script; the daemon is spawned from it. */
   cliPath: string;
+  /** The size and mtime `paths` were keyed by, read when this session started. */
+  build: CliBuild;
+  /** Re-read `cliPath`'s size and mtime (`cliBuild`); checked before every spawn. */
+  statBuild: (cliPath: string) => CliBuild;
+  /**
+   * Working directory of a spawned daemon. It outlives the session that
+   * started it, so not that session's directory (a project the user may
+   * delete or unmount).
+   */
+  cwd: string;
   /** The running Node binary. */
   execPath: string;
   platform: NodeJS.Platform;
@@ -245,6 +260,24 @@ export class DaemonConnection {
         'the daemon cannot be started from a TypeScript entry point (development run)',
       );
     }
+    // An upgrade or a rebuild replaced the script since this session keyed its
+    // paths: a daemon spawned from it would key itself by the new build and
+    // listen on another socket than the one polled here. That build's daemon
+    // belongs to new sessions; this one embeds in-process instead.
+    let current: CliBuild;
+    try {
+      current = this.deps.statBuild(cliPath);
+    } catch (error) {
+      throw new DaemonUnavailableError(
+        `cannot identify the CLI script at ${cliPath}: ${messageOf(error)}`,
+      );
+    }
+    if (current.size !== this.deps.build.size || current.mtimeMs !== this.deps.build.mtimeMs) {
+      throw new DaemonUnavailableError(
+        `the CLI script at ${cliPath} changed since this session started (upgraded or rebuilt); ` +
+          'restart the session to use the new version',
+      );
+    }
     let failure: Error | undefined;
     try {
       // The state directory first: a fresh cache has no daemons/<key>/ to put the log in.
@@ -255,6 +288,7 @@ export class DaemonConnection {
           detached: true,
           stdio: ['ignore', log, log],
           windowsHide: true,
+          cwd: this.deps.cwd,
         });
         child.once('error', (error) => {
           failure = error;

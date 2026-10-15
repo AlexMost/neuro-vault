@@ -77,6 +77,9 @@ describe.skipIf(!posix)('DaemonEmbeddingProvider over a real daemon socket', () 
     const connection = new DaemonConnection({
       paths,
       cliPath: '/never/spawned.js',
+      build: { size: 1, mtimeMs: 1 },
+      statBuild: () => ({ size: 1, mtimeMs: 1 }),
+      cwd: dir,
       execPath: process.execPath,
       platform: 'linux',
       ensureSocketDir: () => {},

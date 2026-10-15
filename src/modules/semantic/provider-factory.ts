@@ -20,7 +20,10 @@ import type { ModelProfile } from './model-profiles.js';
 import type { EmbeddingProvider } from './types.js';
 
 /** The connection's I/O, replaceable by tests; everything else is derived. */
-export type ConnectionIo = Omit<DaemonConnectionDeps, 'paths' | 'cliPath' | 'platform'>;
+export type ConnectionIo = Omit<
+  DaemonConnectionDeps,
+  'paths' | 'cliPath' | 'platform' | 'build' | 'statBuild'
+>;
 
 export interface ProviderFactoryOptions {
   profile: ModelProfile;
@@ -50,6 +53,7 @@ export interface ProviderFactoryOptions {
 function defaultIo(uid: number): ConnectionIo {
   return {
     execPath: process.execPath,
+    cwd: os.homedir(),
     // Not os.userInfo(): it throws when the uid has no passwd entry (docker --user).
     ensureSocketDir: (dir) =>
       ensurePrivateSocketDir(dir, {
@@ -109,9 +113,10 @@ export function createEmbeddingProvider(opts: ProviderFactoryOptions): Embedding
 
   const cliPath = opts.cliPath;
   if (cliPath === undefined) return facade(unavailableLink('no CLI script path to key it by'));
+  const statBuild = opts.build ?? ((p: string) => cliBuild(p));
   let build: CliBuild;
   try {
-    build = (opts.build ?? cliBuild)(cliPath);
+    build = statBuild(cliPath);
   } catch (error) {
     return facade(
       unavailableLink(`cannot identify the CLI script at ${cliPath}: ${messageOf(error)}`),
@@ -130,6 +135,8 @@ export function createEmbeddingProvider(opts: ProviderFactoryOptions): Embedding
     paths,
     cliPath,
     platform,
+    build,
+    statBuild,
   });
   return facade(connection, paths.logFile);
 }

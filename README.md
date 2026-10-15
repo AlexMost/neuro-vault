@@ -144,7 +144,7 @@ flowchart LR
     Vault -.->|watched, reindexed| Corpus
 ```
 
-You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — the semantic leg ranks against an embedding index the server builds and keeps in `<vault>/.neuro-vault/corpus/`, the lexical leg reads notes straight from disk, and vault operations read and write the vault directory directly on disk too. No database, no external process, no Obsidian install required — an in-process watcher reconciles the index after ~10 seconds of quiet, so it never falls far behind what's on disk.
+You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — the semantic leg ranks against an embedding index the server builds and keeps in `<vault>/.neuro-vault/corpus/`, the lexical leg reads notes straight from disk, and vault operations read and write the vault directory directly on disk too. No database, no Obsidian install required, and the only background process is the shared one that holds the embedding model — an in-process watcher reconciles the index after ~10 seconds of quiet, so it never falls far behind what's on disk.
 
 For module wiring and internal data flow, see [docs/architecture/module-structure.md](./docs/architecture/module-structure.md).
 

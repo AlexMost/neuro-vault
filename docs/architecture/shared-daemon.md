@@ -160,8 +160,9 @@ The queue is the same two-lane queue a session uses ([`semantic-backend.md`](./s
 2. `connect` to the key's socket, bounded at 2 s. A connection that succeeds is used. `ENOENT` or `ECONNREFUSED` means nothing listens, so go to step 3. Any other error, or a connect that does not settle in time, is ambiguous, as it is for the daemon's own probe: the facade does not spawn on an ambiguous answer, it treats the daemon as unavailable.
 3. Spawn the daemon:
    - refuse when the CLI path ends in `.ts`, `.mts` or `.cts` (a development run under a TypeScript runner cannot start `node <file> daemon`);
+   - refuse when `cli.js` no longer has the size and mtime this session was keyed by. An upgrade or rebuild replaced it, and a daemon spawned from it would key itself by the new build and listen on another socket than the one this session polls. The new build's daemon belongs to new sessions;
    - create the state directory (`0700`) and open `daemon.log` for appending;
-   - run `spawn(process.execPath, [cliPath, 'daemon'], { detached: true, stdio: ['ignore', log, log], windowsHide: true })`, then `unref` the child and close the fd. An asynchronous spawn `error` is caught and ends the wait early.
+   - run `spawn(process.execPath, [cliPath, 'daemon'], { detached: true, stdio: ['ignore', log, log], windowsHide: true, cwd: os.homedir() })`, then `unref` the child and close the fd. The daemon outlives the session that started it, so it does not keep that session's project directory as its working directory. An asynchronous spawn `error` is caught and ends the wait early.
 4. Poll `connect` every 50 ms for up to 10 s. Two sessions that spawn at once need no coordination: the second daemon loses at the lock or the live-socket probe and exits into the log, and both sessions connect to the winner.
 
 **On every new connection**, the facade sends `embed.initialize` before anything else. That makes the connection a daemon client at once, which holds off the idle exit, loads the profile, and refreshes the batch size. `DaemonConnection.epoch` changes with each connection, which is how the facade knows to send it again after a reconnect. `DaemonConnection.request()` never connects by itself, so a reconnect cannot skip this step.
@@ -183,15 +184,20 @@ A request that runs out rejects with an error naming the method. The connection 
 - the socket directory is not ours;
 - an ambiguous connect;
 - a `.ts` entry point;
+- a CLI script that changed since the session started (upgraded or rebuilt), or one that is gone;
 - a state directory, log or spawn that fails;
 - a poll that runs out;
-- a CLI script the factory could not stat.
+- no CLI script path at all, or one the factory could not stat at startup.
 
 On it, the facade builds an in-process `EmbeddingService` for the same profile and writes one stderr line:
 
 ```
 neuro-vault-mcp: shared embedding daemon unavailable (<reason>); embedding in-process for this session — see <daemon.log>
 ```
+
+The `— see <daemon.log>` part is left out when the session never identified its build (no CLI path, or one it could not stat), because then there is no key and no log to name.
+
+**After an upgrade**, a session started before it keeps its daemon for as long as that daemon runs. If the daemon goes away (`daemon stop`, a crash), the session cannot start it again, because the old version's `cli.js` is gone, so it falls back in-process on its next call, as above. Restarting such sessions is what moves them to the new daemon.
 
 From then on it never touches the connection again. Every other failure reaches the caller and the next call goes through the daemon again. That covers `EMBED_FAILED` (the daemon answered, but the model will not load), `SHUTTING_DOWN`, a timeout and a dropped connection. Falling back on those would load a second model into a session whose daemon is merely busy or restarting. `--no-shared` selects `EmbeddingService` up front and writes nothing.
 

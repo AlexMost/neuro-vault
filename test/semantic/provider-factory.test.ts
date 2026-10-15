@@ -166,6 +166,38 @@ describe('createEmbeddingProvider', () => {
     expect(lines[0]).toMatch(/could not start the daemon: EROFS/);
   });
 
+  it('falls back at once after an upgrade replaced the CLI script, instead of spawning the new build', async () => {
+    const lines: string[] = [];
+    const loader = vi.fn<LocalModelLoader>().mockRejectedValue(new Error('local load reached'));
+    // Keyed at startup by the old build; by the time the daemon must be respawned, cli.js is new.
+    const build = vi
+      .fn(() => ({ size: 10, mtimeMs: 21 }))
+      .mockReturnValueOnce({ size: 10, mtimeMs: 20 });
+    const io = {
+      ensureSocketDir: vi.fn(),
+      connect: vi.fn(async () => {
+        throw errno('ENOENT');
+      }),
+      spawn: vi.fn(),
+      openLog: vi.fn(() => 9),
+      mkdirp: vi.fn(),
+    };
+    const provider = createEmbeddingProvider({
+      profile,
+      shared: true,
+      cliPath: '/opt/nv/dist/cli.js',
+      platform: 'linux',
+      stderr: { write: (s) => (lines.push(s), true) },
+      loader,
+      build,
+      io,
+    });
+    await expect(provider.initialize()).rejects.toThrow('local load reached');
+    expect(io.spawn).not.toHaveBeenCalled();
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/changed since this session started/);
+  });
+
   it('falls back with one line when the CLI script cannot be identified', async () => {
     const lines: string[] = [];
     const loader = vi.fn<LocalModelLoader>().mockRejectedValue(new Error('local load reached'));

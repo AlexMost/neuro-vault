@@ -69,7 +69,10 @@ function deps(overrides: Partial<DaemonConnectionDeps> = {}) {
   return {
     paths,
     cliPath: '/opt/nv/dist/cli.js',
+    build: { size: 1, mtimeMs: 2 },
+    statBuild: vi.fn(() => ({ size: 1, mtimeMs: 2 })),
     execPath: '/usr/bin/node',
+    cwd: '/home/u',
     platform: 'linux' as const,
     ensureSocketDir: vi.fn(),
     connect: vi.fn(async () => echo() as Duplex),
@@ -210,6 +213,7 @@ describe('DaemonConnection — spawning the daemon', () => {
       detached: true,
       stdio: ['ignore', 7, 7],
       windowsHide: true,
+      cwd: '/home/u',
     });
     expect(child.unref).toHaveBeenCalled();
     expect(attempts).toBe(4);
@@ -232,6 +236,38 @@ describe('DaemonConnection — spawning the daemon', () => {
       expect(d.openLog).not.toHaveBeenCalled();
     },
   );
+
+  it('refuses to spawn a daemon for a CLI script rebuilt since this session started', async () => {
+    // An upgrade or `npm run build` replaced cli.js: a daemon spawned from it would key itself
+    // by the new build and listen on another socket than the one this session polls.
+    const d = deps({
+      connect: vi.fn(async () => {
+        throw errno('ENOENT');
+      }),
+      statBuild: vi.fn(() => ({ size: 1, mtimeMs: 3 })),
+    });
+    const ensuring = new DaemonConnection(d).ensure();
+    await expect(ensuring).rejects.toBeInstanceOf(DaemonUnavailableError);
+    await expect(ensuring).rejects.toThrow(/changed since this session started/);
+    expect(d.statBuild).toHaveBeenCalledWith('/opt/nv/dist/cli.js');
+    expect(d.spawn).not.toHaveBeenCalled();
+    expect(d.openLog).not.toHaveBeenCalled();
+  });
+
+  it('refuses to spawn when the CLI script is gone', async () => {
+    const d = deps({
+      connect: vi.fn(async () => {
+        throw errno('ENOENT');
+      }),
+      statBuild: vi.fn(() => {
+        throw errno('ENOENT');
+      }),
+    });
+    await expect(new DaemonConnection(d).ensure()).rejects.toThrow(
+      /cannot identify the CLI script/,
+    );
+    expect(d.spawn).not.toHaveBeenCalled();
+  });
 
   it('wraps a spawn throw and still closes the log fd', async () => {
     const d = deps({
@@ -424,6 +460,8 @@ describe('DaemonConnection — requests', () => {
     await tick();
     socket!.push('not json\n');
     await expect(pending).rejects.toBeInstanceOf(DaemonConnectionError);
+    // Dropped by the parse error itself (with its cause), not later by the close event.
+    await expect(pending).rejects.toThrow(/closed during embed\.query: ./);
     expect(socket!.destroyed).toBe(true);
   });
 
