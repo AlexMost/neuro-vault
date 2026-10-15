@@ -21,7 +21,10 @@ export interface VaultScope {
 export interface VaultScopeInput {
   /** Raw lines of the vault root's `.gitignore`; omit when the file is absent. */
   gitignoreLines?: string[];
-  /** Globs from `.neuro-vault/config.json` `"exclusions"`, unioned with defaults. */
+  /**
+   * Globs from `.neuro-vault/config.json` `"exclusions"`, unioned with defaults.
+   * An entry naming a path (`Archive`) excludes its subtree, like a gitignore entry.
+   */
   configExclusions?: string[];
   /** Defaults to stderr — stdout is the MCP transport and must stay clean. */
   warn?: (message: string) => void;
@@ -67,6 +70,36 @@ export function gitignoreLinesToPatterns(lines: string[]): string[] {
   return patterns;
 }
 
+/**
+ * Config exclusion entries, with a path-naming entry expanded to the path plus
+ * its subtree — the same treatment a `.gitignore` entry gets. A bare `Archive`
+ * or `**\/drafts` would otherwise match the directory itself but none of the
+ * files below it under picomatch, while fast-glob's `ignore` prunes a
+ * directory whose pattern ends in a static name: discovery would drop the
+ * subtree the predicate says is in scope, and the post-filter cannot bring it
+ * back. An entry whose last segment contains a wildcard (`Archive/**`,
+ * `*.excalidraw.md`) is a glob over files and is kept verbatim. Unusable
+ * entries pass through for the caller to drop.
+ */
+export function configExclusionsToPatterns(entries: string[]): string[] {
+  const patterns = new Set<string>();
+  for (const raw of entries) {
+    if (!isUsableExclusionPattern(raw)) {
+      patterns.add(raw);
+      continue;
+    }
+    const entry = raw.trim().replace(/\/+$/, '');
+    const lastSegment = entry.slice(entry.lastIndexOf('/') + 1);
+    if (entry === '' || lastSegment.includes('*')) {
+      patterns.add(raw);
+      continue;
+    }
+    patterns.add(entry);
+    patterns.add(`${entry}/**`);
+  }
+  return [...patterns];
+}
+
 function hasDotSegment(relPath: string): boolean {
   return relPath.split('/').some((seg) => seg.startsWith('.'));
 }
@@ -92,7 +125,7 @@ export function createVaultScope(input: VaultScopeInput = {}): VaultScope {
   const patterns = [
     ...DEFAULT_EXCLUDED_DIRS.flatMap((d) => [d, `${d}/**`]),
     ...gitignoreLinesToPatterns(gitignoreLines),
-    ...(input.configExclusions ?? []),
+    ...configExclusionsToPatterns(input.configExclusions ?? []),
   ].filter(isUsableExclusionPattern);
 
   const matches = picomatch(patterns, { dot: true });

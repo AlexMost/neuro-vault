@@ -18,6 +18,7 @@ function createVaultScope(input?: {
 }): VaultScope;
 
 function gitignoreLinesToPatterns(lines: string[]): string[];
+function configExclusionsToPatterns(entries: string[]): string[];
 ```
 
 `createVaultScope` compiles one pattern list from the three exclusion layers below and exposes two views over it — `ignorePatterns` and `isExcluded` — described in [Two views](#two-views-prune-vs-predicate). `src/lib/obsidian/vault-scope-config.ts` builds a `VaultScope` for a real vault: `loadVaultScope(vaultRoot)` reads the vault root's `.gitignore` and `.neuro-vault/config.json` and calls `createVaultScope` with the result. `IVaultEntry.scope` (`src/lib/vault-registry.ts`) holds one `VaultScope` per registered vault, built once at `VaultRegistry.create` time via `IVaultEntryDeps.scopeFactory` — production wires `scopeFactory` to `loadVaultScope` in `buildDefaultVaultEntryDeps` (`src/server.ts`).
@@ -28,7 +29,7 @@ Scope is the union of three layers — "more entries = fewer visible files", no 
 
 1. **Always excluded, non-configurable.** Any path with a dot-segment (`.obsidian/`, `.smart-env/`, `.git/`, `.neuro-vault/`, `.trash/`, …) is excluded unconditionally; no config entry can re-include one. `isExcluded` checks this directly (`hasDotSegment`); the underlying scan additionally enumerates with fast-glob's `dot: false`, so dot-paths never even reach the pattern match.
 2. **Built-in defaults.** `Templates/` (hard-coded, `DEFAULT_EXCLUDED_DIRS`) plus every entry of the vault root's `.gitignore`, translated to patterns by `gitignoreLinesToPatterns` (see the next section).
-3. **User config.** `.neuro-vault/config.json`'s `"exclusions"` array, unioned in verbatim as additional globs.
+3. **User config.** `.neuro-vault/config.json`'s `"exclusions"` array, unioned in as additional globs, with path-naming entries expanded to their subtree by `configExclusionsToPatterns` (see [Config entries that name a path](#config-entries-that-name-a-path)).
 
 There is no re-include or negation mechanism at any layer: config cannot remove a default exclusion, and a `.gitignore` negation line (`!...`) is simply skipped rather than honoured (see below). This is deliberate (design D2) — union-only keeps the mental model to one direction, and nobody has asked to re-include `Templates/`.
 
@@ -65,7 +66,13 @@ does not work here. `*` is honoured (it compiles to `['*', '*/**']`, which match
 { "exclusions": ["Archive/**", "some/other/glob/**"] }
 ```
 
-`"exclusions"` entries are standard globs (picomatch syntax, `dot: true`), anchored at the vault root like every other layer, unioned with the built-in defaults. Read once per vault, at `VaultRegistry.create` time — the registry already builds entries asynchronously, so the extra file read is free.
+`"exclusions"` entries are standard globs (picomatch syntax, `dot: true`), anchored at the vault root like every other layer, unioned with the built-in defaults. An entry that names a path rather than a file glob (`Archive`, `**/drafts`) excludes that path's whole subtree — see the next section. Read once per vault, at `VaultRegistry.create` time — the registry already builds entries asynchronously, so the extra file read is free.
+
+### Config entries that name a path
+
+A config entry whose last segment has no `*` — `Archive`, `a/b`, `**/drafts`, `Archive/` — is expanded by `configExclusionsToPatterns` to the entry plus `<entry>/**` (a trailing `/` is stripped first), exactly like a `.gitignore` entry. So a bare `Archive` excludes `Archive/a.md` and everything deeper, as the owner expects, and `**/drafts` excludes a `drafts` folder at any depth. An entry whose last segment contains a wildcard is a glob over files and is kept verbatim: `Archive/**`, `**/*.excalidraw.md`, `*.md`, and `Archive/*` (direct children only) mean exactly what picomatch says.
+
+The expansion is not cosmetic. Without it a bare `Archive` compiles to a picomatch pattern that matches the path `Archive` but not `Archive/a.md`, so `isExcluded` would report the files in scope; yet fast-glob's `ignore` prunes any directory whose ignore pattern ends in a static name, so the same entry made `scan` skip the subtree. The two views disagreed, and because the predicate is only a post-filter it cannot bring pruned files back — the notes were in scope on paper and undiscoverable in practice. Expanding the entry makes both views say the same thing, which keeps the invariant in [Two views](#two-views-prune-vs-predicate): the pattern list is never stronger than the predicate.
 
 Failure handling is deliberately asymmetric between "no config" and "broken config" (design D5):
 
