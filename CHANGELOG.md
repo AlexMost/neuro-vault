@@ -2,6 +2,8 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [17.1.1](https://github.com/AlexMost/neuro-vault/compare/v17.1.0...v17.1.1) (2026-10-15)
+
 ## [17.1.0](https://github.com/AlexMost/neuro-vault/compare/v17.0.0...v17.1.0) (2026-10-15)
 
 
