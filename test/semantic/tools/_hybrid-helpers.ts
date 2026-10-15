@@ -34,7 +34,9 @@ export function sourcesWithEmbeddingFor(
   notePath: string,
   embedding: number[] = [1, 0],
 ): Map<string, SmartSource> {
-  return new Map([[notePath, { path: notePath, embedding, blocks: [] }]]);
+  return new Map([
+    [notePath, { path: notePath, embedding: Float32Array.from(embedding), blocks: [] }],
+  ]);
 }
 
 export function engineReturning(hits: Array<{ path: string; similarity: number }>): SearchEngine {

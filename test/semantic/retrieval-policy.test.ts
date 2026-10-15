@@ -20,7 +20,8 @@ import { TEST_SIMILARITY } from '../_identity.js';
 // before the first expansion call ever happens.
 const QUERY_VECTOR = [1, 0];
 
-function makeSource(path: string, embedding: number[] = [1, 0]): SmartSource {
+function makeSource(path: string, values: number[] = [1, 0]): SmartSource {
+  const embedding = Float32Array.from(values);
   return {
     path,
     embedding,
@@ -73,15 +74,17 @@ function routedNeighbors(args: {
   relatedBySeed?: Record<string, SearchResult[]>;
 }): SearchEngine['findNeighbors'] {
   const { sources, seeds, relatedBySeed = {} } = args;
-  return vi.fn(({ queryVector, threshold }: { queryVector: number[]; threshold: number }) => {
-    if (queryVector === QUERY_VECTOR) {
-      return typeof seeds === 'function' ? seeds(threshold) : seeds;
-    }
-    for (const [path, source] of sources) {
-      if (source.embedding === queryVector) return relatedBySeed[path] ?? [];
-    }
-    return [];
-  });
+  return vi.fn(
+    ({ queryVector, threshold }: { queryVector: ArrayLike<number>; threshold: number }) => {
+      if (queryVector === QUERY_VECTOR) {
+        return typeof seeds === 'function' ? seeds(threshold) : seeds;
+      }
+      for (const [path, source] of sources) {
+        if (source.embedding === queryVector) return relatedBySeed[path] ?? [];
+      }
+      return [];
+    },
+  );
 }
 
 const sources = makeSources([
@@ -694,7 +697,11 @@ describe.each(arities)('per-seed block backfill (%s)', (_label, queries) => {
 
   it('leaves blocks empty when the note has no block embeddings', async () => {
     const blockless = new Map(twoNotes);
-    blockless.set('note-b.md', { path: 'note-b.md', embedding: [0.8, 0.2], blocks: [] });
+    blockless.set('note-b.md', {
+      path: 'note-b.md',
+      embedding: new Float32Array([0.8, 0.2]),
+      blocks: [],
+    });
     const searchEngine = makeSearchEngine({
       findNeighbors: vi
         .fn()
@@ -1003,7 +1010,7 @@ describe('cross-query behaviour (query array only)', () => {
       embedQuery: vi.fn().mockImplementation(async (q: string) => (q === 'q1' ? [1, 0] : [0, 1])),
     };
     const findNeighbors = vi.fn(
-      ({ queryVector, threshold }: { queryVector: number[]; threshold: number }) => {
+      ({ queryVector, threshold }: { queryVector: ArrayLike<number>; threshold: number }) => {
         if (queryVector[0] === 1) return [makeSearchResult('note-a.md', 0.8)];
         return threshold <= 0.3 ? [makeSearchResult('note-b.md', 0.4)] : [];
       },
@@ -1080,7 +1087,7 @@ describe('cross-query behaviour (query array only)', () => {
           limit,
         }: {
           sources: Iterable<SmartSource>;
-          queryVector: number[];
+          queryVector: ArrayLike<number>;
           limit?: number;
         }) => {
           // Same shape test the backfill suite uses: the scoped, limit-1 call.
@@ -1269,7 +1276,7 @@ const DISTINCT: SimilarityDefaults = {
 };
 const QUERY = [1, 0];
 const SOURCES = new Map<string, SmartSource>([
-  ['a.md', { path: 'a.md', embedding: [0, 1], blocks: [] }],
+  ['a.md', { path: 'a.md', embedding: new Float32Array([0, 1]), blocks: [] }],
 ]);
 const embedder = { initialize: async () => {}, embedQuery: async () => QUERY };
 
@@ -1295,7 +1302,13 @@ describe('executeRetrieval — profile similarity defaults', () => {
   it("uses the profile's deep default for seeds and block evidence, and its expansion floor", async () => {
     const calls: Array<[string, number]> = [];
     const searchEngine = {
-      findNeighbors: ({ queryVector, threshold }: { queryVector: number[]; threshold: number }) => {
+      findNeighbors: ({
+        queryVector,
+        threshold,
+      }: {
+        queryVector: ArrayLike<number>;
+        threshold: number;
+      }) => {
         calls.push([queryVector === QUERY ? 'seed' : 'expansion', threshold]);
         return queryVector === QUERY ? [{ path: 'a.md', similarity: 0.65 }] : [];
       },

@@ -234,8 +234,14 @@ describe('findDuplicates', () => {
   it('honours a substituted existence filter with no files on disk', async () => {
     const corpus = makeFakeCorpusIndex(
       new Map([
-        ['Folder/note-d.md', { path: 'Folder/note-d.md', embedding: [1, 0, 0], blocks: [] }],
-        ['Folder/note-e.md', { path: 'Folder/note-e.md', embedding: [1, 0, 0], blocks: [] }],
+        [
+          'Folder/note-d.md',
+          { path: 'Folder/note-d.md', embedding: new Float32Array([1, 0, 0]), blocks: [] },
+        ],
+        [
+          'Folder/note-e.md',
+          { path: 'Folder/note-e.md', embedding: new Float32Array([1, 0, 0]), blocks: [] },
+        ],
       ]),
     );
     const registry = makeTestRegistry([

@@ -32,7 +32,7 @@ import { engineReturning, makeLexicalVault, sourcesWithEmbeddingFor } from './_h
 function makeMockSource(p: string, embedding: number[] = [1, 0]): SmartSource {
   return {
     path: p,
-    embedding,
+    embedding: Float32Array.from(embedding),
     blocks: [],
   };
 }
@@ -573,7 +573,7 @@ describe('searchNotes', () => {
 
   it('multi-query expansion (deep): an expansion-only neighbour surfaces with expansion_similarity, not similarity', async () => {
     const sources = makeMockSources(['note-a.md', 'exp.md']);
-    sources.get('note-a.md')!.embedding = [1, 0];
+    sources.get('note-a.md')!.embedding = new Float32Array([1, 0]);
 
     const embed = vi.fn().mockResolvedValue([1, 0]);
     const searchEngine = makeMockSearchEngine({
@@ -645,7 +645,7 @@ describe('searchNotes', () => {
 
   it('single-query deep mode surfaces the expansion neighbour of the seed', async () => {
     const sources = makeMockSources(['note-a.md', 'exp.md']);
-    sources.get('note-a.md')!.embedding = [1, 0];
+    sources.get('note-a.md')!.embedding = new Float32Array([1, 0]);
 
     const embed = vi.fn().mockResolvedValue([1, 0]);
     const searchEngine = makeMockSearchEngine({
@@ -679,8 +679,8 @@ describe('searchNotes', () => {
 
   it("multi-query deep: the same expansion neighbour fuses once at its best seed's expansion_similarity", async () => {
     const sources = makeMockSources(['seed-a.md', 'seed-b.md', 'shared.md']);
-    sources.get('seed-a.md')!.embedding = [1, 0];
-    sources.get('seed-b.md')!.embedding = [0.9, 0.1];
+    sources.get('seed-a.md')!.embedding = new Float32Array([1, 0]);
+    sources.get('seed-b.md')!.embedding = new Float32Array([0.9, 0.1]);
 
     const embed = vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0.9, 0.1]);
     const searchEngine = makeMockSearchEngine({
@@ -854,10 +854,10 @@ describe('searchNotes', () => {
     const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
-        ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
+        ['note-a.md', { path: 'note-a.md', embedding: new Float32Array([1, 0]), blocks: [] }],
       ]);
       const sources2 = new Map([
-        ['note-b.md', { path: 'note-b.md', embedding: [0, 1], blocks: [] }],
+        ['note-b.md', { path: 'note-b.md', embedding: new Float32Array([0, 1]), blocks: [] }],
       ]);
       const corpusIndex1 = makeFakeCorpusIndex(sources1);
       const corpusIndex2 = makeFakeCorpusIndex(sources2);
@@ -933,7 +933,7 @@ describe('searchNotes', () => {
     const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
-        ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
+        ['note-a.md', { path: 'note-a.md', embedding: new Float32Array([1, 0]), blocks: [] }],
       ]);
       const corpusIndex1 = makeFakeCorpusIndex(sources1);
       const corpusIndex2 = makeFakeCorpusIndex(new Map());
@@ -1018,7 +1018,7 @@ describe('searchNotes', () => {
     const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const sources1 = new Map([
-        ['note-a.md', { path: 'note-a.md', embedding: [1, 0], blocks: [] }],
+        ['note-a.md', { path: 'note-a.md', embedding: new Float32Array([1, 0]), blocks: [] }],
       ]);
       const corpusIndex1 = makeFakeCorpusIndex(sources1);
 

@@ -36,7 +36,9 @@ function fakeTimers(collected: Array<{ fn: () => void; ms: number }>) {
 
 function snapshotWith(paths: string[]): CorpusSnapshot {
   return {
-    sources: new Map(paths.map((p) => [p, { path: p, embedding: [1], blocks: [] }])),
+    sources: new Map(
+      paths.map((p) => [p, { path: p, embedding: new Float32Array([1]), blocks: [] }]),
+    ),
     basenameIndex: buildBasenameIndex(paths),
   };
 }

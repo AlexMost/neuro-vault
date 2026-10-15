@@ -10,7 +10,17 @@ afterEach(() => vi.restoreAllMocks());
 describe('vector codec', () => {
   it('round-trips a vector bit-exactly', () => {
     const values = Array.from({ length: TEST_DIMS }, (_, i) => Math.fround(Math.sin(i) / 3));
-    expect(decodeVector(encodeVector(values))).toEqual(values);
+    expect(Array.from(decodeVector(encodeVector(values)))).toEqual(values);
+  });
+
+  it('decodes into a compact Float32Array that owns exactly its own bytes', () => {
+    // A JS number[] costs 8+ bytes a dimension (and Array.from grows spare
+    // capacity on top); the snapshot holds every vector of the corpus for the
+    // life of the session. The copy must not keep the Buffer pool's slab alive.
+    const decoded = decodeVector(encodeVector(Array.from({ length: TEST_DIMS }, (_, i) => i)));
+    expect(decoded).toBeInstanceOf(Float32Array);
+    expect(decoded.byteOffset).toBe(0);
+    expect(decoded.buffer.byteLength).toBe(TEST_DIMS * 4);
   });
 
   it('round-trips correctly when many vectors are encoded in sequence', () => {
@@ -20,7 +30,7 @@ describe('vector codec', () => {
       Array.from({ length: TEST_DIMS }, (_, i) => Math.fround((n + 1) * 0.001 * i)),
     );
     const encoded = vectors.map(encodeVector);
-    encoded.forEach((e, n) => expect(decodeVector(e)).toEqual(vectors[n]));
+    encoded.forEach((e, n) => expect(Array.from(decodeVector(e))).toEqual(vectors[n]));
   });
 
   it('rejects a payload that is not whole float32 values', () => {

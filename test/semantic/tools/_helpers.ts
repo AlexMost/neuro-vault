@@ -48,13 +48,13 @@ const ABC_SOURCES: Record<'note-a' | 'note-b' | 'note-c', [string, SmartSource]>
     'Folder/note-a.md',
     {
       path: 'Folder/note-a.md',
-      embedding: [1, 0, 0],
+      embedding: new Float32Array([1, 0, 0]),
       blocks: [
         {
           key: 'Folder/note-a.md#alpha concept',
           heading: '#alpha concept',
           lines: [1, 3],
-          embedding: [],
+          embedding: new Float32Array([]),
         },
       ],
     },
@@ -63,13 +63,13 @@ const ABC_SOURCES: Record<'note-a' | 'note-b' | 'note-c', [string, SmartSource]>
     'Folder/note-b.md',
     {
       path: 'Folder/note-b.md',
-      embedding: [0, 1, 0],
+      embedding: new Float32Array([0, 1, 0]),
       blocks: [
         {
           key: 'Folder/note-b.md#beta concept',
           heading: '#beta concept',
           lines: [1, 3],
-          embedding: [],
+          embedding: new Float32Array([]),
         },
       ],
     },
@@ -78,13 +78,13 @@ const ABC_SOURCES: Record<'note-a' | 'note-b' | 'note-c', [string, SmartSource]>
     'Folder/note-c.md',
     {
       path: 'Folder/note-c.md',
-      embedding: [0, 0, 1],
+      embedding: new Float32Array([0, 0, 1]),
       blocks: [
         {
           key: 'Folder/note-c.md#gamma concept',
           heading: '#gamma concept',
           lines: [1, 3],
-          embedding: [],
+          embedding: new Float32Array([]),
         },
       ],
     },
@@ -117,26 +117,26 @@ export function createDuplicateCorpus(sources: Map<string, SmartSource>) {
 
   merged.set('Folder/note-d.md', {
     path: 'Folder/note-d.md',
-    embedding: [1, 0, 0],
+    embedding: new Float32Array([1, 0, 0]),
     blocks: [
       {
         key: 'Folder/note-d.md#delta',
         heading: '#delta',
         lines: [1, 3] as [number, number],
-        embedding: [],
+        embedding: new Float32Array([]),
       },
     ],
   });
 
   merged.set('Folder/note-e.md', {
     path: 'Folder/note-e.md',
-    embedding: [1, 0, 0],
+    embedding: new Float32Array([1, 0, 0]),
     blocks: [
       {
         key: 'Folder/note-e.md#echo',
         heading: '#echo',
         lines: [1, 3] as [number, number],
-        embedding: [],
+        embedding: new Float32Array([]),
       },
     ],
   });
@@ -245,7 +245,7 @@ export function makeSyntheticSource(
 ): SmartSource {
   return {
     path: notePath,
-    embedding,
+    embedding: Float32Array.from(embedding),
     blocks: [],
   };
 }

@@ -1,14 +1,14 @@
 import type { BlockSearchResult, DuplicatePair, SearchResult, SmartSource } from './types.js';
 
-function validateVector(vector: number[], label: string): void {
+function validateVector(vector: ArrayLike<number>, label: string): void {
   if (vector.length === 0) {
     throw new Error(`${label} must not be empty`);
   }
 }
 
 function ensureSameDimensions(
-  left: number[],
-  right: number[],
+  left: ArrayLike<number>,
+  right: ArrayLike<number>,
   leftLabel: string,
   rightLabel: string,
 ): void {
@@ -35,7 +35,7 @@ function compareDuplicatePairs(left: DuplicatePair, right: DuplicatePair): numbe
   );
 }
 
-export function cosineSimilarity(a: number[], b: number[]): number {
+export function cosineSimilarity(a: ArrayLike<number>, b: ArrayLike<number>): number {
   validateVector(a, 'Vector a');
   validateVector(b, 'Vector b');
   ensureSameDimensions(a, b, 'Vector a', 'Vector b');
@@ -60,7 +60,7 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 function toSearchResults(
-  queryVector: number[],
+  queryVector: ArrayLike<number>,
   sources: Iterable<SmartSource>,
   threshold: number,
   excludePath?: string,
@@ -98,7 +98,7 @@ export function findNeighbors({
   limit,
   excludePath,
 }: {
-  queryVector: number[];
+  queryVector: ArrayLike<number>;
   sources: Iterable<SmartSource>;
   threshold: number;
   limit?: number;
@@ -119,7 +119,7 @@ export function findBlockNeighbors({
   threshold,
   limit,
 }: {
-  queryVector: number[];
+  queryVector: ArrayLike<number>;
   sources: Iterable<SmartSource>;
   threshold: number;
   limit?: number;

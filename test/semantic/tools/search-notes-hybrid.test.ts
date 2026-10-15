@@ -126,7 +126,10 @@ describe('unified matches shape', () => {
     const files: Record<string, string> = {};
     for (let i = 0; i < 4; i++) files[`note-${i}.md`] = 'irrelevant body text';
     const sources: Map<string, SmartSource> = new Map(
-      Object.keys(files).map((p) => [p, { path: p, embedding: [1, 0], blocks: [] }]),
+      Object.keys(files).map((p) => [
+        p,
+        { path: p, embedding: new Float32Array([1, 0]), blocks: [] },
+      ]),
     );
     const engine = engineReturning([
       { path: 'note-0.md', similarity: 0.9 },
@@ -478,7 +481,7 @@ describe('query_stats', () => {
     // matches nothing in either leg — a dead query variant.
     const sources = sourcesWithEmbeddingFor('пошук note.md', [1, 0]);
     const engine: SearchEngine = {
-      findNeighbors: vi.fn(({ queryVector }: { queryVector: number[] }) =>
+      findNeighbors: vi.fn(({ queryVector }: { queryVector: ArrayLike<number> }) =>
         queryVector[0] === 1 ? [{ path: 'пошук note.md', similarity: 0.9 }] : [],
       ),
       findBlockNeighbors: vi.fn().mockReturnValue([]),
@@ -511,7 +514,7 @@ describe('query_stats', () => {
     const notePath = 'Target пошук.md';
     const sources = sourcesWithEmbeddingFor(notePath, [1, 0]);
     const engine: SearchEngine = {
-      findNeighbors: vi.fn(({ queryVector }: { queryVector: number[] }) =>
+      findNeighbors: vi.fn(({ queryVector }: { queryVector: ArrayLike<number> }) =>
         queryVector[0] === 1 ? [{ path: notePath, similarity: 0.9 }] : [],
       ),
       findBlockNeighbors: vi.fn().mockReturnValue([]),
@@ -578,11 +581,11 @@ describe('query_stats', () => {
     const noteA = 'a.md';
     const noteB = 'b.md';
     const sources = new Map<string, SmartSource>([
-      [noteA, { path: noteA, embedding: [1, 0], blocks: [] }],
-      [noteB, { path: noteB, embedding: [0, 1], blocks: [] }],
+      [noteA, { path: noteA, embedding: new Float32Array([1, 0]), blocks: [] }],
+      [noteB, { path: noteB, embedding: new Float32Array([0, 1]), blocks: [] }],
     ]);
     const engine: SearchEngine = {
-      findNeighbors: vi.fn(({ queryVector }: { queryVector: number[] }) =>
+      findNeighbors: vi.fn(({ queryVector }: { queryVector: ArrayLike<number> }) =>
         queryVector[0] === 1
           ? [{ path: noteA, similarity: 0.9 }]
           : [{ path: noteB, similarity: 0.8 }],
@@ -913,14 +916,14 @@ describe('arity invariance (SDK gate)', () => {
     const notePath = 'Projects/alpha.md';
     const relatedPath = 'Projects/related.md';
     const sources = new Map([
-      [notePath, { path: notePath, embedding: [0, 1], blocks: [] }],
-      [relatedPath, { path: relatedPath, embedding: [0.5, 0.5], blocks: [] }],
+      [notePath, { path: notePath, embedding: new Float32Array([0, 1]), blocks: [] }],
+      [relatedPath, { path: relatedPath, embedding: new Float32Array([0.5, 0.5]), blocks: [] }],
     ]);
     const engine = {
       // Main query pass embeds the query as [1, 0] (the default mock below);
       // the per-seed expansion pass looks up neighbours of the seed's OWN
       // embedding ([0, 1]) — the two are distinguishable by queryVector[0].
-      findNeighbors: vi.fn(({ queryVector }: { queryVector: number[] }) =>
+      findNeighbors: vi.fn(({ queryVector }: { queryVector: ArrayLike<number> }) =>
         queryVector[0] === 1
           ? [{ path: notePath, similarity: 0.82 }]
           : [{ path: relatedPath, similarity: 0.91 }],

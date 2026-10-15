@@ -27,7 +27,7 @@ function bandNote(index: number, querySim: number): SmartSource {
   const a = angleFor(querySim);
   return {
     path: `band-${index}.md`,
-    embedding: vec(a),
+    embedding: Float32Array.from(vec(a)),
     blocks: [
       {
         key: `band-${index}.md#b0`,
@@ -36,7 +36,7 @@ function bandNote(index: number, querySim: number): SmartSource {
         // Block query-similarity deliberately BELOW the note's, inside
         // (0.35, band): lets Task 3 prove blocks are not thinned by an
         // explicit note threshold.
-        embedding: vec(angleFor(querySim - 0.2)),
+        embedding: Float32Array.from(vec(angleFor(querySim - 0.2))),
       },
     ],
   };
@@ -49,7 +49,7 @@ function neighbourNote(index: number, seedSim: number): SmartSource {
   const a = angleFor(BAND_SIMS[0]) + angleFor(seedSim);
   return {
     path: `neighbour-${index}.md`,
-    embedding: vec(a),
+    embedding: Float32Array.from(vec(a)),
     blocks: [],
   };
 }

@@ -20,7 +20,7 @@ describe('search_notes end-to-end sanity fixture', () => {
   it('a note hit by BOTH legs surfaces once in matches[] with both provenance kinds', async () => {
     const notePath = 'Retrieval eval harness.md';
     const sources = new Map<string, SmartSource>([
-      [notePath, { path: notePath, embedding: [1, 0], blocks: [] }],
+      [notePath, { path: notePath, embedding: new Float32Array([1, 0]), blocks: [] }],
     ]);
     // The semantic leg's neighbor lookup is faked to surface the SAME path
     // that the lexical leg finds via a title match, wiring the intersection.
@@ -75,8 +75,8 @@ describe('search_notes end-to-end sanity fixture', () => {
     const tasksPath = 'Tasks/Retrieval task.md';
     const archivePath = 'Archive/Retrieval archive.md';
     const sources = new Map<string, SmartSource>([
-      [tasksPath, { path: tasksPath, embedding: [1, 0], blocks: [] }],
-      [archivePath, { path: archivePath, embedding: [1, 0], blocks: [] }],
+      [tasksPath, { path: tasksPath, embedding: new Float32Array([1, 0]), blocks: [] }],
+      [archivePath, { path: archivePath, embedding: new Float32Array([1, 0]), blocks: [] }],
     ]);
     // Echoes back whatever sources it was actually given, so if `Archive/`
     // leaks past the filter into the semantic leg's candidate set, it shows
