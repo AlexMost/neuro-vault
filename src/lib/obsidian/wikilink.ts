@@ -12,11 +12,16 @@ export function parseWikilinks(text: string): string[] {
   return out;
 }
 
+// Strip the `#heading` / `|alias` suffix, keeping only the note target.
+// Inside a markdown table cell Obsidian escapes the alias separator as `\|`
+// (`[[target\|alias]]`), so a backslash directly before the first `|` belongs
+// to the separator, not to the target.
 export function normalizeWikilinkTarget(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return '';
   const hashIdx = trimmed.indexOf('#');
-  const pipeIdx = trimmed.indexOf('|');
+  let pipeIdx = trimmed.indexOf('|');
+  if (pipeIdx > 0 && trimmed[pipeIdx - 1] === '\\') pipeIdx -= 1;
   const cutCandidates = [hashIdx, pipeIdx].filter((i) => i >= 0);
   if (cutCandidates.length === 0) return trimmed;
   const cut = Math.min(...cutCandidates);

@@ -104,6 +104,61 @@ describe('WikilinkGraphIndex', () => {
     ]);
   });
 
+  it('resolves table-escaped aliases ([[X\\|alias]]) to the target', async () => {
+    // Obsidian escapes the alias separator as `\|` inside markdown table cells.
+    const { reader } = createReader({
+      'Teams/team-growth.md': {
+        content: '| Person | Role |\n|---|---|\n| [[j-doe\\|Jane Doe]] | lead |\n',
+      },
+      'People/j-doe.md': { content: 'profile\n' },
+    });
+    const graph = new WikilinkGraphIndex({ reader, now: clock });
+
+    await graph.ensureFresh();
+
+    expect(graph.getNoteLinks('Teams/team-growth.md').outgoing).toEqual([
+      { target: 'j-doe', resolved: true, path: 'People/j-doe.md' },
+    ]);
+    expect(graph.getBacklinkCount('People/j-doe.md')).toBe(1);
+    expect(graph.getNoteLinks('People/j-doe.md').incoming).toEqual([
+      { source: 'Teams/team-growth.md' },
+    ]);
+  });
+
+  it('resolves a path-form link by unique suffix when it is relative to a sub-folder', async () => {
+    // `[[Teams/_index]]` written inside `Org/` resolves to `Org/Teams/_index.md`
+    // when the vault root has no `Teams/_index.md` (Obsidian's unique-suffix rule).
+    const { reader } = createReader({
+      'Org/Teams/team-growth.md': { content: '[[Teams/_index|Registry]]\n' },
+      'Org/Teams/_index.md': { content: 'registry\n' },
+    });
+    const graph = new WikilinkGraphIndex({ reader, now: clock });
+
+    await graph.ensureFresh();
+
+    expect(graph.getNoteLinks('Org/Teams/team-growth.md').outgoing).toEqual([
+      { target: 'Teams/_index', resolved: true, path: 'Org/Teams/_index.md' },
+    ]);
+    expect(graph.getBacklinkCount('Org/Teams/_index.md')).toBe(1);
+  });
+
+  it('keeps a path-form link unresolved when several notes share the suffix', async () => {
+    const { reader } = createReader({
+      'Org/Teams/team-growth.md': { content: '[[Playbook/_index]]\n' },
+      'Org/Playbook/_index.md': { content: 'current\n' },
+      'Legacy/Playbook/_index.md': { content: 'old\n' },
+    });
+    const graph = new WikilinkGraphIndex({ reader, now: clock });
+
+    await graph.ensureFresh();
+
+    expect(graph.getNoteLinks('Org/Teams/team-growth.md').outgoing).toEqual([
+      { target: 'Playbook/_index', resolved: false },
+    ]);
+    expect(graph.getBacklinkCount('Org/Playbook/_index.md')).toBe(0);
+    expect(graph.getBacklinkCount('Legacy/Playbook/_index.md')).toBe(0);
+  });
+
   it('counts embeds (![[X]]) the same as plain wikilinks', async () => {
     const { reader } = createReader({
       'A.md': { content: '![[B]]\n' },

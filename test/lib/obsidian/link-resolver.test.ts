@@ -59,4 +59,54 @@ describe('buildBasenameIndex', () => {
     const idx = buildBasenameIndex(['A/Foo.md']);
     expect(idx.resolve('Other/Foo')).toBeNull();
   });
+
+  describe('suffix resolution for path-form targets', () => {
+    it('resolves a path-form target by unique suffix when no exact path exists', () => {
+      // Obsidian resolves `[[Teams/_index]]` written inside `GrowPM/` to
+      // `GrowPM/Teams/_index.md` when the vault root holds no `Teams/_index.md`.
+      const idx = buildBasenameIndex(['GrowPM/Teams/_index.md', 'GrowPM/Teams/team-growth.md']);
+      expect(idx.resolve('Teams/_index')).toBe('GrowPM/Teams/_index.md');
+      expect(idx.resolveAll('Teams/_index')).toEqual(['GrowPM/Teams/_index.md']);
+    });
+
+    it('matches a deeper suffix too', () => {
+      const idx = buildBasenameIndex(['Org/Products/Shop/Metrics/_index.md']);
+      expect(idx.resolve('Shop/Metrics/_index')).toBe('Org/Products/Shop/Metrics/_index.md');
+      expect(idx.resolve('Products/Shop/Metrics/_index')).toBe(
+        'Org/Products/Shop/Metrics/_index.md',
+      );
+    });
+
+    it('accepts a .md suffix on the target', () => {
+      const idx = buildBasenameIndex(['GrowPM/Teams/_index.md']);
+      expect(idx.resolve('Teams/_index.md')).toBe('GrowPM/Teams/_index.md');
+    });
+
+    it('prefers an exact path over a suffix match', () => {
+      const idx = buildBasenameIndex(['Teams/_index.md', 'GrowPM/Teams/_index.md']);
+      expect(idx.resolve('Teams/_index')).toBe('Teams/_index.md');
+      expect(idx.resolveAll('Teams/_index')).toEqual(['Teams/_index.md']);
+    });
+
+    it('leaves an ambiguous suffix unresolved while listing the candidates', () => {
+      const idx = buildBasenameIndex(['Legacy/Teams/_index.md', 'GrowPM/Teams/_index.md']);
+      expect(idx.resolve('Teams/_index')).toBeNull();
+      expect(idx.resolveAll('Teams/_index')).toEqual([
+        'GrowPM/Teams/_index.md',
+        'Legacy/Teams/_index.md',
+      ]);
+    });
+
+    it('matches whole segments only, never a partial folder name', () => {
+      const idx = buildBasenameIndex(['GrowPM/SubTeams/_index.md']);
+      expect(idx.resolve('Teams/_index')).toBeNull();
+    });
+
+    it('does not let a suffix match a bare basename target', () => {
+      // `[[_index]]` stays a basename lookup; suffix matching is path-form only.
+      const idx = buildBasenameIndex(['A/Teams/_index.md', 'B/People/_index.md']);
+      expect(idx.resolve('_index')).toBe('A/Teams/_index.md');
+      expect(idx.resolveAll('_index')).toEqual(['A/Teams/_index.md', 'B/People/_index.md']);
+    });
+  });
 });

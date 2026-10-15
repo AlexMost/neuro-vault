@@ -1,0 +1,1 @@
+{"embed_version":2,"provider":"transformers.js","model_key":"harrier-270m","model_id":"onnx-community/harrier-oss-v1-270m-ONNX","revision":"d59c919d0159aea2c19ed7d04288fcdd048d0f9c","dtype":"q8","dims":640,"pooling":"last_token","max_tokens":512,"strategy":"token-window-v1","created":"2026-10-15T10:00:08.780Z"}
