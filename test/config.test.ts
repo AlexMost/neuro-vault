@@ -436,6 +436,9 @@ describe('parseConfig', () => {
 
     it('parses --idle-timeout and rejects bad values', async () => {
       await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '5']),
+      ).resolves.toEqual({ kind: 'daemon', options: { action: undefined, idleTimeoutMinutes: 5 } });
+      await expect(
         parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '0']),
       ).resolves.toMatchObject({ options: { idleTimeoutMinutes: 0 } });
       await expect(
@@ -471,6 +474,10 @@ describe('parseConfig', () => {
         expect(help).toContain(
           'Run the shared-services daemon (the server and `index` start it on demand)',
         );
+        // `daemon` joins the command list; it does not replace the other two.
+        expect(help).toMatch(/Commands: \S+ Run the MCP server over stdio \(default\) \[default\]/);
+        expect(help).toMatch(/\S+ index Build or refresh the embedding corpus for each vault/);
+        expect(help).toMatch(/\S+ daemon \[action\] Run the shared-services daemon/);
       } finally {
         log.mockRestore();
       }

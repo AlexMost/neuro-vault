@@ -8,6 +8,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { describe, expect, it, vi } from 'vitest';
 
+import { modelCorpusDir } from '../src/lib/obsidian/corpus/layout.js';
 import { buildBasenameIndex } from '../src/lib/obsidian/index.js';
 import type { BackendStatus } from '../src/lib/obsidian/semantic-backend.js';
 import { main } from '../src/cli.js';
@@ -617,6 +618,131 @@ describe('Neuro Vault MCP server bootstrap', () => {
       expect(server.registeredResourceUris).toEqual(['vault://overview']);
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('two vaults, one model', () => {
+  /** Above MIN_CHARS, so every note is embedded; `marker` tells the vaults apart in the embed texts. */
+  function noteBody(marker: string, n: number): string {
+    return `${marker} note ${n}. ${'Plain prose that is long enough to clear the size gate. '.repeat(5)}`;
+  }
+
+  async function writeVault(root: string, name: string, notes: number): Promise<string> {
+    const vaultPath = path.join(root, name);
+    await fs.mkdir(vaultPath, { recursive: true });
+    for (let n = 1; n <= notes; n += 1) {
+      await fs.writeFile(path.join(vaultPath, `note-${n}.md`), noteBody(`${name}-marker`, n));
+    }
+    return vaultPath;
+  }
+
+  it('embeds both vaults through the one --model provider, with progress counted per vault', async () => {
+    const root = await createTempVaultPath();
+    const alphaPath = await writeVault(root, 'alpha', 2);
+    const betaPath = await writeVault(root, 'beta', 3);
+
+    // `--model granite-97m`: the profile in the config, and one provider with
+    // its identity. Every document embed parks until the test releases it, so
+    // the test steps the shared queue one note at a time.
+    const granite = resolveModelProfile('granite-97m');
+    const pending: Array<{ texts: string[]; release: () => void }> = [];
+    const embedDocuments = vi.fn(
+      (texts: string[]) =>
+        new Promise<number[][]>((resolve) => {
+          pending.push({
+            texts,
+            release: () =>
+              resolve(
+                texts.map(() => Array.from({ length: granite.dims }, (_, i) => (i === 0 ? 1 : 0))),
+              ),
+          });
+        }),
+    );
+    const provider = {
+      identity: identityOf(granite),
+      maxBatchSize: 64,
+      initialize: vi.fn(async () => {}),
+      embedQuery: vi.fn(),
+      embedDocuments,
+    };
+    const server = createFakeServer();
+
+    const dispose = await startNeuroVaultServer(
+      {
+        vaults: [
+          { name: 'alpha', path: alphaPath },
+          { name: 'beta', path: betaPath },
+        ],
+        semantic: { enabled: true, model: granite, shared: true },
+      },
+      {
+        embeddingProvider: provider,
+        serverFactory: () => server as never,
+        transportFactory: () => ({}) as never,
+        stdin: new PassThrough(),
+      },
+    );
+
+    type Progress = { vault: string; indexed: number; total: number } | 'ready';
+    const findDuplicates = server.toolHandlers.get('find_duplicates')!;
+    const progressOf = async (vault: string): Promise<Progress> => {
+      const result = (await findDuplicates({ vault })) as {
+        isError?: boolean;
+        structuredContent?: {
+          code?: string;
+          details?: { vault: string; indexed: number; total: number };
+        };
+      };
+      if (!result.isError) return 'ready';
+      expect(result.structuredContent?.code).toBe('SEMANTIC_INDEX_BUILDING');
+      return result.structuredContent!.details!;
+    };
+
+    try {
+      const totals: Record<string, number> = { alpha: 2, beta: 3 };
+      const done: Record<string, number> = { alpha: 0, beta: 0 };
+      for (let step = 0; step < 5; step += 1) {
+        // One model, one embed in flight: a single call is ever parked.
+        await vi.waitFor(() => expect(pending.length).toBe(1));
+        const call = pending.shift()!;
+        const vault = call.texts.some((t) => t.includes('alpha-marker')) ? 'alpha' : 'beta';
+        const other = vault === 'alpha' ? 'beta' : 'alpha';
+        const otherBefore = await progressOf(other);
+        call.release();
+        done[vault] += 1;
+
+        await vi.waitFor(async () => {
+          const progress = await progressOf(vault);
+          if (done[vault] === totals[vault] && progress === 'ready') return;
+          expect(progress).toEqual({ vault, indexed: done[vault], total: totals[vault] });
+        });
+        // The note that landed counted for its own vault only.
+        expect(await progressOf(other)).toEqual(otherBefore);
+      }
+
+      await vi.waitFor(async () => {
+        expect(await progressOf('alpha')).toBe('ready');
+        expect(await progressOf('beta')).toBe('ready');
+      });
+
+      // The one provider served both vaults.
+      const texts = embedDocuments.mock.calls.flatMap(([batch]) => batch);
+      expect(texts.some((t) => t.includes('alpha-marker'))).toBe(true);
+      expect(texts.some((t) => t.includes('beta-marker'))).toBe(true);
+      // Each vault's corpus sits under the granite-97m directory and records its identity.
+      for (const vaultPath of [alphaPath, betaPath]) {
+        const manifest = JSON.parse(
+          await fs.readFile(
+            path.join(modelCorpusDir(vaultPath, 'granite-97m'), 'manifest.json'),
+            'utf8',
+          ),
+        ) as { model_key: string; dims: number };
+        expect(manifest).toMatchObject({ model_key: 'granite-97m', dims: 384 });
+      }
+    } finally {
+      await dispose();
+      await fs.rm(root, { recursive: true, force: true });
     }
   });
 });
