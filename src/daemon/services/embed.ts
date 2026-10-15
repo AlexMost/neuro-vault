@@ -18,6 +18,14 @@ interface LoadedProfile {
 export interface EmbedServiceDeps {
   /** The shared provider factory in non-shared mode (design D7). */
   createProvider: (profile: ModelProfile) => EmbeddingProvider;
+  /**
+   * One diagnostic line, without a newline: each profile load with its time, each
+   * load failure, each `EMBED_FAILED` while embedding. The daemon writes these to
+   * stderr, which a spawning session redirects to `daemon.log`. Default: dropped.
+   */
+  log?: (line: string) => void;
+  /** Milliseconds, for timing a load; default `performance.now`. */
+  now?: () => number;
 }
 
 function readProfile(params: Record<string, unknown>): ModelProfile {
@@ -57,6 +65,8 @@ export function createEmbedService(deps: EmbedServiceDeps): {
   handlers: ServiceHandlers;
   loaded(): string[];
 } {
+  const log = deps.log ?? (() => undefined);
+  const now = deps.now ?? (() => performance.now());
   const loaded = new Map<string, LoadedProfile>();
   // Memo of in-flight loads so two concurrent initializes build one provider.
   // A failed load is dropped from here and never enters `loaded`, so the next
@@ -68,15 +78,38 @@ export function createEmbedService(deps: EmbedServiceDeps): {
     if (ready) return Promise.resolve(ready);
     const pending = loading.get(profile.key);
     if (pending) return pending;
+    const started = now();
+    const took = (): number => Math.round(now() - started);
     const load = failedAs(async () => {
       const provider = deps.createProvider(profile);
       await provider.initialize();
       const entry: LoadedProfile = { provider, queue: createQueuedEmbedder(provider) };
       loaded.set(profile.key, entry);
       return entry;
-    }).finally(() => loading.delete(profile.key));
+    })
+      .then(
+        (entry) => {
+          log(`loaded ${profile.key} in ${took()} ms`);
+          return entry;
+        },
+        (error: DaemonRpcError) => {
+          log(`failed to load ${profile.key} after ${took()} ms: ${error.message}`);
+          throw error;
+        },
+      )
+      .finally(() => loading.delete(profile.key));
     loading.set(profile.key, load);
     return load;
+  }
+
+  /** The embedding itself; an `EMBED_FAILED` here is logged with its method and profile, never the text. */
+  async function embedding<T>(what: string, work: () => Promise<T>): Promise<T> {
+    try {
+      return await failedAs(work);
+    } catch (error) {
+      log(`${what}: ${(error as DaemonRpcError).message}`);
+      throw error;
+    }
   }
 
   const handlers: ServiceHandlers = {
@@ -92,7 +125,10 @@ export function createEmbedService(deps: EmbedServiceDeps): {
         throw new DaemonRpcError('INVALID_PARAMS', 'text must be a non-blank string');
       }
       const { queue } = await get(profile);
-      return { vector: assertFinite(await failedAs(() => queue.embedQuery(text))) };
+      const vector = await embedding(`embed.query failed for ${profile.key}`, async () =>
+        assertFinite(await queue.embedQuery(text)),
+      );
+      return { vector };
     },
     documents: async (params): Promise<EmbedDocumentsResult> => {
       const record = asRecord(params);
@@ -111,8 +147,11 @@ export function createEmbedService(deps: EmbedServiceDeps): {
           `at most ${provider.maxBatchSize} texts per call`,
         );
       }
-      const vectors = await failedAs(() => queue.embedDocuments(texts));
-      return { vectors: vectors.map(assertFinite) };
+      const vectors = await embedding(
+        `embed.documents failed for ${profile.key} (${texts.length} texts)`,
+        async () => (await queue.embedDocuments(texts)).map(assertFinite),
+      );
+      return { vectors };
     },
   };
 

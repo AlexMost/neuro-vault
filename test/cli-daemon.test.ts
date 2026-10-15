@@ -22,7 +22,12 @@ import { cliBuild, daemonKey } from '../src/daemon/paths.js';
 import type { Timers } from '../src/daemon/probe.js';
 import type { ServiceRegistry } from '../src/daemon/protocol.js';
 import { EmbeddingService } from '../src/modules/semantic/embedding-service.js';
-import { MODEL_PROFILES } from '../src/modules/semantic/model-profiles.js';
+import {
+  identityOf,
+  MODEL_PROFILES,
+  type ModelProfile,
+} from '../src/modules/semantic/model-profiles.js';
+import type { EmbeddingProvider } from '../src/modules/semantic/types.js';
 
 const BASE = '/home/u/.cache/neuro-vault/daemons';
 const BUILD = { size: 1000, mtimeMs: 1 };
@@ -457,6 +462,40 @@ describe('runDaemonCommand (run)', () => {
       clients: 3,
       services: { embed: { loaded: [] } },
     });
+  });
+
+  it('logs a profile load and a load failure to stderr, nothing to stdout', async () => {
+    let fail = false;
+    const createProvider = vi.fn(
+      (profile: ModelProfile): EmbeddingProvider => ({
+        identity: identityOf(profile),
+        maxBatchSize: 8,
+        initialize: async () => {
+          if (fail) throw new Error('no weights');
+        },
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: async (texts: string[]) => texts.map(() => [1, 0, 0]),
+      }),
+    );
+    const h = harness({ createProvider });
+    await runDaemonCommand(RUN, h.deps);
+    h.err.length = 0;
+    const initialize = (id: number, profile: string) =>
+      serverOptions(h).registry.dispatch({
+        jsonrpc: '2.0',
+        id,
+        method: 'embed.initialize',
+        params: { profile },
+      });
+    expect(isJSONRPCResultResponse(await initialize(1, 'granite-97m'))).toBe(true);
+    fail = true;
+    expect(isJSONRPCResultResponse(await initialize(2, 'harrier-270m'))).toBe(false);
+    expect(h.err).toHaveLength(2);
+    expect(h.err[0]).toMatch(/^neuro-vault-mcp daemon: loaded granite-97m in \d+ ms\n$/);
+    expect(h.err[1]).toMatch(
+      /^neuro-vault-mcp daemon: failed to load harrier-270m after \d+ ms: no weights\n$/,
+    );
+    expect(h.out).toEqual([]);
   });
 
   it('exits 0 at the deadline when close never finishes', async () => {
