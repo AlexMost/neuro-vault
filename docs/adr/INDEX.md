@@ -26,3 +26,4 @@ Template: [0000-template.md](0000-template.md).
 | 0016 | [One disk module owns note writes; `VaultProvider` survives only as a test seam](0016-one-disk-module-owns-note-writes.md) | Accepted |
 | 0017 | [Embedding models are a closed set of verified profiles](0017-embedding-model-profiles.md) | Accepted; per-profile directories adopted 2026-10-14 |
 | 0018 | [A shared-services daemon per installed build; the embedding provider is its first client](0018-shared-services-daemon.md) | Accepted |
+| 0019 | [The corpus is an interface inside the daemon; sessions receive semantic legs, never vectors](0019-embedding-storage-interface.md) | Accepted |
