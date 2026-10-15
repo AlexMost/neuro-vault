@@ -42,7 +42,11 @@ describe('SERVER_INSTRUCTIONS', () => {
               path: vault,
             },
           ],
-          semantic: { enabled: false, model: resolveModelProfile(DEFAULT_MODEL_KEY) },
+          semantic: {
+            enabled: false,
+            model: resolveModelProfile(DEFAULT_MODEL_KEY),
+            shared: false,
+          },
         },
         {
           serverFactory: (instructions: string) => {

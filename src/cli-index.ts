@@ -13,8 +13,8 @@ import {
 } from './lib/obsidian/corpus/reconcile.js';
 import type { EmbedDocumentsFn, EmbeddingIdentity } from './lib/obsidian/corpus/types.js';
 import { createQueuedEmbedder } from './modules/semantic/embed-queue.js';
-import { EmbeddingService } from './modules/semantic/embedding-service.js';
 import type { ModelProfile } from './modules/semantic/model-profiles.js';
+import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
 
 interface OutStream {
   isTTY?: boolean;
@@ -31,16 +31,23 @@ export interface IndexCommandDeps {
   reconcile?: (deps: ReconcileDeps, opts?: ReconcileOptions) => Promise<ReconcileSummary>;
   /** One embedder shared by every vault in the run, built from the selected profile. */
   createEmbedder?: (profile: ModelProfile) => IndexEmbedder;
+  /** Realpath of the running CLI script; the shared embedding daemon is keyed by it. */
+  cliPath?: string;
   stdout?: OutStream;
   stderr?: OutStream;
 }
 
-function defaultEmbedder(profile: ModelProfile): IndexEmbedder {
-  const service = new EmbeddingService({ profile });
+function defaultEmbedder(
+  profile: ModelProfile,
+  opts: { shared: boolean; cliPath?: string; stderr: OutStream },
+): IndexEmbedder {
+  // Shared by default: an `index` run next to a live server embeds through the
+  // daemon that already holds the model instead of loading a second copy.
+  const provider = createEmbeddingProvider({ profile, ...opts });
   // Through the queue so `index` buckets by length exactly as the server does.
   return {
-    identity: service.identity,
-    embedDocuments: createQueuedEmbedder(service).asDocumentEmbedFn(),
+    identity: provider.identity,
+    embedDocuments: createQueuedEmbedder(provider).asDocumentEmbedFn(),
   };
 }
 
@@ -103,7 +110,11 @@ export async function runIndexCommand(
   const stdout = deps.stdout ?? process.stdout;
   const stderr = deps.stderr ?? process.stderr;
   const reconcile = deps.reconcile ?? reconcileCorpus;
-  const embedder = (deps.createEmbedder ?? defaultEmbedder)(options.model);
+  const createEmbedder =
+    deps.createEmbedder ??
+    ((profile: ModelProfile) =>
+      defaultEmbedder(profile, { shared: options.shared, cliPath: deps.cliPath, stderr }));
+  const embedder = createEmbedder(options.model);
 
   let complete = true;
   for (const vault of options.vaults) {

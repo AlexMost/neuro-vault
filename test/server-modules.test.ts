@@ -11,7 +11,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { buildBasenameIndex } from '../src/lib/obsidian/index.js';
 import type { BackendStatus } from '../src/lib/obsidian/semantic-backend.js';
 import { main } from '../src/cli.js';
-import { DEFAULT_MODEL_KEY, resolveModelProfile } from '../src/modules/semantic/model-profiles.js';
+import {
+  DEFAULT_MODEL_KEY,
+  identityOf,
+  resolveModelProfile,
+} from '../src/modules/semantic/model-profiles.js';
 import { startNeuroVaultServer } from '../src/server.js';
 
 function createTempVaultPath() {
@@ -87,7 +91,7 @@ async function startWithBackendStatus(
           path: vaultPath,
         },
       ],
-      semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY) },
+      semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY), shared: false },
     },
     {
       semantic: {
@@ -145,7 +149,7 @@ async function startForShutdown(opts: {
         name: path.basename(vaultPath),
         path: vaultPath,
       })),
-      semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY) },
+      semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY), shared: false },
     },
     {
       semantic: {
@@ -188,7 +192,7 @@ async function startOverPipedStdin(opts: {
   await startNeuroVaultServer(
     {
       vaults: [{ name: path.basename(opts.vaultPath), path: opts.vaultPath }],
-      semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY) },
+      semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY), shared: false },
     },
     {
       semantic: {
@@ -247,6 +251,39 @@ describe('Neuro Vault MCP server bootstrap', () => {
     await settle();
 
     expect(initialize).toHaveBeenCalled();
+  });
+
+  it('warms up through the injected embedding provider, behind the per-process queue', async () => {
+    const vaultPath = await createTempVaultPath();
+    const initialize = vi.fn(async () => {});
+    const provider = {
+      identity: identityOf(resolveModelProfile(DEFAULT_MODEL_KEY)),
+      maxBatchSize: 8,
+      initialize,
+      embedQuery: vi.fn(),
+      embedDocuments: vi.fn(),
+    };
+    await startNeuroVaultServer(
+      {
+        vaults: [{ name: path.basename(vaultPath), path: vaultPath }],
+        semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY), shared: true },
+      },
+      {
+        embeddingProvider: provider,
+        vaultEntryDeps: {
+          semanticBackendFactory: () => ({
+            snapshot: () => Promise.reject(new Error('unused')),
+            status: () => ({ state: 'ready' as const }),
+            dispose: async () => {},
+          }),
+        },
+        serverFactory: () => createFakeServer() as never,
+        transportFactory: () => ({}) as never,
+        stdin: new PassThrough(),
+      },
+    );
+    await settle();
+    expect(initialize).toHaveBeenCalledTimes(1);
   });
 
   it('returns SEMANTIC_INDEX_BUILDING with progress while a vault is still building its corpus (startup tolerant)', async () => {

@@ -60,7 +60,10 @@ describe('runIndexCommand', () => {
       return okSummary();
     });
     const deps = makeDeps(reconcile);
-    const code = await runIndexCommand({ vaults: [vaultA, vaultB], model: profile }, deps);
+    const code = await runIndexCommand(
+      { vaults: [vaultA, vaultB], model: profile, shared: false },
+      deps,
+    );
     expect(code).toBe(0);
     expect(calls).toEqual(['/abs/VaultA', '/abs/VaultB']);
     expect(embeds[0]).toBe(embeds[1]); // one EmbeddingService for the run
@@ -73,7 +76,10 @@ describe('runIndexCommand', () => {
       .mockResolvedValueOnce(okSummary())
       .mockResolvedValueOnce(okSummary({ embedded: 2, failed: 1 }));
     const deps = makeDeps(reconcile);
-    const code = await runIndexCommand({ vaults: [vaultA, vaultB], model: profile }, deps);
+    const code = await runIndexCommand(
+      { vaults: [vaultA, vaultB], model: profile, shared: false },
+      deps,
+    );
     expect(code).toBe(1);
     const out = deps.stdout.chunks.join('');
     expect(out).toContain('VaultA');
@@ -86,7 +92,10 @@ describe('runIndexCommand', () => {
       .mockRejectedValueOnce(new Error('scope exploded'))
       .mockResolvedValueOnce(okSummary());
     const deps = makeDeps(reconcile);
-    const code = await runIndexCommand({ vaults: [vaultA, vaultB], model: profile }, deps);
+    const code = await runIndexCommand(
+      { vaults: [vaultA, vaultB], model: profile, shared: false },
+      deps,
+    );
     expect(code).toBe(1);
     expect(deps.stderr.chunks.join('')).toContain('scope exploded');
     expect(deps.stdout.chunks.join('')).toContain('VaultB');
@@ -98,7 +107,7 @@ describe('runIndexCommand', () => {
       return okSummary({ total: 100, embedded: 100 });
     });
     const deps = makeDeps(reconcile, false);
-    await runIndexCommand({ vaults: [vaultA], model: profile }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false }, deps);
     const progressLines = deps.stdout.chunks.filter((c) => c.startsWith('indexing'));
     expect(progressLines.length).toBeLessThanOrEqual(11);
   });
@@ -110,7 +119,7 @@ describe('runIndexCommand', () => {
       return okSummary({ total: 2, embedded: 2 });
     });
     const deps = makeDeps(reconcile, true);
-    await runIndexCommand({ vaults: [vaultA], model: profile }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false }, deps);
     const out = deps.stdout.chunks.join('');
     expect(out).toContain('\rindexing VaultA: 1/2');
     expect(out).toContain('\rindexing VaultA: 2/2');
@@ -121,7 +130,7 @@ describe('runIndexCommand', () => {
       okSummary({ total: 5, embedded: 1, reused: 2, renamed: 1, deleted: 3, failed: 0 }),
     );
     const deps = makeDeps(reconcile);
-    await runIndexCommand({ vaults: [vaultA], model: profile }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false }, deps);
     const out = deps.stdout.chunks.join('');
     expect(out).toMatch(/total=5 embedded=1 reused=2 renamed=1 deleted=3 failed=0/);
   });
@@ -132,7 +141,7 @@ describe('runIndexCommand', () => {
       throw new Error('storage corrupted');
     });
     const deps = makeDeps(reconcile, true);
-    const code = await runIndexCommand({ vaults: [vaultA], model: profile }, deps);
+    const code = await runIndexCommand({ vaults: [vaultA], model: profile, shared: false }, deps);
     expect(code).toBe(1);
     // Verify that a newline was written to stdout to terminate the progress line
     expect(deps.stdout.chunks).toContain('\n');
@@ -147,9 +156,25 @@ describe('runIndexCommand', () => {
     }));
     const deps = { ...makeDeps(vi.fn(async () => okSummary())), createEmbedder };
     const granite = resolveModelProfile('granite-97m');
-    await runIndexCommand({ vaults: [vaultA, vaultB], model: granite }, deps);
+    await runIndexCommand({ vaults: [vaultA, vaultB], model: granite, shared: false }, deps);
     expect(createEmbedder).toHaveBeenCalledTimes(1);
     expect(createEmbedder).toHaveBeenCalledWith(granite);
+  });
+
+  it('writes the same corpus identity whether the model is shared or in-process', async () => {
+    const identities: unknown[] = [];
+    const reconcile = vi.fn(async (d: ReconcileDeps) => {
+      identities.push(d.identity);
+      return okSummary();
+    });
+    for (const shared of [true, false]) {
+      // The default embedder: nothing is probed or loaded until a document is embedded.
+      const { createEmbedder: _unused, ...deps } = makeDeps(reconcile);
+      await runIndexCommand({ vaults: [vaultA], model: profile, shared }, deps);
+    }
+    expect(identities).toHaveLength(2);
+    expect(identities[0]).toEqual(identities[1]);
+    expect(identities[0]).toMatchObject({ model_key: profile.key });
   });
 
   it('announces a rebuild before the vault’s progress', async () => {
@@ -162,7 +187,7 @@ describe('runIndexCommand', () => {
       return okSummary({ total: 1, embedded: 1 });
     });
     const deps = makeDeps(reconcile);
-    await runIndexCommand({ vaults: [vaultA], model: profile }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false }, deps);
     expect(deps.stdout.chunks[0]).toBe(
       'rebuilding VaultA: corpus was indexed with harrier-270m (embed_version 2); active model is bge-micro-v2 (embed_version 2)\n',
     );
@@ -170,7 +195,7 @@ describe('runIndexCommand', () => {
 
   it('prints no rebuild line when the corpus matches', async () => {
     const deps = makeDeps(vi.fn(async () => okSummary()));
-    await runIndexCommand({ vaults: [vaultA], model: profile }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false }, deps);
     expect(deps.stdout.chunks.join('')).not.toContain('rebuilding');
   });
 

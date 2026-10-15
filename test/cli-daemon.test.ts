@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   CALL_TIMEOUT_MS,
+  daemonProviderFor,
   runDaemonCommand,
   STOP_DEADLINE_MS,
   type DaemonCommandDeps,
@@ -20,6 +21,8 @@ import { parseDaemonInfo } from '../src/daemon/info.js';
 import { cliBuild, daemonKey } from '../src/daemon/paths.js';
 import type { Timers } from '../src/daemon/probe.js';
 import type { ServiceRegistry } from '../src/daemon/protocol.js';
+import { EmbeddingService } from '../src/modules/semantic/embedding-service.js';
+import { MODEL_PROFILES } from '../src/modules/semantic/model-profiles.js';
 
 const BASE = '/home/u/.cache/neuro-vault/daemons';
 const BUILD = { size: 1000, mtimeMs: 1 };
@@ -181,6 +184,15 @@ function addKnown(h: Harness, name: string, info: string | undefined): void {
   h.dirs.add(`${BASE}/${name}`);
   if (info !== undefined) h.files.set(`${BASE}/${name}/daemon.json`, info);
 }
+
+describe('daemonProviderFor', () => {
+  it('builds the in-process provider for every profile — never a facade onto itself', () => {
+    // Construction loads nothing; the model loads on initialize().
+    for (const profile of Object.values(MODEL_PROFILES)) {
+      expect(daemonProviderFor(profile)).toBeInstanceOf(EmbeddingService);
+    }
+  });
+});
 
 describe('runDaemonCommand (run)', () => {
   it('locks, listens, chmods, writes daemon.json and announces on stderr', async () => {

@@ -36,6 +36,15 @@ export { CALL_TIMEOUT_MS, type DaemonFs };
 /** Stopping exits 0 after this long even if closing the server has not finished. */
 export const STOP_DEADLINE_MS = 5_000;
 
+/**
+ * The daemon's own providers are always in-process (design D7): the shared
+ * factory with `shared: false`. A shared provider here would be a facade onto
+ * this very daemon — it would connect to, or spawn, itself.
+ */
+export function daemonProviderFor(profile: ModelProfile): EmbeddingProvider {
+  return createEmbeddingProvider({ profile, shared: false });
+}
+
 export interface DaemonCommandDeps {
   platform?: NodeJS.Platform;
   uid?: number;
@@ -83,9 +92,7 @@ function resolveDeps(deps: DaemonCommandDeps) {
     isAlive: deps.isAlive ?? isPidAlive,
     connect: deps.connect ?? defaultConnect,
     startServer: deps.startServer ?? startDaemonServer,
-    createProvider:
-      deps.createProvider ??
-      ((profile: ModelProfile) => createEmbeddingProvider({ profile, shared: false })),
+    createProvider: deps.createProvider ?? daemonProviderFor,
     writeInfo: deps.writeInfo ?? ((file: string, info: DaemonInfo) => writeDaemonInfo(file, info)),
     readInfo: deps.readInfo ?? ((file: string) => readDaemonInfo(file)),
     onSignal:
@@ -165,6 +172,11 @@ async function runDaemon(options: DaemonCliOptions, r: Resolved): Promise<number
       return 1;
     }
     const stop = await startServing(options, paths, build, r, server);
+    // Unlike the stdio server, which handles no signals (its client hangs up by
+    // closing stdin, and the default handlers end it with nothing to clean up),
+    // the daemon has no stdin to end on and owns its lock, socket and
+    // daemon.json: a default-handler exit would leave all three behind and cut
+    // in-flight requests off without a SHUTTING_DOWN answer (design D5).
     r.onSignal('SIGINT', stop);
     r.onSignal('SIGTERM', stop);
   } catch (error) {

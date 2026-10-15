@@ -39,9 +39,9 @@ Two PRs, in order. Groups are marked **sequential** or **parallel-safe**. Every 
 
 ### 2b. Wiring — sequential after 2a
 
-- [ ] 2.4 `test/config.test.ts` (failing) then `src/config.ts`: `--shared` (boolean, default `true`, declared once) on the server command and `index`; `ServerConfig.semantic.shared`, `IndexCliOptions.shared`
-- [ ] 2.5 `src/server.ts` and `src/cli-index.ts` build their provider through `createEmbeddingProvider` (cliPath = realpath of the running `cli.js`, resolved in `cli.ts`); `test/server-modules.test.ts` and `test/cli-index.test.ts` keep passing with `shared: false` in their fixtures; a new test asserts the server's warmup awaits the facade's `initialize`
-- [ ] 2.6 `src/daemon/services/embed.ts` builds providers via `createEmbeddingProvider({ shared: false })` (closes the loop with D7)
+- [x] 2.4 `test/config.test.ts` (failing) then `src/config.ts`: `--shared` (boolean, default `true`, declared once) on the server command and `index`; `ServerConfig.semantic.shared`, `IndexCliOptions.shared`
+- [x] 2.5 `src/server.ts` and `src/cli-index.ts` build their provider through `createEmbeddingProvider` (cliPath = realpath of the running `cli.js`, resolved in `cli.ts`); `test/server-modules.test.ts` and `test/cli-index.test.ts` keep passing with `shared: false` in their fixtures; a new test asserts the server's warmup awaits the facade's `initialize`
+- [x] 2.6 `src/daemon/services/embed.ts` builds providers via `createEmbeddingProvider({ shared: false })` (closes the loop with D7)
 - [ ] 2.7 Manual check (recorded in verify): two Claude Code sessions → `daemon status` shows `clients: 2`, one loaded profile; `search_notes` in both; `neuro-vault-mcp index` while a server runs → no second model; rebuild → new session gets a second daemon, old sessions keep working, old daemon idles out; `--no-shared` in-process; `npm run dev -- --vault <v>` falls back with one stderr line
 - [ ] 2.8 Measure for verify: RSS of one daemon + 3 sessions vs 3 stdio processes after 5 `search_notes` each; p95 of `search_notes` with 3 concurrent sessions (throwaway script in the session scratchpad)
 

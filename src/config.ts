@@ -28,6 +28,8 @@ function basenameNoTrailingSlash(p: string): string {
 export interface IndexCliOptions {
   vaults: IVaultConfig[];
   model: ModelProfile;
+  /** Embed through the shared daemon (default) or load the model in this process. */
+  shared: boolean;
 }
 
 /**
@@ -115,6 +117,13 @@ const MODEL_OPTION = {
     'Embedding model profile, one per process. A vault indexed with another model is rebuilt, so give the server and `index` the same value.',
 } as const;
 
+const SHARED_OPTION = {
+  type: 'boolean',
+  default: true,
+  describe:
+    'Embed through the shared per-machine daemon, started on demand. --no-shared loads the model in this process.',
+} as const;
+
 function readModel(raw: unknown): ModelProfile {
   // yargs turns a repeated flag into an array; picking one silently would hide a mistake.
   if (Array.isArray(raw)) throw new Error('--model may be given only once');
@@ -171,14 +180,15 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
           default: true,
           describe: 'Enable semantic search module (embedding-based search)',
         })
-        .option('model', MODEL_OPTION),
+        .option('model', MODEL_OPTION)
+        .option('shared', SHARED_OPTION),
     )
     .command('index', 'Build or refresh the embedding corpus for each vault, then exit', (y) =>
-      y.option('vault', VAULT_OPTION).option('model', MODEL_OPTION),
+      y.option('vault', VAULT_OPTION).option('model', MODEL_OPTION).option('shared', SHARED_OPTION),
     )
     .command(
       'daemon [action]',
-      'Run the shared-services daemon; `status` lists daemons, `stop` ends them',
+      'Run the shared-services daemon (the server and `index` start it on demand); `status` lists daemons, `stop` ends them',
       (y) =>
         y
           .positional('action', {
@@ -214,9 +224,10 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
   const vaults = validateVaults((args.vault as string[] | undefined) ?? []);
 
   const model = readModel(args.model);
+  const shared = (args.shared as boolean | undefined) ?? true;
 
   if (args._[0] === 'index') {
-    return { kind: 'index', options: { vaults, model } };
+    return { kind: 'index', options: { vaults, model, shared } };
   }
   return {
     kind: 'run',
@@ -225,6 +236,7 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
       semantic: {
         enabled: (args.semantic as boolean | undefined) ?? true,
         model,
+        shared,
       },
     },
   };
