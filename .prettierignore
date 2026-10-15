@@ -16,3 +16,7 @@ openspec/schemas/
 # Markdown is prose (docs, openspec artifacts, changelog) — prettier's wrapping
 # and list reflow fight the authoring, so we don't gate it on a format check.
 *.md
+
+# Test fixtures are data, not source — vault files and generated corpus JSON
+# are kept byte-for-byte as the code under test reads or writes them.
+**/fixtures/
