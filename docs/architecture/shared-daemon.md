@@ -162,10 +162,10 @@ Every load and failure also leaves one line in the daemon's log, because the cli
 2. `connect` to the key's socket, bounded at 2 s. A connection that succeeds is used. `ENOENT` or `ECONNREFUSED` means nothing listens, so go to step 3. Any other error, or a connect that does not settle in time, is ambiguous, as it is for the daemon's own probe: the facade does not spawn on an ambiguous answer, it treats the daemon as unavailable.
 3. Spawn the daemon:
    - refuse when the CLI path ends in `.ts`, `.mts` or `.cts` (a development run under a TypeScript runner cannot start `node <file> daemon`);
-   - refuse when `cli.js` no longer has the size and mtime this session was keyed by. An upgrade or rebuild replaced it, and a daemon spawned from it would key itself by the new build and listen on another socket than the one this session polls. The new build's daemon belongs to new sessions;
+   - refuse when `cli.js` no longer has the size, mtime and inode this session started with (the inode catches a replacement that kept size and mtime, as npm's fixed extraction mtime allows). An upgrade or rebuild replaced it, and a daemon spawned from it would key itself by the new build and listen on another socket than the one this session polls. The new build's daemon belongs to new sessions;
    - create the state directory (`0700`) and open `daemon.log` for appending;
    - run `spawn(process.execPath, [cliPath, 'daemon'], { detached: true, stdio: ['ignore', log, log], windowsHide: true, cwd: os.homedir() })`, then `unref` the child and close the fd. The daemon outlives the session that started it, so it does not keep that session's project directory as its working directory. An asynchronous spawn `error` is caught and ends the wait early.
-4. Poll `connect` every 50 ms for up to 10 s. Two sessions that spawn at once need no coordination: the second daemon loses at the lock or the live-socket probe and exits into the log, and both sessions connect to the winner.
+4. Poll `connect` every 50 ms for up to 10 s. Two sessions that spawn at once need no coordination: the second daemon loses at the lock or the live-socket probe and exits into the log, and both sessions connect to the winner. A started daemon that exits while nothing listens is spawned again, at most twice (`MAX_RESPAWNS`) within the same budget. The usual cause is a daemon that is still stopping: it unlinks its socket at once but releases its lock only once its connections close, so a daemon spawned in that window exits "already running", and a later spawn finds the lock gone.
 
 **On every new connection**, the facade sends `embed.initialize` before anything else. That makes the connection a daemon client at once, which holds off the idle exit, loads the profile, and refreshes the batch size. `DaemonConnection.epoch` changes with each connection, which is how the facade knows to send it again after a reconnect. `DaemonConnection.request()` never connects by itself, so a reconnect cannot skip this step.
 
@@ -179,7 +179,7 @@ Every load and failure also leaves one line in the daemon's log, because the cli
 
 A request that runs out rejects with an error naming the method. The connection stays up, since a slow daemon is not a dead one.
 
-**A connection that goes away** (the daemon ends the socket on stop, the socket errors, or a line is not valid JSON-RPC) rejects every pending request with `DaemonConnectionError`, carrying the cause. A request written after the daemon ended its side gets no `SHUTTING_DOWN` answer, so the end of input already counts as the close: nothing waits on a socket that will never answer. The next call runs `ensure()` again and respawns the daemon if it is gone, which is how a session recovers from `daemon stop`, an idle exit after the connection dropped, or a crash. The socket is `unref`'d while nothing is pending, so an idle connection never keeps a finished `index` run or a hung-up stdio server alive. It is `ref`'d while an answer is awaited.
+**A connection that goes away** (the daemon ends the socket on stop, the socket errors, or a line is not valid JSON-RPC) rejects every pending request with `DaemonConnectionError`, carrying the cause. A request written after the daemon ended its side gets no `SHUTTING_DOWN` answer, so the end of input already counts as the close: nothing waits on a socket that will never answer. The next call runs `ensure()` again and respawns the daemon if it is gone, which is how a session recovers from `daemon stop`, an idle exit after the connection dropped, or a crash. The socket is `unref`'d while nothing is pending, so an idle connection never keeps a finished `index` run or a hung-up stdio server alive. It is `ref`'d while an answer is awaited. A server whose client hangs up closes the facade's connection in its disposer, so a pending request (a cold `embed.initialize` can take minutes) is rejected rather than holding the process open.
 
 **Fallback, once per process.** A `DaemonUnavailableError` means the daemon could not be located or started. Every case in steps 1–4 above raises one:
 
@@ -199,7 +199,7 @@ neuro-vault-mcp: shared embedding daemon unavailable (<reason>); embedding in-pr
 
 The `— see <daemon.log>` part is left out when the session never identified its build (no CLI path, or one it could not stat), because then there is no key and no log to name.
 
-**After an upgrade**, a session started before it keeps its daemon for as long as that daemon runs. If the daemon goes away (`daemon stop`, a crash), the session cannot start it again, because the old version's `cli.js` is gone, so it falls back in-process on its next call, as above. Restarting such sessions is what moves them to the new daemon.
+**After an upgrade**, a session started before it keeps its daemon for as long as that daemon runs. If the daemon goes away (`daemon stop`, a crash), the session does not start it again, because its `cli.js` has changed (a daemon spawned from it would be the new build, on another key), so it falls back in-process on its next call, as above. Restarting such sessions is what moves them to the new daemon.
 
 From then on it never touches the connection again. Every other failure reaches the caller and the next call goes through the daemon again. That covers `EMBED_FAILED` (the daemon answered, but the model will not load), `SHUTTING_DOWN`, a timeout and a dropped connection. Falling back on those would load a second model into a session whose daemon is merely busy or restarting. `--no-shared` selects `EmbeddingService` up front and writes nothing.
 
@@ -215,7 +215,7 @@ registry.register('lexical', createLexicalService(deps).handlers);
 
 Framing, discovery, the key, the lock and the lifecycle do not move. The candidates already named are `lexical.*` (the per-vault lexical cache, which costs hundreds of MB per session on large vaults) and `watch.*` (one chokidar watcher and reconcile loop per vault instead of one per session). A service that wants to appear in `daemon.info` extends `DaemonInfoResult.services`, which today names `embed` only.
 
-The session side follows one pattern, the facade. The session keeps the interface its code already depends on, and a facade implements it by forwarding to the daemon; for `embed` that is `DaemonEmbeddingProvider`, described next. A later facade, a lexical one for example, follows the same rules: the caller does not change, and any doubt resolves to in-process behaviour.
+The session side follows one pattern, the facade. The session keeps the interface its code already depends on, and a facade implements it by forwarding to the daemon; for `embed` that is `DaemonEmbeddingProvider` ([above](#the-session-side-facade)). A later facade, a lexical one for example, follows the same rules: the caller does not change, and any doubt resolves to in-process behaviour.
 
 ## How a remote embedding provider would fit
 

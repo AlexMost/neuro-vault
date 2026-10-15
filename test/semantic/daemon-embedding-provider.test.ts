@@ -23,6 +23,7 @@ function fakeLink(answers: Record<string, Answer> = {}) {
   const link = {
     epoch: 1,
     ensure: vi.fn(async () => {}),
+    close: vi.fn(),
     request: vi.fn(async (method: string, params: Record<string, unknown>) => {
       const a = answers[method] ?? (method === 'embed.initialize' ? initAnswer(8) : undefined);
       return typeof a === 'function' ? (a as (p: Record<string, unknown>) => unknown)(params) : a;
@@ -275,6 +276,13 @@ describe('DaemonEmbeddingProvider — errors and fallback', () => {
     await expect(p.embedQuery('x')).rejects.toBeInstanceOf(DaemonConnectionError);
     await expect(p.embedDocuments(['x'])).rejects.toThrow(/timed out/);
     expect(p.createFallback).not.toHaveBeenCalled();
+  });
+
+  it('close() closes the connection and leaves a fallback alone', async () => {
+    const link = fakeLink();
+    const p = provider(link);
+    p.close();
+    expect(link.close).toHaveBeenCalledTimes(1);
   });
 
   it('omits the log path when there is none to name', async () => {

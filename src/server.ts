@@ -206,6 +206,8 @@ export async function startNeuroVaultServer(
    * clean teardown this exists to produce.
    */
   const dispose = async (): Promise<void> => {
+    // A request pending on the shared daemon would hold the event loop open.
+    provider.close?.();
     // `async` per entry so a backend whose `dispose()` throws synchronously
     // becomes one settled rejection rather than blowing up the whole map.
     const results = await Promise.allSettled(

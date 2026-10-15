@@ -23,6 +23,8 @@ export interface DaemonLink {
   readonly epoch: number;
   /** Connect (spawning the daemon if needed); `DaemonUnavailableError` when that fails. */
   ensure(): Promise<void>;
+  /** Drop the connection, rejecting what is pending on it; the next `ensure()` reconnects. */
+  close(): void;
   /** One request on the current connection; never connects. */
   request<T>(method: string, params: Record<string, unknown>, timeoutMs: number): Promise<T>;
 }
@@ -126,6 +128,15 @@ export class DaemonEmbeddingProvider implements EmbeddingProvider {
       },
       (p) => p.embedDocuments(texts),
     );
+  }
+
+  /**
+   * Called by the server when its client hangs up: a request still pending on
+   * the daemon (a cold `embed.initialize` can take minutes) must not keep the
+   * process alive. A fallback holds no connection and is left alone.
+   */
+  close(): void {
+    this.deps.connection.close();
   }
 
   private async run<T>(

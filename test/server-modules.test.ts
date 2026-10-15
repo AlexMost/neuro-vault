@@ -254,6 +254,41 @@ describe('Neuro Vault MCP server bootstrap', () => {
     expect(initialize).toHaveBeenCalled();
   });
 
+  it('closes the embedding provider when it disposes, so a pending daemon request cannot hold the process', async () => {
+    const vaultPath = await createTempVaultPath();
+    const close = vi.fn();
+    const provider = {
+      identity: identityOf(resolveModelProfile(DEFAULT_MODEL_KEY)),
+      maxBatchSize: 8,
+      initialize: vi.fn(async () => {}),
+      embedQuery: vi.fn(),
+      embedDocuments: vi.fn(),
+      close,
+    };
+    const dispose = await startNeuroVaultServer(
+      {
+        vaults: [{ name: path.basename(vaultPath), path: vaultPath }],
+        semantic: { enabled: true, model: resolveModelProfile(DEFAULT_MODEL_KEY), shared: true },
+      },
+      {
+        embeddingProvider: provider,
+        vaultEntryDeps: {
+          semanticBackendFactory: () => ({
+            snapshot: () => Promise.reject(new Error('unused')),
+            status: () => ({ state: 'ready' as const }),
+            dispose: async () => {},
+          }),
+        },
+        serverFactory: () => createFakeServer() as never,
+        transportFactory: () => ({}) as never,
+        stdin: new PassThrough(),
+      },
+    );
+    expect(close).not.toHaveBeenCalled();
+    await dispose();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it('warms up through the injected embedding provider, behind the per-process queue', async () => {
     const vaultPath = await createTempVaultPath();
     const initialize = vi.fn(async () => {});

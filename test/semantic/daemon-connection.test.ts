@@ -254,6 +254,20 @@ describe('DaemonConnection — spawning the daemon', () => {
     expect(d.openLog).not.toHaveBeenCalled();
   });
 
+  it('refuses to spawn when the script was replaced with the same size and mtime (new inode)', async () => {
+    const d = deps({
+      connect: vi.fn(async () => {
+        throw errno('ENOENT');
+      }),
+      build: { size: 1, mtimeMs: 2, ino: 10 },
+      statBuild: vi.fn(() => ({ size: 1, mtimeMs: 2, ino: 11 })),
+    });
+    await expect(new DaemonConnection(d).ensure()).rejects.toThrow(
+      /changed since this session started/,
+    );
+    expect(d.spawn).not.toHaveBeenCalled();
+  });
+
   it('refuses to spawn when the CLI script is gone', async () => {
     const d = deps({
       connect: vi.fn(async () => {
@@ -308,6 +322,43 @@ describe('DaemonConnection — spawning the daemon', () => {
     });
     await expect(new DaemonConnection(d).ensure()).rejects.toBeInstanceOf(DaemonUnavailableError);
     expect(d.openLog).not.toHaveBeenCalled();
+  });
+
+  it('spawns again when the daemon it started exits without listening', async () => {
+    // A stopping daemon has already unlinked its socket but still holds its lock, so the
+    // daemon spawned in that window exits ("already running"); once the lock is gone a second
+    // spawn takes over. Without a respawn the session would poll a dead socket and fall back.
+    const children: ReturnType<typeof fakeChild>[] = [];
+    const spawn = vi.fn(() => {
+      const child = fakeChild();
+      children.push(child);
+      if (children.length === 1) setTimeout(() => child.emit('exit', 1, null), 0);
+      return child;
+    });
+    const connect = vi.fn(async (): Promise<Duplex> => {
+      if (children.length < 2) throw errno('ENOENT');
+      return echo();
+    });
+    const d = deps({ connect, spawn, pollTimeoutMs: 10_000 });
+    await new DaemonConnection(d).ensure();
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it('respawns a bounded number of times, then gives up naming the log', async () => {
+    const spawn = vi.fn(() => {
+      const child = fakeChild();
+      setTimeout(() => child.emit('exit', 1, null), 0);
+      return child;
+    });
+    const d = deps({
+      connect: vi.fn(async (): Promise<Duplex> => {
+        throw errno('ENOENT');
+      }),
+      spawn,
+      pollTimeoutMs: 200,
+    });
+    await expect(new DaemonConnection(d).ensure()).rejects.toThrow(paths.logFile);
+    expect(spawn).toHaveBeenCalledTimes(3);
   });
 
   it('stops polling as soon as the child reports a spawn error', async () => {

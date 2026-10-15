@@ -17,6 +17,13 @@ export const POLL_INTERVAL_MS = 50;
 export const POLL_TIMEOUT_MS = 10_000;
 /** A `connect` that neither succeeds nor fails within this long is ambiguous. */
 export const CONNECT_TIMEOUT_MS = 2_000;
+/**
+ * Spawns after the first, when a started daemon exits without ever listening.
+ * The usual cause is a daemon still stopping: it unlinks its socket at once
+ * but releases its lock only once its connections close, so a daemon spawned
+ * in that window exits "already running". A later spawn finds the lock gone.
+ */
+export const MAX_RESPAWNS = 2;
 
 /** The daemon could not be found or started; the caller falls back in-process. */
 export class DaemonUnavailableError extends Error {
@@ -34,10 +41,26 @@ export class DaemonConnectionError extends Error {
   }
 }
 
-/** What `ensure()` needs from a spawned child: detach it, and hear an asynchronous spawn failure. */
+/**
+ * The CLI script's build (size + mtime, which key the daemon) and, where the
+ * platform has one, its inode: a replaced file is a new inode even when an
+ * installer gives it the same size and mtime.
+ */
+export type CliStamp = CliBuild & { ino?: number };
+
+/** What `ensure()` needs from a spawned child: detach it, hear a spawn failure and its exit. */
 export interface SpawnedDaemon {
   unref(): void;
   once(event: 'error', listener: (error: Error) => void): unknown;
+  once(event: 'exit', listener: (code: number | null, signal: string | null) => void): unknown;
+}
+
+/** One started daemon process, as the poll sees it. */
+interface Launch {
+  /** Node could not start the process at all (a missing binary arrives as an `error` event). */
+  failure(): Error | undefined;
+  /** The process ended; a daemon that serves never does while the poll runs. */
+  exited(): boolean;
 }
 
 export type SpawnDaemon = (
@@ -55,10 +78,10 @@ export interface DaemonConnectionDeps {
   paths: DaemonPaths;
   /** Realpath of the running CLI script; the daemon is spawned from it. */
   cliPath: string;
-  /** The size and mtime `paths` were keyed by, read when this session started. */
-  build: CliBuild;
-  /** Re-read `cliPath`'s size and mtime (`cliBuild`); checked before every spawn. */
-  statBuild: (cliPath: string) => CliBuild;
+  /** The size and mtime `paths` were keyed by (plus the inode), read when this session started. */
+  build: CliStamp;
+  /** Re-read `cliPath`'s stamp; compared with `build` before every spawn. */
+  statBuild: (cliPath: string) => CliStamp;
   /**
    * Working directory of a spawned daemon. It outlives the session that
    * started it, so not that session's directory (a project the user may
@@ -205,8 +228,8 @@ export class DaemonConnection {
           ? error
           : new DaemonUnavailableError(`cannot reach the daemon: ${messageOf(error)}`);
       }
-      const spawnFailure = this.spawnDaemon();
-      socket = await this.poll(spawnFailure);
+      this.checkSpawnable();
+      socket = await this.poll(this.launch());
     }
     this.attach(socket);
   }
@@ -249,12 +272,11 @@ export class DaemonConnection {
   }
 
   /**
-   * Start `<node> <cli.js> daemon` detached, its output appended to
-   * `daemon.log`. Returns a getter for an asynchronous spawn failure (Node
-   * reports a missing binary as an `error` event, not a throw).
+   * Whether this session may start a daemon at all. Checked once per spawn
+   * attempt, before anything is created.
    */
-  private spawnDaemon(): () => Error | undefined {
-    const { cliPath, execPath, paths } = this.deps;
+  private checkSpawnable(): void {
+    const { cliPath } = this.deps;
     if (/\.[cm]?tsx?$/.test(cliPath)) {
       throw new DaemonUnavailableError(
         'the daemon cannot be started from a TypeScript entry point (development run)',
@@ -263,8 +285,10 @@ export class DaemonConnection {
     // An upgrade or a rebuild replaced the script since this session keyed its
     // paths: a daemon spawned from it would key itself by the new build and
     // listen on another socket than the one polled here. That build's daemon
-    // belongs to new sessions; this one embeds in-process instead.
-    let current: CliBuild;
+    // belongs to new sessions; this one embeds in-process instead. The inode
+    // catches a replacement that kept both size and mtime (npm extracts every
+    // file with one fixed mtime).
+    let current: CliStamp;
     try {
       current = this.deps.statBuild(cliPath);
     } catch (error) {
@@ -272,13 +296,24 @@ export class DaemonConnection {
         `cannot identify the CLI script at ${cliPath}: ${messageOf(error)}`,
       );
     }
-    if (current.size !== this.deps.build.size || current.mtimeMs !== this.deps.build.mtimeMs) {
+    const { build } = this.deps;
+    if (
+      current.size !== build.size ||
+      current.mtimeMs !== build.mtimeMs ||
+      (current.ino !== undefined && build.ino !== undefined && current.ino !== build.ino)
+    ) {
       throw new DaemonUnavailableError(
         `the CLI script at ${cliPath} changed since this session started (upgraded or rebuilt); ` +
           'restart the session to use the new version',
       );
     }
+  }
+
+  /** Start `<node> <cli.js> daemon` detached, its output appended to `daemon.log`. */
+  private launch(): Launch {
+    const { cliPath, execPath, paths } = this.deps;
     let failure: Error | undefined;
+    let exited = false;
     try {
       // The state directory first: a fresh cache has no daemons/<key>/ to put the log in.
       this.deps.mkdirp(paths.stateDir);
@@ -293,6 +328,9 @@ export class DaemonConnection {
         child.once('error', (error) => {
           failure = error;
         });
+        child.once('exit', () => {
+          exited = true;
+        });
         child.unref();
       } finally {
         this.deps.closeFd(log);
@@ -300,15 +338,23 @@ export class DaemonConnection {
     } catch (error) {
       throw new DaemonUnavailableError(`could not start the daemon: ${messageOf(error)}`);
     }
-    return () => failure;
+    return { failure: () => failure, exited: () => exited };
   }
 
-  private async poll(spawnFailure: () => Error | undefined): Promise<Duplex> {
+  /**
+   * Poll until the socket answers. A started daemon that exits while nothing
+   * listens is spawned again, at most `MAX_RESPAWNS` times within the budget:
+   * a race loser exits too, but by then its winner usually listens, so the
+   * connect below succeeds before a respawn is considered.
+   */
+  private async poll(first: Launch): Promise<Duplex> {
     const interval = this.deps.pollIntervalMs ?? POLL_INTERVAL_MS;
     const budget = this.deps.pollTimeoutMs ?? POLL_TIMEOUT_MS;
+    let current = first;
+    let respawns = 0;
     for (let waited = 0; waited <= budget; waited += interval) {
       await new Promise<void>((resolve) => void this.timers.setTimeout(resolve, interval));
-      const failed = spawnFailure();
+      const failed = current.failure();
       if (failed) {
         throw new DaemonUnavailableError(`could not start the daemon: ${failed.message}`);
       }
@@ -320,6 +366,11 @@ export class DaemonConnection {
             ? error
             : new DaemonUnavailableError(`cannot reach the daemon: ${messageOf(error)}`);
         }
+      }
+      if (current.exited() && respawns < MAX_RESPAWNS) {
+        respawns += 1;
+        this.checkSpawnable();
+        current = this.launch();
       }
     }
     throw new DaemonUnavailableError(

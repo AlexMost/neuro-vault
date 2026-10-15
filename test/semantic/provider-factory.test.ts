@@ -80,7 +80,8 @@ describe('createEmbeddingProvider', () => {
       platform: 'darwin',
       stderr: { write: (s) => (lines.push(s), true) },
       loader,
-      build: () => ({ size: 10, mtimeMs: 20 }),
+      // The inode is for the upgrade check only; the key ignores it, as the daemon's own does.
+      build: () => ({ size: 10, mtimeMs: 20, ino: 777 }),
       io,
     });
     const expected = daemonPaths({

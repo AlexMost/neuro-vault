@@ -67,6 +67,8 @@ bf54098 fix(semantic): never respawn a daemon from a CLI script rebuilt under th
   - **The fix.** `bf54098` re-stats the script before every spawn.
   - **Why it was missed.** The design's Risk "a symlinked dev install rebuilds without a version bump" was mitigated for *new* sessions (a new key) only. The old session's respawn path was never walked through. The rebuild manual check (2.7 #4) closed its sessions instead of stopping the daemon under them.
 
+> **Update 2026-10-15**: an independent review of the opened PR (session "Code review of PR #153") found a third defect of the same family as `bf54098`: a respawn during another daemon's stop lost at the lock and the session fell back after 10 s. It also found that the upgrade check needed the inode, and that `dispose` should close the facade. All three were fixed in the commit after `3404cb0`; see `verify.md` W1b. The §6 candidate about walking respawn paths covers this one too.
+
 ## 3. Plan deviations
 
 - **`request()` never connects** (plan Task 13 had `request` → `ensure`). See §2. `ensure()` also drops a socket that is destroyed or ended but not yet closed.

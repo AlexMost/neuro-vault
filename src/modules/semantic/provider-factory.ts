@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 
-import { cliBuild, daemonPaths, type CliBuild } from '../../daemon/paths.js';
+import { daemonPaths } from '../../daemon/paths.js';
 import { defaultConnect } from '../../daemon/probe.js';
 import { ensurePrivateSocketDir } from '../../daemon/socket-dir.js';
 import { neuroVaultCacheBase } from '../../lib/cache-dir.js';
@@ -11,6 +11,7 @@ import { packageMeta } from '../../package-meta.js';
 import {
   DaemonConnection,
   DaemonUnavailableError,
+  type CliStamp,
   type DaemonConnectionDeps,
 } from './daemon-connection.js';
 import { DaemonEmbeddingProvider, type DaemonLink } from './daemon-embedding-provider.js';
@@ -44,8 +45,8 @@ export interface ProviderFactoryOptions {
   stderr?: { write(chunk: string): boolean };
   /** Injected by tests; production loads through transformers.js. */
   loader?: LocalModelLoader;
-  /** Default `cliBuild` (`fs.statSync`). */
-  build?: (cliPath: string) => CliBuild;
+  /** Default `stampOf` (`fs.statSync`: size, mtime and inode). */
+  build?: (cliPath: string) => CliStamp;
   /** Injected by tests; production uses real sockets, processes and files. */
   io?: Partial<ConnectionIo>;
 }
@@ -72,11 +73,18 @@ function defaultIo(uid: number): ConnectionIo {
   };
 }
 
+/** Size and mtime (the daemon key's build, as `cliBuild` reads it) plus the inode. */
+function stampOf(cliPath: string): CliStamp {
+  const { size, mtimeMs, ino } = fs.statSync(cliPath);
+  return { size, mtimeMs, ino };
+}
+
 /** A link whose every `ensure` reports the daemon unavailable, for a build we cannot key. */
 function unavailableLink(reason: string): DaemonLink {
   return {
     epoch: 0,
     ensure: () => Promise.reject(new DaemonUnavailableError(reason)),
+    close: () => {},
     request: () => Promise.reject(new DaemonUnavailableError(reason)),
   };
 }
@@ -113,8 +121,8 @@ export function createEmbeddingProvider(opts: ProviderFactoryOptions): Embedding
 
   const cliPath = opts.cliPath;
   if (cliPath === undefined) return facade(unavailableLink('no CLI script path to key it by'));
-  const statBuild = opts.build ?? ((p: string) => cliBuild(p));
-  let build: CliBuild;
+  const statBuild = opts.build ?? stampOf;
+  let build: CliStamp;
   try {
     build = statBuild(cliPath);
   } catch (error) {
@@ -124,7 +132,8 @@ export function createEmbeddingProvider(opts: ProviderFactoryOptions): Embedding
   }
   const paths = daemonPaths({
     version: opts.version ?? packageMeta.version,
-    build,
+    // The key is size + mtime only: the daemon computes the same from its own argv.
+    build: { size: build.size, mtimeMs: build.mtimeMs },
     uid,
     platform,
     cacheBase: neuroVaultCacheBase(opts.env ?? process.env, opts.home ?? os.homedir()),

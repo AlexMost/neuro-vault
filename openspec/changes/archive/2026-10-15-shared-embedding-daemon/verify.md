@@ -221,6 +221,12 @@ The daemon's RSS falls back to 374–390 MB idle once inference stops. The 884 M
   - the guide and design now say to restart old sessions after an upgrade;
   - the delta spec gained the "Upgraded under an open session" scenario;
   - manual 2.7 #8 confirms it.
+- **W1b: fixed after an independent review of the opened PR** (2026-10-15, the commit after `3404cb0`):
+  - **Respawn.** A daemon spawned while another is still stopping (its socket is already unlinked, its lock not yet released) exits "already running". The poll now spawns again, at most twice, so it no longer waits out 10 s and falls back.
+  - **Upgrade check.** It compares the inode too, because npm extracts every file with one fixed mtime.
+  - **Disposal.** The server's disposer closes the facade's connection, so a pending `embed.initialize` cannot hold a hung-up server open.
+  - Each has a test.
+  - **Manual replay of the respawn race (not reproduced).** A session searched right after `daemon.shutdown` was sent while a half-open client stayed connected. The search succeeded in 1.28 s on a freshly spawned daemon (pid 60000 → 60019). The old daemon had released its lock within milliseconds, because it destroys each socket once its own writes flush, whatever the peer does. So the first spawn won, and `daemon.log` holds no "already running" line. The window the review describes needs a peer that stops reading with the socket buffer full. It is narrow, and the respawn is pinned by `daemon-connection.test.ts` "spawns again when the daemon it started exits without listening".
 - **W2: the server-level two-vaults-one-model test is still missing** (P8). This is the same gap `embedding-model-profiles` verify W2 recorded, and it is still open. It is carried into a follow-up, together with the minor test pins P2, P4, P6 and P7.
 - **W3: owner check.** Repeat 2.7 #2, #3 and #7 in two real Claude Code sessions on a build of this branch. This session left the owner's live install alone (§8).
 
@@ -228,8 +234,7 @@ The daemon's RSS falls back to 374–390 MB idle once inference stops. The 884 M
 
 - **S1:** `INTERNAL` is a sixth `data.code` that the shared-services-daemon spec does not list. Add it to the spec's error list at the next change touching the protocol.
 - **S2:** the spec says "version-keyed socket" while the key is per *build* (D3). Reword to "build-keyed" in a later spec edit.
-- **S3 (from the PR 2 code review, deferred):**
-  - The spawned daemon inherits the session's cwd. Consider `cwd: os.homedir()`.
+- **S3 (from the PR 2 code review, deferred; the cwd item was done in `bf54098`):**
   - A Windows pipe whose instances are all busy can exceed the 2 s connect timeout and make that session fall back. Both are untested on Windows.
   - Retrying once on `SHUTTING_DOWN` (embed requests are idempotent) would hide a `daemon stop` from the one search in flight. The spec allows surfacing it, as now.
 - **S5:** the daemon writes nothing to `daemon.log` after its start line. It logs no profile load (with its time) and no load failure, and both go only to the requesting client as a result or `EMBED_FAILED`. The fallback line and the guide both point users at `daemon.log`, so one stderr line per load and per load failure would make that log worth opening. Small; a follow-up.
