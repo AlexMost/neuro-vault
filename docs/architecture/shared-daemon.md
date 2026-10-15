@@ -1,0 +1,175 @@
+# The Shared-Services Daemon
+
+One background process per installed build of `neuro-vault-mcp`, shared by every server session and `index` run of that build on the machine. It listens on a local socket, speaks JSON-RPC 2.0 with the MCP stdio framing, and hosts namespaced services. Today it has one real service, `embed`, which holds the embedding model, plus its own `daemon` service for `info` and `shutdown`. The decision behind it is [ADR-0018](../adr/0018-shared-services-daemon.md). The code is `src/daemon/` and `src/cli-daemon.ts`.
+
+**Status of the code.** The daemon, its protocol, the `embed` service and the `daemon [status|stop]` command are built. Nothing starts or uses a daemon automatically yet: the server and `index` still load the model in-process. The session-side facade that will find or spawn the daemon (`DaemonEmbeddingProvider`) is the next step, and this page marks it as planned wherever it comes up.
+
+## What it is
+
+`neuro-vault-mcp daemon [--idle-timeout <min>]` (`runDaemonCommand`, `src/cli-daemon.ts`) takes a lock, cleans up a stale socket, listens, records itself in `daemon.json` and writes one line to stderr:
+
+```
+neuro-vault-mcp v<version> daemon listening on /tmp/neuro-vault-<uid>/<key>.sock (idle timeout 30 min)
+```
+
+It loads no model at startup. A model loads the first time a client sends `embed.initialize` for a profile, and stays loaded for the life of the process. The command takes no `--vault` and no `--model`: the daemon belongs to an installed build, not to a vault configuration. Whatever profile a client asks for is the one it loads, so two sessions on different `--model` values share one daemon that holds two models.
+
+The process runs in the foreground of whoever started it. `runDaemonCommand` resolves `0` once the server is listening, and the listening socket keeps the event loop alive. Detaching, `unref` and redirecting stderr to `daemon.log` are the spawning client's job (the planned facade, see below), not the daemon's.
+
+## Why it exists
+
+Every MCP client session runs its own stdio `neuro-vault-mcp`, and each one that has served a query holds its own copy of the model. On 2026-10-14 with `harrier-270m` that measured 450–600 MB RSS per session that had embedded a query, against 55–85 MB for an idle one; the model is the difference. With several Claude Code, Cursor and desktop sessions open on one laptop, that is gigabytes for identical weights.
+
+The seam to remove the duplication already existed. `EmbeddingProvider` (`src/modules/semantic/types.ts`) is fully asynchronous and self-describing, with queries and documents as separate calls ([ADR-0017](../adr/0017-embedding-model-profiles.md)), so a provider that forwards to another process needs no change anywhere else in the session.
+
+The shape follows what daemon-spawning CLIs converge on (Nx, Watchman, pm2; Gradle and Bazel for keying): a unix socket or named pipe, the identity in an info file beside it, a lock file, a `connect` probe to recognise a stale socket, and an idle exit. The comparison is in ADR-0018.
+
+## Paths and files
+
+`daemonPaths` (`src/daemon/paths.ts`) derives every path from one key:
+
+```
+key = sha256("v1:" + version + ":" + cliSize + ":" + cliMtimeMs).hex[0..12]
+```
+
+`version` is `packageMeta.version`. `cliSize` and `cliMtimeMs` come from `fs.statSync` of the realpath of the running CLI script (`cliBuild`). The key is therefore per installed *build*, not per version: the owner's global install is a symlink into the repo, so `npm run build` changes the code behind an unchanged version string, and a daemon keyed by version alone would go on serving the old code to new sessions. A rebuild gets a new key and a new daemon; the old one idles out. `v1` is a layout tag, so a future change to what the key covers cannot collide with today's keys.
+
+| Path | What |
+| --- | --- |
+| `/tmp/neuro-vault-<uid>/<key>.sock` | POSIX socket. The directory is created `0700`, checked on every start (`ensurePrivateSocketDir`, below), and re-`chmod`ed `0700` in case an older run left it looser; the socket file is `chmod`ed `0600` right after listening. |
+| `\\.\pipe\neuro-vault-<uid>-<key>` | Windows named pipe. No file to go stale, so no probe and no unlink. |
+| `<cache>/neuro-vault/daemons/<key>/daemon.lock` | The holder's pid, created exclusively (see Lifecycle). The state directory is created `0700`. |
+| `<cache>/neuro-vault/daemons/<key>/daemon.json` | `{ pid, version, socket, started_at, cli_size, cli_mtime_ms }`, written atomically (`write-file-atomic`, temp + rename) after listening. |
+| `<cache>/neuro-vault/daemons/<key>/daemon.log` | Where a spawning client will redirect the daemon's stdout and stderr. Nothing in the current code writes it; a daemon started by hand logs to its terminal. |
+
+`<cache>/neuro-vault` is `neuroVaultCacheBase` (`src/lib/cache-dir.ts`): `$XDG_CACHE_HOME/neuro-vault` when `XDG_CACHE_HOME` is an absolute path, else `~/.cache/neuro-vault`. It is the same rule as the model cache, so the two always sit side by side.
+
+The socket lives under `/tmp`, not `os.tmpdir()`. macOS caps a unix socket path at 103 bytes, and its per-user `$TMPDIR` is 48 bytes on its own; `/tmp/neuro-vault-501/<12 hex>.sock` is 38. A client computes the socket path from its own key; `daemon status`, which looks at every key, reads it from `daemon.json`.
+
+`/tmp` is shared, and the directory name is predictable, so another local user can create `/tmp/neuro-vault-<uid>` first, as a symlink to a directory they control or as a directory of their own. `mkdir -p` accepts both. `ensurePrivateSocketDir` (`src/daemon/socket-dir.ts`) therefore `lstat`s the path after creating it: it must be a real directory, not a symlink, owned by our uid, and the `chmod 0700` must succeed. Anything else and the daemon refuses to start, naming the path and what is wrong (`is a symlink`, `is owned by uid N`, `is not a directory`, or the `chmod` error). On Windows there is no directory and no check. The planned facade will run the same check before it connects or spawns.
+
+## Lifecycle
+
+### Start
+
+`runDaemon` in `src/cli-daemon.ts`, in order:
+
+1. **Identify the build.** `cliBuild(realpathSync(process.argv[1]))`. If the script cannot be read, exit 1 naming it.
+2. **Take the lock** (`acquireLock`, `src/daemon/lock.ts`). The lock is published atomically: the pid is written to a private temp file, which is then hard-linked into place, so `link(2)` fails with `EEXIST` if a lock exists and no reader ever sees a half-written file. An existing lock's pid is checked with `process.kill(pid, 0)` (`EPERM` counts as alive). A live holder → exit 1, `daemon is already running (pid N)`, followed by the lock path and a pointer to `daemon status` (a crashed daemon whose pid was reused by another process keeps that message until its lock is removed). A dead holder, or a lock that names no pid, is replaced by rename-and-verify: the lock is moved to a private path and its content compared with what was judged. If it is the same dead lock, it is dropped and the create retried. If another starter published a fresh lock in between, the moved file is put back with a hard link, and the result is `held` or `contended`. Three attempts; after that, `contended` → exit 1, "try again".
+3. **Prepare the socket** (POSIX only). Create, check and tighten the `/tmp/neuro-vault-<uid>` directory (`ensurePrivateSocketDir`; a directory that fails the check is a startup failure, below), then `cleanStaleSocket` (`src/daemon/probe.ts`). The probe deletes the socket file only after `ECONNREFUSED`: the file exists and nobody answers. `ENOENT` means there is nothing to delete. Every other outcome counts as listening: any other error code, a missing code, a synchronous throw, a connect that neither succeeds nor fails within 500 ms. An ambiguous answer must never lead to a live socket being unlinked. File size and age are never evidence; a live unix socket also has size 0. If something listens, the lock is released and the process exits 1, `already listening on <socket>`.
+4. **Listen** (`startDaemonServer`, `src/daemon/socket-server.ts`), `chmod 0600` the socket (the `0700` directory covers the window between listen and chmod), write `daemon.json`, register the `SIGINT`/`SIGTERM` handlers, print the start line.
+
+Any failure after the lock is taken closes the server if it was listening, releases the lock and exits 1 with `daemon failed to start: …`. `releaseLock` removes the lock only when it names our own pid, so a failing starter never deletes the winner's lock.
+
+Two daemons racing for one key almost always resolve at the lock: the loser exits 1 without touching the winner's files. The lock is not airtight: `acquireLock` documents a narrow window, while it replaces a dead holder's lock, in which both starters can come away believing they hold it. The live-socket probe and `listen()`'s `EADDRINUSE` are the further lines of defence; either one sends the second starter down the failure path, and `releaseLock` leaves a lock naming another pid alone.
+
+### Idle
+
+The server tracks its *clients*. A connection becomes a client with its first request outside the `daemon.` namespace (an `embed.*` call, say); one that only calls `daemon.info` or `daemon.shutdown`, as `daemon status` and `daemon stop` do, never becomes one. So polling a daemon with `status` neither keeps it alive nor shows up in its `clients` count, and `daemon.info` never counts the connection asking. The idle timer (`--idle-timeout`, default 30 minutes, `0` = never) is armed as soon as the server is listening, so a daemon nobody ever uses also idles out. The first client disarms it, and the last client to close re-arms it; a connection that never became a client touches it neither way. A client that stays open but sends nothing more keeps the daemon alive: idle counts from the last client, not the last request, so a quiet session never loses its daemon underneath it. When the timer fires, the daemon checks the client count once more (a client that arrived in the same loop turn wins) and stops.
+
+### Stop
+
+There is one stop routine (`createStop`, `src/cli-daemon.ts`), reached from `SIGINT`, `SIGTERM`, idle expiry and `daemon.shutdown`. It runs once:
+
+1. Arm a 5 s deadline (`STOP_DEADLINE_MS`) that exits 0 regardless, so a peer that never reads cannot hold the process.
+2. Close the server: stop accepting; answer every in-flight request with `SHUTTING_DOWN` (a handler that finishes later has its answer suppressed); requests that arrive on open connections during shutdown also get `SHUTTING_DOWN`. Ending the sockets is deferred one I/O turn, so lines already received are answered rather than dropped on an ended socket. Each socket is destroyed once its write side has flushed.
+3. Remove `daemon.json`, then the socket file (POSIX), then the lock. The lock goes last: until it is gone, no new daemon can take this socket path. A removal that fails is reported on stderr and does not stop the rest.
+4. Exit 0.
+
+`daemon.shutdown` answers `{}` first; the stop routine is scheduled on the next timer tick, so the reply is written before the connections end.
+
+### Why the daemon handles signals and the stdio server does not
+
+The stdio server deliberately handles no signals ([`mcp-server-shape.md`](./mcp-server-shape.md)): its client hangs up by closing stdin, `SIGINT`/`SIGTERM` terminate it by default, and every corpus write is atomic, so an abrupt end corrupts nothing. The daemon has no stdin to end on. A signal and the idle timer are the only ways it hears to stop, and it owns three files that describe it. Exiting on the default handler would leave the lock, the socket and `daemon.json` behind for the next start and `daemon status` to clean up, and would cut in-flight requests off with a closed socket instead of a `SHUTTING_DOWN` answer the client can tell apart from a crash.
+
+### `daemon status` and `daemon stop`
+
+Both live in `src/daemon/admin.ts`, print their reports to stdout and always exit 0, printing `no daemon known` when there is nothing to report. They work across builds: they scan every `daemons/*` directory, not only the current key's. Each directory is handled on its own: one that cannot be read (a lock that fails with `EACCES` or `EISDIR`, say) is reported on stderr as `<key>: <message>`, is never swept, and the next one goes on.
+
+`daemon status` prints one line per directory:
+
+| Situation | Printed | State directory |
+| --- | --- | --- |
+| Socket answers `daemon.info` | `<version>  pid <pid>  clients <n>  loaded [<profiles>]  alive  <socket>` | kept |
+| Socket refuses or is absent, lock names another live pid | `<version>  pid <holder>  starting` (a new daemon for the key has taken over a crashed one's entry and has not written its info yet) | kept |
+| Socket refuses or is absent otherwise | `<version>  pid <pid>  stale  (swept)` | removed |
+| Socket counts as listening but `daemon.info` gets no answer within 2 s (`CALL_TIMEOUT_MS`) | `<version>  pid <pid>  busy (no answer)  <socket>` | kept |
+| `daemon.json` unreadable, lock names a live pid | `<key>  starting` (a daemon between taking the lock and writing its info) | kept |
+| `daemon.json` unreadable otherwise | `<key>  stale (unreadable daemon.json)  (swept)` | removed |
+| No `daemon.json`, lock names a live pid | `<key>  starting` (as above, or a daemon at the end of a clean stop) | kept |
+| No `daemon.json`, lock names a dead pid or none | `<key>  stale (lock only)  (swept)` | removed |
+| Nothing in the directory at all | nothing | removed |
+| Neither `daemon.json` nor a lock, but other files (`daemon.log`: the last run's log, or a spawner's log opened before its daemon takes the lock) | nothing | kept, untouched |
+
+`clients` counts the daemon's clients, not its connections: `status`'s own connection is not one (see Idle).
+
+A lock that names the `daemon.json` pid counts as stale even when that pid is alive: the daemon behind that entry is not listening, so a live process with its pid is a reused pid. A live lock under a no-`daemon.json` directory is always `starting`; a reused pid there keeps it until the process ends.
+
+**Sweeping happens under the lock.** Judging an entry stale and removing its directory are two steps, and a new daemon for the key can take the lock in between. So `status` first takes the lock over with `claimLock` (`src/daemon/lock.ts`), the same rename-and-verify `acquireLock` uses: it succeeds only if the lock still holds exactly what `status` judged (or, with no lock judged, if none has appeared), and writes `status`'s own pid into it. Only then is the directory removed, our lock with it. If the claim fails, the entry is kept and printed `starting` with whoever holds the lock now (`?` when the lock names no pid).
+
+`daemon stop` probes the socket of every readable `daemon.json`. A daemon that is not listening is reported `not running` and left for `status` to sweep, or, when its lock names another live pid, reported as `<version> (pid <holder>)  starting — not stopped; run \`neuro-vault-mcp daemon stop\` again`. Every other `starting` directory (unreadable `daemon.json` or no `daemon.json`, under a live lock) gets the same line with its key. Stale directories are left alone. A listening daemon gets `daemon.shutdown`. If that gets no answer, `stop` sends `SIGTERM` only when the lock names the `daemon.json` pid and that pid is alive; `daemon.json` can be stale (a reused pid, or a new daemon on the socket that has not rewritten it yet), so otherwise it writes `daemon <version> (pid N) did not answer; not signalling pid N (lock names <holder or none>)` to stderr and moves on. It then waits up to 6 s (`STOP_WAIT_MS`, the daemon's own 5 s deadline plus slack) for `daemon.json` to disappear, the last thing a stopping daemon does before releasing its lock, and prints `stopped <version> (pid N)`, or a `still running` line on stderr. `stop` prints `no daemon known` only when it reported nothing at all.
+
+## Protocol
+
+Each connection carries JSON-RPC 2.0 messages, one per line, framed exactly as the MCP stdio transport frames them: the SDK's `ReadBuffer` and `serializeMessage` (`@modelcontextprotocol/sdk/shared/stdio.js`), with one `ReadBuffer` per connection. `ReadBuffer.readMessage` validates each line against the SDK's JSON-RPC schema, so the daemon has no framing or message-shape code of its own. The MCP spec says a custom transport over a byte stream SHOULD reuse this framing.
+
+A line that is not a valid JSON-RPC message destroys that connection and touches no other. Notifications and responses a client sends are ignored: the daemon serves requests only. Responses go out in whatever order the handlers finish, matched by `id`.
+
+Methods are `<service>.<method>`, routed by `ServiceRegistry` (`src/daemon/protocol.ts`), a map `namespace → { method: handler }`. Only a handler's own properties resolve, so `embed.toString` is an unknown method.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `daemon.info` | — | `{ name, version, pid, started_at, idle_timeout_min, clients, services: { embed: { loaded: [profileKey…] } } }`; `clients` counts client connections only (see Idle) |
+| `daemon.shutdown` | — | `{}`, then the daemon stops |
+| `embed.initialize` | `{ profile }` | `{ identity, max_batch_size }`, once the profile's provider is ready |
+| `embed.query` | `{ profile, text }` | `{ vector }` |
+| `embed.documents` | `{ profile, texts }` | `{ vectors }`, with `texts.length ≤ max_batch_size` |
+
+Vectors are JSON number arrays. A 640-dimension vector is about 10 KB of text and a batch of 8 about 100 KB, negligible on a local socket next to inference time. Base64 float32 is the documented next step if measurements ever show JSON cost.
+
+Errors are JSON-RPC errors with a numeric `code` and the daemon's own code in `data.code`:
+
+| `data.code` | JSON-RPC `code` | When |
+| --- | --- | --- |
+| `UNKNOWN_METHOD` | -32601 | No such namespace or method. The connection stays open. |
+| `INVALID_PARAMS` | -32602 | Params not an object, wrong types, blank text, empty or oversized `texts` |
+| `UNKNOWN_PROFILE` | -32602 | `profile` is not a key of the closed registry (`MODEL_PROFILES`) |
+| `EMBED_FAILED` | -32603 | The model failed to load, inference threw, or a vector came back non-finite |
+| `SHUTTING_DOWN` | -32000 | The request was in flight, or arrived, while the daemon was stopping |
+| `INTERNAL` | -32603 | A handler threw something other than a `DaemonRpcError` |
+
+## The embed service
+
+`createEmbedService` (`src/daemon/services/embed.ts`) keeps one entry per profile, built on that profile's first request: a provider and a `createQueuedEmbedder` queue around it. The provider comes from the same factory the session will use, `createEmbeddingProvider({ profile, shared: false })` (`src/modules/semantic/provider-factory.ts`), which today returns the local `EmbeddingService`. Two concurrent first requests for one profile share a single load. Any `embed.*` method loads the profile on first use; `embed.initialize` exists so a client can pay that cost up front and learn the identity and batch size.
+
+The queue is the same two-lane queue a session uses ([`semantic-backend.md`](./semantic-backend.md#the-shared-embed-queue)), so query-first ordering now holds between sessions, not only inside one: session B's query waits for at most one batch of session A's indexing. Once the facade lands, each session keeps its own queue with one request in flight, so the daemon's queue depth is bounded by the number of connected sessions.
+
+`EMBED_FAILED` is not a connection failure. A load that fails is dropped from the in-flight memo and never enters the loaded set, so the next request for that profile builds and initializes a fresh provider. This is the same retry-on-next-call behaviour as today's in-process load failure, and it is why the planned facade will surface `EMBED_FAILED` as an error rather than fall back to an in-process model.
+
+`daemon.info` reports `services.embed.loaded`, the profile keys loaded so far; `daemon status` prints it.
+
+## How a new service attaches
+
+A service is one more registry entry. In `startServing` (`src/cli-daemon.ts`), next to `embed`:
+
+```typescript
+registry.register('lexical', createLexicalService(deps).handlers);
+```
+
+Framing, discovery, the key, the lock and the lifecycle do not move. The candidates already named are `lexical.*` (the per-vault lexical cache, which costs hundreds of MB per session on large vaults) and `watch.*` (one chokidar watcher and reconcile loop per vault instead of one per session). A service that wants to appear in `daemon.info` extends `DaemonInfoResult.services`, which today names `embed` only.
+
+The session side follows one pattern, the facade. The session keeps the interface its code already depends on, and a facade implements it by forwarding to the daemon. For `embed` that is the planned `DaemonEmbeddingProvider implements EmbeddingProvider`: it will find the socket for its own key, spawn the daemon detached with stderr to `daemon.log` if nothing listens, poll `connect`, send requests with ids and timeouts, and reconnect on the next call after the socket closes. If the daemon cannot be found or started, or the CLI runs from a `.ts` file, it will fall back once per process to the in-process model, with one stderr line; `--no-shared` will select the in-process model up front. A later facade, for example a lexical one, follows the same rules: the caller does not change, and any doubt resolves to in-process behaviour.
+
+## How a remote embedding provider would fit
+
+Not built; the seam is kept open. `EmbeddingProvider` already has the shape a remote API needs: asynchronous throughout, `identity` reported by the provider, query and document embedding as separate calls (a remote API's `input_type`), and `maxBatchSize` reported by the provider rather than assumed by the caller. `embed.initialize` returns `max_batch_size` for the same reason.
+
+A remote provider would be a profile in the closed registry with its own `identity` (`provider: '<api>'`) and calibrated thresholds, built by `createEmbeddingProvider`. Because the daemon builds its providers through that factory, a remote profile would run inside the daemon: one place for the API key, the rate limit and a response cache, with nothing in the protocol or the session facade changing. Nothing in this daemon assumes the model is local; only `EmbeddingService` does.
+
+## Boundaries
+
+- **Nothing MCP-level lives here.** Every session is still a full stdio MCP server with its own `McpServer`, tools, vault registry, corpus snapshot, watcher and lexical cache ([`mcp-server-shape.md`](./mcp-server-shape.md), [`semantic-backend.md`](./semantic-backend.md)). The daemon never sees a tool call, and no tool contract or `ToolHandlerError` code depends on it.
+- **No vault paths, no secrets.** The daemon is keyed by build, not by vault, and `daemon.json` holds only the fields above. Vault paths would reach the daemon only through a later per-vault service's request params.
+- **Nothing network-reachable.** No TCP port, no HTTP, no authentication: access control is the socket file's mode inside a `0700` directory that `ensurePrivateSocketDir` has verified is ours. A network-facing hub is a separate design (#127).
+- **No stdout.** The daemon writes its diagnostics to stderr. Only `daemon status` and `daemon stop` print to stdout, and those are reports for a person.
+- **Not here:** model loading, tokenisation and pooling ([`embedding-pipeline.md`](./embedding-pipeline.md)); argv parsing and the `kind: 'daemon'` outcome ([`cli-startup.md`](./cli-startup.md)).
