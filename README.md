@@ -209,7 +209,7 @@ Then ask your assistant:
 
 > "What did I write about building AI agents?"
 
-On first run the embedding model downloads automatically (`harrier-270m` ≈ 344 MB, `granite-97m` ≈ 98 MB, `harrier-0.6b` ≈ 706 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `harrier-270m`, a multilingual model that is markedly better than the lite one on Ukrainian notes; add `--model granite-97m` for the lite one (smaller, faster to index, a good fit for small hosts), or `--model harrier-0.6b` when quality matters more than index time ([which to pick, with benchmarks](./docs/guide/embedding-models.md); [bake-off report](./docs/research/2026-10-embedding-model-bakeoff.md)). 🎚️ Similarity thresholds are calibrated per model, so switching needs no tuning — and switching rebuilds the vault's index once.
+On first run the embedding model downloads automatically (`harrier-270m` ≈ 344 MB, `granite-97m` ≈ 98 MB, `harrier-0.6b` ≈ 706 MB) into `~/.cache/neuro-vault/models`. Subsequent starts are fast. The default model is `harrier-270m`, a multilingual model that is markedly better than the lite one on Ukrainian notes; add `--model granite-97m` for the lite one (smaller, faster to index, a good fit for small hosts), or `--model harrier-0.6b` when quality matters more than index time ([which to pick, with benchmarks](./docs/guide/embedding-models.md); [bake-off report](./docs/research/2026-10-embedding-model-bakeoff.md)). 🎚️ Similarity thresholds are calibrated per model, so switching needs no tuning — and switching indexes the vault once for the new model, beside the old model's index (nothing is discarded; `index --prune` removes the others).
 
 To run another model, put `--model` in the server's `args`:
 
@@ -224,13 +224,13 @@ To run another model, put `--model` in the server's `args`:
 }
 ```
 
-Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault, or after upgrading — an upgrade from a release with a different default model rebuilds every index once; an explicit `threshold` or `expansion_floor` you tuned on the old model, say `0.5`, is on a different scale under `harrier-270m` — its query-to-note similarities sit mostly below about 0.44 on the measured vault — so re-tune or drop it):
+Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault, or after upgrading — an upgrade from a release with a different default model indexes every vault once with the new one; an explicit `threshold` or `expansion_floor` you tuned on the old model, say `0.5`, is on a different scale under `harrier-270m` — its query-to-note similarities sit mostly below about 0.44 on the measured vault — so re-tune or drop it):
 
 ```bash
 neuro-vault-mcp index --vault /absolute/path/to/your/vault --model granite-97m
 ```
 
-Give `index` the same `--model` the server runs with (omit both for the default, `harrier-270m`) — a vault indexed with another model is rebuilt, never silently mixed.
+Give `index` the same `--model` the server runs with (omit both for the default, `harrier-270m`) so it warms the index the server serves; each model keeps its own corpus in the vault, so another value builds a separate one and never mixes with it. Add `--prune` to delete the other models' corpora after indexing (it is skipped if the vault's indexing threw or indexed no note at all, and it refuses — failing that vault — if the selected model's corpus is missing when it runs, so neither a failed run nor a concurrent prune by another model ever leaves you without an index; if another process holds the vault, it prints the same waiting line as indexing).
 
 For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./docs/guide/installation.md).
 

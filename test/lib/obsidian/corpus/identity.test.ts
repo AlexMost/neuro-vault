@@ -4,7 +4,9 @@ import {
   corpusIdentityOf,
   formatIdentity,
   formatRebuild,
+  isStoredManifest,
 } from '../../../../src/lib/obsidian/corpus/identity.js';
+import { TEST_IDENTITY } from '../../../_identity.js';
 
 describe('corpusIdentityOf', () => {
   it('records the producing model under this build’s extraction version and strategy', () => {
@@ -84,5 +86,29 @@ describe('formatRebuild', () => {
 
   it('describes a missing manifest without comparing fields', () => {
     expect(formatRebuild(null, active).stored).toBe('an unreadable or missing manifest');
+  });
+});
+
+describe('isStoredManifest', () => {
+  it('accepts a v2 manifest and a legacy v1 one', () => {
+    expect(isStoredManifest({ ...TEST_IDENTITY, created: 'x' })).toBe(true);
+    expect(
+      isStoredManifest({
+        embed_version: 1,
+        model_key: 'bge-micro-v2',
+        model_id: 'TaylorAI/bge-micro-v2',
+        dims: 384,
+        strategy: 'sc-parity-v1',
+        created: '2026-08-25T00:00:00.000Z',
+      }),
+    ).toBe(true);
+  });
+
+  it('rejects a manifest without a model key, or with a mistyped optional field', () => {
+    const { model_key: _dropped, ...withoutKey } = { ...TEST_IDENTITY, created: 'x' };
+    expect(isStoredManifest(withoutKey)).toBe(false);
+    expect(isStoredManifest({ ...TEST_IDENTITY, created: 'x', revision: 7 })).toBe(false);
+    expect(isStoredManifest(null)).toBe(false);
+    expect(isStoredManifest('manifest')).toBe(false);
   });
 });

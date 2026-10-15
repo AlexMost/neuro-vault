@@ -12,6 +12,7 @@ import {
   reconcileCorpus,
   type ReconcileSummary,
 } from '../../../src/lib/obsidian/corpus/reconcile.js';
+import { CorpusLockTimeoutError } from '../../../src/lib/obsidian/corpus/reconcile-lock.js';
 import { loadCorpusSnapshot } from '../../../src/lib/obsidian/corpus/snapshot.js';
 import type { EmbedDocumentsFn } from '../../../src/lib/obsidian/corpus/types.js';
 import { TEST_DIMS, TEST_IDENTITY } from '../../_identity.js';
@@ -366,6 +367,129 @@ describe('createCorpusBackend', () => {
     await backend.whenSettled();
     expect(warn.mock.calls.flat().join('\n')).not.toContain('was indexed with');
   });
+
+  it('reloads after a pass that waited for another process, even with nothing changed', async () => {
+    const loadSnapshot = vi.fn(async () => snapshotWith(['a.md']));
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore({ compatible: true, shards: 1 }),
+      loadSnapshot,
+      reconcile: async ({ onLockWait }) => {
+        onLockWait?.({ holderPid: 4242, holderHost: null });
+        return summary();
+      },
+    });
+    await backend.whenSettled();
+    expect(loadSnapshot).toHaveBeenCalledTimes(2); // startup load + after the waited pass
+  });
+
+  it('keeps serving through a lock timeout and retries on the backoff', async () => {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const warn = vi.fn();
+    const reconcile = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CorpusLockTimeoutError('/v/.neuro-vault/corpus/reconcile.lock', 4242, 1_800_000),
+      )
+      .mockResolvedValueOnce(summary());
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore({ compatible: true, shards: 2 }),
+      loadSnapshot: async () => snapshotWith(['a.md', 'b.md']),
+      reconcile,
+      warn,
+      retryBaseMs: 1_000,
+      ...fakeTimers(timers),
+    });
+
+    await backend.whenSettled();
+
+    expect(backend.status()).toEqual({ state: 'ready' });
+    expect((await backend.snapshot()).sources.size).toBe(2);
+    const logged = warn.mock.calls.flat().join('\n');
+    expect(logged).toContain('pid 4242');
+    expect(logged).toContain('reconcile.lock');
+    expect(logged).toContain('"v"');
+    expect(timers.map((t) => t.ms)).toEqual([1_000]);
+
+    timers[0].fn();
+    await backend.whenSettled();
+    expect(reconcile).toHaveBeenCalledTimes(2);
+    expect(backend.status()).toEqual({ state: 'ready' });
+  });
+
+  it('stays unavailable, with its reason, when a retry pass times out on the lock', async () => {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const reconcile = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('no model on disk'))
+      .mockRejectedValueOnce(
+        new CorpusLockTimeoutError('/v/.neuro-vault/corpus/reconcile.lock', 4242, 1_800_000),
+      );
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore({ compatible: false, shards: 0 }),
+      loadSnapshot: async () => snapshotWith(['a.md']),
+      reconcile,
+      warn: vi.fn(),
+      retryBaseMs: 1_000,
+      ...fakeTimers(timers),
+    });
+    await backend.whenSettled();
+    const unavailable = backend.status();
+    expect(unavailable).toMatchObject({ state: 'unavailable' });
+
+    timers[0].fn(); // the retry pass switches to `indexing` while it runs, then times out
+    await backend.whenSettled();
+
+    expect(backend.status()).toEqual(unavailable);
+    expect(timers).toHaveLength(2); // re-armed again
+  });
+
+  it('does not reload after a pass that did not wait and changed nothing', async () => {
+    const loadSnapshot = vi.fn(async () => snapshotWith(['a.md']));
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore({ compatible: true, shards: 1 }),
+      loadSnapshot,
+      reconcile: async () => summary(),
+    });
+    await backend.whenSettled();
+    expect(loadSnapshot).toHaveBeenCalledTimes(1); // the startup load only
+  });
+
+  it('stays indexing, not unavailable, when a cold vault’s pass times out on the lock', async () => {
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const backend = createCorpusBackend({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      enabled: true,
+      identity: TEST_IDENTITY,
+      store: fakeStore({ compatible: false, shards: 0 }),
+      loadSnapshot: async () => snapshotWith(['a.md']),
+      reconcile: async () => {
+        throw new CorpusLockTimeoutError('/v/.neuro-vault/corpus/reconcile.lock', 4242, 1_800_000);
+      },
+      warn: vi.fn(),
+      retryBaseMs: 1_000,
+      ...fakeTimers(timers),
+    });
+    await backend.whenSettled();
+    expect(backend.status()).toEqual({ state: 'indexing', indexed: 0, total: 0 });
+    expect(timers).toHaveLength(1);
+  });
 });
 
 /**
@@ -381,7 +505,7 @@ describe('createCorpusBackend over a real reconcile', () => {
   /** A cold vault on disk, wired to the production reconcile/store/loader. */
   async function coldVault(files: Record<string, string>) {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-'));
-    const store = new CorpusStore(root, { dims: TEST_DIMS });
+    const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
     // Swapped per pass, so a vault that recovers can be exercised too.
     let embed: EmbedDocumentsFn = () => {
       throw new Error('ONNX model failed to load');
@@ -509,7 +633,7 @@ describe('createCorpusBackend over a real reconcile', () => {
   it('reports ready when only some notes fail and the rest are served', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-partial-'));
     try {
-      const store = new CorpusStore(root, { dims: TEST_DIMS });
+      const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
       const files: Record<string, string> = { 'good.md': body('good'), 'bad.md': body('bad') };
       const backend = createCorpusBackend({
         vaultRoot: root,

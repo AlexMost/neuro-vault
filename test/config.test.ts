@@ -184,6 +184,24 @@ describe('parseConfig', () => {
       expect(parsed.options.vaults[0].path).toBe(vaultPath);
     });
 
+    it('parses --prune, defaulting to off', async () => {
+      const off = await parseConfig(['node', 'cli.js', 'index', '--vault', vaultPath]);
+      const on = await parseConfig(['node', 'cli.js', 'index', '--prune', '--vault', vaultPath]);
+      expect(off.kind === 'index' && off.options.prune).toBe(false);
+      expect(on.kind === 'index' && on.options.prune).toBe(true);
+    });
+
+    it('the server invocation rejects --prune', async () => {
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        await expect(
+          parseConfig(['node', 'cli.js', '--prune', '--vault', vaultPath]),
+        ).rejects.toThrow();
+      } finally {
+        errorLog.mockRestore();
+      }
+    });
+
     it('index rejects a relative vault path with the same error as server mode', async () => {
       await expect(parseConfig(['node', 'cli.js', 'index', '--vault', './rel'])).rejects.toThrow(
         /--vault: path must be absolute/,

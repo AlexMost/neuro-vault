@@ -28,6 +28,8 @@ function basenameNoTrailingSlash(p: string): string {
 export interface IndexCliOptions {
   vaults: IVaultConfig[];
   model: ModelProfile;
+  /** Delete every other model's corpus under each vault once it is reconciled (design D8). */
+  prune: boolean;
 }
 
 /**
@@ -112,7 +114,14 @@ const MODEL_OPTION = {
   choices: MODEL_KEYS,
   default: DEFAULT_MODEL_KEY,
   describe:
-    'Embedding model profile, one per process. A vault indexed with another model is rebuilt, so give the server and `index` the same value.',
+    'Embedding model profile, one per process. Each model keeps its own corpus per vault, so switching rebuilds nothing; give `index` the server’s value to pre-warm the corpus the server serves.',
+} as const;
+
+const PRUNE_OPTION = {
+  type: 'boolean',
+  default: false,
+  describe:
+    "After reconciling each vault, delete every other model's corpus under it (and a leftover pre-per-model corpus), reporting what was removed.",
 } as const;
 
 function readModel(raw: unknown): ModelProfile {
@@ -174,7 +183,7 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
         .option('model', MODEL_OPTION),
     )
     .command('index', 'Build or refresh the embedding corpus for each vault, then exit', (y) =>
-      y.option('vault', VAULT_OPTION).option('model', MODEL_OPTION),
+      y.option('vault', VAULT_OPTION).option('model', MODEL_OPTION).option('prune', PRUNE_OPTION),
     )
     .command(
       'daemon [action]',
@@ -216,7 +225,7 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
   const model = readModel(args.model);
 
   if (args._[0] === 'index') {
-    return { kind: 'index', options: { vaults, model } };
+    return { kind: 'index', options: { vaults, model, prune: args.prune === true } };
   }
   return {
     kind: 'run',
