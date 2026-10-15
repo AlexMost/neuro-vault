@@ -13,7 +13,7 @@ This is a cheat sheet for working in the repo — deeper docs live under `docs/`
 - `npm run build` (tsup) · `npm run dev` (`tsx src/cli.ts`) · `npm run spec` (OpenSpec CLI) · `npm run eval` (offline retrieval-quality harness — [`eval/README.md`](eval/README.md)).
 - Tool tests reach a tool through `registerTool(buildXTool(deps))` and the `callTool` / `expectToolError` helpers in [`test/_gate.ts`](test/_gate.ts) — never `buildXTool(deps).handler`. The registration gate coerces, closes the schema with `.strict()`, and fails as `INVALID_PARAMS`; a handler-direct call enters past all three. See [ADR-0015](docs/adr/0015-input-gate-owns-schema-validation.md).
 
-`npm test`, `npm run lint`, and `npm run typecheck` must all pass before any commit or PR. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) enforces these plus `npm run build` and commitlint on every push to `main` and PR.
+`npm test`, `npm run lint`, `npm run typecheck`, and `npm run format` must all pass before any commit or PR. CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) enforces these plus `npm run build` and commitlint on every push to `main` and PR.
 
 ## Rarely-used tools
 
