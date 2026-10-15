@@ -11,7 +11,7 @@ import { callTool } from '../../_gate.js';
 import { makeSearchDeps } from './_helpers.js';
 
 function makeMockSource(p: string, embedding: number[] = [1, 0]): SmartSource {
-  return { path: p, embedding, blocks: [] };
+  return { path: p, embedding: Float32Array.from(embedding), blocks: [] };
 }
 
 function makeSources(paths: string[]): Map<string, SmartSource> {

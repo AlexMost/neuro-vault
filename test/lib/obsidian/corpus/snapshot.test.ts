@@ -29,9 +29,9 @@ describe('loadCorpusSnapshot', () => {
       ]),
     );
     const source = snap.sources.get('Notes/a.md');
-    expect(source?.embedding).toEqual([0.5, 0.25]);
+    expect(source?.embedding).toEqual(new Float32Array([0.5, 0.25]));
     expect(source?.blocks[0]).toMatchObject({ key: '#Top', heading: 'Top', lines: [1, 4] });
-    expect(source?.blocks[0].embedding).toEqual([0.125, 0]);
+    expect(source?.blocks[0].embedding).toEqual(new Float32Array([0.125, 0]));
   });
 
   it('skips a note with no note-level vector', async () => {

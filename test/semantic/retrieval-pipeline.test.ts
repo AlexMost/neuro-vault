@@ -29,7 +29,11 @@ function vecFor(i: number): number[] {
 function makeSources(): Map<string, SmartSource> {
   const sources = new Map<string, SmartSource>();
   for (let i = 0; i < NOTE_COUNT; i++) {
-    sources.set(notePath(i), { path: notePath(i), embedding: vecFor(i), blocks: [] });
+    sources.set(notePath(i), {
+      path: notePath(i),
+      embedding: Float32Array.from(vecFor(i)),
+      blocks: [],
+    });
   }
   return sources;
 }

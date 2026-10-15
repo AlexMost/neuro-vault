@@ -106,9 +106,9 @@ describe('computeGuards', () => {
 
 describe('collectPopulations + computeCalibrationStats', () => {
   const sources = new Map([
-    ['a.md', { path: 'a.md', embedding: [1, 0], blocks: [] }],
-    ['b.md', { path: 'b.md', embedding: [0.8, 0.6], blocks: [] }],
-    ['c.md', { path: 'c.md', embedding: [0, 1], blocks: [] }],
+    ['a.md', { path: 'a.md', embedding: new Float32Array([1, 0]), blocks: [] }],
+    ['b.md', { path: 'b.md', embedding: new Float32Array([0.8, 0.6]), blocks: [] }],
+    ['c.md', { path: 'c.md', embedding: new Float32Array([0, 1]), blocks: [] }],
   ]);
   // topK 2 < the three notes, so the ranked and unranked populations differ.
   const shape = { seedPool: 1, expansionLimit: 1, topK: 2 };
@@ -173,9 +173,9 @@ describe('collectPopulations + computeCalibrationStats', () => {
     const shifted = collectPopulations({
       queryVectors: [[0.6, 0.8]],
       sources: new Map([
-        ['a.md', { path: 'a.md', embedding: [1, 0], blocks: [] }],
-        ['b.md', { path: 'b.md', embedding: [0.6, 0.8], blocks: [] }],
-        ['c.md', { path: 'c.md', embedding: [0, 1], blocks: [] }],
+        ['a.md', { path: 'a.md', embedding: new Float32Array([1, 0]), blocks: [] }],
+        ['b.md', { path: 'b.md', embedding: new Float32Array([0.6, 0.8]), blocks: [] }],
+        ['c.md', { path: 'c.md', embedding: new Float32Array([0, 1]), blocks: [] }],
       ]),
       ...shape,
     });

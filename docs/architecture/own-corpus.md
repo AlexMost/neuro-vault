@@ -105,7 +105,7 @@ A shard is self-describing, so change detection never consults the manifest:
 }
 ```
 
-Vectors are base64 of a little-endian `Float32Array`, decoded through an explicit `byteOffset`/length view (a bare `.buffer` would read the whole Buffer pool) and bit-exact in both directions. A non-little-endian host is rejected rather than silently byte-swapped.
+Vectors are base64 of a little-endian `Float32Array`, bit-exact in both directions. A non-little-endian host is rejected rather than silently byte-swapped. Decoding copies the bytes out of the Buffer (`buf.buffer.slice(byteOffset, byteOffset + length)`: a bare `.buffer` would read the whole Buffer pool, and a view would keep the pool's slab alive) into a `Float32Array` that the snapshot keeps as is. It is not widened to a JS `number[]`: the snapshot holds every vector of the corpus for the life of a session, and a number array costs 8+ bytes a dimension (plus the spare capacity `Array.from` grows) against 4. On a 955-note vault with 6 180 vectors (640 dims) that was about 48 MB of live heap against about 16 MB. Ranking reads vectors as `ArrayLike<number>`, so a query vector from the embedder (`number[]`) and a stored one compare without conversion.
 
 Filenames are hashed rather than slugified: vault paths carry spaces, Cyrillic and arbitrary punctuation, and a slug would have to be both collision-free and filesystem-safe. A truncated hash is 128 bits, and the shard carries its own `path` — a mismatch reads as a missing shard, so a collision costs one re-embed, never a wrong vector.
 

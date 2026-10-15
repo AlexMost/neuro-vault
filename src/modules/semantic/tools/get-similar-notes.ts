@@ -63,7 +63,7 @@ function isExcluded(notePath: string, prefixes: readonly string[]): boolean {
 
 function collectSemanticCandidates(args: {
   searchEngine: SearchEngine;
-  queryVector: number[];
+  queryVector: ArrayLike<number>;
   sources: Map<string, SmartSource>;
   threshold: number;
   excludePath: string;

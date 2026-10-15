@@ -14,7 +14,7 @@ import {
 
 // 3-dim vectors are fine here: pipelines never touch CorpusStore's dims guard.
 function src(p: string, v: number[]): [string, SmartSource] {
-  return [p, { path: p, embedding: v, blocks: [] }];
+  return [p, { path: p, embedding: Float32Array.from(v), blocks: [] }];
 }
 
 const SOURCES = new Map<string, SmartSource>([
@@ -83,8 +83,8 @@ describe('fused pipeline', () => {
 describe('bestRelevantSimilarity', () => {
   it('reaches relevant notes outside the top list', () => {
     const sources = new Map([
-      ['far.md', { path: 'far.md', embedding: [0.6, 0.8], blocks: [] }],
-      ['near.md', { path: 'near.md', embedding: [1, 0], blocks: [] }],
+      ['far.md', { path: 'far.md', embedding: new Float32Array([0.6, 0.8]), blocks: [] }],
+      ['near.md', { path: 'near.md', embedding: new Float32Array([1, 0]), blocks: [] }],
     ]);
     expect(bestRelevantSimilarity([1, 0], ['far.md', 'gone.md'], sources)).toBeCloseTo(0.6);
     expect(bestRelevantSimilarity([1, 0], ['gone.md'], sources)).toBeNull();

@@ -18,12 +18,18 @@ export function encodeVector(values: number[]): string {
   return Buffer.from(floats.buffer, floats.byteOffset, floats.byteLength).toString('base64');
 }
 
-export function decodeVector(encoded: string): number[] {
+/**
+ * Decodes to a Float32Array rather than a JS `number[]`: the snapshot holds every
+ * vector of the corpus for the life of the session, and a number array costs 8+
+ * bytes a dimension (plus the spare capacity `Array.from` grows) against 4.
+ */
+export function decodeVector(encoded: string): Float32Array {
   assertLittleEndian();
   const buf = Buffer.from(encoded, 'base64');
   if (buf.length % 4 !== 0) {
     throw new Error('neuro-vault corpus: vector payload is not a whole number of float32 values');
   }
-  // byteOffset/length are mandatory — Buffer allocates small buffers from a pool.
-  return Array.from(new Float32Array(buf.buffer, buf.byteOffset, buf.length / 4));
+  // Copy out of the Buffer: small buffers are slices of a shared pool, and a view
+  // would keep that whole slab alive (and need byteOffset/length to read it right).
+  return new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length));
 }

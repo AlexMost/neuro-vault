@@ -75,7 +75,7 @@ async function makeFixtureVault(): Promise<{
   for (let i = 0; i < NOTE_COUNT; i++) {
     const rel = notePath(i);
     await writeFile(path.join(vaultRoot, rel), bodyFor(i));
-    sources.set(rel, { path: rel, embedding: vecFor(i), blocks: [] });
+    sources.set(rel, { path: rel, embedding: Float32Array.from(vecFor(i)), blocks: [] });
   }
   await writeFile(path.join(vaultRoot, LEXICAL_ONLY), '# lexical only\n\nno vector here\n');
   return { vaultRoot, sources };

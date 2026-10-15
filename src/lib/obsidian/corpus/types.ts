@@ -2,12 +2,12 @@ export interface SmartBlock {
   key: string;
   heading: string;
   lines: [number, number];
-  embedding: number[];
+  embedding: Float32Array;
 }
 
 export interface SmartSource {
   path: string;
-  embedding: number[];
+  embedding: Float32Array;
   blocks: SmartBlock[];
 }
 

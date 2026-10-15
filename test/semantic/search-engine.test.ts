@@ -12,12 +12,17 @@ function makeSource(
   path: string,
   embedding: number[],
   blocks: SmartSource['blocks'] = [
-    { key: `${path}#block`, heading: '#block', lines: [1, 3] as [number, number], embedding: [] },
+    {
+      key: `${path}#block`,
+      heading: '#block',
+      lines: [1, 3] as [number, number],
+      embedding: new Float32Array([]),
+    },
   ],
 ): SmartSource {
   return {
     path,
-    embedding,
+    embedding: Float32Array.from(embedding),
     blocks,
   };
 }
@@ -104,43 +109,43 @@ describe('findBlockNeighbors', () => {
   const sources: SmartSource[] = [
     {
       path: 'note-a.md',
-      embedding: [1, 0, 0],
+      embedding: new Float32Array([1, 0, 0]),
       blocks: [
         {
           key: 'note-a.md#intro',
           heading: '#intro',
           lines: [1, 5] as [number, number],
-          embedding: [0.9, 0.1, 0],
+          embedding: new Float32Array([0.9, 0.1, 0]),
         },
         {
           key: 'note-a.md#details',
           heading: '#details',
           lines: [6, 10] as [number, number],
-          embedding: [0.1, 0.9, 0],
+          embedding: new Float32Array([0.1, 0.9, 0]),
         },
       ],
     },
     {
       path: 'note-b.md',
-      embedding: [0, 1, 0],
+      embedding: new Float32Array([0, 1, 0]),
       blocks: [
         {
           key: 'note-b.md#summary',
           heading: '#summary',
           lines: [1, 4] as [number, number],
-          embedding: [0.8, 0.2, 0],
+          embedding: new Float32Array([0.8, 0.2, 0]),
         },
       ],
     },
     {
       path: 'note-c.md',
-      embedding: [0, 0, 1],
+      embedding: new Float32Array([0, 0, 1]),
       blocks: [
         {
           key: 'note-c.md#empty',
           heading: '#empty',
           lines: [1, 3] as [number, number],
-          embedding: [],
+          embedding: new Float32Array([]),
         },
       ],
     },

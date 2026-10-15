@@ -89,14 +89,14 @@ export interface EmbeddingProvider extends QueryEmbedder {
 
 export interface SearchEngine {
   findNeighbors(args: {
-    queryVector: number[];
+    queryVector: ArrayLike<number>;
     sources: Iterable<SmartSource>;
     threshold: number;
     limit?: number;
     excludePath?: string;
   }): SearchResult[];
   findBlockNeighbors(args: {
-    queryVector: number[];
+    queryVector: ArrayLike<number>;
     sources: Iterable<SmartSource>;
     threshold: number;
     limit?: number;
