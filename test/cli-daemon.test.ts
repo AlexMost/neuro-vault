@@ -778,6 +778,52 @@ describe('runDaemonCommand (status / stop)', () => {
     );
   });
 
+  it('stop stops two live daemons of different builds, and status then knows none', async () => {
+    const h = harness({ isAlive: () => true });
+    const daemons = [
+      { key: daemonKey('18.0.0', { size: 1000, mtimeMs: 1 }), pid: 1, socket: '/tmp/a.sock' },
+      { key: daemonKey('18.0.0', { size: 2000, mtimeMs: 2 }), pid: 2, socket: '/tmp/b.sock' },
+    ];
+    expect(daemons[0].key).not.toBe(daemons[1].key);
+    for (const d of daemons) {
+      addKnown(h, d.key, infoJson({ pid: d.pid, socket: d.socket }));
+      h.files.set(`${BASE}/${d.key}/daemon.lock`, String(d.pid));
+    }
+    const shutdowns: number[] = [];
+    h.deps.connect = (p) => {
+      const d = daemons.find((x) => x.socket === p);
+      if (d === undefined) return Promise.reject(errno('ECONNREFUSED'));
+      return Promise.resolve(
+        fakeInfoSocket(
+          { version: '18.0.0', pid: d.pid, clients: 1, loaded: ['harrier-270m'] },
+          {
+            onRequest: (method) => {
+              if (method !== 'daemon.shutdown') return;
+              // What a daemon's own stop removes: daemon.json, then the lock.
+              shutdowns.push(d.pid);
+              h.files.delete(`${BASE}/${d.key}/daemon.json`);
+              h.files.delete(`${BASE}/${d.key}/daemon.lock`);
+            },
+          },
+        ),
+      );
+    };
+
+    await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(shutdowns.sort()).toEqual([1, 2]);
+    expect(h.out.join('').split('\n').filter(Boolean).sort()).toEqual([
+      'stopped 18.0.0 (pid 1)',
+      'stopped 18.0.0 (pid 2)',
+    ]);
+    expect(h.deps.kill).not.toHaveBeenCalled();
+    expect(h.err).toEqual([]);
+
+    h.out.length = 0;
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toMatch(/no daemon known/);
+    expect(h.err).toEqual([]);
+  });
+
   /** Reading this entry's lock fails as an unreadable file would (EACCES). */
   function lockUnreadable(h: Harness, name: string): void {
     const fs = h.deps.fs!;

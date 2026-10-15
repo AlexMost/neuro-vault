@@ -162,6 +162,29 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     admin.socket.destroy();
   });
 
+  it('keeps the connection open after an UNKNOWN_METHOD answer', async () => {
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWithDaemon(),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+    });
+    const client = await LineClient.connect(socketPath);
+    let closed = false;
+    void client.closed().then(() => {
+      closed = true;
+    });
+    client.send({ jsonrpc: '2.0', id: 1, method: 'lexical.search', params: {} });
+    expect(await client.next()).toMatchObject({
+      id: 1,
+      error: { code: -32601, data: { code: 'UNKNOWN_METHOD' } },
+    });
+    client.send({ jsonrpc: '2.0', id: 2, method: 'daemon.info' });
+    expect(await client.next()).toMatchObject({ id: 2, result: expect.any(Object) });
+    expect(closed).toBe(false);
+    client.socket.destroy();
+  });
+
   it('closes only the client that sends a bad line', async () => {
     handle = await startDaemonServer({
       socketPath,

@@ -146,6 +146,34 @@ describe('DaemonEmbeddingProvider — through the daemon', () => {
     expect(sent).toEqual([['a', 'bb'], ['ccc']]);
   });
 
+  it('sends every text once when a reconnect changes the batch size between chunks', async () => {
+    // A concurrent caller reconnects while the first chunk is in flight, and
+    // the new daemon reports a larger batch size. The loop must step by the
+    // chunk it sent, not by the batch size it reads after the await.
+    let batchSize = 2;
+    let reconnected = false;
+    const link: FakeLink = fakeLink({
+      'embed.initialize': () => initAnswer(batchSize),
+      'embed.query': { vector: [0] },
+      'embed.documents': async (params: Record<string, unknown>) => {
+        if (!reconnected) {
+          reconnected = true;
+          link.epoch = 2;
+          batchSize = 3;
+          await p.embedQuery('concurrent');
+        }
+        return { vectors: (params.texts as string[]).map((t) => [t.length]) };
+      },
+    });
+    const p = provider(link);
+    const texts = ['a', 'bb', 'ccc', 'dddd', 'eeeee', 'ffffff'];
+    await expect(p.embedDocuments(texts)).resolves.toEqual(texts.map((t) => [t.length]));
+    const sent = link.request.mock.calls
+      .filter(([m]) => m === 'embed.documents')
+      .map(([, params]) => params.texts);
+    expect(sent).toEqual([['a', 'bb'], ['ccc', 'dddd', 'eeeee'], ['ffffff']]);
+  });
+
   it('rejects an answer with the wrong number of vectors', async () => {
     const link = fakeLink({ 'embed.documents': { vectors: [[1]] } });
     await expect(provider(link).embedDocuments(['a', 'b'])).rejects.toThrow(/1 vectors for 2/);
