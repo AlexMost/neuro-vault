@@ -85,6 +85,12 @@ function deps(overrides: Partial<DaemonConnectionDeps> = {}) {
 
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
+async function connected(d: DaemonConnectionDeps): Promise<DaemonConnection> {
+  const c = new DaemonConnection(d);
+  await c.ensure();
+  return c;
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -92,7 +98,7 @@ afterEach(() => {
 describe('DaemonConnection — locating the daemon', () => {
   it('connects without spawning when the daemon listens', async () => {
     const d = deps();
-    const c = new DaemonConnection(d);
+    const c = await connected(d);
     await expect(c.request('daemon.info', {}, 1000)).resolves.toEqual({ ok: 'daemon.info' });
     expect(d.spawn).not.toHaveBeenCalled();
     expect(c.epoch).toBe(1);
@@ -133,7 +139,7 @@ describe('DaemonConnection — locating the daemon', () => {
   it('coalesces concurrent callers onto one connect', async () => {
     const d = deps();
     const c = new DaemonConnection(d);
-    await Promise.all([c.ensure(), c.ensure(), c.request('embed.query', {}, 1000)]);
+    await Promise.all([c.ensure(), c.ensure(), c.ensure()]);
     expect(d.connect).toHaveBeenCalledTimes(1);
   });
 
@@ -210,19 +216,22 @@ describe('DaemonConnection — spawning the daemon', () => {
     expect(c.epoch).toBe(1);
   });
 
-  it('refuses to spawn from a .ts entry point', async () => {
-    const d = deps({
-      cliPath: '/repo/src/cli.ts',
-      connect: vi.fn(async () => {
-        throw errno('ENOENT');
-      }),
-    });
-    const ensuring = new DaemonConnection(d).ensure();
-    await expect(ensuring).rejects.toBeInstanceOf(DaemonUnavailableError);
-    await expect(ensuring).rejects.toThrow(/TypeScript entry point/);
-    expect(d.spawn).not.toHaveBeenCalled();
-    expect(d.openLog).not.toHaveBeenCalled();
-  });
+  it.each(['/repo/src/cli.ts', '/repo/src/cli.mts', '/repo/src/cli.cts'])(
+    'refuses to spawn from a TypeScript entry point (%s)',
+    async (cliPath) => {
+      const d = deps({
+        cliPath,
+        connect: vi.fn(async () => {
+          throw errno('ENOENT');
+        }),
+      });
+      const ensuring = new DaemonConnection(d).ensure();
+      await expect(ensuring).rejects.toBeInstanceOf(DaemonUnavailableError);
+      await expect(ensuring).rejects.toThrow(/TypeScript entry point/);
+      expect(d.spawn).not.toHaveBeenCalled();
+      expect(d.openLog).not.toHaveBeenCalled();
+    },
+  );
 
   it('wraps a spawn throw and still closes the log fd', async () => {
     const d = deps({
@@ -315,7 +324,7 @@ describe('DaemonConnection — requests', () => {
         })),
       ),
     });
-    const pending = new DaemonConnection(d).request('embed.initialize', { profile: 'x' }, 1000);
+    const pending = (await connected(d)).request('embed.initialize', { profile: 'x' }, 1000);
     await expect(pending).rejects.toBeInstanceOf(DaemonRpcError);
     await expect(pending).rejects.toMatchObject({ code: 'EMBED_FAILED', message: 'no weights' });
   });
@@ -326,7 +335,7 @@ describe('DaemonConnection — requests', () => {
         fakeSocket((m) => ({ jsonrpc: '2.0', id: m.id, error: { code: -32603, message: 'x' } })),
       ),
     });
-    await expect(new DaemonConnection(d).request('embed.query', {}, 1000)).rejects.toMatchObject({
+    await expect((await connected(d)).request('embed.query', {}, 1000)).rejects.toMatchObject({
       code: 'INTERNAL',
     });
   });
@@ -343,7 +352,7 @@ describe('DaemonConnection — requests', () => {
         return socket;
       }),
     });
-    const c = new DaemonConnection(d);
+    const c = await connected(d);
     const first = c.request('embed.query', { text: 'a' }, 1000);
     const second = c.request('embed.query', { text: 'b' }, 1000);
     await tick();
@@ -357,7 +366,7 @@ describe('DaemonConnection — requests', () => {
   it('times out a request that is never answered, naming the method', async () => {
     vi.useFakeTimers();
     const d = deps({ connect: vi.fn(async () => silent()) });
-    const pending = new DaemonConnection(d).request('embed.query', { text: 'x' }, 50);
+    const pending = (await connected(d)).request('embed.query', { text: 'x' }, 50);
     const outcome = expect(pending).rejects.toThrow(/embed\.query timed out after 50 ms/);
     await vi.advanceTimersByTimeAsync(50);
     await outcome;
@@ -372,12 +381,15 @@ describe('DaemonConnection — requests', () => {
         return s;
       }),
     });
-    const c = new DaemonConnection(d);
+    const c = await connected(d);
     const pending = c.request('embed.query', { text: 'x' }, 1000);
     await tick();
-    sockets[0].destroy();
+    sockets[0].destroy(new Error('ECONNRESET'));
     await expect(pending).rejects.toBeInstanceOf(DaemonConnectionError);
-    await expect(pending).rejects.toThrow(/closed during embed\.query/);
+    await expect(pending).rejects.toThrow(/closed during embed\.query: ECONNRESET/);
+    await expect(c.request('embed.query', {}, 1000)).rejects.toBeInstanceOf(DaemonConnectionError);
+    expect(d.connect).toHaveBeenCalledTimes(1);
+    await c.ensure();
     await expect(c.request('embed.query', { text: 'y' }, 1000)).resolves.toEqual({
       ok: 'embed.query',
     });
@@ -393,7 +405,7 @@ describe('DaemonConnection — requests', () => {
         return socket;
       }),
     });
-    const c = new DaemonConnection(d);
+    const c = await connected(d);
     const pending = c.request('embed.documents', { texts: ['a'] }, 60_000);
     await tick();
     socket!.push(null);
@@ -408,7 +420,7 @@ describe('DaemonConnection — requests', () => {
         return socket;
       }),
     });
-    const pending = new DaemonConnection(d).request('embed.query', { text: 'x' }, 1000);
+    const pending = (await connected(d)).request('embed.query', { text: 'x' }, 1000);
     await tick();
     socket!.push('not json\n');
     await expect(pending).rejects.toBeInstanceOf(DaemonConnectionError);
@@ -423,7 +435,7 @@ describe('DaemonConnection — requests', () => {
         return socket;
       }),
     });
-    const c = new DaemonConnection(d);
+    const c = await connected(d);
     await c.ensure();
     expect(socket!.unref).toHaveBeenCalledTimes(1);
     expect(socket!.ref).not.toHaveBeenCalled();
@@ -434,10 +446,36 @@ describe('DaemonConnection — requests', () => {
 
   it('close() destroys the socket and the next call reconnects', async () => {
     const d = deps();
-    const c = new DaemonConnection(d);
+    const c = await connected(d);
     await c.ensure();
     c.close();
+    await expect(c.request('embed.query', {}, 1000)).rejects.toBeInstanceOf(DaemonConnectionError);
+    await c.ensure();
     await c.request('embed.query', {}, 1000);
     expect(d.connect).toHaveBeenCalledTimes(2);
+  });
+
+  it('never connects from request(): it fails until ensure() runs', async () => {
+    const d = deps();
+    const c = new DaemonConnection(d);
+    await expect(c.request('embed.query', {}, 1000)).rejects.toThrow(/closed before embed\.query/);
+    expect(d.connect).not.toHaveBeenCalled();
+  });
+
+  it('ensure() reconnects past a socket destroyed before its close event arrives', async () => {
+    const sockets: FakeSocket[] = [];
+    const d = deps({
+      connect: vi.fn(async () => {
+        const s = echo();
+        sockets.push(s);
+        return s;
+      }),
+    });
+    const c = await connected(d);
+    sockets[0].destroy();
+    // No tick: the socket's close event has not been delivered yet.
+    await c.ensure();
+    expect(d.connect).toHaveBeenCalledTimes(2);
+    expect(c.epoch).toBe(2);
   });
 });

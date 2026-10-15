@@ -28,8 +28,8 @@ export class DaemonUnavailableError extends Error {
 
 /** The connection dropped with requests in flight; the next call reconnects. */
 export class DaemonConnectionError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'DaemonConnectionError';
   }
 }
@@ -110,7 +110,7 @@ function isNotListening(error: unknown): boolean {
  * `DaemonUnavailableError`, on which the caller falls back in-process.
  *
  * A socket that closes, errors or is ended by the daemon rejects every pending
- * request with `DaemonConnectionError` and is forgotten; the next request
+ * request with `DaemonConnectionError` and is forgotten; the next `ensure()`
  * connects again (respawning if needed). A request the daemon never answers
  * rejects after its own timeout. The socket is unref'd while nothing is
  * pending, so an idle connection never keeps a finished process alive.
@@ -136,6 +136,8 @@ export class DaemonConnection {
 
   /** Connected, spawning the daemon first if nothing listens. Idempotent and coalescing. */
   ensure(): Promise<void> {
+    // A socket ended or destroyed whose `close` has not arrived yet is already gone.
+    if (this.socket && (this.socket.destroyed || this.socket.writableEnded)) this.dropSocket?.();
     if (this.socket) return Promise.resolve();
     this.connecting ??= this.establish().finally(() => {
       this.connecting = undefined;
@@ -143,12 +145,16 @@ export class DaemonConnection {
     return this.connecting;
   }
 
+  /**
+   * Send one request on the current connection. Never connects: a caller
+   * runs `ensure()` first, so per-connection setup (the facade's
+   * `embed.initialize`) cannot be skipped by a reconnect hidden in here.
+   */
   async request<T>(method: string, params: Record<string, unknown>, timeoutMs: number): Promise<T> {
-    // A socket ended or destroyed without its `close` delivered yet is already gone.
-    if (this.socket && (this.socket.destroyed || this.socket.writableEnded)) this.dropSocket?.();
-    await this.ensure();
     const socket = this.socket;
-    if (!socket) throw new DaemonConnectionError(`daemon connection closed before ${method}`);
+    if (!socket || socket.destroyed || socket.writableEnded) {
+      throw new DaemonConnectionError(`daemon connection closed before ${method}`);
+    }
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
       const timer = this.timers.setTimeout(() => {
@@ -234,7 +240,7 @@ export class DaemonConnection {
    */
   private spawnDaemon(): () => Error | undefined {
     const { cliPath, execPath, paths } = this.deps;
-    if (cliPath.endsWith('.ts')) {
+    if (/\.[cm]?tsx?$/.test(cliPath)) {
       throw new DaemonUnavailableError(
         'the daemon cannot be started from a TypeScript entry point (development run)',
       );
@@ -298,32 +304,37 @@ export class DaemonConnection {
         let message: JSONRPCMessage | null;
         try {
           message = buffer.readMessage();
-        } catch {
+        } catch (error) {
           // Not our daemon's framing: nothing more on this socket can be trusted.
-          socket.destroy();
+          drop(error);
           return;
         }
         if (!message) return;
         this.settle(socket, message);
       }
     });
-    const drop = (): void => {
+    const drop = (cause?: unknown): void => {
       if (this.socket !== socket) return;
       this.socket = undefined;
       this.dropSocket = undefined;
+      const reason = cause instanceof Error ? `: ${cause.message}` : '';
       for (const [id, entry] of this.pending) {
         this.timers.clearTimeout(entry.timer);
         this.pending.delete(id);
-        entry.reject(new DaemonConnectionError(`daemon connection closed during ${entry.method}`));
+        entry.reject(
+          new DaemonConnectionError(`daemon connection closed during ${entry.method}${reason}`, {
+            cause,
+          }),
+        );
       }
       socket.destroy();
     };
-    this.dropSocket = drop;
+    this.dropSocket = () => drop();
     // The daemon ends a socket when it stops; a request written after that is
     // never answered, so the end of input already counts as the close.
-    socket.on('end', drop);
-    socket.on('close', drop);
-    socket.on('error', drop);
+    socket.on('end', () => drop());
+    socket.on('close', () => drop());
+    socket.on('error', (error: Error) => drop(error));
   }
 
   private settle(socket: Duplex, message: JSONRPCMessage): void {

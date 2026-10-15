@@ -205,15 +205,20 @@ describe('DaemonEmbeddingProvider — errors and fallback', () => {
     expect(lines).toHaveLength(1);
   });
 
-  it('falls back when a reconnect inside the request finds the daemon gone', async () => {
-    const link = fakeLink();
-    link.request.mockImplementation(async (method: string) => {
-      if (method === 'embed.initialize') return initAnswer(8);
-      throw new DaemonUnavailableError('respawn failed');
+  it('re-sends embed.initialize when ensure() reconnected between two calls', async () => {
+    const link = fakeLink({ 'embed.query': { vector: [1] } });
+    link.ensure.mockImplementation(async () => {
+      link.epoch += 1; // every ensure reconnects
     });
-    const fallback = fallbackProvider();
-    await expect(provider(link, { fallback }).embedQuery('x')).resolves.toEqual([0.5]);
-    expect(fallback.calls).toEqual(['query']);
+    const p = provider(link);
+    await p.embedQuery('a');
+    await p.embedQuery('b');
+    expect(methods(link)).toEqual([
+      'embed.initialize',
+      'embed.query',
+      'embed.initialize',
+      'embed.query',
+    ]);
   });
 
   it('does not fall back on EMBED_FAILED and retries through the daemon next time', async () => {

@@ -21,7 +21,9 @@ export const REQUEST_TIMEOUTS = {
 export interface DaemonLink {
   /** Changes on every new connection; `embed.initialize` is re-sent once per value. */
   readonly epoch: number;
+  /** Connect (spawning the daemon if needed); `DaemonUnavailableError` when that fails. */
   ensure(): Promise<void>;
+  /** One request on the current connection; never connects. */
   request<T>(method: string, params: Record<string, unknown>, timeoutMs: number): Promise<T>;
 }
 
@@ -104,8 +106,9 @@ export class DaemonEmbeddingProvider implements EmbeddingProvider {
         // The caller bucketed by the batch size it saw; the handshake may have
         // just lowered it, so chunk to what the daemon accepts.
         const vectors: number[][] = [];
-        for (let start = 0; start < texts.length; start += this.daemonBatchSize) {
+        for (let start = 0; start < texts.length; ) {
           const chunk = texts.slice(start, start + this.daemonBatchSize);
+          start += chunk.length;
           const result = await this.deps.connection.request<EmbedDocumentsResult>(
             'embed.documents',
             { profile: this.deps.profile.key, texts: chunk },
@@ -135,7 +138,7 @@ export class DaemonEmbeddingProvider implements EmbeddingProvider {
       await this.handshake();
       return await viaDaemon();
     } catch (error) {
-      // Only raised before a request is written, so nothing is embedded twice.
+      // Only `ensure()` raises it, before this call wrote anything to the daemon.
       if (!(error instanceof DaemonUnavailableError)) throw error;
       return viaFallback(this.switchToFallback(error));
     }
