@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 
+import { neuroVaultCacheBase } from '../../lib/cache-dir.js';
 import type { ModelProfile } from './model-profiles.js';
 import type { ModelOutput } from './pooling.js';
 import { deriveTemplate, type SpecialTokenTemplate } from './tokenization.js';
@@ -65,9 +66,7 @@ export function defaultModelCacheDir(
   env: NodeJS.ProcessEnv = process.env,
   home: string = os.homedir(),
 ): string {
-  const xdg = env.XDG_CACHE_HOME;
-  const base = xdg !== undefined && path.isAbsolute(xdg) ? xdg : path.join(home, '.cache');
-  return path.join(base, 'neuro-vault', 'models');
+  return path.join(neuroVaultCacheBase(env, home), 'models');
 }
 
 function pickOutput(

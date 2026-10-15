@@ -1,0 +1,126 @@
+import type { JSONRPCMessage, JSONRPCRequest, RequestId } from '@modelcontextprotocol/sdk/types.js';
+import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+
+import type { EmbeddingIdentity } from '../lib/obsidian/corpus/types.js';
+
+// ---- method shapes (the wire contract; see design D2) ----
+export interface EmbedInitializeParams {
+  profile: string;
+}
+export interface EmbedInitializeResult {
+  identity: EmbeddingIdentity;
+  max_batch_size: number;
+}
+export interface EmbedQueryParams {
+  profile: string;
+  text: string;
+}
+export interface EmbedQueryResult {
+  vector: number[];
+}
+export interface EmbedDocumentsParams {
+  profile: string;
+  texts: string[];
+}
+export interface EmbedDocumentsResult {
+  vectors: number[][];
+}
+export interface DaemonInfoResult {
+  name: string;
+  version: string;
+  pid: number;
+  started_at: string;
+  idle_timeout_min: number;
+  clients: number;
+  services: { embed: { loaded: string[] } };
+}
+
+export type DaemonErrorCode =
+  | 'UNKNOWN_METHOD'
+  | 'INVALID_PARAMS'
+  | 'UNKNOWN_PROFILE'
+  | 'EMBED_FAILED'
+  | 'SHUTTING_DOWN'
+  | 'INTERNAL';
+
+// `ErrorCode.ConnectionClosed` (-32000) is the SDK's JSON-RPC server-error slot for a closed connection.
+const JSON_RPC_CODE: Record<DaemonErrorCode, number> = {
+  UNKNOWN_METHOD: ErrorCode.MethodNotFound,
+  INVALID_PARAMS: ErrorCode.InvalidParams,
+  UNKNOWN_PROFILE: ErrorCode.InvalidParams,
+  EMBED_FAILED: ErrorCode.InternalError,
+  SHUTTING_DOWN: ErrorCode.ConnectionClosed,
+  INTERNAL: ErrorCode.InternalError,
+};
+
+export class DaemonRpcError extends Error {
+  constructor(
+    readonly code: DaemonErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'DaemonRpcError';
+  }
+}
+
+export type MethodHandler = (params: unknown) => Promise<unknown>;
+export type ServiceHandlers = Record<string, MethodHandler>;
+
+export function errorResponse(
+  id: RequestId,
+  code: DaemonErrorCode,
+  message: string,
+): JSONRPCMessage {
+  return { jsonrpc: '2.0', id, error: { code: JSON_RPC_CODE[code], message, data: { code } } };
+}
+
+export function resultResponse(id: RequestId, result: unknown): JSONRPCMessage {
+  return { jsonrpc: '2.0', id, result: result as Record<string, unknown> };
+}
+
+/** Params as an object, or `INVALID_PARAMS`. */
+export function asRecord(params: unknown): Record<string, unknown> {
+  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
+    throw new DaemonRpcError('INVALID_PARAMS', 'params must be an object');
+  }
+  return params as Record<string, unknown>;
+}
+
+/**
+ * `namespace → { method: handler }`. A later service (`lexical`, `watch`)
+ * is one more `register` call; framing, discovery and lifecycle do not move.
+ */
+export class ServiceRegistry {
+  private readonly services = new Map<string, ServiceHandlers>();
+
+  register(namespace: string, handlers: ServiceHandlers): void {
+    this.services.set(namespace, handlers);
+  }
+
+  async dispatch(request: JSONRPCRequest): Promise<JSONRPCMessage> {
+    const handler = this.lookup(request.method);
+    if (handler === undefined) {
+      return errorResponse(request.id, 'UNKNOWN_METHOD', `unknown method "${request.method}"`);
+    }
+    try {
+      return resultResponse(request.id, await handler(request.params));
+    } catch (error) {
+      if (error instanceof DaemonRpcError)
+        return errorResponse(request.id, error.code, error.message);
+      return errorResponse(
+        request.id,
+        'INTERNAL',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  /** `<namespace>.<method>` → handler. Own properties only, so `toString` etc. never resolve. */
+  private lookup(method: string): MethodHandler | undefined {
+    const dot = method.indexOf('.');
+    if (dot <= 0 || dot === method.length - 1) return undefined;
+    const handlers = this.services.get(method.slice(0, dot));
+    const name = method.slice(dot + 1);
+    return handlers !== undefined && Object.hasOwn(handlers, name) ? handlers[name] : undefined;
+  }
+}

@@ -5,22 +5,28 @@ import { fileURLToPath } from 'node:url';
 
 import { parseConfig } from './config.js';
 import { runIndexCommand } from './cli-index.js';
+import type { DaemonCommandDeps } from './cli-daemon.js';
 import { startNeuroVaultServer, type NeuroVaultStartupDependencies } from './server.js';
 
 export async function main(
   argv: string[] = process.argv,
-  deps: NeuroVaultStartupDependencies = {},
+  deps: { server?: NeuroVaultStartupDependencies; daemon?: DaemonCommandDeps } = {},
 ): Promise<void> {
   const parsed = await parseConfig(argv);
   // yargs already satisfied this invocation (--help or --version); stop here.
   if (parsed.kind === 'handled') {
     return;
   }
+  if (parsed.kind === 'daemon') {
+    const { runDaemonCommand } = await import('./cli-daemon.js');
+    process.exitCode = await runDaemonCommand(parsed.options, deps.daemon);
+    return;
+  }
   if (parsed.kind === 'index') {
     process.exitCode = await runIndexCommand(parsed.options);
     return;
   }
-  await startNeuroVaultServer(parsed.config, deps);
+  await startNeuroVaultServer(parsed.config, deps.server);
 }
 
 async function run(): Promise<void> {

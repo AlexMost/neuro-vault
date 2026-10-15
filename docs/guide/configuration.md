@@ -11,6 +11,8 @@
 | `--help`         | no       | —          | Show help                                                                                                                                                               |
 | `--version`      | no       | —          | Print the installed version and exit                                                                                                                                    |
 
+`neuro-vault-mcp daemon [status|stop] [--idle-timeout <min>]` runs, lists or stops the shared-services daemon (an embedding-model host; `--idle-timeout` defaults to 30 minutes, `0` = never). Nothing starts a daemon automatically yet — the server and `index` still load the model in their own process.
+
 The `--model` profiles:
 
 - `harrier-270m` — the default; multilingual, balanced quality and cost, ≈ 344 MB.

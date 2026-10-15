@@ -4,18 +4,19 @@ How the process interprets `argv`, and how it decides whether to start the MCP s
 
 ## What it is
 
-`src/cli.ts` exports `main(argv, deps)`, the async function the entrypoint calls. `main` does exactly two things in sequence: call `parseConfig(argv)` (`src/config.ts`), then either return immediately, run the `index` command (`runIndexCommand`, `src/cli-index.ts`), or call `startNeuroVaultServer(config, deps)` (`src/server.ts`) with the config that parsing produced.
+`src/cli.ts` exports `main(argv, deps)`, the async function the entrypoint calls. `main` does exactly two things in sequence: call `parseConfig(argv)` (`src/config.ts`), then either return immediately, run the `index` command (`runIndexCommand`, `src/cli-index.ts`), run the `daemon` command (`runDaemonCommand`, `src/cli-daemon.ts`, loaded by dynamic `import()`), or call `startNeuroVaultServer(config, deps)` (`src/server.ts`) with the config that parsing produced.
 
-`parseConfig` wraps `yargs`, declaring the `--vault`, `--semantic` and `--model` options plus `.help()` and `.version(packageMeta.version)`. It returns a `ParsedCli`:
+`parseConfig` wraps `yargs`, declaring the `--vault`, `--semantic`, `--model` and (on `daemon` only) `--idle-timeout` options plus `.help()` and `.version(packageMeta.version)`. It returns a `ParsedCli`:
 
 ```typescript
 type ParsedCli =
   | { kind: 'run'; config: ServerConfig }
   | { kind: 'index'; options: IndexCliOptions }
+  | { kind: 'daemon'; options: DaemonCliOptions }
   | { kind: 'handled' };
 ```
 
-`kind: 'run'` carries a validated `ServerConfig` — the normal case. `kind: 'index'` carries the options of the `index` subcommand (the vaults, the model profile and the `--prune` flag). `kind: 'handled'` means yargs itself fully satisfied the invocation (it printed `--help` or `--version` output) and there is nothing left to run.
+`kind: 'run'` carries a validated `ServerConfig` — the normal case. `kind: 'index'` carries the options of the `index` subcommand (the vaults, the model profile and the `--prune` flag). `kind: 'daemon'` carries the options of the `daemon` subcommand (see [The `daemon` command](#the-daemon-command) below). `kind: 'handled'` means yargs itself fully satisfied the invocation (it printed `--help` or `--version` output) and there is nothing left to run.
 
 ## Why it exists
 
@@ -41,6 +42,9 @@ config.ts: parseConfig(argv)
   ├─ args.help === true or args.version === true
   │     └─ return { kind: 'handled' }
   │
+  ├─ `daemon` subcommand → read [action] and --idle-timeout
+  │     └─ return { kind: 'daemon', options }   (no --vault guard)
+  │
   └─ otherwise: run the --vault guard, build IVaultConfig[], detect
      case-insensitive basename collisions, resolve --model to its ModelProfile
         ├─ `index` subcommand → return { kind: 'index', options }
@@ -50,6 +54,7 @@ config.ts: parseConfig(argv)
 cli.ts: main() branches on parsed.kind
   │
   ├─ 'handled' → return (startNeuroVaultServer is never called)
+  ├─ 'daemon'  → runDaemonCommand(parsed.options), exit code from its result
   ├─ 'index'   → runIndexCommand(parsed.options), exit code from its result
   └─ 'run'     → startNeuroVaultServer(parsed.config, deps)
 ```
@@ -79,6 +84,10 @@ Each model keeps its own corpus directory in a vault, so another `--model` selec
 Both reads go through the same module rather than each calling `createRequire` independently, so the CLI's `--version` output and the server's self-reported identity can never drift apart.
 
 `packageMeta` resolves `'../package.json'` via `createRequire(import.meta.url)`, evaluated against wherever the *emitted* file ends up running from — not the source file. tsup (`tsup.config.ts`) bundles `src/cli.ts` and everything it imports into one flat `dist/cli.js`; it does not rewrite string literals, so the `'../package.json'` argument reaches the built file unchanged. That path is correct only because `src/` and `dist/` sit at the same depth under the package root: one `..` from either location lands on the package root, where `package.json` lives. `src/package-meta.ts` therefore has to stay at `src/` root depth. Moving it under a subdirectory such as `src/lib/` would still pass every source-level test — those import `package-meta.ts` from `src/`, where `'../package.json'` still resolves correctly — while breaking the published `dist/cli.js`, where the one bundled file no longer sits at the depth the literal string assumes. The failure would only surface in a user's hands, not in CI.
+
+### The `daemon` command
+
+`neuro-vault-mcp daemon [status|stop] [--idle-timeout <min>]` is the third command. `parseConfig` checks for it right after the help/version check and before the `--vault` guard, because the daemon takes no vault and no model, and returns `{ kind: 'daemon', options: { action, idleTimeoutMinutes } }`. `action` is `undefined` (run the daemon), `'status'` or `'stop'`; any other positional fails with the allowed list. `--idle-timeout` (default `DEFAULT_IDLE_TIMEOUT_MINUTES`, 30; `0` = never) is declared as a string option and parsed strictly as a non-negative integer, because yargs' number coercion would turn an empty value (an unset shell variable) into `0` and silently mean "never exit on idle". It is capped at `MAX_IDLE_TIMEOUT_MINUTES` (35791): above 2^31−1 ms Node fires a timer after 1 ms. A repeated `--idle-timeout` is rejected like a repeated `--model`. It is accepted, and ignored, with `status` and `stop`. `main` imports `src/cli-daemon.ts` only on this branch and sets `process.exitCode` from `runDaemonCommand`'s result. What the daemon does once running (paths, lock, protocol, idle exit, `status`/`stop`) is [`shared-daemon.md`](./shared-daemon.md).
 
 ## Boundaries
 

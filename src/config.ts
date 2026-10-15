@@ -11,8 +11,13 @@ import {
   type ModelProfile,
 } from './modules/semantic/model-profiles.js';
 
-import type { ServerConfig, IVaultConfig } from './types.js';
+import type { DaemonCliOptions, ServerConfig, IVaultConfig } from './types.js';
 import { packageMeta } from './package-meta.js';
+
+export const DEFAULT_IDLE_TIMEOUT_MINUTES = 30;
+/** The largest idle timeout a Node timer holds: above 2^31−1 ms it fires after 1 ms. */
+export const MAX_IDLE_TIMEOUT_MINUTES = Math.floor((2 ** 31 - 1) / 60_000);
+const DAEMON_ACTIONS = ['status', 'stop'] as const;
 
 const VAULT_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -28,7 +33,7 @@ export interface IndexCliOptions {
 }
 
 /**
- * The three ways argument parsing can end.
+ * The ways argument parsing can end.
  *
  * `handled` means yargs itself satisfied the invocation — it printed help or
  * the version and, because of `.exitProcess(false)`, returned instead of
@@ -37,6 +42,7 @@ export interface IndexCliOptions {
 export type ParsedCli =
   | { kind: 'run'; config: ServerConfig }
   | { kind: 'index'; options: IndexCliOptions }
+  | { kind: 'daemon'; options: DaemonCliOptions }
   | { kind: 'handled' };
 
 function buildVaultConfig(rawPath: string): IVaultConfig {
@@ -124,6 +130,44 @@ function readModel(raw: unknown): ModelProfile {
   return resolveModelProfile(String(raw));
 }
 
+const IDLE_TIMEOUT_OPTION = {
+  type: 'string',
+  default: DEFAULT_IDLE_TIMEOUT_MINUTES,
+  describe: 'Minutes without a connected client before the daemon exits (0 = never).',
+} as const;
+
+function readIdleTimeout(raw: unknown): number {
+  // yargs turns a repeated flag into an array; picking one silently would hide a mistake.
+  if (Array.isArray(raw)) throw new Error('--idle-timeout may be given only once');
+  // Declared as a string option on purpose: yargs' number coercion turns `''` (an empty shell
+  // variable) into 0, which would silently mean "never exit on idle". Parse it strictly here.
+  const text = typeof raw === 'string' ? raw.trim() : raw;
+  const minutes =
+    typeof text === 'number'
+      ? text
+      : typeof text === 'string' && /^\d+$/.test(text)
+        ? Number(text)
+        : NaN;
+  if (!Number.isInteger(minutes) || minutes < 0) {
+    throw new Error(
+      `--idle-timeout: expected a non-negative integer of minutes, got "${String(raw)}"`,
+    );
+  }
+  if (minutes > MAX_IDLE_TIMEOUT_MINUTES) {
+    throw new Error(`--idle-timeout: at most ${MAX_IDLE_TIMEOUT_MINUTES} minutes; use 0 for never`);
+  }
+  return minutes;
+}
+
+function readDaemonAction(raw: unknown): DaemonCliOptions['action'] {
+  if (raw === undefined) return undefined;
+  if (raw === 'status' || raw === 'stop') return raw;
+  const shown = typeof raw === 'string' ? raw : JSON.stringify(raw);
+  throw new Error(
+    `daemon: unknown action "${shown}" — choose one of: ${DAEMON_ACTIONS.join(', ')}`,
+  );
+}
+
 export async function parseConfig(argv: string[]): Promise<ParsedCli> {
   const args = await yargs(hideBin(argv))
     .scriptName('neuro-vault-mcp')
@@ -141,6 +185,17 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
     .command('index', 'Build or refresh the embedding corpus for each vault, then exit', (y) =>
       y.option('vault', VAULT_OPTION).option('model', MODEL_OPTION).option('prune', PRUNE_OPTION),
     )
+    .command(
+      'daemon [action]',
+      'Run the shared-services daemon; `status` lists daemons, `stop` ends them',
+      (y) =>
+        y
+          .positional('action', {
+            type: 'string',
+            describe: `One of: ${DAEMON_ACTIONS.join(', ')}. Omit to run the daemon.`,
+          })
+          .option('idle-timeout', IDLE_TIMEOUT_OPTION),
+    )
     .strict()
     .help()
     .version(packageMeta.version)
@@ -153,6 +208,16 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
   // and exit non-zero.
   if (args.help === true || args.version === true) {
     return { kind: 'handled' };
+  }
+
+  if (args._[0] === 'daemon') {
+    return {
+      kind: 'daemon',
+      options: {
+        action: readDaemonAction(args.action),
+        idleTimeoutMinutes: readIdleTimeout(args['idle-timeout']),
+      },
+    };
   }
 
   const vaults = validateVaults((args.vault as string[] | undefined) ?? []);

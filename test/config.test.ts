@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { packageMeta } from '../src/package-meta.js';
-import { parseConfig } from '../src/config.js';
+import { MAX_IDLE_TIMEOUT_MINUTES, parseConfig } from '../src/config.js';
 import {
   DEFAULT_MODEL_KEY,
   MODEL_KEYS,
@@ -339,6 +339,123 @@ describe('parseConfig', () => {
         ).rejects.toThrow(/Choices/);
       } finally {
         errorLog.mockRestore();
+      }
+    });
+  });
+
+  describe('daemon command', () => {
+    let errorLog: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      errorLog.mockRestore();
+    });
+
+    it('parses `daemon` with the default idle timeout and no vault', async () => {
+      const parsed = await parseConfig(['node', 'cli.js', 'daemon']);
+      expect(parsed).toEqual({
+        kind: 'daemon',
+        options: { action: undefined, idleTimeoutMinutes: 30 },
+      });
+    });
+
+    it('parses `daemon status` and `daemon stop`', async () => {
+      await expect(parseConfig(['node', 'cli.js', 'daemon', 'status'])).resolves.toMatchObject({
+        kind: 'daemon',
+        options: { action: 'status' },
+      });
+      await expect(parseConfig(['node', 'cli.js', 'daemon', 'stop'])).resolves.toMatchObject({
+        kind: 'daemon',
+        options: { action: 'stop' },
+      });
+    });
+
+    it('parses --idle-timeout and rejects bad values', async () => {
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '0']),
+      ).resolves.toMatchObject({ options: { idleTimeoutMinutes: 0 } });
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '-1']),
+      ).rejects.toThrow(/non-negative integer/);
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', 'soon']),
+      ).rejects.toThrow(/non-negative integer/);
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '1.5']),
+      ).rejects.toThrow(/non-negative integer/);
+    });
+
+    it('caps --idle-timeout at 35791 minutes, the largest a Node timer holds', async () => {
+      expect(MAX_IDLE_TIMEOUT_MINUTES).toBe(35791);
+      expect(MAX_IDLE_TIMEOUT_MINUTES * 60_000).toBeLessThanOrEqual(2 ** 31 - 1);
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '35791']),
+      ).resolves.toMatchObject({ options: { idleTimeoutMinutes: 35791 } });
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '35792']),
+      ).rejects.toThrow('--idle-timeout: at most 35791 minutes; use 0 for never');
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '100000']),
+      ).rejects.toThrow(/at most 35791 minutes/);
+    });
+
+    it('describes what the daemon command does today in --help', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        await parseConfig(['node', 'cli.js', '--help']);
+        const help = String(log.mock.calls[0][0]).replace(/\s+/g, ' ');
+        expect(help).toContain('Run the shared-services daemon;');
+        expect(help).not.toContain('on demand');
+      } finally {
+        log.mockRestore();
+      }
+    });
+
+    it('rejects an empty or blank --idle-timeout instead of reading it as 0', async () => {
+      await expect(parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', ''])).rejects.toThrow(
+        /non-negative integer/,
+      );
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '  ']),
+      ).rejects.toThrow(/non-negative integer/);
+    });
+
+    it('does not accept --idle-timeout on the server or index commands', async () => {
+      await expect(
+        parseConfig(['node', 'cli.js', '--vault', vaultPath, '--idle-timeout', '5']),
+      ).rejects.toThrow(/Unknown argument/);
+      await expect(
+        parseConfig(['node', 'cli.js', 'index', '--vault', vaultPath, '--idle-timeout', '5']),
+      ).rejects.toThrow(/Unknown argument/);
+    });
+
+    it('rejects --idle-timeout given twice', async () => {
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '1', '--idle-timeout', '2']),
+      ).rejects.toThrow(/may be given only once/);
+    });
+
+    it('rejects an unknown daemon action and vault/model options', async () => {
+      await expect(parseConfig(['node', 'cli.js', 'daemon', 'restart'])).rejects.toThrow(
+        /status, stop/,
+      );
+      await expect(parseConfig(['node', 'cli.js', 'daemon', '--vault', vaultPath])).rejects.toThrow(
+        /vault/,
+      );
+      await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--model', 'granite-97m']),
+      ).rejects.toThrow(/model/);
+    });
+
+    it('lets --help short-circuit before the daemon branch', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        await expect(parseConfig(['node', 'cli.js', 'daemon', '--help'])).resolves.toEqual({
+          kind: 'handled',
+        });
+      } finally {
+        log.mockRestore();
       }
     });
   });

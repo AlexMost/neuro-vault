@@ -466,19 +466,21 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
     try {
       await main(['node', 'cli.js', '--vault', vaultPath, '--no-semantic'], {
-        vaultEntryDeps: {
-          providerFactory: () => fakeProvider,
-          readerFactory: () => ({
-            readNotes: vi.fn().mockResolvedValue([]),
-            scan: vi.fn().mockResolvedValue([]),
-          }),
+        server: {
+          vaultEntryDeps: {
+            providerFactory: () => fakeProvider,
+            readerFactory: () => ({
+              readNotes: vi.fn().mockResolvedValue([]),
+              scan: vi.fn().mockResolvedValue([]),
+            }),
+          },
+          serverFactory: (_instructions: string) => server,
+          transportFactory: () => ({}) as never,
+          // Same reason as the helpers above: with a fake transport that has
+          // no `close()`, the hang-up wiring must not land on the real
+          // `process.stdin`. This stream never ends.
+          stdin: new PassThrough(),
         },
-        serverFactory: (_instructions: string) => server,
-        transportFactory: () => ({}) as never,
-        // Same reason as the helpers above: with a fake transport that has
-        // no `close()`, the hang-up wiring must not land on the real
-        // `process.stdin`. This stream never ends.
-        stdin: new PassThrough(),
       });
 
       expect(server.registeredToolNames).toEqual([
@@ -522,30 +524,32 @@ describe('Neuro Vault MCP server bootstrap', () => {
 
     try {
       await main(['node', 'cli.js', '--vault', vaultPath], {
-        vaultEntryDeps: {
-          semanticBackendFactory: () => ({
-            snapshot: () => makeFakeCorpusIndex().snapshot(),
-            status: () => ({ state: 'ready' }),
-            dispose: async () => {},
-          }),
-          providerFactory: () => fakeProvider,
-          readerFactory: () => ({
-            readNotes: vi.fn().mockResolvedValue([]),
-            scan: vi.fn().mockResolvedValue([]),
-          }),
+        server: {
+          vaultEntryDeps: {
+            semanticBackendFactory: () => ({
+              snapshot: () => makeFakeCorpusIndex().snapshot(),
+              status: () => ({ state: 'ready' }),
+              dispose: async () => {},
+            }),
+            providerFactory: () => fakeProvider,
+            readerFactory: () => ({
+              readNotes: vi.fn().mockResolvedValue([]),
+              scan: vi.fn().mockResolvedValue([]),
+            }),
+          },
+          semantic: {
+            embeddingServiceFactory: () => ({
+              initialize: vi.fn().mockResolvedValue(undefined),
+              embedQuery: vi.fn(),
+            }),
+          },
+          serverFactory: (_instructions: string) => server,
+          transportFactory: () => ({}) as never,
+          // Same reason as the helpers above: with a fake transport that has
+          // no `close()`, the hang-up wiring must not land on the real
+          // `process.stdin`. This stream never ends.
+          stdin: new PassThrough(),
         },
-        semantic: {
-          embeddingServiceFactory: () => ({
-            initialize: vi.fn().mockResolvedValue(undefined),
-            embedQuery: vi.fn(),
-          }),
-        },
-        serverFactory: (_instructions: string) => server,
-        transportFactory: () => ({}) as never,
-        // Same reason as the helpers above: with a fake transport that has
-        // no `close()`, the hang-up wiring must not land on the real
-        // `process.stdin`. This stream never ends.
-        stdin: new PassThrough(),
       });
 
       expect(server.registeredToolNames).toEqual([
@@ -589,7 +593,7 @@ describe('informational flags', () => {
       const transportFactory = vi.fn(() => ({}) as never);
 
       try {
-        await main(['node', 'cli.js', flag], { serverFactory, transportFactory });
+        await main(['node', 'cli.js', flag], { server: { serverFactory, transportFactory } });
 
         expect(serverFactory).not.toHaveBeenCalled();
         expect(transportFactory).not.toHaveBeenCalled();
@@ -598,4 +602,47 @@ describe('informational flags', () => {
       }
     },
   );
+
+  it('`daemon status` never constructs a server or opens the transport', async () => {
+    const serverFactory = vi.fn(() => createFakeServer());
+    const transportFactory = vi.fn(() => ({}) as never);
+    const out: string[] = [];
+    const nothing = () => {
+      throw new Error('daemon status must only read');
+    };
+    const savedExitCode = process.exitCode;
+
+    try {
+      await main(['node', 'cli.js', 'daemon', 'status'], {
+        server: { serverFactory, transportFactory },
+        daemon: {
+          home: '/nonexistent-home',
+          env: {},
+          fs: {
+            readdir: () => [],
+            exists: () => false,
+            read: () => undefined,
+            mkdirp: nothing,
+            openExclusive: nothing,
+            unlink: nothing,
+            rename: nothing,
+            linkExclusive: nothing,
+            rmrf: nothing,
+            chmod: nothing,
+            lstat: nothing,
+          },
+          readInfo: () => undefined,
+          stdout: { write: (s: string) => (out.push(s), true) },
+          stderr: { write: () => true },
+        },
+      });
+
+      expect(serverFactory).not.toHaveBeenCalled();
+      expect(transportFactory).not.toHaveBeenCalled();
+      expect(out.join('')).toMatch(/no daemon known/);
+      expect(process.exitCode).toBe(0);
+    } finally {
+      process.exitCode = savedExitCode;
+    }
+  });
 });
