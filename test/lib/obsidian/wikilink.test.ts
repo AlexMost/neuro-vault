@@ -87,4 +87,19 @@ describe('normalizeWikilinkTarget', () => {
   it('returns empty string for empty input', () => {
     expect(normalizeWikilinkTarget('')).toBe('');
   });
+
+  it('treats a table-escaped alias separator (\\|) like a plain pipe', () => {
+    // Obsidian escapes `|` as `\|` inside markdown table cells.
+    expect(normalizeWikilinkTarget('y-burlaka\\|Юрій Бурлака')).toBe('y-burlaka');
+    expect(normalizeWikilinkTarget('Foo\\|Bar')).toBe('Foo');
+  });
+
+  it('cuts at a #heading that precedes an escaped alias separator', () => {
+    expect(normalizeWikilinkTarget('Journey#S3 — Card\\|S3 Card')).toBe('Journey');
+  });
+
+  it('keeps a backslash that is not followed by a pipe', () => {
+    expect(normalizeWikilinkTarget('Foo\\Bar')).toBe('Foo\\Bar');
+    expect(normalizeWikilinkTarget('Foo\\Bar|Alias')).toBe('Foo\\Bar');
+  });
 });

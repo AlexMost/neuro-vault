@@ -103,6 +103,26 @@ describe('getNoteLinks', () => {
     expect([...links]).toEqual(['Folder/Sub/E.md']);
   });
 
+  it('resolves table-escaped aliases ([[X\\|alias]]) like plain aliases', async () => {
+    const readNoteContent = vi.fn(async () => '| [[B\\|Bee]] | [[C\\|See]] |\n');
+    const links = await getNoteLinks({
+      notePath: 'Folder/A.md',
+      readNoteContent,
+      basenameIndex: makeIndex(),
+    });
+    expect([...links].sort()).toEqual(['Folder/B.md', 'Folder/C.md']);
+  });
+
+  it('resolves path-form targets by unique suffix', async () => {
+    const readNoteContent = vi.fn(async () => '[[Sub/E]]\n');
+    const links = await getNoteLinks({
+      notePath: 'Folder/A.md',
+      readNoteContent,
+      basenameIndex: makeIndex(),
+    });
+    expect([...links]).toEqual(['Folder/Sub/E.md']);
+  });
+
   it('treats embeds ![[X]] as forward links', async () => {
     const readNoteContent = vi.fn(async () => '![[B]]\n');
     const links = await getNoteLinks({

@@ -18,7 +18,7 @@ The index is intentionally thin:
 
 - **No watcher of its own.** Unlike the embedding corpus, which is watched (see [`semantic-backend.md`](./semantic-backend.md)), the wikilink graph follows a lazy + TTL model: rebuilt on demand, not kept warm in the background.
 - **No persistence.** Rebuilt from disk on first query and after the TTL expires.
-- **Resolves edges through `BasenameIndex`** — uses the same wikilink resolver as `get_similar_notes` so behaviour stays consistent.
+- **Resolves edges through `BasenameIndex`** — uses the same wikilink resolver as `get_similar_notes` so behaviour stays consistent: exact path → unique suffix (`[[Teams/_index]]` written under `GrowPM/`) → basename. Resolution order and the ambiguity rule: [`note-path-resolution.md`](./note-path-resolution.md#wikilink-targets-basenameindex).
 - **Embeds count as wikilinks.** `![[X]]` produces an outgoing edge to `X`, exactly like `[[X]]`.
 - **Unresolved targets are retained.** Outgoing edges to non-existent notes are kept with `resolved: false` — useful for traversal tools and "concepts I have not yet written about".
 - **Self-links are dropped.** A note linking to itself does not appear in its own `outgoing` or `incoming`.
@@ -53,7 +53,7 @@ interface IncomingLink {
 1. `reader.scan()` produces the vault-scope-filtered path list (see [`vault-scope.md`](./vault-scope.md)).
 2. `buildBasenameIndex(paths)` is computed once for the whole rebuild.
 3. Notes are read in batches of 32 via `VaultReader.readNotes({ fields: ['frontmatter', 'content'] })`.
-4. For each note, `parseWikilinks(content)` + `extractWikilinksFromFrontmatter(frontmatter)` produce raw targets; `normalizeWikilinkTarget` strips display text and section anchors; `basenameIndex.resolve` maps to a vault path or marks unresolved.
+4. For each note, `parseWikilinks(content)` + `extractWikilinksFromFrontmatter(frontmatter)` produce raw targets; `normalizeWikilinkTarget` strips display text (plain `|alias` or the table-escaped `\|alias`) and section anchors; `basenameIndex.resolve` maps to a vault path or marks unresolved (including a path-form target that several notes match by suffix).
 5. Outgoing edges are deduped (resolved by target path, unresolved by raw name); the corresponding incoming edge is appended to the resolved target.
 6. Notes that fail to read (`READ_FAILED`) are logged to stderr and skipped — one bad note does not abort the build.
 
