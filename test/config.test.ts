@@ -343,6 +343,69 @@ describe('parseConfig', () => {
     });
   });
 
+  describe('--shared', () => {
+    it('defaults to shared on the server and on index', async () => {
+      const run = await parseConfig(['node', 'cli.js', '--vault', vaultPath]);
+      if (run.kind !== 'run') throw new Error('expected a run configuration');
+      expect(run.config.semantic.shared).toBe(true);
+      const index = await parseConfig(['node', 'cli.js', 'index', '--vault', vaultPath]);
+      if (index.kind !== 'index') throw new Error('expected an index configuration');
+      expect(index.options.shared).toBe(true);
+    });
+
+    it('--no-shared selects the in-process provider on both commands', async () => {
+      const run = await parseConfig(['node', 'cli.js', '--vault', vaultPath, '--no-shared']);
+      if (run.kind !== 'run') throw new Error('expected a run configuration');
+      expect(run.config.semantic.shared).toBe(false);
+      const index = await parseConfig([
+        'node',
+        'cli.js',
+        'index',
+        '--vault',
+        vaultPath,
+        '--no-shared',
+      ]);
+      if (index.kind !== 'index') throw new Error('expected an index configuration');
+      expect(index.options.shared).toBe(false);
+    });
+
+    it('is accepted alongside --no-semantic', async () => {
+      const parsed = await parseConfig([
+        'node',
+        'cli.js',
+        '--vault',
+        vaultPath,
+        '--no-semantic',
+        '--shared',
+      ]);
+      if (parsed.kind !== 'run') throw new Error('expected a run configuration');
+      expect(parsed.config.semantic.enabled).toBe(false);
+    });
+
+    it('is rejected on the daemon command', async () => {
+      await expect(parseConfig(['node', 'cli.js', 'daemon', '--no-shared'])).rejects.toThrow(
+        /Unknown argument/,
+      );
+    });
+
+    it('documents the flag and its default in --help for the server and index', async () => {
+      const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+      try {
+        await parseConfig(['node', 'cli.js', '--help']);
+        await parseConfig(['node', 'cli.js', 'index', '--help']);
+        for (const call of log.mock.calls.slice(0, 2)) {
+          const help = String(call[0]).replace(/\s+/g, ' ');
+          expect(help).toContain('--shared');
+          expect(help).toMatch(
+            /--shared Embed through the shared per-machine daemon.*default: true/,
+          );
+        }
+      } finally {
+        log.mockRestore();
+      }
+    });
+  });
+
   describe('daemon command', () => {
     let errorLog: ReturnType<typeof vi.spyOn>;
     beforeEach(() => {
@@ -373,6 +436,9 @@ describe('parseConfig', () => {
 
     it('parses --idle-timeout and rejects bad values', async () => {
       await expect(
+        parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '5']),
+      ).resolves.toEqual({ kind: 'daemon', options: { action: undefined, idleTimeoutMinutes: 5 } });
+      await expect(
         parseConfig(['node', 'cli.js', 'daemon', '--idle-timeout', '0']),
       ).resolves.toMatchObject({ options: { idleTimeoutMinutes: 0 } });
       await expect(
@@ -400,13 +466,18 @@ describe('parseConfig', () => {
       ).rejects.toThrow(/at most 35791 minutes/);
     });
 
-    it('describes what the daemon command does today in --help', async () => {
+    it('describes in --help that the server and index start the daemon on demand', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {});
       try {
         await parseConfig(['node', 'cli.js', '--help']);
         const help = String(log.mock.calls[0][0]).replace(/\s+/g, ' ');
-        expect(help).toContain('Run the shared-services daemon;');
-        expect(help).not.toContain('on demand');
+        expect(help).toContain(
+          'Run the shared-services daemon (the server and `index` start it on demand)',
+        );
+        // `daemon` joins the command list; it does not replace the other two.
+        expect(help).toMatch(/Commands: \S+ Run the MCP server over stdio \(default\) \[default\]/);
+        expect(help).toMatch(/\S+ index Build or refresh the embedding corpus for each vault/);
+        expect(help).toMatch(/\S+ daemon \[action\] Run the shared-services daemon/);
       } finally {
         log.mockRestore();
       }

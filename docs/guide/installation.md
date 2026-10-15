@@ -117,6 +117,18 @@ neuro-vault-mcp index --vault /absolute/path/to/your/vault
 
 Pass the same `--model` the server runs with (`harrier-270m` is the default and needs no flag; if the server's `args` carry `--model granite-97m`, add `--model granite-97m` here too): that warms the corpus the server will serve. A different value is not harmful — each model keeps its own corpus in the vault — but it builds a second corpus the server never reads. The `SEMANTIC_INDEX_NOT_FOUND` hint prints `neuro-vault-mcp index --vault <path>` without `--model` — add yours if you run a non-default model.
 
+`index` embeds through the same shared daemon as the server. A run next to an open session therefore loads no second copy of the model. `--no-shared` makes it load its own.
+
 Repeat `--vault` to warm several vaults in one run. It prints per-vault progress and a summary (`indexed`, `embedded`, `reused`, `renamed`, `deleted`, `failed`), and exits non-zero if any note failed to embed. Re-running it later is cheap: an unchanged vault reconciles in well under a second, since only notes that changed since the last pass are re-embedded. If another neuro-vault process (a server, or another `index`) is reconciling the same vault, `index` waits its turn and says so on stderr (`waiting for another neuro-vault process (pid <n>) to finish with <vault>…`).
 
 Add `--prune` to delete the corpora other models have left in the vault once the indexing has succeeded: `neuro-vault-mcp index --vault /absolute/path/to/your/vault --prune`. It prints `pruned <vault>: removed <names>` (or `nothing to remove`), and does nothing, with a `not pruning <vault>: …` line on stderr, if no note was indexed. It also refuses, failing that vault, if the selected model's corpus is missing when it runs, so a concurrent prune by another model can never leave the vault empty; a prune that waits for another process prints the same waiting line as indexing. See [Embedding models](./embedding-models.md#switching-models).
+
+## What runs in the background
+
+The first time a session needs an embedding, it starts one background process, `neuro-vault-mcp daemon`, and every later session on the machine shares it. This is new in 17.1. The model then sits in memory once, in that process, instead of once per session. On a measured laptop, three sessions took about 1.3 GB in total with the daemon, against 2.4–2.6 GB as three separate processes.
+
+- **It belongs to you and to this installed version.** It runs as your user and listens on a local socket, `/tmp/neuro-vault-<uid>/<key>.sock`, in a directory only you can open. It opens no network port. After an upgrade, new sessions start a new daemon, and the old one stays only while sessions of the old version are open. Restart those sessions to move them to the new version.
+- **It leaves on its own.** It exits 30 minutes after its last session disconnects.
+- **Its files** are under `~/.cache/neuro-vault/daemons/<key>/` (or `$XDG_CACHE_HOME/neuro-vault/daemons/<key>/`): `daemon.log` (its output), `daemon.json` (pid, version, socket) and `daemon.lock`.
+- **Inspect or end it** with `neuro-vault-mcp daemon status` and `neuro-vault-mcp daemon stop`.
+- **Opt out** with `--no-shared` in the server's `args` (and on `index`): the session then loads the model itself, as before 17.1. If the daemon cannot be started, the session does the same on its own and says so once on stderr. Windows is untested: there the daemon listens on a named pipe, and any failure falls back the same way.

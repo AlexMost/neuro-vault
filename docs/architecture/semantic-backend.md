@@ -67,12 +67,17 @@ A watcher that fails to start, or errors once running, degrades rather than fail
 
 ## The shared embed queue
 
-One `QueuedEmbedder` (`src/modules/semantic/embed-queue.ts`) wraps the single process-wide `EmbeddingService` instance in a FIFO queue with two lanes:
+One `QueuedEmbedder` (`src/modules/semantic/embed-queue.ts`) wraps the single process-wide embedding provider in a FIFO queue with two lanes. The provider is the daemon facade by default and an in-process `EmbeddingService` with `--no-shared` ([`embedding-pipeline.md`](./embedding-pipeline.md#where-the-model-lives)):
 
 - `embedQuery` enqueues on the **query lane** — the retrieval path (`asProvider()`, wired into `search_notes`/`get_similar_notes`/`find_duplicates`) uses this.
 - `embedDocuments` enqueues one entry per length bucket on the **index lane** — reconcile (`asDocumentEmbedFn()`, wired into every backend's `reconcile` dependency) hands it each note's text and blocks in one call, which the queue splits into length buckets (at most 8 texts each, the longest at most twice the shortest — see [`embedding-pipeline.md`](./embedding-pipeline.md#batching)). Each bucket is one forward pass. A blank text rejects the call up front, naming its index in the caller's input. Once one bucket fails, the call's still-queued buckets skip their forward pass.
 
 The pump always drains the query lane first. A query issued while a vault is cold-indexing therefore waits for at most the one batch already in flight (roughly half a second for a typical batch on `harrier-270m` — a bake-off estimate; a full 8 × 512-token batch takes longer), never behind the thousands of queued indexing batches — one model instance serves every vault's indexing and every live query without either starving the other.
+
+With the shared daemon there are two queues of the same kind, one in front of the other ([`shared-daemon.md`](./shared-daemon.md#the-embed-service)):
+
+- **This process's queue**, in front of the facade. It orders this session's own queries ahead of its own indexing, buckets by length with the batch size the daemon reported, and keeps one request in flight per process.
+- **The daemon's queue**, one per loaded profile. It orders requests from every connected session, so session B's query waits for at most the one batch in flight, not for session A's queued indexing. Because each session has at most one request in flight, its depth is bounded by the number of connected sessions.
 
 ## Who reads the state
 

@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   CALL_TIMEOUT_MS,
+  daemonProviderFor,
   runDaemonCommand,
   STOP_DEADLINE_MS,
   type DaemonCommandDeps,
@@ -20,6 +21,13 @@ import { parseDaemonInfo } from '../src/daemon/info.js';
 import { cliBuild, daemonKey } from '../src/daemon/paths.js';
 import type { Timers } from '../src/daemon/probe.js';
 import type { ServiceRegistry } from '../src/daemon/protocol.js';
+import { EmbeddingService } from '../src/modules/semantic/embedding-service.js';
+import {
+  identityOf,
+  MODEL_PROFILES,
+  type ModelProfile,
+} from '../src/modules/semantic/model-profiles.js';
+import type { EmbeddingProvider } from '../src/modules/semantic/types.js';
 
 const BASE = '/home/u/.cache/neuro-vault/daemons';
 const BUILD = { size: 1000, mtimeMs: 1 };
@@ -181,6 +189,15 @@ function addKnown(h: Harness, name: string, info: string | undefined): void {
   h.dirs.add(`${BASE}/${name}`);
   if (info !== undefined) h.files.set(`${BASE}/${name}/daemon.json`, info);
 }
+
+describe('daemonProviderFor', () => {
+  it('builds the in-process provider for every profile — never a facade onto itself', () => {
+    // Construction loads nothing; the model loads on initialize().
+    for (const profile of Object.values(MODEL_PROFILES)) {
+      expect(daemonProviderFor(profile)).toBeInstanceOf(EmbeddingService);
+    }
+  });
+});
 
 describe('runDaemonCommand (run)', () => {
   it('locks, listens, chmods, writes daemon.json and announces on stderr', async () => {
@@ -445,6 +462,40 @@ describe('runDaemonCommand (run)', () => {
       clients: 3,
       services: { embed: { loaded: [] } },
     });
+  });
+
+  it('logs a profile load and a load failure to stderr, nothing to stdout', async () => {
+    let fail = false;
+    const createProvider = vi.fn(
+      (profile: ModelProfile): EmbeddingProvider => ({
+        identity: identityOf(profile),
+        maxBatchSize: 8,
+        initialize: async () => {
+          if (fail) throw new Error('no weights');
+        },
+        embedQuery: async () => [1, 0, 0],
+        embedDocuments: async (texts: string[]) => texts.map(() => [1, 0, 0]),
+      }),
+    );
+    const h = harness({ createProvider });
+    await runDaemonCommand(RUN, h.deps);
+    h.err.length = 0;
+    const initialize = (id: number, profile: string) =>
+      serverOptions(h).registry.dispatch({
+        jsonrpc: '2.0',
+        id,
+        method: 'embed.initialize',
+        params: { profile },
+      });
+    expect(isJSONRPCResultResponse(await initialize(1, 'granite-97m'))).toBe(true);
+    fail = true;
+    expect(isJSONRPCResultResponse(await initialize(2, 'harrier-270m'))).toBe(false);
+    expect(h.err).toHaveLength(2);
+    expect(h.err[0]).toMatch(/^neuro-vault-mcp daemon: loaded granite-97m in \d+ ms\n$/);
+    expect(h.err[1]).toMatch(
+      /^neuro-vault-mcp daemon: failed to load harrier-270m after \d+ ms: no weights\n$/,
+    );
+    expect(h.out).toEqual([]);
   });
 
   it('exits 0 at the deadline when close never finishes', async () => {
@@ -764,6 +815,52 @@ describe('runDaemonCommand (status / stop)', () => {
       'stopped 18.0.0 (pid 1)\n' +
         'bbbbbbbbbbbb  starting — not stopped; run `neuro-vault-mcp daemon stop` again\n',
     );
+  });
+
+  it('stop stops two live daemons of different builds, and status then knows none', async () => {
+    const h = harness({ isAlive: () => true });
+    const daemons = [
+      { key: daemonKey('18.0.0', { size: 1000, mtimeMs: 1 }), pid: 1, socket: '/tmp/a.sock' },
+      { key: daemonKey('18.0.0', { size: 2000, mtimeMs: 2 }), pid: 2, socket: '/tmp/b.sock' },
+    ];
+    expect(daemons[0].key).not.toBe(daemons[1].key);
+    for (const d of daemons) {
+      addKnown(h, d.key, infoJson({ pid: d.pid, socket: d.socket }));
+      h.files.set(`${BASE}/${d.key}/daemon.lock`, String(d.pid));
+    }
+    const shutdowns: number[] = [];
+    h.deps.connect = (p) => {
+      const d = daemons.find((x) => x.socket === p);
+      if (d === undefined) return Promise.reject(errno('ECONNREFUSED'));
+      return Promise.resolve(
+        fakeInfoSocket(
+          { version: '18.0.0', pid: d.pid, clients: 1, loaded: ['harrier-270m'] },
+          {
+            onRequest: (method) => {
+              if (method !== 'daemon.shutdown') return;
+              // What a daemon's own stop removes: daemon.json, then the lock.
+              shutdowns.push(d.pid);
+              h.files.delete(`${BASE}/${d.key}/daemon.json`);
+              h.files.delete(`${BASE}/${d.key}/daemon.lock`);
+            },
+          },
+        ),
+      );
+    };
+
+    await expect(runDaemonCommand({ action: 'stop', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(shutdowns.sort()).toEqual([1, 2]);
+    expect(h.out.join('').split('\n').filter(Boolean).sort()).toEqual([
+      'stopped 18.0.0 (pid 1)',
+      'stopped 18.0.0 (pid 2)',
+    ]);
+    expect(h.deps.kill).not.toHaveBeenCalled();
+    expect(h.err).toEqual([]);
+
+    h.out.length = 0;
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toMatch(/no daemon known/);
+    expect(h.err).toEqual([]);
   });
 
   /** Reading this entry's lock fails as an unreadable file would (EACCES). */

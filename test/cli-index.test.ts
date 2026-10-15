@@ -64,7 +64,7 @@ describe('runIndexCommand', () => {
     });
     const deps = makeDeps(reconcile);
     const code = await runIndexCommand(
-      { vaults: [vaultA, vaultB], model: profile, prune: false },
+      { vaults: [vaultA, vaultB], model: profile, shared: false, prune: false },
       deps,
     );
     expect(code).toBe(0);
@@ -80,7 +80,7 @@ describe('runIndexCommand', () => {
       .mockResolvedValueOnce(okSummary({ embedded: 2, failed: 1 }));
     const deps = makeDeps(reconcile);
     const code = await runIndexCommand(
-      { vaults: [vaultA, vaultB], model: profile, prune: false },
+      { vaults: [vaultA, vaultB], model: profile, shared: false, prune: false },
       deps,
     );
     expect(code).toBe(1);
@@ -96,7 +96,7 @@ describe('runIndexCommand', () => {
       .mockResolvedValueOnce(okSummary());
     const deps = makeDeps(reconcile);
     const code = await runIndexCommand(
-      { vaults: [vaultA, vaultB], model: profile, prune: false },
+      { vaults: [vaultA, vaultB], model: profile, shared: false, prune: false },
       deps,
     );
     expect(code).toBe(1);
@@ -110,7 +110,7 @@ describe('runIndexCommand', () => {
       return okSummary({ total: 100, embedded: 100 });
     });
     const deps = makeDeps(reconcile, false);
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: false }, deps);
     const progressLines = deps.stdout.chunks.filter((c) => c.startsWith('indexing'));
     expect(progressLines.length).toBeLessThanOrEqual(11);
   });
@@ -122,7 +122,7 @@ describe('runIndexCommand', () => {
       return okSummary({ total: 2, embedded: 2 });
     });
     const deps = makeDeps(reconcile, true);
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: false }, deps);
     const out = deps.stdout.chunks.join('');
     expect(out).toContain('\rindexing VaultA: 1/2');
     expect(out).toContain('\rindexing VaultA: 2/2');
@@ -133,7 +133,7 @@ describe('runIndexCommand', () => {
       okSummary({ total: 5, embedded: 1, reused: 2, renamed: 1, deleted: 3, failed: 0 }),
     );
     const deps = makeDeps(reconcile);
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: false }, deps);
     const out = deps.stdout.chunks.join('');
     expect(out).toMatch(/total=5 embedded=1 reused=2 renamed=1 deleted=3 failed=0/);
   });
@@ -144,7 +144,10 @@ describe('runIndexCommand', () => {
       throw new Error('storage corrupted');
     });
     const deps = makeDeps(reconcile, true);
-    const code = await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    const code = await runIndexCommand(
+      { vaults: [vaultA], model: profile, shared: false, prune: false },
+      deps,
+    );
     expect(code).toBe(1);
     // Verify that a newline was written to stdout to terminate the progress line
     expect(deps.stdout.chunks).toContain('\n');
@@ -159,9 +162,28 @@ describe('runIndexCommand', () => {
     }));
     const deps = { ...makeDeps(vi.fn(async () => okSummary())), createEmbedder };
     const granite = resolveModelProfile('granite-97m');
-    await runIndexCommand({ vaults: [vaultA, vaultB], model: granite, prune: false }, deps);
+    await runIndexCommand(
+      { vaults: [vaultA, vaultB], model: granite, shared: false, prune: false },
+      deps,
+    );
     expect(createEmbedder).toHaveBeenCalledTimes(1);
     expect(createEmbedder).toHaveBeenCalledWith(granite);
+  });
+
+  it('writes the same corpus identity whether the model is shared or in-process', async () => {
+    const identities: unknown[] = [];
+    const reconcile = vi.fn(async (d: ReconcileDeps) => {
+      identities.push(d.identity);
+      return okSummary();
+    });
+    for (const shared of [true, false]) {
+      // The default embedder: nothing is probed or loaded until a document is embedded.
+      const { createEmbedder: _unused, ...deps } = makeDeps(reconcile);
+      await runIndexCommand({ vaults: [vaultA], model: profile, shared, prune: false }, deps);
+    }
+    expect(identities).toHaveLength(2);
+    expect(identities[0]).toEqual(identities[1]);
+    expect(identities[0]).toMatchObject({ model_key: profile.key });
   });
 
   it('announces a rebuild before the vault’s progress', async () => {
@@ -174,7 +196,7 @@ describe('runIndexCommand', () => {
       return okSummary({ total: 1, embedded: 1 });
     });
     const deps = makeDeps(reconcile);
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: false }, deps);
     expect(deps.stdout.chunks[0]).toBe(
       'rebuilding VaultA: corpus was indexed with harrier-270m (embed_version 2); active model is bge-micro-v2 (embed_version 2)\n',
     );
@@ -182,7 +204,7 @@ describe('runIndexCommand', () => {
 
   it('prints no rebuild line when the corpus matches', async () => {
     const deps = makeDeps(vi.fn(async () => okSummary()));
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: false }, deps);
     expect(deps.stdout.chunks.join('')).not.toContain('rebuilding');
   });
 
@@ -197,7 +219,10 @@ describe('runIndexCommand', () => {
       return ['notes', 'granite-97m'];
     });
     const deps = { ...makeDeps(reconcile), prune };
-    const code = await runIndexCommand({ vaults: [vaultA], model: profile, prune: true }, deps);
+    const code = await runIndexCommand(
+      { vaults: [vaultA], model: profile, shared: false, prune: true },
+      deps,
+    );
     expect(code).toBe(0);
     expect(order).toEqual(['reconcile', 'prune']);
     expect(prune).toHaveBeenCalledWith('/abs/VaultA', TEST_EMBEDDING_IDENTITY.model_key, {
@@ -208,14 +233,14 @@ describe('runIndexCommand', () => {
 
   it('says so when there is nothing to prune', async () => {
     const deps = { ...makeDeps(vi.fn(async () => okSummary())), prune: vi.fn(async () => []) };
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: true }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: true }, deps);
     expect(deps.stdout.chunks.at(-1)).toBe('pruned VaultA: nothing to remove\n');
   });
 
   it('never prunes without the flag', async () => {
     const prune = vi.fn(async () => []);
     const deps = { ...makeDeps(vi.fn(async () => okSummary())), prune };
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: false }, deps);
     expect(prune).not.toHaveBeenCalled();
   });
 
@@ -224,7 +249,10 @@ describe('runIndexCommand', () => {
     const reconcile = vi.fn(async () => okSummary({ total: 3, embedded: 0, failed: 3 }));
     const prune = vi.fn(async () => ['granite-97m']);
     const deps = { ...makeDeps(reconcile), prune };
-    const code = await runIndexCommand({ vaults: [vaultA], model: profile, prune: true }, deps);
+    const code = await runIndexCommand(
+      { vaults: [vaultA], model: profile, shared: false, prune: true },
+      deps,
+    );
     expect(code).toBe(1);
     expect(prune).not.toHaveBeenCalled();
     expect(deps.stderr.chunks.join('')).toContain('not pruning VaultA: no note was indexed');
@@ -235,7 +263,9 @@ describe('runIndexCommand', () => {
     const reconcile = vi.fn(async () => okSummary({ total: 0, embedded: 0 }));
     const prune = vi.fn(async () => ['granite-97m']);
     const deps = { ...makeDeps(reconcile), prune };
-    expect(await runIndexCommand({ vaults: [vaultA], model: profile, prune: true }, deps)).toBe(0);
+    expect(
+      await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: true }, deps),
+    ).toBe(0);
     expect(prune).toHaveBeenCalledTimes(1);
   });
 
@@ -247,7 +277,7 @@ describe('runIndexCommand', () => {
     const prune = vi.fn(async () => []);
     const deps = { ...makeDeps(reconcile), prune };
     const code = await runIndexCommand(
-      { vaults: [vaultA, vaultB], model: profile, prune: true },
+      { vaults: [vaultA, vaultB], model: profile, shared: false, prune: true },
       deps,
     );
     expect(code).toBe(1);
@@ -264,7 +294,7 @@ describe('runIndexCommand', () => {
     });
     const deps = { ...makeDeps(vi.fn(async () => okSummary())), prune };
     const code = await runIndexCommand(
-      { vaults: [vaultA, vaultB], model: profile, prune: true },
+      { vaults: [vaultA, vaultB], model: profile, shared: false, prune: true },
       deps,
     );
     expect(code).toBe(1);
@@ -285,7 +315,7 @@ describe('runIndexCommand', () => {
     });
     const deps = makeDeps(reconcile);
     const code = await runIndexCommand(
-      { vaults: [vaultA, vaultB], model: profile, prune: false },
+      { vaults: [vaultA, vaultB], model: profile, shared: false, prune: false },
       deps,
     );
     expect(code).toBe(1);
@@ -302,7 +332,7 @@ describe('runIndexCommand', () => {
       return okSummary();
     });
     const deps = makeDeps(reconcile);
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: false }, deps);
     expect(deps.stderr.chunks).toEqual([
       'waiting for another neuro-vault process (pid 4242) to finish with VaultA…\n',
     ]);
@@ -315,7 +345,7 @@ describe('runIndexCommand', () => {
       return okSummary();
     });
     const deps = makeDeps(reconcile);
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: false }, deps);
     expect(deps.stderr.chunks).toEqual([
       'waiting for another neuro-vault process (pid 4242 on other-host) to finish with VaultA…\n',
     ]);
@@ -327,7 +357,7 @@ describe('runIndexCommand', () => {
       return okSummary();
     });
     const deps = makeDeps(reconcile);
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: false }, deps);
     expect(deps.stderr.chunks).toEqual([
       'waiting for another neuro-vault process (pid 4242) to finish with VaultA…\n',
     ]);
@@ -339,7 +369,7 @@ describe('runIndexCommand', () => {
       return okSummary();
     });
     const deps = makeDeps(reconcile);
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: false }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: false }, deps);
     expect(deps.stderr.chunks).toEqual([
       'waiting for another neuro-vault process to finish with VaultA…\n',
     ]);
@@ -357,7 +387,7 @@ describe('runIndexCommand', () => {
       },
     );
     const deps = { ...makeDeps(vi.fn(async () => okSummary())), prune };
-    await runIndexCommand({ vaults: [vaultA], model: profile, prune: true }, deps);
+    await runIndexCommand({ vaults: [vaultA], model: profile, shared: false, prune: true }, deps);
     expect(deps.stderr.chunks).toEqual([
       'waiting for another neuro-vault process (pid 4242) to finish with VaultA…\n',
     ]);
@@ -379,7 +409,7 @@ describe('runIndexCommand', () => {
     );
     const deps = makeDeps(vi.fn(async () => okSummary()));
     const code = await runIndexCommand(
-      { vaults: [{ name: 'VaultA', path: root }], model: profile, prune: true },
+      { vaults: [{ name: 'VaultA', path: root }], model: profile, shared: false, prune: true },
       deps,
     );
     await released;

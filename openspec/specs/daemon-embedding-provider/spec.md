@@ -1,5 +1,8 @@
-## ADDED Requirements
+# daemon-embedding-provider Specification
 
+## Purpose
+How sessions share one embedding model: the daemon's `embed` service (one provider per profile, loaded on demand, one cross-session queue) and the session-side `DaemonEmbeddingProvider` facade, which keeps the `EmbeddingProvider` contract, finds or spawns the daemon, bounds every wait, and falls back once per process to the in-process model; `--no-shared` opts out. Rationale: ADR-0018; mechanism: `docs/architecture/shared-daemon.md#the-session-side-facade`.
+## Requirements
 ### Requirement: The embed service loads one provider per profile on demand and queues across clients
 
 The daemon's `embed` service SHALL accept `embed.initialize { profile }`, `embed.query { profile, text }` and `embed.documents { profile, texts }` where `profile` is a key of the closed profile registry; any other key SHALL receive a JSON-RPC error with `data.code` `UNKNOWN_PROFILE`. On the first `embed.initialize` for a profile the service SHALL build that profile's provider through the same provider factory the sessions use, in non-shared mode, and SHALL await its initialization before answering `{ identity, max_batch_size }`; later calls for the same profile SHALL reuse it, so one model per profile is loaded per daemon. Every request for a profile SHALL pass through that profile's queue, with query embeddings served ahead of queued document batches regardless of which client sent them. A provider failure SHALL be answered with `data.code` `EMBED_FAILED` and the provider's message, and SHALL NOT be cached: the next request retries. `embed.documents` SHALL reject more than `max_batch_size` texts and any blank text with `INVALID_PARAMS`.
@@ -85,7 +88,7 @@ On first use the facade SHALL probe the version-keyed socket; when nothing liste
 
 ### Requirement: Any failure to reach the daemon falls back once to the in-process provider
 
-When the facade cannot locate or start the daemon — the spawn throws, the poll times out, the CLI runs from a TypeScript source file, or the platform refuses the socket — it SHALL switch, once per process, to the in-process provider for the same profile, write exactly one stderr line naming the daemon log, and never touch the daemon again in that process. A daemon that answers but reports `EMBED_FAILED` SHALL NOT cause a fallback: the error is surfaced to the caller and the next call retries through the daemon. `--no-shared` SHALL select the in-process provider up front without any stderr line. The `index` command SHALL use the same factory and flag.
+When the facade cannot locate or start the daemon — the spawn throws, the poll times out, the CLI runs from a TypeScript source file, the CLI script changed since the session started (an upgrade or rebuild, whose daemon would listen on another key), or the platform refuses the socket — it SHALL switch, once per process, to the in-process provider for the same profile, write exactly one stderr line naming the reason and, when the session's build is known, the daemon log, and never touch the daemon again in that process. A daemon that answers but reports `EMBED_FAILED` SHALL NOT cause a fallback: the error is surfaced to the caller and the next call retries through the daemon. `--no-shared` SHALL select the in-process provider up front without any stderr line. The `index` command SHALL use the same factory and flag.
 
 #### Scenario: Spawn fails
 
@@ -96,6 +99,11 @@ When the facade cannot locate or start the daemon — the spawn throws, the poll
 
 - **WHEN** the CLI is started from `src/cli.ts` through a TypeScript runner
 - **THEN** the session embeds in-process and stderr carries one line explaining why
+
+#### Scenario: Upgraded under an open session
+
+- **WHEN** the installed CLI script is replaced by an upgrade or rebuild while a session is open, and that session's daemon then goes away
+- **THEN** the session does not spawn a daemon from the new script; it embeds in-process from then on and stderr carries one line saying the CLI script changed
 
 #### Scenario: Model load failure is not a fallback
 
@@ -111,3 +119,4 @@ When the facade cannot locate or start the daemon — the spawn throws, the poll
 
 - **WHEN** `neuro-vault-mcp index --vault <path>` runs while a server session of the same version has the profile loaded in the daemon
 - **THEN** the index run embeds through that daemon and loads no model of its own
+

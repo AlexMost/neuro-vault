@@ -3,7 +3,8 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 import { createSemanticModule, type ISemanticModuleDeps } from './modules/semantic/index.js';
 import { createQueuedEmbedder, type QueuedEmbedder } from './modules/semantic/embed-queue.js';
-import { EmbeddingService } from './modules/semantic/embedding-service.js';
+import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
+import type { EmbeddingProvider } from './modules/semantic/types.js';
 import { createOwnCorpusBackendFactory } from './modules/semantic/backend/index.js';
 import { corpusIdentityOf, type CorpusIdentity } from './lib/obsidian/corpus/identity.js';
 import { createOperationsModule } from './modules/operations/index.js';
@@ -45,6 +46,10 @@ export interface NeuroVaultStartupDependencies {
    * hook by hand. Pass the same stream the `transportFactory` transport reads.
    */
   stdin?: StdinLike;
+  /** Realpath of the running CLI script; the shared embedding daemon is keyed by it. */
+  cliPath?: string;
+  /** Replaces the provider the factory would build. For tests. */
+  embeddingProvider?: EmbeddingProvider;
 }
 
 /**
@@ -120,10 +125,20 @@ export async function startNeuroVaultServer(
   deps: NeuroVaultStartupDependencies = {},
 ): Promise<() => Promise<void>> {
   // One model, one embed in flight process-wide (design D7): every vault's
-  // indexing and every query share this queue, with queries jumping ahead.
-  const service = new EmbeddingService({ profile: config.semantic.model });
-  const embedder = createQueuedEmbedder(service);
-  const identity = corpusIdentityOf(service.identity);
+  // indexing and every query share this queue, with queries jumping ahead. By
+  // default the model itself lives in the shared daemon and this queue sits in
+  // front of the facade; the daemon's own per-profile queue orders requests
+  // across sessions.
+  const provider =
+    deps.embeddingProvider ??
+    createEmbeddingProvider({
+      profile: config.semantic.model,
+      shared: config.semantic.shared,
+      cliPath: deps.cliPath,
+      version: SERVER_VERSION,
+    });
+  const embedder = createQueuedEmbedder(provider);
+  const identity = corpusIdentityOf(provider.identity);
 
   const registry = await VaultRegistry.create(
     {
@@ -191,6 +206,8 @@ export async function startNeuroVaultServer(
    * clean teardown this exists to produce.
    */
   const dispose = async (): Promise<void> => {
+    // A request pending on the shared daemon would hold the event loop open.
+    provider.close?.();
     // `async` per entry so a backend whose `dispose()` throws synchronously
     // becomes one settled rejection rather than blowing up the whole map.
     const results = await Promise.allSettled(

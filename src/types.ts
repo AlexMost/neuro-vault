@@ -29,6 +29,8 @@ export interface ServerConfig {
     enabled: boolean;
     /** The one embedding profile this process serves (design D3). */
     model: ModelProfile;
+    /** Embed through the shared per-machine daemon (default) or load the model in-process. */
+    shared: boolean;
   };
 }
 

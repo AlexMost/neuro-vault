@@ -23,7 +23,7 @@ Your second brain stops being a folder you open between contexts and becomes a f
 - 🧭 **A real navigation toolkit for your agent** — instead of grepping files and opening notes one by one, your assistant walks the vault like a database: filter by tags and properties, batch-read metadata, traverse the wikilink graph, discover the structure, jump to semantic neighbours.
 - 🔎 **Ask structured questions in plain language** — _"active projects tagged #ai"_, _"todo tasks with a deadline this week"_, _"meeting notes from `Work/` newest first"_. Your assistant turns them into a **MongoDB-style filter** over frontmatter, tags, and backlink counts — one call, ranked answer, no chains of reads.
 - ✍️ **Full write surface for your notes** — create, in-place replace, or rewrite the whole body; manage frontmatter, tags, and daily notes. Every write goes directly to disk; if you have Obsidian open, its own file watcher picks up the change on its usual cadence.
-- ⚡ **Zero infrastructure** — local stdio MCP server, no database, no external processes, no API keys. The server keeps its own index fresh with an in-process watcher — nothing to run, nothing to babysit.
+- ⚡ **Zero infrastructure** — local stdio MCP server, no database, no API keys. One shared background process per machine holds the embedding model for every session; it starts on demand and leaves when idle. The server keeps its own index fresh with an in-process watcher — nothing to run, nothing to babysit.
 - 🪶 **Obsidian optional** — a vault is just a directory of Markdown files, and the server reads and writes it headlessly: no plugin, no running app, nothing to install beyond this server. Obsidian-flavoured conventions (`[[wikilinks]]`, YAML frontmatter, inline `#tags`) are understood wherever they appear. The one tool that genuinely wants Obsidian is `read_daily` — it reads the Daily Notes plugin's `.obsidian/daily-notes.json` to learn your folder and date format, and returns `DAILY_NOTES_NOT_CONFIGURED` without it.
 - 🔌 **Drop-in for any MCP client** — Claude Code, Cursor, Windsurf — configuration is a single JSON block.
 
@@ -144,7 +144,7 @@ flowchart LR
     Vault -.->|watched, reindexed| Corpus
 ```
 
-You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — the semantic leg ranks against an embedding index the server builds and keeps in `<vault>/.neuro-vault/corpus/`, the lexical leg reads notes straight from disk, and vault operations read and write the vault directory directly on disk too. No database, no external process, no Obsidian install required — an in-process watcher reconciles the index after ~10 seconds of quiet, so it never falls far behind what's on disk.
+You ask, the assistant calls Neuro Vault, Neuro Vault reads your vault — the semantic leg ranks against an embedding index the server builds and keeps in `<vault>/.neuro-vault/corpus/`, the lexical leg reads notes straight from disk, and vault operations read and write the vault directory directly on disk too. No database, no Obsidian install required, and the only background process is the shared one that holds the embedding model — an in-process watcher reconciles the index after ~10 seconds of quiet, so it never falls far behind what's on disk.
 
 For module wiring and internal data flow, see [docs/architecture/module-structure.md](./docs/architecture/module-structure.md).
 

@@ -6,7 +6,7 @@ How the process interprets `argv`, and how it decides whether to start the MCP s
 
 `src/cli.ts` exports `main(argv, deps)`, the async function the entrypoint calls. `main` does exactly two things in sequence: call `parseConfig(argv)` (`src/config.ts`), then either return immediately, run the `index` command (`runIndexCommand`, `src/cli-index.ts`), run the `daemon` command (`runDaemonCommand`, `src/cli-daemon.ts`, loaded by dynamic `import()`), or call `startNeuroVaultServer(config, deps)` (`src/server.ts`) with the config that parsing produced.
 
-`parseConfig` wraps `yargs`, declaring the `--vault`, `--semantic`, `--model` and (on `daemon` only) `--idle-timeout` options plus `.help()` and `.version(packageMeta.version)`. It returns a `ParsedCli`:
+`parseConfig` wraps `yargs`, declaring the `--vault`, `--semantic`, `--model`, `--shared` and (on `daemon` only) `--idle-timeout` options plus `.help()` and `.version(packageMeta.version)`. It returns a `ParsedCli`:
 
 ```typescript
 type ParsedCli =
@@ -16,7 +16,7 @@ type ParsedCli =
   | { kind: 'handled' };
 ```
 
-`kind: 'run'` carries a validated `ServerConfig` — the normal case. `kind: 'index'` carries the options of the `index` subcommand (the vaults, the model profile and the `--prune` flag). `kind: 'daemon'` carries the options of the `daemon` subcommand (see [The `daemon` command](#the-daemon-command) below). `kind: 'handled'` means yargs itself fully satisfied the invocation (it printed `--help` or `--version` output) and there is nothing left to run.
+`kind: 'run'` carries a validated `ServerConfig` — the normal case. `kind: 'index'` carries the options of the `index` subcommand (the vaults, the model profile, `shared` and the `--prune` flag). `kind: 'daemon'` carries the options of the `daemon` subcommand (see [The `daemon` command](#the-daemon-command) below). `kind: 'handled'` means yargs itself fully satisfied the invocation (it printed `--help` or `--version` output) and there is nothing left to run.
 
 ## Why it exists
 
@@ -54,14 +54,16 @@ config.ts: parseConfig(argv)
 cli.ts: main() branches on parsed.kind
   │
   ├─ 'handled' → return (startNeuroVaultServer is never called)
-  ├─ 'daemon'  → runDaemonCommand(parsed.options), exit code from its result
-  ├─ 'index'   → runIndexCommand(parsed.options), exit code from its result
-  └─ 'run'     → startNeuroVaultServer(parsed.config, deps)
+  ├─ 'daemon'  → runDaemonCommand(parsed.options, { cliPath }), exit code from its result
+  ├─ 'index'   → runIndexCommand(parsed.options, { cliPath }), exit code from its result
+  └─ 'run'     → startNeuroVaultServer(parsed.config, { cliPath, ...deps })
 ```
 
 ### Both invocations
 
-The server command and `index` are two commands over the same vaults, so they share `--vault` and `--model`. Each option is declared once (`VAULT_OPTION`, `MODEL_OPTION` in `config.ts`) and attached to both commands, so the two can never drift apart in spelling, default, or validation. `--semantic` belongs to the server command only.
+The server command and `index` are two commands over the same vaults, so they share `--vault`, `--model` and `--shared`. Each option is declared once (`VAULT_OPTION`, `MODEL_OPTION`, `SHARED_OPTION` in `config.ts`) and attached to both commands, so the two can never drift apart in spelling, default, or validation. `--semantic` belongs to the server command only.
+
+`--shared` (boolean, default `true`) picks where the model lives. By default, both commands embed through the shared daemon, and `--no-shared` loads the model in the process. It lands in `ServerConfig.semantic.shared` and `IndexCliOptions.shared`, and it is accepted, with no effect, alongside `--no-semantic`. Both commands build their provider through `createEmbeddingProvider` ([`embedding-pipeline.md`](./embedding-pipeline.md#where-the-model-lives)). That factory needs the realpath of the running CLI script, because the daemon is keyed by that file's size and mtime and spawned from it. `main` resolves it once, from `import.meta.url` (`currentCliPath`), and passes it to every command: `dist/cli.js` in the bundle, or `src/cli.ts` under a TypeScript runner, where the `.ts` suffix makes the facade fall back in-process.
 
 `--model` takes a profile key from the closed registry in `src/modules/semantic/model-profiles.ts` (`harrier-270m`, the default, `granite-97m` or `harrier-0.6b`; see [`embedding-pipeline.md`](./embedding-pipeline.md#profiles)). yargs `choices` rejects an unknown key with the allowed list before any vault is opened, and `parseConfig` resolves the key to its `ModelProfile` (`resolveModelProfile`), so nothing downstream handles an unknown key — `ServerConfig.semantic.model` and `IndexCliOptions.model` are already profiles. A repeated `--model` is rejected (`--model may be given only once`) rather than silently picking one of the values. The selection holds for the whole process: one model per run, no per-vault override.
 
