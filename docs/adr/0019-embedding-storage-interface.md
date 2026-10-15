@@ -1,7 +1,8 @@
-# ADR-0019 — The corpus is an interface inside the daemon; sessions receive semantic legs, never vectors
+# ADR-0019 — The corpus is an interface inside the daemon; sessions read it, never its vectors
 
 - **Status**: Accepted
 - **Date**: 2026-10-15
+- **Amended**: 2026-10-15 (#164): the semantic-leg composition and query embedding run in the session; the daemon serves the corpus's reads only. Changed: the two seams, the read primitives, and the first consequence; one alternative added.
 
 ## Context
 
@@ -13,16 +14,16 @@ That seam cannot move into the daemon as it stands. Either the vectors would cro
 
 ## Decision
 
-Introduce the **corpus** as an interface that reconcile writes to and semantic retrieval reads from. It lives inside the daemon, or inside the in-process fallback, and no session sees it.
+Introduce the **corpus** as an interface that reconcile writes to and semantic retrieval reads from. It lives inside the daemon, or inside the in-process fallback, and no session holds it: a session reads it through `SemanticBackend` and never receives a note vector.
 
-- **Two seams.** (1) Session ↔ `SemanticBackend`: the session-side facade returns a **semantic leg** (seeds, blocks, expansion, scores) and `status()`. `snapshot()` leaves it. Its implementations are the daemon's `corpus.*` service and the in-process fallback; the wire shape is #164's. (2) Semantic-leg composition and reconcile ↔ **corpus**: this ADR. `executeRetrieval` runs beside the corpus, in the daemon or in-process, as a composition of corpus reads. Fusion, `filterExisting`, backlink counts and the wikilink graph stay in the session, as the map decided.
+- **Two seams.** (1) Session ↔ `SemanticBackend`: the session-side facade exposes the corpus's reads (`nearest`, `nearestBlocks`) and `status()`. `snapshot()` leaves it. Its implementations are the daemon's `corpus.*` service and the in-process fallback over an in-memory corpus; the wire shape is #164's. (2) Reconcile ↔ **corpus**: the writes below, in the daemon or in-process. The **semantic-leg composition** (`executeRetrieval`: per-query seeds, the fallback threshold, the cross-query merge, blocks, backfill, expansion), `get_similar_notes`, the `find_duplicates` composition and query embedding (`embed.query`) run in the session over that facade, beside fusion, `filterExisting`, backlink counts and the wikilink graph. The daemon holds only what a hosted vector store could take over; retrieval policy stays out of it.
 - **One corpus per (vault realpath, profile).** The daemon's vault entry for that realpath owns the corpus, the scope and the reconcile loop.
 - **Vectors in, paths and scores out.** The corpus never embeds text. The `EmbeddingProvider` of [ADR-0017](0017-embedding-model-profiles.md) embeds, and its `identity` is what the corpus records. A store's built-in vectorizer is not used.
-- **Read primitives.**
-  - `nearest(vector, { threshold, limit?, allowed?, exclude? })` → `{path, similarity}[]`. Serves per-query seeds, the fallback threshold, and expansion (`exclude` = the seeds).
-  - `nearestBlocks(vector, { paths, threshold, limit? })` → `{path, heading, lines, similarity}[]`. Serves blocks within seeds and the per-seed backfill (`paths = [seed]`, `limit = 1`, `threshold = 0`).
-  - `vectorOf(path)` → vector or `null`. Serves similar-to-note and expansion. The vector stays on the corpus's side of the socket.
-  - `find_duplicates` is a **composition**, not a primitive: for each member, `nearest(vectorOf(member), threshold)`, with symmetric pairs folded. No third-party store answers all-pairs natively; every store answers nearest-neighbour queries.
+- **Read primitives.** Each takes an **anchor**: a query vector, or a note path whose own vector the corpus uses, so a note vector never crosses the socket.
+  - `nearest(anchor, { threshold, limit?, allowed?, exclude? })` → `{path, similarity}[]`, or `null` for a path with no vector. Serves per-query seeds, the fallback threshold, similar-to-note, and expansion (`exclude` = the seeds).
+  - `nearestBlocks(anchor, { paths, threshold, limit? })` → `{path, heading, lines, similarity}[]`. Serves blocks within seeds and the per-seed backfill (`paths = [seed]`, `limit = 1`, `threshold = 0`).
+  - `vectorOf(path)` → vector or `null`, inside the corpus only: it resolves a path anchor and never answers a session.
+  - `find_duplicates` is a **composition** in the session, not a primitive: for each member, `nearest(member path, threshold)`, with symmetric pairs folded. No third-party store answers all-pairs natively; every store answers nearest-neighbour queries, and most accept a stored point as the query.
 - **Write operations**, all reconcile needs:
   - `entries()` → `path → {content_hash, mtime, size}`, with no vectors.
   - `upsert(record)`: metadata, the note vector (or `null` below `MIN_CHARS`) and the block vectors.
@@ -40,7 +41,7 @@ Introduce the **corpus** as an interface that reconcile writes to and semantic r
 
 ## Consequences
 
-- **Vectors leave the session.** Its semantic memory becomes the facade and whatever one leg result holds. The leg's composition is written once and runs on the corpus's side in both the daemon and the in-process fallback.
+- **Note vectors leave the session.** Its semantic memory becomes the facade and whatever one leg result holds. The leg's composition is written once, in the session, over the corpus's reads; the daemon and the in-process fallback differ only in the facade. A search costs several socket round trips (query embedding, seeds, blocks, backfill, expansion); that is accepted for a daemon that a hosted store can replace.
 - **A remote provider plus a third-party store is two implementations, not a session change**: an `EmbeddingProvider` that reports its own identity, and a corpus over the store, with hash, mtime and size as point payload.
 - **`find_duplicates` does about twice the cosine work** of today's triangular loop in the in-memory implementation (N nearest queries instead of N(N−1)/2 pairs). It is a rarely used corpus-hygiene tool.
 - **Readers can see a pass half-applied**: some notes already re-embedded, others not yet. Each note is coherent on its own, and the identity never mixes.
@@ -50,6 +51,7 @@ Introduce the **corpus** as an interface that reconcile writes to and semantic r
 
 ## Alternatives considered
 
+- **The semantic-leg composition beside the corpus, in the daemon** (this ADR as first accepted): one round trip per search, but the daemon would carry retrieval policy (fallback threshold, merge, backfill, expansion) that a hosted vector store cannot take over.
 - **Keep `snapshot()` plus `SearchEngine` as the seam, moved into the daemon**: vectors cross the socket on every call, or each session keeps a copy, which is the cost being removed.
 - **The corpus embeds text itself**: the store, not the provider, would define the corpus identity, and the query prefix of ADR-0017 would move out of the provider.
 - **Change-detection metadata in a local ledger beside a remote store**: two sources of truth, and reconcile tied to the local disk even when vectors are remote.
