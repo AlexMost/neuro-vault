@@ -26,6 +26,18 @@ To embed, the service:
 
 The service also exposes `identity` (`provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens`) — everything that determines the vectors it produces. The corpus records that identity in its manifest, adds its own `embed_version` and `strategy`, and compares every field on startup; see [`own-corpus.md`](./own-corpus.md) for what a mismatch does (discard and rebuild).
 
+## Where the model lives
+
+No caller constructs a provider directly. `createEmbeddingProvider({ profile, shared, cliPath, … })` (`src/modules/semantic/provider-factory.ts`) is the one place a provider is chosen. The server, `index` and the daemon's `embed` service all call it ([ADR-0018](../adr/0018-shared-services-daemon.md)):
+
+| Caller | `shared` | What it gets |
+| --- | --- | --- |
+| Server, `index` (default) | `true` | `DaemonEmbeddingProvider`, a facade onto the shared daemon; the model is loaded there, once per machine per build and profile |
+| Server, `index` with `--no-shared` | `false` | `EmbeddingService` in this process, as before the daemon existed |
+| The daemon's `embed` service | always `false` | `EmbeddingService`, built by `daemonProviderFor` (`src/cli-daemon.ts`); a facade there would connect to the daemon itself |
+
+The facade has the same contract as `EmbeddingService` and the same `identity`, computed locally from the profile, so a corpus built through one is served by the other without a rebuild. Its `maxBatchSize` is the daemon's, reported by `embed.initialize`. When the daemon cannot be found or started, it falls back once per process to an in-process `EmbeddingService`. The connection, the spawn, the timeouts and the fallback rules are in [`shared-daemon.md`](./shared-daemon.md#the-session-side-facade). Everything below this section describes `EmbeddingService` itself, wherever it runs.
+
 ## Why it exists
 
 Tool handlers and the indexer should not import `@huggingface/transformers` or know which model is running. Wrapping tokenizer + model behind the provider gives:

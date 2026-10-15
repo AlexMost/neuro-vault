@@ -7,10 +7,15 @@
 | `--vault`        | yes      | —          | Absolute path to an Obsidian vault directory. Repeat the flag to register additional vaults. The MCP-side alias is always the directory basename; there is no override. |
 | `--semantic`     | no       | `true`     | Enable semantic search module (`--no-semantic` to skip)                                                                                                                 |
 | `--model`        | no       | `harrier-270m` | Embedding model profile, one per process: `harrier-270m` (default, multilingual, ≈ 344 MB), `granite-97m` (lite multilingual, ≈ 98 MB, fastest to index) or `harrier-0.6b` (highest quality, ≈ 706 MB, slowest to index). An unknown key fails and lists the valid ones. Applies to `index` too — use the same value for both, or the server rebuilds the corpus `index` built. Which to pick, how to switch, and the benchmarks: [Embedding models](./embedding-models.md). |
+| `--shared`       | no       | `true`     | Embed through the shared background daemon, which holds one copy of the model for every session on the machine and is started on demand. `--no-shared` loads the model in this process instead, the behaviour before 17.1. Applies to `index` too. See [Installation → What runs in the background](./installation.md#what-runs-in-the-background). |
 | `--help`         | no       | —          | Show help                                                                                                                                                               |
 | `--version`      | no       | —          | Print the installed version and exit                                                                                                                                    |
 
-`neuro-vault-mcp daemon [status|stop] [--idle-timeout <min>]` runs, lists or stops the shared-services daemon (an embedding-model host; `--idle-timeout` defaults to 30 minutes, `0` = never). Nothing starts a daemon automatically yet — the server and `index` still load the model in their own process.
+`neuro-vault-mcp daemon [status|stop] [--idle-timeout <min>]` runs, lists or stops the shared-services daemon, the background process that holds the embedding model:
+
+- `daemon status` lists every known daemon of every installed build: version, pid, connected sessions, the models it has loaded, and whether it is alive. It removes the records of daemons that are gone.
+- `daemon stop` asks every running daemon to exit. A session that is still open starts a new one on its next search.
+- `daemon` alone runs one in the foreground, which you rarely need: the server and `index` start one on demand. `--idle-timeout` sets how long it stays after its last session disconnects (default 30 minutes, `0` = never).
 
 The `--model` profiles:
 
@@ -89,7 +94,17 @@ The global `--no-semantic` flag outranks this: it turns the semantic module off 
 
 **First startup is slow** — the embedding model is downloading (`granite-97m` ≈ 98 MB, `harrier-270m` ≈ 344 MB, `harrier-0.6b` ≈ 706 MB) into `~/.cache/neuro-vault/models` (or `$XDG_CACHE_HOME/neuro-vault/models`). Subsequent starts use the cached model. The first index of a vault then takes minutes, longer with the larger models ([cost per model](./embedding-models.md#the-profiles)).
 
-**The server uses a lot of memory while indexing** — with `harrier-270m`, about 1.3–1.6 GB peak while indexing a vault of roughly a thousand notes (two separate runs); larger vaults will need more, and the bake-off's measuring script, which also held the whole corpus and token statistics in memory, peaked near 1.9 GB, so treat that as an upper bound. On a small host, run with `--model granite-97m` (about 1.2 GB on the same vault, and the quickest first index).
+**`shared embedding daemon unavailable (…); embedding in-process for this session`** on stderr — the session could not reach or start the shared daemon, so it loaded the model itself, exactly as with `--no-shared`. Everything still works; the session just holds its own copy of the model. The reason is in the parentheses, and the daemon's own output is in the `daemon.log` the line names. Common causes:
+
+- running from source (`npm run dev`, which never starts a daemon);
+- `/tmp/neuro-vault-<uid>` belonging to another user, or being a symlink: delete it if it is stale;
+- a read-only cache directory.
+
+A daemon that answers but fails to load the model is not a fallback; that error is reported like a local load failure and retried on the next call.
+
+**Two models' worth of memory after an upgrade** — a session started before the upgrade keeps using the old version's daemon, and new sessions start one for the new version. The old daemon exits 30 minutes after its last session closes. `neuro-vault-mcp daemon status` shows both, and `neuro-vault-mcp daemon stop` ends them at once (open sessions restart the current one on their next search).
+
+**The server uses a lot of memory while indexing** — the model's memory now sits in the shared daemon (`neuro-vault-mcp daemon`), not in each session, unless you run with `--no-shared`. With `harrier-270m`, about 1.3–1.6 GB peak while indexing a vault of roughly a thousand notes (two separate runs); larger vaults will need more, and the bake-off's measuring script, which also held the whole corpus and token statistics in memory, peaked near 1.9 GB, so treat that as an upper bound. On a small host, run with `--model granite-97m` (about 1.2 GB on the same vault, and the quickest first index).
 
 **The server log says it is discarding the corpus and re-indexing** — the vault's corpus was built with a different embedding model (or an older extraction version) than the one now active, so it is rebuilt from scratch in the background; `search_notes` answers from its lexical leg meanwhile. It usually means the server and `neuro-vault-mcp index` were given different `--model` values — use the same one for both. Upgrading from a release that defaulted to a different model rebuilds every vault's corpus once for the same reason; see [Switching models](./embedding-models.md#switching-models).
 
@@ -100,7 +115,7 @@ The global `--no-semantic` flag outranks this: it turns the semantic module off 
 - In-memory search only — no persistent database; the on-disk corpus under `.neuro-vault/corpus/` is the persistence, reloaded into memory on startup and kept current by the per-vault watcher.
 - stdio transport only — not HTTP or SSE.
 - Local vault path only — no remote vaults.
-- One embedding model per process, chosen with `--model` — every registered vault uses it. Switching models re-indexes each vault.
+- One embedding model per process, chosen with `--model` — every registered vault uses it. Switching models re-indexes each vault. The model's weights are loaded once per machine per installed version (in the shared daemon) and shared by every session on that model; with `--no-shared`, once per process.
 - The embedding model is warmed up in the background after the server connects (skipped when every vault has semantic search disabled), and a failed load is retried on the next query. The first run also downloads it, so it can be slow.
 - All vault operations (`read_notes`, `create_note`, `edit_note`, properties, tags, daily notes) read and write the vault directory directly on disk. No Obsidian installation or running instance is required — the server runs fully headless.
 
