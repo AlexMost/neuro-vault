@@ -82,11 +82,15 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
   const server = net.createServer((socket) => {
     connections.add(socket);
     const buffer = new ReadBuffer();
-    socket.on('data', (chunk: Buffer) => {
-      buffer.append(chunk);
+    socket.on('data', (data: Buffer) => {
+      let chunk: Buffer | undefined = data;
       for (;;) {
         let message: JSONRPCMessage | null;
         try {
+          // `append` throws once a line outgrows the SDK's buffer cap (>= 1.30),
+          // which is as unusable as a malformed line.
+          if (chunk) buffer.append(chunk);
+          chunk = undefined;
           message = buffer.readMessage();
         } catch {
           socket.destroy();

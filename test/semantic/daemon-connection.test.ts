@@ -516,6 +516,36 @@ describe('DaemonConnection — requests', () => {
     expect(socket!.destroyed).toBe(true);
   });
 
+  it('drops the connection when the ReadBuffer rejects a chunk as oversized', async () => {
+    let socket: FakeSocket | undefined;
+    const d = deps({
+      connect: vi.fn(async () => {
+        socket = silent();
+        return socket;
+      }),
+    });
+    // SDK >= 1.30 throws from `append` past its size cap; 1.29 never does, so
+    // simulate the throw for one marked chunk and leave every other call alone.
+    const append = ReadBuffer.prototype.append;
+    const spy = vi.spyOn(ReadBuffer.prototype, 'append').mockImplementation(function (
+      this: ReadBuffer,
+      chunk: Buffer,
+    ) {
+      if (chunk.includes('OVERFLOW')) throw new Error('ReadBuffer exceeded maximum size');
+      append.call(this, chunk);
+    });
+    try {
+      const pending = (await connected(d)).request('embed.query', { text: 'x' }, 1000);
+      await tick();
+      socket!.push('OVERFLOW\n');
+      await expect(pending).rejects.toBeInstanceOf(DaemonConnectionError);
+      await expect(pending).rejects.toThrow(/closed during embed\.query: ReadBuffer exceeded/);
+      expect(socket!.destroyed).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('holds the event loop only while an answer is awaited', async () => {
     let socket: FakeSocket | undefined;
     const d = deps({

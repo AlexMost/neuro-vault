@@ -201,6 +201,36 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     good.socket.destroy();
   });
 
+  it('closes only the client whose chunk overflows the ReadBuffer', async () => {
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({ echo: async (p) => p }),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+    });
+    // SDK >= 1.30 throws from `append` past its size cap; 1.29 never does, so
+    // simulate the throw for one marked chunk and leave every other call alone.
+    const append = ReadBuffer.prototype.append;
+    const spy = vi.spyOn(ReadBuffer.prototype, 'append').mockImplementation(function (
+      this: ReadBuffer,
+      chunk: Buffer,
+    ) {
+      if (chunk.includes('OVERFLOW')) throw new Error('ReadBuffer exceeded maximum size');
+      append.call(this, chunk);
+    });
+    try {
+      const bad = await LineClient.connect(socketPath);
+      const good = await LineClient.connect(socketPath);
+      bad.socket.write('OVERFLOW\n');
+      await bad.closed();
+      good.send({ jsonrpc: '2.0', id: 4, method: 't.echo', params: { ok: true } });
+      expect(await good.next()).toMatchObject({ id: 4, result: { ok: true } });
+      good.socket.destroy();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('ignores notifications and client-sent responses, and keeps the connection', async () => {
     handle = await startDaemonServer({
       socketPath,

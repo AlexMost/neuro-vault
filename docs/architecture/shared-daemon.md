@@ -113,7 +113,7 @@ A lock that names the `daemon.json` pid counts as stale even when that pid is al
 
 Each connection carries JSON-RPC 2.0 messages, one per line, framed exactly as the MCP stdio transport frames them: the SDK's `ReadBuffer` and `serializeMessage` (`@modelcontextprotocol/sdk/shared/stdio.js`), with one `ReadBuffer` per connection. `ReadBuffer.readMessage` validates each line against the SDK's JSON-RPC schema, so the daemon has no framing or message-shape code of its own. The MCP spec says a custom transport over a byte stream SHOULD reuse this framing.
 
-A line that is not a valid JSON-RPC message destroys that connection and touches no other. Notifications and responses a client sends are ignored: the daemon serves requests only. Responses go out in whatever order the handlers finish, matched by `id`.
+A line that is not a valid JSON-RPC message destroys that connection and touches no other. So does a line that outgrows the SDK's `ReadBuffer` size cap (10 MiB by default from SDK 1.30, where `append` throws): the daemon destroys that connection, and a session drops its socket and rejects its pending requests with `DaemonConnectionError`. Notifications and responses a client sends are ignored: the daemon serves requests only. Responses go out in whatever order the handlers finish, matched by `id`.
 
 Methods are `<service>.<method>`, routed by `ServiceRegistry` (`src/daemon/protocol.ts`), a map `namespace → { method: handler }`. Only a handler's own properties resolve, so `embed.toString` is an unknown method.
 

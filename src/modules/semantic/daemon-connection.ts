@@ -383,11 +383,14 @@ export class DaemonConnection {
     this.connections += 1;
     this.refWhilePending(socket);
     const buffer = new ReadBuffer();
-    socket.on('data', (chunk: Buffer) => {
-      buffer.append(chunk);
+    socket.on('data', (data: Buffer) => {
+      let chunk: Buffer | undefined = data;
       for (;;) {
         let message: JSONRPCMessage | null;
         try {
+          // `append` throws once a line outgrows the SDK's buffer cap (>= 1.30).
+          if (chunk) buffer.append(chunk);
+          chunk = undefined;
           message = buffer.readMessage();
         } catch (error) {
           // Not our daemon's framing: nothing more on this socket can be trusted.
