@@ -25,3 +25,13 @@ _Avoid_: keyword search, full-text search
 **Fusion**:
 Merging the semantic and lexical legs into the single ranked list a search returns.
 _Avoid_: merge, hybrid ranking
+
+### Shared daemon
+
+**Vault entry**:
+The shared state of one vault directory: its scope, its watcher and reconcile loop, its corpora and its lexical cache. There is one per vault directory, and every session attached to that directory shares it.
+_Avoid_: vault registry entry, shared vault
+
+**Attach**:
+A session becoming a client of a vault entry. The entry lives while any session is attached, and for the idle timeout after the last one leaves.
+_Avoid_: register, subscribe
