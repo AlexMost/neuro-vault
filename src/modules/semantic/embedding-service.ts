@@ -22,11 +22,14 @@ interface Loaded {
   padSide: 'left' | 'right';
 }
 
+/** The most texts one in-process `embedDocuments` call takes. */
+export const LOCAL_MAX_BATCH_SIZE = 8;
+
 /** The local, in-process embedding provider for one model profile. */
 export class EmbeddingService implements EmbeddingProvider {
   readonly identity: EmbeddingIdentity;
 
-  readonly maxBatchSize = 8;
+  readonly maxBatchSize = LOCAL_MAX_BATCH_SIZE;
 
   private readonly profile: ModelProfile;
 
