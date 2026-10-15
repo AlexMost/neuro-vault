@@ -74,7 +74,11 @@ export function createOwnCorpusBackendFactory(
   const createBackend = deps.createBackend ?? createCorpusBackend;
 
   return ({ vaultRoot, vaultName, reader, scope, enabled }): SemanticBackend => {
-    const store = new CorpusStore(vaultRoot, { warn, dims: deps.identity.dims });
+    const store = new CorpusStore(vaultRoot, {
+      warn,
+      modelKey: deps.identity.model_key,
+      dims: deps.identity.dims,
+    });
     const fsDeps = buildReconcileFsDeps({ vaultRoot, reader });
     const embedDocuments = deps.embedder.asDocumentEmbedFn();
 

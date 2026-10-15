@@ -6,14 +6,18 @@ Keeping this corpus fresh once the server is running — the per-vault watcher, 
 
 ## What it is
 
-Four pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any import from `src/modules/` — the indexer sees the embedding model only through a one-function port, `EmbedDocumentsFn = (texts: string[]) => Promise<number[][]>`, called once per note with the note-level text and every block text, vectors back in input order. A failed call fails only that note:
+The pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any import from `src/modules/` — the indexer sees the embedding model only through a one-function port, `EmbedDocumentsFn = (texts: string[]) => Promise<number[][]>`, called once per note with the note-level text and every block text, vectors back in input order. A failed call fails only that note:
 
 | File | Responsibility |
 | --- | --- |
 | `chunker.ts` | Splits a note into keyed blocks with line spans. |
 | `embed-text.ts` | Turns a note and its blocks into the exact strings sent to the model, and applies the size gate. |
-| `shard-store.ts` | Reads, writes, lists and deletes shards and the manifest; atomic writes; `.gitignore` upkeep. |
-| `reconcile.ts` | Brings the corpus into agreement with the vault. |
+| `layout.ts` | The path vocabulary: the corpus root, one model's directory, the reconcile lock's name, and the rule for a legal directory name. |
+| `shard-store.ts` | Reads, writes, lists and deletes the shards and manifest of one model's directory; atomic writes; `.gitignore` upkeep. |
+| `reconcile.ts` | Brings one model's corpus into agreement with the vault. |
+| `reconcile-lock.ts` | The per-vault cross-process lock a pass runs under. |
+| `legacy-migration.ts` | Moves a single-corpus layout into its model's directory. |
+| `prune.ts` | Lists the models whose corpora exist and removes the others (`index --prune`). |
 
 `types.ts` holds the shapes and the three constants that fix how text becomes vectors: `MIN_CHARS` (200), `EMBED_STRATEGY` (`token-window-v1`: notes and blocks are bounded by the profile's token window, not by a character budget) and `EMBED_VERSION` (2). It holds **no model constants**: which model made the vectors is not the corpus's to know. The embedding provider reports an `EmbeddingIdentity` (`provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens` — see [`embedding-pipeline.md`](./embedding-pipeline.md)), and `identity.ts` derives the corpus identity from it: `corpusIdentityOf` takes every field the provider reports and adds `embed_version` and `strategy` from this build's constants — exactly the fields of the manifest below, minus `created` — and `formatIdentity` names an identity (`<model_key> (embed_version <n>)`) in rebuild messages.
 
@@ -69,9 +73,24 @@ A tokenizer can declare no real window (a `model_max_length` of 1e15, say), and 
 
 ```
 <vault>/.neuro-vault/corpus/
-  manifest.json                # { embed_version, provider, model_key, model_id, revision, dtype, dims, pooling, max_tokens, strategy, created }  (manifest v2)
-  notes/<sha256(path)[:32]>.json
+  reconcile.lock               # { host, pid, token, acquired } while a pass runs (any model)
+  <model_key>/                 # one per model profile, e.g. harrier-270m/
+    manifest.json              # { embed_version, provider, model_key, model_id, revision, dtype, dims, pooling, max_tokens, strategy, created }  (manifest v2)
+    notes/<sha256(path)[:32]>.json
 ```
+
+Each model profile has its own directory, named by its `model_key`: readable on disk and in `--prune` output, and stable across a revision bump, so a profile that moves to a new pinned revision rebuilds its directory in place rather than leaving an orphan behind. Switching `--model` therefore selects a directory; it reads, rewrites and discards nothing of any other model's. A directory name must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` and, compared case-insensitively, must not be `notes`, `manifest.json` or `reconcile.lock`. The leading-character rule keeps `.`, `..` and dot-directories out of a path segment that a legacy manifest's `model_key` is read into; the three names are the corpus root's own entries, and `Notes` is the same directory as `notes` on a case-insensitive filesystem. All three shipped profile keys pass. The `.gitignore` entry is still the single line `.neuro-vault/corpus/`.
+
+### Migration from the single-corpus layout
+
+Before per-model directories, `manifest.json` and `notes/` sat directly under `.neuro-vault/corpus/`. The first reconcile pass over a vault on this layout moves them into the manifest's own `model_key` directory, under the vault's lock (see [Concurrency](#concurrency-the-reconcile-lock)) and before the manifest is read. Every server start and every `index` run goes through a pass, so every vault migrates on its first pass after the upgrade; `eval` never migrates.
+
+- **How.** It reads the root manifest for its `model_key`, creates `<model_key>/`, renames `notes/` into it, then renames `manifest.json` into it, and writes one stderr line (`neuro-vault corpus: moved the <model_key> corpus of vault <path> into .neuro-vault/corpus/<model_key>/ (one corpus directory per model)`). They are renames, never copies, and nothing is re-embedded: the pass that follows finds every shard in place, so an unchanged vault costs an incremental stat pass and embeds nothing. The manifest moves last, so a migration interrupted between the two renames leaves the root manifest behind and the target without one, and the next pass completes it. A source that has already gone is "already moved", never an error.
+- **When it does not move anything.** With no root manifest there is nothing to do. It skips, silently (a warning would repeat on every pass), when the root manifest cannot be read or parsed, when it does not validate as a manifest, or when its `model_key` is not a legal directory name; the pass then works in a fresh directory for the active model, as it would on a new vault. It also skips when `<model_key>/manifest.json` already exists, which leaves the legacy entries where they are.
+- **A pre-per-model build still running.** An older build on the same vault keeps using the root layout. Once the migration has moved the root corpus away, that build finds no root manifest and rebuilds at the root once; the new build never reads those files again.
+- **Leftovers.** Anything the migration skipped, and anything a pre-per-model build rebuilt at the root afterwards, stays until `neuro-vault-mcp index --prune` removes it (see [Pruning](#pruning-other-models-corpora)).
+
+A corpus whose identity differs from the running build's — a legacy corpus on an older model, say — still migrates into its own key's directory first. It is then never read by a build that selects another model, and `--prune` removes it.
 
 A shard is self-describing, so change detection never consults the manifest:
 
@@ -104,12 +123,14 @@ The one case that throws instead is writing a vector of the wrong dimension: the
 
 `reconcileCorpus(deps, opts)` takes ports — `scan`, `stat`, `readNote`, `embedDocuments`, a `CorpusStore` — and returns `{ total, embedded, reused, renamed, deleted, failed }`. In order:
 
-1. `ensureManifest` compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (every manifest field except `created`). A mismatch, or a missing manifest while shards exist, discards every shard and rebuilds. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
+0. Take the vault's lock, then migrate a single-corpus layout (see [Concurrency](#concurrency-the-reconcile-lock) and [Migration](#migration-from-the-single-corpus-layout)). Everything below reads the corpus, so a pass that waited sees what the previous holder left.
+1. `ensureManifest` compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (every manifest field except `created`). A mismatch, or a missing manifest while shards exist, discards every shard of this model's directory and rebuilds it. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
 2. Take the scoped path set from `scan()` and the shard map from `listShards()`. Reconcile applies no exclusion rule of its own.
 3. Shards whose path is not in scope become deletion candidates, indexed by content hash — the only place a rename can be recognised.
 4. For each path in scope: equal `mtime` **and** `size` → reused, without opening the note. Otherwise read it; an equal `content_hash` → rewrite the shard's metadata and keep the vectors (**reused**); otherwise embed (**embedded**). A path with no shard whose hash matches a deletion candidate is a **rename**: the old shard is unlinked and the note is re-embedded under its new path.
 5. Every remaining deletion candidate is unlinked (**deleted**).
 6. Ensure the `.gitignore` entry.
+7. Release the lock, in a `finally`.
 
 Progress is reported once per processed note as `{ indexed, total }` counted in notes — the shape slice #3 (CLI progress) and slice #5 (`semantic_status`) consume unchanged. A failure to read, embed or store one note is counted in `failed`, warned on stderr, leaves that note's previous shard untouched, and never aborts the run.
 
@@ -117,13 +138,38 @@ Progress is reported once per processed note as `{ indexed, total }` counted in 
 
 Both embed-text formulas carry path breadcrumbs, so reusing a vector across a rename would leave the old path inside it until the note's text next changed — and a corpus maintained incrementally would then differ from one built from scratch. A rename therefore re-embeds, and two notes with identical content at different paths get different vectors. The payoff is a testable invariant: **any sequence of incremental reconciles ending in a given vault state produces the same corpus as a from-scratch index of that state**, modulo `mtime`/`size`.
 
-### A model change is a rebuild, and never silent
+### An identity change within a model is a rebuild, and never silent
 
-The manifest records everything that determines a stored vector (manifest v2): `embed_version`, `provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens` and `strategy`, plus the informational `created`. `isManifestCompatible` compares every field except `created`, so switching `--model`, moving a profile to a new pinned `revision`, changing its `dtype`, `pooling` or token window, or bumping `embed_version` or `strategy` each make the stored manifest incompatible. The whole corpus is then discarded and re-embedded — vectors from two models, or from the same model under two configurations, do not share a space. The query prefix is not in the manifest: it changes no stored vector.
+The manifest records everything that determines a stored vector (manifest v2): `embed_version`, `provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens` and `strategy`, plus the informational `created`. `isManifestCompatible` compares every field except `created`, so moving a profile to a new pinned `revision`, changing its `dtype`, `pooling` or token window, or bumping `embed_version` or `strategy` each make the stored manifest incompatible. Another `--model` is not on that list: it selects another directory and discards nothing. The directory's corpus is then discarded and re-embedded — vectors from the same model under two configurations do not share a space — and no other model's directory is touched. The query prefix is not in the manifest: it changes no stored vector.
 
 A manifest written before manifest v2 lacks the producer fields (`provider`, `revision`, `dtype`, `pooling`, `max_tokens`). It still parses, as a `StoredManifest` with those fields absent, and it compares as incompatible — so it triggers a rebuild, and the rebuild message can name the `model_key` and `embed_version` it replaces instead of reporting an unreadable manifest. A manifest that cannot be parsed at all, or a missing manifest while shards exist, is named as `an unreadable or missing manifest`.
 
-The rebuild is announced where the user will see it. The server logs one line to stderr at startup — `neuro-vault corpus: vault "<name>" was indexed with <model_key> (embed_version <n>); active model is <model_key> (embed_version <m>) — discarding the corpus and re-indexing in the background` — and `index` prints `rebuilding <name>: corpus was indexed with …; active model is …` (the same two descriptions) before its progress. Only an actual discard is reported: a fresh vault with no corpus yet is not a rebuild. Run `index` and the server with the same `--model`, or each will rebuild the other's corpus.
+The rebuild is announced where the user will see it. The server logs one line to stderr at startup — `neuro-vault corpus: vault "<name>" was indexed with <model_key> (embed_version <n>); active model is <model_key> (embed_version <m>) — discarding the corpus and re-indexing in the background` — and `index` prints `rebuilding <name>: corpus was indexed with …; active model is …` (the same two descriptions) before its progress. Only an actual discard is reported: a fresh vault with no corpus yet is not a rebuild. Give `index` the server's `--model` so it pre-warms the corpus the server serves; any other value builds a separate corpus beside it.
+
+## Concurrency: the reconcile lock
+
+Every MCP client session runs its own server process, and `index` runs beside them, so several processes can reconcile one vault at once. Without coordination they rebuilt shards against each other and deleted each other's fresh writes. A pass therefore runs under one lock per vault, shared by every model: `<vault>/.neuro-vault/corpus/reconcile.lock`. `index --prune` takes the same lock; `eval` never does.
+
+- **Taking it.** The file is created exclusively (`wx`) with `{ host, pid, token, acquired }`: this machine's hostname, the process id, a token unique to this acquisition, and a timestamp. Failing because the file exists means someone holds it, and the contender reads it to judge the holder.
+- **Live or stale.** A holder on another host is always live: its pid, from another machine or another container's pid namespace, cannot be checked here, and judging it dead would take a live lock away. On this host, a holder is stale when `kill(pid, 0)` reports no such process, or when the pid is this process's own (passes over one vault never overlap within a process, so that is a dead predecessor's pid); a process that exists, even under another user, is live. A lock written without a `host` reads as this host's. A file whose content does not parse is taken to be mid-write for 1 s, timed from when this waiter first saw that file so, then stale. A stale lock is replaced only if the file still holds exactly what was judged stale.
+- **Waiting.** A live holder is polled starting at 50 ms, doubling to a 2 s cap, for at most 30 minutes in total — about three times the measured cold index of the default profile on a ~950-note vault, which a holder may also spend downloading its model on a first run. `index` announces the wait once on stderr; a server waits silently and keeps serving its snapshot (it writes one line only on a timeout). A lock path that exists but keeps reading as absent, such as a dangling symlink, is waited on the same way and under the same bound. An abort (the server shutting down) ends the wait without touching the holder's lock.
+- **Releasing.** The lock is removed in a `finally`, and only if the file still holds exactly the content this acquisition wrote, token included, so a holder never removes another's lock, even one carrying its own pid. A release failure warns and never throws.
+- **A pass that waited reuses what the holder built.** The manifest and shard listing are read after the lock is held, so a corpus that became compatible while waiting gets an incremental pass, and nothing the holder embedded is embedded twice. The server also reloads its snapshot after a pass that waited, whatever the counts say: a note the holder re-embedded counts as `reused` here, so the counts alone would leave this process serving the old vectors (see [`semantic-backend.md`](./semantic-backend.md#live-promotion)).
+- **Past 30 minutes.** The server keeps its state and snapshot, writes one stderr line naming the vault, the holder's pid and host and the lock file, and retries on its failure backoff (see [`semantic-backend.md`](./semantic-backend.md#startup-serve-what-you-can-then-catch-up)). `index` writes `waiting for another neuro-vault process (pid <n>[ on <host>]) to finish with <vault>…` on stderr when it starts waiting — the host only when it is not this one, and no parenthesis at all while the holder's pid is unknown — and treats a timeout as that vault's fatal error: a stderr line, the next vault, and a non-zero exit.
+
+Three risks remain, each accepted:
+
+- **A simultaneous stale-steal.** Two waiters judge one dead lock stale in the same instant, and the second removes the first's fresh lock. The conditional removal narrows this to microseconds; the worst case is one pair of overlapping passes, which self-correct on the next pass.
+- **Pid reuse.** A holder died and an unrelated live process took its pid, so the lock looks live and every pass waits the full 30 minutes. The server's timeout line names the lock file; deleting the file clears it.
+- **A dead holder on another host.** A lock left by a crashed process on another machine or container can never be judged stale from here. The remedy is the same, and taking such a lock over on a guess would bring back the concurrent passes the lock exists to prevent.
+
+Because the lock is per vault and not per model, servers on different models serialise their passes. That is accepted: concurrent cold indexes were half of the CPU in the incident that motivated this layout, and a waiting server keeps serving its own snapshot.
+
+## Pruning other models' corpora
+
+Per-model directories trade disk for a switch that discards nothing: two models' corpora coexist until something removes one. `neuro-vault-mcp index --prune` is that something, and nothing removes a corpus automatically. After reconciling a vault, it takes the vault's lock and deletes every directory directly under `.neuro-vault/corpus/` except the selected model's (other models' directories, and a leftover legacy `notes/`), plus a leftover legacy `manifest.json`. It leaves `reconcile.lock` and any other file. It reports on stdout `pruned <vault>: removed <a>, <b>` or `pruned <vault>: nothing to remove`.
+
+It is skipped for a vault whose reconcile threw: the error prints as `index <vault>: <message>` on stderr and nothing is pruned. It is also skipped for one that returned with notes in scope but none embedded, reused or renamed — what an offline first run of a new model looks like, since embed failures are contained per note — and then stderr says `not pruning <vault>: no note was indexed with <model_key>, so the other models' corpora are kept`. Either way a failed run cannot leave a vault with nothing to serve. Nor can a concurrent prune: two `index --prune` runs on different models could each reconcile, then prune the other's directory, so the prune refuses — removing nothing, and failing that vault with `index <vault>: … the <model_key> corpus has no manifest, so nothing would be left to serve` — when the selected model's corpus is missing by the time it holds the lock. A prune that has to wait for the lock prints the same `waiting for another neuro-vault process …` line as the reconcile. A partial failure, where some notes failed but others were indexed, still prunes. Being under the lock, it never deletes a directory another process is mid-pass in; a server serving a pruned model keeps its in-memory snapshot, and its next pass rebuilds the directory.
 
 ## Measured numbers
 
@@ -141,4 +187,4 @@ A cold index is minutes for the two smaller profiles and over half an hour for `
 
 ## Boundaries
 
-This is an indexing library, not a runtime — `reconcileCorpus` takes ports and returns a summary; it starts nothing on its own and knows nothing about watchers, servers, or CLIs. Both of its callers live elsewhere: the `neuro-vault-mcp index` CLI runs it once per invocation, and the per-vault semantic backend runs it at startup and again on every debounced watcher tick — see [`semantic-backend.md`](./semantic-backend.md). Cross-process locking is still out of scope: concurrent indexers (two server processes, or a server and a concurrent `index` run) are structurally safe — atomic per-shard writes, self-correcting on the next pass — but do duplicate work.
+This is an indexing library, not a runtime — `reconcileCorpus` takes ports and returns a summary; it starts nothing on its own and knows nothing about watchers, servers, or CLIs. Both of its callers live elsewhere: the `neuro-vault-mcp index` CLI runs it once per invocation, and the per-vault semantic backend runs it at startup and again on every debounced watcher tick — see [`semantic-backend.md`](./semantic-backend.md). Passes over one vault are serialised across processes by `reconcile.lock` (see [Concurrency](#concurrency-the-reconcile-lock)); sharing one reconcile or one watcher between processes is still out of scope, and is what the shared daemon (#145) is for.

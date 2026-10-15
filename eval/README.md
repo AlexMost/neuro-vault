@@ -82,10 +82,14 @@ An unrecognized flag, a missing value, an unknown `--pipeline` or `--model`
 value, `--baseline` without `--stats`, or `--stats` with `--pipeline fused` fails
 immediately — naming the supported values where there are any.
 
-The run reads `<vault>/.neuro-vault/corpus/` — the shard store this server
-owns and reconciles. It never builds or rebuilds it: the corpus must already
-exist **and have been built by the profile you pass to `--model`**, or the run
-fails naming the `neuro-vault-mcp index` command that fixes it (see below).
+The run reads `<vault>/.neuro-vault/corpus/<model_key>/` — the shard store this
+server owns and reconciles, in the directory of the profile you pass to
+`--model`. It never builds, migrates, locks or deletes anything there: that
+model's corpus must already exist **and have been built by the profile you pass
+to `--model`**, or the run fails naming the `neuro-vault-mcp index` command that
+fixes it (see below). A vault still on the single-corpus layout that preceded
+per-model directories is moved into its model's directory by the first server or
+`index` pass over it, not by `eval`.
 
 ## Axis: model
 
@@ -96,7 +100,7 @@ fails naming the `neuro-vault-mcp index` command that fixes it (see below).
   thresholds `--stats` reports on). An unknown key fails with the list of
   supported ones.
 
-The corpus holds vectors from exactly one model, and a query vector is only
+A model's corpus holds vectors from exactly one model, and a query vector is only
 meaningful against vectors from the same model — different models can even share
 a width and then score as noise rather than fail. So before any query is
 embedded, the runner compares the corpus manifest with the selected profile
@@ -105,10 +109,12 @@ refuses to run on a mismatch. It reads the manifest ahead of listing shards, so
 a corpus of another width is refused on its manifest instead of failing shard
 by shard. There are three refusals, each naming the command that fixes it:
 
-- the corpus was indexed with another profile — the message names both the
-  stored and the requested model;
-- the corpus is missing or empty;
-- the corpus has no readable manifest.
+- the selected model's corpus is missing or empty — the message names its
+  directory and, when other models' corpora exist in the vault, lists them;
+- the model's corpus was built with another identity (a different revision,
+  `embed_version`, dtype, …) — the message names both the stored and the
+  requested identity;
+- the model's corpus has no readable manifest.
 
 The command is `neuro-vault-mcp index --vault <vault> --model <key>`, with
 the resolved vault root and the selected profile's key (the default when
@@ -121,13 +127,17 @@ neuro-vault-mcp index --vault <copy> --model <key>
 npm run eval -- --vault <copy> --model <key>
 ```
 
-This is destructive to that vault's corpus by design: a vault has one corpus
-directory, so indexing it for another profile discards and rebuilds it. Run the
-loop against a **copy** of the vault (the copy keeps its `.git`, so `vault_sha`
-stays meaningful, and its golden set), never against one a live server is
-using — a server started with a different `--model` would rebuild the corpus
-against your runs. Compare the resulting reports on `--pipeline semantic` (see
-[Scoring](#scoring)).
+Each profile has its own corpus directory in the vault, so comparing models is
+an A/B and destroys nothing: `index --model X`, `eval --model X`, `index --model Y`,
+`eval --model Y`, with both corpora kept (a corpus that was already built is
+reused, not re-embedded). A server on another `--model` serving the same vault
+does not interfere either — it reads and writes its own directory, and passes
+over one vault take turns on a lock. Running the loop on a **copy** of the
+vault is still reasonable: the copy keeps its `.git`, so `vault_sha` stays
+meaningful, along with its golden set, and your live vault gains no extra
+corpus directories. When you are done, `neuro-vault-mcp index --vault <vault>
+--model <key> --prune` removes the other profiles' corpora. Compare the resulting
+reports on `--pipeline semantic` (see [Scoring](#scoring)).
 
 ## Axis: pipeline
 
@@ -346,8 +356,9 @@ completes, and the suggestions are then only as good as the vaults are alike.
 1. **Take the baseline first.** On the profile whose thresholds you want to
    reproduce, against a corpus built by it, run
    `npm run eval -- --vault <copy> --model <key> --stats` and keep the report.
-   A vault has one corpus directory, so once it is re-indexed for another
-   profile this baseline can no longer be reproduced.
+   Each profile's corpus is kept beside the others, so indexing the vault for
+   another profile does not take this baseline away — unless you `index --prune`
+   that corpus, or the vault's notes change.
 2. **Per profile:** index the vault copy with it, then run
    `npm run eval -- --vault <copy> --model <key> --stats --baseline <baseline report>`
    and read each default's `suggested` value.

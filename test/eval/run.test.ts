@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CorpusStore } from '../../src/lib/obsidian/corpus/shard-store.js';
 import { TEST_DIMS } from '../_identity.js';
+import { modelCorpusDir } from '../../src/lib/obsidian/corpus/layout.js';
 import { corpusIdentityOf } from '../../src/lib/obsidian/corpus/identity.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
 import { GoldenSetError } from '../../eval/golden.js';
@@ -86,7 +87,7 @@ describe('runEval end-to-end (stub embedder)', () => {
 
   // More notes than the seed pool, so the expansion leg has non-seed neighbours to measure.
   async function addExtraNotes(): Promise<void> {
-    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
+    const store = new CorpusStore(vaultRoot, { modelKey: GRANITE.key, dims: TEST_DIMS });
     for (let i = 1; i <= 10; i += 1) {
       await store.writeShard({
         path: `Notes/extra-${i}.md`,
@@ -109,7 +110,7 @@ describe('runEval end-to-end (stub embedder)', () => {
       await mkdir(path.join(vaultRoot, path.dirname(note)), { recursive: true });
       await writeFile(path.join(vaultRoot, note), text);
     }
-    const store = new CorpusStore(vaultRoot, { dims: TEST_DIMS });
+    const store = new CorpusStore(vaultRoot, { modelKey: GRANITE.key, dims: TEST_DIMS });
     await store.ensureManifest(corpusIdentityOf(identityOf(GRANITE)));
     await store.writeShard({
       path: 'Notes/target.md',
@@ -440,7 +441,7 @@ describe('runEval end-to-end (stub embedder)', () => {
   });
 
   it('hands the selected profile to the corpus gate before any query is embedded', async () => {
-    await makeVault(GOLDEN); // the fixture corpus is granite-97m's
+    await makeVault(GOLDEN); // the fixture corpus is granite-97m's, so harrier-270m has none
     const embed = vi.fn(() => Promise.reject(new Error('embed must not run')));
     const run = runEval(
       {
@@ -452,7 +453,9 @@ describe('runEval end-to-end (stub embedder)', () => {
       { embed, resultsDir },
     );
     await expect(run).rejects.toThrow(BackendError);
-    await expect(run).rejects.toThrow(/not harrier-270m/);
+    await expect(run).rejects.toThrow(
+      `own corpus at ${modelCorpusDir(vaultRoot, 'harrier-270m')} is missing or empty (this vault has corpora for: granite-97m) — build it with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
+    );
     expect(embed).not.toHaveBeenCalled();
   });
 });

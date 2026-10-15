@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 
 import { buildEmbedInputs } from './embed-text.js';
 import type { CorpusIdentity } from './identity.js';
+import { corpusRootOf } from './layout.js';
+import { migrateLegacyCorpus } from './legacy-migration.js';
+import { acquireCorpusLock, type AcquireOptions, type CorpusLock } from './reconcile-lock.js';
 import { CorpusStore, ensureCorpusGitignored } from './shard-store.js';
 import type { CorpusBlock, CorpusShard, EmbedDocumentsFn, StoredManifest } from './types.js';
 import { encodeVector } from './vector-codec.js';
@@ -33,6 +36,17 @@ export interface ReconcileDeps {
   store: CorpusStore;
   /** The identity the corpus must carry — the provider's, under this build's extraction. */
   identity: CorpusIdentity;
+  /**
+   * Takes the vault's cross-process reconcile lock (design D5, D6). Defaults to
+   * `acquireCorpusLock` on `<vaultRoot>/.neuro-vault/corpus/`.
+   */
+  acquireLock?: (opts: AcquireOptions) => Promise<CorpusLock>;
+  /**
+   * Moves a single-corpus layout into its model's directory (design D3, D4).
+   * Runs under the lock, before the manifest is read. Defaults to
+   * `migrateLegacyCorpus` on the vault.
+   */
+  migrateLegacy?: () => Promise<unknown>;
   /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
   warn?: (message: string) => void;
 }
@@ -54,6 +68,13 @@ export interface ReconcileOptions {
    * reported.
    */
   onRebuild?: (rebuild: { stored: StoredManifest | null; active: CorpusIdentity }) => void;
+  /**
+   * Called once, before anything is read, when another live process holds the
+   * vault's lock and this pass starts waiting for it (design D7, D9).
+   * Both fields are null while the lock's content is unreadable; `holderHost`
+   * is null for a lock written without one.
+   */
+  onLockWait?: (wait: { holderPid: number | null; holderHost: string | null }) => void;
 }
 
 export interface ReconcileSummary {
@@ -73,6 +94,9 @@ export function contentHash(content: string): string {
 /**
  * Brings the corpus into agreement with the vault.
  *
+ * Runs under the vault's cross-process lock, after moving a single-corpus
+ * layout into its model directory (design D3–D6).
+ *
  * Membership comes from `scan` alone — reconcile applies no exclusion rule of
  * its own. `mtime` + `size` are a cheap pre-check, `content_hash` is the truth,
  * and a hash matching a shard whose path has vanished identifies a rename. A
@@ -89,16 +113,62 @@ export async function reconcileCorpus(
   deps: ReconcileDeps,
   opts: ReconcileOptions = {},
 ): Promise<ReconcileSummary> {
-  const { vaultRoot, scan, stat, readNote, embedDocuments, store } = deps;
   const warn = deps.warn ?? ((message: string) => console.error(message));
 
-  // Before any I/O. The setup below — a manifest write, a full scan, a full
-  // shard listing — is itself seconds of disk work on a large corpus, and a
-  // pass kicked off just as the client hung up would otherwise run all of it
+  // Before any I/O. The setup below — a lock, a manifest write, a full scan, a
+  // full shard listing — is itself seconds of disk work on a large corpus, and
+  // a pass kicked off just as the client hung up would otherwise run all of it
   // before reaching the first per-note check.
-  if (opts.signal?.aborted) {
-    return { total: 0, embedded: 0, reused: 0, renamed: 0, deleted: 0, failed: 0 };
+  if (opts.signal?.aborted) return emptySummary();
+
+  const acquireLock =
+    deps.acquireLock ??
+    ((lockOpts: AcquireOptions) =>
+      acquireCorpusLock(corpusRootOf(deps.vaultRoot), { warn }, lockOpts));
+  const migrateLegacy = deps.migrateLegacy ?? (() => migrateLegacyCorpus(deps.vaultRoot, { warn }));
+
+  let lock: CorpusLock;
+  try {
+    lock = await acquireLock({
+      signal: opts.signal,
+      onWait: (wait) => {
+        // Guarded like onProgress: a throwing callback must not abort the run.
+        try {
+          opts.onLockWait?.(wait);
+        } catch (err) {
+          warn(`neuro-vault corpus: onLockWait callback threw: ${String(err)}`);
+        }
+      },
+    });
+  } catch (err) {
+    // An abort while waiting is a shutdown, not a failure — the same empty
+    // result as an abort before any I/O. The holder's lock is not ours to touch.
+    if (opts.signal?.aborted) return emptySummary();
+    throw err;
   }
+
+  // Everything that reads the corpus happens from here on, under the lock: a
+  // pass that waited sees what the previous holder wrote (design D6).
+  try {
+    if (opts.signal?.aborted) return emptySummary();
+    await migrateLegacy();
+    return await reconcileLocked(deps, opts, warn);
+  } finally {
+    await lock.release();
+  }
+}
+
+function emptySummary(): ReconcileSummary {
+  return { total: 0, embedded: 0, reused: 0, renamed: 0, deleted: 0, failed: 0 };
+}
+
+/** The pass proper (design D6 steps after migration). The caller holds the vault's lock. */
+async function reconcileLocked(
+  deps: ReconcileDeps,
+  opts: ReconcileOptions,
+  warn: (message: string) => void,
+): Promise<ReconcileSummary> {
+  const { vaultRoot, scan, stat, readNote, embedDocuments, store } = deps;
 
   // First, so an incompatible corpus identity discards the shards before they
   // are read: the shard map below must not see vectors of unknown provenance.

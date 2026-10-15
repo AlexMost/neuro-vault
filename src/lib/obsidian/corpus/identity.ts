@@ -71,3 +71,28 @@ export function formatRebuild(
       .join(', ')})`;
   return { stored: name(stored), active: name(active) };
 }
+
+/**
+ * Whether `value` is a readable manifest: every v2 field, with the producer
+ * fields a legacy (v1) manifest lacks allowed to be absent. Shared by the
+ * store and the legacy migration, so both agree on what "parses" means.
+ */
+export function isStoredManifest(value: unknown): value is StoredManifest {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  const optional = (key: string, type: 'string' | 'number') =>
+    v[key] === undefined || typeof v[key] === type;
+  return (
+    typeof v.embed_version === 'number' &&
+    typeof v.model_key === 'string' &&
+    typeof v.model_id === 'string' &&
+    typeof v.dims === 'number' &&
+    typeof v.strategy === 'string' &&
+    typeof v.created === 'string' &&
+    optional('provider', 'string') &&
+    optional('revision', 'string') &&
+    optional('dtype', 'string') &&
+    optional('pooling', 'string') &&
+    optional('max_tokens', 'number')
+  );
+}

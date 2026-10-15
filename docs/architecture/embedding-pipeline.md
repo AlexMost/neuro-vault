@@ -24,7 +24,7 @@ To embed, the service:
 2. Turns each trimmed text into a model input row made of exactly the tokens the model was trained on — special-token template included, cut to `maxTokens` without losing the template's end (see [Tokenisation](#tokenisation)).
 3. Pads the rows of a call into one batch, runs a single forward pass, pools the output by the attention mask ([`pooling.ts`](../../src/modules/semantic/pooling.ts)) and normalizes each vector to unit length.
 
-The service also exposes `identity` (`provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens`) — everything that determines the vectors it produces. The corpus records that identity in its manifest, adds its own `embed_version` and `strategy`, and compares every field on startup; see [`own-corpus.md`](./own-corpus.md) for what a mismatch does (discard and rebuild).
+The service also exposes `identity` (`provider`, `model_key`, `model_id`, `revision`, `dtype`, `dims`, `pooling`, `max_tokens`) — everything that determines the vectors it produces. The corpus records that identity in its manifest, adds its own `embed_version` and `strategy`, and compares every field on startup; see [`own-corpus.md`](./own-corpus.md) for what a mismatch does (that model's directory is discarded and rebuilt — each model keeps its own).
 
 ## Where the model lives
 
@@ -115,4 +115,4 @@ The contract: **positions come from the attention mask, never from token ids.** 
 ## Boundaries
 
 - The service does not store or cache embeddings. Caching would be wrong: queries are short-lived and the corpus already holds its own pre-computed embeddings.
-- `--model` picks the profile; the service never has a default of its own. The caller passes a `ModelProfile`, and the corpus — not the caller — is responsible for noticing that the stored vectors came from another model or configuration (via `identity`), so a vault indexed with a different profile is rebuilt instead of mixing vector spaces. See [`own-corpus.md`](./own-corpus.md).
+- `--model` picks the profile; the service never has a default of its own. The caller passes a `ModelProfile`, and the corpus — not the caller — is responsible for noticing that the stored vectors came from another model or configuration (via `identity`), so vector spaces are never mixed: another profile reads and writes its own directory in the vault, and only an identity change within one model (a new revision, `embed_version`, …) rebuilds that model's directory. See [`own-corpus.md`](./own-corpus.md).
