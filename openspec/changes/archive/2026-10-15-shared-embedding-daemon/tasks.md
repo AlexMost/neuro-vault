@@ -48,4 +48,4 @@ Two PRs, in order. Groups are marked **sequential** or **parallel-safe**. Every 
 ### 2c. Docs and close-out — sequential after 2b
 
 - [x] 2.9 `docs/architecture/embedding-pipeline.md` (provider factory, the facade, where the model lives), `semantic-backend.md` (queue in two places), `shared-daemon.md` (facade section); `docs/guide/installation.md` (what runs, where `daemon.log` is, idle exit), `configuration.md` (`--shared`/`--no-shared`, `daemon status|stop`, `--idle-timeout`; limitations list reworded); repo `README.md` ("no external processes" → one shared background process per installed version, on demand, gone when idle)
-- [ ] 2.10 `/opsx:verify` → `verify.md` with 1.11, 2.7 and 2.8; `retrospective.md`; `/opsx:archive` (specs synced); final PR carries `Closes #145` and release notes for the minor
+- [x] 2.10 `/opsx:verify` → `verify.md` with 1.11, 2.7 and 2.8; `retrospective.md`; `/opsx:archive` (specs synced); final PR carries `Closes #145` and release notes for the minor
