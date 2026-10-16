@@ -58,7 +58,11 @@ export interface ReconcileLoopDeps {
 export interface ReconcileLoop {
   /** Starts the profile's startup selection; the next pass reconciles it. */
   addProfile(profile: LoopProfile): void;
-  /** Leaves the loop; the caller disposes the corpus. */
+  /**
+   * Leaves the loop; the caller disposes the corpus. The loop disposes it again
+   * when it finishes any work on it still in flight, so that corpus object must
+   * not be attached again — a later `addProfile` with the same key takes a new one.
+   */
   removeProfile(key: string): void;
   status(key: string): BackendStatus;
   lastReconcile(key: string): LastReconcile | undefined;
@@ -226,7 +230,9 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
         readNote: deps.readNote,
         embedDocuments,
         identity,
-        warn,
+        // Per-note warnings name the vault root only; with several profiles they
+        // must say whose corpus failed, as the guard's reason points at them.
+        warn: (message) => warn(`[profile "${key}"] ${message}`),
       },
       corpus,
       paths,
@@ -279,6 +285,8 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
   async function runPass(): Promise<void> {
     passBegun = true;
     lockTimedOut = false;
+    // A dispose() between the request and this microtask has nothing to abort yet.
+    if (disposed) return;
     const members = [...profiles.values()].filter((state) => state.profile.enabled);
     if (members.length === 0) return;
     // A pass that follows a failure IS a build in flight, so say so — else the

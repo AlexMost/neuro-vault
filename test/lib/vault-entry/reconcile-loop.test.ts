@@ -1038,6 +1038,35 @@ describe('createReconcileLoop, many profiles', () => {
     expect(t.lock.calls()).toBe(1);
   });
 
+  it('runs no pass when disposed in the tick that requested it', async () => {
+    const t = await twoProfiles({ 'n1.md': body('1') });
+    t.loop.addProfile(t.profiles.a);
+    t.loop.addProfile(t.profiles.b);
+    await t.loop.dispose();
+    await t.loop.whenSettled();
+    expect(t.lock.calls()).toBe(0);
+    expect(t.scan).not.toHaveBeenCalled();
+    expect(t.order).toEqual([]);
+  });
+
+  it('labels per-note warnings with the profile', async () => {
+    const files = { 'n1.md': body('1') };
+    const t = await twoProfiles(files, {
+      readNote: async (p) => {
+        throw new Error(`EACCES ${p}`);
+      },
+    });
+    t.loop.addProfile(t.profiles.a);
+    t.loop.addProfile(t.profiles.b);
+    await t.loop.whenSettled();
+    const perNote = t.warn.mock.calls
+      .map(([m]) => String(m))
+      .filter((m) => m.includes('failed to index "n1.md"'));
+    expect(perNote).toHaveLength(2);
+    expect(perNote[0]).toMatch(/^\[profile "a"\] neuro-vault corpus: failed to index/);
+    expect(perNote[1]).toMatch(/^\[profile "b"\] neuro-vault corpus: failed to index/);
+  });
+
   it('marks the corpus gitignored once, after the profiles', async () => {
     const t = await twoProfiles({ 'n1.md': body('1') });
     await writeFile(path.join(t.root, '.gitignore'), 'node_modules/\n');
