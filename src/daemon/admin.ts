@@ -13,6 +13,8 @@ import { packageMeta } from '../package-meta.js';
 import type { DaemonInfo } from './info.js';
 import { claimLock, defaultLockFs, parseHolder, type LockFs } from './lock.js';
 import { probeSocket, type SocketConnect, type Timers } from './probe.js';
+import type { ProfileInfo, VaultInfo } from '../lib/vault-entry/index.js';
+
 import type { DaemonInfoResult } from './protocol.js';
 import type { SocketDirFs } from './socket-dir.js';
 
@@ -274,6 +276,45 @@ async function statusOne(d: AdminDeps, entry: Entry, print: Write): Promise<void
   print(
     `${live.version}  pid ${live.pid}  clients ${live.clients}  loaded [${loaded}]  alive  ${info.socket}`,
   );
+  // A daemon of another version answers without `vault`: it has no entries to show.
+  for (const vault of (live.services as { vault?: VaultInfo[] }).vault ?? []) {
+    print(vaultLine(vault));
+    for (const profile of vault.profiles) print(profileLine(profile));
+  }
+}
+
+function vaultLine(vault: VaultInfo): string {
+  const who =
+    vault.clients > 0 ? `clients ${vault.clients}` : `idle since ${vault.idle_since ?? '?'}`;
+  return `  vault ${vault.vault}  ${who}`;
+}
+
+function profileLine(profile: ProfileInfo): string {
+  const parts = [profile.profile];
+  switch (profile.state) {
+    case 'indexing':
+      parts.push(
+        `indexing${profile.total === undefined ? '' : ` ${profile.indexed ?? 0}/${profile.total}`}`,
+      );
+      break;
+    case 'ready':
+      parts.push('ready');
+      if (profile.notes !== undefined) parts.push(`${profile.notes} notes`);
+      break;
+    case 'unavailable':
+      parts.push('unavailable');
+      if (profile.reason !== undefined) parts.push(profile.reason);
+      break;
+    default:
+      parts.push(profile.state);
+  }
+  const last = profile.last_reconcile;
+  if (last !== undefined) {
+    parts.push(
+      `last reconcile ${last.at} +${last.added} ~${last.changed} -${last.removed} ${last.ms} ms`,
+    );
+  }
+  return `    ${parts.join('  ')}`;
 }
 
 export async function runStatus(d: AdminDeps): Promise<number> {

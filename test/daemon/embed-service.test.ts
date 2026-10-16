@@ -164,6 +164,102 @@ describe('embed service', () => {
     expect(order).toEqual(['docs:one', 'query', 'docs:two']);
   });
 
+  describe('documentsFor', () => {
+    it('loads the profile once on first use and embeds on the documents lane', async () => {
+      const provider = fakeProvider('granite-97m');
+      const createProvider = vi.fn(() => provider);
+      const service = createEmbedService({ createProvider });
+      const embed = service.documentsFor('granite-97m');
+      // Nothing loads until the first call.
+      expect(createProvider).not.toHaveBeenCalled();
+      const [a, b] = await Promise.all([embed(['x', 'y']), embed(['z'])]);
+      expect(a).toEqual([
+        [0, 1, 0],
+        [0, 1, 0],
+      ]);
+      expect(b).toEqual([[0, 1, 0]]);
+      await embed(['again']);
+      expect(createProvider).toHaveBeenCalledTimes(1);
+      expect(provider.embedDocuments).toHaveBeenCalled();
+      expect(provider.embedQuery).not.toHaveBeenCalled();
+      expect(service.loaded()).toEqual(['granite-97m']);
+    });
+
+    it('shares the load with embed.initialize', async () => {
+      const createProvider = vi.fn((p: { key: string }) => fakeProvider(p.key));
+      const service = createEmbedService({ createProvider });
+      await Promise.all([
+        service.documentsFor('granite-97m')(['x']),
+        service.handlers.initialize({ profile: 'granite-97m' }, testCtx()),
+      ]);
+      expect(createProvider).toHaveBeenCalledTimes(1);
+    });
+
+    it('queues documents behind a waiting query, like embed.documents', async () => {
+      const order: string[] = [];
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const provider = fakeProvider('granite-97m');
+      provider.embedDocuments = vi.fn(async (texts: string[]) => {
+        order.push(`docs:${texts[0]}`);
+        await gate;
+        return texts.map(() => [0, 1, 0]);
+      });
+      provider.embedQuery = vi.fn(async () => {
+        order.push('query');
+        return [1, 0, 0];
+      });
+      const service = createEmbedService({ createProvider: () => provider });
+      const embed = service.documentsFor('granite-97m');
+      const d1 = embed(['one']);
+      const d2 = embed(['two']);
+      const q = service.handlers.query({ profile: 'granite-97m', text: 'q' }, testCtx());
+      await new Promise((r) => setTimeout(r, 0));
+      release();
+      await Promise.all([d1, d2, q]);
+      expect(order).toEqual(['docs:one', 'query', 'docs:two']);
+    });
+
+    it('splits a batch larger than the provider allows instead of refusing it', async () => {
+      const provider = fakeProvider('granite-97m');
+      const service = createEmbedService({ createProvider: () => provider });
+      const vectors = await service.documentsFor('granite-97m')(new Array<string>(20).fill('t'));
+      expect(vectors).toHaveLength(20);
+    });
+
+    it('reports a load failure as EMBED_FAILED and retries on the next call', async () => {
+      let fail = true;
+      const createProvider = vi.fn((p: { key: string }) =>
+        fakeProvider(p.key, { failInit: fail ? 'no weights' : undefined }),
+      );
+      const service = createEmbedService({ createProvider });
+      const embed = service.documentsFor('granite-97m');
+      await expect(embed(['x'])).rejects.toMatchObject({
+        code: 'EMBED_FAILED',
+        message: 'no weights',
+      });
+      fail = false;
+      await expect(embed(['x'])).resolves.toEqual([[0, 1, 0]]);
+    });
+
+    it('refuses a non-finite vector', async () => {
+      const provider = fakeProvider('granite-97m');
+      provider.embedDocuments = vi.fn(async (texts: string[]) => texts.map(() => [Number.NaN]));
+      const service = createEmbedService({ createProvider: () => provider });
+      await expect(service.documentsFor('granite-97m')(['x'])).rejects.toMatchObject({
+        code: 'EMBED_FAILED',
+      });
+    });
+
+    it('throws for an unknown profile key', () => {
+      const service = createEmbedService({ createProvider: (p) => fakeProvider(p.key) });
+      expect(() => service.documentsFor('bge-m3')).toThrow(/unknown profile "bge-m3"/);
+      expect(() => service.documentsFor('toString')).toThrow(/unknown profile/);
+    });
+  });
+
   describe('diagnostics', () => {
     /** A clock that advances `step` ms per reading. */
     function ticking(step: number): () => number {

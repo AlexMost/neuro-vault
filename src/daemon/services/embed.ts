@@ -1,3 +1,4 @@
+import type { EmbedDocumentsFn } from '../../lib/obsidian/corpus/types.js';
 import { createQueuedEmbedder, type QueuedEmbedder } from '../../modules/semantic/embed-queue.js';
 import { MODEL_PROFILES, type ModelProfile } from '../../modules/semantic/model-profiles.js';
 import type { EmbeddingProvider } from '../../modules/semantic/types.js';
@@ -64,6 +65,12 @@ async function failedAs<T>(work: () => Promise<T>): Promise<T> {
 export function createEmbedService(deps: EmbedServiceDeps): {
   handlers: ServiceHandlers;
   loaded(): string[];
+  /**
+   * The documents lane of one profile's queue, for the vault entries inside this
+   * process: the same load and queue `embed.documents` uses, without the wire
+   * checks. The profile loads on the first call, not now.
+   */
+  documentsFor(profileKey: string): EmbedDocumentsFn;
 } {
   const log = deps.log ?? (() => undefined);
   const now = deps.now ?? (() => performance.now());
@@ -155,5 +162,16 @@ export function createEmbedService(deps: EmbedServiceDeps): {
     },
   };
 
-  return { handlers, loaded: () => [...loaded.keys()] };
+  function documentsFor(profileKey: string): EmbedDocumentsFn {
+    const profile = readProfile({ profile: profileKey });
+    return async (texts) => {
+      const { queue } = await get(profile);
+      return embedding(
+        `embed documents failed for ${profile.key} (${texts.length} texts)`,
+        async () => (await queue.embedDocuments(texts)).map(assertFinite),
+      );
+    };
+  }
+
+  return { handlers, loaded: () => [...loaded.keys()], documentsFor };
 }

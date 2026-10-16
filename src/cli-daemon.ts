@@ -22,9 +22,11 @@ import {
 import { ServiceRegistry } from './daemon/protocol.js';
 import { createDaemonService } from './daemon/services/daemon.js';
 import { createEmbedService } from './daemon/services/embed.js';
+import { createVaultService } from './daemon/services/vault.js';
 import { ensurePrivateSocketDir } from './daemon/socket-dir.js';
 import { startDaemonServer, type DaemonServerHandle } from './daemon/socket-server.js';
 import { neuroVaultCacheBase } from './lib/cache-dir.js';
+import { VaultEntries, type VaultEntriesDeps } from './lib/vault-entry/index.js';
 import type { ModelProfile } from './modules/semantic/model-profiles.js';
 import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
 import type { EmbeddingProvider } from './modules/semantic/types.js';
@@ -64,6 +66,8 @@ export interface DaemonCommandDeps {
   connect?: SocketConnect;
   startServer?: typeof startDaemonServer;
   createProvider?: (profile: ModelProfile) => EmbeddingProvider;
+  /** Builds the daemon's vault entries; default `new VaultEntries(deps)`. */
+  createVaultEntries?: (deps: VaultEntriesDeps) => VaultEntries;
   writeInfo?: (file: string, info: DaemonInfo) => Promise<void>;
   readInfo?: (file: string) => DaemonInfo | undefined;
   onSignal?: (signal: 'SIGINT' | 'SIGTERM', handler: () => void) => void;
@@ -93,6 +97,7 @@ function resolveDeps(deps: DaemonCommandDeps) {
     connect: deps.connect ?? defaultConnect,
     startServer: deps.startServer ?? startDaemonServer,
     createProvider: deps.createProvider ?? daemonProviderFor,
+    createVaultEntries: deps.createVaultEntries ?? ((d: VaultEntriesDeps) => new VaultEntries(d)),
     writeInfo: deps.writeInfo ?? ((file: string, info: DaemonInfo) => writeDaemonInfo(file, info)),
     readInfo: deps.readInfo ?? ((file: string) => readDaemonInfo(file)),
     onSignal:
@@ -227,10 +232,18 @@ async function startServing(
     createProvider: r.createProvider,
     log: (line) => void r.stderr.write(`${packageMeta.name} daemon: ${line}\n`),
   });
+  const entries = r.createVaultEntries({
+    embedderFor: (key) => embed.documentsFor(key),
+    // The daemon's own `--idle-timeout`: an entry or a profile nobody attaches goes after as long.
+    idleTimeoutMs: options.idleTimeoutMinutes * 60_000,
+    timers: r.timers,
+    warn: (message) => void r.stderr.write(`${message}\n`),
+  });
   const registry = new ServiceRegistry();
   registry.register('embed', embed.handlers);
+  registry.register('vault', createVaultService(entries));
 
-  const stop = createStop(paths, r, server);
+  const stop = createStop(paths, r, server, entries);
   const startedAt = r.now().toISOString();
   registry.register(
     'daemon',
@@ -242,6 +255,7 @@ async function startServing(
       idleTimeoutMin: options.idleTimeoutMinutes,
       clients: () => server.handle?.clients() ?? 0,
       embedLoaded: () => embed.loaded(),
+      vaultInfo: () => entries.info(),
       // Deferred one tick so the shutdown response is written before the socket ends.
       requestShutdown: () => void r.timers.setTimeout(stop, 0),
     }),
@@ -270,11 +284,16 @@ async function startServing(
 }
 
 /**
- * The one stop path (SIGINT, SIGTERM, idle, daemon.shutdown): close the
- * server, remove daemon.json, the socket file and the lock, exit 0. Runs once;
- * exits 0 at `STOP_DEADLINE_MS` even if closing stalls on a peer that never reads.
+ * The one stop path (SIGINT, SIGTERM, idle, daemon.shutdown): dispose the vault
+ * entries (watchers, loops, corpora), close the server, remove daemon.json, the
+ * socket file and the lock, exit 0. Runs once; exits 0 at `STOP_DEADLINE_MS` even if closing stalls on a peer that never reads.
  */
-function createStop(paths: DaemonPaths, r: Resolved, server: ServerSlot): () => void {
+function createStop(
+  paths: DaemonPaths,
+  r: Resolved,
+  server: ServerSlot,
+  entries: VaultEntries,
+): () => void {
   let stopping = false;
   let finished = false;
   let deadline: ReturnType<typeof setTimeout> | undefined;
@@ -300,6 +319,11 @@ function createStop(paths: DaemonPaths, r: Resolved, server: ServerSlot): () => 
     stopping = true;
     deadline = r.timers.setTimeout(finish, STOP_DEADLINE_MS);
     void Promise.resolve()
+      .then(() => entries.dispose())
+      .catch((error: unknown) => {
+        r.stderr.write(`${packageMeta.name} daemon: dispose failed: ${messageOf(error)}\n`);
+      })
+      // Whatever disposing did, the server still closes.
       .then(() => server.handle?.close())
       .catch((error: unknown) => {
         r.stderr.write(`${packageMeta.name} daemon: close failed: ${messageOf(error)}\n`);

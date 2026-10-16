@@ -21,6 +21,11 @@ import { parseDaemonInfo } from '../src/daemon/info.js';
 import { cliBuild, daemonKey } from '../src/daemon/paths.js';
 import type { Timers } from '../src/daemon/probe.js';
 import type { ServiceRegistry } from '../src/daemon/protocol.js';
+import {
+  VaultEntries,
+  type VaultEntriesDeps,
+  type VaultInfo,
+} from '../src/lib/vault-entry/index.js';
 import { EmbeddingService } from '../src/modules/semantic/embedding-service.js';
 import {
   identityOf,
@@ -467,7 +472,119 @@ describe('runDaemonCommand (run)', () => {
       started_at: '2026-10-14T10:00:00.000Z',
       idle_timeout_min: 30,
       clients: 3,
-      services: { embed: { loaded: [] } },
+      services: { embed: { loaded: [] }, vault: [] },
+    });
+  });
+
+  describe('vault entries', () => {
+    function entriesHarness(overrides: Partial<DaemonCommandDeps> = {}) {
+      const created: Array<{ deps: VaultEntriesDeps; entries: VaultEntries }> = [];
+      const createVaultEntries = vi.fn((deps: VaultEntriesDeps) => {
+        const entries = new VaultEntries(deps);
+        created.push({ deps, entries });
+        return entries;
+      });
+      const h = harness({ createVaultEntries, ...overrides });
+      return { h, created, createVaultEntries };
+    }
+
+    it('builds them from the daemon idle timeout, its timers and the embed service', async () => {
+      const { h, created } = entriesHarness();
+      await runDaemonCommand({ idleTimeoutMinutes: 2 }, h.deps);
+      expect(created).toHaveLength(1);
+      expect(created[0].deps.idleTimeoutMs).toBe(120_000);
+      expect(created[0].deps.timers).toBe(h.deps.timers);
+      expect(created[0].deps.embedderFor).toBeTypeOf('function');
+    });
+
+    it('--idle-timeout 0 never idles them out', async () => {
+      const { h, created } = entriesHarness();
+      await runDaemonCommand({ idleTimeoutMinutes: 0 }, h.deps);
+      expect(created[0].deps.idleTimeoutMs).toBe(0);
+    });
+
+    it('writes their warnings to stderr, never stdout', async () => {
+      const { h, created } = entriesHarness();
+      await runDaemonCommand(RUN, h.deps);
+      h.err.length = 0;
+      created[0].deps.warn?.('neuro-vault: something');
+      expect(h.err).toEqual(['neuro-vault: something\n']);
+      expect(h.out).toEqual([]);
+    });
+
+    it('embeds through the embed service queue of the profile', async () => {
+      const createProvider = vi.fn(
+        (profile: ModelProfile): EmbeddingProvider => ({
+          identity: identityOf(profile),
+          maxBatchSize: 8,
+          initialize: async () => {},
+          embedQuery: async () => [1, 0, 0],
+          embedDocuments: async (texts: string[]) => texts.map(() => [0, 1, 0]),
+        }),
+      );
+      const { h, created } = entriesHarness({ createProvider });
+      await runDaemonCommand(RUN, h.deps);
+      await expect(created[0].deps.embedderFor('granite-97m')(['a'])).resolves.toEqual([[0, 1, 0]]);
+      expect(createProvider).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves vault.attach over the registry', async () => {
+      const { h } = entriesHarness();
+      await runDaemonCommand(RUN, h.deps);
+      const response = await serverOptions(h).registry.dispatch(
+        { jsonrpc: '2.0', id: 1, method: 'vault.attach', params: { vault: 1, profiles: [] } },
+        testCtx(),
+      );
+      expect(isJSONRPCResultResponse(response)).toBe(false);
+      expect(JSON.stringify(response)).toContain('INVALID_PARAMS');
+    });
+
+    it.each([
+      ['a signal', (h: Harness) => h.signals.get('SIGTERM')!()],
+      ['idle expiry', (h: Harness) => serverOptions(h).onIdle()],
+    ])('%s disposes them before it closes the server', async (_name, trigger) => {
+      const { h, created } = entriesHarness();
+      await runDaemonCommand(RUN, h.deps);
+      const order: string[] = [];
+      let disposed!: () => void;
+      vi.spyOn(created[0].entries, 'dispose').mockImplementation(
+        () =>
+          new Promise<void>((resolve) => {
+            order.push('dispose');
+            disposed = resolve;
+          }),
+      );
+      h.handle.close.mockImplementation(async () => void order.push('close'));
+      trigger(h);
+      await flush();
+      expect(order).toEqual(['dispose']);
+      expect(h.exit).not.toHaveBeenCalled();
+      disposed();
+      await flush();
+      expect(order).toEqual(['dispose', 'close']);
+      expect(h.exit).toHaveBeenCalledWith(0);
+    });
+
+    it('still closes the server and exits 0 when disposing fails', async () => {
+      const { h, created } = entriesHarness();
+      await runDaemonCommand(RUN, h.deps);
+      vi.spyOn(created[0].entries, 'dispose').mockRejectedValue(new Error('watcher stuck'));
+      h.signals.get('SIGINT')!();
+      await flush();
+      expect(h.handle.close).toHaveBeenCalled();
+      expect(h.exit).toHaveBeenCalledWith(0);
+      expect(h.err.join('')).toContain('dispose failed: watcher stuck');
+    });
+
+    it('exits 0 at the deadline when disposing never finishes', async () => {
+      const { h, created } = entriesHarness();
+      await runDaemonCommand(RUN, h.deps);
+      vi.spyOn(created[0].entries, 'dispose').mockImplementation(() => new Promise<void>(() => {}));
+      h.signals.get('SIGTERM')!();
+      await flush();
+      expect(h.exit).not.toHaveBeenCalled();
+      h.clock.fire(STOP_DEADLINE_MS);
+      expect(h.exit).toHaveBeenCalledWith(0);
     });
   });
 
@@ -540,6 +657,98 @@ describe('runDaemonCommand (status / stop)', () => {
     expect(h.dirs.has(`${BASE}/aaaaaaaaaaaa`)).toBe(true);
     expect(h.dirs.has(`${BASE}/bbbbbbbbbbbb`)).toBe(false);
     expect(h.files.has(`${BASE}/bbbbbbbbbbbb/daemon.json`)).toBe(false);
+  });
+
+  it('status prints each vault entry and its profiles under the daemon line', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ pid: 4242, version: '17.2.0', socket: '/tmp/a.sock' }));
+    h.deps.connect = () =>
+      Promise.resolve(
+        fakeInfoSocket({
+          version: '17.2.0',
+          pid: 4242,
+          clients: 2,
+          loaded: ['harrier-270m'],
+          vault: [
+            {
+              vault: '/vaults/notes',
+              clients: 2,
+              profiles: [
+                {
+                  profile: 'harrier-270m',
+                  state: 'ready',
+                  notes: 955,
+                  last_reconcile: {
+                    at: '2026-10-16T09:00:00Z',
+                    added: 1,
+                    changed: 0,
+                    removed: 0,
+                    ms: 340,
+                  },
+                },
+              ],
+            },
+            {
+              vault: '/vaults/work',
+              clients: 0,
+              idle_since: '2026-10-16T08:55:00Z',
+              profiles: [{ profile: 'harrier-270m', state: 'indexing', indexed: 120, total: 840 }],
+            },
+          ],
+        }),
+      );
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('').split('\n')).toEqual([
+      '17.2.0  pid 4242  clients 2  loaded [harrier-270m]  alive  /tmp/a.sock',
+      '  vault /vaults/notes  clients 2',
+      '    harrier-270m  ready  955 notes  last reconcile 2026-10-16T09:00:00Z +1 ~0 -0 340 ms',
+      '  vault /vaults/work  idle since 2026-10-16T08:55:00Z',
+      '    harrier-270m  indexing 120/840',
+      '',
+    ]);
+  });
+
+  it('status prints the other profile states', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ socket: '/tmp/a.sock' }));
+    h.deps.connect = () =>
+      Promise.resolve(
+        fakeInfoSocket({
+          version: '18.0.0',
+          pid: 1,
+          clients: 1,
+          loaded: [],
+          vault: [
+            {
+              vault: '/v',
+              clients: 1,
+              profiles: [
+                { profile: 'a', state: 'unavailable' },
+                { profile: 'b', state: 'disabled' },
+                { profile: 'c', state: 'ready', notes: 3 },
+                { profile: 'd', state: 'indexing' },
+              ],
+            },
+          ],
+        }),
+      );
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('').split('\n').slice(1, -1)).toEqual([
+      '  vault /v  clients 1',
+      '    a  unavailable',
+      '    b  disabled',
+      '    c  ready  3 notes',
+      '    d  indexing',
+    ]);
+  });
+
+  it('status prints a daemon of another version, which has no vault key, without entries', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ socket: '/tmp/a.sock' }));
+    h.deps.connect = () =>
+      Promise.resolve(fakeInfoSocket({ version: '17.0.0', pid: 1, clients: 0, loaded: [] }));
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('')).toBe('17.0.0  pid 1  clients 0  loaded []  alive  /tmp/a.sock\n');
   });
 
   it('status sweeps an entry whose socket file is gone', async () => {
@@ -1047,7 +1256,7 @@ describe('runDaemonCommand (status / stop)', () => {
  * answers with `info`, `daemon.shutdown` with `{}` unless `answerShutdown` is false.
  */
 function fakeInfoSocket(
-  info: { version: string; pid: number; clients: number; loaded: string[] },
+  info: { version: string; pid: number; clients: number; loaded: string[]; vault?: VaultInfo[] },
   opts: { answerShutdown?: boolean; onRequest?: (method: string) => void } = {},
 ): Duplex {
   const { answerShutdown = true } = opts;
@@ -1073,7 +1282,11 @@ function fakeInfoSocket(
               started_at: 'x',
               idle_timeout_min: 30,
               clients: info.clients,
-              services: { embed: { loaded: info.loaded } },
+              services: {
+                embed: { loaded: info.loaded },
+                // A daemon of another version has no `vault` key at all.
+                ...(info.vault === undefined ? {} : { vault: info.vault }),
+              },
             },
           };
         } else if (message.method === 'daemon.shutdown' && answerShutdown) {

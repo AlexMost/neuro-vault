@@ -21,6 +21,8 @@ export interface ProfileInfo {
   state: BackendState;
   indexed?: number;
   total?: number;
+  /** Why the corpus cannot be served; present for `unavailable`. */
+  reason?: string;
   notes?: number;
   last_reconcile?: LastReconcile;
 }
@@ -273,6 +275,9 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
         if (current.state === 'indexing') {
           info.indexed = current.indexed;
           info.total = current.total;
+        }
+        if (current.state === 'unavailable' && current.reason !== undefined) {
+          info.reason = current.reason;
         }
         if (current.state === 'ready' && slot.corpus?.loaded) info.notes = slot.corpus.size();
         const last = slot.corpus === null ? undefined : loop.lastReconcile(slot.key);

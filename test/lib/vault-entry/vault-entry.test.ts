@@ -223,6 +223,22 @@ describe('createVaultEntry', () => {
     expect(h.entry.info(0, '2026-01-01T00:00:00.000Z').idle_since).toBe('2026-01-01T00:00:00.000Z');
   });
 
+  it('info carries the reason of an unavailable profile', async () => {
+    const failingLock = (async () => {
+      throw new Error('lock down');
+    }) as unknown as typeof withReconcileLock;
+    const h = await harness({ loop: { withLock: failingLock } });
+    h.entry.addProfile(HARRIER);
+    await vi.waitFor(() => expect(h.entry.status(HARRIER).state).toBe('unavailable'));
+    expect(h.entry.info(1).profiles).toEqual([
+      expect.objectContaining({
+        profile: HARRIER,
+        state: 'unavailable',
+        reason: expect.stringContaining('lock down'),
+      }),
+    ]);
+  });
+
   it('removeProfile leaves the loop and frees the vectors', async () => {
     const h = await harness({ loop: { withLock: heldLock } });
     await seed(h.root, { 'Notes/y.md': 3 });

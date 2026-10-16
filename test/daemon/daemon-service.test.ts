@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDaemonService } from '../../src/daemon/services/daemon.js';
+import type { VaultInfo } from '../../src/lib/vault-entry/index.js';
 import { testCtx } from './_ctx.js';
 
 // A factory, not a shared object: `requestShutdown` call counts must not leak between tests.
@@ -12,6 +13,7 @@ function makeDeps() {
     idleTimeoutMin: 30,
     clients: vi.fn(() => 2),
     embedLoaded: vi.fn((): string[] => ['granite-97m']),
+    vaultInfo: vi.fn((): VaultInfo[] => []),
     requestShutdown: vi.fn(),
   };
 }
@@ -27,7 +29,7 @@ describe('daemon service', () => {
       started_at: deps.startedAt,
       idle_timeout_min: 30,
       clients: 2,
-      services: { embed: { loaded: ['granite-97m'] } },
+      services: { embed: { loaded: ['granite-97m'] }, vault: [] },
     });
   });
 
@@ -50,6 +52,25 @@ describe('daemon service', () => {
     });
     expect(deps.clients).toHaveBeenCalledTimes(2);
     expect(deps.embedLoaded).toHaveBeenCalledTimes(2);
+  });
+
+  it('info lists vault entries, read at call time', async () => {
+    const deps = makeDeps();
+    const handlers = createDaemonService(deps);
+    const notes: VaultInfo = {
+      vault: '/vaults/notes',
+      clients: 2,
+      profiles: [{ profile: 'harrier-270m', state: 'ready', notes: 955 }],
+    };
+    deps.vaultInfo.mockReturnValue([notes]);
+    await expect(handlers.info(undefined, testCtx())).resolves.toMatchObject({
+      services: { vault: [notes] },
+    });
+    deps.vaultInfo.mockReturnValue([]);
+    await expect(handlers.info(undefined, testCtx())).resolves.toMatchObject({
+      services: { vault: [] },
+    });
+    expect(deps.vaultInfo).toHaveBeenCalledTimes(2);
   });
 
   it('shutdown answers then asks the server to stop', async () => {

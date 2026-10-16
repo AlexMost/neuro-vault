@@ -2,6 +2,7 @@ import type { JSONRPCMessage, JSONRPCRequest, RequestId } from '@modelcontextpro
 import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 import type { EmbeddingIdentity } from '../lib/obsidian/corpus/types.js';
+import type { VaultInfo } from '../lib/vault-entry/index.js';
 
 // ---- method shapes (the wire contract; see design D2) ----
 export interface EmbedInitializeParams {
@@ -32,7 +33,7 @@ export interface DaemonInfoResult {
   started_at: string;
   idle_timeout_min: number;
   clients: number;
-  services: { embed: { loaded: string[] } };
+  services: { embed: { loaded: string[] }; vault: VaultInfo[] };
 }
 
 export type DaemonErrorCode =
