@@ -2,7 +2,7 @@
 
 One background process per installed build of `neuro-vault-mcp`, shared by every server session and `index` run of that build on the machine. It listens on a local socket, speaks JSON-RPC 2.0 with the MCP stdio framing, and hosts namespaced services. Today it has two real services, `embed`, which holds the embedding model, and `vault`, which attaches clients to the shared state of a vault directory ([`vault-entry.md`](./vault-entry.md)), plus its own `daemon` service for `info` and `shutdown`. The decision behind it is [ADR-0018](../adr/0018-shared-services-daemon.md). The code is `src/daemon/` and `src/cli-daemon.ts`.
 
-**Status of the code.** Built and on by default. Every server session and every `index` run embeds through a daemon of its own build, which it finds or spawns on demand through the session-side facade (`DaemonEmbeddingProvider`, [below](#the-session-side-facade)). `--no-shared` keeps the model in the process. The `vault` service is served but **no session attaches to it yet**: sessions still keep their own watcher, reconcile loop and corpus snapshot, so the entries it holds are the ones `daemon status` lists and nothing reads from them.
+**Status of the code.** Built and on by default. Every server session and every `index` run embeds through a daemon of its own build, which it finds or spawns on demand through the session-side facade (`DaemonEmbeddingProvider`, [below](#the-session-side-facade)). `--no-shared` keeps the model in the process. The `vault` service is served but **no session attaches to it yet**: sessions still keep their own watcher, reconcile loop and corpus snapshot, so an entry exists only if a client attaches by hand, and nothing reads from it.
 
 ## What it is
 

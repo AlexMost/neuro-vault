@@ -4,9 +4,9 @@ The index of per-vault primitives built once at server startup, consumed by both
 
 ## What it is
 
-`src/lib/vault-registry.ts` exports two things: the `VaultEntry` interface and `VaultRegistry.create`, an async factory that builds a `VaultRegistry` from a list of `VaultConfig` objects.
+`src/lib/vault-registry.ts` centres on two exports: the `IVaultEntry` interface and `VaultRegistry.create`, an async factory that builds a `VaultRegistry` from a list of `VaultConfig` objects. `IVaultEntry` is one session's record of a registered vault; it is not the shared `VaultEntry` of `src/lib/vault-entry/`, which holds one vault directory's state for every client attached to it ([`vault-entry.md`](./vault-entry.md)).
 
-A `VaultEntry` bundles everything a module or tool handler needs to reach one vault:
+An `IVaultEntry` bundles everything a module or tool handler needs to reach one vault:
 
 | Field                       | Present when                             | Purpose                                                                   |
 | --------------------------- | ---------------------------------------- | ------------------------------------------------------------------------- |
@@ -43,7 +43,7 @@ interface VaultRegistry {
 
 Before the registry, per-vault wiring lived inline in each module factory, which meant every module duplicated reader/provider construction and every tool handler received multiple config arguments. The registry centralises all of that:
 
-- **Modules become stateless consumers.** `createSemanticModule(registry, ...)` and `createOperationsModule(registry, ...)` pull the `VaultEntry` they need instead of receiving raw paths and constructing things themselves.
+- **Modules become stateless consumers.** `createSemanticModule(registry, ...)` and `createOperationsModule(registry, ...)` pull the `IVaultEntry` they need instead of receiving raw paths and constructing things themselves.
 - **Tool handlers are vault-agnostic.** A handler receives `(input, registry)`, calls `registry.require(name)` for a named vault, or fans out via `registry.list()`. No handler owns startup wiring.
 - **Per-vault failures are data, not crashes.** A semantic backend never throws out of construction — a vault whose corpus is missing, incompatible, or fails to build reports `unavailable` through its own `status()`, live, rather than failing `VaultRegistry.create`. The server starts and every other vault, and every non-semantic capability of the failing one, works normally. `get_similar_notes` / `find_duplicates` surface the failure at call time as `SEMANTIC_INDEX_NOT_FOUND`; `search_notes` degrades to its lexical leg instead of erroring. See [`semantic-backend.md`](./semantic-backend.md).
 
@@ -75,7 +75,7 @@ Tool handlers access the registry through three patterns:
 
 ## Invariants
 
-- At least one `VaultEntry` is always present. Config-level validation rejects an empty `vaults` array before `VaultRegistry.create` is called.
+- At least one `IVaultEntry` is always present. Config-level validation rejects an empty `vaults` array before `VaultRegistry.create` is called.
 - Vault names are unique. The registry builds a `Map<name, IVaultEntry>` at construction time; duplicate names would shadow silently, but `parseConfig` rejects them first.
 - `backend` is present if and only if the semantic module is enabled server-wide (`--semantic`, the default). A per-vault `"semantic": false` in `.neuro-vault/config.json` still yields a present `backend` — one built `enabled: false`, permanently reporting `status().state === 'disabled'`.
 - `status().reason` is always set when `status().state === 'unavailable'`; it is never set otherwise. See [`semantic-backend.md`](./semantic-backend.md) for the full state model.

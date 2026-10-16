@@ -51,7 +51,7 @@ The decisions are in `brainstorm.md` (Q1–Q16), taken from wayfinder map #160 a
 
 ### D4: Reconcile is split around the lock
 
-- **Choice**: `reconcile.ts` exposes `withReconcileLock(vaultRoot, opts, fn)` (acquire, migrate legacy, run `fn`, release; abort and wait semantics unchanged) and `reconcileProfile(deps, corpus: CorpusWriter, paths, opts)` (the per-note loop and orphan sweep, reading metadata from `corpus.entries()` and writing through `corpus.upsert/touch/delete`; `ensureManifest` becomes `corpus.identity()` + `corpus.reset(identity)`). `reconcileCorpus` remains as `withReconcileLock` + one `reconcileProfile` over `shardWriter(store)`, so `index` and the legacy session path are behaviour-identical.
+- **Choice**: `reconcile.ts` exposes `withReconcileLock(vaultRoot, opts, fn)` (acquire, migrate legacy, run `fn`, release; abort and wait semantics unchanged) and `reconcileProfile(deps, corpus: CorpusWriter, paths, opts)` (the per-note loop and orphan sweep, reading metadata from `corpus.entries()` and writing through `corpus.upsert/touch/delete`; `ensureManifest` becomes `corpus.identity()` + `corpus.reset(identity)`; as built, that pair is the one call `corpus.ensureIdentity(identity)`, per D3). `reconcileCorpus` remains as `withReconcileLock` + one `reconcileProfile` over `shardWriter(store)`, so `index` and the legacy session path are behaviour-identical.
 - **Why**: one loop per vault directory walks every attached profile under one acquisition of the lock (charting decision 2, brainstorm Q7); the scan is done once per pass and shared by the profiles, since the scope is the entry's.
 - **Alternatives**: one lock acquisition per profile (breaks "passes never overlap within a process" across profiles of one entry).
 

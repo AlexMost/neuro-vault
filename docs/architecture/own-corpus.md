@@ -135,7 +135,7 @@ Two implementations exist, both over a `ShardStore`:
 
 ### A deleted vault root is never recreated
 
-`ShardStore` writes and the reconcile lock create directories lazily, and `mkdir -p` of `<vault>/.neuro-vault/corpus/…` after the vault directory was deleted (or its volume unmounted) would bring back an empty vault that the next scan reads as having no notes, whose shards the pass would then sweep. `ensureCorpusDir(metaDir, dir)` therefore creates `<vault>/.neuro-vault` **non-recursively** — `ENOENT` when the vault root is gone — and only what lies below it recursively. A mount point left behind as an empty directory still passes: it cannot be told from a vault with no notes (an accepted limitation, see [`vault-entry.md`](./vault-entry.md#a-deleted-vault-root-is-unavailable-not-an-empty-vault)).
+`ShardStore` writes, the reconcile lock and the legacy-corpus migration create directories lazily, and `mkdir -p` of `<vault>/.neuro-vault/corpus/…` after the vault directory was deleted (or its volume unmounted) would bring back an empty vault that the next scan reads as having no notes, whose shards the pass would then sweep. `ensureCorpusDir(metaDir, dir)` therefore creates `<vault>/.neuro-vault` **non-recursively** — `ENOENT` when the vault root is gone — and only what lies below it recursively. A mount point left behind as an empty directory still passes: it cannot be told from a vault with no notes (an accepted limitation, see [`vault-entry.md`](./vault-entry.md#a-deleted-vault-root-is-unavailable-not-an-empty-vault)).
 
 ## Atomic writes, and a corrupt shard is a missing shard
 
