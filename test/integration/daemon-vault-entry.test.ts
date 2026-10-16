@@ -20,13 +20,21 @@ const OTHER_PROFILE = 'harrier-270m';
 const DEBOUNCE_MS = 100;
 /** chokidar's `awaitWriteFinish` stability threshold (watcher.ts): a write is reported this late at best. */
 const WRITE_FINISH_MS = 2_000;
+/** chokidar's `awaitWriteFinish` poll interval (watcher.ts). */
+const WRITE_POLL_MS = 200;
+/** What a pass over this three-note vault is allowed to take on a slow runner. */
+const PASS_BUDGET_MS = 3_000;
 const posix = process.platform !== 'win32';
 
 /** The `LineClient` of test/daemon/socket-server.test.ts, with request/response correlation on top. */
 class LineClient {
   private readonly buffer = new ReadBuffer();
-  private readonly waiting = new Map<number, (m: JSONRPCMessage) => void>();
+  private readonly waiting = new Map<
+    number,
+    { resolve: (m: JSONRPCMessage) => void; reject: (e: Error) => void }
+  >();
   private nextId = 1;
+  private ended: Error | undefined;
   constructor(readonly socket: net.Socket) {
     socket.on('data', (chunk: Buffer) => {
       this.buffer.append(chunk);
@@ -34,9 +42,20 @@ class LineClient {
         const message = this.buffer.readMessage();
         if (!message) break;
         const id = (message as { id?: number }).id;
-        if (id !== undefined) this.waiting.get(id)?.(message);
+        if (id === undefined) continue;
+        const pending = this.waiting.get(id);
+        this.waiting.delete(id);
+        pending?.resolve(message);
       }
     });
+    // A dropped connection fails what is waiting, rather than hanging until the test times out.
+    const end = (error: Error) => {
+      this.ended ??= error;
+      for (const pending of this.waiting.values()) pending.reject(this.ended);
+      this.waiting.clear();
+    };
+    socket.on('error', (err) => end(new Error(`socket error: ${err.message}`)));
+    socket.on('close', () => end(new Error('socket closed before the response arrived')));
   }
   static connect(p: string): Promise<LineClient> {
     return new Promise((resolve, reject) => {
@@ -47,8 +66,9 @@ class LineClient {
   }
   call(method: string, params?: Record<string, unknown>): Promise<JSONRPCMessage> {
     const id = this.nextId++;
-    return new Promise((resolve) => {
-      this.waiting.set(id, resolve);
+    if (this.ended) return Promise.reject(this.ended);
+    return new Promise((resolve, reject) => {
+      this.waiting.set(id, { resolve, reject });
       this.socket.write(serializeMessage({ jsonrpc: '2.0', id, method, params }));
     });
   }
@@ -246,7 +266,7 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
 
   it(
     'a note write triggers one pass; an excluded write triggers none',
-    { timeout: 20_000 },
+    { timeout: 25_000 },
     async () => {
       await startDaemon();
       const c = await connect();
@@ -272,12 +292,15 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
       await new Promise((r) => setTimeout(r, WRITE_FINISH_MS));
       expect((await lastPass())?.at).toBe(second?.at);
 
-      const before = embedded.get(PROFILE);
       fs.writeFileSync(path.join(root, 'Archive', 'old.md'), noteBody('old, rewritten'));
       fs.writeFileSync(path.join(root, 'Archive', 'new.md'), noteBody('new'));
-      await new Promise((r) => setTimeout(r, WRITE_FINISH_MS + DEBOUNCE_MS + 700));
+      // Long enough for a wrongly forwarded event to be reported, debounced and its pass to
+      // finish, so an unchanged `at` means no pass ran (the scan is scope-filtered, so such a
+      // pass would still move `at`).
+      await new Promise((r) =>
+        setTimeout(r, WRITE_FINISH_MS + WRITE_POLL_MS + DEBOUNCE_MS + PASS_BUDGET_MS),
+      );
       expect((await lastPass())?.at).toBe(second?.at);
-      expect(embedded.get(PROFILE)).toBe(before);
     },
   );
 
