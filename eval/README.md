@@ -71,7 +71,7 @@ npm run eval -- --vault <path> [--pipeline semantic|fused] [--model <key>] [--st
 
 - `--pipeline` defaults to `semantic`.
 - `--model` names an embedding model profile and defaults to the registry
-  default (`DEFAULT_MODEL_KEY` in `src/modules/semantic/model-profiles.ts`;
+  default (`DEFAULT_MODEL_KEY` in `src/lib/model-profiles.ts`;
   currently `harrier-270m`; see [Axis: model](#axis-model)).
 - `--stats` adds the calibration statistics to the report and the printout
   (see [Calibration](#calibration)); it works on the `semantic` pipeline only.
@@ -363,7 +363,7 @@ completes, and the suggestions are then only as good as the vaults are alike.
    `npm run eval -- --vault <copy> --model <key> --stats --baseline <baseline report>`
    and read each default's `suggested` value.
 3. **Write the chosen values** into the profile's `similarity` in
-   `src/modules/semantic/model-profiles.ts`.
+   `src/lib/model-profiles.ts`.
 4. **Check the guards on the new values.** Re-run
    `npm run eval -- --vault <copy> --model <key> --stats` (no re-index — the
    corpus is the same): the guards evaluate the profile's _current_

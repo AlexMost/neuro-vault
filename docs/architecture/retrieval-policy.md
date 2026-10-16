@@ -176,7 +176,7 @@ The final step (`retrieval-policy.ts:278-285`) maps each capped seed to a `NoteR
 
 ## Calibration
 
-Every similarity default is data on the active `ModelProfile` (`ModelProfile.similarity`, [`model-profiles.ts`](../../src/modules/semantic/model-profiles.ts)), because a model's similarity scale is its own: an encoder with CLS pooling and a decoder with last-token pooling do not spread their scores over the same range, so one threshold set would be wrong for most profiles. The record holds six values, and the table shows where each is applied (`deep` in two steps of `executeRetrieval`, the rest in one):
+Every similarity default is data on the active `ModelProfile` (`ModelProfile.similarity`, [`model-profiles.ts`](../../src/lib/model-profiles.ts)), because a model's similarity scale is its own: an encoder with CLS pooling and a decoder with last-token pooling do not spread their scores over the same range, so one threshold set would be wrong for most profiles. The record holds six values, and the table shows where each is applied (`deep` in two steps of `executeRetrieval`, the rest in one):
 
 | Default | Governs | Read by |
 | --- | --- | --- |

@@ -1,6 +1,6 @@
 # The Semantic Backend
 
-The per-vault seam every semantic tool ranks and reports through: the `SemanticBackend` contract, the four states a vault's index can be in, the startup and freshness machinery that moves between them, and the process-wide embed queue that machinery shares with live search. The decisions behind this are [ADR-0013](../adr/0013-own-embedding-corpus.md) (the server owns a corpus) and [ADR-0014](../adr/0014-background-corpus-freshness.md) (it stays fresh in the background). The corpus mechanism itself — extraction, shard layout, atomic writes, reconcile — is documented in [`own-corpus.md`](./own-corpus.md); this page is about the runtime lifecycle wrapped around it.
+The per-vault seam every semantic tool ranks and reports through: the `SemanticBackend` contract, the four states a vault's index can be in, the startup and freshness machinery that moves between them, and the process-wide embed queue that machinery shares with live search. The decisions behind this are [ADR-0013](../adr/0013-own-embedding-corpus.md) (the server owns a corpus) and [ADR-0014](../adr/0014-background-corpus-freshness.md) (it stays fresh in the background). The daemon's vault entry runs this same state machine per model profile for a vault shared by many sessions ([`vault-entry.md`](./vault-entry.md)); no session attaches to it yet, so this file still describes what a session does. The corpus mechanism itself — extraction, shard layout, atomic writes, reconcile — is documented in [`own-corpus.md`](./own-corpus.md); this page is about the runtime lifecycle wrapped around it.
 
 ## The contract
 
@@ -59,7 +59,7 @@ Every decode applies the vault's scope (`VaultScope.isExcluded`), so `sources` a
 
 ## Freshness: the watcher and the debounce
 
-Each enabled backend gets one `chokidar` watcher over its vault root (`src/lib/vault-entry/watcher.ts`), `.md` files only, every dot-path ignored so the server's own corpus writes cannot feed the watcher back into itself. Any add/change/unlink event resets a debounce timer; `DEBOUNCE_MS` (10,000 ms, `watcher.ts`) after the last event, `onQuiet` fires and calls `backend.requestReconcile()`.
+Each enabled backend gets one `chokidar` watcher over its vault root (`src/lib/vault-entry/watcher.ts`). What it watches follows the vault scope ([`vault-scope.md`](./vault-scope.md#the-watcher-prune-vs-filter)): only an add, change or unlink of a `.md` path the scope does not exclude counts, and chokidar skips a subtree only where the scope proves all of it excluded. Dot-paths are always excluded, so the server's own corpus writes cannot feed the watcher back into itself. The same watcher is what the daemon's vault entry runs ([`vault-entry.md`](./vault-entry.md#the-watcher-follows-the-scope)). Any such event resets a debounce timer; `DEBOUNCE_MS` (10,000 ms, `watcher.ts`) after the last event, `onQuiet` fires and calls `backend.requestReconcile()`.
 
 `requestReconcile()` on the corpus backend coalesces: a request that arrives while a pass is already running just sets a flag, and exactly one follow-up pass runs when the current one finishes — however many requests arrived in between. This is the same `reconcileCorpus` pass startup runs; there is one definition of "changed" in the system, not two.
 

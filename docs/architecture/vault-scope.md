@@ -10,6 +10,7 @@ The single per-vault definition of "which files are visible" — consulted by ev
 interface VaultScope {
   ignorePatterns: string[];
   isExcluded(relPath: string): boolean;
+  isSubtreeExcluded(relDir: string): boolean;
 }
 
 function createVaultScope(input?: {
@@ -21,7 +22,7 @@ function gitignoreLinesToPatterns(lines: string[]): string[];
 function configExclusionsToPatterns(entries: string[]): string[];
 ```
 
-`createVaultScope` compiles one pattern list from the three exclusion layers below and exposes two views over it — `ignorePatterns` and `isExcluded` — described in [Two views](#two-views-prune-vs-predicate). `src/lib/obsidian/vault-scope-config.ts` builds a `VaultScope` for a real vault: `loadVaultScope(vaultRoot)` reads the vault root's `.gitignore` and `.neuro-vault/config.json` and calls `createVaultScope` with the result. `IVaultEntry.scope` (`src/lib/vault-registry.ts`) holds one `VaultScope` per registered vault, built once at `VaultRegistry.create` time via `IVaultEntryDeps.scopeFactory` — production wires `scopeFactory` to `loadVaultScope` in `buildDefaultVaultEntryDeps` (`src/server.ts`).
+`createVaultScope` compiles one pattern list from the three exclusion layers below and exposes three views over it — `ignorePatterns`, `isExcluded` and `isSubtreeExcluded` — described in [Two views](#two-views-prune-vs-predicate) and [The watcher](#the-watcher-prune-vs-filter). `src/lib/obsidian/vault-scope-config.ts` builds a `VaultScope` for a real vault: `loadVaultScope(vaultRoot)` reads the vault root's `.gitignore` and `.neuro-vault/config.json` and calls `createVaultScope` with the result. `IVaultEntry.scope` (`src/lib/vault-registry.ts`) holds one `VaultScope` per registered vault, built once at `VaultRegistry.create` time via `IVaultEntryDeps.scopeFactory` — production wires `scopeFactory` to `loadVaultScope` in `buildDefaultVaultEntryDeps` (`src/server.ts`).
 
 ## Three exclusion layers, unioned
 
@@ -103,6 +104,23 @@ This is also why a pattern starting with `!` can never enter the list. picomatch
 
 **Why prefixed scans rely on the predicate alone.** `FsVaultReader.scan({ pathPrefix })` moves fast-glob's `cwd` into the prefix directory before globbing, so the paths fast-glob sees during matching are relative to the prefix, not the vault root. Root-anchored patterns like `Templates/**` cannot match against those prefix-relative paths — `Templates/` fifteen levels up from `cwd` doesn't look like `Templates/` to a matcher rooted at `cwd`. So `scan` passes `ignore` to fast-glob **only on unprefixed scans** (`!prefix && this.scope ? this.scope.ignorePatterns : []`); a prefixed scan skips the glob-time prune entirely and instead re-prefixes each match back to a vault-relative path (`${prefix}/${match}`) before running it through `scope.isExcluded`. No pattern rewriting is needed — the predicate simply gets paths in the coordinate system it was compiled for.
 
+## The watcher: prune vs. filter
+
+The same two questions — which subtrees may be skipped, which paths count — come up again in the vault entry's file watcher ([`vault-entry.md`](./vault-entry.md#the-watcher-follows-the-scope)), and the watcher used to answer them with a rule of its own (`.md` only, every dot-path ignored), so a note under `Archive/**` still woke the reconcile loop (#106). It now asks the scope, through a third view:
+
+- **`isSubtreeExcluded(relDir): boolean`** — a *sound-but-incomplete* prune test for a vault-relative directory: true only when **every descendant** is excluded, so a watcher may skip the subtree. It is true for a path with a dot segment, and for a directory that matches the prefix of a pattern ending in `/**` (the prefixes are compiled once from `ignorePatterns`, each as the prefix itself and `<prefix>/**`; a bare `/**` has an empty prefix and is dropped). The vault root, `''`, is never excluded. A false answer says nothing.
+
+A pattern of any other shape never prunes: `Archive/*` excludes the files directly under `Archive` but leaves `Archive/2024/note.md` in scope, so `isExcluded('Archive')` can be true while the subtree must still be watched. This is why the watcher cannot hand `isExcluded` to chokidar as its `ignored` predicate — chokidar 4 drops a whole subtree once `ignored` is true for its directory, and its `stats` argument is unreliable, so a directory cannot be told from a file there. Since a bare `.gitignore` or config entry expands to `X` plus `X/**` ([`.gitignore`](#gitignore-subset), [config](#config-entries-that-name-a-path)), it prunes.
+
+The watcher (`src/lib/vault-entry/watcher.ts`) therefore uses each view for what it is good at:
+
+| Question | Asked of | Answer |
+| --- | --- | --- |
+| Skip this directory (and everything below)? chokidar's `ignored`, for a directory or a file | `isSubtreeExcluded(rel)` | only when provably all excluded |
+| Does this event count? | `path.endsWith('.md') && !isExcluded(rel)` | authoritative, per file |
+
+`rel` is `relative(vaultRoot, p)` with separators turned into `/`, judged against the vault root and not the absolute path, so a vault under a dot-directory (`~/.sync/vault`) is not blinded and a Windows-style input gives the same answer as a POSIX one. The vault root itself has an empty `rel` and is never pruned. The dot rule is what keeps the server's own writes under `.neuro-vault/corpus/` from feeding the watcher back into itself. The old `.tmp` clause is gone: it never matched a `.md` file.
+
 ## What consumes scope
 
 Every discovery surface routes through `FsVaultReader.scan`, so all of them inherited scope-filtered results with **zero code changes of their own** (design D6):
@@ -115,7 +133,7 @@ Every discovery surface routes through `FsVaultReader.scan`, so all of them inhe
 - The wikilink graph (`WikilinkGraphIndex.rebuild`, backlink counts) — see [`wikilink-graph.md`](./wikilink-graph.md).
 - Note-name resolution (`buildBasenameIndex`, `kind: 'name'` identifiers) — see [`vault-provider.md`](./vault-provider.md).
 
-**Also governed — the server's own embedding corpus.** The indexer takes its path set from the scoped scan and applies no exclusion rule of its own, so a note the scope hides is never embedded and a shard left behind by a scope change is deleted on the next reconcile — see [`own-corpus.md`](./own-corpus.md). Embedding-side rules decide only *what text of an included note* is embedded (the `min_chars` gate, the character truncation), never which notes are included. This is also what the semantic leg of `search_notes`, `get_similar_notes`, and `find_duplicates` serve from — `entry.backend`'s corpus, not a plugin's — so a note the scope hides is absent from `semantic` matches exactly as it is from `lexical` matches, tag counts, and `total_notes`. There is no remaining membership gap between the two legs.
+**Also governed — the server's own embedding corpus.** The indexer takes its path set from the scoped scan and applies no exclusion rule of its own, so a note the scope hides is never embedded and a shard left behind by a scope change is deleted on the next reconcile — see [`own-corpus.md`](./own-corpus.md). Embedding-side rules decide only *what text of an included note* is embedded (the `min_chars` gate, the character truncation), never which notes are included. This is also what the semantic leg of `search_notes`, `get_similar_notes`, and `find_duplicates` serve from — `entry.backend`'s corpus, not a plugin's — so a note the scope hides is absent from `semantic` matches exactly as it is from `lexical` matches, tag counts, and `total_notes`. There is no remaining membership gap between the two legs. The daemon's vault entry applies the scope to every read of its corpora as well ([`vault-entry.md`](./vault-entry.md#reads-the-excluded-path-fold)), because the corpus on disk agrees with the scope only after a pass has swept.
 
 A consequence stated deliberately (design D6): backlink counts, basename→path name resolution, `total_notes`/folder counts, and rank-fusion's adaptive `k` (`N` = the scoped scan length, see [`rank-fusion.md`](./rank-fusion.md)) all shift wherever scope shrinks the visible set. That is the point of one shared definition, not a side effect to work around. A link *to* an excluded note becomes an unresolved wikilink target, exactly like a link to any other non-existent note; an excluded note itself contributes no outgoing edges, because it is never scanned in the first place.
 
@@ -131,7 +149,8 @@ Scope governs **discovery** — scan, and everything the scan feeds. It is not a
 
 ## Where the code lives
 
-- `src/lib/obsidian/vault-scope.ts` — `VaultScope`, `createVaultScope`, `gitignoreLinesToPatterns`, the dot-segment rule.
+- `src/lib/obsidian/vault-scope.ts` — `VaultScope`, `createVaultScope`, `gitignoreLinesToPatterns`, the dot-segment rule, `isSubtreeExcluded`.
+- `src/lib/vault-entry/watcher.ts` — `isPrunedDir` (the prune question) and `isWatchedNote` (the filter question) over a scope.
 - `src/lib/obsidian/vault-scope-config.ts` — `loadVaultScope`, `SCOPE_CONFIG_PATH`, config parsing and the stderr-warning failure contract.
 - `src/lib/obsidian/vault-reader.ts` — `FsVaultReader.scan` consumes `scope.ignorePatterns` (unprefixed scans only) and filters every result through `scope.isExcluded`.
 - `src/lib/vault-registry.ts` — `IVaultEntry.scope`, `IVaultEntryDeps.scopeFactory`.
