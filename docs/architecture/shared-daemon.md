@@ -111,11 +111,11 @@ Both live in `src/daemon/admin.ts`, print their reports to stdout and always exi
 17.2.0  pid 4242  clients 2  loaded [harrier-270m]  alive  /tmp/neuro-vault-501/<key>.sock
   vault /vaults/notes  clients 2
     harrier-270m  ready  955 notes  last reconcile 2026-10-16T09:00:00.000Z +1 ~0 -0 340 ms
-  vault /vaults/work  idle since 2026-10-16T08:55:00.000Z
+  vault /vaults/work  idle 1h 5m (since 2026-10-16T08:55:00.000Z)
     harrier-270m  indexing 120/840
 ```
 
-A vault line is `vault <realpath>  clients <n>`, or `idle since <iso time>` when it has none. A profile line is the profile key, then its state: `indexing <indexed>/<total>`, `ready` followed by `<n> notes` once the corpus is loaded, `unavailable` followed by the reason, or `disabled`; and, once a pass has finished, `last reconcile <iso time> +<added> ~<changed> -<removed> <ms> ms`. A daemon of another version answers without a `vault` key, or with a different shape; `status` prints the lines it recognises and never fails on the rest.
+A vault line is `vault <realpath>  clients <n>`, or, when it has none, how long it has been idle and since when: `idle <m>m (since <iso time>)`, or `idle <h>h <m>m (…)` past an hour. A profile line is the profile key, then its state: `indexing <indexed>/<total>`, `ready` followed by `<n> notes` once the corpus is loaded, `unavailable` followed by the reason, or `disabled`; and, once a pass has finished, `last reconcile <iso time> +<added> ~<changed> -<removed> <ms> ms`. A daemon of another version answers without a `vault` key, or with a different shape; `status` prints the lines it recognises and never fails on the rest.
 
 A lock that names the `daemon.json` pid counts as stale even when that pid is alive: the daemon behind that entry is not listening, so a live process with its pid is a reused pid. A live lock under a no-`daemon.json` directory is always `starting`; a reused pid there keeps it until the process ends.
 

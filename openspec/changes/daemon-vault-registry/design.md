@@ -88,7 +88,7 @@ The decisions are in `brainstorm.md` (Q1–Q16), taken from wayfinder map #160 a
 
 ### D10: `daemon.info` and `daemon status`
 
-- **Choice**: `DaemonInfoResult.services` gains `vault: VaultInfo[]`, `VaultInfo = { vault, clients, idle_since?, profiles: [{ profile, state, indexed?, total?, notes?, last_reconcile?: { at, added, changed, removed, ms } }] }`. `daemon status` prints the existing daemon line, then one indented line per entry (`clients N`, or `idle since <time>`), then one per profile (state, `notes` or `indexed/total`, last reconcile counts and duration).
+- **Choice**: `DaemonInfoResult.services` gains `vault: VaultInfo[]`, `VaultInfo = { vault, clients, idle_since?, profiles: [{ profile, state, indexed?, total?, notes?, last_reconcile?: { at, added, changed, removed, ms } }] }`. `daemon status` prints the existing daemon line, then one indented line per entry (`clients N`, or `idle <duration> (since <time>)`), then one per profile (state, `notes` or `indexed/total`, last reconcile counts and duration).
 - **Why**: brainstorm Q13; the only operator view of shared state. `ProfileInfo` also carries `reason` while a profile is `unavailable`, which the status line prints.
 
 ### D11: One connection and one switch per process (PR 2)

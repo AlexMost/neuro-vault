@@ -760,7 +760,7 @@ describe('runDaemonCommand (status / stop)', () => {
             {
               vault: '/vaults/work',
               clients: 0,
-              idle_since: '2026-10-16T08:55:00Z',
+              idle_since: '2026-10-14T09:48:00Z',
               profiles: [{ profile: 'harrier-270m', state: 'indexing', indexed: 120, total: 840 }],
             },
           ],
@@ -771,7 +771,7 @@ describe('runDaemonCommand (status / stop)', () => {
       '17.2.0  pid 4242  clients 2  loaded [harrier-270m]  alive  /tmp/a.sock',
       '  vault /vaults/notes  clients 2',
       '    harrier-270m  ready  955 notes  last reconcile 2026-10-16T09:00:00Z +1 ~0 -0 340 ms',
-      '  vault /vaults/work  idle since 2026-10-16T08:55:00Z',
+      '  vault /vaults/work  idle 12m (since 2026-10-14T09:48:00Z)',
       '    harrier-270m  indexing 120/840',
       '',
     ]);

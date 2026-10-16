@@ -61,6 +61,7 @@ export interface AdminDeps {
   isAlive: (pid: number) => boolean;
   kill: (pid: number, signal: 'SIGTERM') => void;
   timers: Timers;
+  now: () => Date;
   stdout: OutStream;
   stderr: OutStream;
 }
@@ -280,7 +281,7 @@ async function statusOne(d: AdminDeps, entry: Entry, print: Write): Promise<void
   const vaults: unknown = (live.services as { vault?: unknown }).vault;
   for (const vault of Array.isArray(vaults) ? (vaults as Array<Partial<VaultInfo> | null>) : []) {
     if (typeof vault !== 'object' || vault === null) continue;
-    print(vaultLine(vault));
+    print(vaultLine(vault, d.now()));
     const profiles: unknown = vault.profiles;
     for (const profile of Array.isArray(profiles) ? (profiles as unknown[]) : []) {
       if (typeof profile === 'object' && profile !== null)
@@ -289,10 +290,19 @@ async function statusOne(d: AdminDeps, entry: Entry, print: Write): Promise<void
   }
 }
 
-function vaultLine(vault: Partial<VaultInfo>): string {
+function vaultLine(vault: Partial<VaultInfo>, now: Date): string {
   const clients = vault.clients ?? 0;
-  const who = clients > 0 ? `clients ${clients}` : `idle since ${vault.idle_since ?? '?'}`;
+  const who = clients > 0 ? `clients ${clients}` : idleFor(vault.idle_since, now);
   return `  vault ${vault.vault ?? '?'}  ${who}`;
+}
+
+/** `idle 12m (since <iso>)`: how long, then when; `idle since ?` when the time is missing or unparsable. */
+function idleFor(since: unknown, now: Date): string {
+  const at = typeof since === 'string' ? Date.parse(since) : Number.NaN;
+  if (Number.isNaN(at)) return `idle since ${typeof since === 'string' ? since : '?'}`;
+  const minutes = Math.max(0, Math.floor((now.getTime() - at) / 60_000));
+  const span = minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  return `idle ${span} (since ${since as string})`;
 }
 
 function profileLine(profile: ProfileInfo): string {
