@@ -274,6 +274,40 @@ describe('createVaultEntry', () => {
     expect(entry.scope.ignorePatterns).toContain('Archive/**');
   });
 
+  it('debounceMs sets how long a watched change waits before it queues a pass', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'nv-vault-entry-'));
+    roots.push(root);
+    let changed: () => void = () => {};
+    const passes: ReconcileLoop[] = [];
+    const entry = createVaultEntry({
+      vaultRoot: root,
+      vaultName: 'v',
+      scope: scopeOf(),
+      semantic: true,
+      debounceMs: 40,
+      embedderFor: () => okEmbed,
+      warn: vi.fn(),
+      createWatcher: ({ onChange }) => {
+        changed = onChange;
+        return { close: async () => {} };
+      },
+      createLoop: (deps) => {
+        const loop = createReconcileLoop({ ...deps, withLock: heldLock });
+        vi.spyOn(loop, 'requestPass');
+        passes.push(loop);
+        return loop;
+      },
+    });
+    entries.push(entry);
+
+    changed();
+    changed();
+    expect(passes[0].requestPass).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(passes[0].requestPass).toHaveBeenCalledTimes(1), {
+      timeout: 1_000,
+    });
+  });
+
   it('dispose closes the watcher and is idempotent', async () => {
     const h = await harness({ loop: { withLock: heldLock } });
     h.entry.addProfile(HARRIER);

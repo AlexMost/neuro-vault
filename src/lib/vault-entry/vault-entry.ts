@@ -44,6 +44,8 @@ export interface VaultEntryOptions {
   semantic: boolean;
   embedderFor: (profileKey: string) => EmbedDocumentsFn;
   warn: (message: string) => void;
+  /** Quiet interval before a change schedules a pass; production keeps the watcher's default. */
+  debounceMs?: number;
   /** Injected by tests; production defaults to the chokidar-backed watcher. */
   createWatcher?: WatcherFactory;
   /** Injected by tests; production uses {@link createReconcileLoop}. */
@@ -129,6 +131,7 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
       vaultName,
       scope,
       onQuiet: () => loop.requestPass(),
+      debounceMs: opts.debounceMs,
       createWatcher: opts.createWatcher,
       warn,
     });
