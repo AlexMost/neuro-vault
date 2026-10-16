@@ -1078,6 +1078,52 @@ describe('createReconcileLoop, many profiles', () => {
     );
   });
 
+  it('calls onSettled after each selection and after each profile a pass reconciled', async () => {
+    const calls: Array<{ key: string; loaded: boolean }> = [];
+    const files = { 'n1.md': body('1') };
+    const corpora = new Map<string, ShardCorpus>();
+    const t = await twoProfiles(
+      files,
+      { onSettled: (key) => calls.push({ key, loaded: corpora.get(key)?.loaded ?? false }) },
+      { seeded: true },
+    );
+    corpora.set('a', t.first.corpus).set('b', t.second.corpus);
+    t.loop.addProfile(t.profiles.a);
+    t.loop.addProfile(t.profiles.b);
+    t.loop.addProfile(profileOf('off', corpusOn(t.root).corpus, { enabled: false }));
+    await t.loop.whenSettled();
+    // Two selections (in either order), then the pass in attach order; never the disabled one.
+    expect(calls).toHaveLength(4);
+    expect(
+      calls
+        .slice(0, 2)
+        .map((c) => c.key)
+        .sort(),
+    ).toEqual(['a', 'b']);
+    expect(calls.slice(2).map((c) => c.key)).toEqual(['a', 'b']);
+    expect(calls.every((c) => c.loaded)).toBe(true);
+  });
+
+  it('warns about a throwing onSettled and keeps going', async () => {
+    const t = await twoProfiles(
+      { 'n1.md': body('1') },
+      {
+        onSettled: () => {
+          throw new Error('hook broke');
+        },
+      },
+    );
+    t.loop.addProfile(t.profiles.a);
+    t.loop.addProfile(t.profiles.b);
+    await t.loop.whenSettled();
+    expect(t.loop.status('a')).toEqual({ state: 'ready' });
+    expect(t.loop.status('b')).toEqual({ state: 'ready' });
+    const hookWarnings = t.warn.mock.calls
+      .map(([m]) => String(m))
+      .filter((m) => /hook broke/.test(m));
+    expect(hookWarnings.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('rejects an unknown key and a duplicate profile', async () => {
     const t = await twoProfiles({});
     expect(() => t.loop.status('nope')).toThrow(/unknown profile "nope"/);

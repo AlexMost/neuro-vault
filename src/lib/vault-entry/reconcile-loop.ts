@@ -53,6 +53,11 @@ export interface ReconcileLoopDeps {
   now?: () => number;
   /** Injected by tests; production uses withReconcileLock. */
   withLock?: typeof withReconcileLock;
+  /**
+   * Called when a profile's corpus may have changed wholesale: after its startup
+   * selection, and after a pass reconciled it. A throw is warned, never propagated.
+   */
+  onSettled?: (key: string) => void;
 }
 
 export interface ReconcileLoop {
@@ -163,6 +168,15 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
   function releaseIfRemoved(state: ProfileState): boolean {
     if (state.removed) state.profile.corpus.dispose();
     return state.removed;
+  }
+
+  function notifySettled(state: ProfileState): void {
+    if (state.removed || disposed || deps.onSettled === undefined) return;
+    try {
+      deps.onSettled(state.profile.key);
+    } catch (err) {
+      warn(`neuro-vault corpus: onSettled threw for ${label(state.profile.key)}: ${String(err)}`);
+    }
   }
 
   function clearRetry(): void {
@@ -317,6 +331,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
             if (!releaseIfRemoved(state) && !signal.aborted) unavailable(state, String(err));
           }
           settled.add(state);
+          if (!signal.aborted) notifySettled(state);
         }
         // Corpus maintenance, skipped on abort so a shutdown is bounded by the note in flight.
         if (!signal.aborted) await ensureCorpusGitignored(deps.vaultRoot, { warn });
@@ -388,7 +403,10 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
       };
       profiles.set(profile.key, state);
       if (!profile.enabled) return;
-      const selection = select(state).finally(() => selections.delete(selection));
+      const selection = select(state).finally(() => {
+        selections.delete(selection);
+        notifySettled(state);
+      });
       selections.add(selection);
       state.selection = selection;
       requestPass();
