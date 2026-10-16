@@ -166,7 +166,7 @@ describe('startVaultWatcher', () => {
         throw new Error('EMFILE');
       },
     });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('EMFILE'));
+    expect(warn).toHaveBeenCalledWith('neuro-vault watcher: vault "v": failed to start: EMFILE');
     vi.advanceTimersByTime(60_000);
     expect(onQuiet).not.toHaveBeenCalled();
   });
@@ -183,7 +183,7 @@ describe('startVaultWatcher', () => {
       createWatcher: factory,
     });
     handles[0].fail(new Error('ENOSPC'));
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('ENOSPC'));
+    expect(warn).toHaveBeenCalledWith('neuro-vault watcher: vault "v": ENOSPC');
   });
 
   it('close cancels a pending debounce and closes the watcher', async () => {

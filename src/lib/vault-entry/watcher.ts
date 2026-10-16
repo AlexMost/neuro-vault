@@ -159,14 +159,14 @@ export function startVaultWatcher(deps: VaultWatcherDeps): WatcherHandle {
         // A watcher must never fail the server — a throwing onQuiet would
         // otherwise become an uncaught exception inside a Node timer.
         const reason = err instanceof Error ? err.message : String(err);
-        warn(`[semantic] vault watcher onQuiet handler threw for "${vaultName}": ${reason}`);
+        warn(`neuro-vault watcher: vault "${vaultName}": onQuiet threw: ${reason}`);
       }
     }, debounceMs);
   };
 
   const onError = (err: unknown) => {
     const reason = err instanceof Error ? err.message : String(err);
-    warn(`[semantic] vault watcher error for "${vaultName}": ${reason}`);
+    warn(`neuro-vault watcher: vault "${vaultName}": ${reason}`);
   };
 
   let handle: WatcherHandle;
@@ -174,7 +174,7 @@ export function startVaultWatcher(deps: VaultWatcherDeps): WatcherHandle {
     handle = createWatcher({ vaultRoot, scope, onChange: scheduleQuiet, onError });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    warn(`[semantic] vault watcher failed to start for "${vaultName}": ${reason}`);
+    warn(`neuro-vault watcher: vault "${vaultName}": failed to start: ${reason}`);
     return noopHandle;
   }
 

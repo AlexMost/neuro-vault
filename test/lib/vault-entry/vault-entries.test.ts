@@ -534,6 +534,15 @@ describe('VaultEntries idle', () => {
     expect(s.entries.info()).toMatchObject([{ vault: '/v', clients: 1 }]);
   });
 
+  it('a failed dispose is logged under the vault name', async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', [HARRIER]);
+    s.created[0].dispose.mockRejectedValue(new Error('EBUSY'));
+    s.entries.detach(1);
+    await vi.advanceTimersByTimeAsync(IDLE_MS);
+    expect(s.warn).toHaveBeenCalledWith('neuro-vault: vault "v" failed to dispose: EBUSY');
+  });
+
   it('idleTimeoutMs 0 never drops', async () => {
     const s = setup({ idleTimeoutMs: 0 });
     await s.entries.attach(1, '/v', [HARRIER]);

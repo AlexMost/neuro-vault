@@ -154,7 +154,7 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
 
   function closeWatcher(handle: WatcherHandle): Promise<void> {
     return handle.close().catch((err: unknown) => {
-      warn(`[semantic] vault watcher failed to close for "${vaultName}": ${String(err)}`);
+      warn(`neuro-vault watcher: vault "${vaultName}": failed to close: ${String(err)}`);
     });
   }
 

@@ -374,7 +374,7 @@ export class VaultEntries {
   private disposeEntry(record: EntryRecord): Promise<void> {
     return record.entry.dispose().catch((err: unknown) => {
       this.warn(
-        `neuro-vault: vault "${record.entry.vaultRoot}" failed to dispose: ${reasonOf(err)}`,
+        `neuro-vault: vault "${path.basename(record.entry.vaultRoot)}" failed to dispose: ${reasonOf(err)}`,
       );
     });
   }
