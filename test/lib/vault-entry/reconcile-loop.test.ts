@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -241,6 +241,31 @@ describe('createReconcileLoop, one profile', () => {
     expect(h.lock.calls()).toBe(1);
     // A reconcile behind a corpus that is already serving must not take it off the air.
     expect(statuses).toEqual([{ state: 'ready' }, { state: 'ready' }]);
+  });
+
+  it('a vault directory that vanished is unavailable, not recreated, and recovers when back', async () => {
+    const h = await harness({ 'a.md': body('a') });
+    const { corpus } = corpusOn(h.root);
+    h.loop.addProfile(profileOf('p', corpus));
+    await h.loop.whenSettled();
+    expect(h.loop.status('p')).toEqual({ state: 'ready' });
+    const passes = h.lock.calls();
+
+    await rm(h.root, { recursive: true, force: true });
+    h.loop.requestPass();
+    await h.loop.whenSettled();
+
+    const status = h.loop.status('p');
+    expect(status).toMatchObject({ state: 'unavailable', reason: expect.stringContaining(h.root) });
+    // The lock's `mkdir -p` would have recreated the directory; the scan would have swept the shards.
+    expect(h.lock.calls()).toBe(passes);
+    expect(h.scan).toHaveBeenCalledTimes(passes);
+    await expect(access(h.root)).rejects.toThrow();
+
+    await mkdir(h.root);
+    h.loop.requestPass();
+    await h.loop.whenSettled();
+    expect(h.loop.status('p')).toEqual({ state: 'ready' });
   });
 
   it('reports indexing with progress before the first index lands', async () => {

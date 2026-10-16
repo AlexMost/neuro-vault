@@ -1,3 +1,5 @@
+import { stat } from 'node:fs/promises';
+
 import type { Corpus } from '../obsidian/corpus/corpus.js';
 import { formatRebuild, type CorpusIdentity } from '../obsidian/corpus/identity.js';
 import {
@@ -91,6 +93,23 @@ interface ProfileState {
   selection: Promise<void>;
   last?: LastReconcile;
   removed: boolean;
+}
+
+/**
+ * A vault whose directory is gone (deleted, or its volume unmounted) must not
+ * reach the lock — `mkdir -p` of the corpus directory would recreate it — nor
+ * the scan, which reads a missing root as an empty vault and would sweep every
+ * shard.
+ */
+async function assertVaultDirectory(vaultRoot: string): Promise<void> {
+  let directory: boolean;
+  try {
+    directory = (await stat(vaultRoot)).isDirectory();
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(`vault directory "${vaultRoot}" is not readable: ${reason}`);
+  }
+  if (!directory) throw new Error(`vault "${vaultRoot}" is no longer a directory`);
 }
 
 const indexing = (): BackendStatus => ({ state: 'indexing', indexed: 0, total: 0 });
@@ -319,6 +338,9 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
     const { signal } = abort;
     const settled = new Set<ProfileState>();
     try {
+      await assertVaultDirectory(deps.vaultRoot);
+      // A dispose during the stat aborted a pass that had no lock to wake yet.
+      if (signal.aborted) return;
       await withLock(deps.vaultRoot, { signal, warn }, async ({ waited }) => {
         const paths = await deps.scan();
         for (const state of members) {
