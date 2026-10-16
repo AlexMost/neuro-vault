@@ -41,6 +41,8 @@ export type DaemonErrorCode =
   | 'UNKNOWN_PROFILE'
   | 'EMBED_FAILED'
   | 'SHUTTING_DOWN'
+  | 'NOT_ATTACHED'
+  | 'VAULT_UNAVAILABLE'
   | 'INTERNAL';
 
 // `ErrorCode.ConnectionClosed` (-32000) is the SDK's JSON-RPC server-error slot for a closed connection.
@@ -50,6 +52,8 @@ const JSON_RPC_CODE: Record<DaemonErrorCode, number> = {
   UNKNOWN_PROFILE: ErrorCode.InvalidParams,
   EMBED_FAILED: ErrorCode.InternalError,
   SHUTTING_DOWN: ErrorCode.ConnectionClosed,
+  NOT_ATTACHED: ErrorCode.InvalidParams,
+  VAULT_UNAVAILABLE: ErrorCode.InvalidParams,
   INTERNAL: ErrorCode.InternalError,
 };
 
@@ -57,21 +61,40 @@ export class DaemonRpcError extends Error {
   constructor(
     readonly code: DaemonErrorCode,
     message: string,
+    /** Extra fields for the response's `error.data`, beside `code`. */
+    readonly data?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'DaemonRpcError';
   }
 }
 
-export type MethodHandler = (params: unknown) => Promise<unknown>;
+/** What a handler knows of the connection its request arrived on. */
+export interface ConnectionContext {
+  /** Unique per connection for the life of the server. */
+  readonly id: number;
+  /**
+   * Runs `fn` once when this connection closes, however it closes. A callback
+   * registered after the connection already closed runs at once.
+   */
+  onClose(fn: () => void): void;
+}
+
+export type MethodHandler = (params: unknown, ctx: ConnectionContext) => Promise<unknown>;
 export type ServiceHandlers = Record<string, MethodHandler>;
 
 export function errorResponse(
   id: RequestId,
   code: DaemonErrorCode,
   message: string,
+  data?: Record<string, unknown>,
 ): JSONRPCMessage {
-  return { jsonrpc: '2.0', id, error: { code: JSON_RPC_CODE[code], message, data: { code } } };
+  // `code` is spread last: the stable name is the contract, `data` only adds to it.
+  return {
+    jsonrpc: '2.0',
+    id,
+    error: { code: JSON_RPC_CODE[code], message, data: { ...data, code } },
+  };
 }
 
 export function resultResponse(id: RequestId, result: unknown): JSONRPCMessage {
@@ -97,16 +120,16 @@ export class ServiceRegistry {
     this.services.set(namespace, handlers);
   }
 
-  async dispatch(request: JSONRPCRequest): Promise<JSONRPCMessage> {
+  async dispatch(request: JSONRPCRequest, ctx: ConnectionContext): Promise<JSONRPCMessage> {
     const handler = this.lookup(request.method);
     if (handler === undefined) {
       return errorResponse(request.id, 'UNKNOWN_METHOD', `unknown method "${request.method}"`);
     }
     try {
-      return resultResponse(request.id, await handler(request.params));
+      return resultResponse(request.id, await handler(request.params, ctx));
     } catch (error) {
       if (error instanceof DaemonRpcError)
-        return errorResponse(request.id, error.code, error.message);
+        return errorResponse(request.id, error.code, error.message, error.data);
       return errorResponse(
         request.id,
         'INTERNAL',

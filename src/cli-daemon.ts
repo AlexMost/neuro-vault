@@ -254,6 +254,7 @@ async function startServing(
     onIdle: stop,
     timers: r.timers,
     onError: (error) => void r.stderr.write(`${packageMeta.name} daemon: ${error.message}\n`),
+    log: (line) => void r.stderr.write(`${packageMeta.name} daemon: ${line}\n`),
   });
   // The 0700 directory guards the socket between listen and this chmod.
   if (r.platform !== 'win32') r.fs.chmod(paths.socketPath, 0o600);

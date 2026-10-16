@@ -28,6 +28,7 @@ import {
   type ModelProfile,
 } from '../src/modules/semantic/model-profiles.js';
 import type { EmbeddingProvider } from '../src/modules/semantic/types.js';
+import { testCtx } from './daemon/_ctx.js';
 
 const BASE = '/home/u/.cache/neuro-vault/daemons';
 const BUILD = { size: 1000, mtimeMs: 1 };
@@ -429,11 +430,14 @@ describe('runDaemonCommand (run)', () => {
   it('daemon.shutdown answers first and stops one tick later', async () => {
     const h = harness();
     await runDaemonCommand(RUN, h.deps);
-    const response = await serverOptions(h).registry.dispatch({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'daemon.shutdown',
-    });
+    const response = await serverOptions(h).registry.dispatch(
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'daemon.shutdown',
+      },
+      testCtx(),
+    );
     expect(isJSONRPCResultResponse(response) && response.result).toEqual({});
     await flush();
     expect(h.handle.close).not.toHaveBeenCalled();
@@ -448,11 +452,14 @@ describe('runDaemonCommand (run)', () => {
     const h = harness();
     h.handle.clients.mockReturnValue(3);
     await runDaemonCommand(RUN, h.deps);
-    const response = await serverOptions(h).registry.dispatch({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'daemon.info',
-    });
+    const response = await serverOptions(h).registry.dispatch(
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'daemon.info',
+      },
+      testCtx(),
+    );
     expect(isJSONRPCResultResponse(response) && response.result).toEqual({
       name: 'neuro-vault-mcp',
       version: '18.0.0',
@@ -481,12 +488,15 @@ describe('runDaemonCommand (run)', () => {
     await runDaemonCommand(RUN, h.deps);
     h.err.length = 0;
     const initialize = (id: number, profile: string) =>
-      serverOptions(h).registry.dispatch({
-        jsonrpc: '2.0',
-        id,
-        method: 'embed.initialize',
-        params: { profile },
-      });
+      serverOptions(h).registry.dispatch(
+        {
+          jsonrpc: '2.0',
+          id,
+          method: 'embed.initialize',
+          params: { profile },
+        },
+        testCtx(),
+      );
     expect(isJSONRPCResultResponse(await initialize(1, 'granite-97m'))).toBe(true);
     fail = true;
     expect(isJSONRPCResultResponse(await initialize(2, 'harrier-270m'))).toBe(false);

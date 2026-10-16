@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDaemonService } from '../../src/daemon/services/daemon.js';
+import { testCtx } from './_ctx.js';
 
 // A factory, not a shared object: `requestShutdown` call counts must not leak between tests.
 function makeDeps() {
@@ -19,7 +20,7 @@ describe('daemon service', () => {
   it('info reports identity, clients and services', async () => {
     const deps = makeDeps();
     const handlers = createDaemonService(deps);
-    await expect(handlers.info(undefined)).resolves.toEqual({
+    await expect(handlers.info(undefined, testCtx())).resolves.toEqual({
       name: 'neuro-vault-mcp',
       version: '18.0.0',
       pid: 42,
@@ -36,14 +37,14 @@ describe('daemon service', () => {
 
     deps.clients.mockReturnValue(1);
     deps.embedLoaded.mockReturnValue([]);
-    await expect(handlers.info(undefined)).resolves.toMatchObject({
+    await expect(handlers.info(undefined, testCtx())).resolves.toMatchObject({
       clients: 1,
       services: { embed: { loaded: [] } },
     });
 
     deps.clients.mockReturnValue(3);
     deps.embedLoaded.mockReturnValue(['granite-97m', 'harrier-270m']);
-    await expect(handlers.info(undefined)).resolves.toMatchObject({
+    await expect(handlers.info(undefined, testCtx())).resolves.toMatchObject({
       clients: 3,
       services: { embed: { loaded: ['granite-97m', 'harrier-270m'] } },
     });
@@ -54,7 +55,7 @@ describe('daemon service', () => {
   it('shutdown answers then asks the server to stop', async () => {
     const deps = makeDeps();
     const handlers = createDaemonService(deps);
-    await expect(handlers.shutdown(undefined)).resolves.toEqual({});
+    await expect(handlers.shutdown(undefined, testCtx())).resolves.toEqual({});
     expect(deps.requestShutdown).toHaveBeenCalledTimes(1);
   });
 });

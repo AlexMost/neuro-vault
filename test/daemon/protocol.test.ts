@@ -12,6 +12,7 @@ import {
   errorResponse,
   ServiceRegistry,
 } from '../../src/daemon/protocol.js';
+import { testCtx } from './_ctx.js';
 
 function req(method: string, params?: unknown, id = 1): JSONRPCRequest {
   return {
@@ -26,7 +27,7 @@ describe('ServiceRegistry.dispatch', () => {
   it('routes <service>.<method> and wraps the result', async () => {
     const registry = new ServiceRegistry();
     registry.register('echo', { say: async (params) => ({ got: params }) });
-    const response = await registry.dispatch(req('echo.say', { a: 1 }, 7));
+    const response = await registry.dispatch(req('echo.say', { a: 1 }, 7), testCtx());
     expect(isJSONRPCResponse(response)).toBe(true);
     expect(response).toMatchObject({ id: 7, result: { got: { a: 1 } } });
   });
@@ -35,7 +36,7 @@ describe('ServiceRegistry.dispatch', () => {
     const registry = new ServiceRegistry();
     registry.register('echo', { say: async () => ({}) });
     for (const method of ['lexical.search', 'echo.shout', 'nodot', 'embed.', '.query', '']) {
-      const response = await registry.dispatch(req(method));
+      const response = await registry.dispatch(req(method), testCtx());
       expect(isJSONRPCErrorResponse(response)).toBe(true);
       expect(response).toMatchObject({ error: { code: -32601, data: { code: 'UNKNOWN_METHOD' } } });
     }
@@ -50,7 +51,7 @@ describe('ServiceRegistry.dispatch', () => {
       'echo.constructor',
       'echo.hasOwnProperty',
     ]) {
-      const response = await registry.dispatch(req(method));
+      const response = await registry.dispatch(req(method), testCtx());
       expect(response).toMatchObject({ error: { code: -32601, data: { code: 'UNKNOWN_METHOD' } } });
     }
   });
@@ -62,7 +63,7 @@ describe('ServiceRegistry.dispatch', () => {
         throw new DaemonRpcError('EMBED_FAILED', 'model exploded');
       },
     });
-    const response = await registry.dispatch(req('embed.query'));
+    const response = await registry.dispatch(req('embed.query'), testCtx());
     expect(response).toMatchObject({
       error: { code: -32603, message: 'model exploded', data: { code: 'EMBED_FAILED' } },
     });
@@ -75,7 +76,7 @@ describe('ServiceRegistry.dispatch', () => {
         throw new TypeError('boom');
       },
     });
-    const response = await registry.dispatch(req('x.y'));
+    const response = await registry.dispatch(req('x.y'), testCtx());
     expect(response).toMatchObject({
       error: { code: -32603, message: 'boom', data: { code: 'INTERNAL' } },
     });
@@ -89,9 +90,41 @@ describe('ServiceRegistry.dispatch', () => {
         throw 'plain string failure';
       },
     });
-    const response = await registry.dispatch(req('x.y'));
+    const response = await registry.dispatch(req('x.y'), testCtx());
     expect(response).toMatchObject({
       error: { code: -32603, message: 'plain string failure', data: { code: 'INTERNAL' } },
+    });
+  });
+
+  it('passes the connection context to the handler', async () => {
+    const registry = new ServiceRegistry();
+    const ctx = testCtx(7);
+    const seen: unknown[] = [];
+    registry.register('echo', {
+      say: async (_params, c) => {
+        seen.push(c);
+        return {};
+      },
+    });
+    await registry.dispatch(req('echo.say'), ctx);
+    expect(seen).toEqual([ctx]);
+    expect(seen[0]).toBe(ctx);
+  });
+
+  it("carries a DaemonRpcError's data into the response, beside code", async () => {
+    const registry = new ServiceRegistry();
+    registry.register('vault', {
+      status: async () => {
+        throw new DaemonRpcError('NOT_ATTACHED', 'attach first', { key: '/v' });
+      },
+    });
+    const response = await registry.dispatch(req('vault.status'), testCtx());
+    expect(response).toMatchObject({
+      error: {
+        code: -32602,
+        message: 'attach first',
+        data: { code: 'NOT_ATTACHED', key: '/v' },
+      },
     });
   });
 
@@ -99,9 +132,9 @@ describe('ServiceRegistry.dispatch', () => {
     const registry = new ServiceRegistry();
     registry.register('echo', { say: async () => ({ v: 'first' }), only_first: async () => ({}) });
     registry.register('echo', { say: async () => ({ v: 'second' }) });
-    const response = await registry.dispatch(req('echo.say'));
+    const response = await registry.dispatch(req('echo.say'), testCtx());
     expect(response).toMatchObject({ result: { v: 'second' } });
-    const gone = await registry.dispatch(req('echo.only_first'));
+    const gone = await registry.dispatch(req('echo.only_first'), testCtx());
     expect(gone).toMatchObject({ error: { data: { code: 'UNKNOWN_METHOD' } } });
   });
 });
@@ -114,6 +147,8 @@ describe('errorResponse', () => {
     EMBED_FAILED: -32603,
     SHUTTING_DOWN: -32000,
     INTERNAL: -32603,
+    NOT_ATTACHED: -32602,
+    VAULT_UNAVAILABLE: -32602,
   };
 
   it.each(Object.entries(expected) as [DaemonErrorCode, number][])(
@@ -126,6 +161,22 @@ describe('errorResponse', () => {
       });
     },
   );
+});
+
+describe('errorResponse data', () => {
+  it('merges data beside code', () => {
+    const response = errorResponse(5, 'NOT_ATTACHED', 'msg', { extra: 1 });
+    expect(response).toMatchObject({ error: { data: { code: 'NOT_ATTACHED', extra: 1 } } });
+    expect((response as { error: { data: unknown } }).error.data).toEqual({
+      code: 'NOT_ATTACHED',
+      extra: 1,
+    });
+  });
+
+  it('lets code win over a data.code key', () => {
+    const response = errorResponse(5, 'INTERNAL', 'msg', { code: 'NOT_ATTACHED' });
+    expect((response as { error: { data: unknown } }).error.data).toEqual({ code: 'INTERNAL' });
+  });
 });
 
 describe('asRecord', () => {
