@@ -606,12 +606,33 @@ describe('createReconcileLoop over a real reconcile', () => {
       loop,
       warn,
       corpus,
+      root,
       attach: () => loop.addProfile(profileOf('p', corpus, { embed: (texts) => embed(texts) })),
       repairEmbed: () => {
         embed = okEmbed;
       },
+      setEmbed: (next: EmbedDocumentsFn) => {
+        embed = next;
+      },
     };
   }
+
+  it('a vault deleted mid-pass is unavailable after the follow-up pass and never recreated', async () => {
+    const files = { 'a.md': body('a'), 'b.md': body('b') };
+    const { loop, corpus, attach, root, setEmbed } = await coldVault(files);
+    // The watcher's unlink events land while the pass is still embedding.
+    setEmbed(async (texts) => {
+      await rm(root, { recursive: true, force: true });
+      loop.requestPass();
+      return texts.map(() => vec(0.1));
+    });
+    attach();
+    await loop.whenSettled();
+
+    expect(loop.status('p')).toMatchObject({ state: 'unavailable' });
+    await expect(access(root)).rejects.toThrow();
+    expect(corpus.size()).toBe(0);
+  });
 
   it('reports unavailable when every note of a cold vault fails to embed', async () => {
     const { loop, warn, corpus, attach } = await coldVault({

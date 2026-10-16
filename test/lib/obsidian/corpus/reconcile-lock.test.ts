@@ -437,3 +437,24 @@ describe('isProcessAlive', () => {
     expect(isProcessAlive(process.pid)).toBe(true);
   });
 });
+
+describe('acquireCorpusLock on a vault root that no longer exists', () => {
+  it('rejects with ENOENT and does not recreate the vault', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'nv-lock-gone-'));
+    await rm(root, { recursive: true, force: true });
+
+    await expect(
+      acquireCorpusLock(path.join(root, '.neuro-vault/corpus'), SELF),
+    ).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(stat(root)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('creates .neuro-vault/corpus under a vault that exists', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'nv-lock-here-'));
+    const lock = await acquireCorpusLock(path.join(root, '.neuro-vault/corpus'), SELF);
+    expect((await stat(path.join(root, '.neuro-vault/corpus', LOCK_FILE))).isFile()).toBe(true);
+    await lock.release();
+  });
+});

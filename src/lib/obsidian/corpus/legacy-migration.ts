@@ -1,16 +1,13 @@
-import {
-  mkdir as fsMkdir,
-  readFile as fsReadFile,
-  rename as fsRename,
-  stat as fsStat,
-} from 'node:fs/promises';
+import { readFile as fsReadFile, rename as fsRename, stat as fsStat } from 'node:fs/promises';
 import path from 'node:path';
 
+import { ensureCorpusDir, type MkdirFn } from './ensure-dir.js';
 import { hasErrnoCode } from './errno.js';
 import { isStoredManifest } from './identity.js';
 import {
   CORPUS_DIR,
   corpusRootOf,
+  metaDirOf,
   isModelDirName,
   LEGACY_MANIFEST_FILE,
   LEGACY_NOTES_DIR,
@@ -24,7 +21,7 @@ export type LegacyMigration =
 export interface LegacyMigrationDeps {
   readFile?: (p: string) => Promise<string>;
   rename?: (from: string, to: string) => Promise<void>;
-  mkdir?: (p: string) => Promise<void>;
+  mkdir?: MkdirFn;
   exists?: (p: string) => Promise<boolean>;
   /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
   warn?: (message: string) => void;
@@ -49,8 +46,6 @@ export async function migrateLegacyCorpus(
 ): Promise<LegacyMigration> {
   const readFile = deps.readFile ?? ((p: string) => fsReadFile(p, 'utf8'));
   const rename = deps.rename ?? ((from: string, to: string) => fsRename(from, to));
-  const mkdir =
-    deps.mkdir ?? ((p: string) => fsMkdir(p, { recursive: true }).then(() => undefined));
   const exists = deps.exists ?? pathExists;
   const warn = deps.warn ?? ((message: string) => console.error(message));
 
@@ -75,7 +70,7 @@ export async function migrateLegacyCorpus(
     return { kind: 'skipped', reason: 'target-exists' };
   }
 
-  await mkdir(target);
+  await ensureCorpusDir(metaDirOf(vaultRoot), target, deps.mkdir);
   if (!(await exists(path.join(target, LEGACY_NOTES_DIR)))) {
     await renameIfPresent(
       rename,

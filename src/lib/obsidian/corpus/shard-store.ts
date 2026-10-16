@@ -1,16 +1,12 @@
 import { createHash } from 'node:crypto';
-import {
-  mkdir as fsMkdir,
-  readdir as fsReaddir,
-  readFile as fsReadFile,
-  unlink as fsUnlink,
-} from 'node:fs/promises';
+import { readdir as fsReaddir, readFile as fsReadFile, unlink as fsUnlink } from 'node:fs/promises';
 import path from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
 
+import { ensureCorpusDir, type MkdirFn } from './ensure-dir.js';
 import { IDENTITY_FIELDS, isStoredManifest, type CorpusIdentity } from './identity.js';
-import { CORPUS_DIR, modelCorpusDir } from './layout.js';
+import { CORPUS_DIR, metaDirOf, modelCorpusDir } from './layout.js';
 import type { CorpusBlock, CorpusManifest, CorpusShard, StoredManifest } from './types.js';
 
 /**
@@ -34,7 +30,7 @@ export interface ShardStoreDeps {
   readFile?: (p: string) => Promise<string>;
   readdir?: (p: string) => Promise<string[]>;
   unlink?: (p: string) => Promise<void>;
-  mkdir?: (p: string) => Promise<void>;
+  mkdir?: MkdirFn;
   /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
   warn?: (message: string) => void;
   /** Expected vector dimension, used to validate a shard's vectors. */
@@ -51,7 +47,8 @@ export class ShardStore {
   private readonly readFile: (p: string) => Promise<string>;
   private readonly readdir: (p: string) => Promise<string[]>;
   private readonly unlink: (p: string) => Promise<void>;
-  private readonly mkdir: (p: string) => Promise<void>;
+  private readonly metaDir: string;
+  private readonly mkdir: MkdirFn | undefined;
   private readonly warn: (message: string) => void;
 
   constructor(vaultRoot: string, deps: ShardStoreDeps) {
@@ -65,7 +62,8 @@ export class ShardStore {
     this.readFile = deps.readFile ?? ((p) => fsReadFile(p, 'utf8'));
     this.readdir = deps.readdir ?? ((p) => fsReaddir(p));
     this.unlink = deps.unlink ?? ((p) => fsUnlink(p));
-    this.mkdir = deps.mkdir ?? ((p) => fsMkdir(p, { recursive: true }).then(() => undefined));
+    this.metaDir = metaDirOf(vaultRoot);
+    this.mkdir = deps.mkdir;
     this.warn = deps.warn ?? ((message) => console.error(message));
   }
 
@@ -76,7 +74,7 @@ export class ShardStore {
 
   async writeShard(shard: CorpusShard): Promise<void> {
     this.assertShardVectors(shard);
-    await this.mkdir(this.notesDir);
+    await ensureCorpusDir(this.metaDir, this.notesDir, this.mkdir);
     await this.writeFile(
       path.join(this.notesDir, ShardStore.shardFileName(shard.path)),
       `${JSON.stringify(shard)}\n`,
@@ -158,7 +156,7 @@ export class ShardStore {
   }
 
   async writeManifest(manifest: CorpusManifest): Promise<void> {
-    await this.mkdir(this.corpusRoot);
+    await ensureCorpusDir(this.metaDir, this.corpusRoot, this.mkdir);
     await this.writeFile(this.manifestFile, `${JSON.stringify(manifest)}\n`);
   }
 

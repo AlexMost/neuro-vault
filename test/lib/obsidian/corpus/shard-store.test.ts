@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile, mkdir, readdir, readFile } from 'node:fs/promises';
+import { access, mkdtemp, writeFile, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -489,5 +489,47 @@ describe('ShardStore per-model directories', () => {
       () => new ShardStore('/v', { modelKey: '../x', dims: TEST_DIMS, readdir: readdirSpy }),
     ).toThrow('"../x" is not a valid model directory name');
     expect(readdirSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('a vault root that no longer exists', () => {
+  /** A vault root that was deleted: nothing may bring the directory back. */
+  async function goneVault() {
+    const root = await tempVault();
+    await rm(root, { recursive: true, force: true });
+    return root;
+  }
+  const absent = (p: string) => expect(access(p)).rejects.toMatchObject({ code: 'ENOENT' });
+
+  it('writeShard rejects and leaves no directory behind', async () => {
+    const root = await goneVault();
+    const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+    await expect(store.writeShard(shard('N.md'))).rejects.toMatchObject({ code: 'ENOENT' });
+    await absent(root);
+  });
+
+  it('writeManifest rejects and leaves no directory behind', async () => {
+    const root = await goneVault();
+    const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+    await expect(store.writeManifest(stored)).rejects.toMatchObject({ code: 'ENOENT' });
+    await absent(root);
+  });
+
+  it('ensureCorpusGitignored finds nothing to update and creates nothing', async () => {
+    const root = await goneVault();
+    const warn = vi.fn();
+    await ensureCorpusGitignored(root, { warn });
+    expect(warn).not.toHaveBeenCalled();
+    await absent(root);
+  });
+
+  it('still creates .neuro-vault and the model directory under an existing vault', async () => {
+    const root = await tempVault();
+    const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+    await store.writeManifest(stored);
+    await store.writeShard(shard('N.md'));
+    expect(
+      await readdir(path.join(root, '.neuro-vault', 'corpus', TEST_IDENTITY.model_key)),
+    ).toEqual(expect.arrayContaining(['manifest.json', 'notes']));
   });
 });

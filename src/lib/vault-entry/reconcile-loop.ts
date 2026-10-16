@@ -96,10 +96,13 @@ interface ProfileState {
 }
 
 /**
- * A vault whose directory is gone (deleted, or its volume unmounted) must not
- * reach the lock — `mkdir -p` of the corpus directory would recreate it — nor
- * the scan, which reads a missing root as an empty vault and would sweep every
- * shard.
+ * A pass over a vault whose directory is gone (deleted, or its volume
+ * unmounted) fails before the scan, which reads a missing root as an empty
+ * vault and would sweep every shard. A deletion during a pass cannot bring the
+ * directory back — the lock and the shard store never create the vault root —
+ * so the follow-up pass the deletion's events queue lands here. A mount point
+ * left behind as an empty directory is indistinguishable from an empty vault;
+ * that stays accepted.
  */
 async function assertVaultDirectory(vaultRoot: string): Promise<void> {
   let directory: boolean;

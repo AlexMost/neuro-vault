@@ -1,7 +1,10 @@
 import path from 'node:path';
 
+/** The server's own directory at the vault root; the corpus (and the vault's config) live in it. */
+export const META_DIR = '.neuro-vault';
+
 /** Corpus root, relative to the vault root. Each model's corpus is a directory under it. */
-export const CORPUS_DIR = '.neuro-vault/corpus';
+export const CORPUS_DIR = `${META_DIR}/corpus`;
 
 /**
  * The shard directory and manifest of the single-corpus layout that preceded
@@ -33,6 +36,11 @@ const MODEL_DIR_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export function isModelDirName(name: string): boolean {
   return MODEL_DIR_RE.test(name) && !RESERVED_ROOT_NAMES.has(name.toLowerCase());
+}
+
+/** `<vaultRoot>/.neuro-vault`. */
+export function metaDirOf(vaultRoot: string): string {
+  return path.join(vaultRoot, META_DIR);
 }
 
 /** `<vaultRoot>/.neuro-vault/corpus` — holds every model's directory and the reconcile lock. */
