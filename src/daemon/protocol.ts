@@ -2,7 +2,7 @@ import type { JSONRPCMessage, JSONRPCRequest, RequestId } from '@modelcontextpro
 import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 import type { EmbeddingIdentity } from '../lib/obsidian/corpus/types.js';
-import type { VaultInfo } from '../lib/vault-entry/index.js';
+import type { IVaultInfo } from '../lib/vault-entry/index.js';
 
 // ---- method shapes (the wire contract; see design D2) ----
 export interface EmbedInitializeParams {
@@ -33,7 +33,7 @@ export interface DaemonInfoResult {
   started_at: string;
   idle_timeout_min: number;
   clients: number;
-  services: { embed: { loaded: string[] }; vault: VaultInfo[] };
+  services: { embed: { loaded: string[] }; vault: IVaultInfo[] };
 }
 
 export type DaemonErrorCode =
@@ -71,7 +71,7 @@ export class DaemonRpcError extends Error {
 }
 
 /** What a handler knows of the connection its request arrived on. */
-export interface ConnectionContext {
+export interface IConnectionContext {
   /** Unique per connection for the life of the server. */
   readonly id: number;
   /**
@@ -81,7 +81,7 @@ export interface ConnectionContext {
   onClose(fn: () => void): void;
 }
 
-export type MethodHandler = (params: unknown, ctx: ConnectionContext) => Promise<unknown>;
+export type MethodHandler = (params: unknown, ctx: IConnectionContext) => Promise<unknown>;
 export type ServiceHandlers = Record<string, MethodHandler>;
 
 export function errorResponse(
@@ -137,7 +137,7 @@ export class ServiceRegistry {
     this.services.set(namespace, handlers);
   }
 
-  async dispatch(request: JSONRPCRequest, ctx: ConnectionContext): Promise<JSONRPCMessage> {
+  async dispatch(request: JSONRPCRequest, ctx: IConnectionContext): Promise<JSONRPCMessage> {
     const handler = this.lookup(request.method);
     if (handler === undefined) {
       return errorResponse(request.id, 'UNKNOWN_METHOD', `unknown method "${request.method}"`);

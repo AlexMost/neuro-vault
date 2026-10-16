@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createDaemonService } from '../../src/daemon/services/daemon.js';
-import type { VaultInfo } from '../../src/lib/vault-entry/index.js';
+import type { IVaultInfo } from '../../src/lib/vault-entry/index.js';
 import { testCtx } from './_ctx.js';
 
 // A factory, not a shared object: `requestShutdown` call counts must not leak between tests.
@@ -13,7 +13,7 @@ function makeDeps() {
     idleTimeoutMin: 30,
     clients: vi.fn(() => 2),
     embedLoaded: vi.fn((): string[] => ['granite-97m']),
-    vaultInfo: vi.fn((): VaultInfo[] => []),
+    vaultInfo: vi.fn((): IVaultInfo[] => []),
     requestShutdown: vi.fn(),
   };
 }
@@ -57,7 +57,7 @@ describe('daemon service', () => {
   it('info lists vault entries, read at call time', async () => {
     const deps = makeDeps();
     const handlers = createDaemonService(deps);
-    const notes: VaultInfo = {
+    const notes: IVaultInfo = {
       vault: '/vaults/notes',
       clients: 2,
       profiles: [{ profile: 'harrier-270m', state: 'ready', notes: 955 }],

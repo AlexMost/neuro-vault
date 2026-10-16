@@ -4,10 +4,10 @@ import { z } from 'zod';
 import { buildMultiVaultTool, payloadOnly, withVaultName } from '../../src/lib/multi-vault-tool.js';
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 import { FAN_OUT_SUFFIX } from '../../src/lib/vault-param.js';
-import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from '../../src/lib/vault-registry.js';
 
 function registryOf(...names: string[]): IVaultRegistry {
-  const list = names.map((name) => ({ name, path: `/vaults/${name}` })) as IVaultEntry[];
+  const list = names.map((name) => ({ name, path: `/vaults/${name}` })) as IRegisteredVault[];
   const byName = new Map(list.map((e) => [e.name, e]));
   return {
     get: (n) => byName.get(n),
@@ -27,7 +27,7 @@ interface Input {
   n?: number;
 }
 
-type Single = (entry: IVaultEntry, payload: { results: string[] }) => unknown;
+type Single = (entry: IRegisteredVault, payload: { results: string[] }) => unknown;
 
 function toolFor(registry: IVaultRegistry, single: Single = withVaultName) {
   return buildMultiVaultTool<Input, { results: string[] }, unknown>(registry, {

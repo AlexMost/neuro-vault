@@ -1,15 +1,15 @@
-import type { CorpusEntry, CorpusWriter } from './corpus.js';
+import type { ICorpusEntry, ICorpusWriter } from './corpus.js';
 import type { ShardStore } from './shard-store.js';
 
 /**
- * A {@link CorpusWriter} over a {@link ShardStore} alone: every call goes to disk, and nothing is
+ * A {@link ICorpusWriter} over a {@link ShardStore} alone: every call goes to disk, and nothing is
  * held in memory. It serves callers with no resident corpus to keep in step (`neuro-vault-mcp
  * index`, a reconcile run in isolation).
  */
-export function shardWriter(store: ShardStore): CorpusWriter {
+export function shardWriter(store: ShardStore): ICorpusWriter {
   return {
     async entries() {
-      const entries = new Map<string, CorpusEntry>();
+      const entries = new Map<string, ICorpusEntry>();
       for (const [path, shard] of await store.listShards()) {
         entries.set(path, {
           content_hash: shard.content_hash,

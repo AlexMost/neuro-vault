@@ -1,4 +1,4 @@
-import type { VaultInfo } from '../../lib/vault-entry/index.js';
+import type { IVaultInfo } from '../../lib/vault-entry/index.js';
 import type { DaemonInfoResult, ServiceHandlers } from '../protocol.js';
 
 export interface DaemonServiceDeps {
@@ -9,7 +9,7 @@ export interface DaemonServiceDeps {
   idleTimeoutMin: number;
   clients: () => number;
   embedLoaded: () => string[];
-  vaultInfo: () => VaultInfo[];
+  vaultInfo: () => IVaultInfo[];
   /** Deferred by the caller so the shutdown response is written first. */
   requestShutdown: () => void;
 }

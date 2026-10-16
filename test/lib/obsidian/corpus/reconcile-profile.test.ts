@@ -8,7 +8,7 @@ import {
   reconcileProfile,
   withReconcileLock,
   type NoteContent,
-  type ProfileReconcileDeps,
+  type IProfileReconcileDeps,
 } from '../../../../src/lib/obsidian/corpus/reconcile.js';
 import { ShardCorpus } from '../../../../src/lib/obsidian/corpus/shard-corpus.js';
 import { ShardStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
@@ -57,7 +57,7 @@ async function harness(files: Record<string, string>) {
     texts.map(() => new Array<number>(TEST_DIMS).fill(0.5)),
   );
   const warn = vi.fn();
-  const deps: ProfileReconcileDeps = {
+  const deps: IProfileReconcileDeps = {
     vaultRoot: root,
     stat: vault.stat,
     readNote: vault.readNote,

@@ -11,7 +11,7 @@ export type PathAccess = (absolutePath: string) => Promise<void>;
  * pass. Every consumer of corpus-derived paths must therefore check disk
  * before answering. That check lives here and nowhere else: the returned
  * closure is bound to one vault root and exposed as
- * `IVaultEntry.filterExisting`.
+ * `IRegisteredVault.filterExisting`.
  *
  * Returns the subset of `paths` that exist. Input is de-duplicated, each path
  * is checked independently, and an unreachable path is reported as absent

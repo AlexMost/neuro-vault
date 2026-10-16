@@ -133,7 +133,7 @@ Methods are `<service>.<method>`, routed by `ServiceRegistry` (`src/daemon/proto
 
 | Method | Params | Result |
 | --- | --- | --- |
-| `daemon.info` | — | `{ name, version, pid, started_at, idle_timeout_min, clients, services: { embed: { loaded: [profileKey…] }, vault: VaultInfo[] } }`; `clients` counts client connections only (see Idle); `VaultInfo` is [below](#reporting-vault-state) |
+| `daemon.info` | — | `{ name, version, pid, started_at, idle_timeout_min, clients, services: { embed: { loaded: [profileKey…] }, vault: IVaultInfo[] } }`; `clients` counts client connections only (see Idle); `IVaultInfo` is [below](#reporting-vault-state) |
 | `daemon.shutdown` | — | `{}`, then the daemon stops |
 | `embed.initialize` | `{ profile }` | `{ identity, max_batch_size }`, once the profile's provider is ready |
 | `embed.query` | `{ profile, text }` | `{ vector }` |
@@ -180,16 +180,16 @@ Every load and failure also leaves one line in the daemon's log, because the cli
 
 ### Connection context and error `data`
 
-A handler is `(params, ctx: ConnectionContext) => Promise<unknown>` (`src/daemon/protocol.ts`). `startDaemonServer` creates one context per accepted socket, `{ id, onClose(fn) }`, and `ServiceRegistry.dispatch(request, ctx)` passes it through; `embed.*` and `daemon.*` ignore it. `id` is unique for the life of the server. Callbacks given to `onClose` run once when the socket closes, however it closes; one registered after the close runs at once; a callback that throws is written to the daemon's log and the rest still run. Closing the server resolves only after every connection's callbacks have run, so a stop never leaves an entry thinking a closed client is attached.
+A handler is `(params, ctx: IConnectionContext) => Promise<unknown>` (`src/daemon/protocol.ts`). `startDaemonServer` creates one context per accepted socket, `{ id, onClose(fn) }`, and `ServiceRegistry.dispatch(request, ctx)` passes it through; `embed.*` and `daemon.*` ignore it. `id` is unique for the life of the server. Callbacks given to `onClose` run once when the socket closes, however it closes; one registered after the close runs at once; a callback that throws is written to the daemon's log and the rest still run. Closing the server resolves only after every connection's callbacks have run, so a stop never leaves an entry thinking a closed client is attached.
 
 `DaemonRpcError` takes an optional `data` object, and `errorResponse` merges it into the response's `error.data` *beside* `code`: `{ ...data, code }`, with `code` last, because the stable code name is the contract and `data` only adds to it. No PR 1 method sets `data`; it is the channel PR 2's `CORPUS_NOT_READY` uses to carry the profile's status (`data.status`) without a second round trip (design D9).
 
 ### Reporting vault state
 
-`daemon.info` reports `services.vault`, one `VaultInfo` per entry, in the order the entries were created:
+`daemon.info` reports `services.vault`, one `IVaultInfo` per entry, in the order the entries were created:
 
 ```typescript
-VaultInfo = {
+IVaultInfo = {
   vault: string,          // the realpath key
   clients: number,        // connections attached to the entry
   idle_since?: string,    // ISO time; present only while clients is 0

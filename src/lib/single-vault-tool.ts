@@ -5,7 +5,7 @@ import { resolveSemanticVault, resolveVault } from './resolve-vault.js';
 import type { ToolName } from './tool-names.js';
 import type { ITool } from './tool-registry.js';
 import { describeMultiVault, EXPLICIT_VAULT_SUFFIX, vaultParamShape } from './vault-param.js';
-import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from './vault-registry.js';
 
 interface ISingleVaultSpecBase {
   name: ToolName;
@@ -27,7 +27,7 @@ export interface ISingleVaultToolSpec<
   TOutput,
 > extends ISingleVaultSpecBase {
   semantic?: false;
-  runForEntry: (entry: IVaultEntry, input: TInput) => Promise<TOutput>;
+  runForEntry: (entry: IRegisteredVault, input: TInput) => Promise<TOutput>;
 }
 
 /**
@@ -42,7 +42,7 @@ export interface ISemanticVaultToolSpec<
 > extends ISingleVaultSpecBase {
   semantic: true;
   runForEntry: (
-    entry: IVaultEntry & { backend: SemanticBackend },
+    entry: IRegisteredVault & { backend: SemanticBackend },
     input: TInput,
   ) => Promise<TOutput>;
 }

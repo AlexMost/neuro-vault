@@ -4,7 +4,7 @@
 
 **Goal:** Move each vault's watcher, reconcile loop and decoded corpus out of every stdio session into one vault entry per vault directory in the shared daemon, and make sessions read the corpus through `corpus.*`.
 
-**Architecture:** A shared module `src/lib/vault-entry/` (vault entry, reconcile loop, scope-aware watcher) runs inside the daemon behind new `vault.*` and `corpus.*` services, and inside the session as the in-process fallback. The corpus becomes the ADR-0019 interface (`ShardCorpus` over `ShardStore`); sessions keep the semantic-leg composition and read through a `SemanticBackend` that is a `CorpusReader`. Two PRs: PR 1 (Tasks 1–11) is dark; PR 2 (Tasks 12–19) switches the session over.
+**Architecture:** A shared module `src/lib/vault-entry/` (vault entry, reconcile loop, scope-aware watcher) runs inside the daemon behind new `vault.*` and `corpus.*` services, and inside the session as the in-process fallback. The corpus becomes the ADR-0019 interface (`ShardCorpus` over `ShardStore`); sessions keep the semantic-leg composition and read through a `SemanticBackend` that is a `ICorpusReader`. Two PRs: PR 1 (Tasks 1–11) is dark; PR 2 (Tasks 12–19) switches the session over.
 
 **Tech Stack:** TypeScript (strict, ESM, `isolatedModules`), Node ≥ 20.9, vitest, chokidar 4, picomatch, `@modelcontextprotocol/sdk` stdio framing.
 
@@ -60,23 +60,23 @@
 
 ```ts
 export type CorpusAnchor = { vector: ArrayLike<number> } | { path: string };
-export interface NoteHit { path: string; similarity: number }
-export interface BlockHit { path: string; heading: string; lines: [number, number]; similarity: number }
-export interface NearestOptions {
+export interface INoteHit { path: string; similarity: number }
+export interface IBlockHit { path: string; heading: string; lines: [number, number]; similarity: number }
+export interface INearestOptions {
   threshold: number;
   limit?: number;
   allowed?: readonly string[];
   exclude?: readonly string[];
 }
-export interface NearestBlocksOptions { paths: readonly string[]; threshold: number; limit?: number }
-export interface CorpusReader {
+export interface INearestBlocksOptions { paths: readonly string[]; threshold: number; limit?: number }
+export interface ICorpusReader {
   /** One list per anchor, in order; null for a path anchor whose note has no vector. */
-  nearest(anchors: readonly CorpusAnchor[], opts: NearestOptions): Promise<(NoteHit[] | null)[]>;
-  nearestBlocks(anchors: readonly CorpusAnchor[], opts: NearestBlocksOptions): Promise<(BlockHit[] | null)[]>;
+  nearest(anchors: readonly CorpusAnchor[], opts: INearestOptions): Promise<(INoteHit[] | null)[]>;
+  nearestBlocks(anchors: readonly CorpusAnchor[], opts: INearestBlocksOptions): Promise<(IBlockHit[] | null)[]>;
 }
-export interface CorpusEntry { content_hash: string; mtime: number; size: number }
-export interface CorpusWriter {
-  entries(): Promise<Map<string, CorpusEntry>>;
+export interface ICorpusEntry { content_hash: string; mtime: number; size: number }
+export interface ICorpusWriter {
+  entries(): Promise<Map<string, ICorpusEntry>>;
   upsert(record: CorpusShard): Promise<void>;
   /** False when the corpus has no record for `path` (the caller re-embeds). */
   touch(path: string, stat: { mtime: number; size: number }): Promise<boolean>;
@@ -86,13 +86,13 @@ export interface CorpusWriter {
   ensureIdentity(expected: CorpusIdentity): Promise<{ rebuilt: boolean; previous: StoredManifest | null }>;
   refresh(): Promise<void>;
 }
-export interface Corpus extends CorpusReader, CorpusWriter {
+export interface ICorpus extends ICorpusReader, ICorpusWriter {
   vectorOf(path: string): Float32Array | null;
   dispose(): void;
 }
 ```
 
-- `shard-writer.ts`: `export function shardWriter(store: ShardStore): CorpusWriter`.
+- `shard-writer.ts`: `export function shardWriter(store: ShardStore): ICorpusWriter`.
 
 - [ ] **Step 1: Write the failing tests** in `shard-writer.test.ts` over a temp vault (`fs.mkdtemp`) and a real `ShardStore`:
   - `entries returns metadata of every shard and no vectors` — write two shards; `entries()` has both paths with `{content_hash, mtime, size}` and no other keys.
@@ -115,8 +115,8 @@ export interface Corpus extends CorpusReader, CorpusWriter {
 **Interfaces:**
 - Consumes: Task 2 types, `ShardStore`, `decodeVector`.
 - Produces:
-  - `scoring.ts`: `cosineSimilarity(a, b): number`, `compareNoteHits(a: NoteHit, b: NoteHit): number` (similarity desc, then `path.localeCompare`), `compareBlockHits(a: BlockHit, b: BlockHit): number` (same rule) — moved, not rewritten.
-  - `shard-corpus.ts`: `export class ShardCorpus implements Corpus` with `constructor(store: ShardStore, deps?: { yieldEvery?: () => Promise<void> })`, `load(): Promise<void>`, `readonly loaded: boolean`, `size(): number` (notes with a vector).
+  - `scoring.ts`: `cosineSimilarity(a, b): number`, `compareNoteHits(a: INoteHit, b: INoteHit): number` (similarity desc, then `path.localeCompare`), `compareBlockHits(a: IBlockHit, b: IBlockHit): number` (same rule) — moved, not rewritten.
+  - `shard-corpus.ts`: `export class ShardCorpus implements ICorpus` with `constructor(store: ShardStore, deps?: { yieldEvery?: () => Promise<void> })`, `load(): Promise<void>`, `readonly loaded: boolean`, `size(): number` (notes with a vector).
 
 - [ ] **Step 1: Write the failing tests** over a fixture corpus written through `ShardStore` (reuse the helpers in `test/lib/obsidian/corpus/` that build shards, or write 6 notes with 4-dim vectors):
   - `nearest matches findNeighbors for a query vector` — for thresholds `0`, `0.3`, `0.8` and `limit` `undefined`, `2`, `nearest([{vector}], opts)[0]` deep-equals `findNeighbors({queryVector, sources, threshold, limit})` over `loadCorpusSnapshot(store).sources`.
@@ -130,7 +130,7 @@ export interface Corpus extends CorpusReader, CorpusWriter {
   - `entries includes notes without a vector`.
 - [ ] **Step 2:** Run `npx vitest run test/lib/obsidian/corpus/shard-corpus.test.ts` — expected: FAIL.
 - [ ] **Step 3:** Move the scoring functions into `scoring.ts`; make `search-engine.ts` import them. Run `npx vitest run test/semantic/search-engine.test.ts` — expected: PASS unchanged.
-- [ ] **Step 4:** Implement `ShardCorpus`: memory is `Map<path, {entry: CorpusEntry, vector: Float32Array | null, blocks: SmartBlock[]}>`; every write calls the store first, then updates memory; `nearest` brute-forces with `cosineSimilarity`, filters `allowed` (as a `Set`) and `exclude` before sorting and slicing `limit`; between anchors it awaits `deps.yieldEvery` (default `() => new Promise(setImmediate)`); reads before `load()` throw `Error('corpus not loaded')`.
+- [ ] **Step 4:** Implement `ShardCorpus`: memory is `Map<path, {entry: ICorpusEntry, vector: Float32Array | null, blocks: SmartBlock[]}>`; every write calls the store first, then updates memory; `nearest` brute-forces with `cosineSimilarity`, filters `allowed` (as a `Set`) and `exclude` before sorting and slicing `limit`; between anchors it awaits `deps.yieldEvery` (default `() => new Promise(setImmediate)`); reads before `load()` throw `Error('corpus not loaded')`.
 - [ ] **Step 5:** Run the test file and `npm run typecheck` — expected: PASS.
 - [ ] **Step 6:** Commit `feat(corpus): ShardCorpus, the in-memory corpus over shard files`.
 
@@ -141,11 +141,11 @@ export interface Corpus extends CorpusReader, CorpusWriter {
 - Test: `test/lib/obsidian/corpus/reconcile.test.ts` (existing cases unchanged), new `test/lib/obsidian/corpus/reconcile-profile.test.ts`
 
 **Interfaces:**
-- Consumes: `CorpusWriter`, `shardWriter`, `ShardCorpus`.
+- Consumes: `ICorpusWriter`, `shardWriter`, `ShardCorpus`.
 - Produces:
 
 ```ts
-export interface LockedPassOptions {
+export interface ILockedPassOptions {
   signal?: AbortSignal;
   onLockWait?: ReconcileOptions['onLockWait'];
   acquireLock?: ReconcileDeps['acquireLock'];
@@ -153,8 +153,8 @@ export interface LockedPassOptions {
   warn?: (message: string) => void;
 }
 /** Acquire the vault's lock, migrate a legacy layout, run fn, release. Resolves `undefined` when aborted before fn ran. */
-export function withReconcileLock<T>(vaultRoot: string, opts: LockedPassOptions, fn: (ctx: { waited: boolean }) => Promise<T>): Promise<T | undefined>;
-export interface ProfileReconcileDeps {
+export function withReconcileLock<T>(vaultRoot: string, opts: ILockedPassOptions, fn: (ctx: { waited: boolean }) => Promise<T>): Promise<T | undefined>;
+export interface IProfileReconcileDeps {
   vaultRoot: string;
   stat: ReconcileDeps['stat'];
   readNote: ReconcileDeps['readNote'];
@@ -163,7 +163,7 @@ export interface ProfileReconcileDeps {
   warn?: (message: string) => void;
 }
 /** The per-note loop and orphan sweep for one profile; the caller holds the lock and has scanned. */
-export function reconcileProfile(deps: ProfileReconcileDeps, corpus: CorpusWriter, paths: string[], opts: Omit<ReconcileOptions, 'onLockWait'>): Promise<ReconcileSummary>;
+export function reconcileProfile(deps: IProfileReconcileDeps, corpus: ICorpusWriter, paths: string[], opts: Omit<ReconcileOptions, 'onLockWait'>): Promise<ReconcileSummary>;
 ```
 
   `ReconcileSummary` gains `added: number` (notes embedded that had no record and were not a rename; `embedded` keeps counting them too), additive for every existing reader. `reconcileCorpus(deps, opts)` keeps its signature and becomes `withReconcileLock` + `scan()` + `reconcileProfile(…, shardWriter(deps.store), …)` + `ensureCorpusGitignored`; an aborted run still returns the empty summary.
@@ -227,15 +227,15 @@ export function reconcileProfile(deps: ProfileReconcileDeps, corpus: CorpusWrite
 - Produces:
 
 ```ts
-export interface LoopProfile {
+export interface ILoopProfile {
   key: string;
   identity: CorpusIdentity;
-  corpus: Corpus & { load(): Promise<void>; readonly loaded: boolean };
+  corpus: ICorpus & { load(): Promise<void>; readonly loaded: boolean };
   embedDocuments: EmbedDocumentsFn;
   enabled: boolean;
 }
-export interface LastReconcile { at: string; added: number; changed: number; removed: number; ms: number }
-export interface ReconcileLoopDeps {
+export interface ILastReconcile { at: string; added: number; changed: number; removed: number; ms: number }
+export interface IReconcileLoopDeps {
   vaultRoot: string;
   vaultName: string;
   scan: () => Promise<string[]>;
@@ -248,19 +248,19 @@ export interface ReconcileLoopDeps {
   /** Injected by tests; production uses withReconcileLock. */
   withLock?: typeof withReconcileLock;
 }
-export interface ReconcileLoop {
-  addProfile(profile: LoopProfile): void;      // starts its startup selection; picked up by the next pass
+export interface IReconcileLoop {
+  addProfile(profile: ILoopProfile): void;      // starts its startup selection; picked up by the next pass
   removeProfile(key: string): void;            // leaves the loop; caller disposes the corpus
   status(key: string): BackendStatus;
-  lastReconcile(key: string): LastReconcile | undefined;
+  lastReconcile(key: string): ILastReconcile | undefined;
   requestPass(): void;                         // coalesces while a pass runs
   whenSettled(): Promise<void>;                // tests only
   dispose(): Promise<void>;                    // aborts the pass in flight
 }
-export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop;
+export function createReconcileLoop(deps: IReconcileLoopDeps): IReconcileLoop;
 ```
 
-  `LastReconcile` from a profile's `ReconcileSummary`: `added` = `summary.added`, `changed` = `summary.embedded - summary.added + summary.renamed`, `removed` = `summary.deleted`. A disabled profile reports `disabled` and is skipped by passes. After the profiles, a pass runs `ensureCorpusGitignored(vaultRoot)` as `reconcileCorpus` does.
+  `ILastReconcile` from a profile's `ReconcileSummary`: `added` = `summary.added`, `changed` = `summary.embedded - summary.added + summary.renamed`, `removed` = `summary.deleted`. A disabled profile reports `disabled` and is skipped by passes. After the profiles, a pass runs `ensureCorpusGitignored(vaultRoot)` as `reconcileCorpus` does.
 
 - [ ] **Step 1: Port the failing tests.** Each `createCorpusBackend` case becomes a one-profile `createReconcileLoop` case with the same assertion on `status(key)` (snapshot assertions become corpus-read assertions). Add:
   - `one lock acquisition for two profiles` — inject `withLock` counting calls; two profiles, one `requestPass()` → one call, both corpora reconciled, in `addProfile` order.
@@ -273,7 +273,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop;
 - [ ] **Step 4:** Run the test file and `npm run typecheck` — expected: PASS.
 - [ ] **Step 5:** Commit `feat(vault-entry): one reconcile loop per vault over many profiles`.
 
-### Task 8: `VaultEntry` and `VaultEntries`
+### Task 8: `IVaultEntry` and `VaultEntries`
 
 **Files:**
 - Create: `src/lib/vault-entry/vault-entry.ts`, `src/lib/vault-entry/vault-entries.ts`, `src/lib/vault-entry/index.ts`
@@ -287,31 +287,31 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop;
 export class VaultEntryError extends Error {
   constructor(readonly code: 'NOT_ATTACHED' | 'VAULT_UNAVAILABLE' | 'UNKNOWN_PROFILE', message: string);
 }
-export interface ProfileInfo { profile: string; state: BackendState; indexed?: number; total?: number; notes?: number; last_reconcile?: LastReconcile }
-export interface VaultInfo { vault: string; clients: number; idle_since?: string; profiles: ProfileInfo[] }
-export interface VaultEntriesDeps {
+export interface IProfileInfo { profile: string; state: BackendState; indexed?: number; total?: number; notes?: number; last_reconcile?: ILastReconcile }
+export interface IVaultInfo { vault: string; clients: number; idle_since?: string; profiles: IProfileInfo[] }
+export interface IVaultEntriesDeps {
   /** Per profile key: the document embedder (daemon: the embed service's queue). */
   embedderFor: (profileKey: string) => EmbedDocumentsFn;
   idleTimeoutMs: number;               // 0 = never
   realpath?: (p: string) => Promise<string>;
   isDirectory?: (p: string) => Promise<boolean>;
   loadScope?: (vaultRoot: string) => Promise<{ scope: VaultScope; semantic: boolean }>;
-  createEntry?: (opts: VaultEntryOptions) => VaultEntry;   // tests
+  createEntry?: (opts: IVaultEntryOptions) => IVaultEntry;   // tests
   timers?: Timers; now?: () => Date; warn?: (m: string) => void;
 }
 export class VaultEntries {
-  constructor(deps: VaultEntriesDeps);
+  constructor(deps: IVaultEntriesDeps);
   attach(connectionId: number, vault: string, profiles: readonly string[]): Promise<{ vault: string; profiles: Record<string, BackendStatus> }>;
   status(connectionId: number, vault: string, profile: string): BackendStatus;
   /** For corpus reads: the attached corpus reader with the scope folded in, or VaultEntryError. */
-  reader(connectionId: number, vault: string, profile: string): { reader: CorpusReader; status: BackendStatus; dims: number };
+  reader(connectionId: number, vault: string, profile: string): { reader: ICorpusReader; status: BackendStatus; dims: number };
   detach(connectionId: number): void;
-  info(): VaultInfo[];
+  info(): IVaultInfo[];
   dispose(): Promise<void>;
 }
 ```
 
-  `VaultEntry` (one directory) owns `scope`, `reader` (`FsVaultReader`), watcher (Task 6, `onQuiet` → `loop.requestPass()`), loop (Task 7), corpora per profile, and the excluded-path cache: `excludedPaths(profile)` is recomputed from `corpus.entries()` filtered by `scope.isExcluded` after each pass and on `setScope`; reads fold it into `exclude` and filter `allowed` by `!isExcluded`. It exposes `addProfile(key)`, `removeProfile(key)`, `setScope(scope)` (restart the watcher, rebuild the reader, `requestPass()`, recompute the cache), `status(key)`, `reader(key)`, `info(clients, idleSince)`, `dispose()`.
+  `IVaultEntry` (one directory) owns `scope`, `reader` (`FsVaultReader`), watcher (Task 6, `onQuiet` → `loop.requestPass()`), loop (Task 7), corpora per profile, and the excluded-path cache: `excludedPaths(profile)` is recomputed from `corpus.entries()` filtered by `scope.isExcluded` after each pass and on `setScope`; reads fold it into `exclude` and filter `allowed` by `!isExcluded`. It exposes `addProfile(key)`, `removeProfile(key)`, `setScope(scope)` (restart the watcher, rebuild the reader, `requestPass()`, recompute the cache), `status(key)`, `reader(key)`, `info(clients, idleSince)`, `dispose()`.
 
 - [ ] **Step 1: Write the failing tests** (`vault-entries.test.ts`, fake timers, injected `createEntry` recording calls, injected `realpath`/`isDirectory`/`loadScope`):
   - `same key for trailing slash and symlink` (Review Focus) — `realpath` maps both inputs to `/v`; one `createEntry` call; both attach results carry `vault: '/v'`.
@@ -342,9 +342,9 @@ export class VaultEntries {
 - Produces:
 
 ```ts
-export interface ConnectionContext { readonly id: number; onClose(fn: () => void): void }
-export type MethodHandler = (params: unknown, ctx: ConnectionContext) => Promise<unknown>;
-// ServiceRegistry.dispatch(request: JSONRPCRequest, ctx: ConnectionContext): Promise<JSONRPCMessage>
+export interface IConnectionContext { readonly id: number; onClose(fn: () => void): void }
+export type MethodHandler = (params: unknown, ctx: IConnectionContext) => Promise<unknown>;
+// ServiceRegistry.dispatch(request: JSONRPCRequest, ctx: IConnectionContext): Promise<JSONRPCMessage>
 export type DaemonErrorCode = … | 'NOT_ATTACHED' | 'VAULT_UNAVAILABLE';   // both → ErrorCode.InvalidParams
 export class DaemonRpcError extends Error { constructor(code: DaemonErrorCode, message: string, data?: Record<string, unknown>) }
 export function errorResponse(id: RequestId, code: DaemonErrorCode, message: string, data?: Record<string, unknown>): JSONRPCMessage; // data merged beside code
@@ -362,11 +362,11 @@ export function errorResponse(id: RequestId, code: DaemonErrorCode, message: str
 
 **Files:**
 - Create: `src/daemon/services/vault.ts`
-- Modify: `src/daemon/services/embed.ts` (expose `documentsFor(profileKey): EmbedDocumentsFn`), `src/daemon/services/daemon.ts` and `src/daemon/protocol.ts` (`DaemonInfoResult.services.vault: VaultInfo[]`), `src/cli-daemon.ts` (build `VaultEntries`, register `vault`, dispose entries on stop), `src/daemon/admin.ts` (print entry and profile lines)
+- Modify: `src/daemon/services/embed.ts` (expose `documentsFor(profileKey): EmbedDocumentsFn`), `src/daemon/services/daemon.ts` and `src/daemon/protocol.ts` (`DaemonInfoResult.services.vault: IVaultInfo[]`), `src/cli-daemon.ts` (build `VaultEntries`, register `vault`, dispose entries on stop), `src/daemon/admin.ts` (print entry and profile lines)
 - Test: `test/daemon/vault-service.test.ts`, `test/daemon/embed-service.test.ts`, `test/daemon/daemon-service.test.ts`, `test/cli-daemon.test.ts` (status output)
 
 **Interfaces:**
-- Consumes: `VaultEntries` (Task 8), `ConnectionContext` (Task 9).
+- Consumes: `VaultEntries` (Task 8), `IConnectionContext` (Task 9).
 - Produces: `createVaultService(entries: VaultEntries): ServiceHandlers` with `attach` (params `{vault: string, profiles: string[]}`; `INVALID_PARAMS` for anything else; `VaultEntryError` → `DaemonRpcError` of the same code; registers `ctx.onClose(() => entries.detach(ctx.id))` once per connection) and `status` (params `{vault, profile}`). `documentsFor(key)` returns an `EmbedDocumentsFn` that loads the profile through the existing `get()` on first use and embeds on the documents lane of its queue.
 - `daemon status` lines (exact shape, two-space indent):
 
@@ -406,7 +406,7 @@ export function errorResponse(id: RequestId, code: DaemonErrorCode, message: str
   - `NOT_ATTACHED` and `VAULT_UNAVAILABLE` over the wire, with `data.code`.
   - `vanished vault directory` (Review Focus) — attach, delete the vault directory, request a pass → `status` is `unavailable` with a reason; a second vault on the same daemon still answers `ready`.
 - [ ] **Step 2:** Run `npx vitest run test/integration/daemon-vault-entry.test.ts` — expected: FAIL first, then PASS once wiring gaps found here are fixed (fix them in the owning module, with a unit test there).
-- [ ] **Step 3:** Write `docs/architecture/vault-entry.md` (what a vault entry holds; attach without detach; idle per entry and per corpus; one reconcile loop and lock acquisition per pass; the watcher's prune and filter rules; the excluded-path fold; how it differs from the session's `IVaultEntry`). Update `shared-daemon.md` (the `vault` service, connection context, error `data`, status lines), `own-corpus.md` (`ShardStore`, the corpus interface, `withReconcileLock` + `reconcileProfile`, `shardWriter` for `index`), `vault-scope.md` (`isSubtreeExcluded`, the watcher), and the `docs/architecture/README.md` map.
+- [ ] **Step 3:** Write `docs/architecture/vault-entry.md` (what a vault entry holds; attach without detach; idle per entry and per corpus; one reconcile loop and lock acquisition per pass; the watcher's prune and filter rules; the excluded-path fold; how it differs from the session's `IRegisteredVault`). Update `shared-daemon.md` (the `vault` service, connection context, error `data`, status lines), `own-corpus.md` (`ShardStore`, the corpus interface, `withReconcileLock` + `reconcileProfile`, `shardWriter` for `index`), `vault-scope.md` (`isSubtreeExcluded`, the watcher), and the `docs/architecture/README.md` map.
 - [ ] **Step 4:** Run `npm test && npm run lint && npm run typecheck && npm run format && npm run build` — expected: all PASS.
 - [ ] **Step 5:** Commit `test(daemon): vault entry over a real socket` and `docs(architecture): vault entry and the corpus interface`.
 - [ ] **Step 6:** Push and open PR 1 to `main` with `Refs #158` and `Refs #175` (no `Closes`). Stop here until PR 1 is reviewed and merged.
@@ -464,15 +464,15 @@ export function createSharedServices(opts: ProviderFactoryOptions): SharedServic
 - [ ] **Step 4:** Run `npx vitest run test/daemon test/integration` and `npm run typecheck` — expected: PASS.
 - [ ] **Step 5:** Commit `feat(daemon): corpus.nearest and corpus.nearestBlocks`.
 
-### Task 14: `executeRetrieval` over `CorpusReader`
+### Task 14: `executeRetrieval` over `ICorpusReader`
 
 **Files:**
-- Create: `test/semantic/_legacy-retrieval.ts` (a frozen copy of today's `executeRetrieval` with its helpers, imports pointed at `src/`), `src/modules/semantic/snapshot-reader.ts` (temporary: a `CorpusReader` over `Map<string, SmartSource>`, deleted in Task 16)
+- Create: `test/semantic/_legacy-retrieval.ts` (a frozen copy of today's `executeRetrieval` with its helpers, imports pointed at `src/`), `src/modules/semantic/snapshot-reader.ts` (temporary: a `ICorpusReader` over `Map<string, SmartSource>`, deleted in Task 16)
 - Modify: `src/modules/semantic/retrieval-policy.ts`, `src/modules/semantic/retrieval-pipeline.ts`, `eval/pipelines.ts`
 - Test: `test/semantic/retrieval-parity.test.ts`, existing `test/semantic/{retrieval-policy,retrieval-pipeline}.test.ts`
 
 **Interfaces:**
-- Produces: `RetrievalInput` drops `sources` and `searchEngine`, gains `corpus: CorpusReader` and `allowed?: readonly string[]`. `executeRetrieval(input): Promise<RetrievalOutput>` with `RetrievalOutput` unchanged. `RetrievalPipelineDeps` replaces `snapshot` + `searchEngine` with `corpus?: CorpusReader`. `snapshotReader(sources: Map<string, SmartSource>): CorpusReader`.
+- Produces: `RetrievalInput` drops `sources` and `searchEngine`, gains `corpus: ICorpusReader` and `allowed?: readonly string[]`. `executeRetrieval(input): Promise<RetrievalOutput>` with `RetrievalOutput` unchanged. `RetrievalPipelineDeps` replaces `snapshot` + `searchEngine` with `corpus?: ICorpusReader`. `snapshotReader(sources: Map<string, SmartSource>): ICorpusReader`.
 - Composition, per design D13: seeds = one `nearest(queryVectors, {threshold, limit: limit + 1, allowed})`; fallback = one `nearest` over the vectors of queries left empty, only when the threshold is a default and above `similarity.fallback`; blocks = one `nearestBlocks(queryVectors, {paths: seedPaths, threshold: quick ? 0 : similarity.deep, limit: quick ? QUICK_BLOCK_LIMIT : limit})`; backfill = per starved seed one `nearestBlocks(queryVectors, {paths: [seed], threshold: 0, limit: 1})`, best over anchors; expansion = one `nearest(seedPaths.map(path => ({path})), {threshold: expansionFloor, limit: expansionLimit, exclude: seedPaths, allowed})`.
 
 - [ ] **Step 1: Write the failing parity test** `retrieval-parity.test.ts`: over a 30-note fixture with 8-dim vectors and blocks, for `mode` ∈ {`quick`, `deep`} × `allowed` ∈ {none, 10 paths} × threshold ∈ {default, explicit `0.9`} × queries ∈ {1, 3, one with no hit above default}, `executeRetrieval({…, corpus: snapshotReader(sources), allowed})` deep-equals `legacyExecuteRetrieval({…, sources: narrowed, searchEngine})`. Also `one nearest call carries every query vector` (spy on the reader: the first call has 3 anchors).
@@ -481,7 +481,7 @@ export function createSharedServices(opts: ProviderFactoryOptions): SharedServic
 - [ ] **Step 4:** Run `npx vitest run test/semantic test/eval` and `npm run typecheck` — expected: PASS.
 - [ ] **Step 5:** Commit `refactor(retrieval): compose the semantic leg over corpus reads`.
 
-### Task 15: `get_similar_notes` and `find_duplicates` over `CorpusReader`
+### Task 15: `get_similar_notes` and `find_duplicates` over `ICorpusReader`
 
 **Files:**
 - Modify: `src/modules/semantic/tools/get-similar-notes.ts`, `src/modules/semantic/tools/find-duplicates.ts`
@@ -509,7 +509,7 @@ export function createSharedServices(opts: ProviderFactoryOptions): SharedServic
 - Produces:
 
 ```ts
-export interface SemanticBackend extends CorpusReader {
+export interface SemanticBackend extends ICorpusReader {
   status(): Promise<BackendStatus>;
   dispose(): Promise<void>;
 }

@@ -5,7 +5,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ServiceRegistry, type ConnectionContext } from '../../src/daemon/protocol.js';
+import { ServiceRegistry, type IConnectionContext } from '../../src/daemon/protocol.js';
 import { createVaultService } from '../../src/daemon/services/vault.js';
 import { VaultEntryError } from '../../src/lib/vault-entry/index.js';
 
@@ -26,7 +26,7 @@ function fakeEntries() {
 /** A connection whose `onClose` callbacks are kept and run by `close()`, like the socket server's. */
 function connection(id = 1) {
   const callbacks: Array<() => void> = [];
-  const ctx: ConnectionContext = { id, onClose: (fn) => void callbacks.push(fn) };
+  const ctx: IConnectionContext = { id, onClose: (fn) => void callbacks.push(fn) };
   return { ctx, registered: () => callbacks.length, close: () => callbacks.forEach((fn) => fn()) };
 }
 
@@ -35,7 +35,7 @@ function setup() {
   const registry = new ServiceRegistry();
   registry.register('vault', createVaultService(entries));
   let next = 1;
-  const call = (ctx: ConnectionContext, method: string, params?: unknown) => {
+  const call = (ctx: IConnectionContext, method: string, params?: unknown) => {
     const request: JSONRPCRequest = { jsonrpc: '2.0', id: next++, method, params: params as never };
     return registry.dispatch(request, ctx);
   };

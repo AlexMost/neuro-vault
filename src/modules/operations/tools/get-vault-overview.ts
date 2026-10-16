@@ -2,7 +2,7 @@ import type { IFanOutResult } from '../../../lib/fan-out.js';
 import { computeVaultOverview, type VaultOverview } from '../../../lib/obsidian/vault-overview.js';
 import { buildMultiVaultTool, withVaultName } from '../../../lib/multi-vault-tool.js';
 import type { ITool } from '../../../lib/tool-registry.js';
-import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 
 interface Input {
   vault?: string;
@@ -12,7 +12,7 @@ export interface GetVaultOverviewDeps {
   registry: IVaultRegistry;
 }
 
-async function runOverviewForEntry(entry: IVaultEntry): Promise<VaultOverview> {
+async function runOverviewForEntry(entry: IRegisteredVault): Promise<VaultOverview> {
   return computeVaultOverview({
     reader: entry.reader,
     graph: entry.graph,

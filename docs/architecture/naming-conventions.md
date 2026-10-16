@@ -4,7 +4,7 @@ How TypeScript symbols are named in this codebase, and where related types live 
 
 ## Interfaces use the `I` prefix
 
-New interface declarations get the `I` prefix: `IVaultEntry`, `ITool`, `IResource`, `IFanOutResult`. This makes it visually obvious in import lists which symbols are structural contracts vs. concrete implementations:
+New interface declarations get the `I` prefix: `IRegisteredVault`, `ITool`, `IResource`, `IFanOutResult`. This makes it visually obvious in import lists which symbols are structural contracts vs. concrete implementations:
 
 ```ts
 import { VaultRegistry, type IVaultRegistry } from './lib/vault-registry.js';
@@ -20,7 +20,7 @@ Where both an interface and a default implementation exist, the class drops the 
 
 ```ts
 export interface IVaultRegistry {
-  get(name: string): IVaultEntry | undefined;
+  get(name: string): IRegisteredVault | undefined;
   // ...
 }
 
@@ -35,8 +35,8 @@ Consumers depend on the interface (`registry: IVaultRegistry` in function signat
 
 Co-locate small related types in the same file as the concept they describe. For example, `src/lib/vault-registry.ts` holds:
 
-- `IVaultEntry` — per-vault primitive bundle
-- `IVaultEntryDeps` — factories the registry consumes at construction
+- `IRegisteredVault` — per-vault primitive bundle
+- `IRegisteredVaultDeps` — factories the registry consumes at construction
 - `IVaultRegistryConfig` — registry-wide config
 - `IVaultRegistry` — public read-only contract
 - `class VaultRegistry implements IVaultRegistry` — default implementation

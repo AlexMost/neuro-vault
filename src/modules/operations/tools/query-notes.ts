@@ -5,7 +5,7 @@ import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
 import type { IFanOutResult } from '../../../lib/fan-out.js';
 import type { QueryNotesToolInput } from '../types.js';
-import type { IVaultEntry } from '../../../lib/vault-registry.js';
+import type { IRegisteredVault } from '../../../lib/vault-registry.js';
 import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.js';
 
 const queryNotesSortSchema = z.object({
@@ -42,7 +42,7 @@ export interface QueryNotesResultWithVault {
 }
 
 async function runQueryForEntry(
-  entry: IVaultEntry,
+  entry: IRegisteredVault,
   input: QueryNotesToolInput & { vault?: string },
 ): Promise<QueryNotesResultWithVault> {
   const raw = await runQueryNotes(input, entry.reader, entry.graph);

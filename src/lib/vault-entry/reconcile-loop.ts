@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises';
 
-import type { Corpus } from '../obsidian/corpus/corpus.js';
+import type { ICorpus } from '../obsidian/corpus/corpus.js';
 import { formatRebuild, type CorpusIdentity } from '../obsidian/corpus/identity.js';
 import {
   reconcileProfile,
@@ -18,16 +18,16 @@ import { ensureCorpusGitignored, isManifestCompatible } from '../obsidian/corpus
 import type { EmbedDocumentsFn, StoredManifest } from '../obsidian/corpus/types.js';
 import type { BackendStatus } from '../obsidian/semantic-backend.js';
 
-export interface LoopProfile {
+export interface ILoopProfile {
   key: string;
   identity: CorpusIdentity;
   /** `size()` is the empty-corpus guard's measure: the notes that can rank. */
-  corpus: Corpus & { load(): Promise<void>; readonly loaded: boolean; size(): number };
+  corpus: ICorpus & { load(): Promise<void>; readonly loaded: boolean; size(): number };
   embedDocuments: EmbedDocumentsFn;
   enabled: boolean;
 }
 
-export interface LastReconcile {
+export interface ILastReconcile {
   at: string;
   added: number;
   changed: number;
@@ -35,7 +35,7 @@ export interface LastReconcile {
   ms: number;
 }
 
-export interface ReconcileLoopDeps {
+export interface IReconcileLoopDeps {
   vaultRoot: string;
   vaultName: string;
   scan: () => Promise<string[]>;
@@ -64,9 +64,9 @@ export interface ReconcileLoopDeps {
   onVaultRestored?: () => void;
 }
 
-export interface ReconcileLoop {
+export interface IReconcileLoop {
   /** Starts the profile's startup selection; the next pass reconciles it. */
-  addProfile(profile: LoopProfile): void;
+  addProfile(profile: ILoopProfile): void;
   /**
    * Leaves the loop; the caller disposes the corpus. A reconcile of it in flight
    * is aborted: it stops after the note it is on, and the pass moves on to the
@@ -76,7 +76,7 @@ export interface ReconcileLoop {
    */
   removeProfile(key: string): void;
   status(key: string): BackendStatus;
-  lastReconcile(key: string): LastReconcile | undefined;
+  lastReconcile(key: string): ILastReconcile | undefined;
   /** Coalesces: requests in one synchronous run share a pass, and any during a pass queue one more. */
   requestPass(): void;
   /**
@@ -90,12 +90,12 @@ export interface ReconcileLoop {
   dispose(): Promise<void>;
 }
 
-interface ProfileState {
-  profile: LoopProfile;
+interface IProfileState {
+  profile: ILoopProfile;
   status: BackendStatus;
   /** The startup selection; a pass awaits it before touching this corpus. Never rejects. */
   selection: Promise<void>;
-  last?: LastReconcile;
+  last?: ILastReconcile;
   removed: boolean;
   /** Aborted on removal, so a removed profile stops embedding without waiting out its whole run. */
   abort: AbortController;
@@ -141,7 +141,7 @@ const indexing = (): BackendStatus => ({ state: 'indexing', indexed: 0, total: 0
  * A disabled profile reports `disabled` and is never loaded or reconciled, and
  * a loop whose profiles are all disabled never takes the lock.
  */
-export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
+export function createReconcileLoop(deps: IReconcileLoopDeps): IReconcileLoop {
   const warn = deps.warn ?? ((message: string) => console.error(message));
   const retryBaseMs = deps.retryBaseMs ?? RETRY_BASE_MS;
   const retryMaxMs = deps.retryMaxMs ?? RETRY_MAX_MS;
@@ -151,7 +151,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
   const withLock = deps.withLock ?? withReconcileLock;
 
   /** In addition order: the order a pass walks them. */
-  const profiles = new Map<string, ProfileState>();
+  const profiles = new Map<string, IProfileState>();
   const selections = new Set<Promise<void>>();
   /** The pass in flight (or about to begin), or null when idle. */
   let currentPass: Promise<void> | null = null;
@@ -171,13 +171,13 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
 
   const label = (key: string) => `vault "${deps.vaultName}" (profile "${key}")`;
 
-  function stateOf(key: string): ProfileState {
+  function stateOf(key: string): IProfileState {
     const state = profiles.get(key);
     if (state === undefined) throw new Error(`reconcile loop: unknown profile "${key}"`);
     return state;
   }
 
-  function unavailable(state: ProfileState, reason: string): void {
+  function unavailable(state: IProfileState, reason: string): void {
     state.status = { state: 'unavailable', reason };
     warn(`neuro-vault semantic: corpus unavailable for ${label(state.profile.key)}: ${reason}`);
   }
@@ -195,12 +195,12 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
    * A removed profile's corpus is the caller's to dispose, and that may already
    * have happened: whatever this loop just loaded into it must not stay resident.
    */
-  function releaseIfRemoved(state: ProfileState): boolean {
+  function releaseIfRemoved(state: IProfileState): boolean {
     if (state.removed) state.profile.corpus.dispose();
     return state.removed;
   }
 
-  function notifySettled(state: ProfileState): void {
+  function notifySettled(state: IProfileState): void {
     if (state.removed || disposed || deps.onSettled === undefined) return;
     try {
       deps.onSettled(state.profile.key);
@@ -242,7 +242,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
    * as it is in memory. Failures are reported, not thrown — the pass that
    * follows loads whatever is not loaded.
    */
-  async function select(state: ProfileState): Promise<void> {
+  async function select(state: IProfileState): Promise<void> {
     const { corpus, identity } = state.profile;
     try {
       const stored = await corpus.identity();
@@ -259,7 +259,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
   }
 
   async function reconcileOne(
-    state: ProfileState,
+    state: IProfileState,
     paths: string[],
     waited: boolean,
     passSignal: AbortSignal,
@@ -326,7 +326,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
     // profile reports `unavailable` across its rebuild and callers start a
     // competing `index`. `ready` is left alone: a reconcile behind a serving
     // corpus must not take it off the air. A lock timeout restores what this replaced.
-    const replaced = new Map<ProfileState, { before: BackendStatus; set: BackendStatus }>();
+    const replaced = new Map<IProfileState, { before: BackendStatus; set: BackendStatus }>();
     for (const state of members) {
       if (state.status.state !== 'unavailable') continue;
       const set = indexing();
@@ -336,7 +336,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
     const abort = new AbortController();
     passAbort = abort;
     const { signal } = abort;
-    const settled = new Set<ProfileState>();
+    const settled = new Set<IProfileState>();
     try {
       try {
         await assertVaultDirectory(deps.vaultRoot);
@@ -426,7 +426,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
       if (profiles.has(profile.key)) {
         throw new Error(`reconcile loop: profile "${profile.key}" is already attached`);
       }
-      const state: ProfileState = {
+      const state: IProfileState = {
         profile,
         status: profile.enabled ? indexing() : { state: 'disabled' },
         selection: Promise.resolve(),
@@ -471,7 +471,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
   };
 }
 
-function lastOf(summary: ReconcileSummary, at: number, ms: number): LastReconcile {
+function lastOf(summary: ReconcileSummary, at: number, ms: number): ILastReconcile {
   return {
     at: new Date(at).toISOString(),
     added: summary.added,

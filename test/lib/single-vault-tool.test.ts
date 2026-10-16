@@ -6,7 +6,7 @@ import type { SemanticBackend } from '../../src/lib/obsidian/semantic-backend.js
 import { registerTool } from '../../src/lib/tool-registry.js';
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 import { EXPLICIT_VAULT_SUFFIX } from '../../src/lib/vault-param.js';
-import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from '../../src/lib/vault-registry.js';
 import { callTool, expectToolError } from '../_gate.js';
 
 interface FakeEntrySpec {
@@ -17,7 +17,7 @@ interface FakeEntrySpec {
 function registryOf(...specs: Array<string | FakeEntrySpec>): IVaultRegistry {
   const list = specs.map((s) => {
     const { name, backend } = typeof s === 'string' ? { name: s, backend: undefined } : s;
-    return { name, path: `/vaults/${name}`, backend } as unknown as IVaultEntry;
+    return { name, path: `/vaults/${name}`, backend } as unknown as IRegisteredVault;
   });
   const byName = new Map(list.map((e) => [e.name, e]));
   return {

@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 import {
   VaultRegistry,
-  type IVaultEntry,
-  type IVaultEntryDeps,
+  type IRegisteredVault,
+  type IRegisteredVaultDeps,
 } from '../../src/lib/vault-registry.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import { createVaultScope } from '../../src/lib/obsidian/vault-scope.js';
@@ -12,16 +12,16 @@ import { loadVaultScope } from '../../src/lib/obsidian/vault-scope-config.js';
 import { buildBasenameIndex } from '../../src/lib/obsidian/link-resolver.js';
 import type { IVaultConfig } from '../../src/types.js';
 
-// Type-level guard: provider must be required on IVaultEntry. If anyone
+// Type-level guard: provider must be required on IRegisteredVault. If anyone
 // reintroduces optionality (e.g. by adding `?`), this assertion breaks at
 // compile time — a much cleaner signal than the 14 runtime `!` asserts the
 // codebase used to carry.
 type AssertRequired<T, K extends keyof T> = undefined extends T[K] ? never : true;
-const _providerIsRequired: AssertRequired<IVaultEntry, 'provider'> = true;
+const _providerIsRequired: AssertRequired<IRegisteredVault, 'provider'> = true;
 // Reference to silence the unused-variable lint.
 void _providerIsRequired;
 
-function fakeDeps(): IVaultEntryDeps {
+function fakeDeps(): IRegisteredVaultDeps {
   return {
     readerFactory: ({ vaultRoot }) => ({ vaultRoot }) as never,
     graphFactory: ({ reader }) => ({ reader, ensureFresh: async () => {} }) as never,

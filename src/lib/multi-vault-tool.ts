@@ -5,14 +5,14 @@ import { resolveVault } from './resolve-vault.js';
 import type { ToolName } from './tool-names.js';
 import type { ITool } from './tool-registry.js';
 import { describeMultiVault, FAN_OUT_SUFFIX, vaultParamShape } from './vault-param.js';
-import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from './vault-registry.js';
 
 /**
  * Single-vault shape for a payload that has no vault identity of its own —
  * `list_tags`, `list_properties`, `get_vault_overview`.
  */
 export function withVaultName<T extends object>(
-  entry: IVaultEntry,
+  entry: IRegisteredVault,
   payload: T,
 ): { vault: string } & T {
   return { vault: entry.name, ...payload };
@@ -23,7 +23,7 @@ export function withVaultName<T extends object>(
  * own `vault` — `query_notes`, `search_notes`. Adding a top-level `vault` here
  * would state the same fact twice at two different granularities.
  */
-export function payloadOnly<T extends object>(_entry: IVaultEntry, payload: T): T {
+export function payloadOnly<T extends object>(_entry: IRegisteredVault, payload: T): T {
   return payload;
 }
 
@@ -46,9 +46,9 @@ export interface IMultiVaultToolSpec<
    * builder's own `vault` param.
    */
   inputShape: z.ZodRawShape & { vault?: never };
-  runForEntry: (entry: IVaultEntry, input: TInput) => Promise<TPayload>;
+  runForEntry: (entry: IRegisteredVault, input: TInput) => Promise<TPayload>;
   /** `withVaultName` or `payloadOnly` — required, so the choice is explicit. */
-  single: (entry: IVaultEntry, payload: TPayload) => TSingle;
+  single: (entry: IRegisteredVault, payload: TPayload) => TSingle;
 }
 
 /**

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createOperationsModule } from '../../src/modules/operations/index.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
-import type { IVaultRegistry, IVaultEntry } from '../../src/lib/vault-registry.js';
+import type { IVaultRegistry, IRegisteredVault } from '../../src/lib/vault-registry.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import { createExistingPathFilter } from '../../src/lib/obsidian/existing-paths.js';
@@ -28,7 +28,7 @@ describe('createOperationsModule', () => {
       getBacklinkCount: vi.fn(() => 0),
     } as unknown as WikilinkGraphIndex;
 
-    const fakeEntry: IVaultEntry = {
+    const fakeEntry: IRegisteredVault = {
       name: 'MyVault',
       path: '/tmp/MyVault',
       scope: createVaultScope(),

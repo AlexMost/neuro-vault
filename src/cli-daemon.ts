@@ -22,7 +22,7 @@ import { createVaultService } from './daemon/services/vault.js';
 import { ensurePrivateSocketDir } from './daemon/socket-dir.js';
 import { startDaemonServer, type DaemonServerHandle } from './daemon/socket-server.js';
 import { neuroVaultCacheBase } from './lib/cache-dir.js';
-import { VaultEntries, type VaultEntriesDeps } from './lib/vault-entry/index.js';
+import { VaultEntries, type IVaultEntriesDeps } from './lib/vault-entry/index.js';
 import type { ModelProfile } from './lib/model-profiles.js';
 import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
 import type { EmbeddingProvider } from './modules/semantic/types.js';
@@ -63,7 +63,7 @@ export interface DaemonCommandDeps {
   startServer?: typeof startDaemonServer;
   createProvider?: (profile: ModelProfile) => EmbeddingProvider;
   /** Builds the daemon's vault entries; default `new VaultEntries(deps)`. */
-  createVaultEntries?: (deps: VaultEntriesDeps) => VaultEntries;
+  createVaultEntries?: (deps: IVaultEntriesDeps) => VaultEntries;
   writeInfo?: (file: string, info: DaemonInfo) => Promise<void>;
   readInfo?: (file: string) => DaemonInfo | undefined;
   onSignal?: (signal: 'SIGINT' | 'SIGTERM', handler: () => void) => void;
@@ -93,7 +93,7 @@ function resolveDeps(deps: DaemonCommandDeps) {
     connect: deps.connect ?? defaultConnect,
     startServer: deps.startServer ?? startDaemonServer,
     createProvider: deps.createProvider ?? daemonProviderFor,
-    createVaultEntries: deps.createVaultEntries ?? ((d: VaultEntriesDeps) => new VaultEntries(d)),
+    createVaultEntries: deps.createVaultEntries ?? ((d: IVaultEntriesDeps) => new VaultEntries(d)),
     writeInfo: deps.writeInfo ?? ((file: string, info: DaemonInfo) => writeDaemonInfo(file, info)),
     readInfo: deps.readInfo ?? ((file: string) => readDaemonInfo(file)),
     onSignal:

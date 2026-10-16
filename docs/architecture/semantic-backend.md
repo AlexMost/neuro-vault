@@ -28,7 +28,7 @@ interface SemanticBackend {
 }
 ```
 
-`IVaultEntry.backend?: SemanticBackend` ([`vault-registry.md`](./vault-registry.md)) carries one of these per vault. It is absent only when the semantic module is globally off (`--no-semantic`) — `get_similar_notes` and `find_duplicates` are not registered in that case, and `search_notes` (registered with the lexical leg only) reads the absent backend as `disabled`. A per-vault `"semantic": false` in `.neuro-vault/config.json` still gets a backend; that backend is simply built `enabled: false` and permanently reports `disabled`.
+`IRegisteredVault.backend?: SemanticBackend` ([`vault-registry.md`](./vault-registry.md)) carries one of these per vault. It is absent only when the semantic module is globally off (`--no-semantic`) — `get_similar_notes` and `find_duplicates` are not registered in that case, and `search_notes` (registered with the lexical leg only) reads the absent backend as `disabled`. A per-vault `"semantic": false` in `.neuro-vault/config.json` still gets a backend; that backend is simply built `enabled: false` and permanently reports `disabled`.
 
 `disabled` and `unavailable` mean different things and must never be confused: `disabled` is a deliberate choice (the vault turned semantics off); `unavailable` is broken (a reconcile failed, or there is nothing usable yet and never has been). `src/modules/semantic/backend/corpus-backend.ts` never reports a failure as `disabled`.
 

@@ -1,10 +1,10 @@
 import type { IResource } from '../../../lib/resource-registry.js';
-import type { IVaultEntry } from '../../../lib/vault-registry.js';
+import type { IRegisteredVault } from '../../../lib/vault-registry.js';
 import { computeVaultOverview, type VaultOverview } from '../../../lib/obsidian/vault-overview.js';
 
 export interface IVaultOverviewResourceOpts {
   uri: string;
-  entry: IVaultEntry;
+  entry: IRegisteredVault;
 }
 
 export function buildVaultOverviewResource(

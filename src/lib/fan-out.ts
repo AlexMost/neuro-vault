@@ -1,4 +1,4 @@
-import type { IVaultEntry, IVaultRegistry } from './vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from './vault-registry.js';
 import { ToolHandlerError, isFatalToolError } from './tool-response.js';
 
 export interface ISkippedVault {
@@ -72,7 +72,7 @@ function mapRejectionToFailedVault(vault: string, reason: unknown): IFailedVault
  */
 export async function runFanOut<T extends object>(
   registry: IVaultRegistry,
-  fn: (entry: IVaultEntry) => Promise<T>,
+  fn: (entry: IRegisteredVault) => Promise<T>,
 ): Promise<IFanOutResult<T>> {
   const entries = registry.list();
   const settled = await Promise.allSettled(entries.map((entry) => fn(entry)));

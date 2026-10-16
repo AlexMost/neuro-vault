@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { CorpusWriter } from './corpus.js';
+import type { ICorpusWriter } from './corpus.js';
 import { buildEmbedInputs } from './embed-text.js';
 import type { CorpusIdentity } from './identity.js';
 import { corpusRootOf } from './layout.js';
@@ -153,7 +153,7 @@ export async function reconcileCorpus(
   return summary ?? emptySummary();
 }
 
-export interface LockedPassOptions {
+export interface ILockedPassOptions {
   signal?: AbortSignal;
   onLockWait?: ReconcileOptions['onLockWait'];
   acquireLock?: ReconcileDeps['acquireLock'];
@@ -169,7 +169,7 @@ export interface LockedPassOptions {
  */
 export async function withReconcileLock<T>(
   vaultRoot: string,
-  opts: LockedPassOptions,
+  opts: ILockedPassOptions,
   fn: (ctx: { waited: boolean }) => Promise<T>,
 ): Promise<T | undefined> {
   const warn = opts.warn ?? ((message: string) => console.error(message));
@@ -222,7 +222,7 @@ function emptySummary(): ReconcileSummary {
   return { total: 0, embedded: 0, added: 0, reused: 0, renamed: 0, deleted: 0, failed: 0 };
 }
 
-export interface ProfileReconcileDeps {
+export interface IProfileReconcileDeps {
   vaultRoot: string;
   stat: ReconcileDeps['stat'];
   readNote: ReconcileDeps['readNote'];
@@ -239,8 +239,8 @@ export interface ProfileReconcileDeps {
  * corpus gitignore is the caller's to write once every profile has run.
  */
 export async function reconcileProfile(
-  deps: ProfileReconcileDeps,
-  corpus: CorpusWriter,
+  deps: IProfileReconcileDeps,
+  corpus: ICorpusWriter,
   paths: string[],
   opts: Omit<ReconcileOptions, 'onLockWait'>,
 ): Promise<ReconcileSummary> {
@@ -390,7 +390,7 @@ async function embedNote(
   note: NoteContent,
   hash: string,
   embedDocuments: EmbedDocumentsFn,
-  corpus: CorpusWriter,
+  corpus: ICorpusWriter,
 ): Promise<void> {
   const inputs = buildEmbedInputs(notePath, note.content);
 

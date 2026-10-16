@@ -2,7 +2,7 @@ import type { IFanOutResult } from '../../../lib/fan-out.js';
 import { listProperties } from '../../../lib/obsidian/vault-aggregates.js';
 import { buildMultiVaultTool, withVaultName } from '../../../lib/multi-vault-tool.js';
 import type { ITool } from '../../../lib/tool-registry.js';
-import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 
 interface Input {
   vault?: string;
@@ -16,7 +16,7 @@ export interface ListPropertiesDeps {
   registry: IVaultRegistry;
 }
 
-async function runForEntry(entry: IVaultEntry): Promise<FanOutPayload> {
+async function runForEntry(entry: IRegisteredVault): Promise<FanOutPayload> {
   const results = await listProperties(entry.reader);
   return { results };
 }

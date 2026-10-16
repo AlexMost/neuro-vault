@@ -10,7 +10,7 @@ import {
 } from '../../../src/lib/obsidian/corpus/identity.js';
 import {
   contentHash,
-  type LockedPassOptions,
+  type ILockedPassOptions,
   type NoteContent,
   type withReconcileLock,
 } from '../../../src/lib/obsidian/corpus/reconcile.js';
@@ -21,9 +21,9 @@ import type { EmbedDocumentsFn } from '../../../src/lib/obsidian/corpus/types.js
 import { encodeVector } from '../../../src/lib/obsidian/corpus/vector-codec.js';
 import {
   createReconcileLoop,
-  type LoopProfile,
-  type ReconcileLoop,
-  type ReconcileLoopDeps,
+  type ILoopProfile,
+  type IReconcileLoop,
+  type IReconcileLoopDeps,
 } from '../../../src/lib/vault-entry/reconcile-loop.js';
 import { TEST_DIMS, TEST_EMBEDDING_IDENTITY, TEST_IDENTITY } from '../../_identity.js';
 
@@ -77,7 +77,7 @@ function scriptedLock(script: (call: number) => LockCall = () => ({})) {
   const reached: Array<() => void> = [];
   const withLock = (async (
     _root: string,
-    opts: LockedPassOptions,
+    opts: ILockedPassOptions,
     fn: (ctx: { waited: boolean }) => Promise<unknown>,
   ) => {
     calls += 1;
@@ -126,7 +126,7 @@ function fakeVault(files: Record<string, string>) {
 }
 
 const roots: string[] = [];
-const loops: ReconcileLoop[] = [];
+const loops: IReconcileLoop[] = [];
 
 afterEach(async () => {
   await Promise.all(loops.splice(0).map((loop) => loop.dispose()));
@@ -134,7 +134,7 @@ afterEach(async () => {
 });
 
 /** A vault on disk with a loop over it; the lock defaults to a counting pass-through. */
-async function harness(files: Record<string, string> = {}, over: Partial<ReconcileLoopDeps> = {}) {
+async function harness(files: Record<string, string> = {}, over: Partial<IReconcileLoopDeps> = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'nv-reconcile-loop-'));
   roots.push(root);
   const vault = fakeVault(files);
@@ -165,7 +165,7 @@ function profileOf(
   key: string,
   corpus: ShardCorpus,
   opts: { identity?: CorpusIdentity; embed?: EmbedDocumentsFn; enabled?: boolean } = {},
-): LoopProfile {
+): ILoopProfile {
   return {
     key,
     identity: opts.identity ?? TEST_IDENTITY,
@@ -592,7 +592,7 @@ describe('createReconcileLoop over a real reconcile', () => {
   };
 
   /** A cold vault on disk, wired to the production lock; the embedder is swappable. */
-  async function coldVault(files: Record<string, string>, over: Partial<ReconcileLoopDeps> = {}) {
+  async function coldVault(files: Record<string, string>, over: Partial<IReconcileLoopDeps> = {}) {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-loop-real-'));
     roots.push(root);
     const vault = fakeVault(files);
@@ -785,7 +785,7 @@ describe('createReconcileLoop over a real reconcile', () => {
     let seen: AbortSignal | undefined;
     // Settles only on abort: a cold index is thousands of reads and embeds,
     // and nothing else would stop them once the client hung up.
-    const withLock = (async (_root: string, opts: LockedPassOptions) => {
+    const withLock = (async (_root: string, opts: ILockedPassOptions) => {
       seen = opts.signal;
       started.open();
       await new Promise((resolve) => opts.signal?.addEventListener('abort', resolve));
@@ -809,7 +809,7 @@ describe('createReconcileLoop, many profiles', () => {
   /** Two profiles over one vault, each embedding through its own recorded embedder. */
   async function twoProfiles(
     files: Record<string, string>,
-    over: Partial<ReconcileLoopDeps> = {},
+    over: Partial<IReconcileLoopDeps> = {},
     opts: { seeded?: boolean } = {},
   ) {
     const h = await harness(files, over);

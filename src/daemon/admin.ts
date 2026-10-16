@@ -8,7 +8,7 @@ import {
   type JSONRPCMessage,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import type { ProfileInfo, VaultInfo } from '../lib/vault-entry/index.js';
+import type { IProfileInfo, IVaultInfo } from '../lib/vault-entry/index.js';
 import { packageMeta } from '../package-meta.js';
 
 import type { DaemonInfo } from './info.js';
@@ -280,18 +280,18 @@ async function statusOne(d: AdminDeps, entry: Entry, print: Write): Promise<void
   // A daemon of another version answers without `vault`, and a later one may shape it
   // differently: print what is recognisable, never fail on the rest.
   const vaults: unknown = (live.services as { vault?: unknown }).vault;
-  for (const vault of Array.isArray(vaults) ? (vaults as Array<Partial<VaultInfo> | null>) : []) {
+  for (const vault of Array.isArray(vaults) ? (vaults as Array<Partial<IVaultInfo> | null>) : []) {
     if (typeof vault !== 'object' || vault === null) continue;
     print(vaultLine(vault, d.now()));
     const profiles: unknown = vault.profiles;
     for (const profile of Array.isArray(profiles) ? (profiles as unknown[]) : []) {
       if (typeof profile === 'object' && profile !== null)
-        print(profileLine(profile as ProfileInfo));
+        print(profileLine(profile as IProfileInfo));
     }
   }
 }
 
-function vaultLine(vault: Partial<VaultInfo>, now: Date): string {
+function vaultLine(vault: Partial<IVaultInfo>, now: Date): string {
   const clients = vault.clients ?? 0;
   const who = clients > 0 ? `clients ${clients}` : idleFor(vault.idle_since, now);
   return `  vault ${vault.vault ?? '?'}  ${who}`;
@@ -306,7 +306,7 @@ function idleFor(since: unknown, now: Date): string {
   return `idle ${span} (since ${since as string})`;
 }
 
-function profileLine(profile: ProfileInfo): string {
+function profileLine(profile: IProfileInfo): string {
   const parts = [profile.profile];
   switch (profile.state) {
     case 'indexing':
@@ -328,7 +328,7 @@ function profileLine(profile: ProfileInfo): string {
   // Another daemon version may send null or another shape here; print only what is recognisable.
   const raw: unknown = profile.last_reconcile;
   if (typeof raw === 'object' && raw !== null) {
-    const last = raw as Partial<NonNullable<ProfileInfo['last_reconcile']>>;
+    const last = raw as Partial<NonNullable<IProfileInfo['last_reconcile']>>;
     parts.push(
       `last reconcile ${last.at} +${last.added} ~${last.changed} -${last.removed} ${last.ms} ms`,
     );

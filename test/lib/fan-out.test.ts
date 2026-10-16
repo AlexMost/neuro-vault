@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { runFanOut } from '../../src/lib/fan-out.js';
 import { FATAL_TOOL_ERROR_CODES, ToolHandlerError } from '../../src/lib/tool-response.js';
-import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from '../../src/lib/vault-registry.js';
 
-function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
-  const list = entries.map((e) => ({ readConventions: async () => null, ...e }) as IVaultEntry);
+function makeRegistry(entries: Partial<IRegisteredVault>[]): IVaultRegistry {
+  const list = entries.map(
+    (e) => ({ readConventions: async () => null, ...e }) as IRegisteredVault,
+  );
   return {
     get: (n) => list.find((e) => e.name === n),
     require: () => list[0],

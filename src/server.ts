@@ -12,7 +12,7 @@ import type { EmbeddingProvider } from './modules/semantic/types.js';
 import { createOwnCorpusBackendFactory } from './modules/semantic/backend/index.js';
 import { corpusIdentityOf, type CorpusIdentity } from './lib/obsidian/corpus/identity.js';
 import { createOperationsModule } from './modules/operations/index.js';
-import { VaultRegistry, type IVaultEntryDeps } from './lib/vault-registry.js';
+import { VaultRegistry, type IRegisteredVaultDeps } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
 import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
 import { createListMatchingPaths } from './lib/obsidian/query/index.js';
@@ -41,7 +41,7 @@ export interface StdinLike {
 
 export interface NeuroVaultStartupDependencies {
   semantic?: ISemanticModuleDeps;
-  vaultEntryDeps?: Partial<IVaultEntryDeps>;
+  vaultEntryDeps?: Partial<IRegisteredVaultDeps>;
   serverFactory?: (instructions: string) => ToolServer;
   transportFactory?: () => StdioServerTransport;
   /**
@@ -95,8 +95,8 @@ function defaultTransportFactory(): StdioServerTransport {
 function buildDefaultVaultEntryDeps(
   embedder: QueuedEmbedder,
   identity: CorpusIdentity,
-  overrides: Partial<IVaultEntryDeps> = {},
-): IVaultEntryDeps {
+  overrides: Partial<IRegisteredVaultDeps> = {},
+): IRegisteredVaultDeps {
   return {
     readerFactory: ({ vaultRoot, scope }) => new FsVaultReader({ vaultRoot, scope }),
     vaultConfigFactory: ({ vaultRoot }) => loadVaultConfig(vaultRoot),

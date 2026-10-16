@@ -6,7 +6,7 @@ import {
   DaemonRpcError,
   onlyKeys,
   stringParam,
-  type ConnectionContext,
+  type IConnectionContext,
   type ServiceHandlers,
 } from '../protocol.js';
 
@@ -42,7 +42,7 @@ export function createVaultService(entries: VaultEntriesPort): ServiceHandlers {
   // Connections whose close is already hooked; each removes itself when it closes.
   const hooked = new Set<number>();
 
-  function detachOnClose(ctx: ConnectionContext): void {
+  function detachOnClose(ctx: IConnectionContext): void {
     if (hooked.has(ctx.id)) return;
     hooked.add(ctx.id);
     ctx.onClose(() => {

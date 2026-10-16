@@ -4,24 +4,24 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { CorpusReader } from '../../../src/lib/obsidian/corpus/corpus.js';
+import type { ICorpusReader } from '../../../src/lib/obsidian/corpus/corpus.js';
 import type { BackendStatus } from '../../../src/lib/obsidian/semantic-backend.js';
 import { createVaultScope, type VaultScope } from '../../../src/lib/obsidian/vault-scope.js';
 import { withReconcileLock } from '../../../src/lib/obsidian/corpus/reconcile.js';
 import {
   createReconcileLoop,
-  type ReconcileLoop,
+  type IReconcileLoop,
 } from '../../../src/lib/vault-entry/reconcile-loop.js';
 import {
   createVaultEntry,
-  type VaultEntry,
-  type VaultEntryOptions,
-  type VaultInfo,
+  type IVaultEntry,
+  type IVaultEntryOptions,
+  type IVaultInfo,
 } from '../../../src/lib/vault-entry/vault-entry.js';
 import {
   VaultEntries,
   VaultEntryError,
-  type VaultEntriesDeps,
+  type IVaultEntriesDeps,
 } from '../../../src/lib/vault-entry/vault-entries.js';
 import { MODEL_PROFILES } from '../../../src/lib/model-profiles.js';
 
@@ -32,9 +32,9 @@ const IDLE_MS = 1_000;
 const scopeOf = (exclusions: string[] = []) => createVaultScope({ configExclusions: exclusions });
 
 /** Records what VaultEntries asks of an entry; statuses follow the entry's `semantic` flag. */
-function fakeEntry(opts: VaultEntryOptions) {
+function fakeEntry(opts: IVaultEntryOptions) {
   const profiles: string[] = [];
-  const reader: CorpusReader = {
+  const reader: ICorpusReader = {
     nearest: async () => [],
     nearestBlocks: async () => [],
   };
@@ -60,7 +60,7 @@ function fakeEntry(opts: VaultEntryOptions) {
       return entry.semantic ? { state: 'indexing', indexed: 0, total: 0 } : { state: 'disabled' };
     },
     reader: () => reader,
-    info: (clients: number, idleSince?: string): VaultInfo => ({
+    info: (clients: number, idleSince?: string): IVaultInfo => ({
       vault: opts.vaultRoot,
       clients,
       ...(idleSince === undefined ? {} : { idle_since: idleSince }),
@@ -68,7 +68,7 @@ function fakeEntry(opts: VaultEntryOptions) {
     }),
     dispose: vi.fn(async () => {}),
   };
-  return entry satisfies VaultEntry;
+  return entry satisfies IVaultEntry;
 }
 
 type FakeEntry = ReturnType<typeof fakeEntry>;
@@ -81,7 +81,7 @@ const PATHS: Record<string, string> = {
   '/a-file': '/a-file',
 };
 
-function setup(over: Partial<VaultEntriesDeps> = {}) {
+function setup(over: Partial<IVaultEntriesDeps> = {}) {
   const created: FakeEntry[] = [];
   const loadScope = vi.fn(async (_root: string) => ({ scope: scopeOf(), semantic: true }));
   const warn = vi.fn();
@@ -260,7 +260,7 @@ describe('VaultEntries.attach', () => {
   });
 
   it('names the vault by the realpath’s basename', async () => {
-    const options: VaultEntryOptions[] = [];
+    const options: IVaultEntryOptions[] = [];
     const s = setup({
       realpath: async () => '/vaults/notes',
       createEntry: (opts) => {
@@ -282,7 +282,7 @@ describe('VaultEntries over real entries', () => {
     vi.useRealTimers();
     const root = await realpath(await mkdtemp(path.join(tmpdir(), 'nv-vault-entries-')));
     roots.push(root);
-    const loops: ReconcileLoop[] = [];
+    const loops: IReconcileLoop[] = [];
     let passes = 0;
     const counting = ((...args: Parameters<typeof withReconcileLock>) => {
       passes += 1;

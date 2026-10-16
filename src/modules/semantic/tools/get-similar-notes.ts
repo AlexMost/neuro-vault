@@ -8,7 +8,7 @@ import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { readNoteContentForEntry, readPositiveInteger, readThreshold } from '../tool-helpers.js';
 import type { QueryEmbedder, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
-import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 
 const DEFAULT_LIMIT = 10;
 
@@ -83,7 +83,7 @@ function collectSemanticCandidates(args: {
 
 async function resolveForwardLinks(args: {
   notePath: string;
-  entry: IVaultEntry;
+  entry: IRegisteredVault;
   basenameIndex: BasenameIndex;
 }): Promise<Set<string>> {
   try {
@@ -119,7 +119,7 @@ function mergeForwardLinks(candidates: Map<string, Candidate>, linkedPaths: Set<
 async function filterCandidates(args: {
   candidates: Iterable<Candidate>;
   excludePrefixes: readonly string[];
-  entry: IVaultEntry;
+  entry: IRegisteredVault;
 }): Promise<Candidate[]> {
   // Two unrelated filters: `exclude_folders` is a caller preference, staleness
   // is a corpus invariant. Exclusion runs first so the disk check only sees

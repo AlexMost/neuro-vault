@@ -60,4 +60,4 @@ Both exceptions are explicit precisely because they violate the "no parsing / no
 
 ## Vault binding
 
-Each `VaultEntry` in the `VaultRegistry` carries its own `FsVaultProvider`, constructed with that entry's `vaultRoot` and `reader`. There is no vault-name token passed anywhere — the provider only ever touches the one directory it was constructed with, so there is no possibility of the writes-vs-reads name mismatch ADR-0007's provider had to guard against (`VAULT_NOT_FOUND` today means only "no `--vault name:path` was registered under that name").
+Each `IRegisteredVault` in the `VaultRegistry` carries its own `FsVaultProvider`, constructed with that entry's `vaultRoot` and `reader`. There is no vault-name token passed anywhere — the provider only ever touches the one directory it was constructed with, so there is no possibility of the writes-vs-reads name mismatch ADR-0007's provider had to guard against (`VAULT_NOT_FOUND` today means only "no `--vault name:path` was registered under that name").

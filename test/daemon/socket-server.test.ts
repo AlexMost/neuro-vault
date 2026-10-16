@@ -7,7 +7,7 @@ import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Timers } from '../../src/lib/timers.js';
-import { ServiceRegistry, type ConnectionContext } from '../../src/daemon/protocol.js';
+import { ServiceRegistry, type IConnectionContext } from '../../src/daemon/protocol.js';
 import { startDaemonServer, type DaemonServerHandle } from '../../src/daemon/socket-server.js';
 
 const posix = process.platform !== 'win32';
@@ -70,7 +70,7 @@ describe.skipIf(!posix)('startDaemonServer', () => {
   });
 
   function registryWith(
-    handlers: Record<string, (p: unknown, ctx: ConnectionContext) => Promise<unknown>>,
+    handlers: Record<string, (p: unknown, ctx: IConnectionContext) => Promise<unknown>>,
   ): ServiceRegistry {
     const registry = new ServiceRegistry();
     registry.register('t', handlers);
@@ -211,8 +211,8 @@ describe.skipIf(!posix)('startDaemonServer', () => {
   async function watching(
     closed: string[],
     log?: (line: string) => void,
-  ): Promise<{ ctxs: ConnectionContext[] }> {
-    const ctxs: ConnectionContext[] = [];
+  ): Promise<{ ctxs: IConnectionContext[] }> {
+    const ctxs: IConnectionContext[] = [];
     handle = await startDaemonServer({
       socketPath,
       registry: registryWith({

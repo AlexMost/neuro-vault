@@ -1,4 +1,4 @@
-import type { BlockHit, NoteHit } from './corpus.js';
+import type { IBlockHit, INoteHit } from './corpus.js';
 
 export function validateVector(vector: ArrayLike<number>, label: string): void {
   if (vector.length === 0) {
@@ -23,11 +23,11 @@ export function compareStrings(left: string, right: string): number {
   return left.localeCompare(right);
 }
 
-export function compareNoteHits(left: NoteHit, right: NoteHit): number {
+export function compareNoteHits(left: INoteHit, right: INoteHit): number {
   return right.similarity - left.similarity || compareStrings(left.path, right.path);
 }
 
-export function compareBlockHits(left: BlockHit, right: BlockHit): number {
+export function compareBlockHits(left: IBlockHit, right: IBlockHit): number {
   return right.similarity - left.similarity || compareStrings(left.path, right.path);
 }
 

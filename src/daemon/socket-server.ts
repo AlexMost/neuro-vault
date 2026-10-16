@@ -4,7 +4,7 @@ import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/s
 import { isJSONRPCRequest, type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
 import type { Timers } from '../lib/timers.js';
-import { errorResponse, type ConnectionContext, type ServiceRegistry } from './protocol.js';
+import { errorResponse, type IConnectionContext, type ServiceRegistry } from './protocol.js';
 
 export interface DaemonServerOptions {
   socketPath: string;
@@ -108,7 +108,7 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
         log(`onClose callback failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     };
-    const ctx: ConnectionContext = {
+    const ctx: IConnectionContext = {
       id: nextConnectionId++,
       onClose: (fn) => {
         if (socketClosed) runGuarded(fn);

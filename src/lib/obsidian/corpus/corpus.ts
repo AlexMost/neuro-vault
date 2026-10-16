@@ -4,19 +4,19 @@ import type { CorpusShard, StoredManifest } from './types.js';
 /** What a nearest query is anchored on: a raw vector, or a note already in the corpus. */
 export type CorpusAnchor = { vector: ArrayLike<number> } | { path: string };
 
-export interface NoteHit {
+export interface INoteHit {
   path: string;
   similarity: number;
 }
 
-export interface BlockHit {
+export interface IBlockHit {
   path: string;
   heading: string;
   lines: [number, number];
   similarity: number;
 }
 
-export interface NearestOptions {
+export interface INearestOptions {
   threshold: number;
   limit?: number;
   /** Restrict candidates to these paths. */
@@ -25,7 +25,7 @@ export interface NearestOptions {
   exclude?: readonly string[];
 }
 
-export interface NearestBlocksOptions {
+export interface INearestBlocksOptions {
   /** The notes whose blocks are candidates. */
   paths: readonly string[];
   threshold: number;
@@ -33,25 +33,25 @@ export interface NearestBlocksOptions {
 }
 
 /** Similarity queries over a model's corpus, wherever it lives. */
-export interface CorpusReader {
+export interface ICorpusReader {
   /** One list per anchor, in order; null for a path anchor whose note has no vector. */
-  nearest(anchors: readonly CorpusAnchor[], opts: NearestOptions): Promise<(NoteHit[] | null)[]>;
+  nearest(anchors: readonly CorpusAnchor[], opts: INearestOptions): Promise<(INoteHit[] | null)[]>;
   nearestBlocks(
     anchors: readonly CorpusAnchor[],
-    opts: NearestBlocksOptions,
-  ): Promise<(BlockHit[] | null)[]>;
+    opts: INearestBlocksOptions,
+  ): Promise<(IBlockHit[] | null)[]>;
 }
 
 /** A record's change-detection metadata: all reconcile needs to decide what to re-embed. */
-export interface CorpusEntry {
+export interface ICorpusEntry {
   content_hash: string;
   mtime: number;
   size: number;
 }
 
 /** The durable side of a corpus: what reconcile reads and writes. */
-export interface CorpusWriter {
-  entries(): Promise<Map<string, CorpusEntry>>;
+export interface ICorpusWriter {
+  entries(): Promise<Map<string, ICorpusEntry>>;
   upsert(record: CorpusShard): Promise<void>;
   /** False when the corpus has no record for `path` (the caller re-embeds). */
   touch(path: string, stat: { mtime: number; size: number }): Promise<boolean>;
@@ -64,7 +64,7 @@ export interface CorpusWriter {
   refresh(): Promise<void>;
 }
 
-export interface Corpus extends CorpusReader, CorpusWriter {
+export interface ICorpus extends ICorpusReader, ICorpusWriter {
   vectorOf(path: string): Float32Array | null;
   dispose(): void;
 }

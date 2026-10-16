@@ -1,11 +1,11 @@
 import type {
-  BlockHit,
-  Corpus,
+  IBlockHit,
+  ICorpus,
   CorpusAnchor,
-  CorpusEntry,
-  NearestBlocksOptions,
-  NearestOptions,
-  NoteHit,
+  ICorpusEntry,
+  INearestBlocksOptions,
+  INearestOptions,
+  INoteHit,
 } from './corpus.js';
 import type { CorpusIdentity } from './identity.js';
 import {
@@ -18,8 +18,8 @@ import type { ShardStore } from './shard-store.js';
 import type { CorpusShard, SmartBlock, StoredManifest } from './types.js';
 import { decodeVector } from './vector-codec.js';
 
-interface Resident {
-  entry: CorpusEntry;
+interface IResident {
+  entry: ICorpusEntry;
   /** null for a note below the size gate: it has a record but takes no part in ranking. */
   vector: Float32Array | null;
   blocks: SmartBlock[];
@@ -30,7 +30,7 @@ const LOAD_YIELD_EVERY = 256;
 
 const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-function residentOf(shard: CorpusShard): Resident {
+function residentOf(shard: CorpusShard): IResident {
   return {
     entry: { content_hash: shard.content_hash, mtime: shard.mtime, size: shard.size },
     vector: shard.embedding === null ? null : decodeVector(shard.embedding),
@@ -48,18 +48,18 @@ function residentOf(shard: CorpusShard): Resident {
  * from the map the read captured, not the live one: a read yields between
  * anchors, and a refresh or dispose meanwhile must not change its view.
  */
-function queryOf(anchor: CorpusAnchor, memory: Map<string, Resident>): ArrayLike<number> | null {
+function queryOf(anchor: CorpusAnchor, memory: Map<string, IResident>): ArrayLike<number> | null {
   return 'vector' in anchor ? anchor.vector : (memory.get(anchor.path)?.vector ?? null);
 }
 
 /**
- * The in-memory {@link Corpus} over a {@link ShardStore}: every write goes to the shard files
+ * The in-memory {@link ICorpus} over a {@link ShardStore}: every write goes to the shard files
  * first and to memory only once that write resolved, so memory never claims more than disk holds.
  * Ranking is the brute-force scan the session path runs (same scoring, same ordering), with
  * `allowed` / `exclude` applied before `limit`.
  */
-export class ShardCorpus implements Corpus {
-  private memory: Map<string, Resident> | null = null;
+export class ShardCorpus implements ICorpus {
+  private memory: Map<string, IResident> | null = null;
   private readonly yieldEvery: () => Promise<void>;
 
   constructor(
@@ -81,7 +81,7 @@ export class ShardCorpus implements Corpus {
   }
 
   async load(): Promise<void> {
-    const next = new Map<string, Resident>();
+    const next = new Map<string, IResident>();
     let sinceYield = 0;
     for (const [notePath, shard] of await this.store.listShards()) {
       next.set(notePath, residentOf(shard));
@@ -105,12 +105,12 @@ export class ShardCorpus implements Corpus {
 
   async nearest(
     anchors: readonly CorpusAnchor[],
-    opts: NearestOptions,
-  ): Promise<(NoteHit[] | null)[]> {
+    opts: INearestOptions,
+  ): Promise<(INoteHit[] | null)[]> {
     const memory = this.resident();
     const allowed = opts.allowed === undefined ? null : new Set(opts.allowed);
     const exclude = new Set(opts.exclude);
-    const results: (NoteHit[] | null)[] = [];
+    const results: (INoteHit[] | null)[] = [];
     for (const [index, anchor] of anchors.entries()) {
       if (index > 0) await this.yieldEvery();
       const query = queryOf(anchor, memory);
@@ -118,7 +118,7 @@ export class ShardCorpus implements Corpus {
         results.push(null);
         continue;
       }
-      const hits: NoteHit[] = [];
+      const hits: INoteHit[] = [];
       for (const [notePath, { vector }] of memory) {
         if (vector === null || exclude.has(notePath)) continue;
         if (allowed !== null && !allowed.has(notePath)) continue;
@@ -134,10 +134,10 @@ export class ShardCorpus implements Corpus {
 
   async nearestBlocks(
     anchors: readonly CorpusAnchor[],
-    opts: NearestBlocksOptions,
-  ): Promise<(BlockHit[] | null)[]> {
+    opts: INearestBlocksOptions,
+  ): Promise<(IBlockHit[] | null)[]> {
     const memory = this.resident();
-    const results: (BlockHit[] | null)[] = [];
+    const results: (IBlockHit[] | null)[] = [];
     for (const [index, anchor] of anchors.entries()) {
       if (index > 0) await this.yieldEvery();
       const query = queryOf(anchor, memory);
@@ -145,7 +145,7 @@ export class ShardCorpus implements Corpus {
         results.push(null);
         continue;
       }
-      const hits: BlockHit[] = [];
+      const hits: IBlockHit[] = [];
       for (const notePath of new Set(opts.paths)) {
         const resident = memory.get(notePath);
         // A note without a note vector is out of the corpus as the session path sees it, blocks too.
@@ -170,9 +170,9 @@ export class ShardCorpus implements Corpus {
     return results;
   }
 
-  entries(): Promise<Map<string, CorpusEntry>> {
+  entries(): Promise<Map<string, ICorpusEntry>> {
     try {
-      const entries = new Map<string, CorpusEntry>();
+      const entries = new Map<string, ICorpusEntry>();
       for (const [notePath, { entry }] of this.resident()) entries.set(notePath, { ...entry });
       return Promise.resolve(entries);
     } catch (err) {
@@ -213,7 +213,7 @@ export class ShardCorpus implements Corpus {
     return result;
   }
 
-  private resident(): Map<string, Resident> {
+  private resident(): Map<string, IResident> {
     if (this.memory === null) throw new Error('corpus not loaded');
     return this.memory;
   }

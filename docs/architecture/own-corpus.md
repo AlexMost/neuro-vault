@@ -15,9 +15,9 @@ The pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any im
 | `layout.ts` | The path vocabulary: the corpus root, one model's directory, the reconcile lock's name, and the rule for a legal directory name. |
 | `shard-store.ts` | `ShardStore`: reads, writes, lists and deletes the shards and manifest of one model's directory; atomic writes; `.gitignore` upkeep. |
 | `ensure-dir.ts` | `ensureCorpusDir`: creates the directories a write needs without ever recreating the vault root (below). |
-| `corpus.ts` | The corpus interface: `CorpusReader`, `CorpusWriter`, `Corpus` (below). |
-| `shard-corpus.ts` | `ShardCorpus`, the in-memory `Corpus` over a `ShardStore`. |
-| `shard-writer.ts` | `shardWriter`, a disk-only `CorpusWriter` over a `ShardStore`. |
+| `corpus.ts` | The corpus interface: `ICorpusReader`, `ICorpusWriter`, `ICorpus` (below). |
+| `shard-corpus.ts` | `ShardCorpus`, the in-memory `ICorpus` over a `ShardStore`. |
+| `shard-writer.ts` | `shardWriter`, a disk-only `ICorpusWriter` over a `ShardStore`. |
 | `scoring.ts` | Cosine similarity and the ordering of ranked hits, shared by `ShardCorpus` and `SearchEngine`. |
 | `reconcile.ts` | Brings one model's corpus into agreement with the vault: `withReconcileLock` and `reconcileProfile`, composed by `reconcileCorpus`. |
 | `reconcile-lock.ts` | The per-vault cross-process lock a pass runs under. |
@@ -122,14 +122,14 @@ The corpus lives inside the vault so it travels with it and multi-vault needs no
 
 The shard files are the durable form; what reads and writes a model's corpus goes through an interface ([ADR-0019](../adr/0019-embedding-storage-interface.md)), declared in `corpus.ts`:
 
-- `CorpusReader` — `nearest(anchors, { threshold, limit?, allowed?, exclude? })` and `nearestBlocks(anchors, { paths, threshold, limit? })`. An anchor is `{ vector }` or `{ path }`; one result list comes back per anchor, in order, and `null` for a path anchor whose note carries no vector. `allowed` and `exclude` apply before `limit`.
-- `CorpusWriter` — what reconcile needs: `entries()` (a `Map` of path → `{ content_hash, mtime, size }`, no vectors), `upsert(record)`, `touch(path, stat)` (false when there is no record to touch), `delete(path)`, `identity()` (the stored manifest, or null), `ensureIdentity(expected)` (identity and reset composed: discards the whole corpus when the stored identity differs, and reports `{ rebuilt, previous }`) and `refresh()`.
-- `Corpus` — both, plus `vectorOf(path)` and `dispose()`.
+- `ICorpusReader` — `nearest(anchors, { threshold, limit?, allowed?, exclude? })` and `nearestBlocks(anchors, { paths, threshold, limit? })`. An anchor is `{ vector }` or `{ path }`; one result list comes back per anchor, in order, and `null` for a path anchor whose note carries no vector. `allowed` and `exclude` apply before `limit`.
+- `ICorpusWriter` — what reconcile needs: `entries()` (a `Map` of path → `{ content_hash, mtime, size }`, no vectors), `upsert(record)`, `touch(path, stat)` (false when there is no record to touch), `delete(path)`, `identity()` (the stored manifest, or null), `ensureIdentity(expected)` (identity and reset composed: discards the whole corpus when the stored identity differs, and reports `{ rebuilt, previous }`) and `refresh()`.
+- `ICorpus` — both, plus `vectorOf(path)` and `dispose()`.
 
 Two implementations exist, both over a `ShardStore`:
 
 - **`ShardCorpus`** (`shard-corpus.ts`) is the corpus a shared process serves reads from. `load()` decodes every shard once into `Float32Array`s (yielding to the event loop every 256 notes) and swaps the result in whole, so a read racing the load sees the old corpus or the new, never a half. Each write goes to the shard file first and to memory only once that resolved, so memory never claims more than disk holds. `refresh()` is `load()` again, for a corpus whose shards another process changed; `size()` counts the notes that can rank. Ranking is the brute-force scan `SearchEngine` runs — the same `scoring.ts` cosine and the same ordering (similarity, then `localeCompare` on path) — so the results are identical, which a parity test pins.
-- **`shardWriter(store)`** (`shard-writer.ts`) is a `CorpusWriter` and nothing else: every call goes to disk and nothing is held in memory (`refresh` is a no-op). It is what `reconcileCorpus` hands `reconcileProfile`, and so what `neuro-vault-mcp index` and the session's current backend run on; a run that reads nothing never decodes a corpus.
+- **`shardWriter(store)`** (`shard-writer.ts`) is a `ICorpusWriter` and nothing else: every call goes to disk and nothing is held in memory (`refresh` is a no-op). It is what `reconcileCorpus` hands `reconcileProfile`, and so what `neuro-vault-mcp index` and the session's current backend run on; a run that reads nothing never decodes a corpus.
 
 `ShardStore` is the former `CorpusStore`, renamed when the interface took the name "corpus"; the one behavioural change is `ensureCorpusDir` below.
 
@@ -148,7 +148,7 @@ The one case that throws instead is writing a vector of the wrong dimension: the
 A pass is two functions composed (`reconcile.ts`), so one process can walk several models' corpora of a vault under a single acquisition of the lock:
 
 - **`withReconcileLock(vaultRoot, opts, fn)`** takes the vault's lock, migrates a single-corpus layout (see [Concurrency](#concurrency-the-reconcile-lock) and [Migration](#migration-from-the-single-corpus-layout)), runs `fn({ waited })` and releases in a `finally`. `waited` tells `fn` whether another holder had the lock first; the result is `undefined` when the signal aborted before `fn` ran. Everything below reads the corpus, so a pass that waited sees what the previous holder left.
-- **`reconcileProfile(deps, corpus, paths, opts)`** is the per-note loop and orphan sweep for one model, over a `CorpusWriter` and a path set the caller already scanned. It does not take the lock and does not write the `.gitignore` entry: its caller holds the lock and writes the entry once, after every profile has run.
+- **`reconcileProfile(deps, corpus, paths, opts)`** is the per-note loop and orphan sweep for one model, over a `ICorpusWriter` and a path set the caller already scanned. It does not take the lock and does not write the `.gitignore` entry: its caller holds the lock and writes the entry once, after every profile has run.
 
 `reconcileCorpus(deps, opts)` is the composition `index` and the session's current backend use: `withReconcileLock`, one `scan()`, one `reconcileProfile` over `shardWriter(store)`, then the `.gitignore` entry. It takes ports — `scan`, `stat`, `readNote`, `embedDocuments`, a `ShardStore` — and returns `{ total, embedded, added, reused, renamed, deleted, failed }`; `added` is the part of `embedded` that had no record and was not a rename. The vault entry's reconcile loop ([`vault-entry.md`](./vault-entry.md)) calls `withReconcileLock` once, scans once and calls `reconcileProfile` per profile. In order:
 

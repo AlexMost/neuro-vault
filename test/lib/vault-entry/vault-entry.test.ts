@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { corpusIdentityOf } from '../../../src/lib/obsidian/corpus/identity.js';
 import type {
-  LockedPassOptions,
+  ILockedPassOptions,
   withReconcileLock,
 } from '../../../src/lib/obsidian/corpus/reconcile.js';
 import { contentHash } from '../../../src/lib/obsidian/corpus/reconcile.js';
@@ -16,13 +16,13 @@ import { encodeVector } from '../../../src/lib/obsidian/corpus/vector-codec.js';
 import { createVaultScope, type VaultScope } from '../../../src/lib/obsidian/vault-scope.js';
 import {
   createReconcileLoop,
-  type ReconcileLoop,
-  type ReconcileLoopDeps,
+  type IReconcileLoop,
+  type IReconcileLoopDeps,
 } from '../../../src/lib/vault-entry/reconcile-loop.js';
 import {
   createVaultEntry,
-  type VaultEntry,
-  type VaultEntryOptions,
+  type IVaultEntry,
+  type IVaultEntryOptions,
 } from '../../../src/lib/vault-entry/vault-entry.js';
 import type { WatcherFactory } from '../../../src/lib/vault-entry/watcher.js';
 import { identityOf, MODEL_PROFILES } from '../../../src/lib/model-profiles.js';
@@ -42,7 +42,7 @@ const okEmbed: EmbedDocumentsFn = async (texts) => texts.map(() => axisVec(1));
 const scopeOf = (exclusions: string[] = []) => createVaultScope({ configExclusions: exclusions });
 
 /** A lock that never lets a pass in: the pass waits until the loop aborts it on dispose. */
-const heldLock = (async (_root: string, opts: LockedPassOptions) => {
+const heldLock = (async (_root: string, opts: ILockedPassOptions) => {
   await new Promise((resolve) => opts.signal?.addEventListener('abort', resolve));
   return undefined;
 }) as typeof withReconcileLock;
@@ -58,7 +58,7 @@ function fakeWatchers() {
 }
 
 const roots: string[] = [];
-const entries: VaultEntry[] = [];
+const entries: IVaultEntry[] = [];
 
 afterEach(async () => {
   await Promise.all(entries.splice(0).map((entry) => entry.dispose()));
@@ -70,15 +70,15 @@ async function harness(
     scope?: VaultScope;
     semantic?: boolean;
     embed?: EmbedDocumentsFn;
-    loop?: Partial<ReconcileLoopDeps>;
+    loop?: Partial<IReconcileLoopDeps>;
   } = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'nv-vault-entry-'));
   roots.push(root);
   const watchers = fakeWatchers();
-  const loops: ReconcileLoop[] = [];
+  const loops: IReconcileLoop[] = [];
   const warn = vi.fn();
-  const options: VaultEntryOptions = {
+  const options: IVaultEntryOptions = {
     vaultRoot: root,
     vaultName: 'v',
     scope: opts.scope ?? scopeOf(),
@@ -350,7 +350,7 @@ describe('createVaultEntry', () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-vault-entry-'));
     roots.push(root);
     let changed: () => void = () => {};
-    const passes: ReconcileLoop[] = [];
+    const passes: IReconcileLoop[] = [];
     const entry = createVaultEntry({
       vaultRoot: root,
       vaultName: 'v',
@@ -392,7 +392,7 @@ describe('createVaultEntry', () => {
     let entered!: () => void;
     const inLock = new Promise<void>((resolve) => (entered = resolve));
     let aborted = false;
-    const recordingLock = (async (_root: string, opts: LockedPassOptions) => {
+    const recordingLock = (async (_root: string, opts: ILockedPassOptions) => {
       entered();
       await new Promise<void>((resolve) =>
         opts.signal?.addEventListener('abort', () => {

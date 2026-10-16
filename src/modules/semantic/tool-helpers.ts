@@ -2,10 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { ToolHandlerError } from '../../lib/tool-response.js';
-import type { IVaultEntry } from '../../lib/vault-registry.js';
+import type { IRegisteredVault } from '../../lib/vault-registry.js';
 
 export function readNoteContentForEntry(
-  entry: IVaultEntry,
+  entry: IRegisteredVault,
   vaultRelativePath: string,
 ): Promise<string> {
   return fs.readFile(path.join(entry.path, vaultRelativePath), 'utf8');

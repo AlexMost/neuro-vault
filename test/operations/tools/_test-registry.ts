@@ -1,7 +1,7 @@
 import { createExistingPathFilter } from '../../../src/lib/obsidian/existing-paths.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import type { VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
-import type { IVaultEntry, IVaultRegistry } from '../../../src/lib/vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from '../../../src/lib/vault-registry.js';
 
 // Most suites using this registry don't exercise the lexical leg of
 // search_notes and never set `.reader` on their partial entries. Default to a
@@ -15,7 +15,7 @@ const emptyReader: VaultReader = {
 
 const noConventions = async (): Promise<string | null> => null;
 
-export function makeTestRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
+export function makeTestRegistry(entries: Partial<IRegisteredVault>[]): IVaultRegistry {
   const list = entries.map(
     (e) =>
       ({
@@ -27,7 +27,7 @@ export function makeTestRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistr
         // passes its own `filterExisting` instead — no temp files needed.
         filterExisting: createExistingPathFilter({ vaultRoot: e.path ?? '' }),
         ...e,
-      }) as IVaultEntry,
+      }) as IRegisteredVault,
   );
   const byName = new Map(list.map((e) => [e.name, e]));
   return {

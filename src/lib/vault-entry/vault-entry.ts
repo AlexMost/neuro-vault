@@ -1,4 +1,4 @@
-import type { CorpusAnchor, CorpusReader } from '../obsidian/corpus/corpus.js';
+import type { CorpusAnchor, ICorpusReader } from '../obsidian/corpus/corpus.js';
 import { buildReconcileFsDeps, type ReconcileFsDeps } from '../obsidian/corpus/fs-deps.js';
 import { corpusIdentityOf, type CorpusIdentity } from '../obsidian/corpus/identity.js';
 import { ShardCorpus } from '../obsidian/corpus/shard-corpus.js';
@@ -10,13 +10,13 @@ import type { VaultScope } from '../obsidian/vault-scope.js';
 import { identityOf, MODEL_PROFILES } from '../model-profiles.js';
 import {
   createReconcileLoop,
-  type LastReconcile,
-  type ReconcileLoop,
-  type ReconcileLoopDeps,
+  type ILastReconcile,
+  type IReconcileLoop,
+  type IReconcileLoopDeps,
 } from './reconcile-loop.js';
 import { startVaultWatcher, type WatcherFactory, type WatcherHandle } from './watcher.js';
 
-export interface ProfileInfo {
+export interface IProfileInfo {
   profile: string;
   state: BackendState;
   indexed?: number;
@@ -24,17 +24,17 @@ export interface ProfileInfo {
   /** Why the corpus cannot be served; present for `unavailable`. */
   reason?: string;
   notes?: number;
-  last_reconcile?: LastReconcile;
+  last_reconcile?: ILastReconcile;
 }
 
-export interface VaultInfo {
+export interface IVaultInfo {
   vault: string;
   clients: number;
   idle_since?: string;
-  profiles: ProfileInfo[];
+  profiles: IProfileInfo[];
 }
 
-export interface VaultEntryOptions {
+export interface IVaultEntryOptions {
   /** The vault directory's realpath: the entry's key. */
   vaultRoot: string;
   /** For logs only. */
@@ -49,11 +49,11 @@ export interface VaultEntryOptions {
   /** Injected by tests; production defaults to the chokidar-backed watcher. */
   createWatcher?: WatcherFactory;
   /** Injected by tests; production uses {@link createReconcileLoop}. */
-  createLoop?: (deps: ReconcileLoopDeps) => ReconcileLoop;
+  createLoop?: (deps: IReconcileLoopDeps) => IReconcileLoop;
 }
 
 /** One vault directory's shared state (design D1): scope, watcher, loop, a corpus per profile. */
-export interface VaultEntry {
+export interface IVaultEntry {
   readonly vaultRoot: string;
   readonly scope: VaultScope;
   readonly semantic: boolean;
@@ -72,8 +72,8 @@ export interface VaultEntry {
   setSemantic(enabled: boolean): void;
   status(key: string): BackendStatus;
   /** The profile's corpus with the scope folded into every read: candidates and path anchors. */
-  reader(key: string): CorpusReader;
-  info(clients: number, idleSince?: string): VaultInfo;
+  reader(key: string): ICorpusReader;
+  info(clients: number, idleSince?: string): IVaultInfo;
   dispose(): Promise<void>;
 }
 
@@ -82,7 +82,7 @@ export function profileIdentity(key: string): CorpusIdentity {
   return corpusIdentityOf(identityOf(MODEL_PROFILES[key]));
 }
 
-interface ProfileSlot {
+interface IProfileSlot {
   key: string;
   identity: CorpusIdentity;
   /** null while the vault is disabled: no store, no corpus, nothing under `.neuro-vault/corpus/`. */
@@ -97,13 +97,13 @@ interface ProfileSlot {
   recomputing: Promise<void> | null;
 }
 
-export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
+export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
   const { vaultRoot, vaultName, warn } = opts;
   let scope = opts.scope;
   let semantic = opts.semantic;
   let fsDeps: ReconcileFsDeps = fsDepsFor(scope);
   /** In attach order: the order `info()` lists them. */
-  const slots = new Map<string, ProfileSlot>();
+  const slots = new Map<string, IProfileSlot>();
   /** Watchers being closed after a scope change; dispose waits for them. */
   const closing = new Set<Promise<void>>();
   let disposing: Promise<void> | null = null;
@@ -158,7 +158,7 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
     });
   }
 
-  function recompute(slot: ProfileSlot | undefined): void {
+  function recompute(slot: IProfileSlot | undefined): void {
     const corpus = slot?.corpus;
     if (slot === undefined || !corpus?.loaded) return;
     const run: Promise<void> = corpus
@@ -178,7 +178,7 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
     slot.recomputing = run;
   }
 
-  function attachCorpus(slot: ProfileSlot): void {
+  function attachCorpus(slot: IProfileSlot): void {
     const store = new ShardStore(vaultRoot, {
       modelKey: slot.key,
       dims: slot.identity.dims,
@@ -195,7 +195,7 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
     });
   }
 
-  function detachCorpus(slot: ProfileSlot): void {
+  function detachCorpus(slot: IProfileSlot): void {
     if (slot.corpus === null) return;
     loop.removeProfile(slot.key);
     slot.corpus.dispose();
@@ -203,7 +203,7 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
     slot.excluded = [];
   }
 
-  function slotOf(key: string): ProfileSlot {
+  function slotOf(key: string): IProfileSlot {
     const slot = slots.get(key);
     if (slot === undefined) throw new Error(`vault entry: profile "${key}" is not attached`);
     return slot;
@@ -246,7 +246,7 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
     },
     addProfile(key) {
       if (slots.has(key)) throw new Error(`vault entry: profile "${key}" is already attached`);
-      const slot: ProfileSlot = {
+      const slot: IProfileSlot = {
         key,
         identity: profileIdentity(key),
         corpus: null,
@@ -309,9 +309,9 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
       };
     },
     info(clients, idleSince) {
-      const profiles = [...slots.values()].map((slot): ProfileInfo => {
+      const profiles = [...slots.values()].map((slot): IProfileInfo => {
         const current = status(slot.key);
-        const info: ProfileInfo = { profile: slot.key, state: current.state };
+        const info: IProfileInfo = { profile: slot.key, state: current.state };
         if (current.state === 'indexing') {
           info.indexed = current.indexed;
           info.total = current.total;

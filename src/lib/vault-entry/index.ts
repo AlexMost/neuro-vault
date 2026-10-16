@@ -1,14 +1,14 @@
-export type { LastReconcile } from './reconcile-loop.js';
+export type { ILastReconcile } from './reconcile-loop.js';
 export {
   VaultEntries,
   VaultEntryError,
-  type VaultEntriesDeps,
+  type IVaultEntriesDeps,
   type VaultEntryErrorCode,
 } from './vault-entries.js';
 export {
   createVaultEntry,
-  type ProfileInfo,
-  type VaultEntry,
-  type VaultEntryOptions,
-  type VaultInfo,
+  type IProfileInfo,
+  type IVaultEntry,
+  type IVaultEntryOptions,
+  type IVaultInfo,
 } from './vault-entry.js';

@@ -27,8 +27,8 @@ import type { Timers } from '../src/lib/timers.js';
 import type { ServiceRegistry } from '../src/daemon/protocol.js';
 import {
   VaultEntries,
-  type VaultEntriesDeps,
-  type VaultInfo,
+  type IVaultEntriesDeps,
+  type IVaultInfo,
 } from '../src/lib/vault-entry/index.js';
 import { EmbeddingService } from '../src/modules/semantic/embedding-service.js';
 import { identityOf, MODEL_PROFILES, type ModelProfile } from '../src/lib/model-profiles.js';
@@ -482,8 +482,8 @@ describe('runDaemonCommand (run)', () => {
 
   describe('vault entries', () => {
     function entriesHarness(overrides: Partial<DaemonCommandDeps> = {}) {
-      const created: Array<{ deps: VaultEntriesDeps; entries: VaultEntries }> = [];
-      const createVaultEntries = vi.fn((deps: VaultEntriesDeps) => {
+      const created: Array<{ deps: IVaultEntriesDeps; entries: VaultEntries }> = [];
+      const createVaultEntries = vi.fn((deps: IVaultEntriesDeps) => {
         const entries = new VaultEntries(deps);
         created.push({ deps, entries });
         return entries;
@@ -1356,7 +1356,7 @@ describe('runDaemonCommand (status / stop)', () => {
  * answers with `info`, `daemon.shutdown` with `{}` unless `answerShutdown` is false.
  */
 function fakeInfoSocket(
-  info: { version: string; pid: number; clients: number; loaded: string[]; vault?: VaultInfo[] },
+  info: { version: string; pid: number; clients: number; loaded: string[]; vault?: IVaultInfo[] },
   opts: { answerShutdown?: boolean; onRequest?: (method: string) => void } = {},
 ): Duplex {
   const { answerShutdown = true } = opts;

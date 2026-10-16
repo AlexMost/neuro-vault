@@ -32,7 +32,7 @@ parseConfig(argv) → ServerConfig
    │
    ▼
 VaultRegistry.create(config, deps) → VaultRegistry
-   │  (one IVaultEntry per --vault name:path; each vault's semantic
+   │  (one IRegisteredVault per --vault name:path; each vault's semantic
    │   backend decides its own readiness live, never throws)
    ▼
 startNeuroVaultServer(config, deps)
@@ -57,10 +57,10 @@ flowchart LR
         direction TB
         CLI[cli.ts<br/>config + flags]
         Core[server.ts<br/>tool registration]
-        Registry[VaultRegistry<br/>one IVaultEntry per vault]
+        Registry[VaultRegistry<br/>one IRegisteredVault per vault]
         subgraph Semantic[Semantic module]
             direction TB
-            Backend[Corpus backend<br/>watcher + reconcile]
+            Backend[ICorpus backend<br/>watcher + reconcile]
             Retrieval[Retrieval policy<br/>effort: quick / deep]
             Embed["Embedding service<br/>model profile (--model)"]
             Search[Search engine<br/>cosine similarity]

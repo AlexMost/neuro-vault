@@ -22,7 +22,7 @@ function gitignoreLinesToPatterns(lines: string[]): string[];
 function configExclusionsToPatterns(entries: string[]): string[];
 ```
 
-`createVaultScope` compiles one pattern list from the three exclusion layers below and exposes three views over it — `ignorePatterns`, `isExcluded` and `isSubtreeExcluded` — described in [Two views](#two-views-prune-vs-predicate) and [The watcher](#the-watcher-prune-vs-filter). `src/lib/obsidian/vault-scope-config.ts` builds a `VaultScope` for a real vault: `loadVaultScope(vaultRoot)` reads the vault root's `.gitignore` and `.neuro-vault/config.json` and calls `createVaultScope` with the result. `IVaultEntry.scope` (`src/lib/vault-registry.ts`) holds one `VaultScope` per registered vault, built once at `VaultRegistry.create` time via `IVaultEntryDeps.scopeFactory` — production wires `scopeFactory` to `loadVaultScope` in `buildDefaultVaultEntryDeps` (`src/server.ts`).
+`createVaultScope` compiles one pattern list from the three exclusion layers below and exposes three views over it — `ignorePatterns`, `isExcluded` and `isSubtreeExcluded` — described in [Two views](#two-views-prune-vs-predicate) and [The watcher](#the-watcher-prune-vs-filter). `src/lib/obsidian/vault-scope-config.ts` builds a `VaultScope` for a real vault: `loadVaultScope(vaultRoot)` reads the vault root's `.gitignore` and `.neuro-vault/config.json` and calls `createVaultScope` with the result. `IRegisteredVault.scope` (`src/lib/vault-registry.ts`) holds one `VaultScope` per registered vault, built once at `VaultRegistry.create` time via `IRegisteredVaultDeps.scopeFactory` — production wires `scopeFactory` to `loadVaultScope` in `buildDefaultVaultEntryDeps` (`src/server.ts`).
 
 ## Three exclusion layers, unioned
 
@@ -153,5 +153,5 @@ Scope governs **discovery** — scan, and everything the scan feeds. It is not a
 - `src/lib/vault-entry/watcher.ts` — `isPrunedDir` (the prune question) and `isWatchedNote` (the filter question) over a scope.
 - `src/lib/obsidian/vault-scope-config.ts` — `loadVaultScope`, `SCOPE_CONFIG_PATH`, config parsing and the stderr-warning failure contract.
 - `src/lib/obsidian/vault-reader.ts` — `FsVaultReader.scan` consumes `scope.ignorePatterns` (unprefixed scans only) and filters every result through `scope.isExcluded`.
-- `src/lib/vault-registry.ts` — `IVaultEntry.scope`, `IVaultEntryDeps.scopeFactory`.
+- `src/lib/vault-registry.ts` — `IRegisteredVault.scope`, `IRegisteredVaultDeps.scopeFactory`.
 - `src/server.ts` — wires `scopeFactory` to `loadVaultScope` in `buildDefaultVaultEntryDeps`.
