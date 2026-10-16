@@ -333,9 +333,9 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
     },
     dispose() {
       disposing ??= (async () => {
-        // closeWatcher never rejects, so a watcher that fails to close still lets the loop stop.
-        await Promise.all([closeWatcher(watcher), ...closing]);
-        await loop.dispose();
+        // The loop is aborted at once, beside the watcher close: the pass in flight
+        // holds the vault's reconcile lock until it stops. closeWatcher never rejects.
+        await Promise.all([closeWatcher(watcher), ...closing, loop.dispose()]);
         for (const slot of slots.values()) slot.corpus?.dispose();
       })();
       return disposing;

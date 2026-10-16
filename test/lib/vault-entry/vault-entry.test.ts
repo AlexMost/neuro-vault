@@ -387,4 +387,33 @@ describe('createVaultEntry', () => {
     await h.entry.dispose();
     expect(h.watchers.started[0].close).toHaveBeenCalledTimes(1);
   });
+
+  it('dispose aborts the pass in flight without waiting for the watcher to close', async () => {
+    let entered!: () => void;
+    const inLock = new Promise<void>((resolve) => (entered = resolve));
+    let aborted = false;
+    const recordingLock = (async (_root: string, opts: LockedPassOptions) => {
+      entered();
+      await new Promise<void>((resolve) =>
+        opts.signal?.addEventListener('abort', () => {
+          aborted = true;
+          resolve();
+        }),
+      );
+      return undefined;
+    }) as typeof withReconcileLock;
+    const h = await harness({ loop: { withLock: recordingLock } });
+    h.entry.addProfile(HARRIER);
+    h.entry.requestPass();
+    await inLock;
+    let closed!: () => void;
+    h.watchers.started[0].close.mockImplementation(
+      () => new Promise<void>((resolve) => (closed = resolve)),
+    );
+    const disposed = h.entry.dispose();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(aborted).toBe(true);
+    closed();
+    await disposed;
+  });
 });

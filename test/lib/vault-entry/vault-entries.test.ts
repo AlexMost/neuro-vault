@@ -514,6 +514,26 @@ describe('VaultEntries idle', () => {
     expect(s.entries.info()).toEqual([]);
   });
 
+  it('a re-attach while a dropped entry disposes waits for that dispose', async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', [HARRIER]);
+    let disposed!: () => void;
+    s.created[0].dispose.mockImplementation(
+      () => new Promise<void>((resolve) => (disposed = resolve)),
+    );
+    s.entries.detach(1);
+    await vi.advanceTimersByTimeAsync(IDLE_MS);
+    expect(s.created[0].dispose).toHaveBeenCalledTimes(1);
+    // One vault directory never has two loops: the new entry waits for the old one to go.
+    const pending = s.entries.attach(2, '/v', [HARRIER]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(s.created).toHaveLength(1);
+    disposed();
+    await pending;
+    expect(s.created).toHaveLength(2);
+    expect(s.entries.info()).toMatchObject([{ vault: '/v', clients: 1 }]);
+  });
+
   it('idleTimeoutMs 0 never drops', async () => {
     const s = setup({ idleTimeoutMs: 0 });
     await s.entries.attach(1, '/v', [HARRIER]);

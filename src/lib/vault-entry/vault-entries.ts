@@ -99,8 +99,12 @@ function samePatterns(a: readonly string[], b: readonly string[]): boolean {
 export class VaultEntries {
   private readonly records = new Map<string, EntryRecord>();
   private readonly inFlight = new Map<number, InFlight>();
-  /** Entries dropped by their idle timer whose dispose is still running. */
-  private readonly dropping = new Set<Promise<void>>();
+  /**
+   * Per realpath, an entry dropped by its idle timer whose dispose is still
+   * running. Its pass may still hold the vault's reconcile lock, which a second
+   * loop of this process would take as stale: an attach waits it out.
+   */
+  private readonly dropping = new Map<string, Promise<void>>();
   private readonly realpath: (p: string) => Promise<string>;
   private readonly isDirectory: (p: string) => Promise<boolean>;
   private readonly loadScope: (root: string) => Promise<{ scope: VaultScope; semantic: boolean }>;
@@ -154,6 +158,10 @@ export class VaultEntries {
       held = this.hold(root, profiles);
       const { scope, semantic } = await this.loadScope(root);
       if (this.disposing !== null) throw new Error('vault entries: disposed');
+      for (let drop = this.dropping.get(root); drop !== undefined; drop = this.dropping.get(root)) {
+        await drop;
+        if (this.disposing !== null) throw new Error('vault entries: disposed');
+      }
       // Synchronous from here: concurrent attaches of one vault cannot both create it.
       const record = this.recordFor(root, scope, semantic);
       // A connection that closed while this attach awaited is no client: what
@@ -230,7 +238,10 @@ export class VaultEntries {
       const records = [...this.records.values()];
       this.records.clear();
       for (const record of records) this.clearTimers(record);
-      await Promise.all([...records.map((record) => this.disposeEntry(record)), ...this.dropping]);
+      await Promise.all([
+        ...records.map((record) => this.disposeEntry(record)),
+        ...this.dropping.values(),
+      ]);
     })();
     return this.disposing;
   }
@@ -348,10 +359,13 @@ export class VaultEntries {
 
   private drop(record: EntryRecord): void {
     if (this.records.get(record.entry.vaultRoot) !== record) return;
-    this.records.delete(record.entry.vaultRoot);
+    const root = record.entry.vaultRoot;
+    this.records.delete(root);
     this.clearTimers(record);
-    const done: Promise<void> = this.disposeEntry(record).finally(() => this.dropping.delete(done));
-    this.dropping.add(done);
+    const done: Promise<void> = this.disposeEntry(record).finally(() => {
+      if (this.dropping.get(root) === done) this.dropping.delete(root);
+    });
+    this.dropping.set(root, done);
   }
 
   private clearTimers(record: EntryRecord): void {
