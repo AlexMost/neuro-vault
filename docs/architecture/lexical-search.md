@@ -79,7 +79,7 @@ Why AST blocks instead of raw lines (see design decision D5 below): markdown par
 
 ### 4. Normalize chain
 
-`normalizeWithMap` (`normalize.ts`) is: **lowercase → NFKD decomposition → strip combining marks (`\p{M}`) → apostrophe unification → whitespace collapse (+ trim)**. It keeps an offset map from each normalized character back to its raw-string index, so a match found in normalized coordinates can be projected back onto the original text for snippeting.
+`normalizeWithMap` (`normalize.ts`) is: **lowercase → NFKD decomposition → strip combining marks (`\p{M}`) → apostrophe unification → whitespace collapse (+ trim)**. It also returns an offset map from each normalized character back to its raw-string index, so a match found in normalized coordinates can be projected back onto the original text for snippeting. The map is **not cached**: a cached unit holds only `raw` and `norm` (one JS number per character made the map about two thirds of the cache's heap), and `makeSnippet` rebuilds the map from `raw` when it builds a snippet.
 
 **Apostrophe unification** is a deliberate, explicit step: Ukrainian text uses several codepoint-distinct apostrophe variants (`'`, `ʼ`, `'`, `'`) that Unicode NFKD does **not** fold into one form. Without an explicit unification pass, `об'єкт` / `обʼєкт` / `об'єкт` would be treated as three different strings. The normalizer folds all four into a single straight `'`.
 
@@ -112,7 +112,7 @@ A note's overall tier is the **best** (lowest-numbered) tier across all its unit
 
 - **Global note cap** (`noteCap`): always the `effort` default (5 quick / 10 deep), in every `mode`. `limit` no longer steers any leg's internal pool — it bounds only the final fused `matches[]` list (see [`rank-fusion.md`](./rank-fusion.md)); a caller who wants a larger lexical candidate pool raises `effort`, not `limit`.
 - **Per-note match cap** (`perNoteCap`, ~3): a note's matches are deduplicated across queries by `(matched_in, first line)`, sorted by tier then density, and sliced to the cap — so a note that matches many times still surfaces only its strongest evidence rows.
-- **Snippet** (`snippet.ts`): a ~150-character window centered on the match, computed over **graphemes** (`Intl.Segmenter`) so multi-codepoint characters are never split mid-cluster, projected from normalized match coordinates back onto the raw text via the offset map, with `…` ellipses when the window doesn't reach an edge. Text shorter than the window is returned whole.
+- **Snippet** (`snippet.ts`): a ~150-character window centered on the match, computed over **graphemes** (`Intl.Segmenter`) so multi-codepoint characters are never split mid-cluster, projected from normalized match coordinates back onto the raw text via an offset map rebuilt from the raw text, with `…` ellipses when the window doesn't reach an edge. Text shorter than the window is returned whole, without building the map. `rankNotes` builds snippets lazily, only for the matches that survive `noteCap` and `perNoteCap`, so the rebuild and the grapheme pass run for at most `noteCap × perNoteCap` units per call rather than for every hit.
 
 ### Per-token diagnostic for AND-killed queries
 
