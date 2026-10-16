@@ -46,13 +46,13 @@ describe('startVaultWatcher over a real chokidar watcher', () => {
   // Starts the production default factory and waits for chokidar's initial scan
   // to finish. The watcher instance is observed by spying on `chokidar.watch`
   // rather than by widening WatcherHandle with a readiness hook only a test uses.
-  async function start(onQuiet: () => void): Promise<void> {
+  async function start(onQuiet: () => void, exclusions = ['Archive']): Promise<void> {
     const watch = vi.spyOn(chokidar, 'watch');
     handle = startVaultWatcher({
       vaultRoot: root,
       vaultName: 'v',
       onQuiet,
-      scope: createVaultScope({ configExclusions: ['Archive'] }),
+      scope: createVaultScope({ configExclusions: exclusions }),
       debounceMs: 50,
     });
     chokidarWatcher = watch.mock.results[0].value as FSWatcher;
@@ -74,6 +74,27 @@ describe('startVaultWatcher over a real chokidar watcher', () => {
       expect(onQuiet).not.toHaveBeenCalled();
 
       await writeFile(join(root, 'Notes', 'b.md'), 'in scope');
+      expect(await waitFor(() => onQuiet.mock.calls.length > 0, POSITIVE_DEADLINE_MS)).toBe(true);
+      expect(onQuiet).toHaveBeenCalledTimes(1);
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'under a one-level glob, schedules nothing for a direct child and fires two levels down',
+    async () => {
+      await mkdir(join(root, 'Archive', '2024'));
+      const onQuiet = vi.fn();
+      await start(onQuiet, ['Archive/*']);
+
+      // `Archive/*` excludes only the directory's own notes, so nothing is pruned.
+      expect(Object.keys(chokidarWatcher.getWatched())).toContain(join(root, 'Archive', '2024'));
+
+      await writeFile(join(root, 'Archive', 'a.md'), 'excluded');
+      await new Promise((resolve) => setTimeout(resolve, NEGATIVE_WINDOW_MS));
+      expect(onQuiet).not.toHaveBeenCalled();
+
+      await writeFile(join(root, 'Archive', '2024', 'b.md'), 'in scope');
       expect(await waitFor(() => onQuiet.mock.calls.length > 0, POSITIVE_DEADLINE_MS)).toBe(true);
       expect(onQuiet).toHaveBeenCalledTimes(1);
     },
