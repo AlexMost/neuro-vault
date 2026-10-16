@@ -139,3 +139,31 @@ describe('createVaultScope', () => {
     );
   });
 });
+
+describe('isSubtreeExcluded', () => {
+  it('prunes only provable subtrees', () => {
+    const scope = createVaultScope({
+      gitignoreLines: ['build'],
+      configExclusions: ['Archive', 'Drafts/*', '**/private/**'],
+    });
+    const cases: Array<[string, boolean]> = [
+      ['', false],
+      ['.obsidian', true],
+      ['Notes/.trash', true],
+      ['Templates', true],
+      ['Templates/Daily', true],
+      ['build', true],
+      ['Archive', true],
+      ['Archive/2024', true],
+      // `Drafts/*` excludes the files directly under Drafts, not deeper ones, so
+      // neither the directory nor a child directory is a provable subtree.
+      ['Drafts', false],
+      ['Drafts/x', false],
+      ['a/private', true],
+      ['Notes', false],
+    ];
+    for (const [dir, expected] of cases) {
+      expect([dir, scope.isSubtreeExcluded(dir)]).toEqual([dir, expected]);
+    }
+  });
+});
