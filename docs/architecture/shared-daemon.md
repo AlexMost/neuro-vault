@@ -148,10 +148,10 @@ Errors are JSON-RPC errors with a numeric `code` and the daemon's own code in `d
 | `data.code` | JSON-RPC `code` | When |
 | --- | --- | --- |
 | `UNKNOWN_METHOD` | -32601 | No such namespace or method. The connection stays open. |
-| `INVALID_PARAMS` | -32602 | Params not an object, wrong types, blank text, empty or oversized `texts`, an unexpected key in a `vault.*` call |
+| `INVALID_PARAMS` | -32602 | Params not an object, wrong types, blank text, empty or oversized `texts`, an unexpected key in a `vault.*` call, a relative `vault` in `vault.attach` |
 | `UNKNOWN_PROFILE` | -32602 | `profile` (or a key of `profiles`) is not a key of the closed registry (`MODEL_PROFILES`) |
 | `NOT_ATTACHED` | -32602 | `vault.status` for a vault and profile this connection did not attach |
-| `VAULT_UNAVAILABLE` | -32602 | `vault.attach` of a path that is not absolute, cannot be resolved, or is not a directory; the message names the reason |
+| `VAULT_UNAVAILABLE` | -32602 | `vault.attach` of a path that cannot be resolved or is not a directory; the message names the reason (a relative path is `INVALID_PARAMS`) |
 | `EMBED_FAILED` | -32603 | The model failed to load, inference threw, or a vector came back non-finite |
 | `SHUTTING_DOWN` | -32000 | The request was in flight, or arrived, while the daemon was stopping |
 | `INTERNAL` | -32603 | A handler threw something other than a `DaemonRpcError` |

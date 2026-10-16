@@ -349,7 +349,7 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
       await a.errorCode('vault.attach', { vault: path.join(dir, 'missing'), profiles: [] }),
     ).toBe('VAULT_UNAVAILABLE');
     expect(await a.errorCode('vault.attach', { vault: 'relative/vault', profiles: [] })).toBe(
-      'VAULT_UNAVAILABLE',
+      'INVALID_PARAMS',
     );
     expect(await a.errorCode('vault.attach', { vault: attached.vault, profiles: ['nope'] })).toBe(
       'UNKNOWN_PROFILE',

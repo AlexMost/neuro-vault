@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { VaultEntryError, type VaultEntries } from '../../lib/vault-entry/index.js';
 import {
   asRecord,
@@ -65,6 +67,10 @@ export function createVaultService(entries: VaultEntries): ServiceHandlers {
       const record = asRecord(params);
       onlyKeys(record, ['vault', 'profiles']);
       const vault = stringParam(record, 'vault');
+      // A malformed param, not an unavailable vault: the daemon has no cwd to resolve it against.
+      if (!path.isAbsolute(vault)) {
+        throw new DaemonRpcError('INVALID_PARAMS', 'vault must be an absolute path');
+      }
       const profiles = profilesParam(record);
       // Hooked before the await: a connection closing mid-attach must still detach.
       detachOnClose(ctx);

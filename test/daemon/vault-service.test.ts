@@ -72,6 +72,7 @@ describe('vault service', () => {
     ['no params', undefined],
     ['a missing vault', { profiles: [] }],
     ['a non-string vault', { vault: 3, profiles: [] }],
+    ['a relative vault', { vault: 'relative/vault', profiles: [] }],
     ['a missing profiles', { vault: '/v' }],
     ['a non-array profiles', { vault: '/v', profiles: 'harrier-270m' }],
     ['a non-string profile', { vault: '/v', profiles: ['harrier-270m', 4] }],
