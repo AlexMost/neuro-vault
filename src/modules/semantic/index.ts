@@ -1,7 +1,11 @@
 import { EmbeddingService } from './embedding-service.js';
 import type { ModelProfile } from './model-profiles.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
-import { buildSemanticTools, type ISemanticToolDeps } from './tools/index.js';
+import {
+  buildLexicalOnlyTools,
+  buildSemanticTools,
+  type ISemanticToolDeps,
+} from './tools/index.js';
 import type { QueryEmbedder, SearchEngine } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 import type { IVaultRegistry } from '../../lib/vault-registry.js';
@@ -43,4 +47,16 @@ export function createSemanticModule(
       await embeddingService.initialize();
     },
   };
+}
+
+/**
+ * What the semantic module contributes when it is off (`--no-semantic`): only
+ * `search_notes`, answering from its lexical leg. The tools with no
+ * non-semantic leg (`get_similar_notes`, `find_duplicates`) stay unregistered.
+ */
+export function createLexicalOnlyTools(
+  registry: IVaultRegistry,
+  config: ISemanticModuleConfig,
+): ToolRegistration[] {
+  return buildLexicalOnlyTools(registry, config.profile);
 }

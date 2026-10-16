@@ -522,7 +522,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('registers eleven operations tools when --no-semantic is passed', async () => {
+  it('registers search_notes plus the eleven operations tools when --no-semantic is passed', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
@@ -557,6 +557,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
       });
 
       expect(server.registeredToolNames).toEqual([
+        'search_notes',
         'read_notes',
         'query_notes',
         'create_note',
@@ -569,12 +570,61 @@ describe('Neuro Vault MCP server bootstrap', () => {
         'get_note_links',
         'get_vault_overview',
       ]);
+      // The tools with no non-semantic leg stay unregistered.
+      expect(server.registeredToolNames).not.toContain('get_similar_notes');
+      expect(server.registeredToolNames).not.toContain('find_duplicates');
       // Removed tools are absent; the unique low-use tools we keep are present.
       expect(server.registeredToolNames).not.toContain('read_property');
       expect(server.registeredToolNames).toContain('list_properties');
       expect(server.registeredToolNames).toContain('remove_property');
       expect(server.registeredToolNames).toContain('get_note_links');
       expect(server.registeredResourceUris).toEqual(['vault://overview']);
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('serves search_notes from its lexical leg alone, reporting semantic_status disabled, under --no-semantic', async () => {
+    const tempRoot = await createTempVaultPath();
+    const vaultPath = path.join(tempRoot, 'vault');
+    await fs.mkdir(vaultPath, { recursive: true });
+    await fs.writeFile(path.join(vaultPath, 'Heron.md'), '# Heron\n\nA wading bird.\n');
+    await fs.writeFile(path.join(vaultPath, 'Other.md'), '# Other\n\nNothing relevant.\n');
+
+    const server = createFakeServer();
+    // Any embedding work under --no-semantic is a bug: the factory must not be
+    // reached, and nothing may be embedded.
+    const embeddingServiceFactory = vi.fn();
+
+    try {
+      await main(['node', 'cli.js', '--vault', vaultPath, '--no-semantic'], {
+        server: {
+          semantic: { embeddingServiceFactory },
+          serverFactory: (_instructions: string) => server,
+          transportFactory: () => ({}) as never,
+          stdin: new PassThrough(),
+        },
+      });
+
+      const searchNotes = server.toolHandlers.get('search_notes');
+      expect(searchNotes).toBeDefined();
+      const result = (await searchNotes!({ query: 'heron' })) as {
+        isError?: boolean;
+        structuredContent?: {
+          matches: { path: string; found_in: string[] }[];
+          semantic_status: { state: string; note?: string };
+        };
+      };
+
+      expect(result.isError).not.toBe(true);
+      const payload = result.structuredContent!;
+      expect(payload.matches.map((m) => m.path)).toEqual(['Heron.md']);
+      expect(payload.matches[0].found_in.every((f) => f.startsWith('lexical:'))).toBe(true);
+      expect(payload.semantic_status).toEqual({
+        state: 'disabled',
+        note: expect.stringContaining('lexical-only'),
+      });
+      expect(embeddingServiceFactory).not.toHaveBeenCalled();
     } finally {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }

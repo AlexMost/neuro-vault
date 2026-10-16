@@ -136,7 +136,7 @@ Each note appears **at most once** in `matches[]`, even when multiple legs surfa
 | --- | --- | --- |
 | `ready` | The vault's index is usable, so the semantic leg runs in every mode that calls for it. Not a claim about *this* call — under `mode: "lexical"` and on the empty-filter early return the leg never runs, and the state is still `ready`. | absent |
 | `indexing` | The vault's index is still building — this response is lexical-only even under `mode: "hybrid"`. | present — note counts so far / total |
-| `disabled` | The vault opted out (`"semantic": false` in its `.neuro-vault/config.json`), or `--no-semantic` is set server-wide. | absent |
+| `disabled` | The vault opted out (`"semantic": false` in its `.neuro-vault/config.json`), or `--no-semantic` is set server-wide (`search_notes` stays registered and runs lexical-only; the embeddings-only tools are not registered at all). | absent |
 | `unavailable` | No usable semantic answer for this call: the index is absent or broken with no build in flight, **or** the semantic leg failed mid-call (the query could not be embedded, the corpus could not be read) and this response fell back to its lexical leg. | absent |
 
 Every state but `ready` also carries a `note` — one sentence saying what that state did to the response in hand ("the semantic leg did not run … these matches are lexical-only"). It rides on the payload rather than in the tool's description on purpose: a description is sent on every `tools/list`, while this is read only on the responses it applies to. It is not the backend's failure `reason`, which travels on error payloads (`SEMANTIC_INDEX_BUILDING`, `SEMANTIC_DISABLED`, `SEMANTIC_INDEX_NOT_FOUND`) and is deliberately not exposed here.
@@ -363,7 +363,7 @@ Reference frontmatter keys with the dotted prefix `frontmatter.<key>`. Reference
 | Error code | When | What to do |
 | --- | --- | --- |
 | `SEMANTIC_INDEX_BUILDING` | The vault's index is still building (details: `{ vault, indexed, total }`). | Wait and retry, or route through `search_notes` in the meantime — it still answers from its lexical leg and reports the same `indexed`/`total` via `semantic_status`. |
-| `SEMANTIC_DISABLED` | The vault opted out (`"semantic": false`, or `--no-semantic` server-wide). | Nothing to retry — use the lexical leg (`search_notes({ mode: "lexical" })`, `query_notes`) instead, or re-enable semantic search for that vault. |
+| `SEMANTIC_DISABLED` | The vault opted out (`"semantic": false`). Under `--no-semantic` the tools that raise it are not registered at all. | Nothing to retry — use the lexical leg (`search_notes({ mode: "lexical" })`, `query_notes`) instead, or re-enable semantic search for that vault. |
 | `SEMANTIC_INDEX_NOT_FOUND` | No usable index and no build in flight — a genuinely unavailable corpus (details: `{ vault, reason, hint }`, where `reason` says what went wrong). | Build it: `neuro-vault-mcp index --vault <path>` (the error's `details.hint` names the command; add the same `--model` your server runs with if it is not the default), then retry. |
 
 ### `get_similar_notes`

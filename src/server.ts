@@ -1,7 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
-import { createSemanticModule, type ISemanticModuleDeps } from './modules/semantic/index.js';
+import {
+  createLexicalOnlyTools,
+  createSemanticModule,
+  type ISemanticModuleDeps,
+} from './modules/semantic/index.js';
 import { createQueuedEmbedder, type QueuedEmbedder } from './modules/semantic/embed-queue.js';
 import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
 import type { EmbeddingProvider } from './modules/semantic/types.js';
@@ -167,6 +171,10 @@ export async function startNeuroVaultServer(
     );
     toolRegistrations.push(...semantic.tools);
     warmup = semantic.warmup;
+  } else {
+    // `search_notes` does not need the embedding corpus for its lexical leg, so
+    // it outlives the module; only the tools with no non-semantic leg go.
+    toolRegistrations.push(...createLexicalOnlyTools(registry, { profile: config.semantic.model }));
   }
 
   const operations = createOperationsModule(registry);
