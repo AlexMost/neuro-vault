@@ -1,4 +1,7 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import net from 'node:net';
 import os from 'node:os';
+import path from 'node:path';
 import { Duplex, PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
@@ -17,6 +20,7 @@ import {
   STOP_DEADLINE_MS,
   type DaemonCommandDeps,
 } from '../src/cli-daemon.js';
+import { startDaemonServer } from '../src/daemon/socket-server.js';
 import { parseDaemonInfo } from '../src/daemon/info.js';
 import { cliBuild, daemonKey } from '../src/daemon/paths.js';
 import type { Timers } from '../src/daemon/probe.js';
@@ -81,7 +85,11 @@ function harness(overrides: Partial<DaemonCommandDeps> = {}) {
   const dirs = new Set<string>();
   const out: string[] = [];
   const err: string[] = [];
-  const handle = { clients: vi.fn(() => 0), close: vi.fn(async () => {}) };
+  const handle = {
+    clients: vi.fn(() => 0),
+    beginClose: vi.fn(),
+    close: vi.fn(async () => {}),
+  };
   const startServer = vi.fn(async (_opts: unknown) => handle);
   const signals = new Map<string, () => void>();
   const exit = vi.fn();
@@ -565,6 +573,67 @@ describe('runDaemonCommand (run)', () => {
       expect(h.exit).toHaveBeenCalledWith(0);
     });
 
+    it('begins closing the server before it disposes the entries', async () => {
+      const { h, created } = entriesHarness();
+      await runDaemonCommand(RUN, h.deps);
+      const order: string[] = [];
+      h.handle.beginClose.mockImplementation(() => void order.push('begin'));
+      vi.spyOn(created[0].entries, 'dispose').mockImplementation(async () => {
+        order.push('dispose');
+      });
+      h.signals.get('SIGTERM')!();
+      expect(order).toEqual(['begin']);
+      await flush();
+      expect(order).toEqual(['begin', 'dispose']);
+    });
+
+    it('answers SHUTTING_DOWN to vault and embed requests while the entries dispose', async () => {
+      const dir = mkdtempSync('/tmp/nv-daemon-');
+      try {
+        const { h, created } = entriesHarness();
+        h.deps.startServer = (opts) =>
+          startDaemonServer({ ...opts, socketPath: path.join(dir, 's.sock') });
+        await runDaemonCommand(RUN, h.deps);
+        let disposed!: () => void;
+        vi.spyOn(created[0].entries, 'dispose').mockImplementation(
+          () =>
+            new Promise<void>((resolve) => {
+              disposed = resolve;
+            }),
+        );
+        const socket = net.connect(path.join(dir, 's.sock'));
+        await new Promise((resolve) => socket.once('connect', resolve));
+        const replies: JSONRPCMessage[] = [];
+        const buffer = new ReadBuffer();
+        socket.on('data', (chunk: Buffer) => {
+          buffer.append(chunk);
+          for (let m = buffer.readMessage(); m; m = buffer.readMessage()) replies.push(m);
+        });
+        h.signals.get('SIGTERM')!();
+        await flush();
+        const requests: Array<[string, unknown]> = [
+          ['vault.status', { vault: '/v', profile: 'harrier-270m' }],
+          ['vault.attach', { vault: '/v', profiles: [] }],
+          ['embed.query', { profile: 'granite-97m', text: 'x' }],
+          ['daemon.info', undefined],
+        ];
+        requests.forEach(([method, params], i) =>
+          socket.write(serializeMessage({ jsonrpc: '2.0', id: i + 1, method, params } as never)),
+        );
+        await until(() => replies.length === requests.length);
+        for (const reply of replies) {
+          expect(reply).toMatchObject({ error: { data: { code: 'SHUTTING_DOWN' } } });
+        }
+        // Nothing was served: no provider was built for the embed call.
+        expect(h.deps.createProvider).not.toHaveBeenCalled();
+        disposed();
+        await until(() => h.exit.mock.calls.length > 0);
+        socket.destroy();
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
     it('still closes the server and exits 0 when disposing fails', async () => {
       const { h, created } = entriesHarness();
       await runDaemonCommand(RUN, h.deps);
@@ -749,6 +818,28 @@ describe('runDaemonCommand (status / stop)', () => {
       Promise.resolve(fakeInfoSocket({ version: '17.0.0', pid: 1, clients: 0, loaded: [] }));
     await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
     expect(h.out.join('')).toBe('17.0.0  pid 1  clients 0  loaded []  alive  /tmp/a.sock\n');
+  });
+
+  it.each([
+    ['a vault entry without profiles', [{ vault: '/v', clients: 1 }]],
+    ['a non-array vault', 'nope'],
+    ['a null entry and a null profile', [null, { vault: '/v', clients: 1, profiles: [null] }]],
+  ])('status survives a future daemon sending %s', async (_name, vault) => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ socket: '/tmp/a.sock' }));
+    h.deps.connect = () =>
+      Promise.resolve(
+        fakeInfoSocket({
+          version: '19.0.0',
+          pid: 1,
+          clients: 0,
+          loaded: [],
+          vault: vault as never,
+        }),
+      );
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.err).toEqual([]);
+    expect(h.out.join('')).toMatch(/^19\.0\.0 .*alive/);
   });
 
   it('status sweeps an entry whose socket file is gone', async () => {

@@ -284,9 +284,10 @@ async function startServing(
 }
 
 /**
- * The one stop path (SIGINT, SIGTERM, idle, daemon.shutdown): dispose the vault
- * entries (watchers, loops, corpora), close the server, remove daemon.json, the
- * socket file and the lock, exit 0. Runs once; exits 0 at `STOP_DEADLINE_MS` even if closing stalls on a peer that never reads.
+ * The one stop path (SIGINT, SIGTERM, idle, daemon.shutdown): stop answering requests, dispose
+ * the vault entries (watchers, loops, corpora), close the server, remove daemon.json, the
+ * socket file and the lock, exit 0. Runs once; exits 0 at `STOP_DEADLINE_MS` even if
+ * closing stalls on a peer that never reads.
  */
 function createStop(
   paths: DaemonPaths,
@@ -318,6 +319,9 @@ function createStop(
     if (stopping) return;
     stopping = true;
     deadline = r.timers.setTimeout(finish, STOP_DEADLINE_MS);
+    // Before the entries dispose: a request arriving meanwhile is answered SHUTTING_DOWN,
+    // not served from entries that are going away.
+    server.handle?.beginClose();
     void Promise.resolve()
       .then(() => entries.dispose())
       .catch((error: unknown) => {

@@ -8,13 +8,12 @@ import {
   type JSONRPCMessage,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import type { ProfileInfo, VaultInfo } from '../lib/vault-entry/index.js';
 import { packageMeta } from '../package-meta.js';
 
 import type { DaemonInfo } from './info.js';
 import { claimLock, defaultLockFs, parseHolder, type LockFs } from './lock.js';
 import { probeSocket, type SocketConnect, type Timers } from './probe.js';
-import type { ProfileInfo, VaultInfo } from '../lib/vault-entry/index.js';
-
 import type { DaemonInfoResult } from './protocol.js';
 import type { SocketDirFs } from './socket-dir.js';
 
@@ -276,17 +275,24 @@ async function statusOne(d: AdminDeps, entry: Entry, print: Write): Promise<void
   print(
     `${live.version}  pid ${live.pid}  clients ${live.clients}  loaded [${loaded}]  alive  ${info.socket}`,
   );
-  // A daemon of another version answers without `vault`: it has no entries to show.
-  for (const vault of (live.services as { vault?: VaultInfo[] }).vault ?? []) {
+  // A daemon of another version answers without `vault`, and a later one may shape it
+  // differently: print what is recognisable, never fail on the rest.
+  const vaults: unknown = (live.services as { vault?: unknown }).vault;
+  for (const vault of Array.isArray(vaults) ? (vaults as Array<Partial<VaultInfo> | null>) : []) {
+    if (typeof vault !== 'object' || vault === null) continue;
     print(vaultLine(vault));
-    for (const profile of vault.profiles) print(profileLine(profile));
+    const profiles: unknown = vault.profiles;
+    for (const profile of Array.isArray(profiles) ? (profiles as unknown[]) : []) {
+      if (typeof profile === 'object' && profile !== null)
+        print(profileLine(profile as ProfileInfo));
+    }
   }
 }
 
-function vaultLine(vault: VaultInfo): string {
-  const who =
-    vault.clients > 0 ? `clients ${vault.clients}` : `idle since ${vault.idle_since ?? '?'}`;
-  return `  vault ${vault.vault}  ${who}`;
+function vaultLine(vault: Partial<VaultInfo>): string {
+  const clients = vault.clients ?? 0;
+  const who = clients > 0 ? `clients ${clients}` : `idle since ${vault.idle_since ?? '?'}`;
+  return `  vault ${vault.vault ?? '?'}  ${who}`;
 }
 
 function profileLine(profile: ProfileInfo): string {

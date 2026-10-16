@@ -75,6 +75,8 @@ describe('vault service', () => {
     ['a missing profiles', { vault: '/v' }],
     ['a non-array profiles', { vault: '/v', profiles: 'harrier-270m' }],
     ['a non-string profile', { vault: '/v', profiles: ['harrier-270m', 4] }],
+    ['a scope key', { vault: '/v', profiles: [], scope: { exclude: ['x'] } }],
+    ['a corpus identity key', { vault: '/v', profiles: [], identity: {} }],
   ])('attach validates params: %s is INVALID_PARAMS', async (_name, params) => {
     const { entries, call } = setup();
     const response = await call(connection().ctx, 'vault.attach', params);
@@ -98,6 +100,7 @@ describe('vault service', () => {
     ['a non-string vault', { vault: 1, profile: 'p' }],
     ['a missing profile', { vault: '/v' }],
     ['a non-string profile', { vault: '/v', profile: ['p'] }],
+    ['a scope key', { vault: '/v', profile: 'p', scope: {} }],
   ])('status validates params: %s is INVALID_PARAMS', async (_name, params) => {
     const { entries, call } = setup();
     const response = await call(connection().ctx, 'vault.status', params);
@@ -162,6 +165,26 @@ describe('vault service', () => {
     expect(second.registered()).toBe(1);
     second.close();
     expect(entries.detach).toHaveBeenCalledTimes(2);
+  });
+
+  it('detaches a connection that closed while its attach was still pending', async () => {
+    const { entries, call } = setup();
+    const conn = connection(8);
+    let resolveAttach!: (value: { vault: string; profiles: Record<string, never> }) => void;
+    entries.attach.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveAttach = resolve;
+        }) as never,
+    );
+    const pending = call(conn.ctx, 'vault.attach', { vault: '/v', profiles: [] });
+    await Promise.resolve();
+    conn.close();
+    expect(entries.detach).toHaveBeenCalledExactlyOnceWith(8);
+    resolveAttach({ vault: '/v', profiles: {} });
+    await pending;
+    // The entries' own in-flight bookkeeping handles the late join; nothing re-hooks the closed connection.
+    expect(entries.detach).toHaveBeenCalledTimes(1);
   });
 
   it('registers the close callback even when the attach fails', async () => {

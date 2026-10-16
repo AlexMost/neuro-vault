@@ -6,6 +6,14 @@ import {
   type ServiceHandlers,
 } from '../protocol.js';
 
+/** The params carry exactly `allowed`: no scope, no exclusions, no corpus identity (spec). */
+function onlyKeys(params: Record<string, unknown>, allowed: readonly string[]): void {
+  const extra = Object.keys(params).find((key) => !allowed.includes(key));
+  if (extra !== undefined) {
+    throw new DaemonRpcError('INVALID_PARAMS', `unexpected param "${extra}"`);
+  }
+}
+
 function stringParam(params: Record<string, unknown>, name: string): string {
   const value = params[name];
   if (typeof value !== 'string') {
@@ -22,7 +30,7 @@ function profilesParam(params: Record<string, unknown>): string[] {
   return value;
 }
 
-/** A `VaultEntryError` keeps its code and message on the wire; anything else is the registry's INTERNAL. */
+/** A `VaultEntryError` keeps its code and message on the wire; anything else stays INTERNAL. */
 async function wired<T>(work: () => Promise<T> | T): Promise<T> {
   try {
     return await work();
@@ -55,6 +63,7 @@ export function createVaultService(entries: VaultEntries): ServiceHandlers {
   return {
     attach: async (params, ctx) => {
       const record = asRecord(params);
+      onlyKeys(record, ['vault', 'profiles']);
       const vault = stringParam(record, 'vault');
       const profiles = profilesParam(record);
       // Hooked before the await: a connection closing mid-attach must still detach.
@@ -63,6 +72,7 @@ export function createVaultService(entries: VaultEntries): ServiceHandlers {
     },
     status: async (params, ctx) => {
       const record = asRecord(params);
+      onlyKeys(record, ['vault', 'profile']);
       const vault = stringParam(record, 'vault');
       const profile = stringParam(record, 'profile');
       return wired(() => entries.status(ctx.id, vault, profile));

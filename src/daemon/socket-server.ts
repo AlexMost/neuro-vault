@@ -26,6 +26,12 @@ export interface DaemonServerOptions {
 
 export interface DaemonServerHandle {
   clients(): number;
+  /**
+   * Enters the shutting-down state at once: no new connections, every request
+   * answered `SHUTTING_DOWN`, those in flight included. Ends nothing; `close()`
+   * does that and drains. Idempotent, and implied by `close()`.
+   */
+  beginClose(): void;
   close(): Promise<void>;
 }
 
@@ -58,6 +64,7 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
   const inFlight = new Set<InFlight>();
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let shuttingDown = false;
+  let begun: Promise<void> | undefined;
   let closing: Promise<void> | undefined;
   // Resolves once every connection's `close` handler (and its `onClose` callbacks) has run;
   // `server.close` alone can report drained a turn earlier.
@@ -158,20 +165,27 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
   server.on('error', (error) => opts.onError?.(error));
   armIdle();
 
+  /** Stops accepting and answers what is in flight; resolves once every connection is gone. */
+  const begin = (): Promise<void> =>
+    (begun ??= new Promise<void>((resolve) => {
+      shuttingDown = true;
+      disarmIdle();
+      // `server.close` stops accepting at once and unlinks the socket file
+      // once every connection is gone.
+      server.close(() => void drained.then(resolve));
+      if (connections.size === 0) allGone();
+      for (const entry of inFlight) {
+        entry.answered = true;
+        write(entry.socket, errorResponse(entry.id, 'SHUTTING_DOWN', 'daemon is stopping'));
+      }
+    }));
+
   return {
     clients: () => clients.size,
+    beginClose: () => void begin(),
     close: () => {
-      closing ??= new Promise<void>((resolve) => {
-        shuttingDown = true;
-        disarmIdle();
-        // `server.close` stops accepting at once and unlinks the socket file
-        // once every connection is gone.
-        server.close(() => void drained.then(resolve));
-        if (connections.size === 0) allGone();
-        for (const entry of inFlight) {
-          entry.answered = true;
-          write(entry.socket, errorResponse(entry.id, 'SHUTTING_DOWN', 'daemon is stopping'));
-        }
+      closing ??= (() => {
+        const done = begin();
         // Ending is deferred one I/O turn: a request already received on a
         // connection is answered SHUTTING_DOWN (not dropped on an ended
         // socket) first. Each socket is destroyed only after its write side
@@ -181,7 +195,8 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
             if (!socket.destroyed) socket.end(() => socket.destroy());
           }
         });
-      });
+        return done;
+      })();
       return closing;
     },
   };

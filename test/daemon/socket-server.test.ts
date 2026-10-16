@@ -522,6 +522,54 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     expect(fs.existsSync(socketPath)).toBe(false);
   });
 
+  it('beginClose() answers every later request SHUTTING_DOWN, keeps connections, refuses new ones', async () => {
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({ echo: async (p) => p }),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+    });
+    const a = await LineClient.connect(socketPath);
+    handle.beginClose();
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.echo', params: {} });
+    expect(await a.next()).toMatchObject({ id: 1, error: { data: { code: 'SHUTTING_DOWN' } } });
+    // Still open: ending the connections is close()'s job.
+    expect(a.socket.destroyed).toBe(false);
+    await expect(LineClient.connect(socketPath)).rejects.toThrow();
+    handle.beginClose();
+    const closing = handle.close();
+    await a.closed();
+    await closing;
+    handle = undefined;
+    expect(fs.existsSync(socketPath)).toBe(false);
+  });
+
+  it('beginClose() answers a request already in flight with SHUTTING_DOWN', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({
+        slow: async () => {
+          await gate;
+          return {};
+        },
+      }),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+    });
+    const a = await LineClient.connect(socketPath);
+    a.send({ jsonrpc: '2.0', id: 4, method: 't.slow' });
+    await tick();
+    handle.beginClose();
+    expect(await a.next()).toMatchObject({ id: 4, error: { data: { code: 'SHUTTING_DOWN' } } });
+    release();
+    await handle.close();
+    handle = undefined;
+  });
+
   it('does not idle out when a client arrived in the same turn the timer fired', async () => {
     const onIdle = vi.fn();
     const { timers, armed } = fakeTimers();
