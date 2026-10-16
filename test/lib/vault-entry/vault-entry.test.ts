@@ -156,6 +156,27 @@ describe('createVaultEntry', () => {
     ]);
   });
 
+  it('a path anchor on an excluded note not yet swept reads as null', async () => {
+    const h = await harness({ scope: scopeOf(['Archive/**']), loop: { withLock: heldLock } });
+    await seed(h.root, { 'Archive/x.md': 2, 'Notes/y.md': 3 });
+    h.entry.addProfile(HARRIER);
+    await vi.waitFor(() => expect(h.entry.status(HARRIER)).toEqual({ state: 'ready' }));
+
+    const reader = h.entry.reader(HARRIER);
+    const anchors = [{ path: 'Archive/x.md' }, { path: 'Notes/y.md' }, { path: 'Archive/x.md' }];
+    const notes = await reader.nearest(anchors, { threshold: -1 });
+    expect(notes[0]).toBeNull();
+    expect(notes[2]).toBeNull();
+    expect((notes[1] ?? []).map((hit) => hit.path)).toEqual(['Notes/y.md']);
+    const blocks = await reader.nearestBlocks(anchors, {
+      paths: ['Archive/x.md', 'Notes/y.md'],
+      threshold: -1,
+    });
+    expect(blocks[0]).toBeNull();
+    expect(blocks[2]).toBeNull();
+    expect((blocks[1] ?? []).map((hit) => hit.path)).toEqual(['Notes/y.md']);
+  });
+
   it('setScope restarts the watcher, queues one pass and applies to reads at once', async () => {
     const h = await harness({ loop: { withLock: heldLock } });
     await seed(h.root, { 'Archive/x.md': 2, 'Notes/y.md': 3 });

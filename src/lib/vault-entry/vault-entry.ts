@@ -1,4 +1,4 @@
-import type { CorpusReader } from '../obsidian/corpus/corpus.js';
+import type { CorpusAnchor, CorpusReader } from '../obsidian/corpus/corpus.js';
 import { buildReconcileFsDeps, type ReconcileFsDeps } from '../obsidian/corpus/fs-deps.js';
 import { corpusIdentityOf, type CorpusIdentity } from '../obsidian/corpus/identity.js';
 import { ShardCorpus } from '../obsidian/corpus/shard-corpus.js';
@@ -71,7 +71,7 @@ export interface VaultEntry {
   /** Disables every profile (no corpus at all), or gives each a fresh corpus. */
   setSemantic(enabled: boolean): void;
   status(key: string): BackendStatus;
-  /** The profile's corpus with the scope folded into every read. */
+  /** The profile's corpus with the scope folded into every read: candidates and path anchors. */
   reader(key: string): CorpusReader;
   info(clients: number, idleSince?: string): VaultInfo;
   dispose(): Promise<void>;
@@ -215,6 +215,23 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
     return corpus;
   }
 
+  /**
+   * Runs a read over the anchors the scope keeps and answers `null` for a path
+   * anchor on an excluded note — what the session's snapshot answers, as an
+   * excluded note is not in it. Such a note can still be in the corpus until a
+   * pass sweeps it, and its vector would otherwise anchor a search.
+   */
+  async function foldAnchors<T>(
+    anchors: readonly CorpusAnchor[],
+    read: (kept: readonly CorpusAnchor[]) => Promise<(T | null)[]>,
+  ): Promise<(T | null)[]> {
+    const excluded = (anchor: CorpusAnchor) => 'path' in anchor && scope.isExcluded(anchor.path);
+    if (!anchors.some(excluded)) return read(anchors);
+    const answers = await read(anchors.filter((anchor) => !excluded(anchor)));
+    let next = 0;
+    return anchors.map((anchor) => (excluded(anchor) ? null : answers[next++]));
+  }
+
   function status(key: string): BackendStatus {
     return slotOf(key).corpus === null ? { state: 'disabled' } : loop.status(key);
   }
@@ -268,20 +285,27 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
         nearest: async (anchors, readOpts) => {
           await slotOf(key).recomputing;
           const slot = slotOf(key);
-          return corpusOf(key).nearest(anchors, {
-            ...readOpts,
-            allowed: readOpts.allowed?.filter((p) => !scope.isExcluded(p)),
-            exclude:
-              slot.excluded.length === 0
-                ? readOpts.exclude
-                : [...(readOpts.exclude ?? []), ...slot.excluded],
-          });
+          const corpus = corpusOf(key);
+          return foldAnchors(anchors, (kept) =>
+            corpus.nearest(kept, {
+              ...readOpts,
+              allowed: readOpts.allowed?.filter((p) => !scope.isExcluded(p)),
+              exclude:
+                slot.excluded.length === 0
+                  ? readOpts.exclude
+                  : [...(readOpts.exclude ?? []), ...slot.excluded],
+            }),
+          );
         },
-        nearestBlocks: async (anchors, readOpts) =>
-          corpusOf(key).nearestBlocks(anchors, {
-            ...readOpts,
-            paths: readOpts.paths.filter((p) => !scope.isExcluded(p)),
-          }),
+        nearestBlocks: async (anchors, readOpts) => {
+          const corpus = corpusOf(key);
+          return foldAnchors(anchors, (kept) =>
+            corpus.nearestBlocks(kept, {
+              ...readOpts,
+              paths: readOpts.paths.filter((p) => !scope.isExcluded(p)),
+            }),
+          );
+        },
       };
     },
     info(clients, idleSince) {
