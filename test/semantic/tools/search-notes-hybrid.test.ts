@@ -452,7 +452,7 @@ describe('multi-query and fan-out', () => {
   it('carries a per-vault semantic_status in each fan-out entry', async () => {
     // a: ready semantic backend. b: semantic module off for this vault
     // entirely (no backend) — a vault without a backend still reports
-    // `unavailable` rather than omitting the field.
+    // `disabled` rather than omitting the field.
     const a = await makeLexicalVault({ 'пошук a.md': '' }, { backendStatus: { state: 'ready' } });
     const b = await makeLexicalVault({ 'пошук b.md': '' }, { semantic: false });
     const registry = makeTestRegistry([...a.deps.registry.list(), ...b.deps.registry.list()]);
@@ -465,7 +465,7 @@ describe('multi-query and fan-out', () => {
       );
       expect(byVault.v).toEqual({ state: 'ready' });
       expect(byVault.w).toEqual({
-        state: 'unavailable',
+        state: 'disabled',
         note: expect.stringContaining('lexical-only'),
       });
     } finally {

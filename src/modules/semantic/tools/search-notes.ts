@@ -108,17 +108,17 @@ const DEGRADED_NOTES: Record<Exclude<BackendState, 'ready'>, string> = {
   indexing:
     'The semantic leg did not run — the index is still building, so these matches are lexical-only.',
   disabled:
-    'The semantic leg did not run — semantic search is turned off for this vault, so these matches are lexical-only.',
+    'The semantic leg did not run — semantic search is turned off (for this vault, or server-wide), so these matches are lexical-only.',
   unavailable:
     'The semantic leg did not run — this vault has no usable semantic index, so these matches are lexical-only.',
 };
 
 // An absent backend means the semantic module is globally off for this
-// server; it is reported as `unavailable` (same branch `resolveSemanticVault`
-// uses for a backend that reports its own failure reason), just without the
-// `reason` string — that detail belongs on error payloads, not here.
+// server (`--no-semantic`), which is the same `disabled` state a vault's own
+// `"semantic": false` reports — the response is lexical-only for the same
+// reason, and a caller needs no second vocabulary for it.
 function toStatusField(status: BackendStatus | undefined): SemanticStatusField {
-  const state = status?.state ?? 'unavailable';
+  const state = status?.state ?? 'disabled';
   return {
     state,
     ...(status?.state === 'indexing'

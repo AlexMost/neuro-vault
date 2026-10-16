@@ -15,7 +15,7 @@ Each module exports `createXModule(config, deps) → { tools: ToolRegistration[]
 
 Different users want different things. Some want semantic search and are fine with the background indexing it costs; some just want vault operations from their AI assistant; some want both. Splitting along this axis means:
 
-- Users can disable the semantic module (`--no-semantic`) so no vault gets a semantic backend at all — no embedding-model load, no corpus reconcile, ever. Note this unregisters `search_notes` entirely — including its lexical leg, even though that leg does not need embeddings. Operations tools are always registered — they are pure-object factories with no startup cost and no external runtime dependency.
+- Users can disable the semantic module (`--no-semantic`) so no vault gets a semantic backend at all — no embedding-model load, no corpus reconcile, ever. `search_notes` stays registered and answers from its lexical leg alone, reporting `semantic_status: { state: "disabled" }`; only `get_similar_notes` and `find_duplicates`, which have no non-semantic leg, are unregistered. Operations tools are always registered — they are pure-object factories with no startup cost and no external runtime dependency.
 - Each module is independently testable and reasonable in isolation.
 - Adding a third module later (e.g. structural search) is a localized change — the server-level wiring is uniform.
 
@@ -38,6 +38,7 @@ VaultRegistry.create(config, deps) → VaultRegistry
 startNeuroVaultServer(config, deps)
    │
    ├─ if config.semantic.enabled  → createSemanticModule(registry, ...)  → registrations[]
+   │  else                        → createLexicalOnlyTools(registry, ...) → [search_notes]
    ├─ createOperationsModule(registry, ...) → registrations[]   (always)
    │
    └─ register all → server.connect(transport) → warmup

@@ -1187,7 +1187,7 @@ describe('semantic_status', () => {
     });
   });
 
-  it('reports unavailable when the semantic module is globally off (no backend)', async () => {
+  it('reports disabled when the semantic module is globally off (no backend)', async () => {
     const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
     try {
       const registry = makeTestRegistry([
@@ -1208,7 +1208,7 @@ describe('semantic_status', () => {
       const reg = registerTool(tool);
       const result = await callTool<SearchNotesOutput>(reg, { query: 'x' });
       expect(result.semantic_status).toEqual({
-        state: 'unavailable',
+        state: 'disabled',
         note: expect.stringContaining('lexical-only'),
       });
     } finally {
