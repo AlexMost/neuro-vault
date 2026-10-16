@@ -824,6 +824,19 @@ describe('runDaemonCommand (status / stop)', () => {
     ['a vault entry without profiles', [{ vault: '/v', clients: 1 }]],
     ['a non-array vault', 'nope'],
     ['a null entry and a null profile', [null, { vault: '/v', clients: 1, profiles: [null] }]],
+    [
+      'a null or scalar last_reconcile',
+      [
+        {
+          vault: '/v',
+          clients: 1,
+          profiles: [
+            { profile: 'a', state: 'ready', last_reconcile: null },
+            { profile: 'b', state: 'ready', last_reconcile: 'yesterday' },
+          ],
+        },
+      ],
+    ],
   ])('status survives a future daemon sending %s', async (_name, vault) => {
     const h = harness();
     addKnown(h, 'aaaaaaaaaaaa', infoJson({ socket: '/tmp/a.sock' }));

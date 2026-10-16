@@ -314,8 +314,10 @@ function profileLine(profile: ProfileInfo): string {
     default:
       parts.push(profile.state);
   }
-  const last = profile.last_reconcile;
-  if (last !== undefined) {
+  // Another daemon version may send null or another shape here; print only what is recognisable.
+  const raw: unknown = profile.last_reconcile;
+  if (typeof raw === 'object' && raw !== null) {
+    const last = raw as Partial<NonNullable<ProfileInfo['last_reconcile']>>;
     parts.push(
       `last reconcile ${last.at} +${last.added} ~${last.changed} -${last.removed} ${last.ms} ms`,
     );
