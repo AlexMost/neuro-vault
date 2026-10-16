@@ -6,7 +6,7 @@ import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/s
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { Timers } from '../../src/daemon/probe.js';
+import type { Timers } from '../../src/lib/timers.js';
 import { ServiceRegistry, type ConnectionContext } from '../../src/daemon/protocol.js';
 import { startDaemonServer, type DaemonServerHandle } from '../../src/daemon/socket-server.js';
 

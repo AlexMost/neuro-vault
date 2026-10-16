@@ -9,7 +9,8 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import type { CliBuild, DaemonPaths } from '../../daemon/paths.js';
-import type { SocketConnect, Timers } from '../../daemon/probe.js';
+import type { SocketConnect } from '../../daemon/probe.js';
+import type { Timers } from '../../lib/timers.js';
 import { DaemonRpcError, type DaemonErrorCode } from '../../daemon/protocol.js';
 
 /** Spawn-and-poll: one `connect` attempt every 50 ms, for at most 10 s (design D6). */

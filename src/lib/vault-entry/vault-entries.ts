@@ -8,6 +8,7 @@ import { loadVaultConfig } from '../obsidian/vault-config.js';
 import { loadVaultScope } from '../obsidian/vault-scope-config.js';
 import type { VaultScope } from '../obsidian/vault-scope.js';
 import { MODEL_PROFILES } from '../model-profiles.js';
+import type { Timers } from '../timers.js';
 import {
   createVaultEntry,
   profileIdentity,
@@ -26,12 +27,6 @@ export class VaultEntryError extends Error {
     super(message);
     this.name = 'VaultEntryError';
   }
-}
-
-/** The timer seam, shaped like the daemon's own so one fake serves both. */
-export interface Timers {
-  setTimeout: typeof setTimeout;
-  clearTimeout: typeof clearTimeout;
 }
 
 export interface VaultEntriesDeps {

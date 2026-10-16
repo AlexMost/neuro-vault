@@ -23,7 +23,7 @@ import {
 import { startDaemonServer } from '../src/daemon/socket-server.js';
 import { parseDaemonInfo } from '../src/daemon/info.js';
 import { cliBuild, daemonKey } from '../src/daemon/paths.js';
-import type { Timers } from '../src/daemon/probe.js';
+import type { Timers } from '../src/lib/timers.js';
 import type { ServiceRegistry } from '../src/daemon/protocol.js';
 import {
   VaultEntries,

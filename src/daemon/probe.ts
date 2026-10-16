@@ -1,10 +1,7 @@
 import net from 'node:net';
 import type { Duplex } from 'node:stream';
 
-export interface Timers {
-  setTimeout: typeof setTimeout;
-  clearTimeout: typeof clearTimeout;
-}
+import type { Timers } from '../lib/timers.js';
 
 export type ProbeResult = 'listening' | 'refused' | 'absent';
 export type SocketConnect = (path: string) => Promise<Duplex>;

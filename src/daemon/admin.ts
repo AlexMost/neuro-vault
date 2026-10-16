@@ -13,7 +13,8 @@ import { packageMeta } from '../package-meta.js';
 
 import type { DaemonInfo } from './info.js';
 import { claimLock, defaultLockFs, parseHolder, type LockFs } from './lock.js';
-import { probeSocket, type SocketConnect, type Timers } from './probe.js';
+import type { Timers } from '../lib/timers.js';
+import { probeSocket, type SocketConnect } from './probe.js';
 import type { DaemonInfoResult } from './protocol.js';
 import type { SocketDirFs } from './socket-dir.js';
 

@@ -3,7 +3,7 @@ import net from 'node:net';
 import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
 import { isJSONRPCRequest, type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
-import type { Timers } from './probe.js';
+import type { Timers } from '../lib/timers.js';
 import { errorResponse, type ConnectionContext, type ServiceRegistry } from './protocol.js';
 
 export interface DaemonServerOptions {

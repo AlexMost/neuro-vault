@@ -12,13 +12,9 @@ import {
 } from './daemon/admin.js';
 import { readDaemonInfo, writeDaemonInfo, type DaemonInfo } from './daemon/info.js';
 import { acquireLock, isPidAlive, releaseLock } from './daemon/lock.js';
+import type { Timers } from './lib/timers.js';
 import { cliBuild, daemonPaths, type CliBuild, type DaemonPaths } from './daemon/paths.js';
-import {
-  cleanStaleSocket,
-  defaultConnect,
-  type SocketConnect,
-  type Timers,
-} from './daemon/probe.js';
+import { cleanStaleSocket, defaultConnect, type SocketConnect } from './daemon/probe.js';
 import { ServiceRegistry } from './daemon/protocol.js';
 import { createDaemonService } from './daemon/services/daemon.js';
 import { createEmbedService } from './daemon/services/embed.js';
