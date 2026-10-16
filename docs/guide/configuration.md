@@ -69,7 +69,7 @@ To exclude additional paths, add an optional `<vault>/.neuro-vault/config.json`:
 { "exclusions": ["Archive/**", "Scratch/**"] }
 ```
 
-Each entry is a glob, anchored at the vault root, added on top of the built-in defaults — this list can only exclude more, not re-include something the defaults already exclude. Matching is case-sensitive, even on macOS: `Archive/**` does not exclude `archive/`. The file is read once, when the server starts; edit it and restart the server to pick up the change.
+Each entry is a glob, anchored at the vault root, added on top of the built-in defaults — this list can only exclude more, not re-include something the defaults already exclude. An entry that names a folder works without the trailing `/**`: `"Archive"` and `"**/drafts"` exclude the folder and everything under it, like a `.gitignore` entry. An entry ending in a wildcard (`*.excalidraw.md`, `Archive/*`) matches exactly what the glob says. Matching is case-sensitive, even on macOS: `Archive/**` does not exclude `archive/`. The file is read once, when the server starts; edit it and restart the server to pick up the change.
 
 A missing file means the built-in defaults only, silently. Everything else that can go wrong falls back to the defaults and logs a warning to **stderr** while the server keeps running: an unreadable file, invalid JSON, a top-level value that isn't a JSON object (a bare `["Archive/**"]` array is the easy mistake), or an `"exclusions"` value that isn't a string array. Individual entries that are empty or start with `!` are dropped with a warning naming them — `!` cannot re-include a path here, and an empty entry would otherwise match nothing useful.
 

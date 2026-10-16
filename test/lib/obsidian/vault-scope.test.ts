@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  configExclusionsToPatterns,
   createVaultScope,
   gitignoreLinesToPatterns,
 } from '../../../src/lib/obsidian/vault-scope.js';
@@ -13,6 +14,34 @@ describe('gitignoreLinesToPatterns', () => {
 
   it('strips leading and trailing slashes and excludes the subtree', () => {
     expect(gitignoreLinesToPatterns(['/dist/'])).toEqual(['dist', 'dist/**']);
+  });
+});
+
+describe('configExclusionsToPatterns', () => {
+  it('expands an entry that names a path to the path plus its subtree', () => {
+    expect(configExclusionsToPatterns(['Archive'])).toEqual(['Archive', 'Archive/**']);
+    expect(configExclusionsToPatterns(['**/drafts'])).toEqual(['**/drafts', '**/drafts/**']);
+    expect(configExclusionsToPatterns(['a/b'])).toEqual(['a/b', 'a/b/**']);
+  });
+
+  it('strips a trailing slash like a gitignore entry', () => {
+    expect(configExclusionsToPatterns(['Archive/'])).toEqual(['Archive', 'Archive/**']);
+  });
+
+  it('leaves entries whose last segment is a wildcard untouched', () => {
+    const entries = ['Archive/**', '**/*.excalidraw.md', '*.md', 'Archive/*', '**'];
+    expect(configExclusionsToPatterns(entries)).toEqual(entries);
+  });
+
+  it('does not duplicate a subtree the user already spelled out', () => {
+    expect(configExclusionsToPatterns(['Archive', 'Archive/**'])).toEqual([
+      'Archive',
+      'Archive/**',
+    ]);
+  });
+
+  it('passes unusable entries through for the caller to drop', () => {
+    expect(configExclusionsToPatterns(['', '!Keep'])).toEqual(['', '!Keep']);
   });
 });
 
@@ -46,6 +75,22 @@ describe('createVaultScope', () => {
     const scope = createVaultScope({ configExclusions: ['Archive/**'] });
     expect(scope.isExcluded('Archive/old.md')).toBe(true);
     expect(scope.isExcluded('Templates/Daily.md')).toBe(true); // default survives
+  });
+
+  it('treats a bare config entry as a path: the named subtree is excluded', () => {
+    const scope = createVaultScope({ configExclusions: ['Archive', '**/drafts'] });
+    expect(scope.isExcluded('Archive')).toBe(true);
+    expect(scope.isExcluded('Archive/a.md')).toBe(true);
+    expect(scope.isExcluded('Archive/deep/a.md')).toBe(true);
+    expect(scope.isExcluded('drafts/a.md')).toBe(true);
+    expect(scope.isExcluded('Projects/drafts/a.md')).toBe(true);
+    expect(scope.isExcluded('Archive2/a.md')).toBe(false);
+    expect(scope.isExcluded('Projects/a.md')).toBe(false);
+  });
+
+  it('feeds the subtree pattern to ignorePatterns too, so the glob prune matches the predicate', () => {
+    const scope = createVaultScope({ configExclusions: ['Archive'] });
+    expect(scope.ignorePatterns).toEqual(expect.arrayContaining(['Archive', 'Archive/**']));
   });
 
   it('never throws on an empty config exclusion, and ignores it', () => {

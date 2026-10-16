@@ -93,3 +93,45 @@ describe('vault scope end-to-end (real temp-dir vault)', () => {
     });
   });
 });
+
+describe('vault scope end-to-end: bare config exclusions (no trailing /**)', () => {
+  let bareRoot: string;
+
+  beforeAll(async () => {
+    bareRoot = await mkdtemp(path.join(tmpdir(), 'nv-scope-bare-'));
+    const write = async (rel: string, content: string) => {
+      await mkdir(path.dirname(path.join(bareRoot, rel)), { recursive: true });
+      await writeFile(path.join(bareRoot, rel), content, 'utf8');
+    };
+    await write('Projects/alpha.md', 'kept');
+    await write('Projects/drafts/wip.md', 'excluded by **/drafts');
+    await write('drafts/top.md', 'excluded by **/drafts');
+    await write('Archive/a.md', 'excluded by Archive');
+    await write('Archive/deep/b.md', 'excluded by Archive');
+    await write('Sketches/plan.excalidraw.md', 'excluded by **/*.excalidraw.md');
+    await write('Sketches/notes.md', 'kept');
+    await write(
+      '.neuro-vault/config.json',
+      JSON.stringify({ exclusions: ['Archive', '**/drafts', '**/*.excalidraw.md'] }),
+    );
+  });
+
+  afterAll(async () => {
+    await rm(bareRoot, { recursive: true, force: true });
+  });
+
+  it('scan and predicate agree, and the named subtrees are out of scope', async () => {
+    const scope = await loadVaultScope(bareRoot);
+    const reader = new FsVaultReader({ vaultRoot: bareRoot, scope });
+    const scanned = await reader.scan();
+    expect(scanned).toEqual(['Projects/alpha.md', 'Sketches/notes.md']);
+
+    const everything = await fastGlob('**/*.md', {
+      cwd: bareRoot,
+      onlyFiles: true,
+      dot: false,
+      followSymbolicLinks: false,
+    });
+    expect(everything.filter((p) => !scope.isExcluded(p)).sort()).toEqual(scanned);
+  });
+});
