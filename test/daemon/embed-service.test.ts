@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createEmbedService } from '../../src/daemon/services/embed.js';
 import { DaemonRpcError } from '../../src/daemon/protocol.js';
-import { identityOf, resolveModelProfile } from '../../src/lib/model-profiles.js';
+import {
+  identityOf,
+  resolveModelProfile,
+  type ModelProfile,
+} from '../../src/lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../src/modules/semantic/types.js';
 import { testCtx } from './_ctx.js';
 
@@ -116,6 +120,19 @@ describe('embed service', () => {
     await expect(
       service.handlers.documents({ profile: 'granite-97m', texts: [] }, testCtx()),
     ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
+  });
+
+  it.each([
+    ['initialize', { profile: 'granite-97m', model: 'x' }],
+    ['query', { profile: 'granite-97m', text: 'q', prefix: 'query: ' }],
+    ['documents', { profile: 'granite-97m', texts: ['t'], batch: 2 }],
+  ] as const)('rejects an unexpected key in embed.%s as INVALID_PARAMS', async (method, params) => {
+    const createProvider = vi.fn((p: ModelProfile) => fakeProvider(p.key));
+    const service = createEmbedService({ createProvider });
+    await expect(service.handlers[method](params, testCtx())).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+    });
+    expect(createProvider).not.toHaveBeenCalled();
   });
 
   it('builds the provider once when query arrives before any initialize', async () => {

@@ -4,25 +4,11 @@ import { VaultEntryError, type VaultEntries } from '../../lib/vault-entry/index.
 import {
   asRecord,
   DaemonRpcError,
+  onlyKeys,
+  stringParam,
   type ConnectionContext,
   type ServiceHandlers,
 } from '../protocol.js';
-
-/** The params carry exactly `allowed`: no scope, no exclusions, no corpus identity (spec). */
-function onlyKeys(params: Record<string, unknown>, allowed: readonly string[]): void {
-  const extra = Object.keys(params).find((key) => !allowed.includes(key));
-  if (extra !== undefined) {
-    throw new DaemonRpcError('INVALID_PARAMS', `unexpected param "${extra}"`);
-  }
-}
-
-function stringParam(params: Record<string, unknown>, name: string): string {
-  const value = params[name];
-  if (typeof value !== 'string') {
-    throw new DaemonRpcError('INVALID_PARAMS', `${name} must be a string`);
-  }
-  return value;
-}
 
 function profilesParam(params: Record<string, unknown>): string[] {
   const value = params.profiles;
@@ -65,6 +51,7 @@ export function createVaultService(entries: VaultEntries): ServiceHandlers {
   return {
     attach: async (params, ctx) => {
       const record = asRecord(params);
+      // No scope, no exclusions, no corpus identity: the daemon reads those from the vault (spec).
       onlyKeys(record, ['vault', 'profiles']);
       const vault = stringParam(record, 'vault');
       // A malformed param, not an unavailable vault: the daemon has no cwd to resolve it against.

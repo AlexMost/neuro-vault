@@ -148,7 +148,7 @@ Errors are JSON-RPC errors with a numeric `code` and the daemon's own code in `d
 | `data.code` | JSON-RPC `code` | When |
 | --- | --- | --- |
 | `UNKNOWN_METHOD` | -32601 | No such namespace or method. The connection stays open. |
-| `INVALID_PARAMS` | -32602 | Params not an object, wrong types, blank text, empty or oversized `texts`, an unexpected key in a `vault.*` call, a relative `vault` in `vault.attach` |
+| `INVALID_PARAMS` | -32602 | Params not an object, wrong types, blank text, empty or oversized `texts`, an unexpected param key in any call, a relative `vault` in `vault.attach` |
 | `UNKNOWN_PROFILE` | -32602 | `profile` (or a key of `profiles`) is not a key of the closed registry (`MODEL_PROFILES`) |
 | `NOT_ATTACHED` | -32602 | `vault.status` for a vault and profile this connection did not attach |
 | `VAULT_UNAVAILABLE` | -32602 | `vault.attach` of a path that cannot be resolved or is not a directory; the message names the reason (a relative path is `INVALID_PARAMS`) |
@@ -172,7 +172,7 @@ Every load and failure also leaves one line in the daemon's log, because the cli
 
 `createVaultService` (`src/daemon/services/vault.ts`) serves `vault.attach` and `vault.status` over the daemon's `VaultEntries` ([`vault-entry.md`](./vault-entry.md) has what they do: validation order, the scope re-read, idle, the loop). `startServing` builds the entries with `embedderFor` wired to the embed service's documents lane (`embed.documentsFor(profileKey)`: the same load and queue `embed.documents` uses, without the wire checks, and the profile loads on its first embed, not at attach) and with the daemon's own `--idle-timeout` as the idle time of an entry or profile nobody is attached to.
 
-- The params are strict: `vault.attach` carries exactly `{ vault: string, profiles: string[] }` and `vault.status` exactly `{ vault: string, profile: string }`. Any other key is `INVALID_PARAMS` — the scope, the exclusions and the corpus identity are the daemon's to read from the vault, never the client's.
+- The params are strict: `vault.attach` carries exactly `{ vault: string, profiles: string[] }` and `vault.status` exactly `{ vault: string, profile: string }`. Any other key is `INVALID_PARAMS` — the scope, the exclusions and the corpus identity are the daemon's to read from the vault, never the client's. Every daemon method's params are closed the same way (`onlyKeys` and `stringParam` beside `asRecord` in `protocol.ts`): `embed.initialize` takes `{ profile }`, `embed.query` `{ profile, text }` and `embed.documents` `{ profile, texts }`.
 - `vault.status` is a read of the entry's state for a pair *this connection* attached; the vault must be addressed by the realpath `vault.attach` returned.
 - **No `vault.detach`.** A connection that closes detaches itself from everything it attached. The service hooks `ctx.onClose` the first time a connection calls `vault.attach`, before the attach awaits anything, so a connection that closes mid-attach still detaches.
 - A `VaultEntryError` (`NOT_ATTACHED`, `VAULT_UNAVAILABLE`, `UNKNOWN_PROFILE`) keeps its code and message on the wire; anything else is `INTERNAL`.

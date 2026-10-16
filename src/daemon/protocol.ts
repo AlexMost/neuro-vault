@@ -110,6 +110,22 @@ export function asRecord(params: unknown): Record<string, unknown> {
   return params as Record<string, unknown>;
 }
 
+/** The params carry exactly `allowed`: every daemon method's params are closed. */
+export function onlyKeys(params: Record<string, unknown>, allowed: readonly string[]): void {
+  const extra = Object.keys(params).find((key) => !allowed.includes(key));
+  if (extra !== undefined) {
+    throw new DaemonRpcError('INVALID_PARAMS', `unexpected param "${extra}"`);
+  }
+}
+
+export function stringParam(params: Record<string, unknown>, name: string): string {
+  const value = params[name];
+  if (typeof value !== 'string') {
+    throw new DaemonRpcError('INVALID_PARAMS', `${name} must be a string`);
+  }
+  return value;
+}
+
 /**
  * `namespace → { method: handler }`. A later service (`lexical`, `watch`)
  * is one more `register` call; framing, discovery and lifecycle do not move.

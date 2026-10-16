@@ -7,7 +7,7 @@ import type { BackendStatus } from '../obsidian/semantic-backend.js';
 import { loadVaultConfig } from '../obsidian/vault-config.js';
 import { loadVaultScope } from '../obsidian/vault-scope-config.js';
 import type { VaultScope } from '../obsidian/vault-scope.js';
-import { MODEL_PROFILES } from '../model-profiles.js';
+import { isProfileKey, MODEL_PROFILES } from '../model-profiles.js';
 import type { Timers } from '../timers.js';
 import {
   createVaultEntry,
@@ -141,7 +141,7 @@ export class VaultEntries {
     try {
       const root = await this.resolve(vault);
       for (const key of profiles) {
-        if (!Object.hasOwn(MODEL_PROFILES, key)) {
+        if (!isProfileKey(key)) {
           throw new VaultEntryError(
             'UNKNOWN_PROFILE',
             `unknown profile "${key}" — choose one of: ${Object.keys(MODEL_PROFILES).join(', ')}`,

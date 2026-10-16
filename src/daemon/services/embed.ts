@@ -1,10 +1,12 @@
 import type { EmbedDocumentsFn } from '../../lib/obsidian/corpus/types.js';
 import { createQueuedEmbedder, type QueuedEmbedder } from '../../modules/semantic/embed-queue.js';
-import { MODEL_PROFILES, type ModelProfile } from '../../lib/model-profiles.js';
+import { isProfileKey, MODEL_PROFILES, type ModelProfile } from '../../lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../modules/semantic/types.js';
 import {
   asRecord,
   DaemonRpcError,
+  onlyKeys,
+  stringParam,
   type EmbedDocumentsResult,
   type EmbedInitializeResult,
   type EmbedQueryResult,
@@ -29,13 +31,16 @@ export interface EmbedServiceDeps {
   now?: () => number;
 }
 
-function readProfile(params: Record<string, unknown>): ModelProfile {
-  const key = params.profile;
-  if (typeof key !== 'string')
-    throw new DaemonRpcError('INVALID_PARAMS', 'profile must be a string');
-  if (!Object.hasOwn(MODEL_PROFILES, key))
-    throw new DaemonRpcError('UNKNOWN_PROFILE', `unknown profile "${key}"`);
+function profileOf(key: string): ModelProfile {
+  if (!isProfileKey(key)) throw new DaemonRpcError('UNKNOWN_PROFILE', `unknown profile "${key}"`);
   return MODEL_PROFILES[key];
+}
+
+/** The params of an `embed.*` call: exactly `profile` plus `allowed`. */
+function readParams(params: unknown, ...allowed: string[]) {
+  const record = asRecord(params);
+  onlyKeys(record, ['profile', ...allowed]);
+  return { record, profile: profileOf(stringParam(record, 'profile')) };
 }
 
 function assertFinite(vector: number[]): number[] {
@@ -121,12 +126,11 @@ export function createEmbedService(deps: EmbedServiceDeps): {
 
   const handlers: ServiceHandlers = {
     initialize: async (params): Promise<EmbedInitializeResult> => {
-      const { provider } = await get(readProfile(asRecord(params)));
+      const { provider } = await get(readParams(params).profile);
       return { identity: provider.identity, max_batch_size: provider.maxBatchSize };
     },
     query: async (params): Promise<EmbedQueryResult> => {
-      const record = asRecord(params);
-      const profile = readProfile(record);
+      const { record, profile } = readParams(params, 'text');
       const text = record.text;
       if (typeof text !== 'string' || text.trim() === '') {
         throw new DaemonRpcError('INVALID_PARAMS', 'text must be a non-blank string');
@@ -138,8 +142,7 @@ export function createEmbedService(deps: EmbedServiceDeps): {
       return { vector };
     },
     documents: async (params): Promise<EmbedDocumentsResult> => {
-      const record = asRecord(params);
-      const profile = readProfile(record);
+      const { record, profile } = readParams(params, 'texts');
       const texts = record.texts;
       if (!Array.isArray(texts) || !texts.every((t): t is string => typeof t === 'string')) {
         throw new DaemonRpcError('INVALID_PARAMS', 'texts must be an array of strings');
@@ -163,7 +166,7 @@ export function createEmbedService(deps: EmbedServiceDeps): {
   };
 
   function documentsFor(profileKey: string): EmbedDocumentsFn {
-    const profile = readProfile({ profile: profileKey });
+    const profile = profileOf(profileKey);
     return async (texts) => {
       const { queue } = await get(profile);
       return embedding(
