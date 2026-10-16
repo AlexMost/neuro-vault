@@ -59,7 +59,7 @@ Every decode applies the vault's scope (`VaultScope.isExcluded`), so `sources` a
 
 ## Freshness: the watcher and the debounce
 
-Each enabled backend gets one `chokidar` watcher over its vault root (`src/modules/semantic/backend/vault-watcher.ts`), `.md` files only, every dot-path ignored so the server's own corpus writes cannot feed the watcher back into itself. Any add/change/unlink event resets a debounce timer; `DEBOUNCE_MS` (10,000 ms, `vault-watcher.ts`) after the last event, `onQuiet` fires and calls `backend.requestReconcile()`.
+Each enabled backend gets one `chokidar` watcher over its vault root (`src/lib/vault-entry/watcher.ts`), `.md` files only, every dot-path ignored so the server's own corpus writes cannot feed the watcher back into itself. Any add/change/unlink event resets a debounce timer; `DEBOUNCE_MS` (10,000 ms, `watcher.ts`) after the last event, `onQuiet` fires and calls `backend.requestReconcile()`.
 
 `requestReconcile()` on the corpus backend coalesces: a request that arrives while a pass is already running just sets a flag, and exactly one follow-up pass runs when the current one finishes — however many requests arrived in between. This is the same `reconcileCorpus` pass startup runs; there is one definition of "changed" in the system, not two.
 

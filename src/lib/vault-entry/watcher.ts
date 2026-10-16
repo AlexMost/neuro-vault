@@ -1,6 +1,11 @@
-import { relative } from 'node:path';
+import path from 'node:path';
 
 import chokidar from 'chokidar';
+
+import type { VaultScope } from '../obsidian/vault-scope.js';
+
+/** The two scope questions the watcher asks — pruning a directory, filtering a note. */
+export type WatcherScope = Pick<VaultScope, 'isExcluded' | 'isSubtreeExcluded'>;
 
 /** A running watcher. `close()` is idempotent-safe and always awaited on shutdown. */
 export interface WatcherHandle {
@@ -11,6 +16,7 @@ export interface WatcherHandle {
 export interface WatcherFactory {
   (opts: {
     vaultRoot: string;
+    scope: WatcherScope;
     onChange: () => void;
     onError: (err: unknown) => void;
   }): WatcherHandle;
@@ -19,6 +25,8 @@ export interface WatcherFactory {
 export interface VaultWatcherDeps {
   vaultRoot: string;
   vaultName: string;
+  /** What the vault discovers — the one definition of scope, shared with the readers. */
+  scope: WatcherScope;
   /** Fires ~debounceMs after the last change event. Wired to backend.requestReconcile. */
   onQuiet: () => void;
   debounceMs?: number;
@@ -33,53 +41,64 @@ export interface VaultWatcherDeps {
 export const DEBOUNCE_MS = 10_000;
 
 /**
- * Ignore dot-paths and in-flight temp files, judged relative to the vault
- * root — not the absolute path chokidar hands the `ignored` predicate.
+ * `p` relative to the vault root with `/` separators — the form the scope
+ * judges. A Windows root (one containing a backslash) is resolved with `path.win32`
+ * so the result is the same whichever platform runs this.
  *
- * chokidar passes absolute paths throughout (the root itself, then each
- * entry as `join(watchPath, relative(watchPath, entry.fullPath))`), so
- * testing the absolute path against `/(^|[\\/])\../ ` matches any dot
- * segment *above* the vault root too — a vault living under a dot-directory
- * (e.g. `~/.sync/vault`) would then have every path ignored and the watcher
- * would silently never fire. Matching on `relative(vaultRoot, p)` scopes the
- * rule to paths *inside* the vault, which is what stops the server's own
- * writes under `.neuro-vault/corpus/` from feeding this watcher back into
- * itself (design D6) without also blinding the watcher for vaults nested
- * under an unrelated dot-directory.
+ * Judging the vault-relative path, not the absolute one chokidar hands over,
+ * is what lets a vault live under a dot-directory (e.g. `~/.sync/vault`): a
+ * dot segment *above* the root never reaches the scope.
  */
-export function isIgnoredPath(vaultRoot: string, p: string): boolean {
-  const rel = relative(vaultRoot, p);
-  if (rel === '') return false; // the vault root itself is never ignored
-  return /(^|[\\/])\../.test(rel) || rel.endsWith('.tmp');
+export function vaultRelative(vaultRoot: string, p: string): string {
+  const rel = vaultRoot.includes('\\')
+    ? path.win32.relative(vaultRoot, p)
+    : path.relative(vaultRoot, p);
+  return rel.replaceAll('\\', '/');
 }
 
 /**
- * `ignored` only filters dot-segments and `.tmp` suffixes (see
- * {@link isIgnoredPath}) — it does not filter by extension, so this is the
- * only thing keeping non-`.md` churn (e.g. a stray `.txt` add) out of
- * `onChange`.
+ * Whether chokidar should skip `p` (and, for a directory, everything below it).
+ * True only when the scope proves the whole subtree excluded — a dot segment, or
+ * a `<prefix>/**` pattern. `Archive/*` excludes `Archive`'s children but not
+ * `Archive/2024/note.md`, so it must not prune: chokidar 4 drops a whole
+ * subtree once `ignored` is true for its directory. The vault root is never
+ * pruned (its relative path is empty). chokidar also asks about files, which is
+ * still sound: anything inside a provably excluded subtree is excluded.
  */
-export function isMarkdownPath(p: string): boolean {
-  return p.endsWith('.md');
+export function isPrunedDir(scope: WatcherScope, vaultRoot: string, p: string): boolean {
+  return scope.isSubtreeExcluded(vaultRelative(vaultRoot, p));
+}
+
+/**
+ * `ignored` never filters by extension or by a per-file rule, so this is what
+ * keeps non-`.md` churn and notes the scope excludes (`Archive/*`, `*.canvas.md`
+ * and the like) out of `onChange`. It also covers the server's own writes under
+ * `.neuro-vault/corpus/`: the dot rule excludes them (design D6).
+ */
+export function isWatchedNote(scope: WatcherScope, vaultRoot: string, p: string): boolean {
+  return p.endsWith('.md') && !scope.isExcluded(vaultRelative(vaultRoot, p));
 }
 
 function defaultCreateWatcher({
   vaultRoot,
+  scope,
   onChange,
   onError,
 }: {
   vaultRoot: string;
+  scope: WatcherScope;
   onChange: () => void;
   onError: (err: unknown) => void;
 }): WatcherHandle {
   const watcher = chokidar.watch(vaultRoot, {
-    ignored: (p: string) => isIgnoredPath(vaultRoot, p),
+    // chokidar's `stats` argument is unreliable in v4, so only the path is used.
+    ignored: (p: string) => isPrunedDir(scope, vaultRoot, p),
     ignoreInitial: true,
     awaitWriteFinish: { stabilityThreshold: 2_000, pollInterval: 200 },
   });
 
-  const forward = (path: string) => {
-    if (isMarkdownPath(path)) onChange();
+  const forward = (p: string) => {
+    if (isWatchedNote(scope, vaultRoot, p)) onChange();
   };
 
   watcher.on('add', forward);
@@ -101,10 +120,13 @@ const noopHandle: WatcherHandle = {
  * "quiet" signal (design D6). Any `.md` add/change/unlink event resets a
  * debounce timer; ~debounceMs after the last event, `onQuiet()` fires once.
  *
- * Dot-paths *inside the vault* are always ignored — that is what stops the
- * server's own writes under `.neuro-vault/corpus/` from feeding this watcher
- * back into itself. The rule is judged relative to the vault root, so a
- * vault living under an unrelated dot-directory is not itself blinded.
+ * The vault scope decides what counts: only an add/change/unlink of a `.md`
+ * path the scope does not exclude arms the timer, and chokidar prunes only the
+ * subtrees the scope proves excluded. Dot-paths inside the vault are always
+ * excluded — that is what stops the server's own writes under
+ * `.neuro-vault/corpus/` from feeding this watcher back into itself. Paths are
+ * judged relative to the vault root, so a vault living under an unrelated
+ * dot-directory is not itself blinded.
  *
  * A watcher that fails to start, or errors later, degrades: it warns to
  * stderr and never throws. The vault simply keeps whatever corpus state it
@@ -114,6 +136,7 @@ export function startVaultWatcher(deps: VaultWatcherDeps): WatcherHandle {
   const {
     vaultRoot,
     vaultName,
+    scope,
     onQuiet,
     debounceMs = DEBOUNCE_MS,
     createWatcher = defaultCreateWatcher,
@@ -148,7 +171,7 @@ export function startVaultWatcher(deps: VaultWatcherDeps): WatcherHandle {
 
   let handle: WatcherHandle;
   try {
-    handle = createWatcher({ vaultRoot, onChange: scheduleQuiet, onError });
+    handle = createWatcher({ vaultRoot, scope, onChange: scheduleQuiet, onError });
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     warn(`[semantic] vault watcher failed to start for "${vaultName}": ${reason}`);

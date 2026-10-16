@@ -6,13 +6,13 @@ import { loadCorpusSnapshot } from '../../../lib/obsidian/corpus/snapshot.js';
 import type { SemanticBackend } from '../../../lib/obsidian/semantic-backend.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
 import type { VaultScope } from '../../../lib/obsidian/vault-scope.js';
+import { startVaultWatcher, type WatcherFactory } from '../../../lib/vault-entry/watcher.js';
 import type { QueuedEmbedder } from '../embed-queue.js';
 import {
   createCorpusBackend,
   type CorpusBackend,
   type CorpusBackendDeps,
 } from './corpus-backend.js';
-import { startVaultWatcher, type WatcherFactory } from './vault-watcher.js';
 
 export interface OwnCorpusBackendFactoryDeps {
   /** Shared process-wide (design D7) — one model, one embed in flight. */
@@ -102,6 +102,7 @@ export function createOwnCorpusBackendFactory(
       ? startVaultWatcher({
           vaultRoot,
           vaultName,
+          scope,
           onQuiet: () => backend.requestReconcile(),
           createWatcher: deps.createWatcher,
           warn,
