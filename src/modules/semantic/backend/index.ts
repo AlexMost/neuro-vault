@@ -1,7 +1,7 @@
 import { buildReconcileFsDeps } from '../../../lib/obsidian/corpus/fs-deps.js';
 import type { CorpusIdentity } from '../../../lib/obsidian/corpus/identity.js';
 import { reconcileCorpus } from '../../../lib/obsidian/corpus/reconcile.js';
-import { CorpusStore } from '../../../lib/obsidian/corpus/shard-store.js';
+import { ShardStore } from '../../../lib/obsidian/corpus/shard-store.js';
 import { loadCorpusSnapshot } from '../../../lib/obsidian/corpus/snapshot.js';
 import type { SemanticBackend } from '../../../lib/obsidian/semantic-backend.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
@@ -74,7 +74,7 @@ export function createOwnCorpusBackendFactory(
   const createBackend = deps.createBackend ?? createCorpusBackend;
 
   return ({ vaultRoot, vaultName, reader, scope, enabled }): SemanticBackend => {
-    const store = new CorpusStore(vaultRoot, {
+    const store = new ShardStore(vaultRoot, {
       warn,
       modelKey: deps.identity.model_key,
       dims: deps.identity.dims,

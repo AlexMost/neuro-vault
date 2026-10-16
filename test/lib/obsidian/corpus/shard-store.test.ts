@@ -4,7 +4,7 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  CorpusStore,
+  ShardStore,
   ensureCorpusGitignored,
   isManifestCompatible,
 } from '../../../../src/lib/obsidian/corpus/shard-store.js';
@@ -30,9 +30,9 @@ async function tempVault() {
 const expected = TEST_IDENTITY;
 const stored = { ...expected, created: '2026-08-24T00:00:00.000Z' };
 
-describe('CorpusStore', () => {
+describe('ShardStore', () => {
   it('round-trips a shard', async () => {
-    const store = new CorpusStore(await tempVault(), {
+    const store = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -41,15 +41,15 @@ describe('CorpusStore', () => {
   });
 
   it('gives colliding-slug paths distinct files', () => {
-    expect(CorpusStore.shardFileName('A/b.md')).not.toBe(CorpusStore.shardFileName('A_b.md'));
+    expect(ShardStore.shardFileName('A/b.md')).not.toBe(ShardStore.shardFileName('A_b.md'));
   });
 
   it('keeps each vault corpus under its own root', async () => {
-    const first = new CorpusStore(await tempVault(), {
+    const first = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
-    const second = new CorpusStore(await tempVault(), {
+    const second = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -61,7 +61,7 @@ describe('CorpusStore', () => {
   it('reads a malformed shard as absent', async () => {
     const root = await tempVault();
     const warnings: string[] = [];
-    const store = new CorpusStore(root, {
+    const store = new ShardStore(root, {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
       warn: (m) => warnings.push(m),
@@ -69,7 +69,7 @@ describe('CorpusStore', () => {
     const file = path.join(
       root,
       '.neuro-vault/corpus/bge-micro-v2/notes',
-      CorpusStore.shardFileName('N.md'),
+      ShardStore.shardFileName('N.md'),
     );
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, '{ not json');
@@ -80,7 +80,7 @@ describe('CorpusStore', () => {
   it('reads a shard whose path does not match its filename as absent', async () => {
     const root = await tempVault();
     const warnings: string[] = [];
-    const store = new CorpusStore(root, {
+    const store = new ShardStore(root, {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
       warn: (m) => warnings.push(m),
@@ -88,7 +88,7 @@ describe('CorpusStore', () => {
     const file = path.join(
       root,
       '.neuro-vault/corpus/bge-micro-v2/notes',
-      CorpusStore.shardFileName('N.md'),
+      ShardStore.shardFileName('N.md'),
     );
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, JSON.stringify(shard('Other.md')));
@@ -99,7 +99,7 @@ describe('CorpusStore', () => {
   it('reads a shard whose vector has the wrong dimension as absent', async () => {
     const root = await tempVault();
     const warnings: string[] = [];
-    const store = new CorpusStore(root, {
+    const store = new ShardStore(root, {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
       warn: (m) => warnings.push(m),
@@ -109,7 +109,7 @@ describe('CorpusStore', () => {
     const file = path.join(
       root,
       '.neuro-vault/corpus/bge-micro-v2/notes',
-      CorpusStore.shardFileName('N.md'),
+      ShardStore.shardFileName('N.md'),
     );
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, JSON.stringify({ ...shard('N.md'), embedding: wrongSize }));
@@ -118,7 +118,7 @@ describe('CorpusStore', () => {
   });
 
   it('refuses to write a shard whose note vector has the wrong dimension', async () => {
-    const store = new CorpusStore(await tempVault(), {
+    const store = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -130,7 +130,7 @@ describe('CorpusStore', () => {
   });
 
   it('refuses to write a shard whose block vector has the wrong dimension', async () => {
-    const store = new CorpusStore(await tempVault(), {
+    const store = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -142,7 +142,7 @@ describe('CorpusStore', () => {
   });
 
   it('writes a shard with no note vector (a note below the size gate)', async () => {
-    const store = new CorpusStore(await tempVault(), {
+    const store = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -153,7 +153,7 @@ describe('CorpusStore', () => {
   it('skips unreadable shards when listing', async () => {
     const root = await tempVault();
     const warnings: string[] = [];
-    const store = new CorpusStore(root, {
+    const store = new ShardStore(root, {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
       warn: (m) => warnings.push(m),
@@ -168,7 +168,7 @@ describe('CorpusStore', () => {
 
   it('lists an empty map when the corpus directory does not exist', async () => {
     expect(
-      await new CorpusStore(await tempVault(), {
+      await new ShardStore(await tempVault(), {
         modelKey: TEST_IDENTITY.model_key,
         dims: TEST_DIMS,
       }).listShards(),
@@ -177,7 +177,7 @@ describe('CorpusStore', () => {
 
   it('writes through the atomic writer, never a partial file', async () => {
     const calls: string[] = [];
-    const store = new CorpusStore(await tempVault(), {
+    const store = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
       writeFile: async (p) => {
@@ -187,11 +187,11 @@ describe('CorpusStore', () => {
     });
     await store.writeShard(shard('N.md'));
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toContain(CorpusStore.shardFileName('N.md'));
+    expect(calls[0]).toContain(ShardStore.shardFileName('N.md'));
   });
 
   it('deletes a shard and tolerates a missing one', async () => {
-    const store = new CorpusStore(await tempVault(), {
+    const store = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -203,7 +203,7 @@ describe('CorpusStore', () => {
 
   it('writes the manifest only when its values change', async () => {
     const writes: string[] = [];
-    const store = new CorpusStore(await tempVault(), {
+    const store = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
       writeFile: async (p) => {
@@ -217,7 +217,7 @@ describe('CorpusStore', () => {
   });
 
   it('writes a manifest on a fresh corpus so the next pass has one to compare', async () => {
-    const store = new CorpusStore(await tempVault(), {
+    const store = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -227,7 +227,7 @@ describe('CorpusStore', () => {
   });
 
   it('does not discard the first index written after a fresh ensureManifest', async () => {
-    const store = new CorpusStore(await tempVault(), {
+    const store = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -240,13 +240,13 @@ describe('CorpusStore', () => {
 
   it('reads shards concurrently, in a stable order', async () => {
     const root = await tempVault();
-    const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+    const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
     for (const p of ['C.md', 'A.md', 'B.md']) await store.writeShard(shard(p));
     const entries = await readdir(path.join(root, '.neuro-vault/corpus/bge-micro-v2/notes'));
     const started: string[] = [];
     let inFlight = 0;
     let peak = 0;
-    const traced = new CorpusStore(root, {
+    const traced = new ShardStore(root, {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
       // Reversed, so a stable read order can only come from listShards sorting.
@@ -267,7 +267,7 @@ describe('CorpusStore', () => {
 
   it('returns the manifest it found: compatible, incompatible with shards, incompatible without', async () => {
     const compatibleRoot = await tempVault();
-    const compatible = new CorpusStore(compatibleRoot, {
+    const compatible = new ShardStore(compatibleRoot, {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -278,7 +278,7 @@ describe('CorpusStore', () => {
       previous: stored,
     });
 
-    const withShards = new CorpusStore(await tempVault(), {
+    const withShards = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -287,7 +287,7 @@ describe('CorpusStore', () => {
     await withShards.writeManifest(other);
     expect(await withShards.ensureManifest(expected)).toEqual({ rebuilt: true, previous: other });
 
-    const noShards = new CorpusStore(await tempVault(), {
+    const noShards = new ShardStore(await tempVault(), {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -298,7 +298,7 @@ describe('CorpusStore', () => {
 
   it('clears every shard when the manifest is incompatible', async () => {
     const root = await tempVault();
-    const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+    const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
     await store.writeShard(shard('N.md'));
     await store.writeManifest({ ...stored, model_key: 'other-model' });
     const result = await store.ensureManifest(expected);
@@ -308,10 +308,10 @@ describe('CorpusStore', () => {
   });
 });
 
-describe('CorpusStore dimension guard', () => {
+describe('ShardStore dimension guard', () => {
   it('a store built for 640 dims refuses a 384-dim vector', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-store-dims-'));
-    const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: 640 });
+    const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: 640 });
     await expect(
       store.writeShard({
         path: 'A.md',
@@ -380,7 +380,7 @@ describe('manifest identity v2', () => {
         created: '2026-08-25T00:00:00.000Z',
       }),
     );
-    const manifest = await new CorpusStore(root, {
+    const manifest = await new ShardStore(root, {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     }).readManifest();
@@ -439,25 +439,25 @@ describe('ensureCorpusGitignored', () => {
   });
 });
 
-describe('CorpusStore per-model directories', () => {
+describe('ShardStore per-model directories', () => {
   const granite = { ...expected, model_key: 'granite-97m' };
   const harrier = { ...expected, model_key: 'harrier-270m' };
 
   it('writes shards and the manifest under corpus/<modelKey>/', async () => {
     const root = await tempVault();
-    const store = new CorpusStore(root, { modelKey: 'granite-97m', dims: TEST_DIMS });
+    const store = new ShardStore(root, { modelKey: 'granite-97m', dims: TEST_DIMS });
     await store.writeShard(shard('N.md'));
     await store.writeManifest({ ...granite, created: 'x' });
     const dir = path.join(root, '.neuro-vault/corpus/granite-97m');
     expect((await readdir(dir)).sort()).toEqual(['manifest.json', 'notes']);
-    expect(await readdir(path.join(dir, 'notes'))).toEqual([CorpusStore.shardFileName('N.md')]);
+    expect(await readdir(path.join(dir, 'notes'))).toEqual([ShardStore.shardFileName('N.md')]);
     expect((await readdir(path.join(root, '.neuro-vault/corpus'))).sort()).toEqual(['granite-97m']);
   });
 
   it('keeps two models of one vault apart', async () => {
     const root = await tempVault();
-    const a = new CorpusStore(root, { modelKey: 'granite-97m', dims: TEST_DIMS });
-    const b = new CorpusStore(root, { modelKey: 'harrier-270m', dims: TEST_DIMS });
+    const a = new ShardStore(root, { modelKey: 'granite-97m', dims: TEST_DIMS });
+    const b = new ShardStore(root, { modelKey: 'harrier-270m', dims: TEST_DIMS });
     await a.writeShard(shard('A.md'));
     expect(await b.readShard('A.md')).toBeNull();
     expect(await b.listShards()).toEqual(new Map());
@@ -466,8 +466,8 @@ describe('CorpusStore per-model directories', () => {
 
   it('rebuilding one model leaves the other model untouched', async () => {
     const root = await tempVault();
-    const a = new CorpusStore(root, { modelKey: 'granite-97m', dims: TEST_DIMS });
-    const b = new CorpusStore(root, { modelKey: 'harrier-270m', dims: TEST_DIMS });
+    const a = new ShardStore(root, { modelKey: 'granite-97m', dims: TEST_DIMS });
+    const b = new ShardStore(root, { modelKey: 'harrier-270m', dims: TEST_DIMS });
     await a.ensureManifest(granite);
     await a.writeShard(shard('A.md'));
     await b.ensureManifest(harrier);
@@ -486,7 +486,7 @@ describe('CorpusStore per-model directories', () => {
   it('refuses an unsafe model key before any I/O', () => {
     const readdirSpy = vi.fn(async () => []);
     expect(
-      () => new CorpusStore('/v', { modelKey: '../x', dims: TEST_DIMS, readdir: readdirSpy }),
+      () => new ShardStore('/v', { modelKey: '../x', dims: TEST_DIMS, readdir: readdirSpy }),
     ).toThrow('"../x" is not a valid model directory name');
     expect(readdirSpy).not.toHaveBeenCalled();
   });

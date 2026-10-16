@@ -20,7 +20,7 @@ import type { CorpusBlock, CorpusManifest, CorpusShard, StoredManifest } from '.
  */
 const SHARD_READ_CONCURRENCY = 64;
 
-export interface CorpusStoreDeps {
+export interface ShardStoreDeps {
   /**
    * The model profile key. The store lives in
    * `<vault>/.neuro-vault/corpus/<modelKey>/` and never reads or writes outside
@@ -42,7 +42,7 @@ export interface CorpusStoreDeps {
 }
 
 /** Reads, writes, lists, and deletes per-note shards under `<vaultRoot>/.neuro-vault/corpus/<modelKey>/notes/`. */
-export class CorpusStore {
+export class ShardStore {
   private readonly corpusRoot: string;
   private readonly notesDir: string;
   private readonly manifestFile: string;
@@ -54,7 +54,7 @@ export class CorpusStore {
   private readonly mkdir: (p: string) => Promise<void>;
   private readonly warn: (message: string) => void;
 
-  constructor(vaultRoot: string, deps: CorpusStoreDeps) {
+  constructor(vaultRoot: string, deps: ShardStoreDeps) {
     // Throws on an unsafe key before any I/O.
     const root = modelCorpusDir(vaultRoot, deps.modelKey);
     this.corpusRoot = root;
@@ -78,18 +78,18 @@ export class CorpusStore {
     this.assertShardVectors(shard);
     await this.mkdir(this.notesDir);
     await this.writeFile(
-      path.join(this.notesDir, CorpusStore.shardFileName(shard.path)),
+      path.join(this.notesDir, ShardStore.shardFileName(shard.path)),
       `${JSON.stringify(shard)}\n`,
     );
   }
 
   async readShard(notePath: string): Promise<CorpusShard | null> {
-    const file = path.join(this.notesDir, CorpusStore.shardFileName(notePath));
+    const file = path.join(this.notesDir, ShardStore.shardFileName(notePath));
     return this.readShardFile(file);
   }
 
   async deleteShard(notePath: string): Promise<void> {
-    const file = path.join(this.notesDir, CorpusStore.shardFileName(notePath));
+    const file = path.join(this.notesDir, ShardStore.shardFileName(notePath));
     try {
       await this.unlink(file);
     } catch (err) {
@@ -255,7 +255,7 @@ export class CorpusStore {
       return null;
     }
 
-    if (CorpusStore.shardFileName(parsed.path) !== path.basename(file)) {
+    if (ShardStore.shardFileName(parsed.path) !== path.basename(file)) {
       this.warn(
         `neuro-vault corpus: shard ${file} path "${parsed.path}" does not hash to its filename`,
       );

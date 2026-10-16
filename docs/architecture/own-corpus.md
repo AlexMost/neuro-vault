@@ -121,7 +121,7 @@ The one case that throws instead is writing a vector of the wrong dimension: the
 
 ## Reconcile
 
-`reconcileCorpus(deps, opts)` takes ports — `scan`, `stat`, `readNote`, `embedDocuments`, a `CorpusStore` — and returns `{ total, embedded, reused, renamed, deleted, failed }`. In order:
+`reconcileCorpus(deps, opts)` takes ports — `scan`, `stat`, `readNote`, `embedDocuments`, a `ShardStore` — and returns `{ total, embedded, reused, renamed, deleted, failed }`. In order:
 
 0. Take the vault's lock, then migrate a single-corpus layout (see [Concurrency](#concurrency-the-reconcile-lock) and [Migration](#migration-from-the-single-corpus-layout)). Everything below reads the corpus, so a pass that waited sees what the previous holder left.
 1. `ensureManifest` compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (every manifest field except `created`). A mismatch, or a missing manifest while shards exist, discards every shard of this model's directory and rebuilds it. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.

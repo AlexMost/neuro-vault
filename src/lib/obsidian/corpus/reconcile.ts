@@ -5,7 +5,7 @@ import type { CorpusIdentity } from './identity.js';
 import { corpusRootOf } from './layout.js';
 import { migrateLegacyCorpus } from './legacy-migration.js';
 import { acquireCorpusLock, type AcquireOptions, type CorpusLock } from './reconcile-lock.js';
-import { CorpusStore, ensureCorpusGitignored } from './shard-store.js';
+import { ShardStore, ensureCorpusGitignored } from './shard-store.js';
 import type { CorpusBlock, CorpusShard, EmbedDocumentsFn, StoredManifest } from './types.js';
 import { encodeVector } from './vector-codec.js';
 
@@ -33,7 +33,7 @@ export interface ReconcileDeps {
   readNote: (relPath: string) => Promise<NoteContent>;
   /** One call per note: its text and its blocks' texts together, vectors back in order. */
   embedDocuments: EmbedDocumentsFn;
-  store: CorpusStore;
+  store: ShardStore;
   /** The identity the corpus must carry — the provider's, under this build's extraction. */
   identity: CorpusIdentity;
   /**
@@ -333,7 +333,7 @@ async function embedNote(
   note: NoteContent,
   hash: string,
   embedDocuments: EmbedDocumentsFn,
-  store: CorpusStore,
+  store: ShardStore,
 ): Promise<void> {
   const inputs = buildEmbedInputs(notePath, note.content);
 

@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CorpusStore } from '../../src/lib/obsidian/corpus/shard-store.js';
+import { ShardStore } from '../../src/lib/obsidian/corpus/shard-store.js';
 import { TEST_DIMS, TEST_IDENTITY } from '../_identity.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
 import { BackendError, loadSnapshot } from '../../eval/backends.js';
@@ -19,7 +19,7 @@ describe('own backend snapshot', () => {
 
   it('decodes shards into SmartSource entries and skips vectorless notes', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-own-'));
-    const store = new CorpusStore(vaultRoot, {
+    const store = new ShardStore(vaultRoot, {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -61,7 +61,7 @@ describe('own backend snapshot', () => {
   it('refuses a model corpus built with another identity before listing shards, naming the index command', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
     // A 640-wide shard under a manifest of another embed_version: the manifest must refuse it.
-    const wide = new CorpusStore(vaultRoot, { modelKey: 'harrier-270m', dims: 640 });
+    const wide = new ShardStore(vaultRoot, { modelKey: 'harrier-270m', dims: 640 });
     await wide.writeManifest({
       ...TEST_IDENTITY,
       model_key: 'harrier-270m',
@@ -98,7 +98,7 @@ describe('own backend snapshot', () => {
 
   it('refuses shards whose manifest is missing', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
-    const store = new CorpusStore(vaultRoot, {
+    const store = new ShardStore(vaultRoot, {
       modelKey: TEST_IDENTITY.model_key,
       dims: TEST_DIMS,
     });
@@ -117,7 +117,7 @@ describe('own backend snapshot', () => {
 
   it('refuses manifest-less shards of another width on the manifest, without decoding them', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
-    const wide = new CorpusStore(vaultRoot, { modelKey: TEST_IDENTITY.model_key, dims: 640 });
+    const wide = new ShardStore(vaultRoot, { modelKey: TEST_IDENTITY.model_key, dims: 640 });
     await wide.writeShard({
       path: 'a.md',
       content_hash: 'h',
@@ -140,7 +140,7 @@ describe('own backend snapshot', () => {
 
   it('names the other models present when the selected one has no corpus, and leaves them alone', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-gate-'));
-    const granite = new CorpusStore(vaultRoot, { modelKey: 'granite-97m', dims: TEST_DIMS });
+    const granite = new ShardStore(vaultRoot, { modelKey: 'granite-97m', dims: TEST_DIMS });
     await granite.ensureManifest({ ...TEST_IDENTITY, model_key: 'granite-97m' });
     await granite.writeShard({
       path: 'a.md',

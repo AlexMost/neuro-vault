@@ -4,10 +4,7 @@ import {
   describeHolder,
 } from '../../../lib/obsidian/corpus/reconcile-lock.js';
 import type { ReconcileOptions, ReconcileSummary } from '../../../lib/obsidian/corpus/reconcile.js';
-import {
-  isManifestCompatible,
-  type CorpusStore,
-} from '../../../lib/obsidian/corpus/shard-store.js';
+import { isManifestCompatible, type ShardStore } from '../../../lib/obsidian/corpus/shard-store.js';
 import type { CorpusShard } from '../../../lib/obsidian/corpus/types.js';
 import { buildBasenameIndex } from '../../../lib/obsidian/link-resolver.js';
 import type {
@@ -30,7 +27,7 @@ export interface CorpusBackendDeps {
   vaultName: string;
   /** Global `--semantic` AND the per-vault config, already resolved. */
   enabled: boolean;
-  store: CorpusStore;
+  store: ShardStore;
   /** The identity a stored manifest must match to be served. */
   identity: CorpusIdentity;
   /**
@@ -40,7 +37,7 @@ export interface CorpusBackendDeps {
    * and parsing the whole corpus twice.
    */
   loadSnapshot: (
-    store: CorpusStore,
+    store: ShardStore,
     opts?: { shards?: Map<string, CorpusShard> },
   ) => Promise<CorpusSnapshot>;
   /**

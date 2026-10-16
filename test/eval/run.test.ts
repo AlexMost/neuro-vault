@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CorpusStore } from '../../src/lib/obsidian/corpus/shard-store.js';
+import { ShardStore } from '../../src/lib/obsidian/corpus/shard-store.js';
 import { TEST_DIMS } from '../_identity.js';
 import { modelCorpusDir } from '../../src/lib/obsidian/corpus/layout.js';
 import { corpusIdentityOf } from '../../src/lib/obsidian/corpus/identity.js';
@@ -87,7 +87,7 @@ describe('runEval end-to-end (stub embedder)', () => {
 
   // More notes than the seed pool, so the expansion leg has non-seed neighbours to measure.
   async function addExtraNotes(): Promise<void> {
-    const store = new CorpusStore(vaultRoot, { modelKey: GRANITE.key, dims: TEST_DIMS });
+    const store = new ShardStore(vaultRoot, { modelKey: GRANITE.key, dims: TEST_DIMS });
     for (let i = 1; i <= 10; i += 1) {
       await store.writeShard({
         path: `Notes/extra-${i}.md`,
@@ -110,7 +110,7 @@ describe('runEval end-to-end (stub embedder)', () => {
       await mkdir(path.join(vaultRoot, path.dirname(note)), { recursive: true });
       await writeFile(path.join(vaultRoot, note), text);
     }
-    const store = new CorpusStore(vaultRoot, { modelKey: GRANITE.key, dims: TEST_DIMS });
+    const store = new ShardStore(vaultRoot, { modelKey: GRANITE.key, dims: TEST_DIMS });
     await store.ensureManifest(corpusIdentityOf(identityOf(GRANITE)));
     await store.writeShard({
       path: 'Notes/target.md',
