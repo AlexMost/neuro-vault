@@ -44,6 +44,15 @@ function residentOf(shard: CorpusShard): Resident {
 }
 
 /**
+ * The vector an anchor stands for; null when a path anchor has none. Resolved
+ * from the map the read captured, not the live one: a read yields between
+ * anchors, and a refresh or dispose meanwhile must not change its view.
+ */
+function queryOf(anchor: CorpusAnchor, memory: Map<string, Resident>): ArrayLike<number> | null {
+  return 'vector' in anchor ? anchor.vector : (memory.get(anchor.path)?.vector ?? null);
+}
+
+/**
  * The in-memory {@link Corpus} over a {@link ShardStore}: every write goes to the shard files
  * first and to memory only once that write resolved, so memory never claims more than disk holds.
  * Ranking is the brute-force scan the session path runs (same scoring, same ordering), with
@@ -104,7 +113,7 @@ export class ShardCorpus implements Corpus {
     const results: (NoteHit[] | null)[] = [];
     for (const [index, anchor] of anchors.entries()) {
       if (index > 0) await this.yieldEvery();
-      const query = this.queryOf(anchor);
+      const query = queryOf(anchor, memory);
       if (query === null) {
         results.push(null);
         continue;
@@ -131,7 +140,7 @@ export class ShardCorpus implements Corpus {
     const results: (BlockHit[] | null)[] = [];
     for (const [index, anchor] of anchors.entries()) {
       if (index > 0) await this.yieldEvery();
-      const query = this.queryOf(anchor);
+      const query = queryOf(anchor, memory);
       if (query === null) {
         results.push(null);
         continue;
@@ -207,10 +216,5 @@ export class ShardCorpus implements Corpus {
   private resident(): Map<string, Resident> {
     if (this.memory === null) throw new Error('corpus not loaded');
     return this.memory;
-  }
-
-  /** The vector an anchor stands for; null when a path anchor has none. */
-  private queryOf(anchor: CorpusAnchor): ArrayLike<number> | null {
-    return 'vector' in anchor ? anchor.vector : this.vectorOf(anchor.path);
   }
 }

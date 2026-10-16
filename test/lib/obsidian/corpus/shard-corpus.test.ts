@@ -196,6 +196,52 @@ describe('ShardCorpus', () => {
     expect(yieldEvery).toHaveBeenCalledTimes(2);
   });
 
+  it('every anchor of one read resolves against the corpus the read began on', async () => {
+    const root = await makeRoot();
+    const store = makeStore(root);
+    await store.ensureManifest(IDENTITY);
+    for (const s of FIXTURE) await store.writeShard(s);
+    let between: () => Promise<void> = () => Promise.resolve();
+    const corpus = new ShardCorpus(store, { yieldEvery: () => between() });
+    await corpus.load();
+    const anchors = [{ path: 'a.md' }, { path: 'a.md' }];
+    const blockOpts = { paths: ['a.md', 'b.md'], threshold: 0 };
+
+    const nearest = await corpus.nearest(anchors, { threshold: 0 });
+    const blocks = await corpus.nearestBlocks(anchors, blockOpts);
+    expect(nearest[0]).not.toBeNull();
+    expect(nearest[1]).toEqual(nearest[0]);
+    expect(blocks[1]).toEqual(blocks[0]);
+
+    // Another holder removed the anchor note, and a refresh landed between two anchors.
+    await makeStore(root).deleteShard('a.md');
+    between = () => {
+      between = () => Promise.resolve();
+      return corpus.refresh();
+    };
+    expect(await corpus.nearest(anchors, { threshold: 0 })).toEqual(nearest);
+    await store.writeShard(FIXTURE[0]);
+    await corpus.load();
+    await makeStore(root).deleteShard('a.md');
+    between = () => {
+      between = () => Promise.resolve();
+      return corpus.refresh();
+    };
+    expect(await corpus.nearestBlocks(anchors, blockOpts)).toEqual(blocks);
+
+    // A dispose between two anchors does not fail the read that already began.
+    await corpus.load();
+    const now = await corpus.nearest([{ path: 'b.md' }], { threshold: 0 });
+    between = () => {
+      corpus.dispose();
+      return Promise.resolve();
+    };
+    expect(await corpus.nearest([{ path: 'b.md' }, { path: 'b.md' }], { threshold: 0 })).toEqual([
+      now[0],
+      now[0],
+    ]);
+  });
+
   it('reads before load throw', async () => {
     const root = await makeRoot();
     const corpus = new ShardCorpus(makeStore(root));
