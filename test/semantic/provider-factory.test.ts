@@ -8,7 +8,7 @@ import {
   DEFAULT_MODEL_KEY,
   identityOf,
   resolveModelProfile,
-} from '../../src/modules/semantic/model-profiles.js';
+} from '../../src/lib/model-profiles.js';
 import { createEmbeddingProvider } from '../../src/modules/semantic/provider-factory.js';
 
 function errno(code: string): NodeJS.ErrnoException {

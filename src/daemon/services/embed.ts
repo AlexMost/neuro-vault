@@ -1,6 +1,6 @@
 import type { EmbedDocumentsFn } from '../../lib/obsidian/corpus/types.js';
 import { createQueuedEmbedder, type QueuedEmbedder } from '../../modules/semantic/embed-queue.js';
-import { MODEL_PROFILES, type ModelProfile } from '../../modules/semantic/model-profiles.js';
+import { MODEL_PROFILES, type ModelProfile } from '../../lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../modules/semantic/types.js';
 import {
   asRecord,

@@ -5,7 +5,7 @@ import { ToolHandlerError } from '../../../lib/tool-response.js';
 import type { IFanOutResult } from '../../../lib/fan-out.js';
 import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.js';
 import { EFFORT_PROFILES } from '../effort-profiles.js';
-import type { SimilarityDefaults } from '../model-profiles.js';
+import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { runRetrievalPipeline } from '../retrieval-pipeline.js';
 import {
   normalizeQuery,

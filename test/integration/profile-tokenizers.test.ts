@@ -4,7 +4,7 @@ import {
   defaultModelCacheDir,
   type TokenizerHandle,
 } from '../../src/modules/semantic/local-model-loader.js';
-import { MODEL_KEYS, resolveModelProfile } from '../../src/modules/semantic/model-profiles.js';
+import { MODEL_KEYS, resolveModelProfile } from '../../src/lib/model-profiles.js';
 import { deriveTemplate, encodeRow } from '../../src/modules/semantic/tokenization.js';
 
 // Downloads each profile's tokenizer (not its weights) at the pinned revision.

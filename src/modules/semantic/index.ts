@@ -1,5 +1,5 @@
 import { EmbeddingService } from './embedding-service.js';
-import type { ModelProfile } from './model-profiles.js';
+import type { ModelProfile } from '../../lib/model-profiles.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
 import {
   buildLexicalOnlyTools,

@@ -25,7 +25,7 @@ import {
   type VaultEntryOptions,
 } from '../../../src/lib/vault-entry/vault-entry.js';
 import type { WatcherFactory } from '../../../src/lib/vault-entry/watcher.js';
-import { identityOf, MODEL_PROFILES } from '../../../src/modules/semantic/model-profiles.js';
+import { identityOf, MODEL_PROFILES } from '../../../src/lib/model-profiles.js';
 
 const HARRIER = 'harrier-270m';
 const IDENTITY = corpusIdentityOf(identityOf(MODEL_PROFILES[HARRIER]));

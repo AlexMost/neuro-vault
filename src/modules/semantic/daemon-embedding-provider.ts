@@ -7,7 +7,7 @@ import type { EmbeddingIdentity } from '../../lib/obsidian/corpus/types.js';
 import { packageMeta } from '../../package-meta.js';
 
 import { DaemonUnavailableError } from './daemon-connection.js';
-import { identityOf, type ModelProfile } from './model-profiles.js';
+import { identityOf, type ModelProfile } from '../../lib/model-profiles.js';
 import type { EmbeddingProvider } from './types.js';
 
 export const REQUEST_TIMEOUTS = {

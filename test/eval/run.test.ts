@@ -20,7 +20,7 @@ import {
   DEFAULT_MODEL_KEY,
   identityOf,
   resolveModelProfile,
-} from '../../src/modules/semantic/model-profiles.js';
+} from '../../src/lib/model-profiles.js';
 
 describe('parseEvalArgs', () => {
   it('parses value flags and defaults model and stats', () => {

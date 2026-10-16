@@ -1,4 +1,4 @@
-import type { Pooling } from './model-profiles.js';
+import type { Pooling } from '../../lib/model-profiles.js';
 
 /** A model's output for one batch, as plain data — no transformers.js types cross this seam. */
 export interface ModelOutput {

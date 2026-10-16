@@ -7,7 +7,7 @@ import {
   identityOf,
   resolveModelProfile,
   type SimilarityDefaults,
-} from '../../src/modules/semantic/model-profiles.js';
+} from '../../src/lib/model-profiles.js';
 
 /** Copied from calibration.md, "Chosen values". A retune edits the profile, this pin and that table together. */
 const CALIBRATED_SIMILARITY: Record<string, SimilarityDefaults> = {

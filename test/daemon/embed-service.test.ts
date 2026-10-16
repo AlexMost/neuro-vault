@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createEmbedService } from '../../src/daemon/services/embed.js';
 import { DaemonRpcError } from '../../src/daemon/protocol.js';
-import { identityOf, resolveModelProfile } from '../../src/modules/semantic/model-profiles.js';
+import { identityOf, resolveModelProfile } from '../../src/lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../src/modules/semantic/types.js';
 import { testCtx } from './_ctx.js';
 

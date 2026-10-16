@@ -6,11 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { packageMeta } from '../src/package-meta.js';
 import { MAX_IDLE_TIMEOUT_MINUTES, parseConfig } from '../src/config.js';
-import {
-  DEFAULT_MODEL_KEY,
-  MODEL_KEYS,
-  resolveModelProfile,
-} from '../src/modules/semantic/model-profiles.js';
+import { DEFAULT_MODEL_KEY, MODEL_KEYS, resolveModelProfile } from '../src/lib/model-profiles.js';
 
 describe('parseConfig', () => {
   let tmpRoot: string;

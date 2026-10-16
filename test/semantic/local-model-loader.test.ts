@@ -7,7 +7,7 @@ import {
   defaultModelCacheDir,
   type TransformersModule,
 } from '../../src/modules/semantic/local-model-loader.js';
-import { resolveModelProfile } from '../../src/modules/semantic/model-profiles.js';
+import { resolveModelProfile } from '../../src/lib/model-profiles.js';
 
 const granite = resolveModelProfile('granite-97m');
 

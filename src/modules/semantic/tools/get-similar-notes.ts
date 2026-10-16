@@ -5,7 +5,7 @@ import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
-import type { SimilarityDefaults } from '../model-profiles.js';
+import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { readNoteContentForEntry, readPositiveInteger, readThreshold } from '../tool-helpers.js';
 import type { QueryEmbedder, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
 import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';

@@ -12,11 +12,7 @@ import { modelCorpusDir } from '../src/lib/obsidian/corpus/layout.js';
 import { buildBasenameIndex } from '../src/lib/obsidian/index.js';
 import type { BackendStatus } from '../src/lib/obsidian/semantic-backend.js';
 import { main } from '../src/cli.js';
-import {
-  DEFAULT_MODEL_KEY,
-  identityOf,
-  resolveModelProfile,
-} from '../src/modules/semantic/model-profiles.js';
+import { DEFAULT_MODEL_KEY, identityOf, resolveModelProfile } from '../src/lib/model-profiles.js';
 import { startNeuroVaultServer } from '../src/server.js';
 
 function createTempVaultPath() {

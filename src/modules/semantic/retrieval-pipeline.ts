@@ -1,7 +1,7 @@
 import type { LexicalIndex, RankedNote } from '../../lib/obsidian/lexical/index.js';
 import { EFFORT_PROFILES, LEXICAL_PER_NOTE_CAP } from './effort-profiles.js';
 import { flattenExpansion, fuseRanks, type ExpansionCandidate } from './rank-fusion.js';
-import type { SimilarityDefaults } from './model-profiles.js';
+import type { SimilarityDefaults } from '../../lib/model-profiles.js';
 import { executeRetrieval } from './retrieval-policy.js';
 import type {
   QueryEmbedder,

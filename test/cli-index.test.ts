@@ -11,7 +11,7 @@ import {
   DEFAULT_MODEL_KEY,
   resolveModelProfile,
   type ModelProfile,
-} from '../src/modules/semantic/model-profiles.js';
+} from '../src/lib/model-profiles.js';
 import { TEST_EMBEDDING_IDENTITY, TEST_IDENTITY } from './_identity.js';
 
 const profile = resolveModelProfile(DEFAULT_MODEL_KEY);

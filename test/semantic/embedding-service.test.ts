@@ -7,7 +7,7 @@ import {
   identityOf,
   resolveModelProfile,
   type ModelProfile,
-} from '../../src/modules/semantic/model-profiles.js';
+} from '../../src/lib/model-profiles.js';
 
 const granite = resolveModelProfile('granite-97m');
 /** No registry profile pools by mean; this fixture keeps that branch covered. */

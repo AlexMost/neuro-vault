@@ -27,7 +27,7 @@ import { ensurePrivateSocketDir } from './daemon/socket-dir.js';
 import { startDaemonServer, type DaemonServerHandle } from './daemon/socket-server.js';
 import { neuroVaultCacheBase } from './lib/cache-dir.js';
 import { VaultEntries, type VaultEntriesDeps } from './lib/vault-entry/index.js';
-import type { ModelProfile } from './modules/semantic/model-profiles.js';
+import type { ModelProfile } from './lib/model-profiles.js';
 import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
 import type { EmbeddingProvider } from './modules/semantic/types.js';
 import { packageMeta } from './package-meta.js';

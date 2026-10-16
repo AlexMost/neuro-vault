@@ -1,4 +1,4 @@
-import type { ModelProfile } from './modules/semantic/model-profiles.js';
+import type { ModelProfile } from './lib/model-profiles.js';
 
 export type {
   EmbeddingProvider,

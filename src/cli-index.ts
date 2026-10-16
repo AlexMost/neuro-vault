@@ -18,7 +18,7 @@ import {
 } from './lib/obsidian/corpus/reconcile.js';
 import type { EmbedDocumentsFn, EmbeddingIdentity } from './lib/obsidian/corpus/types.js';
 import { createQueuedEmbedder } from './modules/semantic/embed-queue.js';
-import type { ModelProfile } from './modules/semantic/model-profiles.js';
+import type { ModelProfile } from './lib/model-profiles.js';
 import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
 
 interface OutStream {

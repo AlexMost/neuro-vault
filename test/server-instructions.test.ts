@@ -5,7 +5,7 @@ import { PassThrough } from 'node:stream';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_MODEL_KEY, resolveModelProfile } from '../src/modules/semantic/model-profiles.js';
+import { DEFAULT_MODEL_KEY, resolveModelProfile } from '../src/lib/model-profiles.js';
 import { SERVER_INSTRUCTIONS, startNeuroVaultServer } from '../src/server.js';
 
 /**

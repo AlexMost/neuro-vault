@@ -11,7 +11,7 @@ import {
   MODEL_KEYS,
   resolveModelProfile,
   type ModelProfile,
-} from '../src/modules/semantic/model-profiles.js';
+} from '../src/lib/model-profiles.js';
 import { BackendError, loadSnapshot } from './backends.js';
 import { GoldenSetError, goldenSetPath, loadGoldenSet } from './golden.js';
 import { aggregate, scoreQuery, type QueryScore } from './metrics.js';

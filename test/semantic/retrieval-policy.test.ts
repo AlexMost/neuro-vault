@@ -7,7 +7,7 @@ import type {
   SearchResult,
   SmartSource,
 } from '../../src/types.js';
-import type { SimilarityDefaults } from '../../src/modules/semantic/model-profiles.js';
+import type { SimilarityDefaults } from '../../src/lib/model-profiles.js';
 import { executeRetrieval } from '../../src/modules/semantic/retrieval-policy.js';
 import { TEST_SIMILARITY } from '../_identity.js';
 

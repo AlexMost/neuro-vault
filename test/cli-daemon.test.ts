@@ -31,11 +31,7 @@ import {
   type VaultInfo,
 } from '../src/lib/vault-entry/index.js';
 import { EmbeddingService } from '../src/modules/semantic/embedding-service.js';
-import {
-  identityOf,
-  MODEL_PROFILES,
-  type ModelProfile,
-} from '../src/modules/semantic/model-profiles.js';
+import { identityOf, MODEL_PROFILES, type ModelProfile } from '../src/lib/model-profiles.js';
 import type { EmbeddingProvider } from '../src/modules/semantic/types.js';
 import { testCtx } from './daemon/_ctx.js';
 

@@ -1,6 +1,6 @@
 import { registerTool } from '../../../lib/tool-registry.js';
 import type { ToolRegistration } from '../../../lib/tool-registration.js';
-import type { ModelProfile, SimilarityDefaults } from '../model-profiles.js';
+import type { ModelProfile, SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { findBlockNeighbors, findDuplicates, findNeighbors } from '../search-engine.js';
 import type { QueryEmbedder, SearchEngine } from '../types.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';

@@ -10,7 +10,7 @@ import {
   type DaemonLink,
 } from '../../src/modules/semantic/daemon-embedding-provider.js';
 import { createQueuedEmbedder } from '../../src/modules/semantic/embed-queue.js';
-import { identityOf, resolveModelProfile } from '../../src/modules/semantic/model-profiles.js';
+import { identityOf, resolveModelProfile } from '../../src/lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../src/modules/semantic/types.js';
 
 const profile = resolveModelProfile('granite-97m');

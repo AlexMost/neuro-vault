@@ -23,7 +23,7 @@ import {
   VaultEntryError,
   type VaultEntriesDeps,
 } from '../../../src/lib/vault-entry/vault-entries.js';
-import { MODEL_PROFILES } from '../../../src/modules/semantic/model-profiles.js';
+import { MODEL_PROFILES } from '../../../src/lib/model-profiles.js';
 
 const HARRIER = 'harrier-270m';
 const GRANITE = 'granite-97m';

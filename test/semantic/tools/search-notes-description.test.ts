@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 
 import { EFFORT_PROFILES } from '../../../src/modules/semantic/effort-profiles.js';
-import type { SimilarityDefaults } from '../../../src/modules/semantic/model-profiles.js';
+import type { SimilarityDefaults } from '../../../src/lib/model-profiles.js';
 
 // The advertisement-derivation pin (spec: hybrid-search "Effort-profile
 // advertisement derives from the retrieval constants"). Reads the SOURCE of
