@@ -1,0 +1,344 @@
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+
+import type { CorpusIdentity } from '../../../../src/lib/obsidian/corpus/identity.js';
+import { ShardCorpus } from '../../../../src/lib/obsidian/corpus/shard-corpus.js';
+import { ShardStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
+import { loadCorpusSnapshot } from '../../../../src/lib/obsidian/corpus/snapshot.js';
+import type { CorpusShard } from '../../../../src/lib/obsidian/corpus/types.js';
+import { encodeVector } from '../../../../src/lib/obsidian/corpus/vector-codec.js';
+import {
+  findBlockNeighbors,
+  findNeighbors,
+} from '../../../../src/modules/semantic/search-engine.js';
+import { TEST_IDENTITY } from '../../../_identity.js';
+
+const DIMS = 4;
+const MODEL_KEY = TEST_IDENTITY.model_key;
+const IDENTITY: CorpusIdentity = { ...TEST_IDENTITY, dims: DIMS };
+
+const shard = (
+  p: string,
+  note: number[] | null,
+  blocks: Array<{ key: string; vector: number[] }> = [],
+): CorpusShard => ({
+  path: p,
+  content_hash: `hash-${p}`,
+  mtime: 1000,
+  size: 42,
+  embedding: note === null ? null : encodeVector(note),
+  blocks: blocks.map((b, i) => ({
+    key: b.key,
+    heading: b.key.replace('#', ''),
+    lines: [i * 3 + 1, i * 3 + 3],
+    embedding: encodeVector(b.vector),
+  })),
+});
+
+const FIXTURE: CorpusShard[] = [
+  shard(
+    'a.md',
+    [1, 0, 0, 0],
+    [
+      { key: '#One', vector: [1, 0, 0, 0] },
+      { key: '#Two', vector: [0.9, 0.3, 0, 0] },
+    ],
+  ),
+  shard('b.md', [0.9, 0.4, 0, 0], [{ key: '#One', vector: [0.8, 0.5, 0, 0] }]),
+  shard('c.md', [0.5, 0.8, 0.2, 0], [{ key: '#One', vector: [0.4, 0.9, 0.1, 0] }]),
+  shard('d.md', [0, 1, 0, 0], [{ key: '#One', vector: [0.1, 0.9, 0.3, 0] }]),
+  shard('e.md', [0, 0, 1, 0], [{ key: '#One', vector: [0, 0.2, 1, 0] }]),
+  // Below MIN_CHARS: no note vector, but it still has a record.
+  shard('short.md', null, [{ key: '#Only', vector: [1, 0, 0, 0] }]),
+];
+
+const QUERY = [0.9, 0.3, 0.1, 0];
+
+async function makeRoot(): Promise<string> {
+  return mkdtemp(path.join(tmpdir(), 'nv-shard-corpus-'));
+}
+
+const makeStore = (root: string) => new ShardStore(root, { modelKey: MODEL_KEY, dims: DIMS });
+
+async function setup(shards: CorpusShard[] = FIXTURE) {
+  const root = await makeRoot();
+  const store = makeStore(root);
+  await store.ensureManifest(IDENTITY);
+  for (const s of shards) await store.writeShard(s);
+  const corpus = new ShardCorpus(store, { yieldEvery: () => Promise.resolve() });
+  await corpus.load();
+  return { root, store, corpus };
+}
+
+describe('ShardCorpus', () => {
+  it('nearest matches findNeighbors for a query vector', async () => {
+    const { store, corpus } = await setup();
+    const { sources } = await loadCorpusSnapshot(store);
+
+    for (const threshold of [0, 0.3, 0.8]) {
+      for (const limit of [undefined, 2]) {
+        const [hits] = await corpus.nearest([{ vector: QUERY }], { threshold, limit });
+        expect(hits).toEqual(
+          findNeighbors({ queryVector: QUERY, sources: sources.values(), threshold, limit }),
+        );
+      }
+    }
+  });
+
+  it('nearestBlocks matches findBlockNeighbors within paths', async () => {
+    const { store, corpus } = await setup();
+    const { sources } = await loadCorpusSnapshot(store);
+    const paths = ['a.md', 'c.md'];
+    const subset = [...sources.values()].filter((s) => paths.includes(s.path));
+
+    for (const threshold of [0, 0.3, 0.8]) {
+      for (const limit of [undefined, 2]) {
+        const [hits] = await corpus.nearestBlocks([{ vector: QUERY }], {
+          paths,
+          threshold,
+          limit,
+        });
+        expect(hits).toEqual(
+          findBlockNeighbors({ queryVector: QUERY, sources: subset, threshold, limit }),
+        );
+      }
+    }
+  });
+
+  it('nearestBlocks ignores the blocks of a note with no note vector', async () => {
+    const { corpus } = await setup();
+
+    const [hits] = await corpus.nearestBlocks([{ vector: [1, 0, 0, 0] }], {
+      paths: ['short.md', 'a.md'],
+      threshold: 0,
+    });
+
+    expect(hits?.map((h) => h.path)).not.toContain('short.md');
+    expect(hits?.length).toBe(2);
+  });
+
+  it('answers one list per anchor, in order', async () => {
+    const { corpus } = await setup();
+
+    const result = await corpus.nearest([{ vector: [1, 0, 0, 0] }, { vector: [0, 0, 1, 0] }], {
+      threshold: 0.95,
+    });
+
+    expect(result.map((hits) => hits?.map((h) => h.path))).toEqual([['a.md'], ['e.md']]);
+  });
+
+  it('a path anchor uses the note own vector; a note without one is null', async () => {
+    const { corpus } = await setup();
+
+    const [byPath, short, missing] = await corpus.nearest(
+      [{ path: 'a.md' }, { path: 'short.md' }, { path: 'nope.md' }],
+      { threshold: 0.9, exclude: ['a.md'] },
+    );
+    const [byVector] = await corpus.nearest([{ vector: [1, 0, 0, 0] }], {
+      threshold: 0.9,
+      exclude: ['a.md'],
+    });
+
+    expect(byPath).toEqual(byVector);
+    expect(short).toBeNull();
+    expect(missing).toBeNull();
+  });
+
+  it('a path anchor does not exclude itself', async () => {
+    const { corpus } = await setup();
+
+    const [hits] = await corpus.nearest([{ path: 'a.md' }], { threshold: 0.99 });
+
+    expect(hits?.map((h) => h.path)).toEqual(['a.md']);
+  });
+
+  it('allowed and exclude apply before limit', async () => {
+    const { corpus } = await setup();
+
+    const [allowed] = await corpus.nearest([{ vector: [1, 0, 0, 0] }], {
+      threshold: 0,
+      limit: 1,
+      allowed: ['b.md', 'c.md'],
+    });
+    const [excluded] = await corpus.nearest([{ vector: [1, 0, 0, 0] }], {
+      threshold: 0,
+      limit: 1,
+      exclude: ['a.md'],
+    });
+
+    expect(allowed?.map((h) => h.path)).toEqual(['b.md']);
+    expect(excluded?.map((h) => h.path)).toEqual(['b.md']);
+  });
+
+  it('a dimension mismatch throws, as findNeighbors does', async () => {
+    const { corpus } = await setup();
+
+    await expect(corpus.nearest([{ vector: [1, 0] }], { threshold: 0 })).rejects.toThrow(
+      /dimension mismatch/,
+    );
+  });
+
+  it('yields between anchors', async () => {
+    const root = await makeRoot();
+    const store = makeStore(root);
+    await store.writeShard(FIXTURE[0]);
+    const yieldEvery = vi.fn(() => Promise.resolve());
+    const corpus = new ShardCorpus(store, { yieldEvery });
+    await corpus.load();
+    yieldEvery.mockClear();
+
+    await corpus.nearest([{ vector: QUERY }, { vector: QUERY }, { vector: QUERY }], {
+      threshold: 0,
+    });
+
+    expect(yieldEvery).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads before load throw', async () => {
+    const root = await makeRoot();
+    const corpus = new ShardCorpus(makeStore(root));
+
+    expect(corpus.loaded).toBe(false);
+    await expect(corpus.nearest([{ vector: QUERY }], { threshold: 0 })).rejects.toThrow(
+      'corpus not loaded',
+    );
+    await expect(corpus.entries()).rejects.toThrow('corpus not loaded');
+    expect(() => corpus.vectorOf('a.md')).toThrow('corpus not loaded');
+  });
+
+  it('upsert is visible to the next read and replaces the old vectors', async () => {
+    const { store, corpus } = await setup();
+
+    await corpus.upsert(shard('a.md', [0, 0, 0, 1], [{ key: '#New', vector: [0, 0, 0, 1] }]));
+
+    const [hits] = await corpus.nearest([{ vector: [0, 0, 0, 1] }], { threshold: 0.9 });
+    expect(hits?.map((h) => h.path)).toEqual(['a.md']);
+    const [old] = await corpus.nearest([{ vector: [1, 0, 0, 0] }], {
+      threshold: 0.9,
+      allowed: ['a.md'],
+    });
+    expect(old).toEqual([]);
+    const [blocks] = await corpus.nearestBlocks([{ vector: [1, 0, 0, 0] }], {
+      paths: ['a.md'],
+      threshold: 0.9,
+    });
+    expect(blocks).toEqual([]);
+    expect(Array.from(corpus.vectorOf('a.md') ?? [])).toEqual([0, 0, 0, 1]);
+    expect((await store.readShard('a.md'))?.blocks[0].key).toBe('#New');
+  });
+
+  it('upsert of a note below the size gate drops its vector', async () => {
+    const { corpus } = await setup();
+
+    await corpus.upsert(shard('a.md', null));
+
+    expect(corpus.vectorOf('a.md')).toBeNull();
+    expect(corpus.size()).toBe(4);
+    expect((await corpus.entries()).has('a.md')).toBe(true);
+  });
+
+  it('a failed store write leaves memory unchanged', async () => {
+    const { store, corpus } = await setup();
+    vi.spyOn(store, 'writeShard').mockRejectedValueOnce(new Error('disk full'));
+    vi.spyOn(store, 'deleteShard').mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(corpus.upsert(shard('a.md', [0, 0, 0, 1]))).rejects.toThrow('disk full');
+    await expect(corpus.delete('b.md')).rejects.toThrow('disk full');
+
+    expect(Array.from(corpus.vectorOf('a.md') ?? [])).toEqual([1, 0, 0, 0]);
+    expect(corpus.vectorOf('b.md')).not.toBeNull();
+  });
+
+  it('delete removes the note from reads and entries', async () => {
+    const { store, corpus } = await setup();
+
+    await corpus.delete('a.md');
+
+    const [hits] = await corpus.nearest([{ vector: [1, 0, 0, 0] }], { threshold: 0 });
+    expect(hits?.map((h) => h.path)).not.toContain('a.md');
+    expect((await corpus.entries()).has('a.md')).toBe(false);
+    expect(corpus.vectorOf('a.md')).toBeNull();
+    expect(await store.readShard('a.md')).toBeNull();
+  });
+
+  it('touch rewrites mtime and size in the store and in entries, keeping vectors', async () => {
+    const { store, corpus } = await setup();
+
+    expect(await corpus.touch('a.md', { mtime: 5, size: 9 })).toBe(true);
+    expect(await corpus.touch('nope.md', { mtime: 5, size: 9 })).toBe(false);
+
+    expect((await corpus.entries()).get('a.md')).toEqual({
+      content_hash: 'hash-a.md',
+      mtime: 5,
+      size: 9,
+    });
+    expect(await store.readShard('a.md')).toEqual({ ...FIXTURE[0], mtime: 5, size: 9 });
+    expect(Array.from(corpus.vectorOf('a.md') ?? [])).toEqual([1, 0, 0, 0]);
+  });
+
+  it('entries includes notes without a vector', async () => {
+    const { corpus } = await setup();
+
+    const entries = await corpus.entries();
+
+    expect([...entries.keys()].sort()).toEqual(FIXTURE.map((s) => s.path).sort());
+    expect(entries.get('short.md')).toEqual({
+      content_hash: 'hash-short.md',
+      mtime: 1000,
+      size: 42,
+    });
+    expect(corpus.vectorOf('short.md')).toBeNull();
+    expect(corpus.size()).toBe(5);
+  });
+
+  it('identity reads the stored manifest', async () => {
+    const { corpus } = await setup();
+
+    expect((await corpus.identity())?.model_id).toBe(IDENTITY.model_id);
+  });
+
+  it('ensureIdentity with another identity empties memory', async () => {
+    const { store, corpus } = await setup();
+
+    const result = await corpus.ensureIdentity({ ...IDENTITY, model_id: 'another/model' });
+
+    expect(result.rebuilt).toBe(true);
+    expect(corpus.loaded).toBe(true);
+    expect(corpus.size()).toBe(0);
+    expect(await corpus.entries()).toEqual(new Map());
+    expect(await store.listShards()).toEqual(new Map());
+  });
+
+  it('ensureIdentity with the same identity keeps memory', async () => {
+    const { corpus } = await setup();
+
+    const result = await corpus.ensureIdentity(IDENTITY);
+
+    expect(result.rebuilt).toBe(false);
+    expect(corpus.size()).toBe(5);
+  });
+
+  it('refresh re-reads shards written by another ShardStore', async () => {
+    const { root, corpus } = await setup();
+    const other = makeStore(root);
+    await other.writeShard(shard('f.md', [0, 0, 0, 1]));
+    await other.deleteShard('a.md');
+
+    await corpus.refresh();
+
+    expect(Array.from(corpus.vectorOf('f.md') ?? [])).toEqual([0, 0, 0, 1]);
+    expect(corpus.vectorOf('a.md')).toBeNull();
+    expect((await corpus.entries()).has('a.md')).toBe(false);
+  });
+
+  it('dispose drops memory', async () => {
+    const { corpus } = await setup();
+
+    corpus.dispose();
+
+    expect(corpus.loaded).toBe(false);
+    await expect(corpus.entries()).rejects.toThrow('corpus not loaded');
+  });
+});

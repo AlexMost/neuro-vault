@@ -1,31 +1,14 @@
+import {
+  compareBlockHits,
+  compareNoteHits,
+  compareStrings,
+  cosineSimilarity,
+  ensureSameDimensions,
+  validateVector,
+} from '../../lib/obsidian/corpus/scoring.js';
 import type { BlockSearchResult, DuplicatePair, SearchResult, SmartSource } from './types.js';
 
-function validateVector(vector: ArrayLike<number>, label: string): void {
-  if (vector.length === 0) {
-    throw new Error(`${label} must not be empty`);
-  }
-}
-
-function ensureSameDimensions(
-  left: ArrayLike<number>,
-  right: ArrayLike<number>,
-  leftLabel: string,
-  rightLabel: string,
-): void {
-  if (left.length !== right.length) {
-    throw new Error(
-      `Vector dimension mismatch: ${leftLabel} has ${left.length}, but ${rightLabel} has ${right.length}`,
-    );
-  }
-}
-
-function compareStrings(left: string, right: string): number {
-  return left.localeCompare(right);
-}
-
-function compareSearchResults(left: SearchResult, right: SearchResult): number {
-  return right.similarity - left.similarity || compareStrings(left.path, right.path);
-}
+export { cosineSimilarity };
 
 function compareDuplicatePairs(left: DuplicatePair, right: DuplicatePair): number {
   return (
@@ -33,30 +16,6 @@ function compareDuplicatePairs(left: DuplicatePair, right: DuplicatePair): numbe
     compareStrings(left.note_a, right.note_a) ||
     compareStrings(left.note_b, right.note_b)
   );
-}
-
-export function cosineSimilarity(a: ArrayLike<number>, b: ArrayLike<number>): number {
-  validateVector(a, 'Vector a');
-  validateVector(b, 'Vector b');
-  ensureSameDimensions(a, b, 'Vector a', 'Vector b');
-
-  let dotProduct = 0;
-  let magnitudeA = 0;
-  let magnitudeB = 0;
-
-  for (let index = 0; index < a.length; index += 1) {
-    const left = a[index];
-    const right = b[index];
-    dotProduct += left * right;
-    magnitudeA += left * left;
-    magnitudeB += right * right;
-  }
-
-  if (magnitudeA === 0 || magnitudeB === 0) {
-    return 0;
-  }
-
-  return dotProduct / (Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB));
 }
 
 function toSearchResults(
@@ -86,7 +45,7 @@ function toSearchResults(
     }
   }
 
-  results.sort(compareSearchResults);
+  results.sort(compareNoteHits);
 
   return results;
 }
@@ -107,10 +66,6 @@ export function findNeighbors({
   const results = toSearchResults(queryVector, sources, threshold, excludePath);
 
   return typeof limit === 'number' ? results.slice(0, limit) : results;
-}
-
-function compareBlockSearchResults(left: BlockSearchResult, right: BlockSearchResult): number {
-  return right.similarity - left.similarity || compareStrings(left.path, right.path);
 }
 
 export function findBlockNeighbors({
@@ -152,7 +107,7 @@ export function findBlockNeighbors({
     }
   }
 
-  results.sort(compareBlockSearchResults);
+  results.sort(compareBlockHits);
 
   return typeof limit === 'number' ? results.slice(0, limit) : results;
 }
