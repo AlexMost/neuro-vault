@@ -19,10 +19,11 @@ export interface VaultScope {
   /**
    * Sound-but-incomplete prune test for a vault-relative directory: true only
    * when every descendant is excluded, so a watcher may skip the subtree. A
-   * false answer says nothing — `Archive/*` excludes files directly under
-   * `Archive` while a deeper note stays in scope, so `Archive` is not prunable
-   * even though `isExcluded('Archive')` may be true. `isExcluded` stays
-   * authoritative for every file. The vault root (`''`) is never excluded.
+   * false answer says nothing — `Archive*` matches the directory name `Archive`
+   * but none of its descendants, so `isExcluded('Archive')` is true while
+   * `isSubtreeExcluded('Archive')` is false: the notes below it stay in scope.
+   * `isExcluded` stays authoritative for every file. The vault root (`''`) is
+   * never excluded.
    */
   isSubtreeExcluded(relDir: string): boolean;
 }
