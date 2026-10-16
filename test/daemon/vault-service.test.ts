@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ServiceRegistry, type ConnectionContext } from '../../src/daemon/protocol.js';
 import { createVaultService } from '../../src/daemon/services/vault.js';
-import { VaultEntryError, type VaultEntries } from '../../src/lib/vault-entry/index.js';
+import { VaultEntryError } from '../../src/lib/vault-entry/index.js';
 
 /** The slice of `VaultEntries` the service touches. */
 function fakeEntries() {
@@ -33,7 +33,7 @@ function connection(id = 1) {
 function setup() {
   const entries = fakeEntries();
   const registry = new ServiceRegistry();
-  registry.register('vault', createVaultService(entries as unknown as VaultEntries));
+  registry.register('vault', createVaultService(entries));
   let next = 1;
   const call = (ctx: ConnectionContext, method: string, params?: unknown) => {
     const request: JSONRPCRequest = { jsonrpc: '2.0', id: next++, method, params: params as never };

@@ -35,7 +35,10 @@ async function wired<T>(work: () => Promise<T> | T): Promise<T> {
  * two small config files only (the entries start every load and pass in the
  * background), so it needs no deadline of its own.
  */
-export function createVaultService(entries: VaultEntries): ServiceHandlers {
+/** The slice of the registry the service uses. */
+export type VaultEntriesPort = Pick<VaultEntries, 'attach' | 'status' | 'detach'>;
+
+export function createVaultService(entries: VaultEntriesPort): ServiceHandlers {
   // Connections whose close is already hooked; each removes itself when it closes.
   const hooked = new Set<number>();
 
