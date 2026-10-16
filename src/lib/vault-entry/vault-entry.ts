@@ -7,8 +7,7 @@ import type { EmbedDocumentsFn } from '../obsidian/corpus/types.js';
 import type { BackendState, BackendStatus } from '../obsidian/semantic-backend.js';
 import { FsVaultReader } from '../obsidian/vault-reader.js';
 import type { VaultScope } from '../obsidian/vault-scope.js';
-// A dependency-free table of profiles; the one import from src/modules this directory makes.
-import { identityOf, MODEL_PROFILES } from '../../modules/semantic/model-profiles.js';
+import { identityOf, MODEL_PROFILES } from '../model-profiles.js';
 import {
   createReconcileLoop,
   type LastReconcile,

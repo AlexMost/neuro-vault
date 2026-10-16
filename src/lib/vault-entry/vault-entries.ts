@@ -7,7 +7,7 @@ import type { BackendStatus } from '../obsidian/semantic-backend.js';
 import { loadVaultConfig } from '../obsidian/vault-config.js';
 import { loadVaultScope } from '../obsidian/vault-scope-config.js';
 import type { VaultScope } from '../obsidian/vault-scope.js';
-import { MODEL_PROFILES } from '../../modules/semantic/model-profiles.js';
+import { MODEL_PROFILES } from '../model-profiles.js';
 import {
   createVaultEntry,
   profileIdentity,
