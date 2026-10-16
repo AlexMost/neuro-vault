@@ -7,6 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CorpusReader } from '../../../src/lib/obsidian/corpus/corpus.js';
 import type { BackendStatus } from '../../../src/lib/obsidian/semantic-backend.js';
 import { createVaultScope, type VaultScope } from '../../../src/lib/obsidian/vault-scope.js';
+import { withReconcileLock } from '../../../src/lib/obsidian/corpus/reconcile.js';
+import {
+  createReconcileLoop,
+  type ReconcileLoop,
+} from '../../../src/lib/vault-entry/reconcile-loop.js';
 import {
   createVaultEntry,
   type VaultEntry,
@@ -49,6 +54,7 @@ function fakeEntry(opts: VaultEntryOptions) {
     setSemantic: vi.fn((enabled: boolean) => {
       entry.semantic = enabled;
     }),
+    requestPass: vi.fn(),
     status: (key: string): BackendStatus => {
       if (!profiles.includes(key)) throw new Error(`no profile ${key}`);
       return entry.semantic ? { state: 'indexing', indexed: 0, total: 0 } : { state: 'disabled' };
@@ -240,6 +246,19 @@ describe('VaultEntries.attach', () => {
     expect(s.created[0].setSemantic.mock.calls).toEqual([[false], [true]]);
   });
 
+  it('every attach that joins requests a pass; one whose connection left does not', async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', [HARRIER]);
+    expect(s.created[0].requestPass).toHaveBeenCalledTimes(1);
+    await s.entries.attach(2, '/v', [HARRIER]);
+    await s.entries.attach(1, '/v', []);
+    expect(s.created[0].requestPass).toHaveBeenCalledTimes(3);
+    const pending = s.entries.attach(3, '/v', [HARRIER]);
+    s.entries.detach(3);
+    await pending;
+    expect(s.created[0].requestPass).toHaveBeenCalledTimes(3);
+  });
+
   it('names the vault by the realpath’s basename', async () => {
     const options: VaultEntryOptions[] = [];
     const s = setup({
@@ -255,21 +274,43 @@ describe('VaultEntries.attach', () => {
 });
 
 describe('VaultEntries over real entries', () => {
-  /** A real entry on a temp dir with a do-nothing watcher, so nothing outlives the test. */
+  /**
+   * A real entry on a temp dir with a do-nothing watcher, so nothing outlives the
+   * test — and nothing but an attach ever asks for a pass. Passes are counted at the lock.
+   */
   async function realSetup(semantic: boolean) {
     vi.useRealTimers();
     const root = await realpath(await mkdtemp(path.join(tmpdir(), 'nv-vault-entries-')));
     roots.push(root);
+    const loops: ReconcileLoop[] = [];
+    let passes = 0;
+    const counting = ((...args: Parameters<typeof withReconcileLock>) => {
+      passes += 1;
+      return withReconcileLock(...args);
+    }) as typeof withReconcileLock;
     const entries = new VaultEntries({
       embedderFor: () => async (texts) => texts.map(() => []),
       idleTimeoutMs: IDLE_MS,
       loadScope: async () => ({ scope: scopeOf(), semantic }),
       createEntry: (opts) =>
-        createVaultEntry({ ...opts, createWatcher: () => ({ close: async () => {} }) }),
+        createVaultEntry({
+          ...opts,
+          createWatcher: () => ({ close: async () => {} }),
+          createLoop: (deps) => {
+            const loop = createReconcileLoop({ ...deps, withLock: counting });
+            loops.push(loop);
+            return loop;
+          },
+        }),
       warn: vi.fn(),
     });
     disposables.push(entries);
-    return { root, entries };
+    return {
+      root,
+      entries,
+      passes: () => passes,
+      settled: () => Promise.all(loops.map((loop) => loop.whenSettled())),
+    };
   }
 
   const exists = (p: string) =>
@@ -284,6 +325,16 @@ describe('VaultEntries over real entries', () => {
     expect(result).toEqual({ vault: root, profiles: { [HARRIER]: { state: 'disabled' } } });
     await entries.dispose();
     expect(await exists(path.join(root, '.neuro-vault'))).toBe(false);
+  });
+
+  it('a re-attach reconciles a warm entry with no watcher: exactly one more pass', async () => {
+    const s = await realSetup(true);
+    await s.entries.attach(1, s.root, [HARRIER]);
+    await s.settled();
+    expect(s.passes()).toBe(1);
+    await s.entries.attach(2, s.root, [HARRIER]);
+    await s.settled();
+    expect(s.passes()).toBe(2);
   });
 
   it('profiles: [] attaches without a corpus', async () => {

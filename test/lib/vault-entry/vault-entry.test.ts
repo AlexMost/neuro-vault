@@ -281,6 +281,26 @@ describe('createVaultEntry', () => {
     expect(h.entry.info(0).profiles).toEqual([]);
   });
 
+  it('restarts the watcher when a pass finds the vault directory back', async () => {
+    const h = await harness();
+    h.entry.addProfile(HARRIER);
+    await h.loop().whenSettled();
+    await rm(h.root, { recursive: true, force: true });
+    h.loop().requestPass();
+    await h.loop().whenSettled();
+    expect(h.entry.status(HARRIER).state).toBe('unavailable');
+    expect(h.watchers.started).toHaveLength(1);
+
+    // A new directory is a new inode: the old watch saw it go and sees nothing of it.
+    await mkdir(h.root);
+    h.loop().requestPass();
+    await h.loop().whenSettled();
+    expect(h.entry.status(HARRIER)).toEqual({ state: 'ready' });
+    expect(h.watchers.started).toHaveLength(2);
+    expect(h.watchers.started[0].close).toHaveBeenCalledTimes(1);
+    expect(h.watchers.started[1].scope).toBe(h.entry.scope);
+  });
+
   it('a watcher that fails to start is logged and the entry keeps serving', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-vault-entry-'));
     roots.push(root);

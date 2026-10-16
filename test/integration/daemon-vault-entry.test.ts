@@ -242,11 +242,15 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({ vault: first.vault, clients: 2 });
     await untilReady(b, first.vault);
-    // One pass built it for both: the second attach neither reindexed nor started a second loop.
+    // One pass built it for both: the second attach queues at most one more pass on the same
+    // loop, and that pass re-embeds nothing.
     const built = embedded.get(PROFILE);
     await new Promise((r) => setTimeout(r, 300));
     expect(embedded.get(PROFILE)).toBe(built);
-    expect((await info(b))[0].profiles[0].last_reconcile).toMatchObject({ added: 3 });
+    expect((await info(b))[0].profiles[0]).toMatchObject({
+      notes: 3,
+      last_reconcile: { changed: 0, removed: 0 },
+    });
   });
 
   it('profiles [] attaches without a corpus', { timeout: 15_000 }, async () => {

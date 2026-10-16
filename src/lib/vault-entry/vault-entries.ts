@@ -91,8 +91,10 @@ function samePatterns(a: readonly string[], b: readonly string[]): boolean {
  * per connection, and the idle policy that frees what no connection uses.
  *
  * Attach awaits only path checks and the vault's two small config files; every
- * corpus load and pass runs in the background behind the answer. The scope and
- * the `semantic` key are re-read on every attach, and the latest attach decides.
+ * corpus load and pass runs in the background behind the answer. Every attach
+ * that joins queues a pass, so an entry reconciles on attach even with no
+ * watcher. The scope and the `semantic` key are re-read on every attach, and
+ * the latest attach decides.
  */
 export class VaultEntries {
   private readonly records = new Map<string, EntryRecord>();
@@ -170,6 +172,9 @@ export class VaultEntries {
       if (joined) {
         this.join(record, connectionId);
         record.idleSince = undefined;
+        // The only reconcile trigger an entry whose watcher died still has
+        // (spec: reconcile-on-attach); it coalesces with a pass the attach queued.
+        record.entry.requestPass();
       } else if (record.ids.size === 0) {
         this.idle(record);
       }

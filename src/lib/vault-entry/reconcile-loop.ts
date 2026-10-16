@@ -60,6 +60,12 @@ export interface ReconcileLoopDeps {
    * selection, and after a pass reconciled it. A throw is warned, never propagated.
    */
   onSettled?: (key: string) => void;
+  /**
+   * Called once when a pass finds the vault directory again after a pass found
+   * it missing: a directory that came back is a new inode, which a watch on the
+   * old one never sees. A throw is warned, never propagated.
+   */
+  onVaultRestored?: () => void;
 }
 
 export interface ReconcileLoop {
@@ -164,6 +170,8 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
   let retryDelay = retryBaseMs;
   /** The last pass gave up waiting for another process's lock: not a failure, but re-armed like one. */
   let lockTimedOut = false;
+  /** A pass found the vault directory missing, and none has found it since. */
+  let vaultMissing = false;
 
   const label = (key: string) => `vault "${deps.vaultName}" (profile "${key}")`;
 
@@ -202,6 +210,16 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
       deps.onSettled(state.profile.key);
     } catch (err) {
       warn(`neuro-vault corpus: onSettled threw for ${label(state.profile.key)}: ${String(err)}`);
+    }
+  }
+
+  function notifyVaultRestored(): void {
+    try {
+      deps.onVaultRestored?.();
+    } catch (err) {
+      warn(
+        `neuro-vault corpus: onVaultRestored threw for vault "${deps.vaultName}": ${String(err)}`,
+      );
     }
   }
 
@@ -347,9 +365,18 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
     const { signal } = abort;
     const settled = new Set<ProfileState>();
     try {
-      await assertVaultDirectory(deps.vaultRoot);
+      try {
+        await assertVaultDirectory(deps.vaultRoot);
+      } catch (err) {
+        vaultMissing = true;
+        throw err;
+      }
       // A dispose during the stat aborted a pass that had no lock to wake yet.
       if (signal.aborted) return;
+      if (vaultMissing) {
+        vaultMissing = false;
+        notifyVaultRestored();
+      }
       await withLock(deps.vaultRoot, { signal, warn }, async ({ waited }) => {
         const paths = await deps.scan();
         for (const state of members) {

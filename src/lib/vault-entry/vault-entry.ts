@@ -63,6 +63,11 @@ export interface VaultEntry {
   removeProfile(key: string): void;
   /** Restarts the watcher, rescopes the reader and every later read, and queues a pass. */
   setScope(scope: VaultScope): void;
+  /**
+   * Queues a pass; it coalesces with any already queued. Asked on every attach, so
+   * an entry whose watcher failed (or never started) still reconciles then.
+   */
+  requestPass(): void;
   /** Disables every profile (no corpus at all), or gives each a fresh corpus. */
   setSemantic(enabled: boolean): void;
   status(key: string): BackendStatus;
@@ -119,13 +124,14 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
     readNote: (relPath) => fsDeps.readNote(relPath),
     warn,
     onSettled: (key) => recompute(slots.get(key)),
+    onVaultRestored: () => restartWatcher(),
   });
 
   let watcher = startWatcher();
 
   function startWatcher(): WatcherHandle {
     // startVaultWatcher contains its own failures: a vault without a watcher
-    // still reconciles on every attach.
+    // still reconciles on every attach (VaultEntries asks for a pass on each).
     return startVaultWatcher({
       vaultRoot,
       vaultName,
@@ -135,6 +141,15 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
       createWatcher: opts.createWatcher,
       warn,
     });
+  }
+
+  /** Swaps in a watcher over the current scope; the old one closes in the background. */
+  function restartWatcher(): void {
+    if (disposing !== null) return;
+    const previous = watcher;
+    watcher = startWatcher();
+    const closed = closeWatcher(previous).finally(() => closing.delete(closed));
+    closing.add(closed);
   }
 
   function closeWatcher(handle: WatcherHandle): Promise<void> {
@@ -232,10 +247,7 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
       if (disposing !== null) return;
       scope = next;
       fsDeps = fsDepsFor(next);
-      const previous = watcher;
-      watcher = startWatcher();
-      const closed = closeWatcher(previous).finally(() => closing.delete(closed));
-      closing.add(closed);
+      restartWatcher();
       for (const slot of slots.values()) recompute(slot);
       loop.requestPass();
     },
@@ -247,6 +259,7 @@ export function createVaultEntry(opts: VaultEntryOptions): VaultEntry {
         else detachCorpus(slot);
       }
     },
+    requestPass: () => loop.requestPass(),
     status,
     reader(key) {
       slotOf(key);

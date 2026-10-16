@@ -244,7 +244,8 @@ describe('createReconcileLoop, one profile', () => {
   });
 
   it('a vault directory that vanished is unavailable, not recreated, and recovers when back', async () => {
-    const h = await harness({ 'a.md': body('a') });
+    const onVaultRestored = vi.fn();
+    const h = await harness({ 'a.md': body('a') }, { onVaultRestored });
     const { corpus } = corpusOn(h.root);
     h.loop.addProfile(profileOf('p', corpus));
     await h.loop.whenSettled();
@@ -261,11 +262,17 @@ describe('createReconcileLoop, one profile', () => {
     expect(h.lock.calls()).toBe(passes);
     expect(h.scan).toHaveBeenCalledTimes(passes);
     await expect(access(h.root)).rejects.toThrow();
+    expect(onVaultRestored).not.toHaveBeenCalled();
 
     await mkdir(h.root);
     h.loop.requestPass();
     await h.loop.whenSettled();
     expect(h.loop.status('p')).toEqual({ state: 'ready' });
+    // Once per return of the directory, not per pass that finds it.
+    expect(onVaultRestored).toHaveBeenCalledTimes(1);
+    h.loop.requestPass();
+    await h.loop.whenSettled();
+    expect(onVaultRestored).toHaveBeenCalledTimes(1);
   });
 
   it('reports indexing with progress before the first index lands', async () => {

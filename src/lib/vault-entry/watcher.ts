@@ -129,8 +129,8 @@ const noopHandle: WatcherHandle = {
  * dot-directory is not itself blinded.
  *
  * A watcher that fails to start, or errors later, degrades: it warns to
- * stderr and never throws. The vault simply keeps whatever corpus state it
- * had (reconcile-on-start) — the server keeps serving either way.
+ * stderr and never throws. The vault then reconciles only when a pass is asked
+ * for some other way — on every attach — and the server keeps serving either way.
  */
 export function startVaultWatcher(deps: VaultWatcherDeps): WatcherHandle {
   const {
