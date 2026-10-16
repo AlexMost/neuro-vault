@@ -1004,14 +1004,16 @@ describe('createReconcileLoop, many profiles', () => {
     expect(() => t.loop.status('b')).toThrow(/unknown profile "b"/);
   });
 
-  it('lets a profile removed mid-reconcile finish, then drops its outcome', async () => {
+  it('stops a profile removed mid-reconcile after its note in flight, then drops its outcome', async () => {
     const held = gate();
     const reached = gate();
-    const t = await twoProfiles({ 'n1.md': body('1') });
+    const t = await twoProfiles({ 'n1.md': body('1'), 'n2.md': body('2'), 'n3.md': body('3') });
+    let embedsA = 0;
     let finished = false;
     t.loop.addProfile({
       ...t.profiles.a,
       embedDocuments: async (texts) => {
+        embedsA += 1;
         reached.open();
         await held.promise;
         finished = true;
@@ -1023,9 +1025,11 @@ describe('createReconcileLoop, many profiles', () => {
     t.loop.removeProfile('a');
     held.open();
     await t.loop.whenSettled();
+    // The note in flight finishes; the two after the removal are never embedded.
     expect(finished).toBe(true);
+    expect(embedsA).toBe(1);
     expect(() => t.loop.lastReconcile('a')).toThrow(/unknown profile "a"/);
-    expect(t.order).toEqual(['b']);
+    expect(t.order).toEqual(['b', 'b', 'b']);
     expect(t.loop.status('b')).toEqual({ state: 'ready' });
   });
 

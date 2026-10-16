@@ -66,7 +66,12 @@ afterEach(async () => {
 });
 
 async function harness(
-  opts: { scope?: VaultScope; semantic?: boolean; loop?: Partial<ReconcileLoopDeps> } = {},
+  opts: {
+    scope?: VaultScope;
+    semantic?: boolean;
+    embed?: EmbedDocumentsFn;
+    loop?: Partial<ReconcileLoopDeps>;
+  } = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'nv-vault-entry-'));
   roots.push(root);
@@ -78,7 +83,7 @@ async function harness(
     vaultName: 'v',
     scope: opts.scope ?? scopeOf(),
     semantic: opts.semantic ?? true,
-    embedderFor: () => okEmbed,
+    embedderFor: () => opts.embed ?? okEmbed,
     warn,
     createWatcher: watchers.factory,
     createLoop: (deps) => {
@@ -208,6 +213,32 @@ describe('createVaultEntry', () => {
     expect(calls).toHaveLength(2);
     expect(calls[1][0].corpus).not.toBe(before);
     await vi.waitFor(() => expect(h.entry.status(HARRIER)).toEqual({ state: 'ready' }));
+  });
+
+  it('setSemantic(false) mid-reconcile stops embedding after the note in flight', async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let embeds = 0;
+    const h = await harness({
+      embed: async (texts) => {
+        embeds += 1;
+        await held;
+        return okEmbed(texts);
+      },
+    });
+    await mkdir(path.join(h.root, 'Notes'));
+    for (const name of ['a', 'b', 'c']) {
+      await writeFile(path.join(h.root, 'Notes', `${name}.md`), `# ${name}\n${'x'.repeat(400)}\n`);
+    }
+    h.entry.addProfile(HARRIER);
+    await vi.waitFor(() => expect(embeds).toBe(1));
+    h.entry.setSemantic(false);
+    release();
+    await h.loop().whenSettled();
+    expect(embeds).toBe(1);
+    expect(h.entry.status(HARRIER)).toEqual({ state: 'disabled' });
   });
 
   it('info reports notes and the last reconcile once a pass made the profile ready', async () => {

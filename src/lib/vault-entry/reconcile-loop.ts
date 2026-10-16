@@ -66,9 +66,11 @@ export interface ReconcileLoop {
   /** Starts the profile's startup selection; the next pass reconciles it. */
   addProfile(profile: LoopProfile): void;
   /**
-   * Leaves the loop; the caller disposes the corpus. The loop disposes it again
-   * when it finishes any work on it still in flight, so that corpus object must
-   * not be attached again — a later `addProfile` with the same key takes a new one.
+   * Leaves the loop; the caller disposes the corpus. A reconcile of it in flight
+   * is aborted: it stops after the note it is on, and the pass moves on to the
+   * next profile. The loop disposes the corpus again once that work settles, so
+   * that corpus object must not be attached again — a later `addProfile` with
+   * the same key takes a new one.
    */
   removeProfile(key: string): void;
   status(key: string): BackendStatus;
@@ -93,6 +95,8 @@ interface ProfileState {
   selection: Promise<void>;
   last?: LastReconcile;
   removed: boolean;
+  /** Aborted on removal, so a removed profile stops embedding without waiting out its whole run. */
+  abort: AbortController;
 }
 
 /**
@@ -244,8 +248,9 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
     state: ProfileState,
     paths: string[],
     waited: boolean,
-    signal: AbortSignal,
+    passSignal: AbortSignal,
   ): Promise<void> {
+    const signal = AbortSignal.any([passSignal, state.abort.signal]);
     const { key, corpus, identity, embedDocuments } = state.profile;
     if (state.status.state === 'unavailable') state.status = indexing();
     const started = now();
@@ -282,8 +287,9 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
         },
       },
     );
-    // An aborted run is a shutdown, not a result: its summary is partial.
-    if (signal.aborted || releaseIfRemoved(state)) return;
+    // An aborted run is a shutdown or a removal, not a result: its summary is
+    // partial. A removal's corpus is released first — the run may have loaded it.
+    if (releaseIfRemoved(state) || signal.aborted) return;
     const finished = now();
     state.last = lastOf(summary, finished, finished - started);
     // A pass that returns is not a pass that worked. `reconcileProfile` is
@@ -425,6 +431,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
         status: profile.enabled ? indexing() : { state: 'disabled' },
         selection: Promise.resolve(),
         removed: false,
+        abort: new AbortController(),
       };
       profiles.set(profile.key, state);
       if (!profile.enabled) return;
@@ -439,6 +446,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
     removeProfile(key) {
       const state = stateOf(key);
       state.removed = true;
+      state.abort.abort();
       profiles.delete(key);
     },
     status: (key) => stateOf(key).status,
@@ -457,6 +465,7 @@ export function createReconcileLoop(deps: ReconcileLoopDeps): ReconcileLoop {
       // Not just a flag: a cold index is thousands of reads and embeds, each an
       // active libuv request holding the event loop open (design D10).
       passAbort?.abort();
+      for (const state of profiles.values()) state.abort.abort();
       await Promise.all([currentPass, ...selections]);
     },
   };
