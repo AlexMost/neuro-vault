@@ -3,19 +3,18 @@ import path from 'node:path';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import type { Nodes, Parent, RootContent } from 'mdast';
 
-import { normalizeWithMap } from './normalize.js';
+import { normalizeText } from './normalize.js';
 
 export interface NoteUnit {
   kind: 'heading' | 'body';
   raw: string;
   norm: string;
-  map: number[];
   lines: [number, number];
   heading?: string;
 }
 
 export interface ParsedNote {
-  title: { raw: string; norm: string; map: number[] };
+  title: { raw: string; norm: string };
   units: NoteUnit[];
 }
 
@@ -38,7 +37,6 @@ const CONTAINER_TYPES = new Set(['list', 'listItem', 'blockquote']);
 
 export function parseNote(opts: { path: string; body: string; lineOffset: number }): ParsedNote {
   const titleRaw = path.basename(opts.path, '.md');
-  const titleNorm = normalizeWithMap(titleRaw);
 
   const units: NoteUnit[] = [];
   let currentHeading: string | undefined;
@@ -48,8 +46,12 @@ export function parseNote(opts: { path: string; body: string; lineOffset: number
       if (node.type === 'heading') {
         const raw = nodeText(node).trim();
         if (raw.length > 0) {
-          const { norm, map } = normalizeWithMap(raw);
-          units.push({ kind: 'heading', raw, norm, map, lines: linesOf(node, opts.lineOffset) });
+          units.push({
+            kind: 'heading',
+            raw,
+            norm: normalizeText(raw),
+            lines: linesOf(node, opts.lineOffset),
+          });
         }
         currentHeading = raw.length > 0 ? raw : currentHeading;
         continue;
@@ -61,12 +63,10 @@ export function parseNote(opts: { path: string; body: string; lineOffset: number
       if (node.type === 'paragraph' || node.type === 'code' || node.type === 'table') {
         const raw = nodeText(node).trim();
         if (raw.length === 0) continue;
-        const { norm, map } = normalizeWithMap(raw);
         units.push({
           kind: 'body',
           raw,
-          norm,
-          map,
+          norm: normalizeText(raw),
           lines: linesOf(node, opts.lineOffset),
           heading: currentHeading,
         });
@@ -76,5 +76,5 @@ export function parseNote(opts: { path: string; body: string; lineOffset: number
 
   visit(fromMarkdown(opts.body).children);
 
-  return { title: { raw: titleRaw, ...titleNorm }, units };
+  return { title: { raw: titleRaw, norm: normalizeText(titleRaw) }, units };
 }

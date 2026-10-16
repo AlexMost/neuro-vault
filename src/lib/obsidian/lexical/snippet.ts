@@ -1,20 +1,24 @@
+import { normalizeWithMap } from './normalize.js';
+
 const WINDOW = 150;
 
 const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
 /**
  * ~150-char grapheme-safe window around the first match, projected from
- * normalized-match coordinates back onto the raw text via the offset map.
+ * normalized-match coordinates back onto the raw text via an offset map that
+ * is rebuilt here from `raw` — only when the text is longer than the window —
+ * so the lexical cache never has to hold one number per character.
  */
 export function makeSnippet(
   raw: string,
-  map: number[],
   normStart: number,
   normLen: number,
   window = WINDOW,
 ): string {
   if (raw.length <= window) return raw;
 
+  const { map } = normalizeWithMap(raw);
   const rawStart = map[Math.min(normStart, map.length - 1)] ?? 0;
   const rawEnd = map[Math.min(normStart + Math.max(normLen - 1, 0), map.length - 1)] ?? rawStart;
 

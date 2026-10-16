@@ -20,7 +20,9 @@ interface Candidate {
   path: string;
   tier: number; // 0..5 — best across the note's matches
   density: number; // of the best match
-  matches: Array<{ tier: number; density: number; match: LexicalMatch }>;
+  // `build` defers the snippet (an offset-map rebuild + grapheme pass) until
+  // the match survives the noteCap / perNoteCap trim.
+  matches: Array<{ tier: number; density: number; key: string; build: () => LexicalMatch }>;
   matchedQueries: Set<string>;
 }
 
@@ -62,7 +64,12 @@ export function rankNotes(opts: {
     for (const q of prepared) {
       if (q.tokens.length === 0) continue;
 
-      const record = (kind: 'title' | 'heading' | 'body', hit: UnitHit, match: LexicalMatch) => {
+      const record = (
+        kind: 'title' | 'heading' | 'body',
+        hit: UnitHit,
+        lines: [number, number] | undefined,
+        build: () => LexicalMatch,
+      ) => {
         const tier = tierOf(kind, hit);
         let cand = byPath.get(notePath);
         if (!cand) {
@@ -81,36 +88,29 @@ export function rankNotes(opts: {
         }
         cand.matchedQueries.add(q.original);
         // avoid duplicate evidence rows across queries for the same location
-        const key = `${match.matched_in}:${match.lines?.[0] ?? -1}`;
-        if (
-          !cand.matches.some((m) => `${m.match.matched_in}:${m.match.lines?.[0] ?? -1}` === key)
-        ) {
-          cand.matches.push({ tier, density: hit.density, match });
+        const key = `${kind}:${lines?.[0] ?? -1}`;
+        if (!cand.matches.some((m) => m.key === key)) {
+          cand.matches.push({ tier, density: hit.density, key, build });
         }
       };
 
       const titleHit = matchUnit(parsed.title.norm, q.norm, q.tokens);
       if (titleHit) {
-        record('title', titleHit, {
+        record('title', titleHit, undefined, () => ({
           matched_in: 'title',
-          snippet: makeSnippet(
-            parsed.title.raw,
-            parsed.title.map,
-            titleHit.firstIndex,
-            titleHit.matchLen,
-          ),
-        });
+          snippet: makeSnippet(parsed.title.raw, titleHit.firstIndex, titleHit.matchLen),
+        }));
       }
 
       for (const unit of parsed.units) {
         const hit = matchUnit(unit.norm, q.norm, q.tokens);
         if (!hit) continue;
-        record(unit.kind, hit, {
+        record(unit.kind, hit, unit.lines, () => ({
           matched_in: unit.kind,
-          snippet: makeSnippet(unit.raw, unit.map, hit.firstIndex, hit.matchLen),
+          snippet: makeSnippet(unit.raw, hit.firstIndex, hit.matchLen),
           lines: unit.lines,
           ...(unit.kind === 'body' && unit.heading !== undefined ? { heading: unit.heading } : {}),
-        });
+        }));
       }
     }
   }
@@ -153,7 +153,7 @@ export function rankNotes(opts: {
     matches: c.matches
       .sort((a, b) => a.tier - b.tier || b.density - a.density)
       .slice(0, opts.perNoteCap)
-      .map((m) => m.match),
+      .map((m) => m.build()),
     matchedQueries: [...c.matchedQueries],
   }));
 
