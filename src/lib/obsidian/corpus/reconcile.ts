@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 
+import type { CorpusWriter } from './corpus.js';
 import { buildEmbedInputs } from './embed-text.js';
 import type { CorpusIdentity } from './identity.js';
 import { corpusRootOf } from './layout.js';
 import { migrateLegacyCorpus } from './legacy-migration.js';
 import { acquireCorpusLock, type AcquireOptions, type CorpusLock } from './reconcile-lock.js';
 import { ShardStore, ensureCorpusGitignored } from './shard-store.js';
+import { shardWriter } from './shard-writer.js';
 import type { CorpusBlock, CorpusShard, EmbedDocumentsFn, StoredManifest } from './types.js';
 import { encodeVector } from './vector-codec.js';
 
@@ -80,7 +82,10 @@ export interface ReconcileOptions {
 export interface ReconcileSummary {
   /** Notes in scope for this run. */
   total: number;
+  /** Notes embedded for being new or changed; a rename counts in `renamed` instead. */
   embedded: number;
+  /** The part of `embedded` that had no record and was not a rename. */
+  added: number;
   reused: number;
   renamed: number;
   deleted: number;
@@ -115,23 +120,78 @@ export async function reconcileCorpus(
 ): Promise<ReconcileSummary> {
   const warn = deps.warn ?? ((message: string) => console.error(message));
 
+  const summary = await withReconcileLock(
+    deps.vaultRoot,
+    {
+      signal: opts.signal,
+      onLockWait: opts.onLockWait,
+      acquireLock: deps.acquireLock,
+      migrateLegacy: deps.migrateLegacy,
+      warn,
+    },
+    async () => {
+      const paths = await deps.scan();
+      const summary = await reconcileProfile(
+        {
+          vaultRoot: deps.vaultRoot,
+          stat: deps.stat,
+          readNote: deps.readNote,
+          embedDocuments: deps.embedDocuments,
+          identity: deps.identity,
+          warn,
+        },
+        shardWriter(deps.store),
+        paths,
+        opts,
+      );
+      // Corpus maintenance, not part of the partial result an aborted run hands
+      // back — skipped so a shutdown is bounded by the note in flight and nothing more.
+      if (!opts.signal?.aborted) await ensureCorpusGitignored(deps.vaultRoot, { warn });
+      return summary;
+    },
+  );
+  return summary ?? emptySummary();
+}
+
+export interface LockedPassOptions {
+  signal?: AbortSignal;
+  onLockWait?: ReconcileOptions['onLockWait'];
+  acquireLock?: ReconcileDeps['acquireLock'];
+  migrateLegacy?: ReconcileDeps['migrateLegacy'];
+  warn?: (message: string) => void;
+}
+
+/**
+ * Takes the vault's cross-process lock, moves a single-corpus layout into its
+ * model directory (design D3–D6), runs `fn`, and releases. Resolves `undefined`
+ * when the signal aborted before `fn` ran. `waited` tells `fn` whether another
+ * holder had the lock first.
+ */
+export async function withReconcileLock<T>(
+  vaultRoot: string,
+  opts: LockedPassOptions,
+  fn: (ctx: { waited: boolean }) => Promise<T>,
+): Promise<T | undefined> {
+  const warn = opts.warn ?? ((message: string) => console.error(message));
+
   // Before any I/O. The setup below — a lock, a manifest write, a full scan, a
   // full shard listing — is itself seconds of disk work on a large corpus, and
   // a pass kicked off just as the client hung up would otherwise run all of it
   // before reaching the first per-note check.
-  if (opts.signal?.aborted) return emptySummary();
+  if (opts.signal?.aborted) return undefined;
 
   const acquireLock =
-    deps.acquireLock ??
-    ((lockOpts: AcquireOptions) =>
-      acquireCorpusLock(corpusRootOf(deps.vaultRoot), { warn }, lockOpts));
-  const migrateLegacy = deps.migrateLegacy ?? (() => migrateLegacyCorpus(deps.vaultRoot, { warn }));
+    opts.acquireLock ??
+    ((lockOpts: AcquireOptions) => acquireCorpusLock(corpusRootOf(vaultRoot), { warn }, lockOpts));
+  const migrateLegacy = opts.migrateLegacy ?? (() => migrateLegacyCorpus(vaultRoot, { warn }));
 
+  let waited = false;
   let lock: CorpusLock;
   try {
     lock = await acquireLock({
       signal: opts.signal,
       onWait: (wait) => {
+        waited = true;
         // Guarded like onProgress: a throwing callback must not abort the run.
         try {
           opts.onLockWait?.(wait);
@@ -143,36 +203,53 @@ export async function reconcileCorpus(
   } catch (err) {
     // An abort while waiting is a shutdown, not a failure — the same empty
     // result as an abort before any I/O. The holder's lock is not ours to touch.
-    if (opts.signal?.aborted) return emptySummary();
+    if (opts.signal?.aborted) return undefined;
     throw err;
   }
 
   // Everything that reads the corpus happens from here on, under the lock: a
   // pass that waited sees what the previous holder wrote (design D6).
   try {
-    if (opts.signal?.aborted) return emptySummary();
+    if (opts.signal?.aborted) return undefined;
     await migrateLegacy();
-    return await reconcileLocked(deps, opts, warn);
+    return await fn({ waited });
   } finally {
     await lock.release();
   }
 }
 
 function emptySummary(): ReconcileSummary {
-  return { total: 0, embedded: 0, reused: 0, renamed: 0, deleted: 0, failed: 0 };
+  return { total: 0, embedded: 0, added: 0, reused: 0, renamed: 0, deleted: 0, failed: 0 };
 }
 
-/** The pass proper (design D6 steps after migration). The caller holds the vault's lock. */
-async function reconcileLocked(
-  deps: ReconcileDeps,
-  opts: ReconcileOptions,
-  warn: (message: string) => void,
-): Promise<ReconcileSummary> {
-  const { vaultRoot, scan, stat, readNote, embedDocuments, store } = deps;
+export interface ProfileReconcileDeps {
+  vaultRoot: string;
+  stat: ReconcileDeps['stat'];
+  readNote: ReconcileDeps['readNote'];
+  embedDocuments: EmbedDocumentsFn;
+  /** The identity the corpus must carry — the provider's, under this build's extraction. */
+  identity: CorpusIdentity;
+  /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
+  warn?: (message: string) => void;
+}
 
-  // First, so an incompatible corpus identity discards the shards before they
-  // are read: the shard map below must not see vectors of unknown provenance.
-  const { rebuilt, previous } = await store.ensureManifest(deps.identity);
+/**
+ * The per-note loop and orphan sweep for one profile (design D6 steps after
+ * migration). The caller holds the vault's lock and has scanned `paths`; the
+ * corpus gitignore is the caller's to write once every profile has run.
+ */
+export async function reconcileProfile(
+  deps: ProfileReconcileDeps,
+  corpus: CorpusWriter,
+  paths: string[],
+  opts: Omit<ReconcileOptions, 'onLockWait'>,
+): Promise<ReconcileSummary> {
+  const { vaultRoot, stat, readNote, embedDocuments } = deps;
+  const warn = deps.warn ?? ((message: string) => console.error(message));
+
+  // First, so an incompatible corpus identity discards the records before they
+  // are read: the map below must not see vectors of unknown provenance.
+  const { rebuilt, previous } = await corpus.ensureIdentity(deps.identity);
   if (rebuilt) {
     // Guarded like onProgress: a throwing callback must not abort the run.
     try {
@@ -182,18 +259,9 @@ async function reconcileLocked(
     }
   }
 
-  const paths = await scan();
-  // Retain only the metadata the loop reads — the vectors of a whole corpus
-  // would otherwise sit in memory for the run. The rare metadata-rewrite path
-  // re-reads its one shard lazily.
-  const shards = new Map<string, { mtime: number; size: number; content_hash: string }>();
-  for (const [shardPath, shard] of await store.listShards()) {
-    shards.set(shardPath, {
-      mtime: shard.mtime,
-      size: shard.size,
-      content_hash: shard.content_hash,
-    });
-  }
+  // Metadata only, so the vectors of a whole corpus never sit in memory for the
+  // run. The rare metadata-rewrite path (`touch`) re-reads its one record lazily.
+  const shards = await corpus.entries();
   const inScope = new Set(paths);
 
   // Shards whose note is no longer in scope: deletion candidates, and the only
@@ -208,14 +276,7 @@ async function reconcileLocked(
     else orphansByHash.set(shard.content_hash, [shardPath]);
   }
 
-  const summary: ReconcileSummary = {
-    total: paths.length,
-    embedded: 0,
-    reused: 0,
-    renamed: 0,
-    deleted: 0,
-    failed: 0,
-  };
+  const summary: ReconcileSummary = { ...emptySummary(), total: paths.length };
 
   let indexed = 0;
   for (const notePath of paths) {
@@ -235,17 +296,15 @@ async function reconcileLocked(
         const note = await readNote(notePath);
         const hash = contentHash(note.content);
         if (hash === shard.content_hash) {
-          // Same bytes, new metadata: rewrite the shard, keep the vectors. The
-          // listing kept metadata only, so fetch the full shard lazily; a shard
-          // that vanished meanwhile falls through to a re-embed.
-          const full = await store.readShard(notePath);
-          if (full !== null) {
-            await store.writeShard({ ...full, mtime: note.mtime, size: note.size });
+          // Same bytes, new metadata: rewrite the record, keep the vectors. A
+          // record that vanished meanwhile (`touch` is false) falls through to
+          // a re-embed.
+          if (await corpus.touch(notePath, { mtime: note.mtime, size: note.size })) {
             summary.reused += 1;
             continue;
           }
         }
-        await embedNote(notePath, note, hash, embedDocuments, store);
+        await embedNote(notePath, note, hash, embedDocuments, corpus);
         summary.embedded += 1;
         continue;
       }
@@ -257,14 +316,14 @@ async function reconcileLocked(
       // a failure must leave the note's previous shard untouched.
       const renamedFrom = takeOrphanWithHash(orphansByHash, hash);
       if (renamedFrom !== null) orphans.delete(renamedFrom);
-      await embedNote(notePath, note, hash, embedDocuments, store);
+      await embedNote(notePath, note, hash, embedDocuments, corpus);
       if (renamedFrom !== null) {
         summary.renamed += 1;
         // The rename already succeeded; a failed unlink of the old shard must
         // not recount it as a failed index. The stale shard is swept as an
         // orphan on the next pass.
         try {
-          await store.deleteShard(renamedFrom);
+          await corpus.delete(renamedFrom);
         } catch (err) {
           summary.failed += 1;
           warn(
@@ -273,6 +332,7 @@ async function reconcileLocked(
         }
       } else {
         summary.embedded += 1;
+        summary.added += 1;
       }
     } catch (err) {
       // The note keeps whatever shard it already had; the next pass retries it.
@@ -291,9 +351,8 @@ async function reconcileLocked(
     }
   }
 
-  // The sweep and the gitignore write below are corpus maintenance, not part of
-  // the partial result an aborted run hands back — skip them so a shutdown is
-  // bounded by the note in flight and nothing more.
+  // The sweep is corpus maintenance, not part of the partial result an aborted
+  // run hands back — skip it so a shutdown is bounded by the note in flight.
   if (opts.signal?.aborted) return summary;
 
   for (const orphanPath of orphans) {
@@ -303,7 +362,7 @@ async function reconcileLocked(
     // swept by the next pass.
     if (opts.signal?.aborted) return summary;
     try {
-      await store.deleteShard(orphanPath);
+      await corpus.delete(orphanPath);
       summary.deleted += 1;
     } catch (err) {
       summary.failed += 1;
@@ -312,8 +371,6 @@ async function reconcileLocked(
       );
     }
   }
-
-  await ensureCorpusGitignored(vaultRoot, { warn });
 
   return summary;
 }
@@ -327,13 +384,13 @@ function takeOrphanWithHash(orphansByHash: Map<string, string[]>, hash: string):
   return claimed;
 }
 
-/** Embeds one note's inputs and writes its shard. Throws on the first failure — the caller contains it. */
+/** Embeds one note's inputs and writes its record. Throws on the first failure — the caller contains it. */
 async function embedNote(
   notePath: string,
   note: NoteContent,
   hash: string,
   embedDocuments: EmbedDocumentsFn,
-  store: ShardStore,
+  corpus: CorpusWriter,
 ): Promise<void> {
   const inputs = buildEmbedInputs(notePath, note.content);
 
@@ -365,5 +422,5 @@ async function embedNote(
     embedding,
     blocks,
   };
-  await store.writeShard(shard);
+  await corpus.upsert(shard);
 }

@@ -506,6 +506,7 @@ describe('reconcileCorpus', () => {
     expect(summary).toEqual({
       total: 0,
       embedded: 0,
+      added: 0,
       reused: 0,
       renamed: 0,
       deleted: 0,
@@ -609,7 +610,15 @@ describe('reconcileCorpus', () => {
   });
 });
 
-const EMPTY_SUMMARY = { total: 0, embedded: 0, reused: 0, renamed: 0, deleted: 0, failed: 0 };
+const EMPTY_SUMMARY = {
+  total: 0,
+  embedded: 0,
+  added: 0,
+  reused: 0,
+  renamed: 0,
+  deleted: 0,
+  failed: 0,
+};
 
 function deferred() {
   let resolve!: () => void;

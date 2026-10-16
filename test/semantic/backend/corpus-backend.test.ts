@@ -44,7 +44,7 @@ function snapshotWith(paths: string[]): CorpusSnapshot {
 }
 
 function summary(over: Partial<ReconcileSummary> = {}): ReconcileSummary {
-  return { total: 1, embedded: 0, reused: 1, renamed: 0, deleted: 0, failed: 0, ...over };
+  return { total: 1, embedded: 0, added: 0, reused: 1, renamed: 0, deleted: 0, failed: 0, ...over };
 }
 
 /** A store whose manifest and shard count are set per test. */
