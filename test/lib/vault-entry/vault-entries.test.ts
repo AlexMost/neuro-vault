@@ -186,6 +186,19 @@ describe('VaultEntries.attach', () => {
     expect(s.loadScope).not.toHaveBeenCalled();
   });
 
+  it('concurrent attaches of a new vault share one entry', async () => {
+    const s = setup();
+    const [first, second] = await Promise.all([
+      s.entries.attach(1, '/v', [HARRIER]),
+      s.entries.attach(2, '/v/', [HARRIER]),
+    ]);
+    expect(first.vault).toBe('/v');
+    expect(second.vault).toBe('/v');
+    expect(s.created).toHaveLength(1);
+    expect(s.created[0].addProfile).toHaveBeenCalledTimes(1);
+    expect(s.entries.info()).toMatchObject([{ vault: '/v', clients: 2 }]);
+  });
+
   it('attaching twice adds a profile and keeps the first', async () => {
     const s = setup();
     await s.entries.attach(1, '/v', [HARRIER]);
@@ -388,6 +401,66 @@ describe('VaultEntries idle', () => {
     await vi.advanceTimersByTimeAsync(IDLE_MS * 2);
     expect(s.created[0].removeProfile).not.toHaveBeenCalled();
     expect(s.created[0].addProfile).toHaveBeenCalledTimes(2);
+  });
+
+  /** A loadScope held open by hand, so a timer can fire while an attach awaits it. */
+  function heldScope(s: ReturnType<typeof setup>) {
+    let release: (fail?: Error) => void = () => {};
+    s.loadScope.mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          release = (fail) => (fail ? reject(fail) : resolve({ scope: scopeOf(), semantic: true }));
+        }),
+    );
+    return { release: (fail?: Error) => release(fail) };
+  }
+
+  it('an attach awaiting its scope holds an idling entry past its timer', async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', [HARRIER]);
+    s.entries.detach(1);
+    await vi.advanceTimersByTimeAsync(IDLE_MS / 2);
+    const held = heldScope(s);
+    const pending = s.entries.attach(2, '/v', [HARRIER]);
+    await vi.advanceTimersByTimeAsync(IDLE_MS);
+    held.release();
+    expect((await pending).profiles[HARRIER].state).toBe('indexing');
+    expect(s.created).toHaveLength(1);
+    expect(s.created[0].removeProfile).not.toHaveBeenCalled();
+    expect(s.created[0].dispose).not.toHaveBeenCalled();
+    expect(s.entries.info()).toMatchObject([{ vault: '/v', clients: 1 }]);
+    await vi.advanceTimersByTimeAsync(IDLE_MS * 5);
+    expect(s.created[0].dispose).not.toHaveBeenCalled();
+  });
+
+  it('a held entry whose attach fails idles out once released', async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', [HARRIER]);
+    s.entries.detach(1);
+    const held = heldScope(s);
+    const pending = s.entries.attach(2, '/v', [HARRIER]);
+    await vi.advanceTimersByTimeAsync(IDLE_MS * 2);
+    expect(s.created[0].dispose).not.toHaveBeenCalled();
+    held.release(new Error('EIO'));
+    await expect(pending).rejects.toThrow('EIO');
+    expect(s.entries.info()).toEqual([]);
+    expect(s.created[0].removeProfile).toHaveBeenCalledExactlyOnceWith(HARRIER);
+    expect(s.created[0].dispose).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps the first idle time across a detached attach', async () => {
+    let clock = Date.parse('2026-01-02T03:04:05.000Z');
+    const s = setup({ now: () => new Date(clock) });
+    await s.entries.attach(1, '/v', [HARRIER]);
+    s.entries.detach(1);
+    clock += 60_000;
+    const pending = s.entries.attach(2, '/v', [HARRIER]);
+    s.entries.detach(2);
+    await pending;
+    expect(s.entries.info()[0].idle_since).toBe('2026-01-02T03:04:05.000Z');
+    await vi.advanceTimersByTimeAsync(IDLE_MS);
+    expect(s.entries.info()).toEqual([]);
   });
 
   it('idleTimeoutMs 0 never drops', async () => {

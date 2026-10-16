@@ -1092,15 +1092,13 @@ describe('createReconcileLoop, many profiles', () => {
     t.loop.addProfile(t.profiles.b);
     t.loop.addProfile(profileOf('off', corpusOn(t.root).corpus, { enabled: false }));
     await t.loop.whenSettled();
-    // Two selections (in either order), then the pass in attach order; never the disabled one.
-    expect(calls).toHaveLength(4);
-    expect(
-      calls
-        .slice(0, 2)
-        .map((c) => c.key)
-        .sort(),
-    ).toEqual(['a', 'b']);
-    expect(calls.slice(2).map((c) => c.key)).toEqual(['a', 'b']);
+    // Each profile once for its selection and once for the pass; the pass walks
+    // them in attach order, but b's selection may land after a's pass. Never the disabled one.
+    const keys = calls.map((c) => c.key);
+    expect(keys.filter((k) => k === 'a')).toHaveLength(2);
+    expect(keys.filter((k) => k === 'b')).toHaveLength(2);
+    expect(keys).toHaveLength(4);
+    expect(keys.lastIndexOf('a')).toBeLessThan(keys.lastIndexOf('b'));
     expect(calls.every((c) => c.loaded)).toBe(true);
   });
 

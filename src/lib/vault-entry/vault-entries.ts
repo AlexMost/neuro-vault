@@ -56,6 +56,12 @@ type Timer = ReturnType<typeof setTimeout>;
 interface Clients {
   ids: Set<number>;
   timer?: Timer;
+  /** Attaches past their path checks that will reuse this; a timer firing meanwhile waits. */
+  holds: number;
+  /** What the timer does when it fires, kept to run on release when it fired under a hold. */
+  expire?: () => void;
+  /** The timer fired under a hold: released with no client, it expires then. */
+  expired: boolean;
 }
 
 interface EntryRecord extends Clients {
@@ -129,6 +135,8 @@ export class VaultEntries {
     const flight = this.inFlight.get(connectionId) ?? { count: 0, detached: false };
     flight.count += 1;
     this.inFlight.set(connectionId, flight);
+    /** What this attach holds while it reads the scope, released in order: profiles, then entry. */
+    let held: Clients[] = [];
     try {
       const root = await this.resolve(vault);
       for (const key of profiles) {
@@ -139,6 +147,9 @@ export class VaultEntries {
           );
         }
       }
+      // From here this attach counts as arrived: an idle timer firing while the
+      // scope loads must not drop what it is about to reuse.
+      held = this.hold(root, profiles);
       const { scope, semantic } = await this.loadScope(root);
       if (this.disposing !== null) throw new Error('vault entries: disposed');
       // Synchronous from here: concurrent attaches of one vault cannot both create it.
@@ -150,7 +161,7 @@ export class VaultEntries {
         let attached = record.profiles.get(key);
         if (attached === undefined) {
           record.entry.addProfile(key);
-          attached = { ids: new Set() };
+          attached = { ids: new Set(), holds: 0, expired: false };
           record.profiles.set(key, attached);
         }
         if (joined) this.join(attached, connectionId);
@@ -169,6 +180,7 @@ export class VaultEntries {
     } finally {
       flight.count -= 1;
       if (flight.count === 0) this.inFlight.delete(connectionId);
+      for (const clients of held) this.release(clients);
     }
   }
 
@@ -263,41 +275,74 @@ export class VaultEntries {
       embedderFor: this.deps.embedderFor,
       warn: this.warn,
     });
-    const record: EntryRecord = { entry, ids: new Set(), profiles: new Map() };
+    const record: EntryRecord = {
+      entry,
+      ids: new Set(),
+      profiles: new Map(),
+      holds: 0,
+      expired: false,
+    };
     this.records.set(root, record);
     return record;
   }
 
+  private hold(root: string, profiles: readonly string[]): Clients[] {
+    const record = this.records.get(root);
+    if (record === undefined) return [];
+    const held: Clients[] = [];
+    for (const key of profiles) {
+      const attached = record.profiles.get(key);
+      if (attached !== undefined && !held.includes(attached)) held.push(attached);
+    }
+    held.push(record);
+    for (const clients of held) clients.holds += 1;
+    return held;
+  }
+
+  /** Runs an expiry that fired under the hold, unless a client joined or everything is gone. */
+  private release(clients: Clients): void {
+    clients.holds -= 1;
+    if (clients.holds > 0 || !clients.expired) return;
+    clients.expired = false;
+    if (clients.ids.size === 0 && this.disposing === null) clients.expire?.();
+  }
+
   private join(clients: Clients, connectionId: number): void {
     clients.ids.add(connectionId);
+    clients.expired = false;
     if (clients.timer !== undefined) {
       this.timers.clearTimeout(clients.timer);
       clients.timer = undefined;
     }
   }
 
-  /** Starts the idle timer unless one runs already, or idling out is off. */
+  /** Starts the idle timer unless one runs already, one fired under a hold, or idling out is off. */
   private arm(clients: Clients, fire: () => void): void {
-    if (this.deps.idleTimeoutMs === 0 || clients.timer !== undefined) return;
+    if (this.deps.idleTimeoutMs === 0 || clients.timer !== undefined || clients.expired) return;
+    clients.expire = fire;
     clients.timer = this.timers.setTimeout(() => {
       clients.timer = undefined;
-      fire();
+      if (clients.holds > 0) clients.expired = true;
+      else fire();
     }, this.deps.idleTimeoutMs);
     // An idle timer must never be the reason the process stays alive.
     (clients.timer as { unref?: () => void }).unref?.();
   }
 
   private idle(record: EntryRecord): void {
-    record.idleSince = this.now();
+    // The first time it went idle: the one its timer counts from.
+    record.idleSince ??= this.now();
     this.arm(record, () => this.drop(record));
   }
 
   private free(record: EntryRecord, key: string): void {
+    if (this.records.get(record.entry.vaultRoot) !== record || !record.profiles.has(key)) return;
     record.profiles.delete(key);
     record.entry.removeProfile(key);
   }
 
   private drop(record: EntryRecord): void {
+    if (this.records.get(record.entry.vaultRoot) !== record) return;
     this.records.delete(record.entry.vaultRoot);
     this.clearTimers(record);
     const done: Promise<void> = this.disposeEntry(record).finally(() => this.dropping.delete(done));
@@ -308,6 +353,7 @@ export class VaultEntries {
     for (const clients of [record, ...record.profiles.values()]) {
       if (clients.timer !== undefined) this.timers.clearTimeout(clients.timer);
       clients.timer = undefined;
+      clients.expired = false;
     }
   }
 
