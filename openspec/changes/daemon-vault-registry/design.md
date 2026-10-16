@@ -45,7 +45,7 @@ The decisions are in `brainstorm.md` (Q1–Q16), taken from wayfinder map #160 a
   - `CorpusReader { nearest(anchor, opts), nearestBlocks(anchor, opts) }` with `anchor = { vector } | { path }`, returning `null` for a path anchor without a vector;
   - `CorpusWriter { entries(), upsert(record), touch(path, stat), delete(path), identity(), reset(identity), refresh() }`;
   - `Corpus = CorpusReader & CorpusWriter & { vectorOf(path), dispose() }`.
-  `CorpusStore` is renamed `ShardStore` (file `shard-store.ts` keeps its name). `ShardCorpus` (`shard-corpus.ts`) implements `Corpus` over a `ShardStore` plus in-memory `Float32Array`s and metadata, loaded once by `load()` and updated per write (write the shard first, then memory). `shardWriter(store)` implements `CorpusWriter` over the `ShardStore` alone, with no memory: what `neuro-vault-mcp index` and PR 1's legacy session path use. The brute-force scoring of `search-engine.ts` (cosine, ordering by similarity then `localeCompare` on path) moves into `ShardCorpus`'s internals, unchanged, so rankings are identical.
+  `CorpusStore` is renamed `ShardStore` (file `shard-store.ts` keeps its name). `ShardCorpus` (`shard-corpus.ts`) implements `Corpus` over a `ShardStore` plus in-memory `Float32Array`s and metadata, loaded once by `load()` and updated per write (write the shard first, then memory). `shardWriter(store)` implements `CorpusWriter` over the `ShardStore` alone, with no memory: what `neuro-vault-mcp index` and PR 1's legacy session path use. `CorpusWriter` carries `ensureIdentity(expected)` (the stored identity checked and, on a mismatch, reset, composed in one call) in place of the separate `reset(identity)` the interface list above shows, so a writer never exposes a half-reset corpus. The brute-force scoring of `search-engine.ts` (cosine, ordering by similarity then `localeCompare` on path) moves into `ShardCorpus`'s internals, unchanged, so rankings are identical.
 - **Why**: per-note visibility and `entries()` without vectors (ADR-0019); the disk-only writer keeps `index` from decoding a corpus it never reads.
 - **Alternatives**: one class that lazily loads its memory side on first read (two modes in one type, and the legacy session path would still hold a second copy if anything read it).
 
@@ -89,7 +89,7 @@ The decisions are in `brainstorm.md` (Q1–Q16), taken from wayfinder map #160 a
 ### D10: `daemon.info` and `daemon status`
 
 - **Choice**: `DaemonInfoResult.services` gains `vault: VaultInfo[]`, `VaultInfo = { vault, clients, idle_since?, profiles: [{ profile, state, indexed?, total?, notes?, last_reconcile?: { at, added, changed, removed, ms } }] }`. `daemon status` prints the existing daemon line, then one indented line per entry (`clients N`, or `idle since <time>`), then one per profile (state, `notes` or `indexed/total`, last reconcile counts and duration).
-- **Why**: brainstorm Q13; the only operator view of shared state.
+- **Why**: brainstorm Q13; the only operator view of shared state. `ProfileInfo` also carries `reason` while a profile is `unavailable`, which the status line prints.
 
 ### D11: One connection and one switch per process (PR 2)
 

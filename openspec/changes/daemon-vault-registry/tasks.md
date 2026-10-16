@@ -8,39 +8,39 @@ Parallelism: groups 1 and 3 are parallel-safe with each other (no shared files).
 
 ## 1. Corpus interface and its first implementation (parallel-safe with 3)
 
-- [ ] 1.1 Rename `CorpusStore` → `ShardStore` (and `CorpusStoreDeps` → `ShardStoreDeps`) with every call site: `src/lib/obsidian/corpus/`, `src/modules/semantic/backend/`, `src/cli-index.ts`, `eval/`, tests. Mechanical; the full suite passes unchanged.
-- [ ] 1.2 Declare `CorpusAnchor`, `NearestOptions`, `NearestBlocksOptions`, `CorpusReader`, `CorpusWriter`, `CorpusEntry`, `CorpusRecord` and `Corpus` in `src/lib/obsidian/corpus/corpus.ts` (design D3).
-- [ ] 1.3 `shardWriter(store)`: a `CorpusWriter` over `ShardStore` alone (`entries` from the shard listing's metadata, `upsert`/`touch`/`delete` as shard writes, `identity`/`reset` over the manifest, `refresh` a no-op), with unit tests on a temp directory.
-- [ ] 1.4 Extract the scoring of `search-engine.ts` (`cosineSimilarity`, result ordering) into a module both `SearchEngine` and the new corpus import, with no behaviour change.
-- [ ] 1.5 `ShardCorpus`: `load()` (decode once), `entries`, per-write memory updates after the shard write, `identity`/`reset` (empties memory), `refresh` (re-read), `vectorOf`, `nearest`, `nearestBlocks` (anchors, `allowed`, `exclude`, `limit`, `null` for a path without a vector), `dispose`. Tests include a parity test: `nearest`/`nearestBlocks` equal `findNeighbors`/`findBlockNeighbors` over the same fixture corpus.
+- [x] 1.1 Rename `CorpusStore` → `ShardStore` (and `CorpusStoreDeps` → `ShardStoreDeps`) with every call site: `src/lib/obsidian/corpus/`, `src/modules/semantic/backend/`, `src/cli-index.ts`, `eval/`, tests. Mechanical; the full suite passes unchanged.
+- [x] 1.2 Declare `CorpusAnchor`, `NearestOptions`, `NearestBlocksOptions`, `CorpusReader`, `CorpusWriter`, `CorpusEntry`, `CorpusRecord` and `Corpus` in `src/lib/obsidian/corpus/corpus.ts` (design D3).
+- [x] 1.3 `shardWriter(store)`: a `CorpusWriter` over `ShardStore` alone (`entries` from the shard listing's metadata, `upsert`/`touch`/`delete` as shard writes, `identity`/`reset` over the manifest, `refresh` a no-op), with unit tests on a temp directory.
+- [x] 1.4 Extract the scoring of `search-engine.ts` (`cosineSimilarity`, result ordering) into a module both `SearchEngine` and the new corpus import, with no behaviour change.
+- [x] 1.5 `ShardCorpus`: `load()` (decode once), `entries`, per-write memory updates after the shard write, `identity`/`reset` (empties memory), `refresh` (re-read), `vectorOf`, `nearest`, `nearestBlocks` (anchors, `allowed`, `exclude`, `limit`, `null` for a path without a vector), `dispose`. Tests include a parity test: `nearest`/`nearestBlocks` equal `findNeighbors`/`findBlockNeighbors` over the same fixture corpus.
 
 ## 2. Reconcile split around the lock (needs 1)
 
-- [ ] 2.1 Split `reconcile.ts` into `withReconcileLock(vaultRoot, opts, fn)` and `reconcileProfile(deps, corpus: CorpusWriter, paths, opts)`; `reconcileCorpus` becomes their composition over `shardWriter(store)`. Every existing reconcile, lock and backend test passes unchanged; new tests drive `reconcileProfile` over a `ShardCorpus` and check memory and shards agree after embed, touch, rename and sweep.
+- [x] 2.1 Split `reconcile.ts` into `withReconcileLock(vaultRoot, opts, fn)` and `reconcileProfile(deps, corpus: CorpusWriter, paths, opts)`; `reconcileCorpus` becomes their composition over `shardWriter(store)`. Every existing reconcile, lock and backend test passes unchanged; new tests drive `reconcileProfile` over a `ShardCorpus` and check memory and shards agree after embed, touch, rename and sweep.
 
 ## 3. The watcher follows the scope (#106) (parallel-safe with 1)
 
-- [ ] 3.1 `VaultScope.isSubtreeExcluded(relDir)`: dot segment, or a match against the prefix of a `/**` pattern; table tests (`Templates`, `Archive` after a bare entry, `Archive/*` false, `**/drafts`, nested, root).
-- [ ] 3.2 Watcher predicate: `ignored` prunes a directory only on `isSubtreeExcluded`, events pass only for `.md` with `!isExcluded`; relative path with `/` separators (table test with a Windows-style input); drop the `.tmp` clause. Move the watcher to `src/lib/vault-entry/watcher.ts` and keep the session's factory using it with the scope it already receives.
-- [ ] 3.3 chokidar integration test on a temp vault: an edit under an excluded subtree schedules nothing; an edit under `Archive/*`'s second level does.
+- [x] 3.1 `VaultScope.isSubtreeExcluded(relDir)`: dot segment, or a match against the prefix of a `/**` pattern; table tests (`Templates`, `Archive` after a bare entry, `Archive/*` false, `**/drafts`, nested, root).
+- [x] 3.2 Watcher predicate: `ignored` prunes a directory only on `isSubtreeExcluded`, events pass only for `.md` with `!isExcluded`; relative path with `/` separators (table test with a Windows-style input); drop the `.tmp` clause. Move the watcher to `src/lib/vault-entry/watcher.ts` and keep the session's factory using it with the scope it already receives.
+- [x] 3.3 chokidar integration test on a temp vault: an edit under an excluded subtree schedules nothing; an edit under `Archive/*`'s second level does.
 
 ## 4. Vault entry (needs 1–3)
 
-- [ ] 4.1 `src/lib/vault-entry/reconcile-loop.ts`: the per-profile state machine of `createCorpusBackend` (startup selection, one pass with a dirty flag, retry backoff, lock-timeout restore, abort on dispose, the empty-corpus guard), walking profiles in attach order under one `withReconcileLock`, refreshing every corpus after a wait. Port the `corpus-backend` tests to it, plus multi-profile tests (one lock acquisition, mid-pass attach).
-- [ ] 4.2 `VaultEntry`: scope, watcher, loop, corpus per profile; `addProfile`, `setScope` (restart watcher, queue a pass, fold scope into reads), `status(profile)`, `info()`, `dispose()`.
-- [ ] 4.3 `VaultEntries`: realpath keying, `attach(connectionId, path, profiles)` (`VAULT_UNAVAILABLE`, `UNKNOWN_PROFILE`, `disabled` from the vault's config, scope re-read), `status(connectionId, vault, profile)` (`NOT_ATTACHED`), `detach(connectionId)`, idle timers per entry and per profile (`0` = never), `info()`, `dispose()`. Tests with fake timers and an injected entry factory.
+- [x] 4.1 `src/lib/vault-entry/reconcile-loop.ts`: the per-profile state machine of `createCorpusBackend` (startup selection, one pass with a dirty flag, retry backoff, lock-timeout restore, abort on dispose, the empty-corpus guard), walking profiles in attach order under one `withReconcileLock`, refreshing every corpus after a wait. Port the `corpus-backend` tests to it, plus multi-profile tests (one lock acquisition, mid-pass attach).
+- [x] 4.2 `VaultEntry`: scope, watcher, loop, corpus per profile; `addProfile`, `setScope` (restart watcher, queue a pass, fold scope into reads), `status(profile)`, `info()`, `dispose()`.
+- [x] 4.3 `VaultEntries`: realpath keying, `attach(connectionId, path, profiles)` (`VAULT_UNAVAILABLE`, `UNKNOWN_PROFILE`, `disabled` from the vault's config, scope re-read), `status(connectionId, vault, profile)` (`NOT_ATTACHED`), `detach(connectionId)`, idle timers per entry and per profile (`0` = never), `info()`, `dispose()`. Tests with fake timers and an injected entry factory.
 
 ## 5. Daemon wiring (needs 4)
 
-- [ ] 5.1 Per-connection context: `MethodHandler(params, ctx)`, `ServiceRegistry.dispatch(request, ctx)`, `startDaemonServer` creating `{ id, onClose }` per socket; `embed` and `daemon` services unchanged in behaviour.
-- [ ] 5.2 `DaemonErrorCode` += `NOT_ATTACHED`, `VAULT_UNAVAILABLE`; `DaemonRpcError` and `errorResponse` carry optional `data`; protocol tests.
-- [ ] 5.3 `vault` service (`attach`, `status`) over `VaultEntries`, registered in `cli-daemon.ts`; the `embed` service exposes a per-profile document embedder and identity for the entries; daemon stop disposes the entries.
-- [ ] 5.4 `daemon.info.services.vault` and the `daemon status` lines per entry and profile (`src/daemon/admin.ts`), with snapshot-style tests of the printed lines.
-- [ ] 5.5 Integration test over a real socket and a fixture vault with a fake embedder: attach → `vault.status` `indexing` → `ready`; two connections share one entry (`clients: 2`); `profiles: []`; a note write triggers one pass; an excluded write triggers none; close + idle timeout drops the entry; `NOT_ATTACHED`, `VAULT_UNAVAILABLE`.
+- [x] 5.1 Per-connection context: `MethodHandler(params, ctx)`, `ServiceRegistry.dispatch(request, ctx)`, `startDaemonServer` creating `{ id, onClose }` per socket; `embed` and `daemon` services unchanged in behaviour.
+- [x] 5.2 `DaemonErrorCode` += `NOT_ATTACHED`, `VAULT_UNAVAILABLE`; `DaemonRpcError` and `errorResponse` carry optional `data`; protocol tests.
+- [x] 5.3 `vault` service (`attach`, `status`) over `VaultEntries`, registered in `cli-daemon.ts`; the `embed` service exposes a per-profile document embedder and identity for the entries; daemon stop disposes the entries.
+- [x] 5.4 `daemon.info.services.vault` and the `daemon status` lines per entry and profile (`src/daemon/admin.ts`), with snapshot-style tests of the printed lines.
+- [x] 5.5 Integration test over a real socket and a fixture vault with a fake embedder: attach → `vault.status` `indexing` → `ready`; two connections share one entry (`clients: 2`); `profiles: []`; a note write triggers one pass; an excluded write triggers none; close + idle timeout drops the entry; `NOT_ATTACHED`, `VAULT_UNAVAILABLE`.
 
 ## 6. PR 1 delivery
 
-- [ ] 6.1 Docs: new `docs/architecture/vault-entry.md`; `shared-daemon.md` (vault service, connection context, status lines), `own-corpus.md` (`ShardStore`, corpus interface, reconcile split), `vault-scope.md` (`isSubtreeExcluded`, watcher), `docs/architecture/README.md` map.
+- [x] 6.1 Docs: new `docs/architecture/vault-entry.md`; `shared-daemon.md` (vault service, connection context, status lines), `own-corpus.md` (`ShardStore`, corpus interface, reconcile split), `vault-scope.md` (`isSubtreeExcluded`, watcher), `docs/architecture/README.md` map.
 - [ ] 6.2 `npm test && npm run lint && npm run typecheck && npm run format && npm run build`; PR 1 to `main` with `Refs #158`, `Refs #175`. Pause for review and merge.
 
 ## PR 2 — sessions read through the daemon, `Refs #158`, `Closes #175`, `Closes #106`
