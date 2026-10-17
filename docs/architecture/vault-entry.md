@@ -81,7 +81,7 @@ One chokidar watcher per entry (`watcher.ts`, `startVaultWatcher`), started with
 
 ## What it deliberately does not do
 
-- **No lexical cache, no wikilink graph, no `corpus.*` methods yet.** The entry holds the semantic side only; the daemon serves `vault.attach` and `vault.status` and nothing that reads a corpus over the wire.
+- **No lexical cache, no wikilink graph.** The entry holds the semantic side only; the daemon serves `vault.attach`, `vault.status` and the `corpus.*` reads ([`shared-daemon.md`](./shared-daemon.md#the-corpus-service)), and no session reads them yet.
 - **No watching of `.gitignore` or `config.json`.** Scope changes take effect on the next attach.
 - **No scope from the client.** Attach carries a path and profile keys, never exclusions or an identity: sessions could disagree, and the key would no longer identify the state.
 - **No format change.** Shards, manifests, the lock and `index` behave as in [`own-corpus.md`](./own-corpus.md).

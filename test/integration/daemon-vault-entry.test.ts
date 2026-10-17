@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ServiceRegistry, type DaemonInfoResult } from '../../src/daemon/protocol.js';
 import { createDaemonService } from '../../src/daemon/services/daemon.js';
+import { createCorpusService } from '../../src/daemon/services/corpus.js';
 import { createVaultService } from '../../src/daemon/services/vault.js';
 import { startDaemonServer, type DaemonServerHandle } from '../../src/daemon/socket-server.js';
 import { MODEL_PROFILES } from '../../src/lib/model-profiles.js';
@@ -123,6 +124,8 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
   let clients: LineClient[];
   /** Per profile key: how many documents the fake embedder was asked to embed. */
   let embedded: Map<string, number>;
+  /** While set, the fake embedder waits for it: a pass cannot finish, so the corpus stays `indexing`. */
+  let embedGate: Promise<void> | undefined;
 
   beforeEach(() => {
     // Short enough for the 104-byte sun_path limit of macOS.
@@ -130,6 +133,7 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
     socketPath = path.join(dir, 's.sock');
     clients = [];
     embedded = new Map();
+    embedGate = undefined;
   });
 
   afterEach(async () => {
@@ -145,6 +149,7 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
     entries = new VaultEntries({
       // Vectors of the profile's own width, so the real ShardStore accepts them; no model loads.
       embedderFor: (key) => async (texts) => {
+        await embedGate;
         embedded.set(key, (embedded.get(key) ?? 0) + texts.length);
         return texts.map(() => {
           const v = new Array<number>(MODEL_PROFILES[key].dims).fill(0);
@@ -158,6 +163,7 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
     });
     const registry = new ServiceRegistry();
     registry.register('vault', createVaultService(entries));
+    registry.register('corpus', createCorpusService(entries));
     const live = entries;
     registry.register(
       'daemon',
@@ -393,4 +399,189 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
       expect(later.vault).toBe(b.vault);
     },
   );
+
+  describe('corpus reads', () => {
+    type NoteAnswer = { hits: ({ path: string; similarity: number }[] | null)[] };
+    type BlockAnswer = {
+      hits: ({ path: string; heading: string; lines: number[]; similarity: number }[] | null)[];
+    };
+    const query = (dims = MODEL_PROFILES[PROFILE].dims) => {
+      const v = new Array<number>(dims).fill(0);
+      v[0] = 1;
+      return v;
+    };
+    const base = { profile: PROFILE, threshold: 0.5 };
+
+    async function readyVault(c: LineClient) {
+      const attached = await attach(
+        c,
+        makeVault('notes', {
+          'a.md': noteBody('alpha'),
+          'b.md': noteBody('beta'),
+          'c.md': noteBody('gamma'),
+          'short.md': '# short\n\nToo short to embed.\n',
+        }),
+      );
+      await untilReady(c, attached.vault);
+      return attached.vault;
+    }
+
+    it(
+      'one list per anchor, null for a note too short to carry a vector',
+      { timeout: 15_000 },
+      async () => {
+        await startDaemon();
+        const c = await connect();
+        const vault = await readyVault(c);
+
+        const answer = await c.result<NoteAnswer>('corpus.nearest', {
+          ...base,
+          vault,
+          anchors: [
+            { vector: query() },
+            { path: 'short.md' },
+            { path: 'b.md' },
+            { vector: query().map((x) => -x) },
+          ],
+        });
+
+        expect(answer.hits).toHaveLength(4);
+        // Equal similarity: ordered by path.
+        expect(answer.hits[0]?.map((hit) => hit.path)).toEqual(['a.md', 'b.md', 'c.md']);
+        expect(answer.hits[1]).toBeNull();
+        expect(answer.hits[2]?.map((hit) => hit.path)).toEqual(['a.md', 'b.md', 'c.md']);
+        expect(answer.hits[3]).toEqual([]);
+      },
+    );
+
+    it('allowed and exclude narrow before the limit', { timeout: 15_000 }, async () => {
+      await startDaemon();
+      const c = await connect();
+      const vault = await readyVault(c);
+      const nearest = async (extra: Record<string, unknown>) =>
+        (
+          await c.result<NoteAnswer>('corpus.nearest', {
+            ...base,
+            vault,
+            anchors: [{ vector: query() }],
+            ...extra,
+          })
+        ).hits[0]?.map((hit) => hit.path);
+
+      expect(await nearest({ limit: 1 })).toEqual(['a.md']);
+      expect(await nearest({ limit: 1, allowed: ['c.md', 'b.md'] })).toEqual(['b.md']);
+      expect(await nearest({ limit: 2, exclude: ['a.md'] })).toEqual(['b.md', 'c.md']);
+    });
+
+    it('nearestBlocks answers blocks of the given notes only', { timeout: 15_000 }, async () => {
+      await startDaemon();
+      const c = await connect();
+      const vault = await readyVault(c);
+
+      const answer = await c.result<BlockAnswer>('corpus.nearestBlocks', {
+        ...base,
+        vault,
+        anchors: [{ vector: query() }, { path: 'short.md' }],
+        paths: ['b.md'],
+      });
+
+      expect(answer.hits[0]?.map((hit) => hit.path)).toEqual(['b.md']);
+      expect(answer.hits[0]?.[0]).toMatchObject({ heading: 'beta', lines: [1, 4] });
+      expect(answer.hits[1]).toBeNull();
+    });
+
+    it('corpus.nearest returns no vectors', { timeout: 15_000 }, async () => {
+      await startDaemon();
+      const c = await connect();
+      const vault = await readyVault(c);
+
+      const notes = await c.call('corpus.nearest', {
+        ...base,
+        vault,
+        anchors: [{ vector: query() }, { path: 'a.md' }],
+      });
+      const blocks = await c.call('corpus.nearestBlocks', {
+        ...base,
+        vault,
+        anchors: [{ path: 'a.md' }],
+        paths: ['a.md', 'b.md'],
+      });
+
+      // No array of numbers anywhere in the answer, in particular none as wide as the corpus.
+      const numberArrays = (value: unknown): unknown[][] =>
+        Array.isArray(value)
+          ? [
+              ...(value.some((x) => typeof x === 'number') ? [value] : []),
+              ...value.flatMap(numberArrays),
+            ]
+          : typeof value === 'object' && value !== null
+            ? Object.values(value).flatMap(numberArrays)
+            : [];
+      for (const response of [notes, blocks]) {
+        expect('result' in response).toBe(true);
+        // `lines` is the one pair of numbers a block hit carries.
+        expect(numberArrays(response).filter((array) => array.length > 2)).toEqual([]);
+      }
+    });
+
+    it(
+      'answers CORPUS_NOT_READY with the status while the corpus builds',
+      { timeout: 15_000 },
+      async () => {
+        let release!: () => void;
+        embedGate = new Promise((resolve) => {
+          release = resolve;
+        });
+        await startDaemon();
+        const c = await connect();
+        const vault = (await attach(c, makeVault('notes'))).vault;
+
+        const response = await c.call('corpus.nearest', {
+          ...base,
+          vault,
+          anchors: [{ vector: query() }],
+        });
+
+        expect('error' in response).toBe(true);
+        const data = ('error' in response ? response.error.data : undefined) as {
+          code: string;
+          status: Status;
+        };
+        expect(data.code).toBe('CORPUS_NOT_READY');
+        expect(data.status.state).toBe('indexing');
+        release();
+        await untilReady(c, vault);
+      },
+    );
+
+    it(
+      'refuses what the connection did not attach, an unknown profile and a wrong width',
+      { timeout: 15_000 },
+      async () => {
+        await startDaemon();
+        const a = await connect();
+        const b = await connect();
+        const vault = await readyVault(a);
+        const call = (client: LineClient, extra: Record<string, unknown>) =>
+          client.errorCode('corpus.nearest', {
+            ...base,
+            vault,
+            anchors: [{ vector: query() }],
+            ...extra,
+          });
+
+        expect(await call(b, {})).toBe('NOT_ATTACHED');
+        expect(await call(a, { profile: OTHER_PROFILE })).toBe('NOT_ATTACHED');
+        expect(await call(a, { profile: 'nope' })).toBe('UNKNOWN_PROFILE');
+        expect(
+          await call(a, { anchors: [{ vector: query(MODEL_PROFILES[OTHER_PROFILE].dims) }] }),
+        ).toBe('INVALID_PARAMS');
+        expect(await call(a, { anchors: [{ vector: [1, 2] }] })).toBe('INVALID_PARAMS');
+        // Every refusal left the connection serving.
+        expect(
+          (await a.result<NoteAnswer>('corpus.nearest', { ...base, vault, anchors: [] })).hits,
+        ).toEqual([]);
+      },
+    );
+  });
 });

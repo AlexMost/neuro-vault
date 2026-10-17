@@ -543,6 +543,18 @@ describe('runDaemonCommand (run)', () => {
       expect(JSON.stringify(response)).toContain('INVALID_PARAMS');
     });
 
+    it('serves corpus.nearest and corpus.nearestBlocks over the registry', async () => {
+      const { h } = entriesHarness();
+      await runDaemonCommand(RUN, h.deps);
+      for (const method of ['corpus.nearest', 'corpus.nearestBlocks']) {
+        const response = await serverOptions(h).registry.dispatch(
+          { jsonrpc: '2.0', id: 1, method, params: { vault: 1 } },
+          testCtx(),
+        );
+        expect(JSON.stringify(response)).toContain('INVALID_PARAMS');
+      }
+    });
+
     it.each([
       ['a signal', (h: Harness) => h.signals.get('SIGTERM')!()],
       ['idle expiry', (h: Harness) => serverOptions(h).onIdle()],

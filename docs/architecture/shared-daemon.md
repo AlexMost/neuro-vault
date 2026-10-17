@@ -140,6 +140,8 @@ Methods are `<service>.<method>`, routed by `ServiceRegistry` (`src/daemon/proto
 | `embed.documents` | `{ profile, texts }` | `{ vectors }`, with `texts.length ≤ max_batch_size` |
 | `vault.attach` | `{ vault, profiles }` | `{ vault, profiles: { [profile]: BackendStatus } }`, without waiting for any load or pass ([The vault service](#the-vault-service)) |
 | `vault.status` | `{ vault, profile }` | the profile's `BackendStatus`, for a pair this connection attached |
+| `corpus.nearest` | `{ vault, profile, anchors, threshold, limit?, allowed?, exclude? }` | `{ hits: ({ path, similarity }[] \| null)[] }`, one list per anchor ([The corpus service](#the-corpus-service)) |
+| `corpus.nearestBlocks` | `{ vault, profile, anchors, paths, threshold, limit? }` | `{ hits: ({ path, heading, lines, similarity }[] \| null)[] }` |
 
 Vectors are JSON number arrays. A 640-dimension vector is about 10 KB of text and a batch of 8 about 100 KB, negligible on a local socket next to inference time. Base64 float32 is the documented next step if measurements ever show JSON cost.
 
@@ -150,8 +152,10 @@ Errors are JSON-RPC errors with a numeric `code` and the daemon's own code in `d
 | `UNKNOWN_METHOD` | -32601 | No such namespace or method. The connection stays open. |
 | `INVALID_PARAMS` | -32602 | Params not an object, wrong types, blank text, empty or oversized `texts`, an unexpected param key in any call, a relative `vault` in `vault.attach` |
 | `UNKNOWN_PROFILE` | -32602 | `profile` (or a key of `profiles`) is not a key of the closed registry (`MODEL_PROFILES`) |
-| `NOT_ATTACHED` | -32602 | `vault.status` for a vault and profile this connection did not attach |
+| `NOT_ATTACHED` | -32602 | `vault.status` or `corpus.*` for a vault and profile this connection did not attach |
 | `VAULT_UNAVAILABLE` | -32602 | `vault.attach` of a path that cannot be resolved or is not a directory; the message names the reason (a relative path is `INVALID_PARAMS`) |
+| `CORPUS_NOT_READY` | -32603 | `corpus.*` while the profile is not `ready`; `data.status` is its `BackendStatus` |
+| `CORPUS_FAILED` | -32603 | A `corpus.*` read threw inside the corpus; the message is the reason |
 | `EMBED_FAILED` | -32603 | The model failed to load, inference threw, or a vector came back non-finite |
 | `SHUTTING_DOWN` | -32000 | The request was in flight, or arrived, while the daemon was stopping |
 | `INTERNAL` | -32603 | A handler threw something other than a `DaemonRpcError` |
@@ -163,6 +167,8 @@ Errors are JSON-RPC errors with a numeric `code` and the daemon's own code in `d
 The queue is the same two-lane queue a session uses ([`semantic-backend.md`](./semantic-backend.md#the-shared-embed-queue)), so query-first ordering now holds between sessions, not only inside one: session B's query waits for at most one batch of session A's indexing. Each session keeps its own queue in front of the facade, with one request in flight, so the daemon's queue depth is bounded by the number of connected sessions.
 
 `EMBED_FAILED` is not a connection failure. A load that fails is dropped from the in-flight memo and never enters the loaded set, so the next request for that profile builds and initializes a fresh provider. This is the same retry-on-next-call behaviour as today's in-process load failure, and it is why the facade surfaces `EMBED_FAILED` as an error rather than fall back to an in-process model.
+
+A reconcile pass reaches the model through `documentsFor`, one batch per note, so a model that cannot load would be rebuilt and logged for every batch. `documentsFor` therefore remembers a failed load for `LOAD_FAILURE_MEMO_MS` (30 s) and rejects with the same error meanwhile, with one log line per failure. `embed.initialize` and `embed.query` are not held back: their next call still retries.
 
 Every load and failure also leaves one line in the daemon's log, because the client that asked is often not the one a user looks at. `createEmbedService` takes a `log(line)` dependency, and `startServing` wires it to stderr with the daemon's prefix. It logs `loaded <profile> in N ms` once per load, however many requests shared it, and `failed to load <profile> after N ms: <message>` for a failed load. A request that fails because its load failed adds no second line. An `EMBED_FAILED` raised while embedding logs `embed.query failed for <profile>: <message>` or `embed.documents failed for <profile> (N texts): <message>`. Requests rejected before any embedding (`INVALID_PARAMS`, `UNKNOWN_PROFILE`) are not logged. No line carries query or document text. There are no levels and no rotation; a run adds a handful of lines to `daemon.log` unless embedding keeps failing.
 
@@ -177,6 +183,15 @@ Every load and failure also leaves one line in the daemon's log, because the cli
 - **No `vault.detach`.** A connection that closes detaches itself from everything it attached. The service hooks `ctx.onClose` the first time a connection calls `vault.attach`, before the attach awaits anything, so a connection that closes mid-attach still detaches.
 - A `VaultEntryError` (`NOT_ATTACHED`, `VAULT_UNAVAILABLE`, `UNKNOWN_PROFILE`) keeps its code and message on the wire; anything else is `INTERNAL`.
 - `vault.*` calls make the connection a client like `embed.*` calls (see Idle), so an attached session holds the daemon open.
+- A `VaultEntryError` is mapped by `wired` (`src/daemon/services/wired.ts`), shared with the corpus service.
+
+## The corpus service
+
+`createCorpusService` (`src/daemon/services/corpus.ts`) serves `corpus.nearest` and `corpus.nearestBlocks` through `VaultEntries.reader(connectionId, vault, profile)`; the reader folds the vault's scope into the read ([`vault-entry.md`](./vault-entry.md)). The daemon answers one similarity read per call and never a vector: a hit carries a path, a similarity and, for a block, its heading and lines.
+
+- Params are snake_case and closed (`onlyKeys`). An anchor is exactly one of `{ vector: number[] }` (finite numbers) or `{ path: string }`; `limit`, when sent, is a non-negative integer. `corpus.nearest` alone takes `allowed` and `exclude`, `corpus.nearestBlocks` alone `paths`.
+- The checks run in a fixed order, each answering its own code: the shape of the params (`INVALID_PARAMS`), the profile key (`UNKNOWN_PROFILE`), the attachment of the pair on this connection (`NOT_ATTACHED`), the profile being `ready` (`CORPUS_NOT_READY` with `data.status`), the width of each vector anchor against the corpus's dimension (`INVALID_PARAMS`), and last the read itself (`CORPUS_FAILED`). The profile is checked before the attachment because an unknown profile can never have been attached.
+- `hits` holds one entry per anchor, in order: `null` for a path anchor whose note has no vector, `[]` when nothing reaches the threshold. The corpus yields to the event loop between the anchors of one call (`ShardCorpus`), so a large `find_duplicates` batch does not starve other connections.
 
 ### Connection context and error `data`
 
