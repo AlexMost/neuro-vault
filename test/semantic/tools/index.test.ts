@@ -1,19 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildSemanticTools } from '../../../src/modules/semantic/tools/index.js';
-import type { QueryEmbedder, SearchEngine } from '../../../src/modules/semantic/types.js';
+import type { QueryEmbedder } from '../../../src/modules/semantic/types.js';
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 import { makeFakeGraph } from './_helpers.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
 
 const embeddingProvider: QueryEmbedder = { initialize: vi.fn(), embedQuery: vi.fn() };
-const searchEngine: SearchEngine = {
-  findNeighbors: vi.fn().mockReturnValue([]),
-  findBlockNeighbors: vi.fn().mockReturnValue([]),
-  findDuplicates: vi.fn().mockReturnValue([]),
-};
-
 function registryOf(...names: string[]): IVaultRegistry {
   return makeTestRegistry(
     names.map((name) => ({
@@ -29,7 +23,6 @@ function toolsFor(...names: string[]) {
   return buildSemanticTools({
     registry: registryOf(...names),
     embeddingProvider,
-    searchEngine,
     modelKey: 'bge-micro-v2',
     similarity: TEST_SIMILARITY,
   });

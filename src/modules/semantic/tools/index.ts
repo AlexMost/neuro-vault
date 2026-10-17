@@ -1,7 +1,7 @@
 import { registerTool } from '../../../lib/tool-registry.js';
 import type { ToolRegistration } from '../../../lib/tool-registration.js';
 import type { ModelProfile, SimilarityDefaults } from '../../../lib/model-profiles.js';
-import type { QueryEmbedder, SearchEngine } from '../types.js';
+import type { QueryEmbedder } from '../types.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { buildFindDuplicatesTool } from './find-duplicates.js';
 import { buildGetSimilarNotesTool } from './get-similar-notes.js';
@@ -10,7 +10,6 @@ import { buildSearchNotesTool } from './search-notes.js';
 export interface ISemanticToolDeps {
   registry: IVaultRegistry;
   embeddingProvider: QueryEmbedder;
-  searchEngine: SearchEngine;
   modelKey: string;
   /** The active model profile's default thresholds. */
   similarity: SimilarityDefaults;

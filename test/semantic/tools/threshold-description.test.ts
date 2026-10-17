@@ -2,11 +2,6 @@ import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 
 import { registerTool, type ITool } from '../../../src/lib/tool-registry.js';
-import {
-  findBlockNeighbors,
-  findDuplicates,
-  findNeighbors,
-} from '../../../src/modules/semantic/search-engine.js';
 import { buildFindDuplicatesTool } from '../../../src/modules/semantic/tools/find-duplicates.js';
 import { buildGetSimilarNotesTool } from '../../../src/modules/semantic/tools/get-similar-notes.js';
 import { makeTestRegistry } from './_helpers.js';
@@ -23,7 +18,6 @@ const distinct = {
   similarNotes: 0.37,
   duplicates: 0.83,
 };
-const searchEngine = { findNeighbors, findBlockNeighbors, findDuplicates };
 
 function advertisedThreshold<I, O>(tool: ITool<I, O>): string | undefined {
   const { properties } = z.toJSONSchema(registerTool(tool).spec.inputSchema as z.ZodType, {
@@ -40,7 +34,6 @@ describe('threshold advertises the active profile default', () => {
         initialize: () => Promise.resolve(),
         embedQuery: () => Promise.resolve([1]),
       },
-      searchEngine,
       modelKey: 'k',
       similarity: distinct,
     });
@@ -50,7 +43,6 @@ describe('threshold advertises the active profile default', () => {
   it('find_duplicates names duplicates', () => {
     const tool = buildFindDuplicatesTool({
       registry: makeTestRegistry([]),
-      searchEngine,
       modelKey: 'k',
       similarity: distinct,
     });

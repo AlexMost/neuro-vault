@@ -1,12 +1,11 @@
 import { EmbeddingService } from './embedding-service.js';
 import type { ModelProfile } from '../../lib/model-profiles.js';
-import { findBlockNeighbors, findDuplicates, findNeighbors } from './search-engine.js';
 import {
   buildLexicalOnlyTools,
   buildSemanticTools,
   type ISemanticToolDeps,
 } from './tools/index.js';
-import type { QueryEmbedder, SearchEngine } from './types.js';
+import type { QueryEmbedder } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 import type { IVaultRegistry } from '../../lib/vault-registry.js';
 
@@ -16,7 +15,6 @@ export interface ISemanticModuleConfig {
 
 export interface ISemanticModuleDeps {
   embeddingServiceFactory?: (profile: ModelProfile) => QueryEmbedder;
-  searchEngine?: SearchEngine;
 }
 
 export interface ISemanticModule {
@@ -31,13 +29,11 @@ export function createSemanticModule(
 ): ISemanticModule {
   const embeddingServiceFactory =
     deps.embeddingServiceFactory ?? ((profile: ModelProfile) => new EmbeddingService({ profile }));
-  const searchEngine = deps.searchEngine ?? { findNeighbors, findBlockNeighbors, findDuplicates };
   const embeddingService = embeddingServiceFactory(config.profile);
 
   const semanticDeps: ISemanticToolDeps = {
     registry,
     embeddingProvider: embeddingService,
-    searchEngine,
     modelKey: config.profile.key,
     similarity: config.profile.similarity,
   };

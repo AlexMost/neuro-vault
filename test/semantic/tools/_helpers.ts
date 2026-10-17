@@ -10,6 +10,7 @@ import type {
   CorpusSnapshot,
   SemanticBackend,
 } from '../../../src/lib/obsidian/semantic-backend.js';
+import type { VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import {
@@ -17,15 +18,10 @@ import {
   type SearchNotesInput,
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
-import {
-  findBlockNeighbors,
-  findDuplicates,
-  findNeighbors,
-} from '../../../src/modules/semantic/search-engine.js';
+import { findDuplicates, findNeighbors } from '../../../src/modules/semantic/search-engine.js';
 import type {
   QueryEmbedder,
   ListMatchingPaths,
-  SearchEngine,
   SmartSource,
 } from '../../../src/modules/semantic/types.js';
 import { callTool } from '../../_gate.js';
@@ -150,6 +146,18 @@ export function makeFakeGraph(counts: Record<string, number> = {}): WikilinkGrap
     getBacklinkCount: vi.fn((p: string) => counts[p] ?? 0),
     getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
   } as unknown as WikilinkGraphIndex;
+}
+
+/**
+ * A reader whose scoped note list is exactly the corpus' paths: what `entry.reader.scan()`
+ * returns for a vault whose every note carries a record (a short note is a path in the scan
+ * with an empty vector in `sources`).
+ */
+export function readerOf(sources: Map<string, SmartSource>): VaultReader {
+  return {
+    scan: async () => [...sources.keys()].sort(),
+    readNotes: async () => [],
+  };
 }
 
 export function makeFakeCorpusIndex(sources: Map<string, SmartSource>): CorpusLike {
@@ -299,5 +307,5 @@ export async function runSearch(opts: {
 
 export { makeTestRegistry };
 
-export { findNeighbors, findDuplicates, findBlockNeighbors, buildBasenameIndex };
-export type { QueryEmbedder, ListMatchingPaths, SearchEngine, SmartSource, BasenameIndex };
+export { findNeighbors, findDuplicates, buildBasenameIndex };
+export type { QueryEmbedder, ListMatchingPaths, SmartSource, BasenameIndex };

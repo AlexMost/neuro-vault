@@ -16,9 +16,8 @@ import {
   makeVaultFixture,
   makeFakeCorpusIndex,
   makeSyntheticSource,
+  readerOf,
   findNeighbors,
-  findDuplicates,
-  findBlockNeighbors,
   toBackend,
 } from './_helpers.js';
 import type { SmartSource } from './_helpers.js';
@@ -65,7 +64,6 @@ describe('getSimilarNotes', () => {
       const tool = buildGetSimilarNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
         similarity: TEST_SIMILARITY,
       });
@@ -106,7 +104,6 @@ describe('getSimilarNotes', () => {
       const tool = buildGetSimilarNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
         similarity: TEST_SIMILARITY,
       });
@@ -145,7 +142,6 @@ describe('getSimilarNotes', () => {
       const tool = buildGetSimilarNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
         similarity: TEST_SIMILARITY,
       });
@@ -184,7 +180,6 @@ describe('getSimilarNotes', () => {
       const tool = buildGetSimilarNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
         similarity: TEST_SIMILARITY,
       });
@@ -231,7 +226,6 @@ describe('getSimilarNotes', () => {
       const tool = buildGetSimilarNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
         similarity: TEST_SIMILARITY,
       });
@@ -271,7 +265,6 @@ describe('getSimilarNotes', () => {
       const tool = buildGetSimilarNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
         similarity: TEST_SIMILARITY,
       });
@@ -304,7 +297,6 @@ describe('getSimilarNotes', () => {
       const tool = buildGetSimilarNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
         similarity: TEST_SIMILARITY,
       });
@@ -330,7 +322,6 @@ describe('getSimilarNotes', () => {
       const tool = buildGetSimilarNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
         similarity: TEST_SIMILARITY,
       });
@@ -357,7 +348,6 @@ describe('getSimilarNotes', () => {
       const tool = buildGetSimilarNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
         similarity: TEST_SIMILARITY,
       });
@@ -379,7 +369,6 @@ describe('getSimilarNotes', () => {
       const tool = buildGetSimilarNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
         similarity: TEST_SIMILARITY,
       });
@@ -442,12 +431,12 @@ describe('getSimilarNotes — graph signals', () => {
         name: 'v',
         path: vaultRoot,
         backend: toBackend(corpusIndex),
+        reader: readerOf(sources),
       },
     ]);
     const tool = buildGetSimilarNotesTool({
       registry,
       embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-      searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
       modelKey: MODEL_KEY,
       similarity: TEST_SIMILARITY,
     });
@@ -466,6 +455,67 @@ describe('getSimilarNotes — graph signals', () => {
         const r = results.find((x) => x.path === p)!;
         expect(r.signals.forward_link).toBe(true);
       }
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('a link to a short note is a forward_link', async () => {
+    // S is in the vault's scoped note list but carries no vector (below the embedding size gate).
+    const sources = makeSources();
+    sources.set('Folder/S.md', makeSyntheticSource('Folder/S.md', []));
+    const { reg, cleanup } = await buildToolWithVault({
+      sources,
+      body: '# A\n\nA short one: [[S]].\n',
+    });
+    try {
+      const results = await callTool<SimilarResults>(reg, { path: 'Folder/A.md', threshold: 0.9 });
+      const s = results.find((r) => r.path === 'Folder/S.md');
+      expect(s).toBeDefined();
+      expect(s!.signals).toEqual({ forward_link: true });
+      expect(s!.similarity).toBeUndefined();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('NOT_FOUND when the note has no vector', async () => {
+    const sources = makeSources();
+    sources.set('Folder/S.md', makeSyntheticSource('Folder/S.md', []));
+    const { reg, cleanup } = await buildToolWithVault({ sources });
+    try {
+      await expect(callTool(reg, { path: 'Folder/S.md', threshold: 0 })).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        message: 'No note found for path: Folder/S.md',
+        details: { path: 'Folder/S.md' },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('keeps the semantic scores the in-memory scan gave', async () => {
+    const sources = makeSources();
+    const { reg, cleanup } = await buildToolWithVault({
+      sources,
+      body: '# A\n\nNo links here.\n',
+    });
+    try {
+      const expected = findNeighbors({
+        queryVector: sources.get('Folder/A.md')!.embedding,
+        sources: sources.values(),
+        threshold: 0,
+        excludePath: 'Folder/A.md',
+      });
+      const results = await callTool<SimilarResults>(reg, {
+        path: 'Folder/A.md',
+        threshold: 0,
+        limit: 50,
+      });
+      // Rank differs (the frontmatter link to D puts it first); the scores must not.
+      const byPath = (list: { path: string; similarity?: number }[]) =>
+        list.map((r) => [r.path, r.similarity] as const).sort(([a], [b]) => a.localeCompare(b));
+      expect(byPath(results)).toEqual(byPath(expected));
     } finally {
       await cleanup();
     }
@@ -657,26 +707,33 @@ describe('getSimilarNotes — graph signals', () => {
   });
 
   it('applies the profile’s similarNotes default when threshold is omitted', async () => {
-    const { vaultRoot, cleanup } = await makeTempVault({ 'a.md': '# A\n' });
+    const { vaultRoot, cleanup } = await makeTempVault({
+      'a.md': '# A\n',
+      'near.md': '# N\n',
+      'far.md': '# F\n',
+    });
     try {
-      const thresholds: number[] = [];
-      const sources = new Map<string, SmartSource>([['a.md', makeSyntheticSource('a.md')]]);
+      // Similarity to a.md: near 0.8, far 0.7 — only the former clears the profile's 0.77.
+      const sources = new Map<string, SmartSource>([
+        ['a.md', makeSyntheticSource('a.md', [1, 0])],
+        ['near.md', makeSyntheticSource('near.md', [0.8, 0.6])],
+        ['far.md', makeSyntheticSource('far.md', [0.7, Math.sqrt(0.51)])],
+      ]);
       const tool = buildGetSimilarNotesTool({
         registry: makeTestRegistry([
-          { name: 'v', path: vaultRoot, backend: toBackend(makeFakeCorpusIndex(sources)) },
+          {
+            name: 'v',
+            path: vaultRoot,
+            backend: toBackend(makeFakeCorpusIndex(sources)),
+            reader: readerOf(sources),
+          },
         ]),
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: {
-          findNeighbors: (args) => (thresholds.push(args.threshold), []),
-          findDuplicates,
-          findBlockNeighbors,
-        },
         modelKey: MODEL_KEY,
         similarity: { ...TEST_SIMILARITY, similarNotes: 0.77 },
       });
-      await callTool(registerTool(tool), { path: 'a.md' });
-      expect(thresholds).toContain(0.77);
-      expect(thresholds).not.toContain(0.5);
+      const results = await callTool<SimilarResults>(registerTool(tool), { path: 'a.md' });
+      expect(results.map((r) => r.path)).toEqual(['near.md']);
     } finally {
       await cleanup();
     }
