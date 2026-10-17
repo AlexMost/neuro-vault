@@ -41,7 +41,7 @@ Parallelism: groups 1 and 3 are parallel-safe with each other (no shared files).
 ## 6. PR 1 delivery
 
 - [x] 6.1 Docs: new `docs/architecture/vault-entry.md`; `shared-daemon.md` (vault service, connection context, status lines), `own-corpus.md` (`ShardStore`, corpus interface, reconcile split), `vault-scope.md` (`isSubtreeExcluded`, watcher), `docs/architecture/README.md` map.
-- [ ] 6.2 `npm test && npm run lint && npm run typecheck && npm run format && npm run build`; PR 1 to `main` with `Refs #158`, `Refs #175`. Pause for review and merge.
+- [x] 6.2 `npm test && npm run lint && npm run typecheck && npm run format && npm run build`; PR 1 to `main` with `Refs #158`, `Refs #175`. Pause for review and merge.
 
 ## PR 2 — sessions read through the daemon, `Refs #158`, `Closes #175`, `Closes #106`
 
