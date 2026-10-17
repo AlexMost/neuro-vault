@@ -1,16 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { DaemonRpcError } from '../../src/daemon/protocol.js';
-import {
-  DaemonConnectionError,
-  DaemonUnavailableError,
-} from '../../src/modules/semantic/daemon-connection.js';
+import { DaemonConnectionError } from '../../src/modules/semantic/daemon-connection.js';
 import {
   DaemonEmbeddingProvider,
   type DaemonLink,
 } from '../../src/modules/semantic/daemon-embedding-provider.js';
 import { createQueuedEmbedder } from '../../src/modules/semantic/embed-queue.js';
 import { identityOf, resolveModelProfile } from '../../src/lib/model-profiles.js';
+import type { ISharedServices } from '../../src/modules/semantic/shared-services.js';
 import type { EmbeddingProvider } from '../../src/modules/semantic/types.js';
 
 const profile = resolveModelProfile('granite-97m');
@@ -59,20 +57,31 @@ function fallbackProvider(): EmbeddingProvider & { calls: string[] } {
   };
 }
 
-function provider(
-  connection: FakeLink,
-  extra: { fallback?: EmbeddingProvider; lines?: string[]; logFile?: string } = {},
-) {
+/** The process's services over a fake link; `local` makes every `ensure()` answer so. */
+function fakeServices(link: FakeLink) {
+  const services = {
+    mode: 'pending' as ISharedServices['mode'],
+    connection: asLink(link),
+    ensure: vi.fn(async () => {
+      if (services.mode === 'local') return 'local' as const;
+      await link.ensure();
+      return 'daemon' as const;
+    }),
+    close: vi.fn(),
+  };
+  return services;
+}
+
+function provider(connection: FakeLink, extra: { fallback?: EmbeddingProvider } = {}) {
+  const services = fakeServices(connection);
   const createFallback = vi.fn(() => extra.fallback ?? fallbackProvider());
   const p = new DaemonEmbeddingProvider({
     profile,
-    connection: asLink(connection),
+    services,
     createFallback,
     initialMaxBatchSize: 8,
-    stderr: { write: (s) => (extra.lines?.push(s), true) },
-    logFile: extra.logFile ?? '/c/daemon.log',
   });
-  return Object.assign(p, { createFallback });
+  return Object.assign(p, { createFallback, services });
 }
 
 function methods(link: FakeLink): string[] {
@@ -205,33 +214,37 @@ describe('DaemonEmbeddingProvider — through the daemon', () => {
 });
 
 describe('DaemonEmbeddingProvider — errors and fallback', () => {
-  it('falls back once when the daemon is unavailable, with one stderr line naming the log', async () => {
-    const lines: string[] = [];
+  it('embeds in-process once the services answer local, building the fallback once', async () => {
     const link = fakeLink();
-    link.ensure.mockRejectedValue(new DaemonUnavailableError('no spawn'));
     const fallback = fallbackProvider();
-    const p = provider(link, { fallback, lines });
+    const p = provider(link, { fallback });
+    p.services.mode = 'local';
     await expect(p.embedQuery('x')).resolves.toEqual([0.5]);
     await expect(p.embedDocuments(['y'])).resolves.toEqual([[0.5]]);
     await p.initialize();
     expect(fallback.calls).toEqual(['query', 'docs', 'init']);
     expect(p.maxBatchSize).toBe(3);
-    expect(link.ensure).toHaveBeenCalledTimes(1);
+    expect(link.ensure).not.toHaveBeenCalled();
     expect(link.request).not.toHaveBeenCalled();
     expect(p.createFallback).toHaveBeenCalledTimes(1);
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/no spawn/);
-    expect(lines[0]).toMatch(/\/c\/daemon\.log/);
   });
 
-  it('builds one fallback when concurrent calls all find the daemon unavailable', async () => {
-    const lines: string[] = [];
+  it('builds one fallback when concurrent calls all find the services local', async () => {
     const link = fakeLink();
-    link.ensure.mockRejectedValue(new DaemonUnavailableError('gone'));
-    const p = provider(link, { lines });
+    const p = provider(link);
+    p.services.mode = 'local';
     await Promise.all([p.embedQuery('a'), p.embedQuery('b'), p.initialize()]);
     expect(p.createFallback).toHaveBeenCalledTimes(1);
-    expect(lines).toHaveLength(1);
+  });
+
+  it('switches to the fallback when another facade flips the switch mid-session', async () => {
+    const link = fakeLink({ 'embed.query': { vector: [1] } });
+    const fallback = fallbackProvider();
+    const p = provider(link, { fallback });
+    await expect(p.embedQuery('a')).resolves.toEqual([1]);
+    p.services.mode = 'local'; // the corpus facade found the daemon gone
+    await expect(p.embedQuery('b')).resolves.toEqual([0.5]);
+    expect(fallback.calls).toEqual(['query']);
   });
 
   it('re-sends embed.initialize when ensure() reconnected between two calls', async () => {
@@ -276,30 +289,5 @@ describe('DaemonEmbeddingProvider — errors and fallback', () => {
     await expect(p.embedQuery('x')).rejects.toBeInstanceOf(DaemonConnectionError);
     await expect(p.embedDocuments(['x'])).rejects.toThrow(/timed out/);
     expect(p.createFallback).not.toHaveBeenCalled();
-  });
-
-  it('close() closes the connection and leaves a fallback alone', async () => {
-    const link = fakeLink();
-    const p = provider(link);
-    p.close();
-    expect(link.close).toHaveBeenCalledTimes(1);
-  });
-
-  it('omits the log path when there is none to name', async () => {
-    const lines: string[] = [];
-    const link = fakeLink();
-    link.ensure.mockRejectedValue(new DaemonUnavailableError('no CLI script path'));
-    const p = new DaemonEmbeddingProvider({
-      profile,
-      connection: asLink(link),
-      createFallback: fallbackProvider,
-      initialMaxBatchSize: 8,
-      stderr: { write: (s) => (lines.push(s), true) },
-    });
-    await p.embedQuery('x');
-    expect(lines).toEqual([
-      'neuro-vault-mcp: shared embedding daemon unavailable (no CLI script path); ' +
-        'embedding in-process for this session\n',
-    ]);
   });
 });

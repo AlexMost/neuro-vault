@@ -95,7 +95,7 @@ The global `--no-semantic` flag outranks this: it turns the semantic module off 
 
 **First startup is slow** — the embedding model is downloading (`granite-97m` ≈ 98 MB, `harrier-270m` ≈ 344 MB, `harrier-0.6b` ≈ 706 MB) into `~/.cache/neuro-vault/models` (or `$XDG_CACHE_HOME/neuro-vault/models`). Subsequent starts use the cached model. The first index of a vault then takes minutes, longer with the larger models ([cost per model](./embedding-models.md#the-profiles)).
 
-**`shared embedding daemon unavailable (…); embedding in-process for this session`** on stderr — the session could not reach or start the shared daemon, so it loaded the model itself, exactly as with `--no-shared`. Everything still works; the session just holds its own copy of the model. The reason is in the parentheses, and the daemon's own output is in the `daemon.log` the line names: its start line, each model it loaded and how long that took, and each load or embedding failure with its message. Common causes:
+**`shared daemon unavailable (…); running in-process for this session`** on stderr — the session could not reach or start the shared daemon, so it loaded the model itself, exactly as with `--no-shared`. Everything still works; the session just holds its own copy of the model. The reason is in the parentheses, and the daemon's own output is in the `daemon.log` the line names: its start line, each model it loaded and how long that took, and each load or embedding failure with its message. Common causes:
 
 - running from source (`npm run dev`, which never starts a daemon);
 - `/tmp/neuro-vault-<uid>` belonging to another user, or being a symlink: delete it if it is stale;

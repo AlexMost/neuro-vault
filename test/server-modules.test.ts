@@ -250,7 +250,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
     expect(initialize).toHaveBeenCalled();
   });
 
-  it('closes the embedding provider when it disposes, so a pending daemon request cannot hold the process', async () => {
+  it('closes the shared services when it disposes, so a pending daemon request cannot hold the process', async () => {
     const vaultPath = await createTempVaultPath();
     const close = vi.fn();
     const provider = {
@@ -259,6 +259,11 @@ describe('Neuro Vault MCP server bootstrap', () => {
       initialize: vi.fn(async () => {}),
       embedQuery: vi.fn(),
       embedDocuments: vi.fn(),
+    };
+    const sharedServices = {
+      mode: 'daemon' as const,
+      connection: {} as never,
+      ensure: vi.fn(),
       close,
     };
     const dispose = await startNeuroVaultServer(
@@ -268,6 +273,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
       },
       {
         embeddingProvider: provider,
+        sharedServices,
         vaultEntryDeps: {
           semanticBackendFactory: () => ({
             snapshot: () => Promise.reject(new Error('unused')),

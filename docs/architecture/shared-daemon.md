@@ -250,7 +250,7 @@ A request that runs out rejects with an error naming the method. The connection 
 On it, the facade builds an in-process `EmbeddingService` for the same profile and writes one stderr line:
 
 ```
-neuro-vault-mcp: shared embedding daemon unavailable (<reason>); embedding in-process for this session — see <daemon.log>
+neuro-vault-mcp: shared daemon unavailable (<reason>); running in-process for this session — see <daemon.log>
 ```
 
 The `— see <daemon.log>` part is left out when the session never identified its build (no CLI path, or one it could not stat), because then there is no key and no log to name.

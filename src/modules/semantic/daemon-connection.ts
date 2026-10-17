@@ -435,9 +435,11 @@ export class DaemonConnection {
     this.timers.clearTimeout(entry.timer);
     this.refWhilePending(socket);
     if (isJSONRPCErrorResponse(message)) {
-      const data = message.error.data as { code?: unknown } | undefined;
-      const code = typeof data?.code === 'string' ? (data.code as DaemonErrorCode) : 'INTERNAL';
-      entry.reject(new DaemonRpcError(code, message.error.message));
+      const { code: wireCode, ...extra } = (message.error.data ?? {}) as { code?: unknown };
+      const code = typeof wireCode === 'string' ? (wireCode as DaemonErrorCode) : 'INTERNAL';
+      // Everything beside `code` (a `CORPUS_NOT_READY` carries the status) reaches the caller.
+      const data = Object.keys(extra).length > 0 ? extra : undefined;
+      entry.reject(new DaemonRpcError(code, message.error.message, data));
     } else {
       entry.resolve(message.result);
     }

@@ -80,11 +80,6 @@ export interface EmbeddingProvider extends QueryEmbedder {
   readonly maxBatchSize: number;
   /** Embeds document texts (no query prefix), vectors in input order. */
   embedDocuments(texts: string[]): Promise<number[][]>;
-  /**
-   * Releases a connection the provider holds, rejecting what is pending on
-   * it. Optional: the in-process provider holds none.
-   */
-  close?(): void;
 }
 
 export interface SearchEngine {

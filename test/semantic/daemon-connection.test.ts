@@ -416,6 +416,29 @@ describe('DaemonConnection — requests', () => {
     await expect(pending).rejects.toMatchObject({ code: 'EMBED_FAILED', message: 'no weights' });
   });
 
+  it('rejects with DaemonRpcError carrying the rest of error.data', async () => {
+    const d = deps({
+      connect: vi.fn(async () =>
+        fakeSocket((m) => ({
+          jsonrpc: '2.0',
+          id: m.id,
+          error: {
+            code: -32603,
+            message: 'not ready',
+            data: { code: 'CORPUS_NOT_READY', status: { state: 'indexing' } },
+          },
+        })),
+      ),
+    });
+    const pending = (await connected(d)).request('corpus.nearest', {}, 1000);
+    await expect(pending).rejects.toMatchObject({
+      code: 'CORPUS_NOT_READY',
+      data: { status: { state: 'indexing' } },
+    });
+    const error = await pending.catch((e: unknown) => e);
+    expect((error as DaemonRpcError).data).not.toHaveProperty('code');
+  });
+
   it('reads an error without data.code as INTERNAL', async () => {
     const d = deps({
       connect: vi.fn(async () =>

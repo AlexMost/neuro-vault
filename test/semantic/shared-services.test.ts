@@ -1,0 +1,136 @@
+import { Duplex } from 'node:stream';
+
+import { describe, expect, it, vi } from 'vitest';
+
+import { daemonPaths } from '../../src/daemon/paths.js';
+import { DaemonConnectionError } from '../../src/modules/semantic/daemon-connection.js';
+import { createSharedServices } from '../../src/modules/semantic/shared-services.js';
+
+function errno(code: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(code), { code });
+}
+
+function socket(): Duplex {
+  return new Duplex({ read() {}, write: (_c, _e, cb) => cb() });
+}
+
+const baseOptions = {
+  shared: true,
+  cliPath: '/opt/nv/dist/cli.js',
+  version: '18.0.0',
+  env: { XDG_CACHE_HOME: '/xdg' },
+  home: '/home/u',
+  uid: 501,
+  platform: 'linux' as const,
+  build: () => ({ size: 10, mtimeMs: 20 }),
+};
+
+const expectedLog = daemonPaths({
+  version: '18.0.0',
+  build: { size: 10, mtimeMs: 20 },
+  uid: 501,
+  platform: 'linux',
+  cacheBase: '/xdg/neuro-vault',
+}).logFile;
+
+describe('createSharedServices', () => {
+  it('writes one stderr line when two facades both find the daemon unavailable', async () => {
+    const lines: string[] = [];
+    const io = {
+      ensureSocketDir: vi.fn(),
+      connect: vi.fn(async () => {
+        throw errno('ENOENT');
+      }),
+      spawn: vi.fn(() => {
+        throw new Error('spawn denied');
+      }),
+      openLog: vi.fn(() => 9),
+      closeFd: vi.fn(),
+      mkdirp: vi.fn(),
+    };
+    const services = createSharedServices({
+      ...baseOptions,
+      stderr: { write: (s) => (lines.push(s), true) },
+      io,
+    });
+    expect(services.mode).toBe('pending');
+
+    const answers = await Promise.all([services.ensure(), services.ensure()]);
+    expect(answers).toEqual(['local', 'local']);
+    expect(services.mode).toBe('local');
+    await expect(services.ensure()).resolves.toBe('local');
+
+    expect(lines).toEqual([
+      'neuro-vault-mcp: shared daemon unavailable (could not start the daemon: spawn denied); ' +
+        `running in-process for this session — see ${expectedLog}\n`,
+    ]);
+    // The switch is one-way: the daemon is never touched again.
+    expect(io.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('names no log when the CLI script path is unknown', async () => {
+    const lines: string[] = [];
+    const services = createSharedServices({
+      shared: true,
+      stderr: { write: (s) => (lines.push(s), true) },
+    });
+    await expect(services.ensure()).resolves.toBe('local');
+    expect(lines).toEqual([
+      'neuro-vault-mcp: shared daemon unavailable (no CLI script path to key it by); ' +
+        'running in-process for this session\n',
+    ]);
+  });
+
+  it('stays on the daemon after a connection error and reconnects on the next ensure', async () => {
+    const lines: string[] = [];
+    const first = socket();
+    const io = {
+      ensureSocketDir: vi.fn(),
+      connect: vi.fn().mockResolvedValueOnce(first).mockResolvedValue(socket()),
+      spawn: vi.fn(),
+    };
+    const services = createSharedServices({
+      ...baseOptions,
+      stderr: { write: (s) => (lines.push(s), true) },
+      io,
+    });
+    await expect(services.ensure()).resolves.toBe('daemon');
+    expect(services.mode).toBe('daemon');
+
+    const request = services.connection.request('embed.query', {}, 1000);
+    first.destroy();
+    await expect(request).rejects.toBeInstanceOf(DaemonConnectionError);
+
+    await expect(services.ensure()).resolves.toBe('daemon');
+    expect(services.mode).toBe('daemon');
+    expect(io.connect).toHaveBeenCalledTimes(2);
+    expect(lines).toEqual([]);
+  });
+
+  it('is local from the start, with no line and no connection, when not shared', async () => {
+    const lines: string[] = [];
+    const io = { connect: vi.fn(), spawn: vi.fn(), ensureSocketDir: vi.fn() };
+    const services = createSharedServices({
+      shared: false,
+      cliPath: '/opt/nv/dist/cli.js',
+      stderr: { write: (s) => (lines.push(s), true) },
+      io,
+    });
+    expect(services.mode).toBe('local');
+    await expect(services.ensure()).resolves.toBe('local');
+    expect(lines).toEqual([]);
+    expect(io.connect).not.toHaveBeenCalled();
+    expect(io.spawn).not.toHaveBeenCalled();
+  });
+
+  it('close() drops the connection', async () => {
+    const s = socket();
+    const services = createSharedServices({
+      ...baseOptions,
+      io: { ensureSocketDir: vi.fn(), connect: vi.fn(async () => s), spawn: vi.fn() },
+    });
+    await services.ensure();
+    services.close();
+    expect(s.destroyed).toBe(true);
+  });
+});

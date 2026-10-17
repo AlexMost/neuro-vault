@@ -10,6 +10,7 @@ import {
   resolveModelProfile,
 } from '../../src/lib/model-profiles.js';
 import { createEmbeddingProvider } from '../../src/modules/semantic/provider-factory.js';
+import { createSharedServices } from '../../src/modules/semantic/shared-services.js';
 
 function errno(code: string): NodeJS.ErrnoException {
   return Object.assign(new Error(code), { code });
@@ -228,5 +229,39 @@ describe('createEmbeddingProvider', () => {
     });
     await expect(provider.initialize()).rejects.toThrow('local load reached');
     expect(lines).toHaveLength(1);
+  });
+
+  it('shares one connection and one fallback line between providers over the same services', async () => {
+    const lines: string[] = [];
+    const loader = vi.fn<LocalModelLoader>().mockRejectedValue(new Error('local load reached'));
+    const io = {
+      ensureSocketDir: vi.fn(),
+      connect: vi.fn(async () => {
+        throw errno('ENOENT');
+      }),
+      spawn: vi.fn(),
+      openLog: vi.fn(() => {
+        throw errno('EROFS');
+      }),
+      mkdirp: vi.fn(),
+    };
+    const services = createSharedServices({
+      shared: true,
+      cliPath: '/opt/nv/dist/cli.js',
+      platform: 'linux',
+      stderr: { write: (s) => (lines.push(s), true) },
+      build: () => ({ size: 10, mtimeMs: 20 }),
+      io,
+    });
+    const opts = { profile, shared: true, loader };
+    const first = createEmbeddingProvider(opts, services);
+    const second = createEmbeddingProvider(opts, services);
+
+    await expect(first.initialize()).rejects.toThrow('local load reached');
+    await expect(second.initialize()).rejects.toThrow('local load reached');
+    expect(lines).toHaveLength(1);
+    expect(io.connect).toHaveBeenCalledTimes(1);
+    // The switch is decided: a provider built afterwards is in-process at once.
+    expect(createEmbeddingProvider(opts, services)).toBeInstanceOf(EmbeddingService);
   });
 });

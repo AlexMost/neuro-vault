@@ -8,6 +8,7 @@ import {
 } from './modules/semantic/index.js';
 import { createQueuedEmbedder, type QueuedEmbedder } from './modules/semantic/embed-queue.js';
 import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
+import { createSharedServices, type ISharedServices } from './modules/semantic/shared-services.js';
 import type { EmbeddingProvider } from './modules/semantic/types.js';
 import { createOwnCorpusBackendFactory } from './modules/semantic/backend/index.js';
 import { corpusIdentityOf, type CorpusIdentity } from './lib/obsidian/corpus/identity.js';
@@ -54,6 +55,8 @@ export interface NeuroVaultStartupDependencies {
   cliPath?: string;
   /** Replaces the provider the factory would build. For tests. */
   embeddingProvider?: EmbeddingProvider;
+  /** Replaces the process's daemon connection and fallback switch. For tests. */
+  sharedServices?: ISharedServices;
 }
 
 /**
@@ -133,14 +136,13 @@ export async function startNeuroVaultServer(
   // default the model itself lives in the shared daemon and this queue sits in
   // front of the facade; the daemon's own per-profile queue orders requests
   // across sessions.
+  const shared = config.semantic.shared;
+  const services =
+    deps.sharedServices ??
+    createSharedServices({ shared, cliPath: deps.cliPath, version: SERVER_VERSION });
   const provider =
     deps.embeddingProvider ??
-    createEmbeddingProvider({
-      profile: config.semantic.model,
-      shared: config.semantic.shared,
-      cliPath: deps.cliPath,
-      version: SERVER_VERSION,
-    });
+    createEmbeddingProvider({ profile: config.semantic.model, shared }, services);
   const embedder = createQueuedEmbedder(provider);
   const identity = corpusIdentityOf(provider.identity);
 
@@ -215,7 +217,7 @@ export async function startNeuroVaultServer(
    */
   const dispose = async (): Promise<void> => {
     // A request pending on the shared daemon would hold the event loop open.
-    provider.close?.();
+    services.close();
     // `async` per entry so a backend whose `dispose()` throws synchronously
     // becomes one settled rejection rather than blowing up the whole map.
     const results = await Promise.allSettled(

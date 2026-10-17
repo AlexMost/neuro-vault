@@ -4,9 +4,8 @@ import type {
   EmbedQueryResult,
 } from '../../daemon/protocol.js';
 import type { EmbeddingIdentity } from '../../lib/obsidian/corpus/types.js';
-import { packageMeta } from '../../package-meta.js';
 
-import { DaemonUnavailableError } from './daemon-connection.js';
+import type { ISharedServices } from './shared-services.js';
 import { identityOf, type ModelProfile } from '../../lib/model-profiles.js';
 import type { EmbeddingProvider } from './types.js';
 
@@ -17,7 +16,7 @@ export const REQUEST_TIMEOUTS = {
   documents: 300_000,
 } as const;
 
-/** What the facade needs from a connection — `DaemonConnection` in production. */
+/** What the facades need from a connection — `DaemonConnection` in production. */
 export interface DaemonLink {
   /** Changes on every new connection; `embed.initialize` is re-sent once per value. */
   readonly epoch: number;
@@ -31,14 +30,12 @@ export interface DaemonLink {
 
 export interface DaemonEmbeddingProviderDeps {
   profile: ModelProfile;
-  connection: DaemonLink;
+  /** The process's connection and one-way switch, shared with the corpus reads. */
+  services: ISharedServices;
   /** The in-process provider, built only if the daemon is unavailable. */
   createFallback: () => EmbeddingProvider;
   /** `maxBatchSize` until the daemon reports its own. */
   initialMaxBatchSize: number;
-  stderr: { write(chunk: string): boolean };
-  /** Named in the fallback line; absent when the build could not be identified. */
-  logFile?: string;
 }
 
 function isPositiveInteger(value: unknown): value is number {
@@ -56,13 +53,14 @@ function isPositiveInteger(value: unknown): value is number {
  * call: it makes the connection one of the daemon's clients at once (which
  * holds off its idle exit), loads the profile, and refreshes the batch size.
  *
- * Fallback is a one-way switch per process. Once the daemon could not be
- * located or started (`DaemonUnavailableError`), this process embeds in-process
- * for the rest of its life, says so in one stderr line, and never touches the
- * connection again. A daemon that answers with an error — `EMBED_FAILED` for a
- * model that will not load, a timeout, a dropped connection — is *not* that
- * case: the error reaches the caller like a local load failure would, and the
- * next call goes through the daemon again.
+ * Fallback is the services' one-way switch per process (design D11). Once the
+ * daemon could not be located or started, `services.ensure()` answers `local`
+ * for the rest of the process's life — it has said so in one stderr line and
+ * never touches the connection again — and this facade embeds through its own
+ * in-process provider, built on first use. A daemon that answers with an error
+ * — `EMBED_FAILED` for a model that will not load, a timeout, a dropped
+ * connection — is *not* that case: the error reaches the caller like a local
+ * load failure would, and the next call goes through the daemon again.
  */
 export class DaemonEmbeddingProvider implements EmbeddingProvider {
   readonly identity: EmbeddingIdentity;
@@ -90,7 +88,7 @@ export class DaemonEmbeddingProvider implements EmbeddingProvider {
   embedQuery(text: string): Promise<number[]> {
     return this.run(
       async () => {
-        const { vector } = await this.deps.connection.request<EmbedQueryResult>(
+        const { vector } = await this.deps.services.connection.request<EmbedQueryResult>(
           'embed.query',
           { profile: this.deps.profile.key, text },
           REQUEST_TIMEOUTS.query,
@@ -111,7 +109,7 @@ export class DaemonEmbeddingProvider implements EmbeddingProvider {
         for (let start = 0; start < texts.length; ) {
           const chunk = texts.slice(start, start + this.daemonBatchSize);
           start += chunk.length;
-          const result = await this.deps.connection.request<EmbedDocumentsResult>(
+          const result = await this.deps.services.connection.request<EmbedDocumentsResult>(
             'embed.documents',
             { profile: this.deps.profile.key, texts: chunk },
             REQUEST_TIMEOUTS.documents,
@@ -130,36 +128,22 @@ export class DaemonEmbeddingProvider implements EmbeddingProvider {
     );
   }
 
-  /**
-   * Called by the server when its client hangs up: a request still pending on
-   * the daemon (a cold `embed.initialize` can take minutes) must not keep the
-   * process alive. A fallback holds no connection and is left alone.
-   */
-  close(): void {
-    this.deps.connection.close();
-  }
-
   private async run<T>(
     viaDaemon: () => Promise<T>,
     viaFallback: (provider: EmbeddingProvider) => Promise<T>,
   ): Promise<T> {
     if (this.fallback) return viaFallback(this.fallback);
-    try {
-      await this.deps.connection.ensure();
-      await this.handshake();
-      return await viaDaemon();
-    } catch (error) {
-      // Only `ensure()` raises it, before this call wrote anything to the daemon.
-      if (!(error instanceof DaemonUnavailableError)) throw error;
-      return viaFallback(this.switchToFallback(error));
-    }
+    // The switch is the services': it flips once for every facade of the process.
+    if ((await this.deps.services.ensure()) === 'local') return viaFallback(this.localProvider());
+    await this.handshake();
+    return viaDaemon();
   }
 
   /** `embed.initialize` once per connection; concurrent callers share it. */
   private handshake(): Promise<void> {
-    const epoch = this.deps.connection.epoch;
+    const epoch = this.deps.services.connection.epoch;
     if (this.handshakeEpoch === epoch) return Promise.resolve();
-    this.handshaking ??= this.deps.connection
+    this.handshaking ??= this.deps.services.connection
       .request<EmbedInitializeResult>(
         'embed.initialize',
         { profile: this.deps.profile.key },
@@ -175,15 +159,8 @@ export class DaemonEmbeddingProvider implements EmbeddingProvider {
     return this.handshaking;
   }
 
-  private switchToFallback(error: DaemonUnavailableError): EmbeddingProvider {
-    if (!this.fallback) {
-      this.fallback = this.deps.createFallback();
-      const log = this.deps.logFile === undefined ? '' : ` — see ${this.deps.logFile}`;
-      this.deps.stderr.write(
-        `${packageMeta.name}: shared embedding daemon unavailable (${error.message}); ` +
-          `embedding in-process for this session${log}\n`,
-      );
-    }
+  private localProvider(): EmbeddingProvider {
+    this.fallback ??= this.deps.createFallback();
     return this.fallback;
   }
 }
