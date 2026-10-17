@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 import { resolveVault, resolveSemanticVault } from '../../src/lib/resolve-vault.js';
-import type { IVaultEntry, IVaultRegistry } from '../../src/lib/vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from '../../src/lib/vault-registry.js';
 import type { SemanticBackend } from '../../src/lib/obsidian/semantic-backend.js';
 
-function makeRegistry(entries: Partial<IVaultEntry>[]): IVaultRegistry {
-  const list = entries.map((e) => ({ readConventions: async () => null, ...e }) as IVaultEntry);
+function makeRegistry(entries: Partial<IRegisteredVault>[]): IVaultRegistry {
+  const list = entries.map(
+    (e) => ({ readConventions: async () => null, ...e }) as IRegisteredVault,
+  );
   const byName = new Map(list.map((e) => [e.name, e]));
   return {
     get: (n) => byName.get(n),

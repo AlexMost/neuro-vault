@@ -11,7 +11,7 @@ import type { IVaultConfig } from '../types.js';
 /** Filter vault-relative note paths down to those present on disk. */
 export type FilterExistingPaths = (paths: Iterable<string>) => Promise<Set<string>>;
 
-export interface IVaultEntry {
+export interface IRegisteredVault {
   name: string;
   path: string;
   /**
@@ -52,7 +52,7 @@ export interface IVaultEntry {
   backend?: SemanticBackend;
 }
 
-export interface IVaultEntryDeps {
+export interface IRegisteredVaultDeps {
   readerFactory: (opts: { vaultRoot: string; scope: VaultScope }) => VaultReader;
   vaultConfigFactory: (opts: { vaultRoot: string }) => Promise<VaultConfigFile>;
   scopeFactory: (opts: { vaultRoot: string; config: VaultConfigFile }) => Promise<VaultScope>;
@@ -88,9 +88,9 @@ export interface IVaultRegistryConfig {
  * {@link VaultRegistry}.
  */
 export interface IVaultRegistry {
-  get(name: string): IVaultEntry | undefined;
-  require(name: string): IVaultEntry;
-  list(): IVaultEntry[];
+  get(name: string): IRegisteredVault | undefined;
+  require(name: string): IRegisteredVault;
+  list(): IRegisteredVault[];
   isMulti(): boolean;
   names(): string[];
 }
@@ -107,14 +107,17 @@ export class VaultRegistry implements IVaultRegistry {
   // (error details, fan-out group keys, instructions). Lookup itself is
   // case-insensitive so a caller passing "obsidian" hits the entry registered
   // as "Obsidian".
-  private readonly byName: Map<string, IVaultEntry>;
+  private readonly byName: Map<string, IRegisteredVault>;
 
-  private constructor(private readonly entries: ReadonlyArray<IVaultEntry>) {
+  private constructor(private readonly entries: ReadonlyArray<IRegisteredVault>) {
     this.byName = new Map(entries.map((e) => [e.name.toLowerCase(), e]));
   }
 
-  static async create(config: IVaultRegistryConfig, deps: IVaultEntryDeps): Promise<VaultRegistry> {
-    const entries: IVaultEntry[] = [];
+  static async create(
+    config: IVaultRegistryConfig,
+    deps: IRegisteredVaultDeps,
+  ): Promise<VaultRegistry> {
+    const entries: IRegisteredVault[] = [];
     for (const v of config.vaults) {
       const vaultConfig = await deps.vaultConfigFactory({ vaultRoot: v.path });
       const scope = await deps.scopeFactory({ vaultRoot: v.path, config: vaultConfig });
@@ -159,11 +162,11 @@ export class VaultRegistry implements IVaultRegistry {
     return new VaultRegistry(entries);
   }
 
-  get(name: string): IVaultEntry | undefined {
+  get(name: string): IRegisteredVault | undefined {
     return this.byName.get(name.toLowerCase());
   }
 
-  require(name: string): IVaultEntry {
+  require(name: string): IRegisteredVault {
     const entry = this.byName.get(name.toLowerCase());
     if (entry) return entry;
     throw new ToolHandlerError('VAULT_NOT_FOUND', `Vault "${name}" is not registered`, {
@@ -171,7 +174,7 @@ export class VaultRegistry implements IVaultRegistry {
     });
   }
 
-  list(): IVaultEntry[] {
+  list(): IRegisteredVault[] {
     return [...this.entries];
   }
 

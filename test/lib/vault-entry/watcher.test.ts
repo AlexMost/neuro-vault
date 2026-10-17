@@ -1,24 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createVaultScope } from '../../../src/lib/obsidian/vault-scope.js';
 import {
-  isIgnoredPath,
-  isMarkdownPath,
+  isPrunedDir,
+  isWatchedNote,
   startVaultWatcher,
-} from '../../../src/modules/semantic/backend/vault-watcher.js';
+  vaultRelative,
+} from '../../../src/lib/vault-entry/watcher.js';
+
+const scope = createVaultScope({ configExclusions: ['Archive'] });
+const oneLevelScope = createVaultScope({ configExclusions: ['Archive/*'] });
 
 function fakeWatcherFactory() {
-  const handles: Array<{ fire: () => void; fail: (e: unknown) => void; closed: boolean }> = [];
+  const handles: Array<{
+    fire: () => void;
+    fail: (e: unknown) => void;
+    closed: boolean;
+    scope: unknown;
+  }> = [];
   const factory = ({
     onChange,
     onError,
+    scope,
   }: {
     onChange: () => void;
     onError: (e: unknown) => void;
+    scope: unknown;
   }) => {
     const handle = {
       fire: onChange,
       fail: onError,
       closed: false,
+      scope,
       close: async () => {
         handle.closed = true;
       },
@@ -29,35 +42,78 @@ function fakeWatcherFactory() {
   return { factory, handles };
 }
 
-describe('isIgnoredPath', () => {
-  it("ignores the server's own corpus writes under the vault root", () => {
-    expect(isIgnoredPath('/vault', '/vault/.neuro-vault/corpus/x.json')).toBe(true);
+describe('vaultRelative', () => {
+  it('judges a path relative to the vault root with / separators', () => {
+    expect(vaultRelative('/vault', '/vault/Archive/n.md')).toBe('Archive/n.md');
   });
 
-  it('does not ignore an ordinary note under the vault root', () => {
-    expect(isIgnoredPath('/vault', '/vault/notes/a.md')).toBe(false);
+  it('converts Windows separators', () => {
+    expect(vaultRelative('C:\\vault', 'C:\\vault\\Archive\\n.md')).toBe('Archive/n.md');
   });
 
-  it('does not ignore a vault nested under an unrelated dot-directory', () => {
-    expect(isIgnoredPath('/Users/x/.sync/vault', '/Users/x/.sync/vault/notes/a.md')).toBe(false);
-  });
-
-  it('ignores an in-flight temp file inside the vault', () => {
-    expect(isIgnoredPath('/vault', '/vault/notes/a.md.tmp')).toBe(true);
-  });
-
-  it('does not ignore the vault root itself', () => {
-    expect(isIgnoredPath('/vault', '/vault')).toBe(false);
+  it('returns an empty string for the root itself', () => {
+    expect(vaultRelative('/vault', '/vault')).toBe('');
   });
 });
 
-describe('isMarkdownPath', () => {
-  it('accepts .md paths', () => {
-    expect(isMarkdownPath('/vault/notes/a.md')).toBe(true);
+describe('isWatchedNote', () => {
+  it('accepts an in-scope .md', () => {
+    expect(isWatchedNote(scope, '/vault', '/vault/Notes/a.md')).toBe(true);
   });
 
-  it('rejects non-.md paths', () => {
-    expect(isMarkdownPath('/vault/notes/a.txt')).toBe(false);
+  it('rejects a .md under an excluded subtree', () => {
+    expect(isWatchedNote(scope, '/vault', '/vault/Archive/a.md')).toBe(false);
+  });
+
+  it('rejects a non-.md path', () => {
+    expect(isWatchedNote(scope, '/vault', '/vault/Notes/a.txt')).toBe(false);
+  });
+
+  it('rejects a .md under a dot directory', () => {
+    expect(isWatchedNote(scope, '/vault', '/vault/Notes/.trash/x.md')).toBe(false);
+  });
+
+  it("ignores the server's own corpus writes", () => {
+    expect(isWatchedNote(scope, '/vault', '/vault/.neuro-vault/corpus/x.md')).toBe(false);
+  });
+
+  it('keeps a note two levels under a one-level glob', () => {
+    expect(isWatchedNote(oneLevelScope, '/vault', '/vault/Archive/2024/x.md')).toBe(true);
+  });
+
+  it('judges a Windows path as its vault-relative form', () => {
+    expect(isWatchedNote(scope, 'C:\\vault', 'C:\\vault\\Archive\\note.md')).toBe(false);
+  });
+});
+
+describe('isPrunedDir', () => {
+  it('prunes a provably excluded subtree', () => {
+    expect(isPrunedDir(scope, '/vault', '/vault/Archive')).toBe(true);
+    expect(isPrunedDir(scope, '/vault', '/vault/Archive/2024')).toBe(true);
+  });
+
+  it('prunes a dot directory inside the vault', () => {
+    expect(isPrunedDir(scope, '/vault', '/vault/.neuro-vault')).toBe(true);
+  });
+
+  it('does not prune a one-level glob, whose deeper notes stay in scope', () => {
+    expect(isPrunedDir(oneLevelScope, '/vault', '/vault/Archive')).toBe(false);
+    expect(isPrunedDir(oneLevelScope, '/vault', '/vault/Archive/2024')).toBe(false);
+  });
+
+  it('does not prune an ordinary directory', () => {
+    expect(isPrunedDir(scope, '/vault', '/vault/Notes')).toBe(false);
+  });
+
+  it('never prunes the vault root', () => {
+    expect(isPrunedDir(scope, '/vault', '/vault')).toBe(false);
+  });
+
+  it('does not prune a vault nested under an unrelated dot-directory', () => {
+    const root = '/home/u/.sync/vault';
+    expect(isPrunedDir(scope, root, root)).toBe(false);
+    expect(isPrunedDir(scope, root, `${root}/Notes`)).toBe(false);
+    expect(isPrunedDir(scope, root, `${root}/Archive`)).toBe(true);
   });
 });
 
@@ -72,6 +128,7 @@ describe('startVaultWatcher', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       onQuiet,
+      scope,
       createWatcher: factory,
       debounceMs: 100,
     });
@@ -84,6 +141,18 @@ describe('startVaultWatcher', () => {
     expect(onQuiet).toHaveBeenCalledTimes(1);
   });
 
+  it('hands the scope to the watcher factory', () => {
+    const { factory, handles } = fakeWatcherFactory();
+    startVaultWatcher({
+      vaultRoot: '/v',
+      vaultName: 'v',
+      onQuiet: vi.fn(),
+      scope,
+      createWatcher: factory,
+    });
+    expect(handles[0].scope).toBe(scope);
+  });
+
   it('warns and stays quiet when the watcher cannot start', () => {
     const warn = vi.fn();
     const onQuiet = vi.fn();
@@ -91,12 +160,13 @@ describe('startVaultWatcher', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       onQuiet,
+      scope,
       warn,
       createWatcher: () => {
         throw new Error('EMFILE');
       },
     });
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('EMFILE'));
+    expect(warn).toHaveBeenCalledWith('neuro-vault watcher: vault "v": failed to start: EMFILE');
     vi.advanceTimersByTime(60_000);
     expect(onQuiet).not.toHaveBeenCalled();
   });
@@ -108,11 +178,12 @@ describe('startVaultWatcher', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       onQuiet: vi.fn(),
+      scope,
       warn,
       createWatcher: factory,
     });
     handles[0].fail(new Error('ENOSPC'));
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('ENOSPC'));
+    expect(warn).toHaveBeenCalledWith('neuro-vault watcher: vault "v": ENOSPC');
   });
 
   it('close cancels a pending debounce and closes the watcher', async () => {
@@ -122,6 +193,7 @@ describe('startVaultWatcher', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       onQuiet,
+      scope,
       createWatcher: factory,
       debounceMs: 100,
     });
@@ -139,6 +211,7 @@ describe('startVaultWatcher', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       onQuiet,
+      scope,
       createWatcher: factory,
       debounceMs: 100,
     });
@@ -166,6 +239,7 @@ describe('startVaultWatcher', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       onQuiet,
+      scope,
       createWatcher: factory,
       debounceMs: 100,
       setTimer: setTimer as unknown as typeof setTimeout,
@@ -196,6 +270,7 @@ describe('startVaultWatcher', () => {
       vaultRoot: '/v',
       vaultName: 'v',
       onQuiet,
+      scope,
       warn,
       createWatcher: factory,
       debounceMs: 100,

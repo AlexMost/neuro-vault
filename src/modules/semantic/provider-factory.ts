@@ -17,7 +17,7 @@ import {
 import { DaemonEmbeddingProvider, type DaemonLink } from './daemon-embedding-provider.js';
 import { EmbeddingService, LOCAL_MAX_BATCH_SIZE } from './embedding-service.js';
 import type { LocalModelLoader } from './local-model-loader.js';
-import type { ModelProfile } from './model-profiles.js';
+import type { ModelProfile } from '../../lib/model-profiles.js';
 import type { EmbeddingProvider } from './types.js';
 
 /** The connection's I/O, replaceable by tests; everything else is derived. */

@@ -30,7 +30,7 @@ import type {
 } from '../../../src/modules/semantic/types.js';
 import { callTool } from '../../_gate.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
-import type { SimilarityDefaults } from '../../../src/modules/semantic/model-profiles.js';
+import type { SimilarityDefaults } from '../../../src/lib/model-profiles.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 
 export const MODEL_KEY = 'bge-micro-v2';

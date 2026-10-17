@@ -1,7 +1,7 @@
 import { formatIdentity, type CorpusIdentity } from '../src/lib/obsidian/corpus/identity.js';
 import { modelCorpusDir } from '../src/lib/obsidian/corpus/layout.js';
 import { listModelCorpora } from '../src/lib/obsidian/corpus/prune.js';
-import { CorpusStore, isManifestCompatible } from '../src/lib/obsidian/corpus/shard-store.js';
+import { ShardStore, isManifestCompatible } from '../src/lib/obsidian/corpus/shard-store.js';
 import { loadCorpusSnapshot } from '../src/lib/obsidian/corpus/snapshot.js';
 import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
 
@@ -24,7 +24,7 @@ export async function loadSnapshot(
 ): Promise<Map<string, SmartSource>> {
   const corpusDir = modelCorpusDir(vaultRoot, expected.model_key);
   const rebuild = `neuro-vault-mcp index --vault ${shellQuote(vaultRoot)} --model ${expected.model_key}`;
-  const store = new CorpusStore(vaultRoot, { modelKey: expected.model_key, dims: expected.dims });
+  const store = new ShardStore(vaultRoot, { modelKey: expected.model_key, dims: expected.dims });
   // Both refusals come before listing: shards of another width would each fail
   // validation loudly and decode to nothing, and vectors of another model can
   // share the width yet score as noise.

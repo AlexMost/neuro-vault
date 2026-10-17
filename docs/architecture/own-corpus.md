@@ -2,7 +2,7 @@
 
 The embedding corpus the server builds and owns: how a note becomes model inputs, where the vectors live, and how the corpus is kept in agreement with the vault. The decision behind it is [ADR-0013](../adr/0013-own-embedding-corpus.md), which supersedes the "the server never writes embeddings" half of [ADR-0006](../adr/0006-smart-connections-corpus.md).
 
-Keeping this corpus fresh once the server is running — the per-vault watcher, its debounce, and who calls `reconcileCorpus` — is not this file's concern. See [`semantic-backend.md`](./semantic-backend.md) and [ADR-0014](../adr/0014-background-corpus-freshness.md).
+Keeping this corpus fresh once the server is running — the per-vault watcher, its debounce, and who calls `reconcileCorpus` — is not this file's concern. See [`semantic-backend.md`](./semantic-backend.md) and [ADR-0014](../adr/0014-background-corpus-freshness.md); the daemon's shared version of the same loop, one per vault directory over many profiles, is [`vault-entry.md`](./vault-entry.md).
 
 ## What it is
 
@@ -13,8 +13,13 @@ The pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any im
 | `chunker.ts` | Splits a note into keyed blocks with line spans. |
 | `embed-text.ts` | Turns a note and its blocks into the exact strings sent to the model, and applies the size gate. |
 | `layout.ts` | The path vocabulary: the corpus root, one model's directory, the reconcile lock's name, and the rule for a legal directory name. |
-| `shard-store.ts` | Reads, writes, lists and deletes the shards and manifest of one model's directory; atomic writes; `.gitignore` upkeep. |
-| `reconcile.ts` | Brings one model's corpus into agreement with the vault. |
+| `shard-store.ts` | `ShardStore`: reads, writes, lists and deletes the shards and manifest of one model's directory; atomic writes; `.gitignore` upkeep. |
+| `ensure-dir.ts` | `ensureCorpusDir`: creates the directories a write needs without ever recreating the vault root (below). |
+| `corpus.ts` | The corpus interface: `ICorpusReader`, `ICorpusWriter`, `ICorpus` (below). |
+| `shard-corpus.ts` | `ShardCorpus`, the in-memory `ICorpus` over a `ShardStore`. |
+| `shard-writer.ts` | `shardWriter`, a disk-only `ICorpusWriter` over a `ShardStore`. |
+| `scoring.ts` | Cosine similarity and the ordering of ranked hits, shared by `ShardCorpus` and `SearchEngine`. |
+| `reconcile.ts` | Brings one model's corpus into agreement with the vault: `withReconcileLock` and `reconcileProfile`, composed by `reconcileCorpus`. |
 | `reconcile-lock.ts` | The per-vault cross-process lock a pass runs under. |
 | `legacy-migration.ts` | Moves a single-corpus layout into its model's directory. |
 | `prune.ts` | Lists the models whose corpora exist and removes the others (`index --prune`). |
@@ -113,6 +118,25 @@ Block entries without a vector are not written at all: in the replaced corpus tw
 
 The corpus lives inside the vault so it travels with it and multi-vault needs no extra bookkeeping. `.neuro-vault/corpus/` is a dot-path, so the vault scope excludes it unconditionally. On each run the indexer ensures the vault's root `.gitignore` ignores the corpus, appending one `.neuro-vault/corpus/` line when the file exists and does not already cover it. It never creates a `.gitignore`, never rewrites another line, and never ignores `.neuro-vault/` as a whole — other things under that directory are meant to be versioned. A failure warns on stderr and never fails indexing.
 
+## The corpus interface
+
+The shard files are the durable form; what reads and writes a model's corpus goes through an interface ([ADR-0019](../adr/0019-embedding-storage-interface.md)), declared in `corpus.ts`:
+
+- `ICorpusReader` — `nearest(anchors, { threshold, limit?, allowed?, exclude? })` and `nearestBlocks(anchors, { paths, threshold, limit? })`. An anchor is `{ vector }` or `{ path }`; one result list comes back per anchor, in order, and `null` for a path anchor whose note carries no vector. `allowed` and `exclude` apply before `limit`.
+- `ICorpusWriter` — what reconcile needs: `entries()` (a `Map` of path → `{ content_hash, mtime, size }`, no vectors), `upsert(record)`, `touch(path, stat)` (false when there is no record to touch), `delete(path)`, `identity()` (the stored manifest, or null), `ensureIdentity(expected)` (identity and reset composed: discards the whole corpus when the stored identity differs, and reports `{ rebuilt, previous }`) and `refresh()`.
+- `ICorpus` — both, plus `vectorOf(path)` and `dispose()`.
+
+Two implementations exist, both over a `ShardStore`:
+
+- **`ShardCorpus`** (`shard-corpus.ts`) is the corpus a shared process serves reads from. `load()` decodes every shard once into `Float32Array`s (yielding to the event loop every 256 notes) and swaps the result in whole, so a read racing the load sees the old corpus or the new, never a half. Each write goes to the shard file first and to memory only once that resolved, so memory never claims more than disk holds. `refresh()` is `load()` again, for a corpus whose shards another process changed; `size()` counts the notes that can rank. Ranking is the brute-force scan `SearchEngine` runs — the same `scoring.ts` cosine and the same ordering (similarity, then `localeCompare` on path) — so the results are identical, which a parity test pins.
+- **`shardWriter(store)`** (`shard-writer.ts`) is a `ICorpusWriter` and nothing else: every call goes to disk and nothing is held in memory (`refresh` is a no-op). It is what `reconcileCorpus` hands `reconcileProfile`, and so what `neuro-vault-mcp index` and the session's current backend run on; a run that reads nothing never decodes a corpus.
+
+`ShardStore` is the former `CorpusStore`, renamed when the interface took the name "corpus"; the one behavioural change is `ensureCorpusDir` below.
+
+### A deleted vault root is never recreated
+
+`ShardStore` writes, the reconcile lock and the legacy-corpus migration create directories lazily, and `mkdir -p` of `<vault>/.neuro-vault/corpus/…` after the vault directory was deleted (or its volume unmounted) would bring back an empty vault that the next scan reads as having no notes, whose shards the pass would then sweep. `ensureCorpusDir(metaDir, dir)` therefore creates `<vault>/.neuro-vault` **non-recursively** — `ENOENT` when the vault root is gone — and only what lies below it recursively. A mount point left behind as an empty directory still passes: it cannot be told from a vault with no notes (an accepted limitation, see [`vault-entry.md`](./vault-entry.md#a-deleted-vault-root-is-unavailable-not-an-empty-vault)).
+
 ## Atomic writes, and a corrupt shard is a missing shard
 
 Every shard and manifest write goes through `write-file-atomic` (temp file + rename), so a reader sees either the previous file or the complete new one. On the read side, a shard that fails to read, fails to parse, fails validation, carries a `path` that does not hash back to its filename, or holds a vector whose byte length disagrees with `dims × 4` reads as **absent** and is warned about — the note is simply re-embedded on the next pass. The note on disk is the ground truth, so no corpus damage is fatal.
@@ -121,15 +145,20 @@ The one case that throws instead is writing a vector of the wrong dimension: the
 
 ## Reconcile
 
-`reconcileCorpus(deps, opts)` takes ports — `scan`, `stat`, `readNote`, `embedDocuments`, a `CorpusStore` — and returns `{ total, embedded, reused, renamed, deleted, failed }`. In order:
+A pass is two functions composed (`reconcile.ts`), so one process can walk several models' corpora of a vault under a single acquisition of the lock:
 
-0. Take the vault's lock, then migrate a single-corpus layout (see [Concurrency](#concurrency-the-reconcile-lock) and [Migration](#migration-from-the-single-corpus-layout)). Everything below reads the corpus, so a pass that waited sees what the previous holder left.
-1. `ensureManifest` compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (every manifest field except `created`). A mismatch, or a missing manifest while shards exist, discards every shard of this model's directory and rebuilds it. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
-2. Take the scoped path set from `scan()` and the shard map from `listShards()`. Reconcile applies no exclusion rule of its own.
+- **`withReconcileLock(vaultRoot, opts, fn)`** takes the vault's lock, migrates a single-corpus layout (see [Concurrency](#concurrency-the-reconcile-lock) and [Migration](#migration-from-the-single-corpus-layout)), runs `fn({ waited })` and releases in a `finally`. `waited` tells `fn` whether another holder had the lock first; the result is `undefined` when the signal aborted before `fn` ran. Everything below reads the corpus, so a pass that waited sees what the previous holder left.
+- **`reconcileProfile(deps, corpus, paths, opts)`** is the per-note loop and orphan sweep for one model, over a `ICorpusWriter` and a path set the caller already scanned. It does not take the lock and does not write the `.gitignore` entry: its caller holds the lock and writes the entry once, after every profile has run.
+
+`reconcileCorpus(deps, opts)` is the composition `index` and the session's current backend use: `withReconcileLock`, one `scan()`, one `reconcileProfile` over `shardWriter(store)`, then the `.gitignore` entry. It takes ports — `scan`, `stat`, `readNote`, `embedDocuments`, a `ShardStore` — and returns `{ total, embedded, added, reused, renamed, deleted, failed }`; `added` is the part of `embedded` that had no record and was not a rename. The vault entry's reconcile loop ([`vault-entry.md`](./vault-entry.md)) calls `withReconcileLock` once, scans once and calls `reconcileProfile` per profile. In order:
+
+0. Take the vault's lock and migrate (`withReconcileLock`, above).
+1. `ensureIdentity` (`corpus.ensureIdentity(identity)`, first thing in `reconcileProfile`) compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (every manifest field except `created`). A mismatch, or a missing manifest while shards exist, discards every shard of this model's directory and rebuilds it. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
+2. Take the scoped path set from `scan()` (run once inside the lock, before `reconcileProfile`) and the records' metadata from `corpus.entries()`. Reconcile applies no exclusion rule of its own.
 3. Shards whose path is not in scope become deletion candidates, indexed by content hash — the only place a rename can be recognised.
 4. For each path in scope: equal `mtime` **and** `size` → reused, without opening the note. Otherwise read it; an equal `content_hash` → rewrite the shard's metadata and keep the vectors (**reused**); otherwise embed (**embedded**). A path with no shard whose hash matches a deletion candidate is a **rename**: the old shard is unlinked and the note is re-embedded under its new path.
 5. Every remaining deletion candidate is unlinked (**deleted**).
-6. Ensure the `.gitignore` entry.
+6. Ensure the `.gitignore` entry (the caller, once per pass).
 7. Release the lock, in a `finally`.
 
 Progress is reported once per processed note as `{ indexed, total }` counted in notes — the shape slice #3 (CLI progress) and slice #5 (`semantic_status`) consume unchanged. A failure to read, embed or store one note is counted in `failed`, warned on stderr, leaves that note's previous shard untouched, and never aborts the run.
@@ -187,4 +216,4 @@ A cold index is minutes for the two smaller profiles and over half an hour for `
 
 ## Boundaries
 
-This is an indexing library, not a runtime — `reconcileCorpus` takes ports and returns a summary; it starts nothing on its own and knows nothing about watchers, servers, or CLIs. Both of its callers live elsewhere: the `neuro-vault-mcp index` CLI runs it once per invocation, and the per-vault semantic backend runs it at startup and again on every debounced watcher tick — see [`semantic-backend.md`](./semantic-backend.md). Passes over one vault are serialised across processes by `reconcile.lock` (see [Concurrency](#concurrency-the-reconcile-lock)); sharing one reconcile or one watcher between processes is still out of scope, and is what the shared daemon (#145) is for.
+This is an indexing library, not a runtime — `reconcileCorpus`, `withReconcileLock` and `reconcileProfile` take ports and return a summary; they start nothing on their own and know nothing about watchers, servers, or CLIs. Their callers live elsewhere: the `neuro-vault-mcp index` CLI runs `reconcileCorpus` once per invocation, the per-vault semantic backend of a session runs it at startup and again on every debounced watcher tick ([`semantic-backend.md`](./semantic-backend.md)), and the daemon's vault entry runs the split form, one lock acquisition per pass over every attached profile ([`vault-entry.md`](./vault-entry.md)). Passes over one vault are serialised across processes by `reconcile.lock` (see [Concurrency](#concurrency-the-reconcile-lock)); sharing one watcher and one decoded corpus between sessions is the vault entry's job, not this library's.

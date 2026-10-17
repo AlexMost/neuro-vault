@@ -8,7 +8,7 @@ import { buildReconcileFsDeps } from './lib/obsidian/corpus/fs-deps.js';
 import { corpusRootOf } from './lib/obsidian/corpus/layout.js';
 import { pruneOtherCorpora } from './lib/obsidian/corpus/prune.js';
 import { acquireCorpusLock, describeHolder } from './lib/obsidian/corpus/reconcile-lock.js';
-import { CorpusStore } from './lib/obsidian/corpus/shard-store.js';
+import { ShardStore } from './lib/obsidian/corpus/shard-store.js';
 import { corpusIdentityOf, formatRebuild } from './lib/obsidian/corpus/identity.js';
 import {
   reconcileCorpus,
@@ -18,7 +18,7 @@ import {
 } from './lib/obsidian/corpus/reconcile.js';
 import type { EmbedDocumentsFn, EmbeddingIdentity } from './lib/obsidian/corpus/types.js';
 import { createQueuedEmbedder } from './modules/semantic/embed-queue.js';
-import type { ModelProfile } from './modules/semantic/model-profiles.js';
+import type { ModelProfile } from './lib/model-profiles.js';
 import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
 
 interface OutStream {
@@ -133,7 +133,7 @@ async function reconcileOne(
   const scope = await loadVaultScope(vault.path);
   const reader = new FsVaultReader({ vaultRoot: vault.path, scope });
   const identity = corpusIdentityOf(embedder.identity);
-  const store = new CorpusStore(vault.path, { modelKey: identity.model_key, dims: identity.dims });
+  const store = new ShardStore(vault.path, { modelKey: identity.model_key, dims: identity.dims });
   return reconcile(
     {
       ...buildReconcileFsDeps({ vaultRoot: vault.path, reader }),

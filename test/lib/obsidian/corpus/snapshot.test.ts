@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { loadCorpusSnapshot } from '../../../../src/lib/obsidian/corpus/snapshot.js';
 import { encodeVector } from '../../../../src/lib/obsidian/corpus/vector-codec.js';
 import type { CorpusShard } from '../../../../src/lib/obsidian/corpus/types.js';
-import type { CorpusStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
+import type { ShardStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
 
 function shard(
   path: string,
@@ -13,10 +13,10 @@ function shard(
   return { path, content_hash: 'h', mtime: 1, size: 1, embedding, blocks };
 }
 
-function storeWith(shards: CorpusShard[]): CorpusStore {
+function storeWith(shards: CorpusShard[]): ShardStore {
   return {
     listShards: async () => new Map(shards.map((s) => [s.path, s])),
-  } as unknown as CorpusStore;
+  } as unknown as ShardStore;
 }
 
 describe('loadCorpusSnapshot', () => {

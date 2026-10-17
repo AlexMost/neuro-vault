@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCorpusBackend } from '../../../src/modules/semantic/backend/corpus-backend.js';
 import { buildBasenameIndex } from '../../../src/lib/obsidian/link-resolver.js';
 import type { CorpusSnapshot } from '../../../src/lib/obsidian/semantic-backend.js';
-import { CorpusStore } from '../../../src/lib/obsidian/corpus/shard-store.js';
+import { ShardStore } from '../../../src/lib/obsidian/corpus/shard-store.js';
 import {
   reconcileCorpus,
   type ReconcileSummary,
@@ -44,11 +44,11 @@ function snapshotWith(paths: string[]): CorpusSnapshot {
 }
 
 function summary(over: Partial<ReconcileSummary> = {}): ReconcileSummary {
-  return { total: 1, embedded: 0, reused: 1, renamed: 0, deleted: 0, failed: 0, ...over };
+  return { total: 1, embedded: 0, added: 0, reused: 1, renamed: 0, deleted: 0, failed: 0, ...over };
 }
 
 /** A store whose manifest and shard count are set per test. */
-function fakeStore(opts: { compatible: boolean; shards: number }): CorpusStore {
+function fakeStore(opts: { compatible: boolean; shards: number }): ShardStore {
   return {
     readManifest: async () =>
       opts.compatible
@@ -56,7 +56,7 @@ function fakeStore(opts: { compatible: boolean; shards: number }): CorpusStore {
         : { ...TEST_IDENTITY, model_key: 'other', embed_version: 99, created: 'now' },
     listShards: async () =>
       new Map(Array.from({ length: opts.shards }, (_, i) => [`n${i}.md`, {}])) as never,
-  } as unknown as CorpusStore;
+  } as unknown as ShardStore;
 }
 
 describe('createCorpusBackend', () => {
@@ -173,7 +173,7 @@ describe('createCorpusBackend', () => {
       store: {
         readManifest: () => Promise.reject(new Error('EIO')),
         listShards: () => Promise.reject(new Error('EIO')),
-      } as unknown as CorpusStore,
+      } as unknown as ShardStore,
       loadSnapshot: async () => snapshotWith(['a.md']),
       // The repairing pass is exactly the one that finds nothing to do.
       reconcile: async () => summary(),
@@ -507,7 +507,7 @@ describe('createCorpusBackend over a real reconcile', () => {
   /** A cold vault on disk, wired to the production reconcile/store/loader. */
   async function coldVault(files: Record<string, string>) {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-'));
-    const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+    const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
     // Swapped per pass, so a vault that recovers can be exercised too.
     let embed: EmbedDocumentsFn = () => {
       throw new Error('ONNX model failed to load');
@@ -635,7 +635,7 @@ describe('createCorpusBackend over a real reconcile', () => {
   it('reports ready when only some notes fail and the rest are served', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-backend-partial-'));
     try {
-      const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+      const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
       const files: Record<string, string> = { 'good.md': body('good'), 'bad.md': body('bad') };
       const backend = createCorpusBackend({
         vaultRoot: root,

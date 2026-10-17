@@ -16,6 +16,16 @@ export interface VaultScope {
   ignorePatterns: readonly string[];
   /** Authoritative membership test for a vault-relative POSIX path. */
   isExcluded(relPath: string): boolean;
+  /**
+   * Sound-but-incomplete prune test for a vault-relative directory: true only
+   * when every descendant is excluded, so a watcher may skip the subtree. A
+   * false answer says nothing — `Archive*` matches the directory name `Archive`
+   * but none of its descendants, so `isExcluded('Archive')` is true while
+   * `isSubtreeExcluded('Archive')` is false: the notes below it stay in scope.
+   * `isExcluded` stays authoritative for every file. The vault root (`''`) is
+   * never excluded.
+   */
+  isSubtreeExcluded(relDir: string): boolean;
 }
 
 export interface VaultScopeInput {
@@ -129,10 +139,27 @@ export function createVaultScope(input: VaultScopeInput = {}): VaultScope {
   ].filter(isUsableExclusionPattern);
 
   const matches = picomatch(patterns, { dot: true });
+  // A directory's whole subtree is excluded only under a `<prefix>/**` pattern:
+  // the directory, or an ancestor of it, matches the prefix. A pattern of any
+  // other shape (`Drafts/*`, `*.excalidraw.md`) leaves in-scope files below it
+  // possible, so it never prunes. An empty prefix (a bare `/**`) is dropped —
+  // picomatch throws on it.
+  const subtreePrefixes = patterns
+    .filter((p) => p.endsWith('/**'))
+    .map((p) => p.slice(0, -'/**'.length))
+    .filter((prefix) => prefix !== '');
+  const subtreeMatches = picomatch(
+    subtreePrefixes.flatMap((prefix) => [prefix, `${prefix}/**`]),
+    { dot: true },
+  );
   return {
     ignorePatterns: Object.freeze([...patterns]),
     isExcluded(relPath: string): boolean {
       return hasDotSegment(relPath) || matches(relPath);
+    },
+    isSubtreeExcluded(relDir: string): boolean {
+      if (relDir === '') return false;
+      return hasDotSegment(relDir) || subtreeMatches(relDir);
     },
   };
 }

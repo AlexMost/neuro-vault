@@ -8,11 +8,13 @@ import {
   type JSONRPCMessage,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import type { IProfileInfo, IVaultInfo } from '../lib/vault-entry/index.js';
 import { packageMeta } from '../package-meta.js';
 
 import type { DaemonInfo } from './info.js';
 import { claimLock, defaultLockFs, parseHolder, type LockFs } from './lock.js';
-import { probeSocket, type SocketConnect, type Timers } from './probe.js';
+import type { Timers } from '../lib/timers.js';
+import { probeSocket, type SocketConnect } from './probe.js';
 import type { DaemonInfoResult } from './protocol.js';
 import type { SocketDirFs } from './socket-dir.js';
 
@@ -60,6 +62,7 @@ export interface AdminDeps {
   isAlive: (pid: number) => boolean;
   kill: (pid: number, signal: 'SIGTERM') => void;
   timers: Timers;
+  now: () => Date;
   stdout: OutStream;
   stderr: OutStream;
 }
@@ -274,6 +277,63 @@ async function statusOne(d: AdminDeps, entry: Entry, print: Write): Promise<void
   print(
     `${live.version}  pid ${live.pid}  clients ${live.clients}  loaded [${loaded}]  alive  ${info.socket}`,
   );
+  // A daemon of another version answers without `vault`, and a later one may shape it
+  // differently: print what is recognisable, never fail on the rest.
+  const vaults: unknown = (live.services as { vault?: unknown }).vault;
+  for (const vault of Array.isArray(vaults) ? (vaults as Array<Partial<IVaultInfo> | null>) : []) {
+    if (typeof vault !== 'object' || vault === null) continue;
+    print(vaultLine(vault, d.now()));
+    const profiles: unknown = vault.profiles;
+    for (const profile of Array.isArray(profiles) ? (profiles as unknown[]) : []) {
+      if (typeof profile === 'object' && profile !== null)
+        print(profileLine(profile as IProfileInfo));
+    }
+  }
+}
+
+function vaultLine(vault: Partial<IVaultInfo>, now: Date): string {
+  const clients = vault.clients ?? 0;
+  const who = clients > 0 ? `clients ${clients}` : idleFor(vault.idle_since, now);
+  return `  vault ${vault.vault ?? '?'}  ${who}`;
+}
+
+/** `idle 12m (since <iso>)`: how long, then when; `idle since ?` when the time is missing or unparsable. */
+function idleFor(since: unknown, now: Date): string {
+  const at = typeof since === 'string' ? Date.parse(since) : Number.NaN;
+  if (Number.isNaN(at)) return `idle since ${typeof since === 'string' ? since : '?'}`;
+  const minutes = Math.max(0, Math.floor((now.getTime() - at) / 60_000));
+  const span = minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  return `idle ${span} (since ${since as string})`;
+}
+
+function profileLine(profile: IProfileInfo): string {
+  const parts = [profile.profile];
+  switch (profile.state) {
+    case 'indexing':
+      parts.push(
+        `indexing${profile.total === undefined ? '' : ` ${profile.indexed ?? 0}/${profile.total}`}`,
+      );
+      break;
+    case 'ready':
+      parts.push('ready');
+      if (profile.notes !== undefined) parts.push(`${profile.notes} notes`);
+      break;
+    case 'unavailable':
+      parts.push('unavailable');
+      if (profile.reason !== undefined) parts.push(profile.reason);
+      break;
+    default:
+      parts.push(profile.state);
+  }
+  // Another daemon version may send null or another shape here; print only what is recognisable.
+  const raw: unknown = profile.last_reconcile;
+  if (typeof raw === 'object' && raw !== null) {
+    const last = raw as Partial<NonNullable<IProfileInfo['last_reconcile']>>;
+    parts.push(
+      `last reconcile ${last.at} +${last.added} ~${last.changed} -${last.removed} ${last.ms} ms`,
+    );
+  }
+  return `    ${parts.join('  ')}`;
 }
 
 export async function runStatus(d: AdminDeps): Promise<number> {

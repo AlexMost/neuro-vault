@@ -1,4 +1,4 @@
-import type { EmbeddingIdentity } from '../../lib/obsidian/corpus/types.js';
+import type { EmbeddingIdentity } from './obsidian/corpus/types.js';
 
 /** How a model's token states become one vector. */
 export type Pooling = 'mean' | 'cls' | 'last_token';
@@ -126,8 +126,13 @@ export const DEFAULT_MODEL_KEY = HARRIER_270M.key;
 
 export const MODEL_KEYS: readonly string[] = Object.freeze(Object.keys(MODEL_PROFILES));
 
+/** Whether `key` names a profile of the registry (never one inherited from `Object.prototype`). */
+export function isProfileKey(key: string): boolean {
+  return Object.hasOwn(MODEL_PROFILES, key);
+}
+
 export function resolveModelProfile(key: string): ModelProfile {
-  if (!Object.hasOwn(MODEL_PROFILES, key)) {
+  if (!isProfileKey(key)) {
     throw new Error(`unknown model "${key}" — choose one of: ${MODEL_KEYS.join(', ')}`);
   }
   return MODEL_PROFILES[key];

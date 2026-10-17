@@ -5,7 +5,7 @@ import { ToolHandlerError } from '../../../lib/tool-response.js';
 import type { IFanOutResult } from '../../../lib/fan-out.js';
 import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.js';
 import { EFFORT_PROFILES } from '../effort-profiles.js';
-import type { SimilarityDefaults } from '../model-profiles.js';
+import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { runRetrievalPipeline } from '../retrieval-pipeline.js';
 import {
   normalizeQuery,
@@ -21,7 +21,7 @@ import type {
   SearchEffort,
   SearchEngine,
 } from '../types.js';
-import type { IVaultEntry, IVaultRegistry } from '../../../lib/vault-registry.js';
+import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 import { LexicalIndex, type LexicalMatch } from '../../../lib/obsidian/lexical/index.js';
 import type { BackendState, BackendStatus } from '../../../lib/obsidian/semantic-backend.js';
 
@@ -260,10 +260,10 @@ function buildQueryStats(args: {
 }
 
 async function runSearchForEntry(
-  entry: IVaultEntry,
+  entry: IRegisteredVault,
   input: SearchNotesInput,
   deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'searchEngine' | 'modelKey' | 'similarity'> & {
-    lexicalFor: (entry: IVaultEntry) => LexicalIndex;
+    lexicalFor: (entry: IRegisteredVault) => LexicalIndex;
     warn: (message: string) => void;
   },
 ): Promise<SearchNotesOutput> {
@@ -453,7 +453,7 @@ export function buildSearchNotesTool(
   // lifetime. Never touches the embedding corpus — it's a read-through
   // cache over the filesystem via `entry.reader`.
   const lexicalIndexes = new Map<string, LexicalIndex>();
-  const lexicalFor = (entry: IVaultEntry): LexicalIndex => {
+  const lexicalFor = (entry: IRegisteredVault): LexicalIndex => {
     let idx = lexicalIndexes.get(entry.name);
     if (!idx) {
       idx = new LexicalIndex({ vaultRoot: entry.path, reader: entry.reader });

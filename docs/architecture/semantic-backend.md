@@ -1,6 +1,6 @@
 # The Semantic Backend
 
-The per-vault seam every semantic tool ranks and reports through: the `SemanticBackend` contract, the four states a vault's index can be in, the startup and freshness machinery that moves between them, and the process-wide embed queue that machinery shares with live search. The decisions behind this are [ADR-0013](../adr/0013-own-embedding-corpus.md) (the server owns a corpus) and [ADR-0014](../adr/0014-background-corpus-freshness.md) (it stays fresh in the background). The corpus mechanism itself — extraction, shard layout, atomic writes, reconcile — is documented in [`own-corpus.md`](./own-corpus.md); this page is about the runtime lifecycle wrapped around it.
+The per-vault seam every semantic tool ranks and reports through: the `SemanticBackend` contract, the four states a vault's index can be in, the startup and freshness machinery that moves between them, and the process-wide embed queue that machinery shares with live search. The decisions behind this are [ADR-0013](../adr/0013-own-embedding-corpus.md) (the server owns a corpus) and [ADR-0014](../adr/0014-background-corpus-freshness.md) (it stays fresh in the background). The daemon's vault entry runs this same state machine per model profile for a vault shared by many sessions ([`vault-entry.md`](./vault-entry.md)); no session attaches to it yet, so this file still describes what a session does. The corpus mechanism itself — extraction, shard layout, atomic writes, reconcile — is documented in [`own-corpus.md`](./own-corpus.md); this page is about the runtime lifecycle wrapped around it.
 
 ## The contract
 
@@ -28,7 +28,7 @@ interface SemanticBackend {
 }
 ```
 
-`IVaultEntry.backend?: SemanticBackend` ([`vault-registry.md`](./vault-registry.md)) carries one of these per vault. It is absent only when the semantic module is globally off (`--no-semantic`) — `get_similar_notes` and `find_duplicates` are not registered in that case, and `search_notes` (registered with the lexical leg only) reads the absent backend as `disabled`. A per-vault `"semantic": false` in `.neuro-vault/config.json` still gets a backend; that backend is simply built `enabled: false` and permanently reports `disabled`.
+`IRegisteredVault.backend?: SemanticBackend` ([`vault-registry.md`](./vault-registry.md)) carries one of these per vault. It is absent only when the semantic module is globally off (`--no-semantic`) — `get_similar_notes` and `find_duplicates` are not registered in that case, and `search_notes` (registered with the lexical leg only) reads the absent backend as `disabled`. A per-vault `"semantic": false` in `.neuro-vault/config.json` still gets a backend; that backend is simply built `enabled: false` and permanently reports `disabled`.
 
 `disabled` and `unavailable` mean different things and must never be confused: `disabled` is a deliberate choice (the vault turned semantics off); `unavailable` is broken (a reconcile failed, or there is nothing usable yet and never has been). `src/modules/semantic/backend/corpus-backend.ts` never reports a failure as `disabled`.
 
@@ -47,7 +47,7 @@ interface SemanticBackend {
 
 `unavailable` is not terminal. It is not a decision frozen at startup the way the corpus that preceded this design (`semanticAvailable: false`, decided once and never revisited) used to be — the next pass, whether from the watcher or an explicit request, re-runs the same reconcile and promotes back to `ready` on success.
 
-That recovery does not depend on anyone touching the vault. A pass that ends `unavailable` re-arms itself on a doubling backoff (`RETRY_BASE_MS` 30 s to `RETRY_MAX_MS` 15 min, `corpus-backend.ts`), reset on the first pass that does not fail; a watcher event or an explicit request supersedes the pending retry, since that pass _is_ the retry. Without it the watcher would be the only path back, and a vault nobody edits — a read-only reference vault, or one whose watcher failed to start — would stay broken until the process restarted, long after the cause (an absent model, a full disk, a lost network) had cleared. The retry timer is `unref`'d, so it never keeps the process alive on its own.
+That recovery does not depend on anyone touching the vault. A pass that ends `unavailable` re-arms itself on a doubling backoff (`RETRY_BASE_MS` 30 s to `RETRY_MAX_MS` 15 min, `src/lib/obsidian/corpus/pass-outcome.ts`), reset on the first pass that does not fail; a watcher event or an explicit request supersedes the pending retry, since that pass _is_ the retry. Without it the watcher would be the only path back, and a vault nobody edits — a read-only reference vault, or one whose watcher failed to start — would stay broken until the process restarted, long after the cause (an absent model, a full disk, a lost network) had cleared. The retry timer is `unref`'d, so it never keeps the process alive on its own.
 
 A retry pass reports `indexing`, with counters, for its duration: a rebuild in flight is a build in flight, and reporting `unavailable` across it would tell a caller to run a second, competing `neuro-vault-mcp index` against the corpus that pass is already writing. A reconcile behind a corpus that is already `ready` is the one case that does _not_ change state — that vault is still serving.
 
@@ -59,7 +59,7 @@ Every decode applies the vault's scope (`VaultScope.isExcluded`), so `sources` a
 
 ## Freshness: the watcher and the debounce
 
-Each enabled backend gets one `chokidar` watcher over its vault root (`src/modules/semantic/backend/vault-watcher.ts`), `.md` files only, every dot-path ignored so the server's own corpus writes cannot feed the watcher back into itself. Any add/change/unlink event resets a debounce timer; `DEBOUNCE_MS` (10,000 ms, `vault-watcher.ts`) after the last event, `onQuiet` fires and calls `backend.requestReconcile()`.
+Each enabled backend gets one `chokidar` watcher over its vault root (`src/lib/vault-entry/watcher.ts`). What it watches follows the vault scope ([`vault-scope.md`](./vault-scope.md#the-watcher-prune-vs-filter)): only an add, change or unlink of a `.md` path the scope does not exclude counts, and chokidar skips a subtree only where the scope proves all of it excluded. Dot-paths are always excluded, so the server's own corpus writes cannot feed the watcher back into itself. The same watcher is what the daemon's vault entry runs ([`vault-entry.md`](./vault-entry.md#the-watcher-follows-the-scope)). Any such event resets a debounce timer; `DEBOUNCE_MS` (10,000 ms, `watcher.ts`) after the last event, `onQuiet` fires and calls `backend.requestReconcile()`.
 
 `requestReconcile()` on the corpus backend coalesces: a request that arrives while a pass is already running just sets a flag, and exactly one follow-up pass runs when the current one finishes — however many requests arrived in between. This is the same `reconcileCorpus` pass startup runs; there is one definition of "changed" in the system, not two.
 

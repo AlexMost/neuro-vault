@@ -1,7 +1,7 @@
 import { buildBasenameIndex } from '../link-resolver.js';
 import type { CorpusSnapshot } from '../semantic-backend.js';
 import type { CorpusShard, SmartSource } from './types.js';
-import type { CorpusStore } from './shard-store.js';
+import type { ShardStore } from './shard-store.js';
 import { decodeVector } from './vector-codec.js';
 
 /**
@@ -21,7 +21,7 @@ import { decodeVector } from './vector-codec.js';
  * ranking path can see an excluded note.
  */
 export async function loadCorpusSnapshot(
-  store: CorpusStore,
+  store: ShardStore,
   opts: {
     shards?: Map<string, CorpusShard>;
     isExcluded?: (relPath: string) => boolean;

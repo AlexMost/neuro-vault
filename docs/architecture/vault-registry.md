@@ -4,9 +4,9 @@ The index of per-vault primitives built once at server startup, consumed by both
 
 ## What it is
 
-`src/lib/vault-registry.ts` exports two things: the `VaultEntry` interface and `VaultRegistry.create`, an async factory that builds a `VaultRegistry` from a list of `VaultConfig` objects.
+`src/lib/vault-registry.ts` centres on two exports: the `IRegisteredVault` interface and `VaultRegistry.create`, an async factory that builds a `VaultRegistry` from a list of `VaultConfig` objects. `IRegisteredVault` is one session's record of a registered vault; it is not the shared `IVaultEntry` of `src/lib/vault-entry/`, which holds one vault directory's state for every client attached to it ([`vault-entry.md`](./vault-entry.md)).
 
-A `VaultEntry` bundles everything a module or tool handler needs to reach one vault:
+An `IRegisteredVault` bundles everything a module or tool handler needs to reach one vault:
 
 | Field                       | Present when                             | Purpose                                                                   |
 | --------------------------- | ---------------------------------------- | ------------------------------------------------------------------------- |
@@ -23,7 +23,7 @@ A `VaultEntry` bundles everything a module or tool handler needs to reach one va
 
 `scope` is built before anything else in entry construction: `VaultRegistry.create` calls `deps.scopeFactory({ vaultRoot: v.path })` first and passes the result into `readerFactory`, since `reader` needs it to filter `scan`. Production wires `scopeFactory` to `loadVaultScope`, which reads that vault's root `.gitignore` and `.neuro-vault/config.json` (see [`vault-scope.md`](./vault-scope.md) for the exclusion layers and the config failure contract) — so per-vault scope config loading happens at registry-build time, not per call.
 
-`readConventions` and `filterExisting` are *per-vault capabilities*: small closures pre-bound to one vault's root, built by `conventionsReaderFactory` and `existingPathFilterFactory` in `IVaultEntryDeps` the same way `reader` and `provider` are. A consumer holding an entry gets the behaviour without threading `entry.path` anywhere, and a test substitutes it by passing its own function — no files on disk required. `filterExisting` exists because a corpus-derived path is a claim about the index and not a promise about the filesystem — the backend's watcher closes that gap only after its debounce, and only when no reconcile is already in flight — so every corpus-derived path is filtered through here before a tool returns it.
+`readConventions` and `filterExisting` are *per-vault capabilities*: small closures pre-bound to one vault's root, built by `conventionsReaderFactory` and `existingPathFilterFactory` in `IRegisteredVaultDeps` the same way `reader` and `provider` are. A consumer holding an entry gets the behaviour without threading `entry.path` anywhere, and a test substitutes it by passing its own function — no files on disk required. `filterExisting` exists because a corpus-derived path is a claim about the index and not a promise about the filesystem — the backend's watcher closes that gap only after its debounce, and only when no reconcile is already in flight — so every corpus-derived path is filtered through here before a tool returns it.
 
 `backend` is built by `semanticBackendFactory`, one of two flags away from being present at all: the module-level `--no-semantic` flag decides whether a vault gets a backend in the first place (absent means the embeddings-only tools are not registered to read it, and `search_notes` reports it as `semantic_status: disabled` while serving its lexical leg), while the per-vault `"semantic": false` config key only decides whether a present backend is built `enabled: true` or `enabled: false`. `VaultRegistry.create` never awaits backend construction — a backend decides its own readiness live, reported through `status()` — so registry construction returns as soon as every vault's backend object exists, not once each is actually ready to serve. See [`semantic-backend.md`](./semantic-backend.md) for the state model and [ADR-0013](../adr/0013-own-embedding-corpus.md)/[ADR-0014](../adr/0014-background-corpus-freshness.md) for why.
 
@@ -31,9 +31,9 @@ The `VaultRegistry` interface exposes a small, stable API:
 
 ```typescript
 interface VaultRegistry {
-  get(name: string): IVaultEntry | undefined;
-  require(name: string): IVaultEntry; // throws VAULT_NOT_FOUND if missing
-  list(): IVaultEntry[];
+  get(name: string): IRegisteredVault | undefined;
+  require(name: string): IRegisteredVault; // throws VAULT_NOT_FOUND if missing
+  list(): IRegisteredVault[];
   isMulti(): boolean;
   names(): string[];
 }
@@ -43,7 +43,7 @@ interface VaultRegistry {
 
 Before the registry, per-vault wiring lived inline in each module factory, which meant every module duplicated reader/provider construction and every tool handler received multiple config arguments. The registry centralises all of that:
 
-- **Modules become stateless consumers.** `createSemanticModule(registry, ...)` and `createOperationsModule(registry, ...)` pull the `VaultEntry` they need instead of receiving raw paths and constructing things themselves.
+- **Modules become stateless consumers.** `createSemanticModule(registry, ...)` and `createOperationsModule(registry, ...)` pull the `IRegisteredVault` they need instead of receiving raw paths and constructing things themselves.
 - **Tool handlers are vault-agnostic.** A handler receives `(input, registry)`, calls `registry.require(name)` for a named vault, or fans out via `registry.list()`. No handler owns startup wiring.
 - **Per-vault failures are data, not crashes.** A semantic backend never throws out of construction — a vault whose corpus is missing, incompatible, or fails to build reports `unavailable` through its own `status()`, live, rather than failing `VaultRegistry.create`. The server starts and every other vault, and every non-semantic capability of the failing one, works normally. `get_similar_notes` / `find_duplicates` surface the failure at call time as `SEMANTIC_INDEX_NOT_FOUND`; `search_notes` degrades to its lexical leg instead of erroring. See [`semantic-backend.md`](./semantic-backend.md).
 
@@ -54,7 +54,7 @@ ServerConfig.vaults[]
       │
       ▼
 VaultRegistry.create(config, deps)
-      │  (one IVaultEntry per vault; each vault's semantic backend
+      │  (one IRegisteredVault per vault; each vault's semantic backend
       │   decides its own readiness live — see semantic-backend.md)
       ▼
 VaultRegistry
@@ -75,8 +75,8 @@ Tool handlers access the registry through three patterns:
 
 ## Invariants
 
-- At least one `VaultEntry` is always present. Config-level validation rejects an empty `vaults` array before `VaultRegistry.create` is called.
-- Vault names are unique. The registry builds a `Map<name, IVaultEntry>` at construction time; duplicate names would shadow silently, but `parseConfig` rejects them first.
+- At least one `IRegisteredVault` is always present. Config-level validation rejects an empty `vaults` array before `VaultRegistry.create` is called.
+- Vault names are unique. The registry builds a `Map<name, IRegisteredVault>` at construction time; duplicate names would shadow silently, but `parseConfig` rejects them first.
 - `backend` is present if and only if the semantic module is enabled server-wide (`--semantic`, the default). A per-vault `"semantic": false` in `.neuro-vault/config.json` still yields a present `backend` — one built `enabled: false`, permanently reporting `status().state === 'disabled'`.
 - `status().reason` is always set when `status().state === 'unavailable'`; it is never set otherwise. See [`semantic-backend.md`](./semantic-backend.md) for the full state model.
 

@@ -3,11 +3,13 @@ import {
   CorpusLockTimeoutError,
   describeHolder,
 } from '../../../lib/obsidian/corpus/reconcile-lock.js';
-import type { ReconcileOptions, ReconcileSummary } from '../../../lib/obsidian/corpus/reconcile.js';
 import {
-  isManifestCompatible,
-  type CorpusStore,
-} from '../../../lib/obsidian/corpus/shard-store.js';
+  RETRY_BASE_MS,
+  RETRY_MAX_MS,
+  unusableCorpusReason,
+} from '../../../lib/obsidian/corpus/pass-outcome.js';
+import type { ReconcileOptions, ReconcileSummary } from '../../../lib/obsidian/corpus/reconcile.js';
+import { isManifestCompatible, type ShardStore } from '../../../lib/obsidian/corpus/shard-store.js';
 import type { CorpusShard } from '../../../lib/obsidian/corpus/types.js';
 import { buildBasenameIndex } from '../../../lib/obsidian/link-resolver.js';
 import type {
@@ -16,21 +18,12 @@ import type {
   SemanticBackend,
 } from '../../../lib/obsidian/semantic-backend.js';
 
-/**
- * Backoff for the self-retry after a pass leaves the vault `unavailable`: the
- * first retry waits this long, each further failure doubles it up to
- * {@link RETRY_MAX_MS}. Without it a vault nobody edits has no way back — the
- * watcher is the only other thing that ever asks for a pass.
- */
-export const RETRY_BASE_MS = 30_000;
-export const RETRY_MAX_MS = 900_000;
-
 export interface CorpusBackendDeps {
   vaultRoot: string;
   vaultName: string;
   /** Global `--semantic` AND the per-vault config, already resolved. */
   enabled: boolean;
-  store: CorpusStore;
+  store: ShardStore;
   /** The identity a stored manifest must match to be served. */
   identity: CorpusIdentity;
   /**
@@ -40,7 +33,7 @@ export interface CorpusBackendDeps {
    * and parsing the whole corpus twice.
    */
   loadSnapshot: (
-    store: CorpusStore,
+    store: ShardStore,
     opts?: { shards?: Map<string, CorpusShard> },
   ) => Promise<CorpusSnapshot>;
   /**
@@ -216,38 +209,14 @@ export function createCorpusBackend(deps: CorpusBackendDeps): CorpusBackend {
       // should repair it declining because it changed nothing.
       if (!snapshotLoaded || waited || summary.embedded + summary.renamed + summary.deleted > 0) {
         const loaded = await deps.loadSnapshot(deps.store);
-        // A pass that returns is not a pass that worked. `reconcileCorpus` is
-        // per-note tolerant by design: a rejected `embed` — an offline first
-        // run, an unwritable model cache, an ONNX load failure — is counted in
-        // `summary.failed` and the pass returns normally. When every note went
-        // that way there is no shard to decode, so serving the empty result
-        // behind `ready` would report a broken index as a healthy empty one.
-        //
-        // All three clauses are load-bearing, and none alone is the guard:
-        // `sources.size === 0` also describes an empty vault (`total > 0`
-        // rules that out) and a healthy vault whose notes are all below the
-        // size gate, which index fine and contribute no source (`failed > 0`
-        // rules that out — nothing failed there); `failed > 0` alone also
-        // describes a healthy incremental pass that lost one note, whose
-        // decoded corpus is not empty, because a failed note keeps the shard
-        // it already had.
-        //
-        // Deliberately NOT also requiring `embedded === 0`: a note under
-        // `MIN_CHARS` gets no note vector and no qualifying block, so
-        // `embedNote` calls `embed` zero times, writes a shard that carries no
-        // embedding, and still counts as `embedded`. One stub note in a cold
-        // vault would therefore have kept this guard silent while every real
-        // note failed — and, because the stub is `reused` from then on, the
-        // load branch would never run again and the vault would sit at `ready`
-        // over an empty corpus until something in it changed.
-        if (loaded.sources.size === 0 && summary.total > 0 && summary.failed > 0) {
+        // The empty-corpus guard: see unusableCorpusReason for why each clause is there.
+        const reason = unusableCorpusReason(loaded.sources.size, summary);
+        if (reason !== null) {
           // `snapshot`/`snapshotLoaded` are left untouched: the vault keeps
           // whatever it had, and the next pass reloads unconditionally rather
-          // than trusting a decode that produced nothing. Not terminal — a
-          // later pass that embeds anything overwrites this state with `ready`.
-          unavailable(
-            `indexing produced no usable corpus: ${summary.failed} of ${summary.total} notes failed and the decoded corpus is empty (see the per-note warnings above)`,
-          );
+          // than trusting a decode that produced nothing. The stub note that
+          // `reused` would otherwise keep from reloading cannot latch `ready`.
+          unavailable(reason);
           return;
         }
         snapshot = loaded;

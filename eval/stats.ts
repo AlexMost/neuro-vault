@@ -1,5 +1,5 @@
 import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
-import type { SimilarityDefaults } from '../src/modules/semantic/model-profiles.js';
+import type { SimilarityDefaults } from '../src/lib/model-profiles.js';
 import { findNeighbors } from '../src/modules/semantic/search-engine.js';
 import type { QueryScore } from './metrics.js';
 

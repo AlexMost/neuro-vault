@@ -1,9 +1,12 @@
+import type { EmbedDocumentsFn } from '../../lib/obsidian/corpus/types.js';
 import { createQueuedEmbedder, type QueuedEmbedder } from '../../modules/semantic/embed-queue.js';
-import { MODEL_PROFILES, type ModelProfile } from '../../modules/semantic/model-profiles.js';
+import { isProfileKey, MODEL_PROFILES, type ModelProfile } from '../../lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../modules/semantic/types.js';
 import {
   asRecord,
   DaemonRpcError,
+  onlyKeys,
+  stringParam,
   type EmbedDocumentsResult,
   type EmbedInitializeResult,
   type EmbedQueryResult,
@@ -28,13 +31,16 @@ export interface EmbedServiceDeps {
   now?: () => number;
 }
 
-function readProfile(params: Record<string, unknown>): ModelProfile {
-  const key = params.profile;
-  if (typeof key !== 'string')
-    throw new DaemonRpcError('INVALID_PARAMS', 'profile must be a string');
-  if (!Object.hasOwn(MODEL_PROFILES, key))
-    throw new DaemonRpcError('UNKNOWN_PROFILE', `unknown profile "${key}"`);
+function profileOf(key: string): ModelProfile {
+  if (!isProfileKey(key)) throw new DaemonRpcError('UNKNOWN_PROFILE', `unknown profile "${key}"`);
   return MODEL_PROFILES[key];
+}
+
+/** The params of an `embed.*` call: exactly `profile` plus `allowed`. */
+function readParams(params: unknown, ...allowed: string[]) {
+  const record = asRecord(params);
+  onlyKeys(record, ['profile', ...allowed]);
+  return { record, profile: profileOf(stringParam(record, 'profile')) };
 }
 
 function assertFinite(vector: number[]): number[] {
@@ -64,6 +70,12 @@ async function failedAs<T>(work: () => Promise<T>): Promise<T> {
 export function createEmbedService(deps: EmbedServiceDeps): {
   handlers: ServiceHandlers;
   loaded(): string[];
+  /**
+   * The documents lane of one profile's queue, for the vault entries inside this
+   * process: the same load and queue `embed.documents` uses, without the wire
+   * checks. The profile loads on the first call, not now.
+   */
+  documentsFor(profileKey: string): EmbedDocumentsFn;
 } {
   const log = deps.log ?? (() => undefined);
   const now = deps.now ?? (() => performance.now());
@@ -114,12 +126,11 @@ export function createEmbedService(deps: EmbedServiceDeps): {
 
   const handlers: ServiceHandlers = {
     initialize: async (params): Promise<EmbedInitializeResult> => {
-      const { provider } = await get(readProfile(asRecord(params)));
+      const { provider } = await get(readParams(params).profile);
       return { identity: provider.identity, max_batch_size: provider.maxBatchSize };
     },
     query: async (params): Promise<EmbedQueryResult> => {
-      const record = asRecord(params);
-      const profile = readProfile(record);
+      const { record, profile } = readParams(params, 'text');
       const text = record.text;
       if (typeof text !== 'string' || text.trim() === '') {
         throw new DaemonRpcError('INVALID_PARAMS', 'text must be a non-blank string');
@@ -131,8 +142,7 @@ export function createEmbedService(deps: EmbedServiceDeps): {
       return { vector };
     },
     documents: async (params): Promise<EmbedDocumentsResult> => {
-      const record = asRecord(params);
-      const profile = readProfile(record);
+      const { record, profile } = readParams(params, 'texts');
       const texts = record.texts;
       if (!Array.isArray(texts) || !texts.every((t): t is string => typeof t === 'string')) {
         throw new DaemonRpcError('INVALID_PARAMS', 'texts must be an array of strings');
@@ -155,5 +165,16 @@ export function createEmbedService(deps: EmbedServiceDeps): {
     },
   };
 
-  return { handlers, loaded: () => [...loaded.keys()] };
+  function documentsFor(profileKey: string): EmbedDocumentsFn {
+    const profile = profileOf(profileKey);
+    return async (texts) => {
+      const { queue } = await get(profile);
+      return embedding(
+        `embed documents failed for ${profile.key} (${texts.length} texts)`,
+        async () => (await queue.embedDocuments(texts)).map(assertFinite),
+      );
+    };
+  }
+
+  return { handlers, loaded: () => [...loaded.keys()], documentsFor };
 }

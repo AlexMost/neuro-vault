@@ -6,8 +6,8 @@ import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/s
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { Timers } from '../../src/daemon/probe.js';
-import { ServiceRegistry } from '../../src/daemon/protocol.js';
+import type { Timers } from '../../src/lib/timers.js';
+import { ServiceRegistry, type IConnectionContext } from '../../src/daemon/protocol.js';
 import { startDaemonServer, type DaemonServerHandle } from '../../src/daemon/socket-server.js';
 
 const posix = process.platform !== 'win32';
@@ -70,7 +70,7 @@ describe.skipIf(!posix)('startDaemonServer', () => {
   });
 
   function registryWith(
-    handlers: Record<string, (p: unknown) => Promise<unknown>>,
+    handlers: Record<string, (p: unknown, ctx: IConnectionContext) => Promise<unknown>>,
   ): ServiceRegistry {
     const registry = new ServiceRegistry();
     registry.register('t', handlers);
@@ -183,6 +183,134 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     expect(await client.next()).toMatchObject({ id: 2, result: expect.any(Object) });
     expect(closed).toBe(false);
     client.socket.destroy();
+  });
+
+  it('gives each connection its own context id', async () => {
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({ who: async (_p, ctx) => ({ id: ctx.id }) }),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+    });
+    const a = await LineClient.connect(socketPath);
+    const b = await LineClient.connect(socketPath);
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.who' });
+    b.send({ jsonrpc: '2.0', id: 1, method: 't.who' });
+    a.send({ jsonrpc: '2.0', id: 2, method: 't.who' });
+    const [a1, a2, b1] = [await a.next(), await a.next(), await b.next()];
+    const idOf = (m: JSONRPCMessage): number =>
+      (m as unknown as { result: { id: number } }).result.id;
+    expect(idOf(a1)).toBe(idOf(a2));
+    expect(idOf(a1)).not.toBe(idOf(b1));
+    expect(new Set([idOf(a1), idOf(b1)])).toEqual(new Set([1, 2]));
+    a.socket.destroy();
+    b.socket.destroy();
+  });
+
+  /** A server whose `t.watch` registers `onClose` callbacks that push `label` onto `closed`. */
+  async function watching(
+    closed: string[],
+    log?: (line: string) => void,
+  ): Promise<{ ctxs: IConnectionContext[] }> {
+    const ctxs: IConnectionContext[] = [];
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({
+        watch: async (p, ctx) => {
+          ctxs.push(ctx);
+          ctx.onClose(() => closed.push((p as { label: string }).label));
+          return {};
+        },
+      }),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+      ...(log ? { log } : {}),
+    });
+    return { ctxs };
+  }
+
+  it('runs onClose callbacks when that socket closes, not another', async () => {
+    const closed: string[] = [];
+    await watching(closed);
+    const a = await LineClient.connect(socketPath);
+    const b = await LineClient.connect(socketPath);
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.watch', params: { label: 'a' } });
+    b.send({ jsonrpc: '2.0', id: 1, method: 't.watch', params: { label: 'b' } });
+    await a.next();
+    await b.next();
+    expect(closed).toEqual([]);
+    a.socket.destroy();
+    await a.closed();
+    await tick();
+    expect(closed).toEqual(['a']);
+    b.socket.destroy();
+    await b.closed();
+    await tick();
+    expect(closed).toEqual(['a', 'b']);
+  });
+
+  it('runs onClose callbacks for a connection closed by a bad line', async () => {
+    const closed: string[] = [];
+    await watching(closed);
+    const a = await LineClient.connect(socketPath);
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.watch', params: { label: 'a' } });
+    await a.next();
+    a.socket.write('this is not json\n');
+    await a.closed();
+    await tick();
+    expect(closed).toEqual(['a']);
+  });
+
+  it('runs onClose callbacks when the server shuts down', async () => {
+    const closed: string[] = [];
+    await watching(closed);
+    const a = await LineClient.connect(socketPath);
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.watch', params: { label: 'a' } });
+    await a.next();
+    await handle?.close();
+    handle = undefined;
+    expect(closed).toEqual(['a']);
+  });
+
+  it('a throwing onClose callback is logged and does not skip the rest', async () => {
+    const lines: string[] = [];
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({
+        watch: async (_p, ctx) => {
+          ctx.onClose(() => {
+            throw new Error('first failed');
+          });
+          ctx.onClose(() => lines.push('second ran'));
+          return {};
+        },
+      }),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+      log: (line) => lines.push(line),
+    });
+    const a = await LineClient.connect(socketPath);
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.watch' });
+    await a.next();
+    a.socket.destroy();
+    await a.closed();
+    await tick();
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('first failed');
+    expect(lines[1]).toBe('second ran');
+  });
+
+  it('runs an onClose callback registered after the socket closed immediately', async () => {
+    const closed: string[] = [];
+    const { ctxs } = await watching(closed);
+    const a = await LineClient.connect(socketPath);
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.watch', params: { label: 'early' } });
+    await a.next();
+    a.socket.destroy();
+    await a.closed();
+    await tick();
+    ctxs[0]?.onClose(() => closed.push('late'));
+    expect(closed).toEqual(['early', 'late']);
   });
 
   it('closes only the client that sends a bad line', async () => {
@@ -394,6 +522,54 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     expect(fs.existsSync(socketPath)).toBe(false);
   });
 
+  it('beginClose() answers every later request SHUTTING_DOWN, keeps connections, refuses new ones', async () => {
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({ echo: async (p) => p }),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+    });
+    const a = await LineClient.connect(socketPath);
+    handle.beginClose();
+    a.send({ jsonrpc: '2.0', id: 1, method: 't.echo', params: {} });
+    expect(await a.next()).toMatchObject({ id: 1, error: { data: { code: 'SHUTTING_DOWN' } } });
+    // Still open: ending the connections is close()'s job.
+    expect(a.socket.destroyed).toBe(false);
+    await expect(LineClient.connect(socketPath)).rejects.toThrow();
+    handle.beginClose();
+    const closing = handle.close();
+    await a.closed();
+    await closing;
+    handle = undefined;
+    expect(fs.existsSync(socketPath)).toBe(false);
+  });
+
+  it('beginClose() answers a request already in flight with SHUTTING_DOWN', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    handle = await startDaemonServer({
+      socketPath,
+      registry: registryWith({
+        slow: async () => {
+          await gate;
+          return {};
+        },
+      }),
+      idleTimeoutMs: 0,
+      onIdle: () => {},
+    });
+    const a = await LineClient.connect(socketPath);
+    a.send({ jsonrpc: '2.0', id: 4, method: 't.slow' });
+    await tick();
+    handle.beginClose();
+    expect(await a.next()).toMatchObject({ id: 4, error: { data: { code: 'SHUTTING_DOWN' } } });
+    release();
+    await handle.close();
+    handle = undefined;
+  });
+
   it('does not idle out when a client arrived in the same turn the timer fired', async () => {
     const onIdle = vi.fn();
     const { timers, armed } = fakeTimers();
@@ -422,9 +598,11 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     });
     const a = await LineClient.connect(socketPath);
     await tick();
+    // close() now resolves after the connection's own close handler, so listen before it.
+    const clientClosed = a.closed();
     await handle.close();
     await handle.close();
-    await a.closed();
+    await clientClosed;
   });
 
   it('close() does not throw when a client already went away', async () => {

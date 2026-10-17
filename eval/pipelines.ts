@@ -3,7 +3,7 @@ import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
 import { FsVaultReader } from '../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../src/lib/obsidian/vault-scope-config.js';
 import { WikilinkGraphIndex } from '../src/lib/obsidian/wikilink-graph.js';
-import type { SimilarityDefaults } from '../src/modules/semantic/model-profiles.js';
+import type { SimilarityDefaults } from '../src/lib/model-profiles.js';
 import {
   EXPANSION_WEIGHT,
   flattenExpansion,

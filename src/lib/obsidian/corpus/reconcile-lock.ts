@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import {
-  mkdir as fsMkdir,
   readFile as fsReadFile,
   unlink as fsUnlink,
   writeFile as fsWriteFile,
@@ -9,6 +8,7 @@ import { hostname } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { ensureCorpusDir, type MkdirFn } from './ensure-dir.js';
 import { hasErrnoCode } from './errno.js';
 import { LOCK_FILE } from './layout.js';
 
@@ -47,7 +47,7 @@ export interface CorpusLockDeps {
   createExclusive?: (p: string, data: string) => Promise<void>;
   readFile?: (p: string) => Promise<string>;
   unlink?: (p: string) => Promise<void>;
-  mkdir?: (p: string) => Promise<void>;
+  mkdir?: MkdirFn;
   /** Must reject when `signal` aborts. */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   now?: () => number;
@@ -134,8 +134,6 @@ export async function acquireCorpusLock(
     deps.createExclusive ?? ((p: string, data: string) => fsWriteFile(p, data, { flag: 'wx' }));
   const readFile = deps.readFile ?? ((p: string) => fsReadFile(p, 'utf8'));
   const unlink = deps.unlink ?? ((p: string) => fsUnlink(p));
-  const mkdir =
-    deps.mkdir ?? ((p: string) => fsMkdir(p, { recursive: true }).then(() => undefined));
   const sleep =
     deps.sleep ?? ((ms: number, signal?: AbortSignal) => delay(ms, undefined, { signal }));
   const now = deps.now ?? (() => Date.now());
@@ -143,7 +141,8 @@ export async function acquireCorpusLock(
   const warn = deps.warn ?? ((message: string) => console.error(message));
 
   const lockFile = path.join(corpusRoot, LOCK_FILE);
-  await mkdir(corpusRoot);
+  // `<vault>/.neuro-vault/corpus`: never creates the vault root itself.
+  await ensureCorpusDir(path.dirname(corpusRoot), corpusRoot, deps.mkdir);
   const content = `${JSON.stringify({ host, pid, token, acquired: new Date(now()).toISOString() })}\n`;
   const started = now();
   let pause = LOCK_POLL_MIN_MS;

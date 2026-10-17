@@ -11,7 +11,7 @@ import {
 } from '../../../../src/lib/obsidian/corpus/reconcile.js';
 import { acquireCorpusLock } from '../../../../src/lib/obsidian/corpus/reconcile-lock.js';
 import { formatIdentity } from '../../../../src/lib/obsidian/corpus/identity.js';
-import { CorpusStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
+import { ShardStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
 import { buildEmbedInputs } from '../../../../src/lib/obsidian/corpus/embed-text.js';
 import { TEST_DIMS, TEST_IDENTITY } from '../../../_identity.js';
 
@@ -70,7 +70,7 @@ async function harness(files: Record<string, string>, extra: Partial<ReconcileDe
   const root = await mkdtemp(path.join(tmpdir(), 'nv-reconcile-'));
   const vault = fakeVault(files);
   const embed = fakeEmbedDocuments();
-  const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+  const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
   const warn = vi.fn();
   const run = (opts: ReconcileOptions = {}) =>
     reconcileCorpus(
@@ -338,7 +338,7 @@ describe('reconcileCorpus', () => {
         readNote: vault.readNote,
         embedDocuments: fakeEmbedDocuments(),
         identity: TEST_IDENTITY,
-        store: new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS }),
+        store: new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS }),
       },
       { onProgress: (p) => seen.push({ ...p }) },
     );
@@ -355,7 +355,7 @@ describe('reconcileCorpus', () => {
       if (texts.some((t) => t.includes('Bad'))) throw new Error('model exploded');
       return texts.map(() => new Array<number>(TEST_DIMS).fill(0.1));
     });
-    const store = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+    const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
     const warn = vi.fn();
 
     const summary = await reconcileCorpus({
@@ -483,7 +483,7 @@ describe('reconcileCorpus', () => {
     const shardFile = path.join(
       root,
       '.neuro-vault/corpus/bge-micro-v2/notes',
-      CorpusStore.shardFileName('A.md'),
+      ShardStore.shardFileName('A.md'),
     );
     await mkdir(path.dirname(shardFile), { recursive: true });
     await writeFile(shardFile, '{ not json', 'utf8');
@@ -506,6 +506,7 @@ describe('reconcileCorpus', () => {
     expect(summary).toEqual({
       total: 0,
       embedded: 0,
+      added: 0,
       reused: 0,
       renamed: 0,
       deleted: 0,
@@ -609,7 +610,15 @@ describe('reconcileCorpus', () => {
   });
 });
 
-const EMPTY_SUMMARY = { total: 0, embedded: 0, reused: 0, renamed: 0, deleted: 0, failed: 0 };
+const EMPTY_SUMMARY = {
+  total: 0,
+  embedded: 0,
+  added: 0,
+  reused: 0,
+  renamed: 0,
+  deleted: 0,
+  failed: 0,
+};
 
 function deferred() {
   let resolve!: () => void;
@@ -743,7 +752,7 @@ describe('reconcileCorpus across processes', () => {
           readNote: vault.readNote,
           embedDocuments: embed,
           identity: TEST_IDENTITY,
-          store: new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS }),
+          store: new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS }),
           warn: vi.fn(),
           acquireLock: (opts) =>
             acquireCorpusLock(
@@ -785,7 +794,7 @@ describe('reconcileCorpus across processes', () => {
   it('a pass that waited on a rebuild reads the new manifest and discards nothing', async () => {
     const { results, rebuilds, waits } = await twoPasses({ 'A.md': body('A') }, async (root) => {
       // A corpus of this model at another embed_version, with a shard to lose.
-      const stale = new CorpusStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+      const stale = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
       await stale.writeManifest({
         ...TEST_IDENTITY,
         embed_version: TEST_IDENTITY.embed_version + 1,

@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createEmbedService } from '../../src/daemon/services/embed.js';
 import { DaemonRpcError } from '../../src/daemon/protocol.js';
-import { identityOf, resolveModelProfile } from '../../src/modules/semantic/model-profiles.js';
+import {
+  identityOf,
+  resolveModelProfile,
+  type ModelProfile,
+} from '../../src/lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../src/modules/semantic/types.js';
+import { testCtx } from './_ctx.js';
 
 function fakeProvider(
   key: string,
@@ -25,8 +30,8 @@ describe('embed service', () => {
     const createProvider = vi.fn((profile) => fakeProvider(profile.key));
     const service = createEmbedService({ createProvider });
     const [a, b] = await Promise.all([
-      service.handlers.initialize({ profile: 'granite-97m' }),
-      service.handlers.initialize({ profile: 'granite-97m' }),
+      service.handlers.initialize({ profile: 'granite-97m' }, testCtx()),
+      service.handlers.initialize({ profile: 'granite-97m' }, testCtx()),
     ]);
     expect(createProvider).toHaveBeenCalledTimes(1);
     expect(a).toEqual(b);
@@ -39,14 +44,16 @@ describe('embed service', () => {
 
   it('holds two providers for two profiles', async () => {
     const service = createEmbedService({ createProvider: (p) => fakeProvider(p.key) });
-    await service.handlers.initialize({ profile: 'granite-97m' });
-    await service.handlers.initialize({ profile: 'harrier-270m' });
+    await service.handlers.initialize({ profile: 'granite-97m' }, testCtx());
+    await service.handlers.initialize({ profile: 'harrier-270m' }, testCtx());
     expect(service.loaded().sort()).toEqual(['granite-97m', 'harrier-270m']);
   });
 
   it('rejects an unknown profile', async () => {
     const service = createEmbedService({ createProvider: (p) => fakeProvider(p.key) });
-    await expect(service.handlers.query({ profile: 'bge-m3', text: 'x' })).rejects.toMatchObject({
+    await expect(
+      service.handlers.query({ profile: 'bge-m3', text: 'x' }, testCtx()),
+    ).rejects.toMatchObject({
       code: 'UNKNOWN_PROFILE',
     });
   });
@@ -57,13 +64,17 @@ describe('embed service', () => {
       fakeProvider(p.key, { failInit: fail ? 'no weights' : undefined }),
     );
     const service = createEmbedService({ createProvider });
-    await expect(service.handlers.initialize({ profile: 'granite-97m' })).rejects.toMatchObject({
+    await expect(
+      service.handlers.initialize({ profile: 'granite-97m' }, testCtx()),
+    ).rejects.toMatchObject({
       code: 'EMBED_FAILED',
       message: 'no weights',
     });
     expect(service.loaded()).toEqual([]);
     fail = false;
-    await expect(service.handlers.initialize({ profile: 'granite-97m' })).resolves.toMatchObject({
+    await expect(
+      service.handlers.initialize({ profile: 'granite-97m' }, testCtx()),
+    ).resolves.toMatchObject({
       max_batch_size: 8,
     });
     expect(createProvider).toHaveBeenCalledTimes(2);
@@ -72,10 +83,10 @@ describe('embed service', () => {
   it('serves query and documents, validating params', async () => {
     const service = createEmbedService({ createProvider: (p) => fakeProvider(p.key) });
     await expect(
-      service.handlers.query({ profile: 'granite-97m', text: 'hello' }),
+      service.handlers.query({ profile: 'granite-97m', text: 'hello' }, testCtx()),
     ).resolves.toEqual({ vector: [1, 0, 0] });
     await expect(
-      service.handlers.documents({ profile: 'granite-97m', texts: ['a', 'b'] }),
+      service.handlers.documents({ profile: 'granite-97m', texts: ['a', 'b'] }, testCtx()),
     ).resolves.toEqual({
       vectors: [
         [0, 1, 0],
@@ -83,15 +94,20 @@ describe('embed service', () => {
       ],
     });
     await expect(
-      service.handlers.documents({ profile: 'granite-97m', texts: ['a', ' '] }),
+      service.handlers.documents({ profile: 'granite-97m', texts: ['a', ' '] }, testCtx()),
     ).rejects.toBeInstanceOf(DaemonRpcError);
     await expect(
-      service.handlers.documents({
-        profile: 'granite-97m',
-        texts: new Array<string>(9).fill('t'),
-      }),
+      service.handlers.documents(
+        {
+          profile: 'granite-97m',
+          texts: new Array<string>(9).fill('t'),
+        },
+        testCtx(),
+      ),
     ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
-    await expect(service.handlers.query({ profile: 'granite-97m' })).rejects.toMatchObject({
+    await expect(
+      service.handlers.query({ profile: 'granite-97m' }, testCtx()),
+    ).rejects.toMatchObject({
       code: 'INVALID_PARAMS',
     });
   });
@@ -99,20 +115,33 @@ describe('embed service', () => {
   it('rejects a blank query text and an empty texts array as INVALID_PARAMS', async () => {
     const service = createEmbedService({ createProvider: (p) => fakeProvider(p.key) });
     await expect(
-      service.handlers.query({ profile: 'granite-97m', text: '  \n' }),
+      service.handlers.query({ profile: 'granite-97m', text: '  \n' }, testCtx()),
     ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
     await expect(
-      service.handlers.documents({ profile: 'granite-97m', texts: [] }),
+      service.handlers.documents({ profile: 'granite-97m', texts: [] }, testCtx()),
     ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
+  });
+
+  it.each([
+    ['initialize', { profile: 'granite-97m', model: 'x' }],
+    ['query', { profile: 'granite-97m', text: 'q', prefix: 'query: ' }],
+    ['documents', { profile: 'granite-97m', texts: ['t'], batch: 2 }],
+  ] as const)('rejects an unexpected key in embed.%s as INVALID_PARAMS', async (method, params) => {
+    const createProvider = vi.fn((p: ModelProfile) => fakeProvider(p.key));
+    const service = createEmbedService({ createProvider });
+    await expect(service.handlers[method](params, testCtx())).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+    });
+    expect(createProvider).not.toHaveBeenCalled();
   });
 
   it('builds the provider once when query arrives before any initialize', async () => {
     const createProvider = vi.fn((p: { key: string }) => fakeProvider(p.key));
     const service = createEmbedService({ createProvider });
     await expect(
-      service.handlers.query({ profile: 'granite-97m', text: 'first' }),
+      service.handlers.query({ profile: 'granite-97m', text: 'first' }, testCtx()),
     ).resolves.toEqual({ vector: [1, 0, 0] });
-    await service.handlers.query({ profile: 'granite-97m', text: 'second' });
+    await service.handlers.query({ profile: 'granite-97m', text: 'second' }, testCtx());
     expect(createProvider).toHaveBeenCalledTimes(1);
     expect(service.loaded()).toEqual(['granite-97m']);
   });
@@ -122,7 +151,7 @@ describe('embed service', () => {
       createProvider: (p) => fakeProvider(p.key, { vector: [Number.NaN, 0, 0] }),
     });
     await expect(
-      service.handlers.query({ profile: 'granite-97m', text: 'x' }),
+      service.handlers.query({ profile: 'granite-97m', text: 'x' }, testCtx()),
     ).rejects.toMatchObject({ code: 'EMBED_FAILED' });
   });
 
@@ -143,13 +172,109 @@ describe('embed service', () => {
       return [1, 0, 0];
     });
     const service = createEmbedService({ createProvider: () => provider });
-    const d1 = service.handlers.documents({ profile: 'granite-97m', texts: ['one'] });
-    const d2 = service.handlers.documents({ profile: 'granite-97m', texts: ['two'] });
-    const q = service.handlers.query({ profile: 'granite-97m', text: 'q' });
+    const d1 = service.handlers.documents({ profile: 'granite-97m', texts: ['one'] }, testCtx());
+    const d2 = service.handlers.documents({ profile: 'granite-97m', texts: ['two'] }, testCtx());
+    const q = service.handlers.query({ profile: 'granite-97m', text: 'q' }, testCtx());
     await new Promise((r) => setTimeout(r, 0));
     release();
     await Promise.all([d1, d2, q]);
     expect(order).toEqual(['docs:one', 'query', 'docs:two']);
+  });
+
+  describe('documentsFor', () => {
+    it('loads the profile once on first use and embeds on the documents lane', async () => {
+      const provider = fakeProvider('granite-97m');
+      const createProvider = vi.fn(() => provider);
+      const service = createEmbedService({ createProvider });
+      const embed = service.documentsFor('granite-97m');
+      // Nothing loads until the first call.
+      expect(createProvider).not.toHaveBeenCalled();
+      const [a, b] = await Promise.all([embed(['x', 'y']), embed(['z'])]);
+      expect(a).toEqual([
+        [0, 1, 0],
+        [0, 1, 0],
+      ]);
+      expect(b).toEqual([[0, 1, 0]]);
+      await embed(['again']);
+      expect(createProvider).toHaveBeenCalledTimes(1);
+      expect(provider.embedDocuments).toHaveBeenCalled();
+      expect(provider.embedQuery).not.toHaveBeenCalled();
+      expect(service.loaded()).toEqual(['granite-97m']);
+    });
+
+    it('shares the load with embed.initialize', async () => {
+      const createProvider = vi.fn((p: { key: string }) => fakeProvider(p.key));
+      const service = createEmbedService({ createProvider });
+      await Promise.all([
+        service.documentsFor('granite-97m')(['x']),
+        service.handlers.initialize({ profile: 'granite-97m' }, testCtx()),
+      ]);
+      expect(createProvider).toHaveBeenCalledTimes(1);
+    });
+
+    it('queues documents behind a waiting query, like embed.documents', async () => {
+      const order: string[] = [];
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const provider = fakeProvider('granite-97m');
+      provider.embedDocuments = vi.fn(async (texts: string[]) => {
+        order.push(`docs:${texts[0]}`);
+        await gate;
+        return texts.map(() => [0, 1, 0]);
+      });
+      provider.embedQuery = vi.fn(async () => {
+        order.push('query');
+        return [1, 0, 0];
+      });
+      const service = createEmbedService({ createProvider: () => provider });
+      const embed = service.documentsFor('granite-97m');
+      const d1 = embed(['one']);
+      const d2 = embed(['two']);
+      const q = service.handlers.query({ profile: 'granite-97m', text: 'q' }, testCtx());
+      await new Promise((r) => setTimeout(r, 0));
+      release();
+      await Promise.all([d1, d2, q]);
+      expect(order).toEqual(['docs:one', 'query', 'docs:two']);
+    });
+
+    it('splits a batch larger than the provider allows instead of refusing it', async () => {
+      const provider = fakeProvider('granite-97m');
+      const service = createEmbedService({ createProvider: () => provider });
+      const vectors = await service.documentsFor('granite-97m')(new Array<string>(20).fill('t'));
+      expect(vectors).toHaveLength(20);
+    });
+
+    it('reports a load failure as EMBED_FAILED and retries on the next call', async () => {
+      let fail = true;
+      const createProvider = vi.fn((p: { key: string }) =>
+        fakeProvider(p.key, { failInit: fail ? 'no weights' : undefined }),
+      );
+      const service = createEmbedService({ createProvider });
+      const embed = service.documentsFor('granite-97m');
+      await expect(embed(['x'])).rejects.toMatchObject({
+        code: 'EMBED_FAILED',
+        message: 'no weights',
+      });
+      fail = false;
+      await expect(embed(['x'])).resolves.toEqual([[0, 1, 0]]);
+    });
+
+    it('refuses a non-finite vector', async () => {
+      const provider = fakeProvider('granite-97m');
+      provider.embedDocuments = vi.fn(async (texts: string[]) => texts.map(() => [Number.NaN]));
+      const service = createEmbedService({ createProvider: () => provider });
+      await expect(service.documentsFor('granite-97m')(['x'])).rejects.toMatchObject({
+        code: 'EMBED_FAILED',
+      });
+    });
+
+    it('throws for an unknown profile key', () => {
+      const service = createEmbedService({ createProvider: (p) => fakeProvider(p.key) });
+      expect(() => service.documentsFor('bge-m3')).toThrow(/unknown profile "bge-m3"/);
+      expect(() => service.documentsFor('toString')).toThrow(/unknown profile/);
+    });
   });
 
   describe('diagnostics', () => {
@@ -171,10 +296,10 @@ describe('embed service', () => {
         now: ticking(812.4),
       });
       await Promise.all([
-        service.handlers.initialize({ profile: 'granite-97m' }),
-        service.handlers.query({ profile: 'granite-97m', text: 'x' }),
+        service.handlers.initialize({ profile: 'granite-97m' }, testCtx()),
+        service.handlers.query({ profile: 'granite-97m', text: 'x' }, testCtx()),
       ]);
-      await service.handlers.initialize({ profile: 'granite-97m' });
+      await service.handlers.initialize({ profile: 'granite-97m' }, testCtx());
       expect(log.mock.calls).toEqual([['loaded granite-97m in 812 ms']]);
     });
 
@@ -186,9 +311,11 @@ describe('embed service', () => {
         log,
         now: ticking(5),
       });
-      await expect(service.handlers.query({ profile: 'granite-97m', text: 'x' })).rejects.toThrow();
+      await expect(
+        service.handlers.query({ profile: 'granite-97m', text: 'x' }, testCtx()),
+      ).rejects.toThrow();
       fail = false;
-      await service.handlers.initialize({ profile: 'granite-97m' });
+      await service.handlers.initialize({ profile: 'granite-97m' }, testCtx());
       expect(log.mock.calls).toEqual([
         ['failed to load granite-97m after 5 ms: no weights'],
         ['loaded granite-97m in 5 ms'],
@@ -203,13 +330,13 @@ describe('embed service', () => {
       });
       provider.embedDocuments = vi.fn(async (texts: string[]) => texts.map(() => [Number.NaN]));
       const service = createEmbedService({ createProvider: () => provider, log, now: ticking(1) });
-      await service.handlers.initialize({ profile: 'granite-97m' });
+      await service.handlers.initialize({ profile: 'granite-97m' }, testCtx());
       log.mockClear();
       await expect(
-        service.handlers.query({ profile: 'granite-97m', text: 'secret note text' }),
+        service.handlers.query({ profile: 'granite-97m', text: 'secret note text' }, testCtx()),
       ).rejects.toMatchObject({ code: 'EMBED_FAILED' });
       await expect(
-        service.handlers.documents({ profile: 'granite-97m', texts: ['a', 'b'] }),
+        service.handlers.documents({ profile: 'granite-97m', texts: ['a', 'b'] }, testCtx()),
       ).rejects.toMatchObject({ code: 'EMBED_FAILED' });
       expect(log.mock.calls).toEqual([
         ['embed.query failed for granite-97m: onnx exploded'],
@@ -220,8 +347,12 @@ describe('embed service', () => {
     it('logs nothing for a request it rejects before embedding', async () => {
       const log = vi.fn();
       const service = createEmbedService({ createProvider: (p) => fakeProvider(p.key), log });
-      await expect(service.handlers.query({ profile: 'bge-m3', text: 'x' })).rejects.toThrow();
-      await expect(service.handlers.query({ profile: 'granite-97m', text: ' ' })).rejects.toThrow();
+      await expect(
+        service.handlers.query({ profile: 'bge-m3', text: 'x' }, testCtx()),
+      ).rejects.toThrow();
+      await expect(
+        service.handlers.query({ profile: 'granite-97m', text: ' ' }, testCtx()),
+      ).rejects.toThrow();
       expect(log).not.toHaveBeenCalled();
     });
   });

@@ -13,7 +13,7 @@ import {
   DaemonConnectionError,
 } from '../../src/modules/semantic/daemon-connection.js';
 import { DaemonEmbeddingProvider } from '../../src/modules/semantic/daemon-embedding-provider.js';
-import { identityOf, resolveModelProfile } from '../../src/modules/semantic/model-profiles.js';
+import { identityOf, resolveModelProfile } from '../../src/lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../src/modules/semantic/types.js';
 
 const posix = process.platform !== 'win32';

@@ -12,7 +12,7 @@ const embedder = {
   asDocumentEmbedFn: () => async (ts: string[]) => ts.map(() => [1]),
 } as never;
 const reader = { scan: async () => [] } as never;
-const scope = { ignorePatterns: [], isExcluded: () => false };
+const scope = { ignorePatterns: [], isExcluded: () => false, isSubtreeExcluded: () => false };
 
 /**
  * A stand-in for the corpus backend this factory builds. Whether the factory

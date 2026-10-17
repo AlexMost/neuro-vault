@@ -4,7 +4,7 @@ How the server turns a query string or a document into a vector that can be comp
 
 ## What it is
 
-`src/modules/semantic/embedding-service.ts` is the local, in-process implementation of the `EmbeddingProvider` interface (`src/modules/semantic/types.ts`). It is built from one `ModelProfile` — a record in [`model-profiles.ts`](../../src/modules/semantic/model-profiles.ts) that holds everything model-specific: the Hugging Face repo, the pinned revision, `dtype`, output dimension, pooling method, query/document prefixes, the token window (`maxTokens`) and the profile's default similarity thresholds (see [`retrieval-policy.md`](./retrieval-policy.md#calibration)). The decision behind the registry is [ADR-0017](../adr/0017-embedding-model-profiles.md).
+`src/modules/semantic/embedding-service.ts` is the local, in-process implementation of the `EmbeddingProvider` interface (`src/modules/semantic/types.ts`). It is built from one `ModelProfile` — a record in [`model-profiles.ts`](../../src/lib/model-profiles.ts) that holds everything model-specific: the Hugging Face repo, the pinned revision, `dtype`, output dimension, pooling method, query/document prefixes, the token window (`maxTokens`) and the profile's default similarity thresholds (see [`retrieval-policy.md`](./retrieval-policy.md#calibration)). The decision behind the registry is [ADR-0017](../adr/0017-embedding-model-profiles.md).
 
 ## Profiles
 

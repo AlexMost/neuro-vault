@@ -8,7 +8,7 @@ Every vault may carry an optional file at `<vaultPath>/.neuro-vault/for-external
 
 `.neuro-vault/` is also the home of `config.json`, an unrelated per-vault file read by a different subsystem: it names extra exclusion globs consumed when building the vault's discovery scope. See [`vault-scope.md`](./vault-scope.md) rather than this file for that contract — the two `.neuro-vault/` files share a directory but not a reader, a schema, or a failure model. (`.neuro-vault/` itself is always excluded from discovery, alongside every other dot-segment path, regardless of either file's presence.)
 
-`src/lib/obsidian/vault-conventions.ts` owns the file: `CONVENTIONS_PATH` (the vault-relative location), `readVaultConventions(vaultPath)` (the best-effort read), `CONVENTIONS_CHAR_CAP` (the response-side size cap) and `capConventions(raw)` (the bounded slice). Every vault entry exposes the reader as `IVaultEntry.readConventions()`, built by `conventionsReaderFactory` in `IVaultEntryDeps` like every other per-entry dependency. One reader, so every consumer agrees by construction on where the file lives, what counts as empty, and what a failed read means.
+`src/lib/obsidian/vault-conventions.ts` owns the file: `CONVENTIONS_PATH` (the vault-relative location), `readVaultConventions(vaultPath)` (the best-effort read), `CONVENTIONS_CHAR_CAP` (the response-side size cap) and `capConventions(raw)` (the bounded slice). Every vault entry exposes the reader as `IRegisteredVault.readConventions()`, built by `conventionsReaderFactory` in `IRegisteredVaultDeps` like every other per-entry dependency. One reader, so every consumer agrees by construction on where the file lives, what counts as empty, and what a failed read means.
 
 ## Why it exists
 
@@ -75,7 +75,7 @@ Reading the file is best-effort. A missing, unreadable, or permission-denied `fo
 ## Where the code lives
 
 - `src/lib/obsidian/vault-conventions.ts` — path constant, reader, cap constant, cap helper.
-- `src/lib/vault-registry.ts` — `IVaultEntry.readConventions`, `IVaultEntryDeps.conventionsReaderFactory`.
+- `src/lib/vault-registry.ts` — `IRegisteredVault.readConventions`, `IRegisteredVaultDeps.conventionsReaderFactory`.
 - `src/lib/obsidian/vault-overview.ts` — `conventions` / `conventions_truncated` on `VaultOverview`, produced by `computeVaultOverview`.
 - `src/modules/operations/tools/get-vault-overview.ts` — the tool surface and the description sentence.
 - `src/modules/operations/resources/vault-overview.ts` — the resource surface.

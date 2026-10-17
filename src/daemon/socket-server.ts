@@ -3,8 +3,8 @@ import net from 'node:net';
 import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
 import { isJSONRPCRequest, type JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
-import type { Timers } from './probe.js';
-import { errorResponse, type ServiceRegistry } from './protocol.js';
+import type { Timers } from '../lib/timers.js';
+import { errorResponse, type IConnectionContext, type ServiceRegistry } from './protocol.js';
 
 export interface DaemonServerOptions {
   socketPath: string;
@@ -15,6 +15,8 @@ export interface DaemonServerOptions {
   timers?: Timers;
   /** A server-level error after listening; the default drops it rather than crash the process. */
   onError?: (error: Error) => void;
+  /** One diagnostic line, without a newline (a throwing `onClose` callback); default: dropped. */
+  log?: (line: string) => void;
   /**
    * Runs `fn` one I/O turn later (default `setImmediate`). `close()` ends its
    * connections through it, so lines already received are still answered.
@@ -24,6 +26,12 @@ export interface DaemonServerOptions {
 
 export interface DaemonServerHandle {
   clients(): number;
+  /**
+   * Enters the shutting-down state at once: no new connections, every request
+   * answered `SHUTTING_DOWN`, those in flight included. Ends nothing; `close()`
+   * does that and drains. Idempotent, and implied by `close()`.
+   */
+  beginClose(): void;
   close(): Promise<void>;
 }
 
@@ -49,12 +57,21 @@ interface InFlight {
 export async function startDaemonServer(opts: DaemonServerOptions): Promise<DaemonServerHandle> {
   const timers = opts.timers ?? { setTimeout, clearTimeout };
   const defer = opts.defer ?? ((fn: () => void): void => void setImmediate(fn));
+  const log = opts.log ?? (() => undefined);
+  let nextConnectionId = 1;
   const connections = new Set<net.Socket>();
   const clients = new Set<net.Socket>();
   const inFlight = new Set<InFlight>();
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let shuttingDown = false;
+  let begun: Promise<void> | undefined;
   let closing: Promise<void> | undefined;
+  // Resolves once every connection's `close` handler (and its `onClose` callbacks) has run;
+  // `server.close` alone can report drained a turn earlier.
+  let allGone!: () => void;
+  const drained = new Promise<void>((resolve) => {
+    allGone = resolve;
+  });
 
   const write = (socket: net.Socket, message: JSONRPCMessage): void => {
     if (!socket.destroyed) socket.write(serializeMessage(message));
@@ -81,6 +98,23 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
 
   const server = net.createServer((socket) => {
     connections.add(socket);
+    let socketClosed = false;
+    const closeCallbacks: Array<() => void> = [];
+    // One throwing callback must not skip the rest, so each is guarded.
+    const runGuarded = (fn: () => void): void => {
+      try {
+        fn();
+      } catch (error) {
+        log(`onClose callback failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+    const ctx: IConnectionContext = {
+      id: nextConnectionId++,
+      onClose: (fn) => {
+        if (socketClosed) runGuarded(fn);
+        else closeCallbacks.push(fn);
+      },
+    };
     const buffer = new ReadBuffer();
     socket.on('data', (data: Buffer) => {
       let chunk: Buffer | undefined = data;
@@ -105,7 +139,7 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
         if (!message.method.startsWith('daemon.')) promote(socket);
         const entry: InFlight = { socket, id: message.id, answered: false };
         inFlight.add(entry);
-        void opts.registry.dispatch(message).then((response) => {
+        void opts.registry.dispatch(message, ctx).then((response) => {
           inFlight.delete(entry);
           if (!entry.answered) write(socket, response);
         });
@@ -115,6 +149,9 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
     socket.on('close', () => {
       connections.delete(socket);
       if (clients.delete(socket) && clients.size === 0) armIdle();
+      socketClosed = true;
+      for (const fn of closeCallbacks.splice(0)) runGuarded(fn);
+      if (shuttingDown && connections.size === 0) allGone();
     });
   });
 
@@ -128,19 +165,27 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
   server.on('error', (error) => opts.onError?.(error));
   armIdle();
 
+  /** Stops accepting and answers what is in flight; resolves once every connection is gone. */
+  const begin = (): Promise<void> =>
+    (begun ??= new Promise<void>((resolve) => {
+      shuttingDown = true;
+      disarmIdle();
+      // `server.close` stops accepting at once and unlinks the socket file
+      // once every connection is gone.
+      server.close(() => void drained.then(resolve));
+      if (connections.size === 0) allGone();
+      for (const entry of inFlight) {
+        entry.answered = true;
+        write(entry.socket, errorResponse(entry.id, 'SHUTTING_DOWN', 'daemon is stopping'));
+      }
+    }));
+
   return {
     clients: () => clients.size,
+    beginClose: () => void begin(),
     close: () => {
-      closing ??= new Promise<void>((resolve) => {
-        shuttingDown = true;
-        disarmIdle();
-        // `server.close` stops accepting at once and unlinks the socket file
-        // once every connection is gone.
-        server.close(() => resolve());
-        for (const entry of inFlight) {
-          entry.answered = true;
-          write(entry.socket, errorResponse(entry.id, 'SHUTTING_DOWN', 'daemon is stopping'));
-        }
+      closing ??= (() => {
+        const done = begin();
         // Ending is deferred one I/O turn: a request already received on a
         // connection is answered SHUTTING_DOWN (not dropped on an ended
         // socket) first. Each socket is destroyed only after its write side
@@ -150,7 +195,8 @@ export async function startDaemonServer(opts: DaemonServerOptions): Promise<Daem
             if (!socket.destroyed) socket.end(() => socket.destroy());
           }
         });
-      });
+        return done;
+      })();
       return closing;
     },
   };

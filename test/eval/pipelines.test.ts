@@ -12,7 +12,7 @@ import {
   rankQuery,
 } from '../../eval/pipelines.js';
 
-// 3-dim vectors are fine here: pipelines never touch CorpusStore's dims guard.
+// 3-dim vectors are fine here: pipelines never touch ShardStore's dims guard.
 function src(p: string, v: number[]): [string, SmartSource] {
   return [p, { path: p, embedding: Float32Array.from(v), blocks: [] }];
 }

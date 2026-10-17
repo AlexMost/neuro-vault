@@ -9,7 +9,7 @@ import {
   MODEL_KEYS,
   resolveModelProfile,
   type ModelProfile,
-} from './modules/semantic/model-profiles.js';
+} from './lib/model-profiles.js';
 
 import type { DaemonCliOptions, ServerConfig, IVaultConfig } from './types.js';
 import { packageMeta } from './package-meta.js';

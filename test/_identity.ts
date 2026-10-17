@@ -1,6 +1,6 @@
 import { corpusIdentityOf, type CorpusIdentity } from '../src/lib/obsidian/corpus/identity.js';
 import type { EmbeddingIdentity } from '../src/lib/obsidian/corpus/types.js';
-import type { SimilarityDefaults } from '../src/modules/semantic/model-profiles.js';
+import type { SimilarityDefaults } from '../src/lib/model-profiles.js';
 
 /** Vector width every corpus test writes and reads. */
 export const TEST_DIMS = 384;

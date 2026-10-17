@@ -5,7 +5,7 @@ import {
   type LocalModel,
   type LocalModelLoader,
 } from './local-model-loader.js';
-import { identityOf, type ModelProfile } from './model-profiles.js';
+import { identityOf, type ModelProfile } from '../../lib/model-profiles.js';
 import { poolAndNormalize } from './pooling.js';
 import { encodeRow, padBatch } from './tokenization.js';
 import type { EmbeddingProvider } from './types.js';

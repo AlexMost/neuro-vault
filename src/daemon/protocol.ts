@@ -2,6 +2,7 @@ import type { JSONRPCMessage, JSONRPCRequest, RequestId } from '@modelcontextpro
 import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 import type { EmbeddingIdentity } from '../lib/obsidian/corpus/types.js';
+import type { IVaultInfo } from '../lib/vault-entry/index.js';
 
 // ---- method shapes (the wire contract; see design D2) ----
 export interface EmbedInitializeParams {
@@ -32,7 +33,7 @@ export interface DaemonInfoResult {
   started_at: string;
   idle_timeout_min: number;
   clients: number;
-  services: { embed: { loaded: string[] } };
+  services: { embed: { loaded: string[] }; vault: IVaultInfo[] };
 }
 
 export type DaemonErrorCode =
@@ -41,6 +42,8 @@ export type DaemonErrorCode =
   | 'UNKNOWN_PROFILE'
   | 'EMBED_FAILED'
   | 'SHUTTING_DOWN'
+  | 'NOT_ATTACHED'
+  | 'VAULT_UNAVAILABLE'
   | 'INTERNAL';
 
 // `ErrorCode.ConnectionClosed` (-32000) is the SDK's JSON-RPC server-error slot for a closed connection.
@@ -50,6 +53,8 @@ const JSON_RPC_CODE: Record<DaemonErrorCode, number> = {
   UNKNOWN_PROFILE: ErrorCode.InvalidParams,
   EMBED_FAILED: ErrorCode.InternalError,
   SHUTTING_DOWN: ErrorCode.ConnectionClosed,
+  NOT_ATTACHED: ErrorCode.InvalidParams,
+  VAULT_UNAVAILABLE: ErrorCode.InvalidParams,
   INTERNAL: ErrorCode.InternalError,
 };
 
@@ -57,21 +62,40 @@ export class DaemonRpcError extends Error {
   constructor(
     readonly code: DaemonErrorCode,
     message: string,
+    /** Extra fields for the response's `error.data`, beside `code`. */
+    readonly data?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'DaemonRpcError';
   }
 }
 
-export type MethodHandler = (params: unknown) => Promise<unknown>;
+/** What a handler knows of the connection its request arrived on. */
+export interface IConnectionContext {
+  /** Unique per connection for the life of the server. */
+  readonly id: number;
+  /**
+   * Runs `fn` once when this connection closes, however it closes. A callback
+   * registered after the connection already closed runs at once.
+   */
+  onClose(fn: () => void): void;
+}
+
+export type MethodHandler = (params: unknown, ctx: IConnectionContext) => Promise<unknown>;
 export type ServiceHandlers = Record<string, MethodHandler>;
 
 export function errorResponse(
   id: RequestId,
   code: DaemonErrorCode,
   message: string,
+  data?: Record<string, unknown>,
 ): JSONRPCMessage {
-  return { jsonrpc: '2.0', id, error: { code: JSON_RPC_CODE[code], message, data: { code } } };
+  // `code` is spread last: the stable name is the contract, `data` only adds to it.
+  return {
+    jsonrpc: '2.0',
+    id,
+    error: { code: JSON_RPC_CODE[code], message, data: { ...data, code } },
+  };
 }
 
 export function resultResponse(id: RequestId, result: unknown): JSONRPCMessage {
@@ -86,6 +110,22 @@ export function asRecord(params: unknown): Record<string, unknown> {
   return params as Record<string, unknown>;
 }
 
+/** The params carry exactly `allowed`: every daemon method's params are closed. */
+export function onlyKeys(params: Record<string, unknown>, allowed: readonly string[]): void {
+  const extra = Object.keys(params).find((key) => !allowed.includes(key));
+  if (extra !== undefined) {
+    throw new DaemonRpcError('INVALID_PARAMS', `unexpected param "${extra}"`);
+  }
+}
+
+export function stringParam(params: Record<string, unknown>, name: string): string {
+  const value = params[name];
+  if (typeof value !== 'string') {
+    throw new DaemonRpcError('INVALID_PARAMS', `${name} must be a string`);
+  }
+  return value;
+}
+
 /**
  * `namespace → { method: handler }`. A later service (`lexical`, `watch`)
  * is one more `register` call; framing, discovery and lifecycle do not move.
@@ -97,16 +137,16 @@ export class ServiceRegistry {
     this.services.set(namespace, handlers);
   }
 
-  async dispatch(request: JSONRPCRequest): Promise<JSONRPCMessage> {
+  async dispatch(request: JSONRPCRequest, ctx: IConnectionContext): Promise<JSONRPCMessage> {
     const handler = this.lookup(request.method);
     if (handler === undefined) {
       return errorResponse(request.id, 'UNKNOWN_METHOD', `unknown method "${request.method}"`);
     }
     try {
-      return resultResponse(request.id, await handler(request.params));
+      return resultResponse(request.id, await handler(request.params, ctx));
     } catch (error) {
       if (error instanceof DaemonRpcError)
-        return errorResponse(request.id, error.code, error.message);
+        return errorResponse(request.id, error.code, error.message, error.data);
       return errorResponse(
         request.id,
         'INTERNAL',

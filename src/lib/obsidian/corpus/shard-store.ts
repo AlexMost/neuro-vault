@@ -1,16 +1,12 @@
 import { createHash } from 'node:crypto';
-import {
-  mkdir as fsMkdir,
-  readdir as fsReaddir,
-  readFile as fsReadFile,
-  unlink as fsUnlink,
-} from 'node:fs/promises';
+import { readdir as fsReaddir, readFile as fsReadFile, unlink as fsUnlink } from 'node:fs/promises';
 import path from 'node:path';
 
 import writeFileAtomic from 'write-file-atomic';
 
+import { ensureCorpusDir, type MkdirFn } from './ensure-dir.js';
 import { IDENTITY_FIELDS, isStoredManifest, type CorpusIdentity } from './identity.js';
-import { CORPUS_DIR, modelCorpusDir } from './layout.js';
+import { CORPUS_DIR, metaDirOf, modelCorpusDir } from './layout.js';
 import type { CorpusBlock, CorpusManifest, CorpusShard, StoredManifest } from './types.js';
 
 /**
@@ -20,7 +16,7 @@ import type { CorpusBlock, CorpusManifest, CorpusShard, StoredManifest } from '.
  */
 const SHARD_READ_CONCURRENCY = 64;
 
-export interface CorpusStoreDeps {
+export interface ShardStoreDeps {
   /**
    * The model profile key. The store lives in
    * `<vault>/.neuro-vault/corpus/<modelKey>/` and never reads or writes outside
@@ -34,7 +30,7 @@ export interface CorpusStoreDeps {
   readFile?: (p: string) => Promise<string>;
   readdir?: (p: string) => Promise<string[]>;
   unlink?: (p: string) => Promise<void>;
-  mkdir?: (p: string) => Promise<void>;
+  mkdir?: MkdirFn;
   /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
   warn?: (message: string) => void;
   /** Expected vector dimension, used to validate a shard's vectors. */
@@ -42,7 +38,7 @@ export interface CorpusStoreDeps {
 }
 
 /** Reads, writes, lists, and deletes per-note shards under `<vaultRoot>/.neuro-vault/corpus/<modelKey>/notes/`. */
-export class CorpusStore {
+export class ShardStore {
   private readonly corpusRoot: string;
   private readonly notesDir: string;
   private readonly manifestFile: string;
@@ -51,10 +47,11 @@ export class CorpusStore {
   private readonly readFile: (p: string) => Promise<string>;
   private readonly readdir: (p: string) => Promise<string[]>;
   private readonly unlink: (p: string) => Promise<void>;
-  private readonly mkdir: (p: string) => Promise<void>;
+  private readonly metaDir: string;
+  private readonly mkdir: MkdirFn | undefined;
   private readonly warn: (message: string) => void;
 
-  constructor(vaultRoot: string, deps: CorpusStoreDeps) {
+  constructor(vaultRoot: string, deps: ShardStoreDeps) {
     // Throws on an unsafe key before any I/O.
     const root = modelCorpusDir(vaultRoot, deps.modelKey);
     this.corpusRoot = root;
@@ -65,7 +62,8 @@ export class CorpusStore {
     this.readFile = deps.readFile ?? ((p) => fsReadFile(p, 'utf8'));
     this.readdir = deps.readdir ?? ((p) => fsReaddir(p));
     this.unlink = deps.unlink ?? ((p) => fsUnlink(p));
-    this.mkdir = deps.mkdir ?? ((p) => fsMkdir(p, { recursive: true }).then(() => undefined));
+    this.metaDir = metaDirOf(vaultRoot);
+    this.mkdir = deps.mkdir;
     this.warn = deps.warn ?? ((message) => console.error(message));
   }
 
@@ -76,20 +74,20 @@ export class CorpusStore {
 
   async writeShard(shard: CorpusShard): Promise<void> {
     this.assertShardVectors(shard);
-    await this.mkdir(this.notesDir);
+    await ensureCorpusDir(this.metaDir, this.notesDir, this.mkdir);
     await this.writeFile(
-      path.join(this.notesDir, CorpusStore.shardFileName(shard.path)),
+      path.join(this.notesDir, ShardStore.shardFileName(shard.path)),
       `${JSON.stringify(shard)}\n`,
     );
   }
 
   async readShard(notePath: string): Promise<CorpusShard | null> {
-    const file = path.join(this.notesDir, CorpusStore.shardFileName(notePath));
+    const file = path.join(this.notesDir, ShardStore.shardFileName(notePath));
     return this.readShardFile(file);
   }
 
   async deleteShard(notePath: string): Promise<void> {
-    const file = path.join(this.notesDir, CorpusStore.shardFileName(notePath));
+    const file = path.join(this.notesDir, ShardStore.shardFileName(notePath));
     try {
       await this.unlink(file);
     } catch (err) {
@@ -158,7 +156,7 @@ export class CorpusStore {
   }
 
   async writeManifest(manifest: CorpusManifest): Promise<void> {
-    await this.mkdir(this.corpusRoot);
+    await ensureCorpusDir(this.metaDir, this.corpusRoot, this.mkdir);
     await this.writeFile(this.manifestFile, `${JSON.stringify(manifest)}\n`);
   }
 
@@ -255,7 +253,7 @@ export class CorpusStore {
       return null;
     }
 
-    if (CorpusStore.shardFileName(parsed.path) !== path.basename(file)) {
+    if (ShardStore.shardFileName(parsed.path) !== path.basename(file)) {
       this.warn(
         `neuro-vault corpus: shard ${file} path "${parsed.path}" does not hash to its filename`,
       );

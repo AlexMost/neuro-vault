@@ -14,9 +14,9 @@
 
 `neuro-vault-mcp daemon [status|stop] [--idle-timeout <min>]` runs, lists or stops the shared-services daemon, the background process that holds the embedding model:
 
-- `daemon status` lists every known daemon of every installed build: version, pid, connected sessions, the models it has loaded, and whether it is alive. It removes the records of daemons that are gone.
+- `daemon status` lists every known daemon of every installed build: version, pid, connected sessions, the models it has loaded, and whether it is alive. Under a live daemon it adds one line per vault it holds (its sessions, or how long it has been idle) and one per model of that vault (indexing progress or note count, and the last reconcile). It removes the records of daemons that are gone.
 - `daemon stop` asks every running daemon to exit. A session that is still open starts a new one on its next search.
-- `daemon` alone runs one in the foreground, which you rarely need: the server and `index` start one on demand. `--idle-timeout` sets how long it stays after its last session disconnects (default 30 minutes, `0` = never).
+- `daemon` alone runs one in the foreground, which you rarely need: the server and `index` start one on demand. `--idle-timeout` sets how long it stays after its last session disconnects (default 30 minutes, `0` = never); the same timeout frees a vault, or one model's index of it, that no session has used for that long.
 
 The `--model` profiles:
 

@@ -11,7 +11,7 @@ import type {
 
 import { EFFORT_PROFILES } from './effort-profiles.js';
 import type { EffortProfile } from './effort-profiles.js';
-import type { SimilarityDefaults } from './model-profiles.js';
+import type { SimilarityDefaults } from '../../lib/model-profiles.js';
 
 const QUICK_BLOCK_LIMIT = 5;
 

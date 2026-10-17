@@ -11,7 +11,7 @@ import {
   DEFAULT_MODEL_KEY,
   resolveModelProfile,
   type ModelProfile,
-} from '../src/modules/semantic/model-profiles.js';
+} from '../src/lib/model-profiles.js';
 import { TEST_EMBEDDING_IDENTITY, TEST_IDENTITY } from './_identity.js';
 
 const profile = resolveModelProfile(DEFAULT_MODEL_KEY);
@@ -36,7 +36,16 @@ const vaultB = {
 };
 
 function okSummary(overrides = {}) {
-  return { total: 3, embedded: 3, reused: 0, renamed: 0, deleted: 0, failed: 0, ...overrides };
+  return {
+    total: 3,
+    embedded: 3,
+    added: 0,
+    reused: 0,
+    renamed: 0,
+    deleted: 0,
+    failed: 0,
+    ...overrides,
+  };
 }
 
 function makeDeps(reconcile: IndexCommandDeps['reconcile'], tty = false) {

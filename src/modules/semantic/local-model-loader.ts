@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { neuroVaultCacheBase } from '../../lib/cache-dir.js';
-import type { ModelProfile } from './model-profiles.js';
+import type { ModelProfile } from '../../lib/model-profiles.js';
 import type { ModelOutput } from './pooling.js';
 import { deriveTemplate, type SpecialTokenTemplate } from './tokenization.js';
 
