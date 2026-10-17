@@ -14,6 +14,7 @@ import { DaemonRpcError } from '../../src/daemon/protocol.js';
 import {
   DaemonConnection,
   DaemonConnectionError,
+  DaemonTimeoutError,
   DaemonUnavailableError,
   type DaemonConnectionDeps,
   type SpawnedDaemon,
@@ -480,6 +481,8 @@ describe('DaemonConnection — requests', () => {
     const outcome = expect(pending).rejects.toThrow(/embed\.query timed out after 50 ms/);
     await vi.advanceTimersByTimeAsync(50);
     await outcome;
+    // Its own class: a corpus facade reads it as "daemon did not answer".
+    await expect(pending).rejects.toBeInstanceOf(DaemonTimeoutError);
   });
 
   it('rejects pending requests when the socket closes and reconnects on the next call', async () => {

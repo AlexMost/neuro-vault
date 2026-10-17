@@ -217,8 +217,8 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
 
   /**
    * Runs a read over the anchors the scope keeps and answers `null` for a path
-   * anchor on an excluded note — what the session's snapshot answers, as an
-   * excluded note is not in it. Such a note can still be in the corpus until a
+   * anchor on an excluded note — as for a note the corpus does not hold, which
+   * is what an excluded note is to every caller. Such a note can still be in the corpus until a
    * pass sweeps it, and its vector would otherwise anchor a search.
    */
   async function foldAnchors<T>(

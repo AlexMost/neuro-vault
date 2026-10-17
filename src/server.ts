@@ -6,12 +6,11 @@ import {
   createSemanticModule,
   type ISemanticModuleDeps,
 } from './modules/semantic/index.js';
-import { createQueuedEmbedder, type QueuedEmbedder } from './modules/semantic/embed-queue.js';
+import { createQueuedEmbedder } from './modules/semantic/embed-queue.js';
 import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
 import { createSharedServices, type ISharedServices } from './modules/semantic/shared-services.js';
 import type { EmbeddingProvider } from './modules/semantic/types.js';
-import { createOwnCorpusBackendFactory } from './modules/semantic/backend/index.js';
-import { corpusIdentityOf, type CorpusIdentity } from './lib/obsidian/corpus/identity.js';
+import { createSemanticBackends } from './modules/semantic/backend/index.js';
 import { createOperationsModule } from './modules/operations/index.js';
 import { VaultRegistry, type IRegisteredVaultDeps } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
@@ -96,8 +95,7 @@ function defaultTransportFactory(): StdioServerTransport {
 }
 
 function buildDefaultVaultEntryDeps(
-  embedder: QueuedEmbedder,
-  identity: CorpusIdentity,
+  semanticBackendFactory: IRegisteredVaultDeps['semanticBackendFactory'],
   overrides: Partial<IRegisteredVaultDeps> = {},
 ): IRegisteredVaultDeps {
   return {
@@ -107,7 +105,7 @@ function buildDefaultVaultEntryDeps(
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
     providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
-    semanticBackendFactory: createOwnCorpusBackendFactory({ embedder, identity }),
+    semanticBackendFactory,
     conventionsReaderFactory:
       ({ vaultRoot }) =>
       () =>
@@ -144,14 +142,21 @@ export async function startNeuroVaultServer(
     deps.embeddingProvider ??
     createEmbeddingProvider({ profile: config.semantic.model, shared }, services);
   const embedder = createQueuedEmbedder(provider);
-  const identity = corpusIdentityOf(provider.identity);
+  // Each vault's corpus: the daemon's vault entry, or this process's own when
+  // `--no-shared` or the daemon cannot be started (design D11, D12).
+  const backends = createSemanticBackends({
+    services,
+    shared,
+    profile: config.semantic.model.key,
+    embedder,
+  });
 
   const registry = await VaultRegistry.create(
     {
       vaults: config.vaults,
       semanticEnabled: config.semantic.enabled,
     },
-    buildDefaultVaultEntryDeps(embedder, identity, deps.vaultEntryDeps),
+    buildDefaultVaultEntryDeps(backends.factory, deps.vaultEntryDeps),
   );
 
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
@@ -198,15 +203,25 @@ export async function startNeuroVaultServer(
   // download and initialize ONNX for work that will never arrive. The tools
   // stay registered either way: `search_notes` still answers from its lexical
   // leg, and the embeddings-only tools still report `SEMANTIC_DISABLED`.
-  const anyVaultEmbeds = registry
-    .list()
-    .some((entry) => entry.backend !== undefined && entry.backend.status().state !== 'disabled');
-  if (anyVaultEmbeds) {
-    void warmup().catch((error) => {
+  //
+  // Decided in the background: a status may be a daemon round trip (the first
+  // one attaches the vault), and startup never waits on one.
+  const anyVaultEmbeds = async (): Promise<boolean> => {
+    const statuses = await Promise.all(
+      registry
+        .list()
+        .flatMap((entry) => (entry.backend === undefined ? [] : [entry.backend.status()])),
+    );
+    return statuses.some((status) => status.state !== 'disabled');
+  };
+  /** Set once teardown starts: a warmup decided after it must not reconnect to the daemon. */
+  let disposed = false;
+  void anyVaultEmbeds()
+    .then((embeds) => (embeds && !disposed ? warmup() : undefined))
+    .catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(`semantic warmup failed: ${message}\n`);
     });
-  }
 
   /**
    * Releases every vault's background resources. Never rejects: one vault's
@@ -216,6 +231,7 @@ export async function startNeuroVaultServer(
    * clean teardown this exists to produce.
    */
   const dispose = async (): Promise<void> => {
+    disposed = true;
     // A request pending on the shared daemon would hold the event loop open.
     services.close();
     // `async` per entry so a backend whose `dispose()` throws synchronously
@@ -228,6 +244,14 @@ export async function startNeuroVaultServer(
       const message =
         result.reason instanceof Error ? result.reason.message : String(result.reason);
       process.stderr.write(`semantic backend disposal failed: ${message}\n`);
+    }
+    // The in-process vault entries, if any vault needed them: their watchers,
+    // timers and the pass in flight would otherwise outlive the client.
+    try {
+      await backends.dispose();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`semantic vault entries disposal failed: ${message}\n`);
     }
   };
 

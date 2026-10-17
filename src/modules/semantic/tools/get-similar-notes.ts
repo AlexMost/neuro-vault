@@ -6,13 +6,13 @@ import {
   type BasenameIndex,
 } from '../../../lib/obsidian/index.js';
 import type { ICorpusReader } from '../../../lib/obsidian/corpus/corpus.js';
+import { CorpusNotReadyError } from '../../../lib/obsidian/semantic-backend.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { readNoteContentForEntry, readPositiveInteger, readThreshold } from '../tool-helpers.js';
-import { lazySnapshotReader } from '../snapshot-reader.js';
 import type { QueryEmbedder, SimilarNoteResult } from '../types.js';
 import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 
@@ -48,8 +48,11 @@ function wrapDependencyError(
   error: unknown,
   message: string,
   details: Record<string, unknown>,
-): ToolHandlerError {
+): ToolHandlerError | CorpusNotReadyError {
   if (error instanceof ToolHandlerError) return error;
+  // The corpus stopped serving after the readiness gate let the call in: the
+  // dispatcher reports it as the gate would.
+  if (error instanceof CorpusNotReadyError) return error;
   return new ToolHandlerError('DEPENDENCY_ERROR', message, { details, cause: error });
 }
 
@@ -183,7 +186,6 @@ export function buildGetSimilarNotesTool(
       exclude_folders: z.array(z.string()).optional(),
     },
     runForEntry: async (entry, input) => {
-      const backend = entry.backend;
       let notePath: string;
       try {
         notePath = normalizeNotePath(input.path);
@@ -197,9 +199,11 @@ export function buildGetSimilarNotesTool(
       const excludePrefixes = (input.exclude_folders ?? []).map(normalizeExcludeEntry);
 
       try {
-        // Where the corpus is read from: the backend's snapshot today.
-        const corpus = lazySnapshotReader(() => backend.snapshot());
-        const candidates = await collectSemanticCandidates({ corpus, notePath, threshold });
+        const candidates = await collectSemanticCandidates({
+          corpus: entry.backend,
+          notePath,
+          threshold,
+        });
         if (candidates === null) {
           throw new ToolHandlerError('NOT_FOUND', `No note found for path: ${notePath}`, {
             details: { path: notePath },

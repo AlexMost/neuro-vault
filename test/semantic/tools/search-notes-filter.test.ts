@@ -80,7 +80,8 @@ describe('search_notes — filter', () => {
       expect(result.matches).toEqual([]);
       expect(result.truncated).toBe(false);
       expect(embed).not.toHaveBeenCalled();
-      expect(corpus.snapshot).not.toHaveBeenCalled();
+      expect(corpus.nearest).not.toHaveBeenCalled();
+      expect(corpus.nearestBlocks).not.toHaveBeenCalled();
     } finally {
       await cleanup();
     }

@@ -14,16 +14,14 @@ import {
   executeRetrieval,
   type RetrievalOutput,
 } from '../../src/modules/semantic/retrieval-policy.js';
-import { snapshotReader } from '../../src/modules/semantic/snapshot-reader.js';
 import type { QueryEmbedder, SearchMode } from '../../src/modules/semantic/types.js';
 import { TEST_IDENTITY, TEST_SIMILARITY } from '../_identity.js';
 import { legacyExecuteRetrieval, legacyNarrowSources } from './_legacy-retrieval.js';
 
 // Ranking parity (design D13): the semantic leg composed over `ICorpusReader`
 // must return exactly what the in-memory leg it replaced returns. The oracle
-// is a frozen copy of that leg; the fixture is written once as shards, so the
-// same corpus is read both through the snapshot bridge and a loaded
-// `ShardCorpus`.
+// is a frozen copy of that leg; the fixture is written once as shards and read
+// through a loaded `ShardCorpus`, the corpus every vault entry serves.
 
 const DIMS = 8;
 const IDENTITY: CorpusIdentity = { ...TEST_IDENTITY, dims: DIMS };
@@ -207,7 +205,6 @@ afterAll(async () => {
 
 // The reader under test. Swapping the corpus implementation is one row here.
 const READERS: Array<[label: string, make: () => ICorpusReader]> = [
-  ['snapshotReader', () => snapshotReader(SOURCES)],
   ['ShardCorpus', () => shardCorpus],
 ];
 
@@ -302,7 +299,10 @@ describe('the parity fixture exercises every step', () => {
 
 describe('one corpus call per step', () => {
   it('one nearest call carries every query vector', async () => {
-    const reader = snapshotReader(SOURCES);
+    const reader: ICorpusReader = {
+      nearest: (anchors, opts) => shardCorpus.nearest(anchors, opts),
+      nearestBlocks: (anchors, opts) => shardCorpus.nearestBlocks(anchors, opts),
+    };
     const nearest = vi.spyOn(reader, 'nearest');
     const nearestBlocks = vi.spyOn(reader, 'nearestBlocks');
 

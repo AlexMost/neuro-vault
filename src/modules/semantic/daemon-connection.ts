@@ -26,6 +26,21 @@ export const CONNECT_TIMEOUT_MS = 2_000;
  */
 export const MAX_RESPAWNS = 2;
 
+/** What the facades need from a connection — `DaemonConnection` in production. */
+export interface DaemonLink {
+  /**
+   * Changes on every new connection; per-connection setup (`embed.initialize`,
+   * `vault.attach`) is re-sent once per value.
+   */
+  readonly epoch: number;
+  /** Connect (spawning the daemon if needed); `DaemonUnavailableError` when that fails. */
+  ensure(): Promise<void>;
+  /** Drop the connection, rejecting what is pending on it; the next `ensure()` reconnects. */
+  close(): void;
+  /** One request on the current connection; never connects. */
+  request<T>(method: string, params: Record<string, unknown>, timeoutMs: number): Promise<T>;
+}
+
 /** The daemon could not be found or started; the caller falls back in-process. */
 export class DaemonUnavailableError extends Error {
   constructor(message: string) {
@@ -39,6 +54,14 @@ export class DaemonConnectionError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = 'DaemonConnectionError';
+  }
+}
+
+/** The daemon did not answer a request within its timeout; the connection stays up. */
+export class DaemonTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DaemonTimeoutError';
   }
 }
 
@@ -154,7 +177,7 @@ function isNotListening(error: unknown): boolean {
  * rejects after its own timeout. The socket is unref'd while nothing is
  * pending, so an idle connection never keeps a finished process alive.
  */
-export class DaemonConnection {
+export class DaemonConnection implements DaemonLink {
   private socket?: Duplex;
   /** Forgets `socket` and rejects what is pending on it; set by `attach`. */
   private dropSocket?: () => void;
@@ -199,7 +222,7 @@ export class DaemonConnection {
       const timer = this.timers.setTimeout(() => {
         this.pending.delete(id);
         this.refWhilePending(socket);
-        reject(new Error(`daemon request ${method} timed out after ${timeoutMs} ms`));
+        reject(new DaemonTimeoutError(`daemon request ${method} timed out after ${timeoutMs} ms`));
       }, timeoutMs);
       this.pending.set(id, { method, resolve: resolve as (v: unknown) => void, reject, timer });
       this.refWhilePending(socket);

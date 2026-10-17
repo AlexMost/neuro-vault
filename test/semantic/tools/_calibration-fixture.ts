@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 
 import type { ICorpusReader } from '../../../src/lib/obsidian/corpus/corpus.js';
-import { snapshotReader } from '../../../src/modules/semantic/snapshot-reader.js';
+import { corpusOver } from '../../_memory-corpus.js';
 import type { QueryEmbedder, SmartSource } from '../../../src/modules/semantic/types.js';
 
 // 2-D unit vectors: query = [1, 0]; a note whose query-similarity should be
@@ -56,7 +56,7 @@ export function makeCalibrationFixture(): {
     ...NEIGHBOUR_SIMS.map((s, i) => neighbourNote(i, s)),
   ];
   return {
-    corpus: snapshotReader(new Map(notes.map((n) => [n.path, n]))),
+    corpus: corpusOver(new Map(notes.map((n) => [n.path, n]))),
     embeddingProvider: {
       initialize: vi.fn(),
       embedQuery: vi.fn().mockResolvedValue(vec(0)),

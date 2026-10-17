@@ -1,9 +1,8 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import type { ICorpusReader } from '../../../src/lib/obsidian/corpus/corpus.js';
 import {
   buildFindDuplicatesTool,
   DUPLICATE_ANCHOR_BATCH,
@@ -17,35 +16,13 @@ import {
   makeVaultFixture,
   makeFakeCorpusIndex,
   createDuplicateCorpus,
-  findDuplicates,
   makeSyntheticSource,
   readerOf,
   toBackend,
 } from './_helpers.js';
 import type { SmartSource } from './_helpers.js';
-
-// Every `nearest` the tool sends goes through here: the batch sizes it asked for, in order.
-const nearestCalls = vi.hoisted(() => [] as number[]);
-
-vi.mock('../../../src/modules/semantic/snapshot-reader.js', async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import('../../../src/modules/semantic/snapshot-reader.js')>();
-  return {
-    ...original,
-    lazySnapshotReader: (
-      ...args: Parameters<typeof original.lazySnapshotReader>
-    ): ICorpusReader => {
-      const reader = original.lazySnapshotReader(...args);
-      return {
-        ...reader,
-        nearest: (anchors, opts) => {
-          nearestCalls.push(anchors.length);
-          return reader.nearest(anchors, opts);
-        },
-      };
-    },
-  };
-});
+import { legacyFindDuplicates } from '../_legacy-retrieval.js';
+import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.js';
 
 type DuplicateResults = Awaited<ReturnType<ReturnType<typeof buildFindDuplicatesTool>['handler']>>;
 
@@ -237,6 +214,20 @@ describe('findDuplicates', () => {
     }
   });
 
+  it('a read the corpus refuses as not ready is reported as the readiness gate would', async () => {
+    const sources = new Map([['a.md', makeSyntheticSource('a.md', [1, 0, 0])]]);
+    const corpus = makeFakeCorpusIndex(sources);
+    corpus.nearest.mockRejectedValue(new CorpusNotReadyError({ state: 'disabled' }));
+    const registry = makeTestRegistry([
+      { name: 'v', path: '/nonexistent', backend: toBackend(corpus), reader: readerOf(sources) },
+    ]);
+    const reg = registerTool(
+      buildFindDuplicatesTool({ registry, modelKey: MODEL_KEY, similarity: TEST_SIMILARITY }),
+    );
+
+    await expect(callTool(reg, {})).rejects.toMatchObject({ code: 'SEMANTIC_DISABLED' });
+  });
+
   it('rejects a vault argument in single-vault mode', async () => {
     const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
 
@@ -319,12 +310,12 @@ describe('findDuplicates', () => {
   });
 
   describe('over the corpus reads', () => {
-    function vaultOf(sources: Map<string, SmartSource>) {
+    function vaultOf(sources: Map<string, SmartSource>, corpus = makeFakeCorpusIndex(sources)) {
       return makeTestRegistry([
         {
           name: 'v',
           path: '/nonexistent',
-          backend: toBackend(makeFakeCorpusIndex(sources)),
+          backend: toBackend(corpus),
           reader: readerOf(sources),
           // Every path the corpus names is declared present — no temp dir.
           filterExisting: async (paths) => new Set(paths),
@@ -332,10 +323,10 @@ describe('findDuplicates', () => {
       ]);
     }
 
-    function toolOf(sources: Map<string, SmartSource>) {
+    function toolOf(sources: Map<string, SmartSource>, corpus = makeFakeCorpusIndex(sources)) {
       return registerTool(
         buildFindDuplicatesTool({
-          registry: vaultOf(sources),
+          registry: vaultOf(sources, corpus),
           modelKey: MODEL_KEY,
           similarity: TEST_SIMILARITY,
         }),
@@ -360,11 +351,11 @@ describe('findDuplicates', () => {
         const notePath = `Notes/n${String(i).padStart(3, '0')}.md`;
         sources.set(notePath, makeSyntheticSource(notePath, [1, 0, 0]));
       }
-      nearestCalls.length = 0;
+      const corpus = makeFakeCorpusIndex(sources);
 
-      await callTool<DuplicateResults>(toolOf(sources), { threshold: 0.99 });
+      await callTool<DuplicateResults>(toolOf(sources, corpus), { threshold: 0.99 });
 
-      expect(nearestCalls).toEqual([64, 64, 2]);
+      expect(corpus.nearest.mock.calls.map(([anchors]) => anchors.length)).toEqual([64, 64, 2]);
     });
 
     it('skips a note without a vector instead of failing', async () => {
@@ -395,7 +386,7 @@ describe('findDuplicates', () => {
       make('copy-3', [0.3, 0.4, 0.5, 0.6]);
 
       for (const threshold of [0, 0.5, 0.9]) {
-        const expected = findDuplicates({ sources: sources.values(), threshold });
+        const expected = legacyFindDuplicates({ sources: sources.values(), threshold });
         const results = await callTool<DuplicateResults>(toolOf(sources), { threshold });
 
         expect(expected.length).toBeGreaterThan(0);

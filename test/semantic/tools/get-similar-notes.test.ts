@@ -17,10 +17,11 @@ import {
   makeFakeCorpusIndex,
   makeSyntheticSource,
   readerOf,
-  findNeighbors,
   toBackend,
 } from './_helpers.js';
 import type { SmartSource } from './_helpers.js';
+import { legacyFindNeighbors } from '../_legacy-retrieval.js';
+import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.js';
 
 type SimilarResults = Awaited<ReturnType<ReturnType<typeof buildGetSimilarNotesTool>['handler']>>;
 
@@ -361,6 +362,90 @@ describe('getSimilarNotes', () => {
     }
   });
 
+  it('SEMANTIC_INDEX_BUILDING while indexing', async () => {
+    const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
+
+    try {
+      const corpus = makeFakeCorpusIndex(sources);
+      const backend = toBackend(corpus, { state: 'indexing', indexed: 3, total: 7 });
+      const registry = makeTestRegistry([{ name: 'v', path: tempRoot, backend }]);
+      const reg = registerTool(
+        buildGetSimilarNotesTool({
+          registry,
+          embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
+          modelKey: MODEL_KEY,
+          similarity: TEST_SIMILARITY,
+        }),
+      );
+
+      await expect(callTool(reg, { path: 'Folder/note-a.md' })).rejects.toMatchObject({
+        code: 'SEMANTIC_INDEX_BUILDING',
+        details: { vault: 'v', indexed: 3, total: 7 },
+      });
+      // The gate read the status once and never reached the corpus.
+      expect(backend.status).toHaveBeenCalledTimes(1);
+      expect(corpus.nearest).not.toHaveBeenCalled();
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('a read the corpus refuses as not ready is reported as the readiness gate would', async () => {
+    const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
+
+    try {
+      // Ready at the gate; the daemon respawned before the read and is indexing again.
+      const corpus = makeFakeCorpusIndex(sources);
+      corpus.nearest.mockRejectedValue(
+        new CorpusNotReadyError({ state: 'indexing', indexed: 0, total: 4 }),
+      );
+      const registry = makeTestRegistry([
+        { name: 'v', path: tempRoot, backend: toBackend(corpus), reader: readerOf(sources) },
+      ]);
+      const reg = registerTool(
+        buildGetSimilarNotesTool({
+          registry,
+          embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
+          modelKey: MODEL_KEY,
+          similarity: TEST_SIMILARITY,
+        }),
+      );
+
+      await expect(callTool(reg, { path: 'Folder/note-a.md' })).rejects.toMatchObject({
+        code: 'SEMANTIC_INDEX_BUILDING',
+        details: { vault: 'v', indexed: 0, total: 4 },
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('a read that fails inside the corpus is a DEPENDENCY_ERROR', async () => {
+    const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
+
+    try {
+      const corpus = makeFakeCorpusIndex(sources);
+      corpus.nearest.mockRejectedValue(new Error('disk on fire'));
+      const registry = makeTestRegistry([
+        { name: 'v', path: tempRoot, backend: toBackend(corpus), reader: readerOf(sources) },
+      ]);
+      const reg = registerTool(
+        buildGetSimilarNotesTool({
+          registry,
+          embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
+          modelKey: MODEL_KEY,
+          similarity: TEST_SIMILARITY,
+        }),
+      );
+
+      await expect(callTool(reg, { path: 'Folder/note-a.md' })).rejects.toMatchObject({
+        code: 'DEPENDENCY_ERROR',
+      });
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects a vault argument in single-vault mode', async () => {
     const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
 
@@ -501,11 +586,10 @@ describe('getSimilarNotes — graph signals', () => {
       body: '# A\n\nNo links here.\n',
     });
     try {
-      const expected = findNeighbors({
+      const expected = legacyFindNeighbors({
         queryVector: sources.get('Folder/A.md')!.embedding,
-        sources: sources.values(),
+        sources: [...sources.values()].filter((s) => s.path !== 'Folder/A.md'),
         threshold: 0,
-        excludePath: 'Folder/A.md',
       });
       const results = await callTool<SimilarResults>(reg, {
         path: 'Folder/A.md',

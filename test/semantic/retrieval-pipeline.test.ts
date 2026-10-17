@@ -6,7 +6,7 @@ import {
   type RetrievalPipelineDeps,
   type RetrievalPipelineInput,
 } from '../../src/modules/semantic/retrieval-pipeline.js';
-import { snapshotReader } from '../../src/modules/semantic/snapshot-reader.js';
+import { corpusOver } from '../_memory-corpus.js';
 import type { SmartSource } from '../../src/modules/semantic/types.js';
 import { TEST_SIMILARITY } from '../_identity.js';
 
@@ -46,7 +46,7 @@ function lexicalNote(path: string): RankedNote {
 
 function makeDeps(overrides: Partial<RetrievalPipelineDeps> = {}): RetrievalPipelineDeps {
   return {
-    corpus: snapshotReader(makeSources()),
+    corpus: corpusOver(makeSources()),
     lexical: {
       search: () =>
         Promise.resolve({
@@ -154,7 +154,7 @@ describe('runRetrievalPipeline', () => {
 
   it('narrows the semantic leg by the allowed set', async () => {
     const allowed = new Set([notePath(1), notePath(2), LEXICAL_ONLY]);
-    const corpus = snapshotReader(makeSources());
+    const corpus = corpusOver(makeSources());
     const nearest = vi.spyOn(corpus, 'nearest');
     const result = await runRetrievalPipeline({ ...DEEP, allowed }, makeDeps({ corpus }));
     for (const c of result.candidates) {

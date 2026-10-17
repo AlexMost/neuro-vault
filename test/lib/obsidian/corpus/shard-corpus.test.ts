@@ -6,14 +6,13 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CorpusIdentity } from '../../../../src/lib/obsidian/corpus/identity.js';
 import { ShardCorpus } from '../../../../src/lib/obsidian/corpus/shard-corpus.js';
 import { ShardStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
-import { loadCorpusSnapshot } from '../../../../src/lib/obsidian/corpus/snapshot.js';
-import type { CorpusShard } from '../../../../src/lib/obsidian/corpus/types.js';
-import { encodeVector } from '../../../../src/lib/obsidian/corpus/vector-codec.js';
-import {
-  findBlockNeighbors,
-  findNeighbors,
-} from '../../../../src/modules/semantic/search-engine.js';
+import type { CorpusShard, SmartSource } from '../../../../src/lib/obsidian/corpus/types.js';
+import { decodeVector, encodeVector } from '../../../../src/lib/obsidian/corpus/vector-codec.js';
 import { TEST_IDENTITY } from '../../../_identity.js';
+import {
+  legacyFindBlockNeighbors as findBlockNeighbors,
+  legacyFindNeighbors as findNeighbors,
+} from '../../../semantic/_legacy-retrieval.js';
 
 const DIMS = 4;
 const MODEL_KEY = TEST_IDENTITY.model_key;
@@ -56,6 +55,20 @@ const FIXTURE: CorpusShard[] = [
 
 const QUERY = [0.9, 0.3, 0.1, 0];
 
+/** The fixture decoded as the in-memory scan read it: notes with a vector only. */
+function sourcesOf(shards: CorpusShard[]): Map<string, SmartSource> {
+  const sources = new Map<string, SmartSource>();
+  for (const s of shards) {
+    if (s.embedding === null) continue;
+    sources.set(s.path, {
+      path: s.path,
+      embedding: decodeVector(s.embedding),
+      blocks: s.blocks.map((b) => ({ ...b, embedding: decodeVector(b.embedding) })),
+    });
+  }
+  return sources;
+}
+
 async function makeRoot(): Promise<string> {
   return mkdtemp(path.join(tmpdir(), 'nv-shard-corpus-'));
 }
@@ -74,8 +87,8 @@ async function setup(shards: CorpusShard[] = FIXTURE) {
 
 describe('ShardCorpus', () => {
   it('nearest matches findNeighbors for a query vector', async () => {
-    const { store, corpus } = await setup();
-    const { sources } = await loadCorpusSnapshot(store);
+    const { corpus } = await setup();
+    const sources = sourcesOf(FIXTURE);
 
     for (const threshold of [0, 0.3, 0.8]) {
       for (const limit of [undefined, 2]) {
@@ -88,8 +101,8 @@ describe('ShardCorpus', () => {
   });
 
   it('nearestBlocks matches findBlockNeighbors within paths', async () => {
-    const { store, corpus } = await setup();
-    const { sources } = await loadCorpusSnapshot(store);
+    const { corpus } = await setup();
+    const sources = sourcesOf(FIXTURE);
     const paths = ['a.md', 'c.md'];
     const subset = [...sources.values()].filter((s) => paths.includes(s.path));
 

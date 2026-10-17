@@ -1,11 +1,4 @@
-import type { BasenameIndex } from './link-resolver.js';
-import type { SmartSource } from './corpus/types.js';
-
-/** What every semantic tool ranks against: notes keyed by vault-relative path. */
-export interface CorpusSnapshot {
-  sources: Map<string, SmartSource>;
-  basenameIndex: BasenameIndex;
-}
+import type { ICorpusReader } from './corpus/corpus.js';
 
 /**
  * `disabled` is deliberate (the vault turned semantics off); `unavailable` is
@@ -23,12 +16,29 @@ export interface BackendStatus {
 }
 
 /**
- * One backend per vault entry, read by all three semantic tools of that vault.
- * `snapshot()` is what ranking consumes; `status()` is what the contract
- * surfaces report; `dispose()` releases background resources at shutdown.
+ * One backend per vault entry, read by all three semantic tools of that vault
+ * (design D12): the corpus's two reads, the vault's status, and `dispose()`
+ * for shutdown. It never exposes the corpus's vectors — with the shared
+ * daemon they never leave it, and in the in-process fallback they stay in the
+ * vault entry.
  */
-export interface SemanticBackend {
-  snapshot(): Promise<CorpusSnapshot>;
-  status(): BackendStatus;
+export interface ISemanticBackend extends ICorpusReader {
+  /** Never rejects: a status that cannot be read is `unavailable` with the reason. */
+  status(): Promise<BackendStatus>;
   dispose(): Promise<void>;
+}
+
+/**
+ * A read refused because the corpus cannot serve yet (the daemon's
+ * `CORPUS_NOT_READY`, or the same check in-process). Callers report it the way
+ * the readiness gate reports `status`.
+ */
+export class CorpusNotReadyError extends Error {
+  constructor(
+    readonly status: BackendStatus,
+    message = `the corpus is ${status.state}`,
+  ) {
+    super(message);
+    this.name = 'CorpusNotReadyError';
+  }
 }

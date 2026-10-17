@@ -16,18 +16,6 @@ export const REQUEST_TIMEOUTS = {
   documents: 300_000,
 } as const;
 
-/** What the facades need from a connection — `DaemonConnection` in production. */
-export interface DaemonLink {
-  /** Changes on every new connection; `embed.initialize` is re-sent once per value. */
-  readonly epoch: number;
-  /** Connect (spawning the daemon if needed); `DaemonUnavailableError` when that fails. */
-  ensure(): Promise<void>;
-  /** Drop the connection, rejecting what is pending on it; the next `ensure()` reconnects. */
-  close(): void;
-  /** One request on the current connection; never connects. */
-  request<T>(method: string, params: Record<string, unknown>, timeoutMs: number): Promise<T>;
-}
-
 export interface DaemonEmbeddingProviderDeps {
   profile: ModelProfile;
   /** The process's connection and one-way switch, shared with the corpus reads. */

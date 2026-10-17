@@ -2,7 +2,8 @@
 // `ICorpusReader` (design D13), frozen as a test oracle: the parity test
 // requires today's `executeRetrieval` to return exactly what this returns.
 // Self-contained on purpose — it carries its own copies of the scan
-// (`findNeighbors` / `findBlockNeighbors`) and the source narrowing, so it
+// (`findNeighbors` / `findBlockNeighbors`, and `find_duplicates`' pair scan) and
+// the source narrowing, so it
 // outlives the snapshot, `SearchEngine` and anything else the corpus reads
 // replace. Do not "fix" it to follow production: a diff against it is the
 // regression it exists to catch.
@@ -15,6 +16,7 @@ import type { RetrievalOutput } from '../../src/modules/semantic/retrieval-polic
 import type {
   BlockMatch,
   BlockSearchResult,
+  DuplicatePair,
   NoteResultNode,
   QueryEmbedder,
   RelatedNote,
@@ -346,4 +348,49 @@ export async function legacyExecuteRetrieval(
   }));
 
   return { results, truncated, per_query_hits, per_query_fallback };
+}
+
+// --- the scans, for the oracles of the tools composed over the reads ---------
+
+/** The note scan, as `get_similar_notes` and the ranking tests compared against it. */
+export { findNeighbors as legacyFindNeighbors, findBlockNeighbors as legacyFindBlockNeighbors };
+
+/** `find_duplicates` as search-engine.ts ran it: every pair, once, by similarity then path. */
+export function legacyFindDuplicates({
+  sources,
+  threshold,
+}: {
+  sources: Iterable<SmartSource>;
+  threshold: number;
+}): DuplicatePair[] {
+  const sourceList = [...sources];
+  const duplicates: DuplicatePair[] = [];
+  for (let leftIndex = 0; leftIndex < sourceList.length; leftIndex += 1) {
+    const left = sourceList[leftIndex];
+    for (let rightIndex = leftIndex + 1; rightIndex < sourceList.length; rightIndex += 1) {
+      const right = sourceList[rightIndex];
+      ensureSameDimensions(
+        left.embedding,
+        right.embedding,
+        `Source vector for ${left.path}`,
+        `Source vector for ${right.path}`,
+      );
+      const similarity = cosineSimilarity(left.embedding, right.embedding);
+      if (similarity >= threshold) {
+        const ordered = left.path.localeCompare(right.path) <= 0;
+        duplicates.push({
+          note_a: ordered ? left.path : right.path,
+          note_b: ordered ? right.path : left.path,
+          similarity,
+        });
+      }
+    }
+  }
+  duplicates.sort(
+    (left, right) =>
+      right.similarity - left.similarity ||
+      left.note_a.localeCompare(right.note_a) ||
+      left.note_b.localeCompare(right.note_b),
+  );
+  return duplicates;
 }

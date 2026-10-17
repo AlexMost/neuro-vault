@@ -13,8 +13,8 @@ import {
   DaemonUnavailableError,
   type CliStamp,
   type DaemonConnectionDeps,
+  type DaemonLink,
 } from './daemon-connection.js';
-import type { DaemonLink } from './daemon-embedding-provider.js';
 
 /** The connection's I/O, replaceable by tests; everything else is derived. */
 export type ConnectionIo = Omit<

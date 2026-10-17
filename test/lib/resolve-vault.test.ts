@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 import { resolveVault, resolveSemanticVault } from '../../src/lib/resolve-vault.js';
 import type { IRegisteredVault, IVaultRegistry } from '../../src/lib/vault-registry.js';
-import type { SemanticBackend } from '../../src/lib/obsidian/semantic-backend.js';
+import type { BackendStatus, ISemanticBackend } from '../../src/lib/obsidian/semantic-backend.js';
 
 function makeRegistry(entries: Partial<IRegisteredVault>[]): IVaultRegistry {
   const list = entries.map(
@@ -23,20 +23,19 @@ function makeRegistry(entries: Partial<IRegisteredVault>[]): IVaultRegistry {
   };
 }
 
-function readyBackend(): SemanticBackend {
+function backendIn(status: BackendStatus): ISemanticBackend {
   return {
-    snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) as never,
-    status: () => ({ state: 'ready' }),
+    nearest: async () => [],
+    nearestBlocks: async () => [],
+    status: async () => status,
     dispose: async () => {},
   };
 }
 
-function unavailableBackend(reason: string): SemanticBackend {
-  return {
-    snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) as never,
-    status: () => ({ state: 'unavailable', reason }),
-    dispose: async () => {},
-  };
+const readyBackend = (): ISemanticBackend => backendIn({ state: 'ready' });
+
+function unavailableBackend(reason: string): ISemanticBackend {
+  return backendIn({ state: 'unavailable', reason });
 }
 
 function registryWithBackend(
@@ -45,22 +44,17 @@ function registryWithBackend(
     | { state: 'disabled' }
     | { state: 'unavailable'; reason: string },
 ): IVaultRegistry {
-  const backend: SemanticBackend = {
-    snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) as never,
-    status: () => status,
-    dispose: async () => {},
-  };
-  return makeRegistry([{ name: 'v', backend }]);
+  return makeRegistry([{ name: 'v', backend: backendIn(status) }]);
 }
 
-function catchError(fn: () => unknown): ToolHandlerError {
+async function catchError(fn: () => Promise<unknown>): Promise<ToolHandlerError> {
   try {
-    fn();
-    throw new Error('expected throw');
+    await fn();
   } catch (err) {
     if (err instanceof ToolHandlerError) return err;
     throw err;
   }
+  throw new Error('expected throw');
 }
 
 describe('resolveVault', () => {
@@ -107,62 +101,57 @@ describe('resolveVault', () => {
 });
 
 describe('resolveSemanticVault', () => {
-  it('single-vault, backend ready → returns entry with backend defined (no !)', () => {
+  it('single-vault, backend ready → returns entry with backend defined (no !)', async () => {
     const backend = readyBackend();
     const reg = makeRegistry([{ name: 'only', backend }]);
-    const entry = resolveSemanticVault({}, reg, { tool: 'search_notes' });
+    const entry = await resolveSemanticVault({}, reg, { tool: 'search_notes' });
     expect(entry.name).toBe('only');
     expect(entry.backend).toBe(backend);
   });
 
-  it('single-vault, no backend → throws SEMANTIC_INDEX_NOT_FOUND', () => {
+  it('single-vault, no backend → throws SEMANTIC_INDEX_NOT_FOUND', async () => {
     const reg = makeRegistry([{ name: 'only' }]);
-    try {
-      resolveSemanticVault({}, reg, { tool: 'search_notes' });
-      throw new Error('expected throw');
-    } catch (err) {
-      expect(err).toBeInstanceOf(ToolHandlerError);
-      expect((err as ToolHandlerError).code).toBe('SEMANTIC_INDEX_NOT_FOUND');
-      expect((err as ToolHandlerError).details).toMatchObject({ vault: 'only' });
-    }
+    const err = await catchError(() => resolveSemanticVault({}, reg, { tool: 'search_notes' }));
+    expect(err.code).toBe('SEMANTIC_INDEX_NOT_FOUND');
+    expect(err.details).toMatchObject({ vault: 'only' });
   });
 
-  it('single-vault, backend unavailable → throws SEMANTIC_INDEX_NOT_FOUND with the backend reason', () => {
+  it('single-vault, backend unavailable → throws SEMANTIC_INDEX_NOT_FOUND with the backend reason', async () => {
     const reg = makeRegistry([{ name: 'only', backend: unavailableBackend('no corpus') }]);
-    try {
-      resolveSemanticVault({}, reg, { tool: 'search_notes' });
-      throw new Error('expected throw');
-    } catch (err) {
-      expect(err).toBeInstanceOf(ToolHandlerError);
-      expect((err as ToolHandlerError).code).toBe('SEMANTIC_INDEX_NOT_FOUND');
-      expect((err as ToolHandlerError).message).toMatch(/no corpus/);
-    }
+    const err = await catchError(() => resolveSemanticVault({}, reg, { tool: 'search_notes' }));
+    expect(err.code).toBe('SEMANTIC_INDEX_NOT_FOUND');
+    expect(err.message).toMatch(/no corpus/);
   });
 
-  it('multi-vault, vault: "b" selects vault b (backend ready) over vault a (no backend)', () => {
+  it('multi-vault, vault: "b" selects vault b (backend ready) over vault a (no backend)', async () => {
     const backend = readyBackend();
     const reg = makeRegistry([{ name: 'a' }, { name: 'b', backend }]);
-    const entry = resolveSemanticVault({ vault: 'b' }, reg, { tool: 'search_notes' });
+    const entry = await resolveSemanticVault({ vault: 'b' }, reg, { tool: 'search_notes' });
     expect(entry.name).toBe('b');
     expect(entry.backend).toBe(backend);
   });
 
-  it('reports a building index with its progress', () => {
+  it('reports a building index with its progress', async () => {
     const registry = registryWithBackend({ state: 'indexing', indexed: 12, total: 840 });
-    try {
-      resolveSemanticVault({}, registry, { tool: 'find_duplicates' });
-      expect.unreachable();
-    } catch (error) {
-      expect(error).toBeInstanceOf(ToolHandlerError);
-      const e = error as ToolHandlerError;
-      expect(e.code).toBe('SEMANTIC_INDEX_BUILDING');
-      expect(e.details).toMatchObject({ vault: 'v', indexed: 12, total: 840 });
-    }
+    const e = await catchError(() =>
+      resolveSemanticVault({}, registry, { tool: 'find_duplicates' }),
+    );
+    expect(e.code).toBe('SEMANTIC_INDEX_BUILDING');
+    expect(e.details).toMatchObject({ vault: 'v', indexed: 12, total: 840 });
   });
 
-  it('names the config key for a disabled vault', () => {
+  it('reads the status once', async () => {
+    const backend = readyBackend();
+    const status = vi.spyOn(backend, 'status');
+    await resolveSemanticVault({}, makeRegistry([{ name: 'only', backend }]), {
+      tool: 'find_duplicates',
+    });
+    expect(status).toHaveBeenCalledTimes(1);
+  });
+
+  it('names the config key for a disabled vault', async () => {
     const registry = registryWithBackend({ state: 'disabled' });
-    const error = catchError(() =>
+    const error = await catchError(() =>
       resolveSemanticVault({}, registry, { tool: 'get_similar_notes' }),
     );
     expect(error.code).toBe('SEMANTIC_DISABLED');
@@ -171,9 +160,11 @@ describe('resolveSemanticVault', () => {
     );
   });
 
-  it('points an unavailable corpus at the index command and never at a plugin', () => {
+  it('points an unavailable corpus at the index command and never at a plugin', async () => {
     const registry = registryWithBackend({ state: 'unavailable', reason: 'EACCES' });
-    const error = catchError(() => resolveSemanticVault({}, registry, { tool: 'find_duplicates' }));
+    const error = await catchError(() =>
+      resolveSemanticVault({}, registry, { tool: 'find_duplicates' }),
+    );
     expect(error.code).toBe('SEMANTIC_INDEX_NOT_FOUND');
     const text = `${error.message} ${JSON.stringify(error.details)}`;
     expect(text).toContain('EACCES');
@@ -184,12 +175,14 @@ describe('resolveSemanticVault', () => {
   // The spec scenario is literal: "the reason is present in the details".
   // A reason interpolated into the message only is not machine-readable —
   // a client parsing `details` cannot recover it from prose.
-  it('carries the unavailable reason in details, not only in the message', () => {
+  it('carries the unavailable reason in details, not only in the message', async () => {
     const registry = registryWithBackend({
       state: 'unavailable',
       reason: 'corpus shard notes/a.json is not valid JSON',
     });
-    const error = catchError(() => resolveSemanticVault({}, registry, { tool: 'find_duplicates' }));
+    const error = await catchError(() =>
+      resolveSemanticVault({}, registry, { tool: 'find_duplicates' }),
+    );
     expect(error.code).toBe('SEMANTIC_INDEX_NOT_FOUND');
     expect(error.details).toMatchObject({
       vault: 'v',
@@ -197,9 +190,11 @@ describe('resolveSemanticVault', () => {
     });
   });
 
-  it('carries a reason in details when the semantic module is off server-wide', () => {
+  it('carries a reason in details when the semantic module is off server-wide', async () => {
     const reg = makeRegistry([{ name: 'only' }]);
-    const error = catchError(() => resolveSemanticVault({}, reg, { tool: 'find_duplicates' }));
+    const error = await catchError(() =>
+      resolveSemanticVault({}, reg, { tool: 'find_duplicates' }),
+    );
     expect(error.code).toBe('SEMANTIC_INDEX_NOT_FOUND');
     expect(error.details).toMatchObject({
       vault: 'only',

@@ -9,8 +9,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { describe, expect, it, vi } from 'vitest';
 
 import { modelCorpusDir } from '../src/lib/obsidian/corpus/layout.js';
-import { buildBasenameIndex } from '../src/lib/obsidian/index.js';
-import type { BackendStatus } from '../src/lib/obsidian/semantic-backend.js';
+import type { BackendStatus, ISemanticBackend } from '../src/lib/obsidian/semantic-backend.js';
 import { main } from '../src/cli.js';
 import { DEFAULT_MODEL_KEY, identityOf, resolveModelProfile } from '../src/lib/model-profiles.js';
 import { startNeuroVaultServer } from '../src/server.js';
@@ -42,28 +41,16 @@ function createFakeServer() {
   };
 }
 
-const fakeSources = new Map([
-  [
-    'Folder/note-a.md',
-    {
-      path: 'Folder/note-a.md',
-      embedding: [1, 0, 0],
-      blocks: [
-        {
-          key: 'Folder/note-a.md#alpha',
-          heading: '#alpha',
-          lines: [1, 3] as [number, number],
-          embedding: [],
-        },
-      ],
-    },
-  ],
-]);
-
-function makeFakeCorpusIndex(sources: typeof fakeSources = fakeSources) {
-  const basenameIndex = buildBasenameIndex(sources.keys());
+/** A backend parked in `status`, whose reads answer nothing. */
+function fakeBackend(
+  status: BackendStatus = { state: 'ready' },
+  dispose: () => Promise<void> = async () => {},
+): ISemanticBackend {
   return {
-    snapshot: vi.fn().mockResolvedValue({ sources, basenameIndex }),
+    nearest: async (anchors) => anchors.map(() => []),
+    nearestBlocks: async (anchors) => anchors.map(() => []),
+    status: async () => status,
+    dispose,
   };
 }
 
@@ -96,9 +83,10 @@ async function startWithBackendStatus(
       },
       vaultEntryDeps: {
         semanticBackendFactory: () => ({
-          snapshot: () => Promise.reject(new Error('snapshot must not be read when not ready')),
-          status: () => status,
-          dispose: async () => {},
+          ...fakeBackend(status),
+          nearest: () => Promise.reject(new Error('the corpus must not be read when not ready')),
+          nearestBlocks: () =>
+            Promise.reject(new Error('the corpus must not be read when not ready')),
         }),
       },
       serverFactory: (_instructions: string) => server,
@@ -156,11 +144,8 @@ async function startForShutdown(opts: {
       transportFactory: () => transport as never,
       stdin: new PassThrough(),
       vaultEntryDeps: {
-        semanticBackendFactory: ({ vaultName }) => ({
-          snapshot: async () => ({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
-          status: () => ({ state: 'ready' as const }),
-          dispose: () => opts.backendDispose(vaultName),
-        }),
+        semanticBackendFactory: ({ vaultName }) =>
+          fakeBackend({ state: 'ready' }, () => opts.backendDispose(vaultName)),
       },
     },
   );
@@ -207,11 +192,7 @@ async function startOverPipedStdin(opts: {
       transportFactory: () => new StdioServerTransport(stdin, stdout),
       stdin,
       vaultEntryDeps: {
-        semanticBackendFactory: () => ({
-          snapshot: async () => ({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
-          status: () => ({ state: 'ready' as const }),
-          dispose: opts.backendDispose,
-        }),
+        semanticBackendFactory: () => fakeBackend({ state: 'ready' }, opts.backendDispose),
       },
     },
   );
@@ -275,11 +256,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         embeddingProvider: provider,
         sharedServices,
         vaultEntryDeps: {
-          semanticBackendFactory: () => ({
-            snapshot: () => Promise.reject(new Error('unused')),
-            status: () => ({ state: 'ready' as const }),
-            dispose: async () => {},
-          }),
+          semanticBackendFactory: () => fakeBackend(),
         },
         serverFactory: () => createFakeServer() as never,
         transportFactory: () => ({}) as never,
@@ -309,11 +286,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
       {
         embeddingProvider: provider,
         vaultEntryDeps: {
-          semanticBackendFactory: () => ({
-            snapshot: () => Promise.reject(new Error('unused')),
-            status: () => ({ state: 'ready' as const }),
-            dispose: async () => {},
-          }),
+          semanticBackendFactory: () => fakeBackend(),
         },
         serverFactory: () => createFakeServer() as never,
         transportFactory: () => ({}) as never,
@@ -651,11 +624,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
       await main(['node', 'cli.js', '--vault', vaultPath], {
         server: {
           vaultEntryDeps: {
-            semanticBackendFactory: () => ({
-              snapshot: () => makeFakeCorpusIndex().snapshot(),
-              status: () => ({ state: 'ready' }),
-              dispose: async () => {},
-            }),
+            semanticBackendFactory: () => fakeBackend(),
             providerFactory: () => fakeProvider,
             readerFactory: () => ({
               readNotes: vi.fn().mockResolvedValue([]),

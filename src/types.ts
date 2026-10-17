@@ -3,12 +3,10 @@ import type { ModelProfile } from './lib/model-profiles.js';
 export type {
   EmbeddingProvider,
   QueryEmbedder,
-  SearchEngine,
   SearchMode,
   SearchNotesInput,
   GetSimilarNotesInput,
   FindDuplicatesInput,
-  ToolHandlerDependencies,
   ToolHandlerErrorCode,
   ToolHandlers,
   SmartBlock,

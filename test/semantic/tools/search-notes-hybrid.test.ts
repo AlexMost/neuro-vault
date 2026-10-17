@@ -252,9 +252,9 @@ describe('lexical leg orchestration', () => {
     }
   });
 
-  it('mode: "lexical" never touches the corpus loader even when a corpus IS available', async () => {
+  it('mode: "lexical" never touches the corpus even when a corpus IS available', async () => {
     const notePath = 'Пошук note.md';
-    // If the corpus loader (or the semantic leg) were invoked despite
+    // If the corpus (or the semantic leg) were read despite
     // `mode: "lexical"`, this note would surface a semantic hit — proving the
     // assertion below isn't vacuously true because the corpus is empty.
     const sources = sourcesScoring([{ path: notePath, similarity: 0.9 }]);
@@ -268,7 +268,8 @@ describe('lexical leg orchestration', () => {
       expect(out.matches).toHaveLength(1);
       expect(out.matches[0].found_in).toEqual(['lexical:title']);
       const backend = deps.registry.list()[0].backend!;
-      expect(backend.snapshot).not.toHaveBeenCalled();
+      expect(backend.nearest).not.toHaveBeenCalled();
+      expect(backend.nearestBlocks).not.toHaveBeenCalled();
     } finally {
       await cleanup();
     }

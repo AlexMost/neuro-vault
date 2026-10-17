@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { DaemonRpcError } from '../../src/daemon/protocol.js';
-import { DaemonConnectionError } from '../../src/modules/semantic/daemon-connection.js';
 import {
-  DaemonEmbeddingProvider,
+  DaemonConnectionError,
   type DaemonLink,
-} from '../../src/modules/semantic/daemon-embedding-provider.js';
+} from '../../src/modules/semantic/daemon-connection.js';
+import { DaemonEmbeddingProvider } from '../../src/modules/semantic/daemon-embedding-provider.js';
 import { createQueuedEmbedder } from '../../src/modules/semantic/embed-queue.js';
 import { identityOf, resolveModelProfile } from '../../src/lib/model-profiles.js';
 import type { ISharedServices } from '../../src/modules/semantic/shared-services.js';

@@ -1,5 +1,5 @@
+import type { ICorpusReader } from '../src/lib/obsidian/corpus/corpus.js';
 import { LexicalIndex } from '../src/lib/obsidian/lexical/index.js';
-import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
 import { FsVaultReader } from '../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../src/lib/obsidian/vault-scope-config.js';
 import { WikilinkGraphIndex } from '../src/lib/obsidian/wikilink-graph.js';
@@ -10,8 +10,6 @@ import {
   fuseRanks,
 } from '../src/modules/semantic/rank-fusion.js';
 import { executeRetrieval } from '../src/modules/semantic/retrieval-policy.js';
-import { findNeighbors } from '../src/modules/semantic/search-engine.js';
-import { snapshotReader } from '../src/modules/semantic/snapshot-reader.js';
 
 export type PipelineId = 'semantic' | 'fused';
 export type EmbedFn = (text: string) => Promise<number[]>;
@@ -61,36 +59,35 @@ export interface RankedPath {
  * Best cosine between the query and any relevant note, ranked or not — the
  * evidence a threshold calibration needs for notes the top list never reached.
  */
-export function bestRelevantSimilarity(
+export async function bestRelevantSimilarity(
   queryVector: number[],
   relevant: string[],
-  sources: Map<string, SmartSource>,
-): number | null {
-  const candidates = relevant.flatMap((p) => {
-    const source = sources.get(p);
-    return source ? [source] : [];
+  corpus: ICorpusReader,
+): Promise<number | null> {
+  const [hits] = await corpus.nearest([{ vector: queryVector }], {
+    threshold: -1,
+    limit: 1,
+    allowed: relevant,
   });
-  const [best] = findNeighbors({ queryVector, sources: candidates, threshold: -1, limit: 1 });
-  return best?.similarity ?? null;
+  return hits?.[0]?.similarity ?? null;
 }
 
-function rankSemantic(
+async function rankSemantic(
   queryVector: number[],
-  sources: Map<string, SmartSource>,
+  corpus: ICorpusReader,
   similarity: SimilarityDefaults,
-): RankedPath[] {
-  return findNeighbors({
-    queryVector,
-    sources: sources.values(),
+): Promise<RankedPath[]> {
+  const [hits] = await corpus.nearest([{ vector: queryVector }], {
     threshold: evalConfig(similarity).semantic_threshold,
     limit: EVAL_TOP_K,
-  }).map((r) => ({ path: r.path, score: r.similarity }));
+  });
+  return (hits ?? []).map((r) => ({ path: r.path, score: r.similarity }));
 }
 
 async function rankFused(
   query: string,
   queryVector: number[],
-  sources: Map<string, SmartSource>,
+  corpus: ICorpusReader,
   context: FusedContext,
   similarity: SimilarityDefaults,
 ): Promise<RankedPath[]> {
@@ -109,7 +106,7 @@ async function rankFused(
     threshold: config.semantic_threshold,
     expansionLimit: config.expansion_limit,
     expansionFloor: config.expansion_floor,
-    corpus: snapshotReader(sources),
+    corpus,
     embeddingProvider: {
       initialize: () => Promise.resolve(),
       embedQuery: () => Promise.resolve(queryVector),
@@ -141,15 +138,16 @@ export async function rankQuery(args: {
   query: string;
   /** The query embedded once by the caller, so both pipelines rank the same vector. */
   queryVector: number[];
-  sources: Map<string, SmartSource>;
+  /** The vault's own corpus, loaded in-process (design D15). */
+  corpus: ICorpusReader;
   fusedContext?: FusedContext;
   similarity: SimilarityDefaults;
 }): Promise<RankedPath[]> {
   if (args.pipeline === 'semantic') {
-    return rankSemantic(args.queryVector, args.sources, args.similarity);
+    return rankSemantic(args.queryVector, args.corpus, args.similarity);
   }
   if (!args.fusedContext) {
     throw new Error('fused pipeline requires a FusedContext');
   }
-  return rankFused(args.query, args.queryVector, args.sources, args.fusedContext, args.similarity);
+  return rankFused(args.query, args.queryVector, args.corpus, args.fusedContext, args.similarity);
 }

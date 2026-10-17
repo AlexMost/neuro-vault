@@ -19,8 +19,8 @@ export function encodeVector(values: number[]): string {
 }
 
 /**
- * Decodes to a Float32Array rather than a JS `number[]`: the snapshot holds every
- * vector of the corpus for the life of the session, and a number array costs 8+
+ * Decodes to a Float32Array rather than a JS `number[]`: a loaded corpus holds every
+ * vector it serves for the life of its vault entry, and a number array costs 8+
  * bytes a dimension (plus the spare capacity `Array.from` grows) against 4.
  */
 export function decodeVector(encoded: string): Float32Array {

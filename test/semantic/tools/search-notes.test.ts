@@ -20,9 +20,17 @@ import {
   makeSearchDeps,
   makeTestRegistry,
   makeFakeCorpusIndex,
+  makeSyntheticSource,
   toBackend,
   runSearch,
 } from './_helpers.js';
+import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.js';
+import { createDaemonSemanticBackend } from '../../../src/modules/semantic/backend/daemon-backend.js';
+import {
+  DaemonTimeoutError,
+  type DaemonLink,
+} from '../../../src/modules/semantic/daemon-connection.js';
+import type { ISharedServices } from '../../../src/modules/semantic/shared-services.js';
 import { makeLexicalVault, sourcesScoring, sourcesWithEmbeddingFor } from './_hybrid-helpers.js';
 
 // Lightweight helpers for mock-only tests (no real corpus needed)
@@ -198,7 +206,7 @@ describe('searchNotes', () => {
     }
   });
 
-  it('degrades to the lexical leg when the corpus snapshot cannot be read', async () => {
+  it('degrades to the lexical leg when the corpus read fails', async () => {
     const notePath = 'Notes/a.md';
     const warn = vi.fn();
     const { deps, cleanup } = await makeLexicalVault(
@@ -209,7 +217,7 @@ describe('searchNotes', () => {
       const entry = deps.registry.list()[0];
       entry.backend = {
         ...entry.backend!,
-        snapshot: vi.fn().mockRejectedValue(new Error('corpus shard a.json is not valid JSON')),
+        nearest: vi.fn().mockRejectedValue(new Error('corpus shard a.json is not valid JSON')),
       };
       const tool = buildSearchNotesTool({ ...deps, warn });
       const reg = registerTool(tool);
@@ -225,6 +233,94 @@ describe('searchNotes', () => {
         note: expect.stringContaining('lexical-only'),
       });
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('not valid JSON'));
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('a status timeout degrades to lexical with unavailable', async () => {
+    // The real daemon backend over a connection whose `vault.status` never
+    // answers in time: one search degrades, and the next one asks again.
+    const notePath = 'Notes/a.md';
+    const { deps, cleanup } = await makeLexicalVault({ [notePath]: 'нотатка про пошук' });
+    const request = vi.fn(async (method: string, params: Record<string, unknown>) => {
+      if (method === 'vault.attach') {
+        return { vault: params.vault, profiles: { [MODEL_KEY]: { state: 'ready' } } };
+      }
+      if (method === 'vault.status') {
+        throw new DaemonTimeoutError('daemon request vault.status timed out after 10000 ms');
+      }
+      throw new Error(`the corpus must not be read: ${method}`);
+    });
+    const services: ISharedServices = {
+      mode: 'daemon',
+      connection: { epoch: 1, ensure: async () => {}, close: () => {}, request } as DaemonLink,
+      ensure: async () => 'daemon',
+      close: () => {},
+    };
+    try {
+      const entry = deps.registry.list()[0];
+      entry.backend = createDaemonSemanticBackend({
+        services,
+        vaultRoot: entry.path,
+        profile: MODEL_KEY,
+        local: () => {
+          throw new Error('never local');
+        },
+      });
+      // The startup attach has answered.
+      expect(await entry.backend.status()).toEqual({ state: 'ready' });
+      const reg = registerTool(buildSearchNotesTool(deps));
+
+      for (let call = 0; call < 2; call += 1) {
+        const result = await callTool<SearchNotesOutput>(reg, { query: 'пошук' });
+        expect(result.semantic_status).toEqual({
+          state: 'unavailable',
+          note: expect.stringContaining('lexical-only'),
+        });
+        expect(result.matches.length).toBeGreaterThan(0);
+        expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+          true,
+        );
+      }
+      expect(request.mock.calls.map(([method]) => method)).toEqual([
+        'vault.attach',
+        'vault.status',
+        'vault.status',
+      ]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('a read refused as not ready degrades to lexical, reporting the status it carries', async () => {
+    const notePath = 'Notes/a.md';
+    const warn = vi.fn();
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      { sources: sourcesWithEmbeddingFor(notePath, [1, 0]) },
+    );
+    try {
+      const entry = deps.registry.list()[0];
+      entry.backend = {
+        ...entry.backend!,
+        nearest: vi
+          .fn()
+          .mockRejectedValue(new CorpusNotReadyError({ state: 'indexing', indexed: 1, total: 6 })),
+      };
+      const reg = registerTool(buildSearchNotesTool({ ...deps, warn }));
+
+      const result = await callTool<SearchNotesOutput>(reg, { query: 'пошук' });
+
+      expect(result.semantic_status).toEqual({
+        state: 'indexing',
+        indexed: 1,
+        total: 6,
+        note: expect.stringContaining('lexical-only'),
+      });
+      expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+        true,
+      );
     } finally {
       await cleanup();
     }
@@ -1056,29 +1152,42 @@ describe('semantic_status', () => {
     }
   });
 
-  it('reports the state in lexical mode without reading a snapshot', async () => {
-    const snapshot = vi.fn();
+  it('reports the state in lexical mode without reading the corpus', async () => {
+    const corpus = makeFakeCorpusIndex(
+      new Map([['Notes/a.md', makeSyntheticSource('Notes/a.md')]]),
+    );
     const result = await runSearch({
       backendStatus: { state: 'ready' },
-      snapshot,
+      corpus,
       input: { query: 'x', mode: 'lexical' },
     });
     expect(result.semantic_status).toEqual({ state: 'ready' });
-    expect(snapshot).not.toHaveBeenCalled();
+    expect(corpus.nearest).not.toHaveBeenCalled();
+    expect(corpus.nearestBlocks).not.toHaveBeenCalled();
   });
 
-  it('reads the snapshot once for a search whose semantic leg makes several corpus reads', async () => {
+  it('reads the status once for a search whose semantic leg makes several corpus reads', async () => {
     // Deep effort over two queries: seeds, blocks and expansion are separate
-    // corpus reads, all served from one snapshot read.
-    const snapshot = vi.fn();
-    const result = await runSearch({
-      backendStatus: { state: 'ready' },
-      snapshot,
-      snapshotPaths: ['Notes/a.md', 'Notes/b.md'],
-      input: { query: ['x', 'y'], effort: 'deep' },
+    // corpus reads; the vault's status is read once for the whole call.
+    const sources = new Map(
+      ['Notes/a.md', 'Notes/b.md'].map((p) => [p, makeSyntheticSource(p)] as const),
+    );
+    const { deps, backend, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0, 0]) },
+      modelKey: MODEL_KEY,
     });
-    expect(result.matches.some((m) => m.found_in.includes('semantic'))).toBe(true);
-    expect(snapshot).toHaveBeenCalledTimes(1);
+    try {
+      const reg = registerTool(buildSearchNotesTool(deps));
+      const result = await callTool<SearchNotesOutput>(reg, {
+        query: ['x', 'y'],
+        effort: 'deep',
+      });
+      expect(result.matches.some((m) => m.found_in.includes('semantic'))).toBe(true);
+      expect(backend.status).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanup();
+    }
   });
 
   it('reports the state on the empty-filter early return', async () => {
@@ -1125,7 +1234,7 @@ describe('semantic_status', () => {
   it('drops a corpus path whose note is gone before the next reconcile', async () => {
     const result = await runSearch({
       backendStatus: { state: 'ready' },
-      snapshotPaths: ['Notes/gone.md', 'Notes/here.md'],
+      corpusPaths: ['Notes/gone.md', 'Notes/here.md'],
       existingPaths: ['Notes/here.md'],
       input: { query: 'x' },
     });
@@ -1152,8 +1261,8 @@ describe('semantic_status', () => {
       const entry = deps.registry.list()[0];
       const status = vi
         .fn()
-        .mockReturnValueOnce({ state: 'indexing', indexed: 3, total: 9 })
-        .mockReturnValue({ state: 'ready' });
+        .mockResolvedValueOnce({ state: 'indexing', indexed: 3, total: 9 })
+        .mockResolvedValue({ state: 'ready' });
       entry.backend = { ...entry.backend!, status };
 
       const tool = buildSearchNotesTool(deps);

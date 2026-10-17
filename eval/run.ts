@@ -12,7 +12,7 @@ import {
   resolveModelProfile,
   type ModelProfile,
 } from '../src/lib/model-profiles.js';
-import { BackendError, loadSnapshot } from './backends.js';
+import { BackendError, loadCorpus, notesWithVectors } from './backends.js';
 import { GoldenSetError, goldenSetPath, loadGoldenSet } from './golden.js';
 import { aggregate, scoreQuery, type QueryScore } from './metrics.js';
 import {
@@ -169,15 +169,15 @@ export async function runEval(
 ): Promise<{ reportFile: string; report: EvalReport }> {
   const vaultRoot = path.resolve(args.vault);
   // Validation gates the run: golden set first (its failures must precede any
-  // model/corpus work), then the backend snapshot.
+  // model/corpus work), then the vault's corpus.
   const entries = await loadGoldenSet(vaultRoot);
   const profile = args.model; // the only profile this run sees
   const identity = identityOf(profile);
-  const sources = await loadSnapshot(vaultRoot, corpusIdentityOf(identity));
+  const corpus = await loadCorpus(vaultRoot, corpusIdentityOf(identity));
   // Refused here, not as a RangeError after the whole golden set has been embedded.
-  if (args.stats && sources.size > MAX_STATS_SOURCES) {
+  if (args.stats && corpus.size() > MAX_STATS_SOURCES) {
     throw new UsageError(
-      `--stats keeps every note↔note similarity in memory and takes at most ${MAX_STATS_SOURCES} note vectors; this vault has ${sources.size}`,
+      `--stats keeps every note↔note similarity in memory and takes at most ${MAX_STATS_SOURCES} note vectors; this vault has ${corpus.size()}`,
     );
   }
   // A bad baseline fails here, not after the whole golden set has been embedded.
@@ -201,21 +201,22 @@ export async function runEval(
       pipeline: args.pipeline,
       query: entry.query,
       queryVector,
-      sources,
+      corpus,
       fusedContext,
       similarity: profile.similarity,
     });
     per_query.push(
-      scoreQuery(entry, ranked, bestRelevantSimilarity(queryVector, entry.relevant, sources)),
+      scoreQuery(entry, ranked, await bestRelevantSimilarity(queryVector, entry.relevant, corpus)),
     );
   }
 
   let stats: CalibrationStats | undefined;
   if (args.stats) {
     // The run's own knobs, so the populations can never drift from what was ranked.
-    const populations = collectPopulations({
+    const populations = await collectPopulations({
       queryVectors,
-      sources,
+      corpus,
+      paths: await notesWithVectors(corpus),
       seedPool: config.semantic_pool,
       expansionLimit: config.expansion_limit,
       topK: EVAL_TOP_K,

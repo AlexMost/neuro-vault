@@ -7,7 +7,6 @@ import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.
 import { EFFORT_PROFILES } from '../effort-profiles.js';
 import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { runRetrievalPipeline } from '../retrieval-pipeline.js';
-import { lazySnapshotReader } from '../snapshot-reader.js';
 import {
   normalizeQuery,
   normalizeQueryArray,
@@ -23,7 +22,11 @@ import type {
 } from '../types.js';
 import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 import { LexicalIndex, type LexicalMatch } from '../../../lib/obsidian/lexical/index.js';
-import type { BackendState, BackendStatus } from '../../../lib/obsidian/semantic-backend.js';
+import {
+  CorpusNotReadyError,
+  type BackendState,
+  type BackendStatus,
+} from '../../../lib/obsidian/semantic-backend.js';
 
 const prefixSchema = z.union([z.string(), z.array(z.string()).min(1)]);
 
@@ -272,8 +275,9 @@ async function runSearchForEntry(
   // Read once, up front — it describes the vault's index, not this
   // request, so every return path below (including the empty-filter early
   // return and `mode: "lexical"`, which never touch the backend otherwise)
-  // carries the same value (design D5).
-  const semantic_status = toStatusField(entry.backend?.status());
+  // carries the same value (design D5), and the semantic leg's go/no-go
+  // below is decided from it rather than from a second read.
+  const semantic_status = toStatusField(await entry.backend?.status());
 
   // `channel` picks which retrieval leg(s) run. `effort` maps onto the
   // internal quick|deep retrieval-policy vocabulary. `threshold` is
@@ -371,8 +375,7 @@ async function runSearchForEntry(
       allowed,
     },
     {
-      // Read lazily: only a search whose semantic leg runs reads the snapshot.
-      ...(backend !== undefined ? { corpus: lazySnapshotReader(() => backend.snapshot()) } : {}),
+      ...(backend !== undefined ? { corpus: backend } : {}),
       lexical: lexicalFor(entry),
       getBacklinkCount: (p) => graph.getBacklinkCount(p),
       filterExisting: (paths) => entry.filterExisting(paths),
@@ -386,10 +389,15 @@ async function runSearchForEntry(
       `neuro-vault semantic: search_notes fell back to its lexical leg for vault "${entry.name}": ${String(result.semantic.error)}`,
     );
   }
+  // A corpus that stopped serving between the status read and the leg says
+  // what it is now (`indexing` after a daemon respawn, say); any other failure
+  // is the vault's semantic index being unusable for this call.
   const status =
-    result.semantic.status === 'failed'
-      ? { state: 'unavailable' as const, note: DEGRADED_NOTES.unavailable }
-      : semantic_status;
+    result.semantic.status !== 'failed'
+      ? semantic_status
+      : result.semantic.error instanceof CorpusNotReadyError
+        ? toStatusField(result.semantic.error.status)
+        : { state: 'unavailable' as const, note: DEGRADED_NOTES.unavailable };
 
   const semanticOutcome = result.semantic;
   const semanticRan = semanticOutcome.status === 'ran';
