@@ -1,16 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { RankedNote } from '../../src/lib/obsidian/lexical/index.js';
-import {
-  findBlockNeighbors,
-  findDuplicates,
-  findNeighbors,
-} from '../../src/modules/semantic/search-engine.js';
 import {
   runRetrievalPipeline,
   type RetrievalPipelineDeps,
   type RetrievalPipelineInput,
 } from '../../src/modules/semantic/retrieval-pipeline.js';
+import { snapshotReader } from '../../src/modules/semantic/snapshot-reader.js';
 import type { SmartSource } from '../../src/modules/semantic/types.js';
 import { TEST_SIMILARITY } from '../_identity.js';
 
@@ -50,7 +46,7 @@ function lexicalNote(path: string): RankedNote {
 
 function makeDeps(overrides: Partial<RetrievalPipelineDeps> = {}): RetrievalPipelineDeps {
   return {
-    snapshot: () => Promise.resolve({ sources: makeSources() }),
+    corpus: snapshotReader(makeSources()),
     lexical: {
       search: () =>
         Promise.resolve({
@@ -67,7 +63,6 @@ function makeDeps(overrides: Partial<RetrievalPipelineDeps> = {}): RetrievalPipe
       initialize: () => Promise.resolve(),
       embedQuery: () => Promise.resolve(QUERY_VECTOR),
     },
-    searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     similarity: TEST_SIMILARITY,
     ...overrides,
   };
@@ -140,26 +135,33 @@ describe('runRetrievalPipeline', () => {
 
   it('degrades to the already-computed lexical results when the semantic leg throws', async () => {
     const boom = new Error('no model on disk');
-    const deps = makeDeps({ snapshot: () => Promise.reject(boom) });
+    const deps = makeDeps({
+      corpus: { nearest: () => Promise.reject(boom), nearestBlocks: () => Promise.reject(boom) },
+    });
     const result = await runRetrievalPipeline({ ...DEEP }, deps);
     expect(result.semantic).toEqual({ status: 'failed', error: boom });
     expect(result.candidates.map((c) => c.path)).toEqual([LEXICAL_ONLY, notePath(9)]);
     expect(result.candidates.every((c) => c.semantic === undefined)).toBe(true);
   });
 
-  it('skips the semantic leg when the caller opts out or no snapshot exists', async () => {
+  it('skips the semantic leg when the caller opts out or no corpus exists', async () => {
     const optedOut = await runRetrievalPipeline({ ...DEEP, semantic: false }, makeDeps());
     expect(optedOut.semantic).toEqual({ status: 'skipped' });
-    const noBackend = await runRetrievalPipeline({ ...DEEP }, makeDeps({ snapshot: undefined }));
+    const noBackend = await runRetrievalPipeline({ ...DEEP }, makeDeps({ corpus: undefined }));
     expect(noBackend.semantic).toEqual({ status: 'skipped' });
     expect(noBackend.candidates.map((c) => c.path)).toEqual([LEXICAL_ONLY, notePath(9)]);
   });
 
-  it('narrows the semantic sources by the allowed set', async () => {
+  it('narrows the semantic leg by the allowed set', async () => {
     const allowed = new Set([notePath(1), notePath(2), LEXICAL_ONLY]);
-    const result = await runRetrievalPipeline({ ...DEEP, allowed }, makeDeps());
+    const corpus = snapshotReader(makeSources());
+    const nearest = vi.spyOn(corpus, 'nearest');
+    const result = await runRetrievalPipeline({ ...DEEP, allowed }, makeDeps({ corpus }));
     for (const c of result.candidates) {
       if (c.semantic) expect(allowed.has(c.path)).toBe(true);
     }
+    // Handed to the corpus as a list, on every note read.
+    expect(nearest).toHaveBeenCalled();
+    for (const [, opts] of nearest.mock.calls) expect(opts.allowed).toEqual([...allowed]);
   });
 });

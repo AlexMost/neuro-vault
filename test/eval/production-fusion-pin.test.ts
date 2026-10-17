@@ -7,11 +7,6 @@ import { FsVaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../../src/lib/obsidian/vault-scope-config.js';
 import { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import {
-  findBlockNeighbors,
-  findDuplicates,
-  findNeighbors,
-} from '../../src/modules/semantic/search-engine.js';
-import {
   buildSearchNotesTool,
   type SearchNotesOutput,
 } from '../../src/modules/semantic/tools/search-notes.js';
@@ -99,7 +94,6 @@ async function productionOrder(
   const tool = buildSearchNotesTool({
     registry,
     embeddingProvider: { initialize: () => Promise.resolve(), embedQuery: embed },
-    searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     modelKey: 'k',
     similarity: TEST_SIMILARITY,
   });

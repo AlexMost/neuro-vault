@@ -12,11 +12,6 @@ import type { SimilarityDefaults } from '../../../src/lib/model-profiles.js';
 import { readFile } from 'node:fs/promises';
 
 import { registerTool } from '../../../src/lib/tool-registry.js';
-import {
-  findBlockNeighbors,
-  findDuplicates,
-  findNeighbors,
-} from '../../../src/modules/semantic/search-engine.js';
 import { buildSearchNotesTool } from '../../../src/modules/semantic/tools/search-notes.js';
 import { makeTestRegistry } from './_helpers.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
@@ -28,7 +23,6 @@ function builtTool(similarity: SimilarityDefaults = TEST_SIMILARITY) {
       initialize: () => Promise.resolve(),
       embedQuery: () => Promise.resolve([1]),
     },
-    searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     modelKey: 'k',
     similarity,
   });

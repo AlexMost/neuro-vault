@@ -7,6 +7,7 @@ import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.
 import { EFFORT_PROFILES } from '../effort-profiles.js';
 import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { runRetrievalPipeline } from '../retrieval-pipeline.js';
+import { lazySnapshotReader } from '../snapshot-reader.js';
 import {
   normalizeQuery,
   normalizeQueryArray,
@@ -19,7 +20,6 @@ import type {
   NoteFilter,
   SearchChannelMode,
   SearchEffort,
-  SearchEngine,
 } from '../types.js';
 import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 import { LexicalIndex, type LexicalMatch } from '../../../lib/obsidian/lexical/index.js';
@@ -131,7 +131,6 @@ function toStatusField(status: BackendStatus | undefined): SemanticStatusField {
 export interface SearchNotesDeps {
   registry: IVaultRegistry;
   embeddingProvider: QueryEmbedder;
-  searchEngine: SearchEngine;
   modelKey: string;
   /** The active model profile's default thresholds. */
   similarity: SimilarityDefaults;
@@ -262,13 +261,13 @@ function buildQueryStats(args: {
 async function runSearchForEntry(
   entry: IRegisteredVault,
   input: SearchNotesInput,
-  deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'searchEngine' | 'modelKey' | 'similarity'> & {
+  deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'modelKey' | 'similarity'> & {
     lexicalFor: (entry: IRegisteredVault) => LexicalIndex;
     warn: (message: string) => void;
   },
 ): Promise<SearchNotesOutput> {
   const { graph, listMatchingPaths } = entry;
-  const { embeddingProvider, searchEngine, modelKey, similarity, lexicalFor, warn } = deps;
+  const { embeddingProvider, modelKey, similarity, lexicalFor, warn } = deps;
 
   // Read once, up front — it describes the vault's index, not this
   // request, so every return path below (including the empty-filter early
@@ -372,12 +371,12 @@ async function runSearchForEntry(
       allowed,
     },
     {
-      ...(backend !== undefined ? { snapshot: () => backend.snapshot() } : {}),
+      // Read lazily: only a search whose semantic leg runs reads the snapshot.
+      ...(backend !== undefined ? { corpus: lazySnapshotReader(() => backend.snapshot()) } : {}),
       lexical: lexicalFor(entry),
       getBacklinkCount: (p) => graph.getBacklinkCount(p),
       filterExisting: (paths) => entry.filterExisting(paths),
       embeddingProvider,
-      searchEngine,
       similarity,
     },
   );
@@ -446,7 +445,7 @@ async function runSearchForEntry(
 export function buildSearchNotesTool(
   deps: SearchNotesDeps,
 ): ITool<SearchNotesInput, SearchNotesOutput | IFanOutResult<SearchNotesOutput>> {
-  const { registry, embeddingProvider, searchEngine, modelKey, similarity } = deps;
+  const { registry, embeddingProvider, modelKey, similarity } = deps;
   const warn = deps.warn ?? ((message: string) => console.error(message));
 
   // Per-vault lexical indexes, created lazily; the Map lives for the tool's
@@ -462,7 +461,7 @@ export function buildSearchNotesTool(
     return idx;
   };
 
-  const entryDeps = { embeddingProvider, searchEngine, modelKey, similarity, lexicalFor, warn };
+  const entryDeps = { embeddingProvider, modelKey, similarity, lexicalFor, warn };
   const SEARCH_NOTES_DESCRIPTION = [
     'Hybrid search over notes: fuses a semantic leg (embedding similarity — fuzzy recall, topic exploration, cross-language), a lexical leg (exact text over titles, headings and body — names, codes, terms) and, at deep effort, an expansion leg (neighbours of the semantic hits) into ONE reciprocal-rank-fused list. Pass short keyword queries (1-4 words), not sentences.',
     '',

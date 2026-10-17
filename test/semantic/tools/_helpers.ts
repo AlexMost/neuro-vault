@@ -188,7 +188,6 @@ export function toBackend(
 export async function makeSearchDeps(opts: {
   sources: Map<string, SmartSource>;
   embeddingProvider: QueryEmbedder;
-  searchEngine: SearchEngine;
   modelKey: string;
   similarity?: SimilarityDefaults;
   absentPaths?: Set<string>;
@@ -200,7 +199,6 @@ export async function makeSearchDeps(opts: {
   deps: {
     registry: ReturnType<typeof makeTestRegistry>;
     embeddingProvider: QueryEmbedder;
-    searchEngine: SearchEngine;
     modelKey: string;
     similarity: SimilarityDefaults;
   };
@@ -231,7 +229,6 @@ export async function makeSearchDeps(opts: {
     deps: {
       registry,
       embeddingProvider: opts.embeddingProvider,
-      searchEngine: opts.searchEngine,
       modelKey: opts.modelKey,
       similarity: opts.similarity ?? TEST_SIMILARITY,
     },
@@ -285,7 +282,6 @@ export async function runSearch(opts: {
   const { deps, cleanup } = await makeSearchDeps({
     sources,
     embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0, 0]) },
-    searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
     modelKey: MODEL_KEY,
     absentPaths,
     corpus: { snapshot: snapshotFn },

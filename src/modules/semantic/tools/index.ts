@@ -1,7 +1,6 @@
 import { registerTool } from '../../../lib/tool-registry.js';
 import type { ToolRegistration } from '../../../lib/tool-registration.js';
 import type { ModelProfile, SimilarityDefaults } from '../../../lib/model-profiles.js';
-import { findBlockNeighbors, findDuplicates, findNeighbors } from '../search-engine.js';
 import type { QueryEmbedder, SearchEngine } from '../types.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { buildFindDuplicatesTool } from './find-duplicates.js';
@@ -47,7 +46,6 @@ export function buildLexicalOnlyTools(
           embedQuery: () =>
             Promise.reject(new Error('the semantic module is disabled; nothing can be embedded')),
         },
-        searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
         modelKey: profile.key,
         similarity: profile.similarity,
       }),

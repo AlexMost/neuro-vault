@@ -1,15 +1,8 @@
 import { vi } from 'vitest';
 
-import {
-  findBlockNeighbors,
-  findDuplicates,
-  findNeighbors,
-} from '../../../src/modules/semantic/search-engine.js';
-import type {
-  QueryEmbedder,
-  SearchEngine,
-  SmartSource,
-} from '../../../src/modules/semantic/types.js';
+import type { ICorpusReader } from '../../../src/lib/obsidian/corpus/corpus.js';
+import { snapshotReader } from '../../../src/modules/semantic/snapshot-reader.js';
+import type { QueryEmbedder, SmartSource } from '../../../src/modules/semantic/types.js';
 
 // 2-D unit vectors: query = [1, 0]; a note whose query-similarity should be
 // `s` sits at angle acos(s). A neighbour at seed-angle + acos(t) has
@@ -55,8 +48,7 @@ function neighbourNote(index: number, seedSim: number): SmartSource {
 }
 
 export function makeCalibrationFixture(): {
-  sources: Map<string, SmartSource>;
-  searchEngine: SearchEngine;
+  corpus: ICorpusReader;
   embeddingProvider: QueryEmbedder;
 } {
   const notes = [
@@ -64,8 +56,7 @@ export function makeCalibrationFixture(): {
     ...NEIGHBOUR_SIMS.map((s, i) => neighbourNote(i, s)),
   ];
   return {
-    sources: new Map(notes.map((n) => [n.path, n])),
-    searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
+    corpus: snapshotReader(new Map(notes.map((n) => [n.path, n]))),
     embeddingProvider: {
       initialize: vi.fn(),
       embedQuery: vi.fn().mockResolvedValue(vec(0)),

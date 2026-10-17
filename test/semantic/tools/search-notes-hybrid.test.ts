@@ -6,15 +6,15 @@ import {
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import type { IFanOutResult } from '../../../src/lib/fan-out.js';
-import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
+import type { SmartSource } from '../../../src/modules/semantic/types.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
 import { makeSearchDeps, makeTestRegistry } from './_helpers.js';
 import {
-  engineReturning,
   makeLexicalVault,
-  makeMockEngine,
+  sourcesScoring,
   sourcesWithEmbeddingFor,
+  vectorScoring,
 } from './_hybrid-helpers.js';
 
 describe('unified matches shape', () => {
@@ -24,10 +24,7 @@ describe('unified matches shape', () => {
     // exactly one lexical kind (title), keeping found_in assertion precise.
     const { deps, cleanup } = await makeLexicalVault(
       { 'Target.md': 'Notes on building a retrieval evaluation harness.\n' },
-      {
-        sources: sourcesWithEmbeddingFor('Target.md'),
-        engine: engineReturning([{ path: 'Target.md', similarity: 0.8 }]),
-      },
+      { sources: sourcesScoring([{ path: 'Target.md', similarity: 0.8 }]) },
     );
     try {
       const out = await callTool<SearchNotesOutput>(registerTool(buildSearchNotesTool(deps)), {
@@ -36,7 +33,7 @@ describe('unified matches shape', () => {
       expect(out.matches).toHaveLength(1);
       const m = out.matches[0];
       expect(m.found_in).toEqual(['semantic', 'lexical:title']);
-      expect(m.similarity).toBe(0.8);
+      expect(m.similarity).toBeCloseTo(0.8, 6);
       expect(m.lexical?.[0]?.matched_in).toBe('title');
       expect(out).not.toHaveProperty('semantic_matches');
       expect(out).not.toHaveProperty('lexical_matches');
@@ -119,25 +116,18 @@ describe('unified matches shape', () => {
 
   it('surfaces the semantic leg pool overflow even when the lexical leg is empty and the merged cap is not hit', async () => {
     // 4 files that don't lexically match the query at all (0 lexical hits),
-    // with the semantic engine mocked to always return all 4 regardless of
-    // query — quick effort's semantic pool cap is 3, so the leg overflows
-    // (4 > 3) even though the merged list (3 semantic-only entries) sits
-    // well under the quick merged cap of 5.
+    // all 4 above the quick default for the query — quick effort's semantic
+    // pool cap is 3, so the leg overflows (4 > 3) even though the merged list
+    // (3 semantic-only entries) sits well under the quick merged cap of 5.
     const files: Record<string, string> = {};
     for (let i = 0; i < 4; i++) files[`note-${i}.md`] = 'irrelevant body text';
-    const sources: Map<string, SmartSource> = new Map(
-      Object.keys(files).map((p) => [
-        p,
-        { path: p, embedding: new Float32Array([1, 0]), blocks: [] },
-      ]),
-    );
-    const engine = engineReturning([
+    const sources = sourcesScoring([
       { path: 'note-0.md', similarity: 0.9 },
       { path: 'note-1.md', similarity: 0.8 },
       { path: 'note-2.md', similarity: 0.7 },
       { path: 'note-3.md', similarity: 0.6 },
     ]);
-    const { deps, cleanup } = await makeLexicalVault(files, { sources, engine });
+    const { deps, cleanup } = await makeLexicalVault(files, { sources });
     try {
       const out = await callTool<SearchNotesOutput>(registerTool(buildSearchNotesTool(deps)), {
         query: 'zzz-no-lexical-match',
@@ -151,22 +141,28 @@ describe('unified matches shape', () => {
   });
 
   it('never returns an empty blocks array', async () => {
-    // findBlockNeighbors is mocked to always return a hit for the seed note,
-    // so `blocks` is populated (non-empty) whenever it's present at all —
-    // proving `assembleUnified` never emits `blocks: []`.
+    // The seed note carries a block the query reaches, so `blocks` is
+    // populated (non-empty) whenever it's present at all — proving
+    // `assembleUnified` never emits `blocks: []`.
     const notePath = 'пошук note.md';
-    const sources = sourcesWithEmbeddingFor(notePath, [1, 0]);
-    const engine: SearchEngine = {
-      findNeighbors: vi.fn().mockReturnValue([{ path: notePath, similarity: 0.9 }]),
-      findBlockNeighbors: vi
-        .fn()
-        .mockReturnValue([{ path: notePath, heading: '#h', lines: [1, 3], similarity: 0.7 }]),
-      findDuplicates: vi.fn().mockReturnValue([]),
-    };
-    const { deps, cleanup } = await makeLexicalVault(
-      { [notePath]: 'зміст нотатки' },
-      { sources, engine },
-    );
+    const sources = new Map<string, SmartSource>([
+      [
+        notePath,
+        {
+          path: notePath,
+          embedding: Float32Array.from(vectorScoring(0.9)),
+          blocks: [
+            {
+              key: '#h',
+              heading: '#h',
+              lines: [1, 3],
+              embedding: Float32Array.from(vectorScoring(0.7)),
+            },
+          ],
+        },
+      ],
+    ]);
+    const { deps, cleanup } = await makeLexicalVault({ [notePath]: 'зміст нотатки' }, { sources });
     try {
       const out = await callTool<SearchNotesOutput>(registerTool(buildSearchNotesTool(deps)), {
         query: 'пошук',
@@ -258,12 +254,11 @@ describe('lexical leg orchestration', () => {
 
   it('mode: "lexical" never touches the corpus loader even when a corpus IS available', async () => {
     const notePath = 'Пошук note.md';
-    const sources = sourcesWithEmbeddingFor(notePath);
     // If the corpus loader (or the semantic leg) were invoked despite
-    // `mode: "lexical"`, this engine would surface a hit — proving the
+    // `mode: "lexical"`, this note would surface a semantic hit — proving the
     // assertion below isn't vacuously true because the corpus is empty.
-    const engine = engineReturning([{ path: notePath, similarity: 0.9 }]);
-    const { deps, cleanup } = await makeLexicalVault({ [notePath]: '' }, { sources, engine });
+    const sources = sourcesScoring([{ path: notePath, similarity: 0.9 }]);
+    const { deps, cleanup } = await makeLexicalVault({ [notePath]: '' }, { sources });
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
       const out = await callTool<SearchNotesOutput>(reg, {
@@ -335,7 +330,6 @@ describe('search_notes input axes (SDK gate)', () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources: new Map(),
       embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
-      searchEngine: makeMockEngine(),
       modelKey: 'k',
     });
     const tool = buildSearchNotesTool(deps);
@@ -479,17 +473,11 @@ describe('query_stats', () => {
   it('reports pre-cap per-query stats and surfaces dead variants', async () => {
     // "пошук" matches both lexically (title) and semantically; "Мобі"
     // matches nothing in either leg — a dead query variant.
+    // [0, 1] is orthogonal to the note: under every threshold, fallback too.
     const sources = sourcesWithEmbeddingFor('пошук note.md', [1, 0]);
-    const engine: SearchEngine = {
-      findNeighbors: vi.fn(({ queryVector }: { queryVector: ArrayLike<number> }) =>
-        queryVector[0] === 1 ? [{ path: 'пошук note.md', similarity: 0.9 }] : [],
-      ),
-      findBlockNeighbors: vi.fn().mockReturnValue([]),
-      findDuplicates: vi.fn().mockReturnValue([]),
-    };
     const { deps, cleanup } = await makeLexicalVault(
       { 'пошук note.md': 'зміст нотатки' },
-      { sources, engine },
+      { sources },
     );
     deps.embeddingProvider.embedQuery = vi.fn(async (q: string) =>
       q === 'пошук' ? [1, 0] : [0, 1],
@@ -513,14 +501,7 @@ describe('query_stats', () => {
     // note hit lexically by q1 ("пошук"), semantically by q2 ("vector") only.
     const notePath = 'Target пошук.md';
     const sources = sourcesWithEmbeddingFor(notePath, [1, 0]);
-    const engine: SearchEngine = {
-      findNeighbors: vi.fn(({ queryVector }: { queryVector: ArrayLike<number> }) =>
-        queryVector[0] === 1 ? [{ path: notePath, similarity: 0.9 }] : [],
-      ),
-      findBlockNeighbors: vi.fn().mockReturnValue([]),
-      findDuplicates: vi.fn().mockReturnValue([]),
-    };
-    const { deps, cleanup } = await makeLexicalVault({ [notePath]: '' }, { sources, engine });
+    const { deps, cleanup } = await makeLexicalVault({ [notePath]: '' }, { sources });
     deps.embeddingProvider.embedQuery = vi.fn(async (q: string) =>
       q === 'vector' ? [1, 0] : [0, 1],
     );
@@ -584,19 +565,7 @@ describe('query_stats', () => {
       [noteA, { path: noteA, embedding: new Float32Array([1, 0]), blocks: [] }],
       [noteB, { path: noteB, embedding: new Float32Array([0, 1]), blocks: [] }],
     ]);
-    const engine: SearchEngine = {
-      findNeighbors: vi.fn(({ queryVector }: { queryVector: ArrayLike<number> }) =>
-        queryVector[0] === 1
-          ? [{ path: noteA, similarity: 0.9 }]
-          : [{ path: noteB, similarity: 0.8 }],
-      ),
-      findBlockNeighbors: vi.fn().mockReturnValue([]),
-      findDuplicates: vi.fn().mockReturnValue([]),
-    };
-    const { deps, cleanup } = await makeLexicalVault(
-      { [noteA]: '', [noteB]: '' },
-      { sources, engine },
-    );
+    const { deps, cleanup } = await makeLexicalVault({ [noteA]: '', [noteB]: '' }, { sources });
     deps.embeddingProvider.embedQuery = vi.fn(async (q: string) => (q === 'q1' ? [1, 0] : [0, 1]));
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
@@ -732,15 +701,8 @@ describe('query_stats', () => {
   it('marks semantic hits rescued by the fallback retry on the entry', async () => {
     // Every note scores below the quick default (0.5) but above the 0.3
     // fallback, so the leg's hits exist only because the retry ran.
-    const sources = sourcesWithEmbeddingFor('note.md', [1, 0]);
-    const engine: SearchEngine = {
-      findNeighbors: vi.fn(({ threshold }: { threshold: number }) =>
-        threshold <= 0.3 ? [{ path: 'note.md', similarity: 0.35 }] : [],
-      ),
-      findBlockNeighbors: vi.fn().mockReturnValue([]),
-      findDuplicates: vi.fn().mockReturnValue([]),
-    };
-    const { deps, cleanup } = await makeLexicalVault({ 'note.md': 'зміст' }, { sources, engine });
+    const sources = sourcesScoring([{ path: 'note.md', similarity: 0.35 }]);
+    const { deps, cleanup } = await makeLexicalVault({ 'note.md': 'зміст' }, { sources });
     deps.embeddingProvider.embedQuery = vi.fn(async () => [1, 0]);
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
@@ -816,12 +778,8 @@ describe('expansion_floor input schema (SDK gate)', () => {
 describe('query_stats semantic_fallback flag', () => {
   it('flags a query rescued by the default-threshold fallback', async () => {
     // Hits at 0.4: below the quick default 0.5, above the 0.3 fallback.
-    const engine = makeMockEngine();
-    engine.findNeighbors.mockImplementation(({ threshold }: { threshold: number }) =>
-      threshold <= 0.4 ? [{ path: 'a.md', similarity: 0.4 }] : [],
-    );
-    const sources = sourcesWithEmbeddingFor('a.md');
-    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'body' }, { sources, engine });
+    const sources = sourcesScoring([{ path: 'a.md', similarity: 0.4 }]);
+    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'body' }, { sources });
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
       const output = await callTool<{
@@ -835,9 +793,9 @@ describe('query_stats semantic_fallback flag', () => {
   });
 
   it('never flags explicit-threshold requests, even at zero hits', async () => {
-    const engine = makeMockEngine(); // findNeighbors always []
-    const sources = sourcesWithEmbeddingFor('a.md');
-    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'body' }, { sources, engine });
+    // 0.8 for every query: a hit at any default, none under 0.99.
+    const sources = sourcesScoring([{ path: 'a.md', similarity: 0.8 }]);
+    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'body' }, { sources });
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
       const output = await callTool<{
@@ -853,10 +811,8 @@ describe('query_stats semantic_fallback flag', () => {
   });
 
   it('does not flag queries whose first pass had hits', async () => {
-    const engine = makeMockEngine();
-    engine.findNeighbors.mockReturnValue([{ path: 'a.md', similarity: 0.8 }]);
-    const sources = sourcesWithEmbeddingFor('a.md');
-    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'body' }, { sources, engine });
+    const sources = sourcesScoring([{ path: 'a.md', similarity: 0.8 }]);
+    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'body' }, { sources });
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
       const output = await callTool<{
@@ -870,21 +826,38 @@ describe('query_stats semantic_fallback flag', () => {
 });
 
 describe('expansion_floor wiring', () => {
-  it('forwards expansion_floor to the expansion leg as the per-seed findNeighbors threshold', async () => {
-    const engine = makeMockEngine();
-    engine.findNeighbors.mockReturnValue([{ path: 'a.md', similarity: 0.8 }]);
-    const sources = sourcesWithEmbeddingFor('a.md');
-    const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'alpha body' }, { sources, engine });
+  it('forwards expansion_floor to the expansion leg as the per-seed neighbour floor', async () => {
+    // The seed sits 60° from the query (0.5); its neighbour 25° further on is
+    // out of the query's reach (≈0.09) but 0.906 from the seed — over a 0.9
+    // floor, under 0.91. Only the forwarded floor decides whether it expands.
+    const at = (degrees: number) => {
+      const r = (degrees * Math.PI) / 180;
+      return Float32Array.from([Math.cos(r), Math.sin(r)]);
+    };
+    const sources = new Map<string, SmartSource>([
+      ['a.md', { path: 'a.md', embedding: at(60), blocks: [] }],
+      ['n.md', { path: 'n.md', embedding: at(85), blocks: [] }],
+    ]);
+    const { deps, cleanup } = await makeLexicalVault(
+      { 'a.md': 'alpha body', 'n.md': 'other' },
+      { sources },
+    );
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
-      await callTool(reg, { query: 'alpha', effort: 'deep', expansion_floor: 0.91 });
-      const thresholds = engine.findNeighbors.mock.calls.map(
-        (call) => (call[0] as { threshold: number }).threshold,
-      );
-      // First call is the query pass at the deep default threshold (0.35);
-      // a later call is the per-seed expansion lookup, which must carry the
-      // forwarded expansion_floor rather than the default or the threshold.
-      expect(thresholds).toContain(0.91);
+      const expanded = (out: SearchNotesOutput) =>
+        out.matches.filter((m) => m.found_in.includes('expansion')).map((m) => m.path);
+      const below = await callTool<SearchNotesOutput>(reg, {
+        query: 'alpha',
+        effort: 'deep',
+        expansion_floor: 0.9,
+      });
+      const above = await callTool<SearchNotesOutput>(reg, {
+        query: 'alpha',
+        effort: 'deep',
+        expansion_floor: 0.91,
+      });
+      expect(expanded(below)).toEqual(['n.md']);
+      expect(expanded(above)).toEqual([]);
     } finally {
       await cleanup();
     }
@@ -900,10 +873,7 @@ describe('arity invariance (SDK gate)', () => {
     const notePath = 'Projects/alpha.md';
     return makeLexicalVault(
       { [notePath]: '# Alpha\n\nalpha beta gamma\n' },
-      {
-        sources: sourcesWithEmbeddingFor(notePath),
-        engine: engineReturning([{ path: notePath, similarity: 0.82 }]),
-      },
+      { sources: sourcesScoring([{ path: notePath, similarity: 0.82 }]) },
     );
   }
 
@@ -915,24 +885,25 @@ describe('arity invariance (SDK gate)', () => {
     // blind to a fold that breaks block or expansion handling for one arity.
     const notePath = 'Projects/alpha.md';
     const relatedPath = 'Projects/related.md';
-    const sources = new Map([
-      [notePath, { path: notePath, embedding: new Float32Array([0, 1]), blocks: [] }],
-      [relatedPath, { path: relatedPath, embedding: new Float32Array([0.5, 0.5]), blocks: [] }],
-    ]);
-    const engine = {
-      // Main query pass embeds the query as [1, 0] (the default mock below);
-      // the per-seed expansion pass looks up neighbours of the seed's OWN
-      // embedding ([0, 1]) — the two are distinguishable by queryVector[0].
-      findNeighbors: vi.fn(({ queryVector }: { queryVector: ArrayLike<number> }) =>
-        queryVector[0] === 1
-          ? [{ path: notePath, similarity: 0.82 }]
-          : [{ path: relatedPath, similarity: 0.91 }],
-      ),
-      findBlockNeighbors: vi
-        .fn()
-        .mockReturnValue([{ path: notePath, heading: '#Alpha', lines: [1, 3], similarity: 0.7 }]),
-      findDuplicates: vi.fn().mockReturnValue([]),
+    // The query embeds as [1, 0] (the default mock). The seed sits 35° off
+    // it (0.82), carrying a block the query reaches; the related note sits
+    // 45° further on — out of the query's reach under the deep default
+    // (≈0.17), but 0.71 from the seed, so it surfaces only via expansion.
+    const at = (degrees: number) => {
+      const r = (degrees * Math.PI) / 180;
+      return Float32Array.from([Math.cos(r), Math.sin(r)]);
     };
+    const sources = new Map<string, SmartSource>([
+      [
+        notePath,
+        {
+          path: notePath,
+          embedding: at(35),
+          blocks: [{ key: '#Alpha', heading: '#Alpha', lines: [1, 3], embedding: at(45) }],
+        },
+      ],
+      [relatedPath, { path: relatedPath, embedding: at(80), blocks: [] }],
+    ]);
     const { deps, cleanup } = await makeLexicalVault(
       {
         [notePath]: '# Alpha\n\nalpha beta gamma\n',
@@ -940,7 +911,7 @@ describe('arity invariance (SDK gate)', () => {
         // expansion, never the lexical leg.
         [relatedPath]: '# Unrelated\n\nfiller text only\n',
       },
-      { sources, engine },
+      { sources },
     );
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
@@ -1003,25 +974,14 @@ describe('arity invariance (SDK gate)', () => {
 
   it('the semantic fallback fires identically at both arities', async () => {
     const notePath = 'Projects/alpha.md';
-    // Fresh vault + engine PER ARITY: `mockReturnValueOnce([])` consumes
-    // itself on the first call, so sharing one engine across both handler
-    // calls would silently give the second arity a different (already-hit)
-    // first pass. Each arity must independently trigger and survive the
-    // 0.3 retry.
+    // A fresh vault PER ARITY, so neither call can lean on the other's state.
+    // At 0.34 the note is under the quick default and over the 0.3 fallback:
+    // the first pass finds nothing and the retry rescues it, on each arity
+    // independently.
     function makeFallbackVault() {
-      const engine = {
-        // First call (mode default threshold) finds nothing; the 0.3 retry
-        // rescues it.
-        findNeighbors: vi
-          .fn()
-          .mockReturnValueOnce([])
-          .mockReturnValue([{ path: notePath, similarity: 0.34 }]),
-        findBlockNeighbors: vi.fn().mockReturnValue([]),
-        findDuplicates: vi.fn().mockReturnValue([]),
-      };
       return makeLexicalVault(
         { [notePath]: '# Alpha\n\nalpha beta gamma\n' },
-        { sources: sourcesWithEmbeddingFor(notePath), engine },
+        { sources: sourcesScoring([{ path: notePath, similarity: 0.34 }]) },
       );
     }
 

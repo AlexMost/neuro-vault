@@ -1,44 +1,32 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type {
-  BlockSearchResult,
-  QueryEmbedder,
-  SearchEngine,
-  SearchResult,
-  SmartSource,
-} from '../../src/types.js';
+  CorpusAnchor,
+  IBlockHit,
+  ICorpusReader,
+  INearestBlocksOptions,
+  INearestOptions,
+  INoteHit,
+} from '../../src/lib/obsidian/corpus/corpus.js';
+import type { QueryEmbedder } from '../../src/types.js';
 import type { SimilarityDefaults } from '../../src/lib/model-profiles.js';
 import { executeRetrieval } from '../../src/modules/semantic/retrieval-policy.js';
 import { TEST_SIMILARITY } from '../_identity.js';
 
 // The vector every fixture below embeds every query to. A single shared ARRAY
 // INSTANCE on purpose: `embedQuery` is mocked with `mockResolvedValue(QUERY_VECTOR)`,
-// so a `findNeighbors` call whose `queryVector` is this exact instance is a
-// seed-pass call, while any other instance is a seed's own `embedding` — i.e.
-// the per-seed expansion leg. Routing on identity rather than call order is
-// what lets one fixture serve both arities: N queries means N seed-pass calls
-// before the first expansion call ever happens.
+// so an anchor holding this exact instance is a query anchor, while a
+// `{ path }` anchor is a seed — i.e. the per-seed expansion leg. Routing on
+// the anchor rather than call order is what lets one fixture serve both
+// arities.
 const QUERY_VECTOR = [1, 0];
 
-function makeSource(path: string, values: number[] = [1, 0]): SmartSource {
-  const embedding = Float32Array.from(values);
-  return {
-    path,
-    embedding,
-    blocks: [{ key: `${path}#block`, heading: '#block', lines: [1, 3], embedding }],
-  };
-}
-
-function makeSearchResult(path: string, similarity: number): SearchResult {
+function makeSearchResult(path: string, similarity: number): INoteHit {
   return { path, similarity };
 }
 
-function makeBlockResult(path: string, similarity: number): BlockSearchResult {
+function makeBlockResult(path: string, similarity: number): IBlockHit {
   return { path, heading: '#block', lines: [1, 3], similarity };
-}
-
-function makeSources(entries: Array<[string, number[]]>): Map<string, SmartSource> {
-  return new Map(entries.map(([path, emb]) => [path, makeSource(path, emb)]));
 }
 
 function makeEmbeddingProvider(vector: number[] = QUERY_VECTOR): QueryEmbedder {
@@ -48,50 +36,53 @@ function makeEmbeddingProvider(vector: number[] = QUERY_VECTOR): QueryEmbedder {
   };
 }
 
-function makeSearchEngine(
-  overrides: Partial<{
-    findNeighbors: SearchEngine['findNeighbors'];
-    findBlockNeighbors: SearchEngine['findBlockNeighbors'];
-    findDuplicates: SearchEngine['findDuplicates'];
-  }> = {},
-): SearchEngine {
-  return {
-    findNeighbors: vi.fn().mockReturnValue([]),
-    findBlockNeighbors: vi.fn().mockReturnValue([]),
-    findDuplicates: vi.fn().mockReturnValue([]),
-    ...overrides,
+type NearestFn = (anchor: CorpusAnchor, opts: INearestOptions) => INoteHit[] | null | undefined;
+type BlocksFn = (
+  anchor: CorpusAnchor,
+  opts: INearestBlocksOptions,
+) => IBlockHit[] | null | undefined;
+
+// A fake corpus answering each anchor of a call through a per-anchor function.
+// `findNeighbors` / `findBlockNeighbors` are those per-anchor spies: one call
+// per anchor, with the call's options — so "called once per query" still
+// reads as it did, while `corpus.nearest` / `corpus.nearestBlocks` count the
+// corpus reads themselves (one per step).
+function makeCorpus(overrides: { findNeighbors?: NearestFn; findBlockNeighbors?: BlocksFn } = {}) {
+  const findNeighbors = vi.fn<NearestFn>(overrides.findNeighbors ?? (() => []));
+  const findBlockNeighbors = vi.fn<BlocksFn>(overrides.findBlockNeighbors ?? (() => []));
+  const corpus = {
+    nearest: vi.fn((anchors: readonly CorpusAnchor[], opts: INearestOptions) =>
+      Promise.resolve(anchors.map((anchor) => findNeighbors(anchor, opts) ?? null)),
+    ),
+    nearestBlocks: vi.fn((anchors: readonly CorpusAnchor[], opts: INearestBlocksOptions) =>
+      Promise.resolve(anchors.map((anchor) => findBlockNeighbors(anchor, opts) ?? null)),
+    ),
+  } satisfies ICorpusReader;
+  return { corpus, findNeighbors, findBlockNeighbors };
+}
+
+const isQueryAnchor = (anchor: CorpusAnchor): boolean =>
+  'vector' in anchor && anchor.vector === QUERY_VECTOR;
+
+// A per-anchor `nearest` that tells the seed pass apart from the per-seed
+// expansion pass by its anchor (see QUERY_VECTOR above), instead of by call
+// order. `seeds` may be a function of `threshold` so a fixture can make the
+// mode-default pass come back empty and let only the 0.3 retry find anything.
+function routedNeighbors(args: {
+  seeds: INoteHit[] | ((threshold: number) => INoteHit[]);
+  relatedBySeed?: Record<string, INoteHit[]>;
+}): NearestFn {
+  const { seeds, relatedBySeed = {} } = args;
+  return (anchor, { threshold }) => {
+    if (isQueryAnchor(anchor)) return typeof seeds === 'function' ? seeds(threshold) : seeds;
+    if ('path' in anchor) return relatedBySeed[anchor.path] ?? [];
+    return [];
   };
 }
 
-// A `findNeighbors` fake that tells the seed pass apart from the per-seed
-// expansion pass by which vector drove the call (see QUERY_VECTOR above),
-// instead of by call order. `seeds` may be a function of `threshold` so a
-// fixture can make the mode-default pass come back empty and let only the
-// 0.3 retry find anything.
-function routedNeighbors(args: {
-  sources: Map<string, SmartSource>;
-  seeds: SearchResult[] | ((threshold: number) => SearchResult[]);
-  relatedBySeed?: Record<string, SearchResult[]>;
-}): SearchEngine['findNeighbors'] {
-  const { sources, seeds, relatedBySeed = {} } = args;
-  return vi.fn(
-    ({ queryVector, threshold }: { queryVector: ArrayLike<number>; threshold: number }) => {
-      if (queryVector === QUERY_VECTOR) {
-        return typeof seeds === 'function' ? seeds(threshold) : seeds;
-      }
-      for (const [path, source] of sources) {
-        if (source.embedding === queryVector) return relatedBySeed[path] ?? [];
-      }
-      return [];
-    },
-  );
-}
-
-const sources = makeSources([
-  ['note-a.md', [1, 0]],
-  ['note-b.md', [0.8, 0.2]],
-  ['note-c.md', [0, 1]],
-]);
+// The expansion read is the only one anchored on seed paths.
+const expansionCalls = (findNeighbors: ReturnType<typeof makeCorpus>['findNeighbors']) =>
+  findNeighbors.mock.calls.filter(([anchor]) => 'path' in anchor);
 
 // One pipeline, two arities. Every invariant below that has meaning at both
 // is asserted once, over this table — a single query is the degenerate case
@@ -109,109 +100,104 @@ const allFalse = (queries: string[]): Record<string, boolean> =>
 describe.each(arities)('mode defaults (%s)', (_label, queries) => {
   // A hit on the first pass in both tests below, so neither the 0.3 retry nor
   // (deep) the expansion leg adds calls — every recorded call is a seed pass.
-  const oneHit = () => vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]);
+  const oneHit = () => () => [makeSearchResult('note-a.md', 0.9)];
 
-  it('quick mode calls findNeighbors with threshold 0.5 and limit 4 (mode limit 3 + 1 truncation-detection overfetch)', async () => {
-    const searchEngine = makeSearchEngine({ findNeighbors: oneHit() });
-    const embeddingProvider = makeEmbeddingProvider();
+  it('quick mode asks for threshold 0.5 and limit 4 (mode limit 3 + 1 truncation-detection overfetch)', async () => {
+    const { corpus, findNeighbors } = makeCorpus({ findNeighbors: oneHit() });
 
     await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources,
-      embeddingProvider,
-      searchEngine,
+      corpus,
+      embeddingProvider: makeEmbeddingProvider(),
     });
 
-    // Called once per query — assert every call's shape, not just the first.
-    expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(queries.length);
-    for (const call of vi.mocked(searchEngine.findNeighbors).mock.calls) {
-      expect(call[0]).toMatchObject({ threshold: 0.5, limit: 4 });
+    // One corpus read carrying one anchor per query — assert every anchor's shape.
+    expect(corpus.nearest).toHaveBeenCalledTimes(1);
+    expect(findNeighbors).toHaveBeenCalledTimes(queries.length);
+    for (const [anchor, opts] of findNeighbors.mock.calls) {
+      expect(isQueryAnchor(anchor)).toBe(true);
+      expect(opts).toMatchObject({ threshold: 0.5, limit: 4 });
     }
   });
 
-  it('deep mode calls findNeighbors with threshold 0.35 and limit 9 (mode limit 8 + 1 truncation-detection overfetch)', async () => {
-    const searchEngine = makeSearchEngine({ findNeighbors: oneHit() });
-    const embeddingProvider = makeEmbeddingProvider();
+  it('deep mode asks for threshold 0.35 and limit 9 (mode limit 8 + 1 truncation-detection overfetch)', async () => {
+    const { corpus, findNeighbors } = makeCorpus({ findNeighbors: oneHit() });
 
     await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       expansion: false,
-      sources,
-      embeddingProvider,
-      searchEngine,
+      corpus,
+      embeddingProvider: makeEmbeddingProvider(),
     });
 
-    expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(queries.length);
-    for (const call of vi.mocked(searchEngine.findNeighbors).mock.calls) {
-      expect(call[0]).toMatchObject({ threshold: 0.35, limit: 9 });
+    expect(corpus.nearest).toHaveBeenCalledTimes(1);
+    expect(findNeighbors).toHaveBeenCalledTimes(queries.length);
+    for (const [, opts] of findNeighbors.mock.calls) {
+      expect(opts).toMatchObject({ threshold: 0.35, limit: 9 });
     }
   });
 
   it('quick mode attaches blocks scoped to matched notes when there are vector results', async () => {
-    const findBlockNeighbors = vi.fn().mockReturnValue([makeBlockResult('note-a.md', 0.75)]);
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
-      findBlockNeighbors,
+    const { corpus, findBlockNeighbors } = makeCorpus({
+      findNeighbors: () => [makeSearchResult('note-a.md', 0.8)],
+      findBlockNeighbors: () => [makeBlockResult('note-a.md', 0.75)],
     });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     const noteA = output.results.find((r) => r.path === 'note-a.md')!;
     expect(noteA.blocks).toEqual([{ heading: '#block', lines: [1, 3], similarity: 0.75 }]);
     expect(noteA.related).toEqual([]);
-    // One shared-pass block call per query, all with the quick-mode shape; no
-    // backfill call, since note-a already has evidence.
+    // One shared-pass block read carrying every query, with the quick-mode
+    // shape and the seeds as its notes; no backfill, since note-a already has
+    // evidence.
+    expect(corpus.nearestBlocks).toHaveBeenCalledTimes(1);
     expect(findBlockNeighbors).toHaveBeenCalledTimes(queries.length);
-    for (const [args] of findBlockNeighbors.mock.calls) {
-      expect(args).toMatchObject({ threshold: 0, limit: 5 });
+    for (const [, opts] of findBlockNeighbors.mock.calls) {
+      expect(opts).toEqual({ paths: ['note-a.md'], threshold: 0, limit: 5 });
     }
   });
 
   it('emits no results and never runs block search when there are no matches', async () => {
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([]),
-    });
+    const { corpus } = makeCorpus();
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results).toEqual([]);
-    expect(searchEngine.findBlockNeighbors).not.toHaveBeenCalled();
+    expect(corpus.nearestBlocks).not.toHaveBeenCalled();
   });
 
   it('deep mode drops orphan blocks — only blocks belonging to result notes are attached', async () => {
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
-      findBlockNeighbors: vi.fn().mockReturnValue([
+    const { corpus } = makeCorpus({
+      findNeighbors: () => [makeSearchResult('note-a.md', 0.8)],
+      findBlockNeighbors: () => [
         makeBlockResult('note-a.md', 0.7),
         makeBlockResult('note-c.md', 0.85), // orphan — note-c is not a seed
-      ]),
+      ],
     });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results.map((r) => r.path)).not.toContain('note-c.md');
@@ -222,39 +208,38 @@ describe.each(arities)('mode defaults (%s)', (_label, queries) => {
 
 describe.each(arities)('fallback to lower threshold (%s)', (_label, queries) => {
   it('retries with threshold 0.3 when the initial search returns empty', async () => {
-    const findNeighbors = vi.fn(({ threshold }: { threshold: number }) =>
-      threshold <= 0.3 ? [makeSearchResult('note-a.md', 0.35)] : [],
-    );
-    const searchEngine = makeSearchEngine({ findNeighbors });
+    const { corpus, findNeighbors } = makeCorpus({
+      findNeighbors: (_anchor, { threshold }) =>
+        threshold <= 0.3 ? [makeSearchResult('note-a.md', 0.35)] : [],
+    });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
-    // Two passes per query: the mode default, then the 0.3 retry.
+    // Two reads, each carrying every query: the mode default, then the 0.3 retry.
+    expect(corpus.nearest).toHaveBeenCalledTimes(2);
     expect(findNeighbors).toHaveBeenCalledTimes(queries.length * 2);
-    const retries = findNeighbors.mock.calls.filter(([args]) => args.threshold === 0.3);
+    const retries = findNeighbors.mock.calls.filter(([, opts]) => opts.threshold === 0.3);
     expect(retries).toHaveLength(queries.length);
+    for (const [, opts] of retries) expect(opts.limit).toBe(4);
     expect(output.results.map((r) => r.path)).toEqual(['note-a.md']);
   });
 
   it('does not retry when the initial threshold is already <= 0.3', async () => {
-    const findNeighbors = vi.fn().mockReturnValue([]);
-    const searchEngine = makeSearchEngine({ findNeighbors });
+    const { corpus, findNeighbors } = makeCorpus();
 
     await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       threshold: 0.3,
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(findNeighbors).toHaveBeenCalledTimes(queries.length);
@@ -262,48 +247,41 @@ describe.each(arities)('fallback to lower threshold (%s)', (_label, queries) => 
 });
 
 describe.each(arities)('explicit threshold is a hard filter (%s)', (_label, queries) => {
-  const oneNote = makeSources([['note-a.md', [1, 0]]]);
-
   it('does not retry at 0.3 when an explicit threshold filters everything', async () => {
-    const findNeighbors = vi.fn().mockReturnValue([]);
-    const searchEngine = makeSearchEngine({ findNeighbors });
+    const { corpus, findNeighbors } = makeCorpus();
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       threshold: 0.99,
-      sources: oneNote,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results).toEqual([]);
     // One pass per query, no retries.
     expect(findNeighbors).toHaveBeenCalledTimes(queries.length);
-    for (const [args] of findNeighbors.mock.calls) expect(args.threshold).toBe(0.99);
+    for (const [, opts] of findNeighbors.mock.calls) expect(opts.threshold).toBe(0.99);
     expect(output.per_query_fallback).toEqual(allFalse(queries));
   });
 
   it('retries at 0.3 for the default threshold and reports per-query fallback true', async () => {
-    const findNeighbors = vi.fn(({ threshold }: { threshold: number }) =>
-      threshold <= 0.3 ? [makeSearchResult('note-a.md', 0.4)] : [],
-    );
-    const searchEngine = makeSearchEngine({ findNeighbors });
+    const { corpus, findNeighbors } = makeCorpus({
+      findNeighbors: (_anchor, { threshold }) =>
+        threshold <= 0.3 ? [makeSearchResult('note-a.md', 0.4)] : [],
+    });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources: oneNote,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
-    // Each query retries independently; the retries interleave with the
-    // mode-default passes, so count them rather than pinning call positions.
     expect(findNeighbors).toHaveBeenCalledTimes(queries.length * 2);
-    expect(findNeighbors.mock.calls.filter(([args]) => args.threshold === 0.3)).toHaveLength(
+    expect(findNeighbors.mock.calls.filter(([, opts]) => opts.threshold === 0.3)).toHaveLength(
       queries.length,
     );
     expect(output.results.map((r) => r.path)).toEqual(['note-a.md']);
@@ -311,46 +289,40 @@ describe.each(arities)('explicit threshold is a hard filter (%s)', (_label, quer
   });
 
   it('reports per-query fallback false when the first pass already had hits', async () => {
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
-    });
+    const { corpus } = makeCorpus({ findNeighbors: () => [makeSearchResult('note-a.md', 0.8)] });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources: oneNote,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.per_query_fallback).toEqual(allFalse(queries));
   });
 
-  it('passes a custom threshold to findNeighbors instead of the mode default', async () => {
-    const findNeighbors = vi.fn().mockReturnValue([]);
-    const searchEngine = makeSearchEngine({ findNeighbors });
+  it('passes a custom threshold to the corpus instead of the mode default', async () => {
+    const { corpus, findNeighbors } = makeCorpus();
 
     await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       threshold: 0.7,
-      sources: oneNote,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(findNeighbors).toHaveBeenCalledTimes(queries.length);
-    for (const [args] of findNeighbors.mock.calls) expect(args.threshold).toBe(0.7);
+    for (const [, opts] of findNeighbors.mock.calls) expect(opts.threshold).toBe(0.7);
   });
 });
 
 describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) => {
   it('attaches each seed its own related[] populated from its own neighbours', async () => {
-    const searchEngine = makeSearchEngine({
+    const { corpus } = makeCorpus({
       findNeighbors: routedNeighbors({
-        sources,
         seeds: [makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.7)],
         relatedBySeed: {
           'note-a.md': [makeSearchResult('note-c.md', 0.65)],
@@ -365,9 +337,8 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
       mode: 'deep',
       expansion: true,
       expansionLimit: 3,
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     const noteA = output.results.find((r) => r.path === 'note-a.md')!;
@@ -377,9 +348,8 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
   });
 
   it('the same neighbour appears in related[] of every seed it neighbours (no global dedup)', async () => {
-    const searchEngine = makeSearchEngine({
+    const { corpus } = makeCorpus({
       findNeighbors: routedNeighbors({
-        sources,
         seeds: [makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.7)],
         relatedBySeed: {
           'note-a.md': [makeSearchResult('note-c.md', 0.65)],
@@ -394,9 +364,8 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
       mode: 'deep',
       expansion: true,
       expansionLimit: 3,
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     const noteA = output.results.find((r) => r.path === 'note-a.md')!;
@@ -405,164 +374,62 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
     expect(noteB.related).toEqual([{ path: 'note-c.md', expansion_similarity: 0.55 }]);
   });
 
-  it("does not include a seed in any seed's related[]", async () => {
-    const searchEngine = makeSearchEngine({
+  it('asks for every seed in one read, every seed excluded, capped at expansionLimit', async () => {
+    // Excluding the seeds before the per-seed cap is what keeps a seed out of
+    // every related[] and still fills the cap when top neighbours are seeds.
+    const { corpus, findNeighbors } = makeCorpus({
       findNeighbors: routedNeighbors({
-        sources,
-        seeds: [makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.7)],
-        relatedBySeed: {
-          'note-a.md': [
-            makeSearchResult('note-b.md', 0.6), // note-b is a seed → filtered
-            makeSearchResult('note-c.md', 0.55),
-          ],
-          'note-b.md': [],
-        },
-      }),
-    });
-
-    const output = await executeRetrieval({
-      similarity: TEST_SIMILARITY,
-      queries,
-      mode: 'deep',
-      expansion: true,
-      expansionLimit: 3,
-      sources,
-      embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
-    });
-
-    const noteA = output.results.find((r) => r.path === 'note-a.md')!;
-    expect(noteA.related.map((r) => r.path)).not.toContain('note-b.md');
-    expect(noteA.related).toEqual([{ path: 'note-c.md', expansion_similarity: 0.55 }]);
-  });
-
-  it('caps related[] per note at expansionLimit', async () => {
-    const fiveNeighbours = [
-      makeSearchResult('n1.md', 0.9),
-      makeSearchResult('n2.md', 0.8),
-      makeSearchResult('n3.md', 0.7),
-      makeSearchResult('n4.md', 0.6),
-      makeSearchResult('n5.md', 0.5),
-    ];
-    const searchEngine = makeSearchEngine({
-      findNeighbors: routedNeighbors({
-        sources,
-        seeds: [makeSearchResult('note-a.md', 0.9)],
-        relatedBySeed: { 'note-a.md': fiveNeighbours },
-      }),
-    });
-
-    const output = await executeRetrieval({
-      similarity: TEST_SIMILARITY,
-      queries,
-      mode: 'deep',
-      expansion: true,
-      expansionLimit: 2,
-      sources,
-      embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
-    });
-
-    const noteA = output.results.find((r) => r.path === 'note-a.md')!;
-    expect(noteA.related).toHaveLength(2);
-    expect(noteA.related.map((r) => r.path)).toEqual(['n1.md', 'n2.md']);
-  });
-
-  it('honours the per-note cap even when some top neighbours are filtered out as seeds', async () => {
-    // 3 seeds, all densely connected. The engine returns 5 neighbours for
-    // seed-a, of which the top 2 are themselves seeds. After the filter only
-    // 3 remain; the per-seed cap is 3, so all 3 survivors must appear.
-    const seedSources = makeSources([
-      ['seed-a.md', [1, 0]],
-      ['seed-b.md', [0.9, 0.1]],
-      ['seed-c.md', [0.8, 0.2]],
-      ['n1.md', [0.7, 0.3]],
-      ['n2.md', [0.6, 0.4]],
-      ['n3.md', [0.5, 0.5]],
-    ]);
-    const searchEngine = makeSearchEngine({
-      findNeighbors: routedNeighbors({
-        sources: seedSources,
         seeds: [
           makeSearchResult('seed-a.md', 0.95),
           makeSearchResult('seed-b.md', 0.93),
           makeSearchResult('seed-c.md', 0.91),
         ],
-        relatedBySeed: {
-          'seed-a.md': [
-            makeSearchResult('seed-b.md', 0.93),
-            makeSearchResult('seed-c.md', 0.91),
-            makeSearchResult('n1.md', 0.8),
-            makeSearchResult('n2.md', 0.7),
-            makeSearchResult('n3.md', 0.6),
-          ],
-        },
       }),
     });
 
-    const output = await executeRetrieval({
+    await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       expansion: true,
-      expansionLimit: 3,
-      sources: seedSources,
+      expansionLimit: 2,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
-    const seedA = output.results.find((r) => r.path === 'seed-a.md')!;
-    expect(seedA.related.map((r) => r.path)).toEqual(['n1.md', 'n2.md', 'n3.md']);
+    // Seeds, then expansion: two reads.
+    expect(corpus.nearest).toHaveBeenCalledTimes(2);
+    const [anchors, opts] = corpus.nearest.mock.calls[1];
+    expect(anchors).toEqual([{ path: 'seed-a.md' }, { path: 'seed-b.md' }, { path: 'seed-c.md' }]);
+    expect(opts).toEqual({
+      threshold: 0.35,
+      limit: 2,
+      exclude: ['seed-a.md', 'seed-b.md', 'seed-c.md'],
+      allowed: undefined,
+    });
+    expect(expansionCalls(findNeighbors)).toHaveLength(3);
   });
 
-  it('does not run expansion when expansion is false (related stays empty)', async () => {
-    const findNeighbors = routedNeighbors({
-      sources,
-      seeds: [makeSearchResult('note-a.md', 0.9)],
-      relatedBySeed: { 'note-a.md': [makeSearchResult('note-b.md', 0.7)] },
+  it('a seed without a vector of its own gets an empty related[]', async () => {
+    const { corpus } = makeCorpus({
+      findNeighbors: (anchor) =>
+        isQueryAnchor(anchor) ? [makeSearchResult('note-a.md', 0.9)] : null,
     });
-    const searchEngine = makeSearchEngine({ findNeighbors });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
-      expansion: false,
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
-    // Seed pass only — no per-seed expansion call.
-    expect(findNeighbors).toHaveBeenCalledTimes(queries.length);
-    expect(output.results.every((r) => r.related.length === 0)).toBe(true);
+    expect(output.results.find((r) => r.path === 'note-a.md')!.related).toEqual([]);
   });
 
-  it('quick mode never populates related[]', async () => {
-    const findNeighbors = routedNeighbors({
-      sources,
-      seeds: [makeSearchResult('note-a.md', 0.9)],
-      relatedBySeed: { 'note-a.md': [makeSearchResult('note-b.md', 0.7)] },
-    });
-    const searchEngine = makeSearchEngine({ findNeighbors });
-
-    const output = await executeRetrieval({
-      similarity: TEST_SIMILARITY,
-      queries,
-      mode: 'quick',
-      sources,
-      embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
-    });
-
-    expect(findNeighbors).toHaveBeenCalledTimes(queries.length);
-    expect(output.results.every((r) => r.related.length === 0)).toBe(true);
-  });
-
-  it('deep defaults give seeds a non-empty related[] when neighbours exist', async () => {
-    const searchEngine = makeSearchEngine({
+  it('does not run expansion when expansion is false (related stays empty)', async () => {
+    const { corpus, findNeighbors } = makeCorpus({
       findNeighbors: routedNeighbors({
-        sources,
         seeds: [makeSearchResult('note-a.md', 0.9)],
         relatedBySeed: { 'note-a.md': [makeSearchResult('note-b.md', 0.7)] },
       }),
@@ -572,9 +439,50 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
-      sources,
+      expansion: false,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
+    });
+
+    // Seed pass only — no per-seed expansion read.
+    expect(findNeighbors).toHaveBeenCalledTimes(queries.length);
+    expect(output.results.every((r) => r.related.length === 0)).toBe(true);
+  });
+
+  it('quick mode never populates related[]', async () => {
+    const { corpus, findNeighbors } = makeCorpus({
+      findNeighbors: routedNeighbors({
+        seeds: [makeSearchResult('note-a.md', 0.9)],
+        relatedBySeed: { 'note-a.md': [makeSearchResult('note-b.md', 0.7)] },
+      }),
+    });
+
+    const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
+      queries,
+      mode: 'quick',
+      corpus,
+      embeddingProvider: makeEmbeddingProvider(),
+    });
+
+    expect(findNeighbors).toHaveBeenCalledTimes(queries.length);
+    expect(output.results.every((r) => r.related.length === 0)).toBe(true);
+  });
+
+  it('deep defaults give seeds a non-empty related[] when neighbours exist', async () => {
+    const { corpus } = makeCorpus({
+      findNeighbors: routedNeighbors({
+        seeds: [makeSearchResult('note-a.md', 0.9)],
+        relatedBySeed: { 'note-a.md': [makeSearchResult('note-b.md', 0.7)] },
+      }),
+    });
+
+    const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
+      queries,
+      mode: 'deep',
+      corpus,
+      embeddingProvider: makeEmbeddingProvider(),
     });
 
     const noteA = output.results.find((r) => r.path === 'note-a.md')!;
@@ -583,11 +491,10 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
 });
 
 describe.each(arities)('expansion floor and block decoupling (%s)', (_label, queries) => {
-  const oneNote = makeSources([['note-a.md', [1, 0]]]);
-
   it('floors the per-seed neighbour lookup at expansionFloor, not threshold', async () => {
-    const findNeighbors = vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]);
-    const searchEngine = makeSearchEngine({ findNeighbors });
+    const { corpus, findNeighbors } = makeCorpus({
+      findNeighbors: () => [makeSearchResult('note-a.md', 0.8)],
+    });
 
     await executeRetrieval({
       similarity: TEST_SIMILARITY,
@@ -595,46 +502,42 @@ describe.each(arities)('expansion floor and block decoupling (%s)', (_label, que
       mode: 'deep',
       threshold: 0.7, // explicit, must NOT reach expansion
       expansionFloor: 0.93,
-      sources: oneNote,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
-    // The seed pass runs once per query and completes (Promise.all) before
-    // any expansion call, so everything past it is the expansion leg.
-    const expansionCalls = findNeighbors.mock.calls.slice(queries.length);
-    expect(expansionCalls.length).toBeGreaterThan(0);
-    for (const [args] of expansionCalls) {
-      expect(args.threshold).toBe(0.93);
+    const expansion = expansionCalls(findNeighbors);
+    expect(expansion.length).toBeGreaterThan(0);
+    for (const [, opts] of expansion) {
+      expect(opts.threshold).toBe(0.93);
     }
   });
 
   it('defaults the floor to 0.35 when expansionFloor is absent', async () => {
-    const findNeighbors = vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]);
-    const searchEngine = makeSearchEngine({ findNeighbors });
+    const { corpus, findNeighbors } = makeCorpus({
+      findNeighbors: () => [makeSearchResult('note-a.md', 0.8)],
+    });
 
     await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
       threshold: 0.7,
-      sources: oneNote,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
-    const expansionCalls = findNeighbors.mock.calls.slice(queries.length);
-    expect(expansionCalls.length).toBeGreaterThan(0);
-    for (const [args] of expansionCalls) {
-      expect(args.threshold).toBe(0.35);
+    const expansion = expansionCalls(findNeighbors);
+    expect(expansion.length).toBeGreaterThan(0);
+    for (const [, opts] of expansion) {
+      expect(opts.threshold).toBe(0.35);
     }
   });
 
   it('filters deep blocks at the internal default, not the user threshold', async () => {
-    const findBlockNeighbors = vi.fn().mockReturnValue([makeBlockResult('note-a.md', 0.75)]);
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.8)]),
-      findBlockNeighbors,
+    const { corpus, findBlockNeighbors } = makeCorpus({
+      findNeighbors: () => [makeSearchResult('note-a.md', 0.8)],
+      findBlockNeighbors: () => [makeBlockResult('note-a.md', 0.75)],
     });
 
     await executeRetrieval({
@@ -642,108 +545,110 @@ describe.each(arities)('expansion floor and block decoupling (%s)', (_label, que
       queries,
       mode: 'deep',
       threshold: 0.7,
-      sources: oneNote,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(findBlockNeighbors).toHaveBeenCalledTimes(queries.length);
-    for (const [args] of findBlockNeighbors.mock.calls) {
-      expect(args.threshold).toBe(0.35);
+    for (const [, opts] of findBlockNeighbors.mock.calls) {
+      expect(opts).toEqual({ paths: ['note-a.md'], threshold: 0.35, limit: 8 });
+    }
+  });
+});
+
+describe.each(arities)('the allowed set (%s)', (_label, queries) => {
+  it('reaches every note read — seeds, fallback and expansion — and not the block reads', async () => {
+    const allowed = ['note-a.md', 'note-b.md'];
+    const { corpus } = makeCorpus({
+      findNeighbors: (anchor, { threshold }) =>
+        isQueryAnchor(anchor) && threshold <= 0.3 ? [makeSearchResult('note-a.md', 0.31)] : [],
+    });
+
+    await executeRetrieval({
+      similarity: TEST_SIMILARITY,
+      queries,
+      mode: 'deep',
+      allowed,
+      corpus,
+      embeddingProvider: makeEmbeddingProvider(),
+    });
+
+    // Seeds, fallback, expansion.
+    expect(corpus.nearest).toHaveBeenCalledTimes(3);
+    for (const [, opts] of corpus.nearest.mock.calls) expect(opts.allowed).toEqual(allowed);
+    // Block reads are scoped to the seeds, which the allowed set already bounds.
+    for (const [, opts] of corpus.nearestBlocks.mock.calls) {
+      expect(opts).not.toHaveProperty('allowed');
     }
   });
 });
 
 describe.each(arities)('per-seed block backfill (%s)', (_label, queries) => {
-  const twoNotes = makeSources([
-    ['note-a.md', [1, 0]],
-    ['note-b.md', [0.8, 0.2]],
-  ]);
-  // The backfill lookup is the only one scoped to a single source with
-  // limit 1 — that shape, not call order, identifies it at either arity.
-  const isBackfill = (scoped: unknown, limit: number | undefined): boolean =>
-    Array.isArray(scoped) && scoped.length === 1 && limit === 1;
+  // The backfill read is the only one scoped to a single note with limit 1 —
+  // that shape, not call order, identifies it at either arity.
+  const isBackfill = ({ paths, limit }: INearestBlocksOptions): boolean =>
+    paths.length === 1 && limit === 1;
+  const twoSeeds = () => [makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)];
 
   it('backfills the best block for a seed starved by the shared pass', async () => {
-    const findBlockNeighbors = vi.fn(
-      ({ sources: scoped, limit }: { sources: Iterable<SmartSource>; limit?: number }) =>
-        isBackfill(scoped, limit)
+    const { corpus, findBlockNeighbors } = makeCorpus({
+      findNeighbors: twoSeeds,
+      findBlockNeighbors: (_anchor, opts) =>
+        isBackfill(opts)
           ? [makeBlockResult('note-b.md', 0.42)]
           : [makeBlockResult('note-a.md', 0.9)], // shared pass: all to note-a
-    );
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValue([makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)]),
-      findBlockNeighbors,
     });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources: twoNotes,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     const noteB = output.results.find((r) => r.path === 'note-b.md')!;
     expect(noteB.blocks).toEqual([{ heading: '#block', lines: [1, 3], similarity: 0.42 }]);
-    // The backfill call is scoped to note-b's source alone, threshold 0, limit 1.
-    expect(findBlockNeighbors).toHaveBeenLastCalledWith(
-      expect.objectContaining({ sources: [twoNotes.get('note-b.md')], threshold: 0, limit: 1 }),
-    );
+    // The backfill read is scoped to note-b alone, threshold 0, limit 1, and
+    // carries every query.
+    expect(corpus.nearestBlocks).toHaveBeenCalledTimes(2);
+    const [anchors, opts] = corpus.nearestBlocks.mock.calls[1];
+    expect(anchors).toHaveLength(queries.length);
+    expect(opts).toEqual({ paths: ['note-b.md'], threshold: 0, limit: 1 });
+    expect(findBlockNeighbors).toHaveBeenCalledTimes(queries.length * 2);
   });
 
   it('leaves blocks empty when the note has no block embeddings', async () => {
-    const blockless = new Map(twoNotes);
-    blockless.set('note-b.md', {
-      path: 'note-b.md',
-      embedding: new Float32Array([0.8, 0.2]),
-      blocks: [],
-    });
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValue([makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)]),
-      findBlockNeighbors: vi.fn().mockReturnValue([]),
-    });
+    const { corpus } = makeCorpus({ findNeighbors: twoSeeds });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources: blockless,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results.find((r) => r.path === 'note-b.md')!.blocks).toEqual([]);
   });
 
   it('ignores foreign-path results from a backfill lookup', async () => {
-    // Defensive: a (mis)behaving engine returning another note's block for a
+    // Defensive: a (mis)behaving corpus returning another note's block for a
     // scoped lookup must not attach evidence to the wrong seed.
-    const findBlockNeighbors = vi.fn(
-      ({ sources: scoped, limit }: { sources: Iterable<SmartSource>; limit?: number }) =>
-        isBackfill(scoped, limit)
+    const { corpus, findBlockNeighbors } = makeCorpus({
+      findNeighbors: twoSeeds,
+      findBlockNeighbors: (_anchor, opts) =>
+        isBackfill(opts)
           ? [makeBlockResult('note-a.md', 0.5)] // wrong note for a note-b lookup
           : [makeBlockResult('note-a.md', 0.9)],
-    );
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValue([makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)]),
-      findBlockNeighbors,
     });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources: twoNotes,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results.find((r) => r.path === 'note-b.md')!.blocks).toEqual([]);
@@ -754,19 +659,15 @@ describe.each(arities)('per-seed block backfill (%s)', (_label, queries) => {
 
 describe.each(arities)('shape invariants (%s)', (_label, queries) => {
   it('every result has blocks: [] and related: [] when no leaves apply', async () => {
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
-      findBlockNeighbors: vi.fn().mockReturnValue([]),
-    });
+    const { corpus } = makeCorpus({ findNeighbors: () => [makeSearchResult('note-a.md', 0.9)] });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       expansion: false,
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results[0]).toMatchObject({
@@ -781,26 +682,22 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
     // Post-fold, retrieval populates matched_queries at BOTH arities — for a
     // single query it is simply `[query]`. Whether the field reaches the MCP
     // response is decided in the tool layer, not here.
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
-    });
+    const { corpus } = makeCorpus({ findNeighbors: () => [makeSearchResult('note-a.md', 0.9)] });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results[0].matched_queries).toEqual(queries);
   });
 
   it('related items never carry a similarity field — only expansion_similarity', async () => {
-    const searchEngine = makeSearchEngine({
+    const { corpus } = makeCorpus({
       findNeighbors: routedNeighbors({
-        sources,
         seeds: [makeSearchResult('note-a.md', 0.9)],
         relatedBySeed: { 'note-a.md': [makeSearchResult('note-b.md', 0.7)] },
       }),
@@ -810,9 +707,8 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     const noteA = output.results.find((r) => r.path === 'note-a.md')!;
@@ -825,23 +721,22 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
   });
 
   it('sorts blocks[] within a note by similarity desc', async () => {
-    // The engine returns blocks in arbitrary order; assembly must sort them.
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
-      findBlockNeighbors: vi.fn().mockReturnValue([
+    // The corpus returns blocks in arbitrary order; assembly must sort them.
+    const { corpus } = makeCorpus({
+      findNeighbors: () => [makeSearchResult('note-a.md', 0.9)],
+      findBlockNeighbors: () => [
         { path: 'note-a.md', heading: '#low', lines: [10, 12], similarity: 0.3 },
         { path: 'note-a.md', heading: '#high', lines: [1, 3], similarity: 0.9 },
         { path: 'note-a.md', heading: '#mid', lines: [5, 7], similarity: 0.6 },
-      ]),
+      ],
     });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     const noteA = output.results.find((r) => r.path === 'note-a.md')!;
@@ -849,18 +744,17 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
   });
 
   it('output never has a top-level blockResults field', async () => {
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([makeSearchResult('note-a.md', 0.9)]),
-      findBlockNeighbors: vi.fn().mockReturnValue([makeBlockResult('note-a.md', 0.8)]),
+    const { corpus } = makeCorpus({
+      findNeighbors: () => [makeSearchResult('note-a.md', 0.9)],
+      findBlockNeighbors: () => [makeBlockResult('note-a.md', 0.8)],
     });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output).not.toHaveProperty('blockResults');
@@ -873,81 +767,73 @@ describe.each(arities)('result cap and leg-level pool truncation (%s)', (_label,
   );
 
   it('slices results to the mode limit', async () => {
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue(manyResults),
-    });
+    const { corpus } = makeCorpus({ findNeighbors: () => manyResults });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results).toHaveLength(3);
   });
 
   it('a user-supplied limit overrides the mode default', async () => {
-    const findNeighbors = vi.fn().mockReturnValue(manyResults);
-    const searchEngine = makeSearchEngine({ findNeighbors });
+    const { corpus, findNeighbors } = makeCorpus({ findNeighbors: () => manyResults });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
       limit: 7,
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results).toHaveLength(7);
     // Requests limit + 1 (8) so an overflow beyond the user-supplied limit is
     // observable; `seeds`/`output.results` are still bound to 7.
-    expect(findNeighbors).toHaveBeenCalledWith(expect.objectContaining({ limit: 8 }));
+    expect(findNeighbors).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ limit: 8 }),
+    );
   });
 
-  it('truncated is true when the engine yields more than the mode limit (quick: 4 hits, limit 3)', async () => {
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValue([
-          makeSearchResult('note-a.md', 0.9),
-          makeSearchResult('note-b.md', 0.8),
-          makeSearchResult('note-c.md', 0.7),
-          makeSearchResult('note-d.md', 0.6),
-        ]),
+  it('truncated is true when the corpus yields more than the mode limit (quick: 4 hits, limit 3)', async () => {
+    const { corpus } = makeCorpus({
+      findNeighbors: () => [
+        makeSearchResult('note-a.md', 0.9),
+        makeSearchResult('note-b.md', 0.8),
+        makeSearchResult('note-c.md', 0.7),
+        makeSearchResult('note-d.md', 0.6),
+      ],
     });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results).toHaveLength(3);
     expect(output.truncated).toBe(true);
   });
 
-  it('truncated is false when the engine yields at most the mode limit', async () => {
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValue([makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)]),
+  it('truncated is false when the corpus yields at most the mode limit', async () => {
+    const { corpus } = makeCorpus({
+      findNeighbors: () => [makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)],
     });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'quick',
-      sources,
+      corpus,
       embeddingProvider: makeEmbeddingProvider(),
-      searchEngine,
     });
 
     expect(output.results).toHaveLength(2);
@@ -957,34 +843,37 @@ describe.each(arities)('result cap and leg-level pool truncation (%s)', (_label,
 
 // These invariants are about what happens BETWEEN queries — they have no
 // single-query meaning, so they stay outside the arity table above. Each uses
-// per-query embedding vectors and order-keyed engine mocks deliberately: the
-// point is that the queries differ.
+// per-query embedding vectors and anchor-order-keyed corpus answers
+// deliberately: the point is that the queries differ.
 describe('cross-query behaviour (query array only)', () => {
-  it('merges seeds by path, keeping max similarity, and aggregates matched_queries', async () => {
-    const embeddingProvider: QueryEmbedder = {
+  // Embeds query `i` of `queries` to `vectors[i]`, whatever order the calls come in.
+  function embedderFor(queries: string[], vectors: number[][]): QueryEmbedder {
+    return {
       initialize: vi.fn(),
-      embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
+      embedQuery: vi.fn((q: string) => Promise.resolve(vectors[queries.indexOf(q)])),
     };
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([
-          makeSearchResult('note-a.md', 0.9),
-          makeSearchResult('note-b.md', 0.7),
-        ])
-        .mockReturnValueOnce([
-          makeSearchResult('note-b.md', 0.6),
-          makeSearchResult('note-c.md', 0.5),
-        ]),
+  }
+
+  it('merges seeds by path, keeping max similarity, and aggregates matched_queries', async () => {
+    const { corpus } = makeCorpus({
+      findNeighbors: (anchor) =>
+        'vector' in anchor && anchor.vector[0] === 1
+          ? [makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.7)]
+          : [makeSearchResult('note-b.md', 0.6), makeSearchResult('note-c.md', 0.5)],
     });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries: ['alpha', 'beta'],
       mode: 'quick',
-      sources,
-      embeddingProvider,
-      searchEngine,
+      corpus,
+      embeddingProvider: embedderFor(
+        ['alpha', 'beta'],
+        [
+          [1, 0],
+          [0, 1],
+        ],
+      ),
     });
 
     const byPath = new Map(output.results.map((r) => [r.path, r]));
@@ -998,57 +887,50 @@ describe('cross-query behaviour (query array only)', () => {
     }
   });
 
-  it('tracks fallback independently per query', async () => {
-    const fallbackSources = makeSources([
-      ['note-a.md', [1, 0]],
-      ['note-b.md', [0, 1]],
-    ]);
-    // Keyed by query vector, not call order — Promise.all interleaving must
-    // not matter.
-    const embeddingProvider = {
-      initialize: vi.fn(),
-      embedQuery: vi.fn().mockImplementation(async (q: string) => (q === 'q1' ? [1, 0] : [0, 1])),
-    };
-    const findNeighbors = vi.fn(
-      ({ queryVector, threshold }: { queryVector: ArrayLike<number>; threshold: number }) => {
-        if (queryVector[0] === 1) return [makeSearchResult('note-a.md', 0.8)];
+  it('tracks fallback independently per query, retrying only the queries left empty', async () => {
+    const { corpus } = makeCorpus({
+      findNeighbors: (anchor, { threshold }) => {
+        if ('vector' in anchor && anchor.vector[0] === 1)
+          return [makeSearchResult('note-a.md', 0.8)];
         return threshold <= 0.3 ? [makeSearchResult('note-b.md', 0.4)] : [];
       },
-    );
-    const searchEngine = makeSearchEngine({ findNeighbors });
+    });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries: ['q1', 'q2'],
       mode: 'quick',
-      sources: fallbackSources,
-      embeddingProvider,
-      searchEngine,
+      corpus,
+      embeddingProvider: embedderFor(
+        ['q1', 'q2'],
+        [
+          [1, 0],
+          [0, 1],
+        ],
+      ),
     });
 
     expect(output.per_query_fallback).toEqual({ q1: false, q2: true });
+    // The retry carries q2's vector alone.
+    expect(corpus.nearest.mock.calls[1][0]).toEqual([{ vector: [0, 1] }]);
   });
 
   it('dedupes blocks across query vectors, keeping max similarity', async () => {
     // Two queries each surface the same block at different similarities. The
     // merged block must carry the higher similarity (0.8), not the lower (0.5).
-    const embeddingProvider: QueryEmbedder = {
-      initialize: vi.fn(),
-      embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
-    };
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([makeSearchResult('note-a.md', 0.9)]) // q1 seed
-        .mockReturnValueOnce([makeSearchResult('note-a.md', 0.85)]), // q2 seed (same note)
-      findBlockNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([
-          { path: 'note-a.md', heading: '#h', lines: [1, 3] as [number, number], similarity: 0.5 },
-        ])
-        .mockReturnValueOnce([
-          { path: 'note-a.md', heading: '#h', lines: [1, 3] as [number, number], similarity: 0.8 },
-        ]),
+    const { corpus } = makeCorpus({
+      findNeighbors: (anchor) =>
+        'vector' in anchor && anchor.vector[0] === 1
+          ? [makeSearchResult('note-a.md', 0.9)] // q1 seed
+          : [makeSearchResult('note-a.md', 0.85)], // q2 seed (same note)
+      findBlockNeighbors: (anchor) => [
+        {
+          path: 'note-a.md',
+          heading: '#h',
+          lines: [1, 3],
+          similarity: 'vector' in anchor && anchor.vector[0] === 1 ? 0.5 : 0.8,
+        },
+      ],
     });
 
     const output = await executeRetrieval({
@@ -1056,9 +938,14 @@ describe('cross-query behaviour (query array only)', () => {
       queries: ['q1', 'q2'],
       mode: 'deep',
       expansion: false,
-      sources,
-      embeddingProvider,
-      searchEngine,
+      corpus,
+      embeddingProvider: embedderFor(
+        ['q1', 'q2'],
+        [
+          [1, 0],
+          [0, 1],
+        ],
+      ),
     });
 
     const noteA = output.results.find((r) => r.path === 'note-a.md')!;
@@ -1066,10 +953,11 @@ describe('cross-query behaviour (query array only)', () => {
   });
   // Step 4's shared-pass dedup (above) and Step 4b's per-seed backfill are two
   // separate max-keeping comparisons. This is the backfill one: a seed the
-  // shared pass starved gets one scoped lookup per query vector, and must end
-  // up with the highest-similarity block of them — whichever query order the
-  // vectors arrive in. A fixture embedding every query to one vector cannot
-  // observe this, so the two vectors here have to genuinely differ.
+  // shared pass starved gets one scoped lookup carrying every query vector,
+  // and must end up with the highest-similarity block of them — whichever
+  // query order the vectors arrive in. A fixture embedding every query to one
+  // vector cannot observe this, so the two vectors here have to genuinely
+  // differ.
   it.each([
     { label: 'higher-similarity query last', queries: ['q-low', 'q-high'] },
     { label: 'higher-similarity query first', queries: ['q-high', 'q-low'] },
@@ -1080,50 +968,73 @@ describe('cross-query behaviour (query array only)', () => {
         initialize: vi.fn(),
         embedQuery: vi.fn((query: string) => Promise.resolve(query === 'q-high' ? [0, 1] : [1, 0])),
       };
-      const findBlockNeighbors = vi.fn(
-        ({
-          sources: scoped,
-          queryVector,
-          limit,
-        }: {
-          sources: Iterable<SmartSource>;
-          queryVector: ArrayLike<number>;
-          limit?: number;
-        }) => {
+      const { corpus, findBlockNeighbors } = makeCorpus({
+        findNeighbors: () => [
+          makeSearchResult('note-a.md', 0.9),
+          makeSearchResult('note-b.md', 0.8),
+        ],
+        findBlockNeighbors: (anchor, { paths, limit }) => {
           // Same shape test the backfill suite uses: the scoped, limit-1 call.
-          if (!(Array.isArray(scoped) && scoped.length === 1 && limit === 1)) {
+          if (!(paths.length === 1 && limit === 1)) {
             return [makeBlockResult('note-a.md', 0.9)]; // shared pass starves note-b
           }
           // The backfill lookup answers differently per vector: [0, 1] finds
           // a strictly better block than [1, 0] does.
-          return [makeBlockResult('note-b.md', queryVector[1] === 1 ? 0.7 : 0.3)];
+          const high = 'vector' in anchor && anchor.vector[1] === 1;
+          return [makeBlockResult('note-b.md', high ? 0.7 : 0.3)];
         },
-      );
-      const searchEngine = makeSearchEngine({
-        findNeighbors: vi
-          .fn()
-          .mockReturnValue([
-            makeSearchResult('note-a.md', 0.9),
-            makeSearchResult('note-b.md', 0.8),
-          ]),
-        findBlockNeighbors,
       });
 
       const output = await executeRetrieval({
         similarity: TEST_SIMILARITY,
         queries,
         mode: 'quick',
-        sources,
+        corpus,
         embeddingProvider,
-        searchEngine,
       });
 
       const noteB = output.results.find((r) => r.path === 'note-b.md')!;
       expect(noteB.blocks).toEqual([{ heading: '#block', lines: [1, 3], similarity: 0.7 }]);
-      // Both vectors were actually probed: 2 shared-pass calls + 2 backfill lookups.
+      // Both vectors were actually probed: 2 shared-pass anchors + 2 backfill anchors.
       expect(findBlockNeighbors).toHaveBeenCalledTimes(4);
     },
   );
+
+  it("on a backfill tie across query vectors, the first query's block wins", async () => {
+    const { corpus } = makeCorpus({
+      findNeighbors: () => [makeSearchResult('note-a.md', 0.9), makeSearchResult('note-b.md', 0.8)],
+      findBlockNeighbors: (anchor, { paths, limit }) => {
+        if (!(paths.length === 1 && limit === 1)) return [makeBlockResult('note-a.md', 0.9)];
+        const first = 'vector' in anchor && anchor.vector[0] === 1;
+        return [
+          {
+            path: 'note-b.md',
+            heading: first ? '#first' : '#second',
+            lines: [1, 3],
+            similarity: 0.4,
+          },
+        ];
+      },
+    });
+
+    const output = await executeRetrieval({
+      similarity: TEST_SIMILARITY,
+      queries: ['one', 'two'],
+      mode: 'quick',
+      corpus,
+      embeddingProvider: embedderFor(
+        ['one', 'two'],
+        [
+          [1, 0],
+          [0, 1],
+        ],
+      ),
+    });
+
+    expect(output.results.find((r) => r.path === 'note-b.md')!.blocks).toEqual([
+      { heading: '#first', lines: [1, 3], similarity: 0.4 },
+    ]);
+  });
 
   it("truncated is true when a single query's own pool overflows, even though the merged list fits under limit", async () => {
     // limit defaults to 3 (quick). Query 'a' yields 4 hits — more than its own
@@ -1131,33 +1042,34 @@ describe('cross-query behaviour (query array only)', () => {
     // exactly those same 3 paths, contributing no new unique paths, so the
     // CROSS-QUERY merge cap never fires (merged.length === limit). `truncated`
     // must still be true, driven by query 'a's per-query overflow.
-    const embeddingProvider: QueryEmbedder = {
-      initialize: vi.fn(),
-      embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
-    };
-    const searchEngine = makeSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([
-          makeSearchResult('note-a.md', 0.95),
-          makeSearchResult('note-b.md', 0.9),
-          makeSearchResult('note-c.md', 0.85),
-          makeSearchResult('note-d.md', 0.8),
-        ])
-        .mockReturnValueOnce([
-          makeSearchResult('note-a.md', 0.5),
-          makeSearchResult('note-b.md', 0.4),
-          makeSearchResult('note-c.md', 0.3),
-        ]),
+    const { corpus } = makeCorpus({
+      findNeighbors: (anchor) =>
+        'vector' in anchor && anchor.vector[0] === 1
+          ? [
+              makeSearchResult('note-a.md', 0.95),
+              makeSearchResult('note-b.md', 0.9),
+              makeSearchResult('note-c.md', 0.85),
+              makeSearchResult('note-d.md', 0.8),
+            ]
+          : [
+              makeSearchResult('note-a.md', 0.5),
+              makeSearchResult('note-b.md', 0.4),
+              makeSearchResult('note-c.md', 0.3),
+            ],
     });
 
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries: ['a', 'b'],
       mode: 'quick',
-      sources,
-      embeddingProvider,
-      searchEngine,
+      corpus,
+      embeddingProvider: embedderFor(
+        ['a', 'b'],
+        [
+          [1, 0],
+          [0, 1],
+        ],
+      ),
     });
 
     expect(output.results.map((r) => r.path).sort()).toEqual([
@@ -1170,21 +1082,24 @@ describe('cross-query behaviour (query array only)', () => {
   });
 
   it('caps results at limit (final) regardless of N queries', async () => {
-    const embeddingProvider: QueryEmbedder = {
-      initialize: vi.fn(),
-      embedQuery: vi.fn().mockResolvedValue([1, 0]),
-    };
-    const searchEngine = makeSearchEngine({
+    const prefixes = ['a', 'b', 'c'];
+    const { corpus } = makeCorpus({
       findNeighbors: vi
-        .fn()
+        .fn<NearestFn>()
         .mockReturnValueOnce(
-          Array.from({ length: 5 }, (_, i) => makeSearchResult(`a-${i}.md`, 0.9 - i * 0.01)),
+          Array.from({ length: 5 }, (_, i) =>
+            makeSearchResult(`${prefixes[0]}-${i}.md`, 0.9 - i * 0.01),
+          ),
         )
         .mockReturnValueOnce(
-          Array.from({ length: 5 }, (_, i) => makeSearchResult(`b-${i}.md`, 0.9 - i * 0.01)),
+          Array.from({ length: 5 }, (_, i) =>
+            makeSearchResult(`${prefixes[1]}-${i}.md`, 0.9 - i * 0.01),
+          ),
         )
         .mockReturnValueOnce(
-          Array.from({ length: 5 }, (_, i) => makeSearchResult(`c-${i}.md`, 0.9 - i * 0.01)),
+          Array.from({ length: 5 }, (_, i) =>
+            makeSearchResult(`${prefixes[2]}-${i}.md`, 0.9 - i * 0.01),
+          ),
         ),
     });
 
@@ -1193,9 +1108,8 @@ describe('cross-query behaviour (query array only)', () => {
       queries: ['a', 'b', 'c'],
       mode: 'quick',
       limit: 5,
-      sources,
-      embeddingProvider,
-      searchEngine,
+      corpus,
+      embeddingProvider: makeEmbeddingProvider([1, 0]),
     });
 
     expect(output.results).toHaveLength(5);
@@ -1203,13 +1117,9 @@ describe('cross-query behaviour (query array only)', () => {
   });
 
   it('reports per-query hits before the cross-query cap', async () => {
-    const embeddingProvider: QueryEmbedder = {
-      initialize: vi.fn(),
-      embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
-    };
-    const searchEngine = makeSearchEngine({
+    const { corpus } = makeCorpus({
       findNeighbors: vi
-        .fn()
+        .fn<NearestFn>()
         .mockReturnValueOnce([
           makeSearchResult('note-a.md', 0.9),
           makeSearchResult('note-b.md', 0.7),
@@ -1222,9 +1132,14 @@ describe('cross-query behaviour (query array only)', () => {
       similarity: TEST_SIMILARITY,
       queries: ['a', 'dead'],
       mode: 'quick',
-      sources,
-      embeddingProvider,
-      searchEngine,
+      corpus,
+      embeddingProvider: embedderFor(
+        ['a', 'dead'],
+        [
+          [1, 0],
+          [0, 1],
+        ],
+      ),
     });
 
     expect(output.per_query_hits).toEqual({ a: 2, dead: 0 });
@@ -1236,13 +1151,9 @@ describe('cross-query behaviour (query array only)', () => {
     // merge sort but is sliced off by the Step-3 cap. per_query_hits must still
     // report b's pre-cap count (1), taken from perQueryOutputs, not from the
     // post-cap seeds.
-    const embeddingProvider: QueryEmbedder = {
-      initialize: vi.fn(),
-      embedQuery: vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]),
-    };
-    const searchEngine = makeSearchEngine({
+    const { corpus } = makeCorpus({
       findNeighbors: vi
-        .fn()
+        .fn<NearestFn>()
         .mockReturnValueOnce([
           makeSearchResult('note-a1.md', 0.9),
           makeSearchResult('note-a2.md', 0.85),
@@ -1255,9 +1166,14 @@ describe('cross-query behaviour (query array only)', () => {
       queries: ['a', 'b'],
       mode: 'quick',
       limit: 2,
-      sources,
-      embeddingProvider,
-      searchEngine,
+      corpus,
+      embeddingProvider: embedderFor(
+        ['a', 'b'],
+        [
+          [1, 0],
+          [0, 1],
+        ],
+      ),
     });
 
     expect(output.results.map((r) => r.path)).toEqual(['note-a1.md', 'note-a2.md']);
@@ -1275,25 +1191,19 @@ const DISTINCT: SimilarityDefaults = {
   duplicates: 0.99,
 };
 const QUERY = [1, 0];
-const SOURCES = new Map<string, SmartSource>([
-  ['a.md', { path: 'a.md', embedding: new Float32Array([0, 1]), blocks: [] }],
-]);
 const embedder = { initialize: async () => {}, embedQuery: async () => QUERY };
 
 describe('executeRetrieval — profile similarity defaults', () => {
   it("filters at the profile's quick default, then retries at its fallback", async () => {
     const thresholds: number[] = [];
-    const searchEngine = {
-      findNeighbors: ({ threshold }: { threshold: number }) => (thresholds.push(threshold), []),
-      findBlockNeighbors: () => [],
-      findDuplicates: () => [],
-    } as unknown as SearchEngine;
+    const { corpus } = makeCorpus({
+      findNeighbors: (_anchor, { threshold }) => (thresholds.push(threshold), []),
+    });
     await executeRetrieval({
       queries: ['q'],
       mode: 'quick',
-      sources: SOURCES,
+      corpus,
       embeddingProvider: embedder,
-      searchEngine,
       similarity: DISTINCT,
     });
     expect(thresholds).toEqual([0.7, 0.55]);
@@ -1301,29 +1211,19 @@ describe('executeRetrieval — profile similarity defaults', () => {
 
   it("uses the profile's deep default for seeds and block evidence, and its expansion floor", async () => {
     const calls: Array<[string, number]> = [];
-    const searchEngine = {
-      findNeighbors: ({
-        queryVector,
-        threshold,
-      }: {
-        queryVector: ArrayLike<number>;
-        threshold: number;
-      }) => {
-        calls.push([queryVector === QUERY ? 'seed' : 'expansion', threshold]);
-        return queryVector === QUERY ? [{ path: 'a.md', similarity: 0.65 }] : [];
+    const { corpus } = makeCorpus({
+      findNeighbors: (anchor, { threshold }) => {
+        const seed = 'vector' in anchor && anchor.vector === QUERY;
+        calls.push([seed ? 'seed' : 'expansion', threshold]);
+        return seed ? [{ path: 'a.md', similarity: 0.65 }] : [];
       },
-      findBlockNeighbors: ({ threshold }: { threshold: number }) => (
-        calls.push(['block', threshold]),
-        []
-      ),
-      findDuplicates: () => [],
-    } as unknown as SearchEngine;
+      findBlockNeighbors: (_anchor, { threshold }) => (calls.push(['block', threshold]), []),
+    });
     await executeRetrieval({
       queries: ['q'],
       mode: 'deep',
-      sources: SOURCES,
+      corpus,
       embeddingProvider: embedder,
-      searchEngine,
       similarity: DISTINCT,
     });
     expect(calls).toContainEqual(['seed', 0.6]);
@@ -1333,18 +1233,15 @@ describe('executeRetrieval — profile similarity defaults', () => {
 
   it('an explicit threshold still wins and never falls back', async () => {
     const thresholds: number[] = [];
-    const searchEngine = {
-      findNeighbors: ({ threshold }: { threshold: number }) => (thresholds.push(threshold), []),
-      findBlockNeighbors: () => [],
-      findDuplicates: () => [],
-    } as unknown as SearchEngine;
+    const { corpus } = makeCorpus({
+      findNeighbors: (_anchor, { threshold }) => (thresholds.push(threshold), []),
+    });
     await executeRetrieval({
       queries: ['q'],
       mode: 'quick',
       threshold: 0.95,
-      sources: SOURCES,
+      corpus,
       embeddingProvider: embedder,
-      searchEngine,
       similarity: DISTINCT,
     });
     expect(thresholds).toEqual([0.95]);

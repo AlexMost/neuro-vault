@@ -1,29 +1,23 @@
+import type { ICorpusReader } from '../../lib/obsidian/corpus/corpus.js';
 import type { LexicalIndex, RankedNote } from '../../lib/obsidian/lexical/index.js';
 import { EFFORT_PROFILES, LEXICAL_PER_NOTE_CAP } from './effort-profiles.js';
 import { flattenExpansion, fuseRanks, type ExpansionCandidate } from './rank-fusion.js';
 import type { SimilarityDefaults } from '../../lib/model-profiles.js';
 import { executeRetrieval } from './retrieval-policy.js';
-import type {
-  QueryEmbedder,
-  NoteResultNode,
-  SearchEffort,
-  SearchEngine,
-  SmartSource,
-} from './types.js';
+import type { QueryEmbedder, NoteResultNode, SearchEffort } from './types.js';
 
 /**
- * What `runRetrievalPipeline` needs to run a search: a snapshot of the
- * semantic corpus (absent when there is no backend), the lexical index,
- * backlink lookup, an existence filter for post-retrieval survivor checks,
- * and the embedding provider / search engine `executeRetrieval` drives.
+ * What `runRetrievalPipeline` needs to run a search: the semantic corpus
+ * (absent when there is no backend), the lexical index, backlink lookup, an
+ * existence filter for post-retrieval survivor checks, and the embedding
+ * provider `executeRetrieval` drives.
  */
 export interface RetrievalPipelineDeps {
-  snapshot?: () => Promise<{ sources: Map<string, SmartSource> }>;
+  corpus?: ICorpusReader;
   lexical: Pick<LexicalIndex, 'search'>;
   getBacklinkCount: (path: string) => number;
   filterExisting: (paths: string[]) => Promise<Set<string>>;
   embeddingProvider: QueryEmbedder;
-  searchEngine: SearchEngine;
   /** The active model profile's default thresholds. */
   similarity: SimilarityDefaults;
 }
@@ -69,18 +63,6 @@ export interface RetrievalPipelineResult {
   };
 }
 
-function narrowSources(
-  sources: Map<string, SmartSource>,
-  allowed: Set<string>,
-): Map<string, SmartSource> {
-  const out = new Map<string, SmartSource>();
-  for (const path of allowed) {
-    const src = sources.get(path);
-    if (src) out.set(path, src);
-  }
-  return out;
-}
-
 export async function runRetrievalPipeline(
   input: RetrievalPipelineInput,
   deps: RetrievalPipelineDeps,
@@ -100,11 +82,8 @@ export async function runRetrievalPipeline(
   let semanticNodes: NoteResultNode[] = [];
   let semanticTruncated = false;
   let semantic: SemanticLegOutcome = { status: 'skipped' };
-  if (input.semantic && deps.snapshot !== undefined) {
+  if (input.semantic && deps.corpus !== undefined) {
     try {
-      const { sources } = await deps.snapshot();
-      const effectiveSources =
-        input.allowed !== undefined ? narrowSources(sources, input.allowed) : sources;
       // `cap`/`input.cap` bounds ONLY the final fused list (the `.slice(0,
       // cap)` below) — it is deliberately NOT forwarded here, so it never
       // steers either leg's internal pool volume. A caller raising `limit`
@@ -115,9 +94,10 @@ export async function runRetrievalPipeline(
         mode: input.effort,
         threshold: input.threshold,
         expansionFloor: input.expansionFloor,
-        sources: effectiveSources,
+        corpus: deps.corpus,
+        // The corpus applies the filter to every candidate it ranks.
+        ...(input.allowed !== undefined ? { allowed: [...input.allowed] } : {}),
         embeddingProvider: deps.embeddingProvider,
-        searchEngine: deps.searchEngine,
         similarity: deps.similarity,
       });
       // Existence check covers seeds AND their flattened expansion targets;

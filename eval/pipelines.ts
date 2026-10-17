@@ -10,11 +10,8 @@ import {
   fuseRanks,
 } from '../src/modules/semantic/rank-fusion.js';
 import { executeRetrieval } from '../src/modules/semantic/retrieval-policy.js';
-import {
-  findBlockNeighbors,
-  findDuplicates,
-  findNeighbors,
-} from '../src/modules/semantic/search-engine.js';
+import { findNeighbors } from '../src/modules/semantic/search-engine.js';
+import { snapshotReader } from '../src/modules/semantic/snapshot-reader.js';
 
 export type PipelineId = 'semantic' | 'fused';
 export type EmbedFn = (text: string) => Promise<number[]>;
@@ -112,12 +109,11 @@ async function rankFused(
     threshold: config.semantic_threshold,
     expansionLimit: config.expansion_limit,
     expansionFloor: config.expansion_floor,
-    sources,
+    corpus: snapshotReader(sources),
     embeddingProvider: {
       initialize: () => Promise.resolve(),
       embedQuery: () => Promise.resolve(queryVector),
     },
-    searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     similarity,
   });
   const lexical = await context.lexical.search({

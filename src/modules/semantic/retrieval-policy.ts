@@ -1,12 +1,11 @@
+import type { CorpusAnchor, ICorpusReader, INoteHit } from '../../lib/obsidian/corpus/corpus.js';
 import type {
   BlockMatch,
   QueryEmbedder,
   NoteResultNode,
   RelatedNote,
-  SearchEngine,
   SearchMode,
   SearchResult,
-  SmartSource,
 } from './types.js';
 
 import { EFFORT_PROFILES } from './effort-profiles.js';
@@ -34,39 +33,31 @@ const MODE_DEFAULTS: Record<SearchMode, ModeConfig> = {
   deep: toModeConfig(EFFORT_PROFILES.deep),
 };
 
-// Per-seed expansion. Each seed gets its own sorted, capped list of neighbours.
-// No global dedup — the same path may appear in multiple seeds' related lists
-// (with potentially different expansion_similarity values), by design.
-function computeRelatedPerSeed(args: {
+// Per-seed expansion. Each seed gets its own sorted, capped list of neighbours,
+// all seeds in one corpus read. No global dedup — the same path may appear in
+// multiple seeds' related lists (with potentially different
+// expansion_similarity values), by design. Excluding every seed before the
+// per-seed limit returns exactly what fetching `limit + seeds` and dropping
+// the seeds afterwards did.
+async function computeRelatedPerSeed(args: {
   seedPaths: string[];
-  sources: Map<string, SmartSource>;
-  searchEngine: SearchEngine;
+  corpus: ICorpusReader;
+  allowed: readonly string[] | undefined;
   floor: number;
   perSeedLimit: number;
-}): Map<string, RelatedNote[]> {
-  const { seedPaths, sources, searchEngine, floor, perSeedLimit } = args;
-  const seedSet = new Set(seedPaths);
-  const out = new Map<string, RelatedNote[]>();
-  for (const seedPath of seedPaths) {
-    const source = sources.get(seedPath);
-    if (!source || source.embedding.length === 0) {
-      out.set(seedPath, []);
-      continue;
-    }
-    const neighbours = searchEngine.findNeighbors({
-      queryVector: source.embedding,
-      sources: sources.values(),
-      threshold: floor,
-      limit: perSeedLimit + seedSet.size,
-    });
-    const related = neighbours
-      .filter((n) => !seedSet.has(n.path))
-      .sort((a, b) => b.similarity - a.similarity || a.path.localeCompare(b.path))
-      .slice(0, perSeedLimit)
-      .map((n) => ({ path: n.path, expansion_similarity: n.similarity }));
-    out.set(seedPath, related);
-  }
-  return out;
+}): Promise<Map<string, RelatedNote[]>> {
+  const { seedPaths, corpus, allowed, floor, perSeedLimit } = args;
+  const lists = await corpus.nearest(
+    seedPaths.map((path) => ({ path })),
+    { threshold: floor, limit: perSeedLimit, exclude: seedPaths, allowed },
+  );
+  // A seed without a vector of its own (null) has no neighbours to offer.
+  return new Map(
+    seedPaths.map((seedPath, i) => [
+      seedPath,
+      (lists[i] ?? []).map((n) => ({ path: n.path, expansion_similarity: n.similarity })),
+    ]),
+  );
 }
 
 export interface RetrievalInput {
@@ -77,9 +68,11 @@ export interface RetrievalInput {
   expansion?: boolean;
   expansionLimit?: number;
   expansionFloor?: number;
-  sources: Map<string, SmartSource>;
+  /** The corpus every step reads, one call per step for all queries (design D13). */
+  corpus: ICorpusReader;
+  /** When present, candidate notes are restricted to these paths. */
+  allowed?: readonly string[];
   embeddingProvider: QueryEmbedder;
-  searchEngine: SearchEngine;
   /** The active profile's defaults — every implicit threshold comes from here. */
   similarity: SimilarityDefaults;
 }
@@ -130,7 +123,7 @@ function mergeNoteResults(
 }
 
 export async function executeRetrieval(input: RetrievalInput): Promise<RetrievalOutput> {
-  const { queries, mode, sources, embeddingProvider, searchEngine } = input;
+  const { queries, mode, corpus, allowed, embeddingProvider } = input;
 
   const modeConfig = MODE_DEFAULTS[mode];
   const explicitThreshold = input.threshold !== undefined;
@@ -140,38 +133,44 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const expansionFloor = input.expansionFloor ?? input.similarity.expansionFloor;
   const limit = input.limit ?? modeConfig.limit;
 
-  // Step 1: per-query embed + retrieve (no expansion here). Request one
-  // extra hit beyond `limit` per query so a per-query pool overflow is
-  // observable, then immediately slice back down to `limit` — `neighbors`
-  // (and therefore `per_query_hits` and the merge step below) keep exactly
-  // the same limit-bounded semantics as before the over-fetch; `overflow` is
-  // the only new signal carried out of this step.
-  const perQueryOutputs = await Promise.all(
-    queries.map(async (query) => {
-      const queryVector = await embeddingProvider.embedQuery(query);
-      let neighbors = searchEngine.findNeighbors({
-        queryVector,
-        sources: sources.values(),
-        threshold,
-        limit: limit + 1,
-      });
-      // Step 2 (per query): fallback threshold — default thresholds only. An
-      // explicit threshold that filters everything returns an honest zero.
-      let fallback = false;
-      if (neighbors.length === 0 && !explicitThreshold && threshold > input.similarity.fallback) {
-        neighbors = searchEngine.findNeighbors({
-          queryVector,
-          sources: sources.values(),
-          threshold: input.similarity.fallback,
-          limit: limit + 1,
-        });
-        fallback = neighbors.length > 0;
-      }
-      const overflow = neighbors.length > limit;
-      neighbors = neighbors.slice(0, limit);
-      return { query, queryVector, neighbors, overflow, fallback };
-    }),
+  // Step 1: embed every query, then retrieve every query's seeds in one corpus
+  // read (no expansion here). Request one extra hit beyond `limit` per query
+  // so a per-query pool overflow is observable, then immediately slice back
+  // down to `limit` — `neighbors` (and therefore `per_query_hits` and the
+  // merge step below) keep exactly the same limit-bounded semantics as before
+  // the over-fetch; `overflow` is the only new signal carried out of this step.
+  const queryVectors = await Promise.all(
+    queries.map((query) => embeddingProvider.embedQuery(query)),
   );
+  const anchors: CorpusAnchor[] = queryVectors.map((vector) => ({ vector }));
+  const hitsByQuery: INoteHit[][] = (
+    await corpus.nearest(anchors, { threshold, limit: limit + 1, allowed })
+  ).map((hits) => hits ?? []);
+  // Step 2 (per query): fallback threshold — default thresholds only, one
+  // read for every query left empty. An explicit threshold that filters
+  // everything returns an honest zero.
+  const fallbackByQuery = queries.map(() => false);
+  const emptyQueries = hitsByQuery.flatMap((hits, i) => (hits.length === 0 ? [i] : []));
+  if (emptyQueries.length > 0 && !explicitThreshold && threshold > input.similarity.fallback) {
+    const retried = await corpus.nearest(
+      emptyQueries.map((i) => anchors[i]),
+      { threshold: input.similarity.fallback, limit: limit + 1, allowed },
+    );
+    emptyQueries.forEach((queryIndex, k) => {
+      const hits = retried[k] ?? [];
+      hitsByQuery[queryIndex] = hits;
+      fallbackByQuery[queryIndex] = hits.length > 0;
+    });
+  }
+  const perQueryOutputs = queries.map((query, i) => {
+    const hits = hitsByQuery[i];
+    return {
+      query,
+      neighbors: hits.slice(0, limit),
+      overflow: hits.length > limit,
+      fallback: fallbackByQuery[i],
+    };
+  });
 
   const per_query_hits: Record<string, number> = {};
   const per_query_fallback: Record<string, boolean> = {};
@@ -196,27 +195,19 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const seedPaths = seeds.map((s) => s.path);
   const seedPathSet = new Set(seedPaths);
 
-  // Step 4: block search per query, scoped to seed notes; merge by block-key keeping max similarity.
+  // Step 4: block search for every query in one read, scoped to seed notes;
+  // merge by block-key keeping max similarity.
   const blocksByPath = new Map<string, BlockMatch[]>();
   if (seeds.length > 0) {
-    const seedSources = [...sources.values()].filter((s) => seedPathSet.has(s.path));
+    const rawByQuery = await corpus.nearestBlocks(
+      anchors,
+      mode === 'deep'
+        ? { paths: seedPaths, threshold: input.similarity.deep, limit }
+        : { paths: seedPaths, threshold: 0, limit: QUICK_BLOCK_LIMIT },
+    );
     const rawByKey = new Map<string, BlockMatch & { path: string }>();
-    for (const { queryVector } of perQueryOutputs) {
-      const raw =
-        mode === 'deep'
-          ? searchEngine.findBlockNeighbors({
-              queryVector,
-              sources: seedSources,
-              threshold: input.similarity.deep,
-              limit,
-            })
-          : searchEngine.findBlockNeighbors({
-              queryVector,
-              sources: seedSources,
-              threshold: 0,
-              limit: QUICK_BLOCK_LIMIT,
-            });
-      for (const block of raw) {
+    for (const raw of rawByQuery) {
+      for (const block of raw ?? []) {
         if (!seedPathSet.has(block.path)) continue;
         const key = `${block.path}\0${block.heading}\0${block.lines[0]}-${block.lines[1]}`;
         const existing = rawByKey.get(key);
@@ -243,33 +234,35 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
       bucket.sort((a, b) => b.similarity - a.similarity || a.lines[0] - b.lines[0]);
     }
 
-    // Step 4b: per-seed backfill across query vectors — keep the single best
-    // block over all queries for each starved seed. Blocks are empty only
-    // when the note has no block embeddings at all.
-    for (const seedPath of seedPaths) {
-      if (blocksByPath.get(seedPath)?.length) continue;
-      const source = sources.get(seedPath);
-      if (!source) continue;
+    // Step 4b: per-seed backfill across query vectors — one read per starved
+    // seed carrying every query vector, keeping the single best block over
+    // all queries (the first query wins a tie). Blocks are empty only when
+    // the note has no block embeddings at all.
+    const starved = seedPaths.filter((seedPath) => !blocksByPath.get(seedPath)?.length);
+    const backfills = await Promise.all(
+      starved.map((seedPath) =>
+        corpus.nearestBlocks(anchors, { paths: [seedPath], threshold: 0, limit: 1 }),
+      ),
+    );
+    starved.forEach((seedPath, i) => {
       let best: BlockMatch | undefined;
-      for (const { queryVector } of perQueryOutputs) {
-        const [hit] = searchEngine
-          .findBlockNeighbors({ queryVector, sources: [source], threshold: 0, limit: 1 })
-          .filter((b) => b.path === seedPath);
+      for (const hits of backfills[i]) {
+        const [hit] = (hits ?? []).filter((b) => b.path === seedPath);
         if (hit && (!best || hit.similarity > best.similarity)) {
           best = { heading: hit.heading, lines: hit.lines, similarity: hit.similarity };
         }
       }
       if (best) blocksByPath.set(seedPath, [best]);
-    }
+    });
   }
 
   // Step 5: per-seed expansion (deep only)
   let relatedByPath = new Map<string, RelatedNote[]>();
   if (expansion && expansionLimit > 0 && seeds.length > 0) {
-    relatedByPath = computeRelatedPerSeed({
+    relatedByPath = await computeRelatedPerSeed({
       seedPaths,
-      sources,
-      searchEngine,
+      corpus,
+      allowed,
       floor: expansionFloor,
       perSeedLimit: expansionLimit,
     });
