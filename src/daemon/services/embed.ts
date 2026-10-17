@@ -31,6 +31,13 @@ export interface EmbedServiceDeps {
   now?: () => number;
 }
 
+/**
+ * How long `documentsFor` rejects at once after a profile failed to load. A reconcile pass embeds
+ * note by note, and without this every batch would reload the model and log the failure again.
+ * `embed.initialize` and `embed.query` are not held back: their next call retries.
+ */
+export const LOAD_FAILURE_MEMO_MS = 30_000;
+
 function profileOf(key: string): ModelProfile {
   if (!isProfileKey(key)) throw new DaemonRpcError('UNKNOWN_PROFILE', `unknown profile "${key}"`);
   return MODEL_PROFILES[key];
@@ -84,6 +91,8 @@ export function createEmbedService(deps: EmbedServiceDeps): {
   // A failed load is dropped from here and never enters `loaded`, so the next
   // request builds and initializes a fresh provider.
   const loading = new Map<string, Promise<LoadedProfile>>();
+  // The last load failure per profile and when it happened, for `documentsFor` only.
+  const loadFailures = new Map<string, { error: DaemonRpcError; at: number }>();
 
   function get(profile: ModelProfile): Promise<LoadedProfile> {
     const ready = loaded.get(profile.key);
@@ -168,7 +177,19 @@ export function createEmbedService(deps: EmbedServiceDeps): {
   function documentsFor(profileKey: string): EmbedDocumentsFn {
     const profile = profileOf(profileKey);
     return async (texts) => {
-      const { queue } = await get(profile);
+      const failure = loadFailures.get(profile.key);
+      // A profile loaded since (by `embed.initialize`) is no longer failing.
+      if (failure !== undefined && !loaded.has(profile.key)) {
+        if (now() - failure.at < LOAD_FAILURE_MEMO_MS) throw failure.error;
+      }
+      let queue: QueuedEmbedder;
+      try {
+        ({ queue } = await get(profile));
+      } catch (error) {
+        loadFailures.set(profile.key, { error: error as DaemonRpcError, at: now() });
+        throw error;
+      }
+      loadFailures.delete(profile.key);
       return embedding(
         `embed documents failed for ${profile.key} (${texts.length} texts)`,
         async () => (await queue.embedDocuments(texts)).map(assertFinite),
