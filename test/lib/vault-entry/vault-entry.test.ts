@@ -10,6 +10,7 @@ import type {
   withReconcileLock,
 } from '../../../src/lib/obsidian/corpus/reconcile.js';
 import { contentHash } from '../../../src/lib/obsidian/corpus/reconcile.js';
+import { ShardCorpus } from '../../../src/lib/obsidian/corpus/shard-corpus.js';
 import { ShardStore } from '../../../src/lib/obsidian/corpus/shard-store.js';
 import type { EmbedDocumentsFn } from '../../../src/lib/obsidian/corpus/types.js';
 import { encodeVector } from '../../../src/lib/obsidian/corpus/vector-codec.js';
@@ -176,6 +177,44 @@ describe('createVaultEntry', () => {
     expect(blocks[2]).toBeNull();
     expect((blocks[1] ?? []).map((hit) => hit.path)).toEqual(['Notes/y.md']);
   });
+
+  it.each(['nearest', 'nearestBlocks'] as const)(
+    'a scope change while %s is reading keeps answers aligned with their anchors',
+    async (method) => {
+      const h = await harness({ scope: scopeOf(['Archive/**']), loop: { withLock: heldLock } });
+      await seed(h.root, { 'Archive/x.md': 2, 'Notes/y.md': 3, 'Notes/z.md': 4 });
+      h.entry.addProfile(HARRIER);
+      await vi.waitFor(() => expect(h.entry.status(HARRIER)).toEqual({ state: 'ready' }));
+      // The scope lifts the exclusion at the moment the corpus starts the read.
+      type Read = (this: ShardCorpus, ...args: unknown[]) => Promise<unknown>;
+      const original = ShardCorpus.prototype[method] as unknown as Read;
+      const spy = vi.spyOn(ShardCorpus.prototype, method).mockImplementation(function (
+        this: ShardCorpus,
+        ...args: unknown[]
+      ) {
+        const pending = original.apply(this, args);
+        h.entry.setScope(scopeOf());
+        return pending;
+      } as never);
+
+      try {
+        const reader = h.entry.reader(HARRIER);
+        const anchors = [{ path: 'Archive/x.md' }, { path: 'Notes/y.md' }, { path: 'Notes/z.md' }];
+        const all = ['Archive/x.md', 'Notes/y.md', 'Notes/z.md'];
+        const answers =
+          method === 'nearest'
+            ? await reader.nearest(anchors, { threshold: -1 })
+            : await reader.nearestBlocks(anchors, { paths: all, threshold: -1 });
+
+        // Decided by the scope the read started under: x was excluded, y and z were not.
+        expect(answers[0]).toBeNull();
+        expect(answers[1]?.[0]?.path).toBe('Notes/y.md');
+        expect(answers[2]?.[0]?.path).toBe('Notes/z.md');
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
 
   it('setScope restarts the watcher, queues one pass and applies to reads at once', async () => {
     const h = await harness({ loop: { withLock: heldLock } });
