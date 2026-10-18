@@ -2,6 +2,7 @@ import type { JSONRPCMessage, JSONRPCRequest, RequestId } from '@modelcontextpro
 import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 import type { IBlockHit, INoteHit } from '../lib/obsidian/corpus/corpus.js';
+import type { LexicalMatch } from '../lib/obsidian/lexical/rank.js';
 import type { EmbeddingIdentity } from '../lib/obsidian/corpus/types.js';
 import type { IVaultInfo } from '../lib/vault-entry/index.js';
 
@@ -53,6 +54,21 @@ export interface CorpusNearestBlocksParams {
 export interface CorpusNearestBlocksResult {
   hits: (IBlockHit[] | null)[];
 }
+export interface LexicalSearchParams {
+  vault: string;
+  queries: string[];
+  /** Absent: no filter. An empty list is a filter that matches nothing. */
+  allowed?: string[];
+  note_cap: number;
+  per_note_cap: number;
+}
+export interface LexicalSearchResult {
+  notes: Array<{ path: string; matches: LexicalMatch[]; matched_queries: string[] }>;
+  truncated: boolean;
+  per_query_counts: Record<string, number>;
+  per_query_token_counts: Record<string, Record<string, number>>;
+  total_notes: number;
+}
 export interface DaemonInfoResult {
   name: string;
   version: string;
@@ -73,6 +89,7 @@ export type DaemonErrorCode =
   | 'VAULT_UNAVAILABLE'
   | 'CORPUS_NOT_READY'
   | 'CORPUS_FAILED'
+  | 'LEXICAL_FAILED'
   | 'INTERNAL';
 
 // `ErrorCode.ConnectionClosed` (-32000) is the SDK's JSON-RPC server-error slot for a closed connection.
@@ -86,6 +103,7 @@ const JSON_RPC_CODE: Record<DaemonErrorCode, number> = {
   VAULT_UNAVAILABLE: ErrorCode.InvalidParams,
   CORPUS_NOT_READY: ErrorCode.InternalError,
   CORPUS_FAILED: ErrorCode.InternalError,
+  LEXICAL_FAILED: ErrorCode.InternalError,
   INTERNAL: ErrorCode.InternalError,
 };
 
