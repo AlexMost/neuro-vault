@@ -46,7 +46,7 @@ interface ILexicalReader {
 | --- | --- | --- |
 | Daemon (`createDaemonLexicalReader`) | The default: semantic module on and `--shared` | Attaches the vault (the one attachment it shares with the semantic backend), then `lexical.search` over the daemon connection ([`shared-daemon.md`](./shared-daemon.md#the-lexical-service)), 30 s per call. Once the process's switch went in-process it delegates to the local reader. |
 | In-process entry (`createLocalLexicalReader`) | `--no-shared`, or after the daemon could not be located or started | The same `IVaultEntry.lexicalSearch` over this process's own `VaultEntries`, attached under the fixed connection id 0. |
-| Standalone (`createStandaloneLexicalReader`) | `--no-semantic` | A `LexicalIndex` over the session's own reader, tie-broken by the session's own graph, built on first search. No vault clients exist, so nothing attaches and no daemon starts. This is the path every vault had before the cache moved, and `eval/pipelines.ts` uses it. |
+| Standalone (`createStandaloneLexicalReader`) | `--no-semantic` | A `LexicalIndex` over the session's own reader, tie-broken by the session's own graph; the index is constructed with the reader and fills on the first search. No vault clients exist, so nothing attaches and no daemon starts. This is the path every vault had before the cache moved, and `eval/pipelines.ts` uses it. |
 
 `warm()` attaches the vault in the background at startup (every registered vault, a `"semantic": false` one included, with no profile); the standalone reader has nothing to start early. All three return byte-identical results for the same disk state: a frozen copy of the pre-move index is the oracle the parity tests compare each reader against.
 
