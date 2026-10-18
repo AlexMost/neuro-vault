@@ -3,8 +3,9 @@
 An offline tool that measures the ranking pipeline's retrieval quality against
 a hand-curated golden set. It runs as a plain script — no MCP client, no
 running server — by importing the production ranking modules directly
-(`executeRetrieval`, `LexicalIndex.search`, `flattenExpansion`, `fuseRanks`)
-and calling them the way `search_notes` does. It exists to replace "judge a
+(`executeRetrieval`, `flattenExpansion`, `fuseRanks`) and the standalone
+lexical reader (`createStandaloneLexicalReader`, a `LexicalIndex` over the
+vault's reader with the eval's graph), calling them the way `search_notes` does. It exists to replace "judge a
 ranking change by hand-running a few queries" with a repeatable number: every
 RRF weight (`EXPANSION_WEIGHT`, pool sizes, adaptive `k`) was hand-picked and
 can only be re-tuned against measured data.
@@ -147,7 +148,8 @@ reports on `--pipeline semantic` (see [Scoring](#scoring)).
     (`corpus.nearest` over the loaded corpus, threshold 0, top 10).
   - `fused` — the production RRF pipeline, run at deep effort: `executeRetrieval`
     (semantic leg at threshold 0, pool 8; expansion leg on, per-seed limit 3,
-    expansion floor from the selected profile) + `LexicalIndex.search`
+    expansion floor from the selected profile) + the standalone lexical reader
+    (`createStandaloneLexicalReader`)
     (note cap 10, per-note cap 3, real wikilink-graph backlink tie-break) +
     `flattenExpansion` + `fuseRanks` (expansion weight 0.85). This is the same
     sequence `search_notes` calls internally to assemble its unified list,

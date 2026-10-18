@@ -63,7 +63,7 @@ flowchart LR
             Backend[Semantic backend<br/>daemon facade or in-process vault entry]
             Retrieval[Retrieval policy<br/>effort: quick / deep]
             Embed["Embedding service<br/>model profile (--model)"]
-            Lexical[Lexical reader<br/>daemon by default;<br/>in-process entry with --no-shared,<br/>own cache with --no-semantic]
+            Lexical["Lexical reader<br/>daemon by default,<br/>in-process entry with --no-shared,<br/>own cache with --no-semantic"]
         end
         subgraph Operations[Operations module]
             direction TB

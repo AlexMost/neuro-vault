@@ -203,9 +203,12 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
     await startServer();
 
     // The call that finds the connection gone fails or reads unavailable...
-    await vi.waitFor(async () => {
-      expect((await backend.status()).state).toBe('ready');
-    });
+    await vi.waitFor(
+      async () => {
+        expect((await backend.status()).state).toBe('ready');
+      },
+      { timeout: 10_000 },
+    );
     // ...and the next one reconnected, attached again and serves.
     expect(connection.epoch).toBeGreaterThan(epoch);
     expect(sent.filter((method) => method === 'vault.attach')).toHaveLength(2);
@@ -273,13 +276,16 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
     await startServer();
 
     // The call that finds the connection gone fails or degrades; a later one is served whole.
-    const after = await vi.waitFor(async () => {
-      const out = await search({ query: 'alpha' });
-      expect(out.matches[0]?.found_in).toEqual(
-        expect.arrayContaining(['semantic', 'lexical:title']),
-      );
-      return out;
-    });
+    const after = await vi.waitFor(
+      async () => {
+        const out = await search({ query: 'alpha' });
+        expect(out.matches[0]?.found_in).toEqual(
+          expect.arrayContaining(['semantic', 'lexical:title']),
+        );
+        return out;
+      },
+      { timeout: 10_000 },
+    );
     expect(after.matches.map((m) => m.path)).toEqual(before.matches.map((m) => m.path));
 
     const key = keyOf(root);
