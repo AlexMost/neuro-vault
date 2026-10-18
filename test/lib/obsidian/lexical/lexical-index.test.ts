@@ -130,6 +130,11 @@ describe('LexicalIndex shared refresh rule', () => {
   function makeSpiedIndex(extra: { warn?: (m: string) => void } = {}) {
     const statCalls = new Map<string, number>();
     const reads: string[] = [];
+    // Stats whose real fs.stat has returned (the mtime a refresh will act on is fixed).
+    let statsDone = 0;
+    // Two refreshes overlap exactly when one path is being statted by both at once.
+    const inFlight = new Map<string, number>();
+    let maxInFlightPerPath = 0;
     let gate: Promise<void> = Promise.resolve();
     const index = new LexicalIndex({
       vaultRoot,
@@ -139,8 +144,13 @@ describe('LexicalIndex shared refresh rule', () => {
       stat: async (abs) => {
         const rel = path.relative(vaultRoot, abs);
         statCalls.set(rel, (statCalls.get(rel) ?? 0) + 1);
+        const now = (inFlight.get(rel) ?? 0) + 1;
+        inFlight.set(rel, now);
+        maxInFlightPerPath = Math.max(maxInFlightPerPath, now);
         const s = await fs.stat(abs);
+        statsDone++;
         await gate;
+        inFlight.set(rel, (inFlight.get(rel) ?? 1) - 1);
         return s;
       },
       readFile: async (abs) => {
@@ -153,6 +163,8 @@ describe('LexicalIndex shared refresh rule', () => {
       index,
       statCalls,
       reads,
+      statsDone: () => statsDone,
+      maxInFlightPerPath: () => maxInFlightPerPath,
       block(): () => void {
         let release!: () => void;
         gate = new Promise<void>((r) => {
@@ -163,12 +175,18 @@ describe('LexicalIndex shared refresh rule', () => {
     };
   }
 
-  async function editBacklog(): Promise<void> {
-    const full = path.join(vaultRoot, EDITED);
-    await fs.writeFile(full, 'Черга задач: новеслово тут.\n', 'utf8');
-    const later = new Date(Date.now() + 60_000);
+  async function editNote(rel: string, text: string, offsetMs: number): Promise<void> {
+    const full = path.join(vaultRoot, rel);
+    await fs.writeFile(full, text, 'utf8');
+    const later = new Date(Date.now() + offsetMs);
     await fs.utimes(full, later, later);
   }
+
+  // Lets a (mutant) overlapping refresh reach its stat calls while the barrier is held.
+  const settle = (): Promise<void> => new Promise((r) => globalThis.setTimeout(r, 50));
+
+  const editBacklog = (): Promise<void> =>
+    editNote(EDITED, 'Черга задач: новеслово тут.\n', 60_000);
 
   it('a filtered search evicts nothing', async () => {
     await writeFixtureVault(vaultRoot);
@@ -187,35 +205,40 @@ describe('LexicalIndex shared refresh rule', () => {
 
   it('a call during a refresh is served by the next one', async () => {
     await writeFixtureVault(vaultRoot);
-    const { index, statCalls, block } = makeSpiedIndex();
+    const { index, statCalls, statsDone, maxInFlightPerPath, block } = makeSpiedIndex();
     await index.warm();
     statCalls.clear();
+    const base = statsDone();
 
     const release = block();
     const a = index.search({ queries: ['новеслово'], ...searchOpts });
-    await vi.waitFor(() => expect(statCalls.size).toBe(12));
+    await vi.waitFor(() => expect(statsDone() - base).toBe(12));
     await editBacklog();
     const b = index.search({ queries: ['новеслово'], ...searchOpts });
+    await settle();
     release();
 
     // A began before the edit and keeps the state it scanned.
     expect((await a).notes).toHaveLength(0);
     expect((await b).notes.map((n) => n.path)).toEqual([EDITED]);
     expect([...statCalls.values()]).toEqual(new Array(12).fill(2));
+    expect(maxInFlightPerPath()).toBe(1);
   });
 
   it('concurrent waiters share one follow-up', async () => {
     await writeFixtureVault(vaultRoot);
-    const { index, statCalls, block } = makeSpiedIndex();
+    const { index, statCalls, statsDone, maxInFlightPerPath, block } = makeSpiedIndex();
     await index.warm();
     statCalls.clear();
+    const base = statsDone();
 
     const release = block();
     const a = index.search({ queries: ['новеслово'], ...searchOpts });
-    await vi.waitFor(() => expect(statCalls.size).toBe(12));
+    await vi.waitFor(() => expect(statsDone() - base).toBe(12));
     await editBacklog();
     const b = index.search({ queries: ['новеслово'], ...searchOpts });
     const c = index.search({ queries: ['новеслово'], ...searchOpts });
+    await settle();
     release();
 
     const [ra, rb, rc] = await Promise.all([a, b, c]);
@@ -224,6 +247,75 @@ describe('LexicalIndex shared refresh rule', () => {
     expect(rc.notes.map((n) => n.path)).toEqual([EDITED]);
     // A's refresh, then ONE follow-up for B and C: two refreshes, not three.
     expect([...statCalls.values()]).toEqual(new Array(12).fill(2));
+    expect(maxInFlightPerPath()).toBe(1);
+  });
+
+  it('a call arriving while the follow-up runs is served by a refresh that starts after it', async () => {
+    await writeFixtureVault(vaultRoot);
+    const { index, statCalls, statsDone, maxInFlightPerPath, block } = makeSpiedIndex();
+    await index.warm();
+    statCalls.clear();
+    const base = statsDone();
+
+    const releaseA = block();
+    const a = index.search({ queries: ['новеслово другеслово'], ...searchOpts });
+    await vi.waitFor(() => expect(statsDone() - base).toBe(12));
+    await editBacklog();
+    const b = index.search({ queries: ['новеслово'], ...searchOpts });
+
+    // Hold the follow-up (B's refresh) after its stats, then land a second edit and add C.
+    const releaseB = block();
+    await settle();
+    releaseA();
+    await vi.waitFor(() => expect(statsDone() - base).toBe(24));
+    await editNote('Ideas/Semantic ideas.md', 'Ідея: другеслово тут.\n', 120_000);
+    const c = index.search({ queries: ['другеслово'], ...searchOpts });
+    await settle();
+    releaseB();
+
+    const [ra, rb, rc] = await Promise.all([a, b, c]);
+    expect(ra.notes).toHaveLength(0);
+    // B's refresh statted before the second edit: it must not see it.
+    expect(rb.notes.map((n) => n.path)).toEqual([EDITED]);
+    const rbLater = await index.search({ queries: ['другеслово'], ...searchOpts });
+    expect(rbLater.notes.map((n) => n.path)).toEqual(['Ideas/Semantic ideas.md']);
+    // C was served by a third refresh that began after C arrived.
+    expect(rc.notes.map((n) => n.path)).toEqual(['Ideas/Semantic ideas.md']);
+    expect(maxInFlightPerPath()).toBe(1);
+  });
+
+  it('queued callers are still served when the refresh they waited on fails', async () => {
+    await writeFixtureVault(vaultRoot);
+    const real = new FsVaultReader({ vaultRoot });
+    let scans = 0;
+    let fail!: () => void;
+    const failing = new Promise<void>((_, reject) => {
+      fail = () => reject(new Error('scan exploded'));
+    });
+    const reader = {
+      readNotes: real.readNotes.bind(real),
+      scan: async (): Promise<string[]> => {
+        scans++;
+        if (scans === 1) await failing;
+        return real.scan();
+      },
+    };
+    const index = new LexicalIndex({ vaultRoot, reader });
+    const a = index.search({ queries: ['пошук'], ...searchOpts });
+    const aOutcome = a.then(
+      () => 'resolved',
+      () => 'rejected',
+    );
+    await vi.waitFor(() => expect(scans).toBe(1));
+    const b = index.search({ queries: ['пошук'], ...searchOpts });
+    const c = index.search({ queries: ['пошук'], ...searchOpts });
+    fail();
+
+    expect(await aOutcome).toBe('rejected');
+    const [rb, rc] = await Promise.all([b, c]);
+    expect(rb.totalNotes).toBe(12);
+    expect(rc.totalNotes).toBe(12);
+    expect(scans).toBe(2);
   });
 
   it('warm then info', async () => {
