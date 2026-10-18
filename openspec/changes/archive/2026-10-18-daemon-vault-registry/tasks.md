@@ -73,4 +73,4 @@ Parallelism: groups 1 and 3 are parallel-safe with each other (no shared files).
 
 - [x] 12.1 `/opsx:verify` → `verify.md`: gates, `npm run eval` scores before and after, and by hand on the owner's vault: N sessions → `daemon status` shows one entry with `clients N` and no watcher in any session; killed daemon → next call reconnects; `--no-shared` in-process; per-session footprint at +300 s against the baseline on #158, posted there.
 - [x] 12.2 `retrospective.md`.
-- [ ] 12.3 `npx openspec archive -y`, then PR 2 to `main` with `Refs #158`, `Closes #175`, `Closes #106`.
+- [x] 12.3 `npx openspec archive -y`, then PR 2 to `main` with `Refs #158`, `Closes #175`, `Closes #106`.
