@@ -1,13 +1,19 @@
 import { z } from 'zod';
 
-import { getNoteLinks, type BasenameIndex } from '../../../lib/obsidian/index.js';
+import {
+  buildBasenameIndex,
+  getNoteLinks,
+  type BasenameIndex,
+} from '../../../lib/obsidian/index.js';
+import type { ICorpusReader } from '../../../lib/obsidian/corpus/corpus.js';
+import { CorpusNotReadyError } from '../../../lib/obsidian/semantic-backend.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { readNoteContentForEntry, readPositiveInteger, readThreshold } from '../tool-helpers.js';
-import type { QueryEmbedder, SearchEngine, SimilarNoteResult, SmartSource } from '../types.js';
+import type { QueryEmbedder, SimilarNoteResult } from '../types.js';
 import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 
 const DEFAULT_LIMIT = 10;
@@ -23,7 +29,6 @@ interface Input {
 export interface GetSimilarNotesDeps {
   registry: IVaultRegistry;
   embeddingProvider: QueryEmbedder;
-  searchEngine: SearchEngine;
   modelKey: string;
   similarity: SimilarityDefaults;
 }
@@ -43,8 +48,11 @@ function wrapDependencyError(
   error: unknown,
   message: string,
   details: Record<string, unknown>,
-): ToolHandlerError {
+): ToolHandlerError | CorpusNotReadyError {
   if (error instanceof ToolHandlerError) return error;
+  // The corpus stopped serving after the readiness gate let the call in: the
+  // dispatcher reports it as the gate would.
+  if (error instanceof CorpusNotReadyError) return error;
   return new ToolHandlerError('DEPENDENCY_ERROR', message, { details, cause: error });
 }
 
@@ -61,22 +69,23 @@ function isExcluded(notePath: string, prefixes: readonly string[]): boolean {
   return false;
 }
 
-function collectSemanticCandidates(args: {
-  searchEngine: SearchEngine;
-  queryVector: ArrayLike<number>;
-  sources: Map<string, SmartSource>;
+/**
+ * The note's semantic neighbours: one read anchored on its path, bounded by the threshold
+ * alone. Null when the corpus holds no vector for the note.
+ */
+async function collectSemanticCandidates(args: {
+  corpus: ICorpusReader;
+  notePath: string;
   threshold: number;
-  excludePath: string;
-}): Map<string, Candidate> {
-  const results = args.searchEngine.findNeighbors({
-    queryVector: args.queryVector,
-    sources: args.sources.values(),
+}): Promise<Map<string, Candidate> | null> {
+  const [hits] = await args.corpus.nearest([{ path: args.notePath }], {
     threshold: args.threshold,
-    excludePath: args.excludePath,
+    exclude: [args.notePath],
   });
+  if (hits === null) return null;
   const candidates = new Map<string, Candidate>();
-  for (const r of results) {
-    candidates.set(r.path, { path: r.path, signals: { semantic: r.similarity } });
+  for (const hit of hits) {
+    candidates.set(hit.path, { path: hit.path, signals: { semantic: hit.similarity } });
   }
   return candidates;
 }
@@ -155,7 +164,7 @@ function toSimilarNoteResult(c: Candidate, vaultName: string): StampedSimilarNot
 export function buildGetSimilarNotesTool(
   deps: GetSimilarNotesDeps,
 ): ITool<Input, StampedSimilarNoteResult[]> {
-  const { registry, searchEngine, modelKey, similarity } = deps;
+  const { registry, modelKey, similarity } = deps;
   return buildSingleVaultTool<Input, StampedSimilarNoteResult[]>(registry, {
     name: 'get_similar_notes',
     title: 'Get Similar Notes',
@@ -177,7 +186,6 @@ export function buildGetSimilarNotesTool(
       exclude_folders: z.array(z.string()).optional(),
     },
     runForEntry: async (entry, input) => {
-      const backend = entry.backend;
       let notePath: string;
       try {
         notePath = normalizeNotePath(input.path);
@@ -191,22 +199,20 @@ export function buildGetSimilarNotesTool(
       const excludePrefixes = (input.exclude_folders ?? []).map(normalizeExcludeEntry);
 
       try {
-        const { sources, basenameIndex } = await backend.snapshot();
-
-        const source = sources.get(notePath);
-        if (!source) {
+        const candidates = await collectSemanticCandidates({
+          corpus: entry.backend,
+          notePath,
+          threshold,
+        });
+        if (candidates === null) {
           throw new ToolHandlerError('NOT_FOUND', `No note found for path: ${notePath}`, {
             details: { path: notePath },
           });
         }
 
-        const candidates = collectSemanticCandidates({
-          searchEngine,
-          queryVector: source.embedding,
-          sources,
-          threshold,
-          excludePath: notePath,
-        });
+        // The vault's scoped note list, not the corpus: a note too short to carry a vector
+        // is still a note a link can resolve to.
+        const basenameIndex = buildBasenameIndex(await entry.reader.scan());
         const linkedPaths = await resolveForwardLinks({
           notePath,
           entry,

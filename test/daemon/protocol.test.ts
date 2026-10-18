@@ -149,6 +149,8 @@ describe('errorResponse', () => {
     INTERNAL: -32603,
     NOT_ATTACHED: -32602,
     VAULT_UNAVAILABLE: -32602,
+    CORPUS_NOT_READY: -32603,
+    CORPUS_FAILED: -32603,
   };
 
   it.each(Object.entries(expected) as [DaemonErrorCode, number][])(

@@ -1,8 +1,8 @@
 # The Shared-Services Daemon
 
-One background process per installed build of `neuro-vault-mcp`, shared by every server session and `index` run of that build on the machine. It listens on a local socket, speaks JSON-RPC 2.0 with the MCP stdio framing, and hosts namespaced services. Today it has two real services, `embed`, which holds the embedding model, and `vault`, which attaches clients to the shared state of a vault directory ([`vault-entry.md`](./vault-entry.md)), plus its own `daemon` service for `info` and `shutdown`. The decision behind it is [ADR-0018](../adr/0018-shared-services-daemon.md). The code is `src/daemon/` and `src/cli-daemon.ts`.
+One background process per installed build of `neuro-vault-mcp`, shared by every server session and `index` run of that build on the machine. It listens on a local socket, speaks JSON-RPC 2.0 with the MCP stdio framing, and hosts namespaced services. Today it has three real services, `embed`, which holds the embedding model, `vault`, which attaches clients to the shared state of a vault directory ([`vault-entry.md`](./vault-entry.md)), and `corpus`, which answers similarity reads over that state, plus its own `daemon` service for `info` and `shutdown`. The decisions behind it are [ADR-0018](../adr/0018-shared-services-daemon.md) (the daemon and its embed service) and [ADR-0020](../adr/0020-per-vault-state-in-the-daemon.md) (per-vault state in its vault entries). The code is `src/daemon/` and `src/cli-daemon.ts`.
 
-**Status of the code.** Built and on by default. Every server session and every `index` run embeds through a daemon of its own build, which it finds or spawns on demand through the session-side facade (`DaemonEmbeddingProvider`, [below](#the-session-side-facade)). `--no-shared` keeps the model in the process. The `vault` service is served but **no session attaches to it yet**: sessions still keep their own watcher, reconcile loop and corpus snapshot, so an entry exists only if a client attaches by hand, and nothing reads from it.
+**Status of the code.** Built and on by default. Every server session and every `index` run embeds through a daemon of its own build, which it finds or spawns on demand ([the session-side facades](#the-session-side-facades)). Every server session also attaches each of its semantically enabled vaults to the daemon's vault entry at startup and reads that vault's corpus through `corpus.*`, so the daemon holds the watcher, the reconcile loop and the decoded corpus of every vault once, whatever the number of sessions. `--no-shared` keeps the model and the vault entries in the process.
 
 ## What it is
 
@@ -14,13 +14,15 @@ neuro-vault-mcp v<version> daemon listening on /tmp/neuro-vault-<uid>/<key>.sock
 
 It loads no model and attaches no vault at startup. A model loads the first time a client sends `embed.initialize` for a profile, and stays loaded for the life of the process. The command takes no `--vault` and no `--model`: the daemon belongs to an installed build, not to a vault configuration. Whatever profile a client asks for is the one it loads, so two sessions on different `--model` values share one daemon that holds two models.
 
-The process runs in the foreground of whoever started it. `runDaemonCommand` resolves `0` once the server is listening, and the listening socket keeps the event loop alive. Detaching, `unref` and redirecting stdout and stderr to `daemon.log` are the spawning client's job ([the facade](#the-session-side-facade)), not the daemon's.
+The process runs in the foreground of whoever started it. `runDaemonCommand` resolves `0` once the server is listening, and the listening socket keeps the event loop alive. Detaching, `unref` and redirecting stdout and stderr to `daemon.log` are the spawning client's job ([the facades](#the-session-side-facades)), not the daemon's.
 
 ## Why it exists
 
 Every MCP client session runs its own stdio `neuro-vault-mcp`, and each one that has served a query holds its own copy of the model. On 2026-10-14 with `harrier-270m` that measured 450–600 MB RSS per session that had embedded a query, against 55–85 MB for an idle one; the model is the difference. With several Claude Code, Cursor and desktop sessions open on one laptop, that is gigabytes for identical weights.
 
 The seam to remove the duplication already existed. `EmbeddingProvider` (`src/modules/semantic/types.ts`) is fully asynchronous and self-describing, with queries and documents as separate calls ([ADR-0017](../adr/0017-embedding-model-profiles.md)), so a provider that forwards to another process needs no change anywhere else in the session.
+
+Per-vault semantic state was the next duplicate. Each session also ran its own watcher and reconcile loop per vault and held that vault's decoded corpus: on the baseline of #158 (a ~955-note vault, `harrier-270m`) each extra semantic session cost about 93 MB over the `--no-semantic` floor for it. The vault entry holds that state once per vault directory ([`vault-entry.md`](./vault-entry.md), [ADR-0020](../adr/0020-per-vault-state-in-the-daemon.md)).
 
 The shape follows what daemon-spawning CLIs converge on (Nx, Watchman, pm2; Gradle and Bazel for keying): a unix socket or named pipe, the identity in an info file beside it, a lock file, a `connect` probe to recognise a stale socket, and an idle exit. The comparison is in ADR-0018.
 
@@ -140,6 +142,8 @@ Methods are `<service>.<method>`, routed by `ServiceRegistry` (`src/daemon/proto
 | `embed.documents` | `{ profile, texts }` | `{ vectors }`, with `texts.length ≤ max_batch_size` |
 | `vault.attach` | `{ vault, profiles }` | `{ vault, profiles: { [profile]: BackendStatus } }`, without waiting for any load or pass ([The vault service](#the-vault-service)) |
 | `vault.status` | `{ vault, profile }` | the profile's `BackendStatus`, for a pair this connection attached |
+| `corpus.nearest` | `{ vault, profile, anchors, threshold, limit?, allowed?, exclude? }` | `{ hits: ({ path, similarity }[] \| null)[] }`, one list per anchor ([The corpus service](#the-corpus-service)) |
+| `corpus.nearestBlocks` | `{ vault, profile, anchors, paths, threshold, limit? }` | `{ hits: ({ path, heading, lines, similarity }[] \| null)[] }` |
 
 Vectors are JSON number arrays. A 640-dimension vector is about 10 KB of text and a batch of 8 about 100 KB, negligible on a local socket next to inference time. Base64 float32 is the documented next step if measurements ever show JSON cost.
 
@@ -150,8 +154,10 @@ Errors are JSON-RPC errors with a numeric `code` and the daemon's own code in `d
 | `UNKNOWN_METHOD` | -32601 | No such namespace or method. The connection stays open. |
 | `INVALID_PARAMS` | -32602 | Params not an object, wrong types, blank text, empty or oversized `texts`, an unexpected param key in any call, a relative `vault` in `vault.attach` |
 | `UNKNOWN_PROFILE` | -32602 | `profile` (or a key of `profiles`) is not a key of the closed registry (`MODEL_PROFILES`) |
-| `NOT_ATTACHED` | -32602 | `vault.status` for a vault and profile this connection did not attach |
+| `NOT_ATTACHED` | -32602 | `vault.status` or `corpus.*` for a vault and profile this connection did not attach |
 | `VAULT_UNAVAILABLE` | -32602 | `vault.attach` of a path that cannot be resolved or is not a directory; the message names the reason (a relative path is `INVALID_PARAMS`) |
+| `CORPUS_NOT_READY` | -32603 | `corpus.*` while the profile is not `ready`; `data.status` is its `BackendStatus` |
+| `CORPUS_FAILED` | -32603 | A `corpus.*` read threw inside the corpus; the message is the reason |
 | `EMBED_FAILED` | -32603 | The model failed to load, inference threw, or a vector came back non-finite |
 | `SHUTTING_DOWN` | -32000 | The request was in flight, or arrived, while the daemon was stopping |
 | `INTERNAL` | -32603 | A handler threw something other than a `DaemonRpcError` |
@@ -160,9 +166,11 @@ Errors are JSON-RPC errors with a numeric `code` and the daemon's own code in `d
 
 `createEmbedService` (`src/daemon/services/embed.ts`) keeps one entry per profile, built on that profile's first request: a provider and a `createQueuedEmbedder` queue around it. The provider comes from the same factory the session uses, with `shared: false` (`daemonProviderFor` in `src/cli-daemon.ts`, calling `createEmbeddingProvider` in `src/modules/semantic/provider-factory.ts`), so it is always the local `EmbeddingService`: a shared provider here would be a facade onto this daemon itself. Two concurrent first requests for one profile share a single load. Any `embed.*` method loads the profile on first use; `embed.initialize` exists so a client can pay that cost up front and learn the identity and batch size.
 
-The queue is the same two-lane queue a session uses ([`semantic-backend.md`](./semantic-backend.md#the-shared-embed-queue)), so query-first ordering now holds between sessions, not only inside one: session B's query waits for at most one batch of session A's indexing. Each session keeps its own queue in front of the facade, with one request in flight, so the daemon's queue depth is bounded by the number of connected sessions.
+The queue is the same two-lane queue a session uses ([`semantic-backend.md`](./semantic-backend.md#the-embed-queue)), so query-first ordering holds between sessions, not only inside one: a session's query waits for at most the one batch in flight, not for any vault's queued indexing. Each client keeps its own queue in front of the facade, with one request in flight, and the vault entries index through the same queue (`documentsFor`, below).
 
 `EMBED_FAILED` is not a connection failure. A load that fails is dropped from the in-flight memo and never enters the loaded set, so the next request for that profile builds and initializes a fresh provider. This is the same retry-on-next-call behaviour as today's in-process load failure, and it is why the facade surfaces `EMBED_FAILED` as an error rather than fall back to an in-process model.
+
+A reconcile pass reaches the model through `documentsFor`, one batch per note, so a model that cannot load would be rebuilt and logged for every batch. `documentsFor` therefore remembers a failed load for `LOAD_FAILURE_MEMO_MS` (30 s) and rejects with the same error meanwhile, with one log line per failure. `embed.initialize` and `embed.query` are not held back: their next call still retries.
 
 Every load and failure also leaves one line in the daemon's log, because the client that asked is often not the one a user looks at. `createEmbedService` takes a `log(line)` dependency, and `startServing` wires it to stderr with the daemon's prefix. It logs `loaded <profile> in N ms` once per load, however many requests shared it, and `failed to load <profile> after N ms: <message>` for a failed load. A request that fails because its load failed adds no second line. An `EMBED_FAILED` raised while embedding logs `embed.query failed for <profile>: <message>` or `embed.documents failed for <profile> (N texts): <message>`. Requests rejected before any embedding (`INVALID_PARAMS`, `UNKNOWN_PROFILE`) are not logged. No line carries query or document text. There are no levels and no rotation; a run adds a handful of lines to `daemon.log` unless embedding keeps failing.
 
@@ -177,12 +185,13 @@ Every load and failure also leaves one line in the daemon's log, because the cli
 - **No `vault.detach`.** A connection that closes detaches itself from everything it attached. The service hooks `ctx.onClose` the first time a connection calls `vault.attach`, before the attach awaits anything, so a connection that closes mid-attach still detaches.
 - A `VaultEntryError` (`NOT_ATTACHED`, `VAULT_UNAVAILABLE`, `UNKNOWN_PROFILE`) keeps its code and message on the wire; anything else is `INTERNAL`.
 - `vault.*` calls make the connection a client like `embed.*` calls (see Idle), so an attached session holds the daemon open.
+- A `VaultEntryError` is mapped by `wired` (`src/daemon/services/wired.ts`), shared with the corpus service.
 
 ### Connection context and error `data`
 
 A handler is `(params, ctx: IConnectionContext) => Promise<unknown>` (`src/daemon/protocol.ts`). `startDaemonServer` creates one context per accepted socket, `{ id, onClose(fn) }`, and `ServiceRegistry.dispatch(request, ctx)` passes it through; `embed.*` and `daemon.*` ignore it. `id` is unique for the life of the server. Callbacks given to `onClose` run once when the socket closes, however it closes; one registered after the close runs at once; a callback that throws is written to the daemon's log and the rest still run. Closing the server resolves only after every connection's callbacks have run, so a stop never leaves an entry thinking a closed client is attached.
 
-`DaemonRpcError` takes an optional `data` object, and `errorResponse` merges it into the response's `error.data` *beside* `code`: `{ ...data, code }`, with `code` last, because the stable code name is the contract and `data` only adds to it. No PR 1 method sets `data`; it is the channel PR 2's `CORPUS_NOT_READY` uses to carry the profile's status (`data.status`) without a second round trip (design D9).
+`DaemonRpcError` takes an optional `data` object, and `errorResponse` merges it into the response's `error.data` *beside* `code`: `{ ...data, code }`, with `code` last, because the stable code name is the contract and `data` only adds to it. Today only `CORPUS_NOT_READY` sets it, to carry the profile's status (`data.status`) without a second round trip. The session's `DaemonConnection` surfaces it as `DaemonRpcError.data`.
 
 ### Reporting vault state
 
@@ -206,13 +215,26 @@ IVaultInfo = {
 
 `added` counts notes embedded that had no record, `changed` the other embeds plus renames, `removed` the swept shards. `daemon status` prints it as the indented [vault lines](#daemon-status-and-daemon-stop) under the daemon's own line. It is the operator's only view of the shared state.
 
-## The session-side facade
+## The corpus service
 
-`DaemonEmbeddingProvider` (`src/modules/semantic/daemon-embedding-provider.ts`) implements `EmbeddingProvider` over a `DaemonConnection` (`src/modules/semantic/daemon-connection.ts`). `createEmbeddingProvider` builds the pair for `shared: true` ([`embedding-pipeline.md`](./embedding-pipeline.md#where-the-model-lives)). The server and `index` call it with the realpath of the running `cli.js`, which `src/cli.ts` resolves once and passes to every command. The facade computes the same key the daemon computes for itself: version, plus that file's size and mtime. Construction touches nothing: no probe, no spawn, no directory.
+`createCorpusService` (`src/daemon/services/corpus.ts`) serves `corpus.nearest` and `corpus.nearestBlocks` through `VaultEntries.reader(connectionId, vault, profile)`; the reader folds the vault's scope into the read ([`vault-entry.md`](./vault-entry.md)). The daemon answers one similarity read per call and never a vector: a hit carries a path, a similarity and, for a block, its heading and lines.
 
-**The contract is the in-process one.** `identity` is computed locally from the profile, so it equals `EmbeddingService`'s and a corpus built through either is served by the other. `maxBatchSize` starts at the in-process value (8) and becomes the daemon's `max_batch_size` once `embed.initialize` answers. A document batch larger than that is split before it is sent. The session keeps its own `createQueuedEmbedder` in front of the facade, so its own queries still go ahead of its own indexing, and it has one request in flight at a time.
+- Params are snake_case and closed (`onlyKeys`). An anchor is exactly one of `{ vector: number[] }` (finite numbers) or `{ path: string }`; `limit`, when sent, is a non-negative integer. `corpus.nearest` alone takes `allowed` and `exclude`, `corpus.nearestBlocks` alone `paths`.
+- The checks run in a fixed order, each answering its own code: the shape of the params (`INVALID_PARAMS`), the profile key (`UNKNOWN_PROFILE`), the attachment of the pair on this connection (`NOT_ATTACHED`), the profile being `ready` (`CORPUS_NOT_READY` with `data.status`), the width of each vector anchor against the corpus's dimension (`INVALID_PARAMS`), and last the read itself (`CORPUS_FAILED`). The profile is checked before the attachment because an unknown profile can never have been attached.
+- `hits` holds one entry per anchor, in order: `null` for a path anchor whose note has no vector, `[]` when nothing reaches the threshold. The corpus yields to the event loop between the anchors of one call (`ShardCorpus`), so a large `find_duplicates` batch does not starve other connections.
 
-**Finding the daemon** (`ensure()`, run before every call; concurrent callers share one attempt):
+## The session-side facades
+
+A process reaches the daemon through **one connection and one switch**, shared by every facade it runs. `createSharedServices` (`src/modules/semantic/shared-services.ts`) builds that `ISharedServices` once per process: the server builds it in `startNeuroVaultServer` and hands it to both the embedding provider and the semantic backends; `index` builds its own for its embedding provider. It is called with the realpath of the running `cli.js`, which `src/cli.ts` resolves once and passes to every command, and it computes the same key the daemon computes for itself: version, plus that file's size and mtime. Construction only stats that file; it probes, spawns and creates nothing. `ISharedServices` holds the `DaemonConnection` (`src/modules/semantic/daemon-connection.ts`) and the switch `mode`: `pending` until the first `ensure()` settles, then `daemon` or `local`; `local` is final, and `--no-shared` starts there with no connection and no line.
+
+Two facades run over it:
+
+- **`DaemonEmbeddingProvider`** (`src/modules/semantic/daemon-embedding-provider.ts`) implements `EmbeddingProvider`. `createEmbeddingProvider` builds it for `shared: true` ([`embedding-pipeline.md`](./embedding-pipeline.md#where-the-model-lives)).
+- **The daemon semantic backend** (`createDaemonSemanticBackend`, `src/modules/semantic/backend/daemon-backend.ts`) implements a vault's `ISemanticBackend` over `vault.attach`, `vault.status` and `corpus.*`; it is described in [`semantic-backend.md`](./semantic-backend.md#the-daemon-facade).
+
+**The embedding contract is the in-process one.** `identity` is computed locally from the profile, so it equals `EmbeddingService`'s and a corpus built through either is served by the other. `maxBatchSize` starts at the in-process value (8) and becomes the daemon's `max_batch_size` once `embed.initialize` answers. A document batch larger than that is split before it is sent. The process keeps its own `createQueuedEmbedder` in front of the facade, so its own queries still go ahead of its own document batches, and it has one request in flight at a time.
+
+**Finding the daemon** (`ISharedServices.ensure()`, run before every call of every facade; concurrent callers share one attempt):
 
 1. POSIX: `ensurePrivateSocketDir` on `/tmp/neuro-vault-<uid>` (see [Paths and files](#paths-and-files)).
 2. `connect` to the key's socket, bounded at 2 s. A connection that succeeds is used. `ENOENT` or `ECONNREFUSED` means nothing listens, so go to step 3. Any other error, or a connect that does not settle in time, is ambiguous, as it is for the daemon's own probe: the facade does not spawn on an ambiguous answer, it treats the daemon as unavailable.
@@ -223,7 +245,7 @@ IVaultInfo = {
    - run `spawn(process.execPath, [cliPath, 'daemon'], { detached: true, stdio: ['ignore', log, log], windowsHide: true, cwd: os.homedir() })`, then `unref` the child and close the fd. The daemon outlives the session that started it, so it does not keep that session's project directory as its working directory. An asynchronous spawn `error` is caught and ends the wait early.
 4. Poll `connect` every 50 ms for up to 10 s. Two sessions that spawn at once need no coordination: the second daemon loses at the lock or the live-socket probe and exits into the log, and both sessions connect to the winner. A started daemon that exits while nothing listens is spawned again, at most twice (`MAX_RESPAWNS`) within the same budget. The usual cause is a daemon that is still stopping: it unlinks its socket at once but releases its lock only once its connections close, so a daemon spawned in that window exits "already running", and a later spawn finds the lock gone.
 
-**On every new connection**, the facade sends `embed.initialize` before anything else. That makes the connection a daemon client at once, which holds off the idle exit, loads the profile, and refreshes the batch size. `DaemonConnection.epoch` changes with each connection, which is how the facade knows to send it again after a reconnect. `DaemonConnection.request()` never connects by itself, so a reconnect cannot skip this step.
+**On every new connection**, each facade redoes its own setup before its first call on it. The embedding facade sends `embed.initialize`, which makes the connection a daemon client at once (holding off the idle exit), loads the profile, and refreshes the batch size. Each vault's backend sends `vault.attach` for its vault. `DaemonConnection.epoch` changes with each connection, which is how a facade knows to do it again after a reconnect. `DaemonConnection.request()` never connects by itself, so a reconnect cannot skip this step.
 
 **Requests** carry numeric ids and their own timeouts:
 
@@ -232,10 +254,12 @@ IVaultInfo = {
 | `embed.initialize` | 15 min (the first load downloads the weights) |
 | `embed.query` | 60 s |
 | `embed.documents` | 5 min |
+| `vault.attach`, `vault.status` | 10 s |
+| `corpus.nearest`, `corpus.nearestBlocks` | 30 s |
 
-A request that runs out rejects with an error naming the method. The connection stays up, since a slow daemon is not a dead one.
+A request that runs out rejects with `DaemonTimeoutError`, naming the method. The connection stays up, since a slow daemon is not a dead one.
 
-**A connection that goes away** (the daemon ends the socket on stop, the socket errors, or a line is not valid JSON-RPC) rejects every pending request with `DaemonConnectionError`, carrying the cause. A request written after the daemon ended its side gets no `SHUTTING_DOWN` answer, so the end of input already counts as the close: nothing waits on a socket that will never answer. The next call runs `ensure()` again and respawns the daemon if it is gone, which is how a session recovers from `daemon stop`, an idle exit after the connection dropped, or a crash. The socket is `unref`'d while nothing is pending, so an idle connection never keeps a finished `index` run or a hung-up stdio server alive. It is `ref`'d while an answer is awaited. A server whose client hangs up closes the facade's connection in its disposer, so a pending request (a cold `embed.initialize` can take minutes) is rejected rather than holding the process open.
+**A connection that goes away** (the daemon ends the socket on stop, the socket errors, or a line is not valid JSON-RPC) rejects every pending request with `DaemonConnectionError`, carrying the cause. A request written after the daemon ended its side gets no `SHUTTING_DOWN` answer, so the end of input already counts as the close: nothing waits on a socket that will never answer. The next call runs `ensure()` again and respawns the daemon if it is gone, which is how a session recovers from `daemon stop`, an idle exit after the connection dropped, or a crash. The socket is `unref`'d while nothing is pending, so an idle connection never keeps a finished `index` run or a hung-up stdio server alive. It is `ref`'d while an answer is awaited. A server whose client hangs up closes the shared services in its disposer (`ISharedServices.close()`), which drops the connection, and with it every vault attachment, and rejects a pending request (a cold `embed.initialize` can take minutes) rather than letting it hold the process open. That close is final: a later `ensure()` rejects with `SharedServicesClosedError`, and a connect still in flight stops where it is: its poll timers are cleared (so a cold start cannot hold the process open for the 10 s poll), nothing is spawned or respawned after it, and a socket that connects after it is destroyed. The connection's pending `ensure()` rejects with `DaemonConnectionError`, never `DaemonUnavailableError`, and the services' with `SharedServicesClosedError`, so nothing reconnects, attaches or falls back for a session that is gone.
 
 **Fallback, once per process.** A `DaemonUnavailableError` means the daemon could not be located or started. Every case in steps 1–4 above raises one:
 
@@ -245,19 +269,19 @@ A request that runs out rejects with an error naming the method. The connection 
 - a CLI script that changed since the session started (upgraded or rebuilt), or one that is gone;
 - a state directory, log or spawn that fails;
 - a poll that runs out;
-- no CLI script path at all, or one the factory could not stat at startup.
+- no CLI script path at all, or one `createSharedServices` could not stat at startup.
 
-On it, the facade builds an in-process `EmbeddingService` for the same profile and writes one stderr line:
+On it, `ISharedServices` flips its switch to `local` for every facade of the process at once and writes one stderr line. From then on the embedding facade embeds through an in-process `EmbeddingService` for the same profile, and each vault's backend runs the vault entry in the process ([`semantic-backend.md`](./semantic-backend.md#the-in-process-backend)), each built on its first call after the flip:
 
 ```
-neuro-vault-mcp: shared embedding daemon unavailable (<reason>); embedding in-process for this session — see <daemon.log>
+neuro-vault-mcp: shared daemon unavailable (<reason>); running in-process for this session — see <daemon.log>
 ```
 
 The `— see <daemon.log>` part is left out when the session never identified its build (no CLI path, or one it could not stat), because then there is no key and no log to name.
 
 **After an upgrade**, a session started before it keeps its daemon for as long as that daemon runs. If the daemon goes away (`daemon stop`, a crash), the session does not start it again, because its `cli.js` has changed (a daemon spawned from it would be the new build, on another key), so it falls back in-process on its next call, as above. Restarting such sessions is what moves them to the new daemon.
 
-From then on it never touches the connection again. Every other failure reaches the caller and the next call goes through the daemon again. That covers `EMBED_FAILED` (the daemon answered, but the model will not load), `SHUTTING_DOWN`, a timeout and a dropped connection. Falling back on those would load a second model into a session whose daemon is merely busy or restarting. `--no-shared` selects `EmbeddingService` up front and writes nothing.
+From then on the process never touches the connection again. Every other failure reaches the caller and the next call goes through the daemon again. That covers `EMBED_FAILED` (the daemon answered, but the model will not load), `SHUTTING_DOWN`, `CORPUS_NOT_READY` and `CORPUS_FAILED`, a timeout and a dropped connection. Falling back on those would load a second model, and a second copy of every vault's corpus, into a session whose daemon is merely busy or restarting. Because every vault attaches in the background at startup, the switch is in practice decided before the first tool call. `--no-shared` selects `EmbeddingService` and the in-process vault entries up front and writes nothing.
 
 **The socket path does not depend on the cache directory.** Two sessions of one build with different `XDG_CACHE_HOME` values share one daemon. Its `daemon.json` and log are under the cache directory of the session that spawned it, so only that cache directory's `daemon status` lists it.
 
@@ -269,9 +293,9 @@ A service is one more registry entry. In `startServing` (`src/cli-daemon.ts`), n
 registry.register('lexical', createLexicalService(deps).handlers);
 ```
 
-Framing, discovery, the key, the lock and the lifecycle do not move. `vault` is the second service built this way. The candidate already named is `lexical.*` (the per-vault lexical cache, which costs hundreds of MB per session on large vaults); the corpus reads that sessions will make against the entries `vault` holds are the other one. A service that wants to appear in `daemon.info` extends `DaemonInfoResult.services`, which today names `embed` and `vault`.
+Framing, discovery, the key, the lock and the lifecycle do not move. `vault` and `corpus` are the second and third services built this way, both over the one `VaultEntries` that `startServing` builds. The candidate already named is `lexical.*` (the per-vault lexical cache, which costs hundreds of MB per session on large vaults), a member of the same vault entry. A service that wants to appear in `daemon.info` extends `DaemonInfoResult.services`, which today names `embed` and `vault`.
 
-The session side follows one pattern, the facade. The session keeps the interface its code already depends on, and a facade implements it by forwarding to the daemon; for `embed` that is `DaemonEmbeddingProvider` ([above](#the-session-side-facade)). A later facade, a lexical or a vault one for example, follows the same rules: the caller does not change, and any doubt resolves to in-process behaviour.
+The session side follows one pattern, the facade. The session keeps the interface its code already depends on, and a facade implements it by forwarding to the daemon: `DaemonEmbeddingProvider` for `embed`, the daemon semantic backend for `vault` and `corpus` ([above](#the-session-side-facades)). A later facade, a lexical one for example, follows the same rules: the caller does not change, it runs over the process's one `ISharedServices` rather than a connection or a switch of its own, and any doubt resolves to in-process behaviour.
 
 ## How a remote embedding provider would fit
 
@@ -281,8 +305,8 @@ A remote provider would be a profile in the closed registry with its own `identi
 
 ## Boundaries
 
-- **Nothing MCP-level lives here.** Every session is still a full stdio MCP server with its own `McpServer`, tools, vault registry, corpus snapshot, watcher and lexical cache ([`mcp-server-shape.md`](./mcp-server-shape.md), [`semantic-backend.md`](./semantic-backend.md)); the daemon's vault entries run beside them, unread. The daemon never sees a tool call, and no tool contract or `ToolHandlerError` code depends on it.
-- **Vault paths only through `vault.attach`, and no secrets.** The daemon is keyed by build, not by vault, and `daemon.json` holds only the fields above. A vault path reaches the daemon only as the `vault.attach` param of a connection that chose to attach it, and the daemon reads that vault's own `.gitignore` and `.neuro-vault/config.json` and writes under its `.neuro-vault/corpus/`, as a session does.
+- **Nothing MCP-level lives here.** Every session is still a full stdio MCP server with its own `McpServer`, tools, vault registry, wikilink graph and lexical cache ([`mcp-server-shape.md`](./mcp-server-shape.md)), and it composes the semantic leg, fusion and the existence filter itself over the daemon's corpus reads ([`semantic-backend.md`](./semantic-backend.md), [`retrieval-policy.md`](./retrieval-policy.md)). The daemon never sees a tool call, and no tool contract or `ToolHandlerError` code depends on it.
+- **Vault paths only through `vault.attach`, and no secrets.** The daemon is keyed by build, not by vault, and `daemon.json` holds only the fields above. A vault path reaches the daemon only as the `vault.attach` param of a connection that chose to attach it, and the daemon reads that vault's own `.gitignore` and `.neuro-vault/config.json` and writes under its `.neuro-vault/corpus/`, as a session on `--no-shared` does.
 - **Nothing network-reachable.** No TCP port, no HTTP, no authentication: access control is the socket file's mode inside a `0700` directory that `ensurePrivateSocketDir` has verified is ours. A network-facing hub is a separate design (#127).
 - **No stdout.** The daemon writes its diagnostics to stderr. Only `daemon status` and `daemon stop` print to stdout, and those are reports for a person.
 - **Not here:** model loading, tokenisation and pooling ([`embedding-pipeline.md`](./embedding-pipeline.md)); argv parsing and the `kind: 'daemon'` outcome ([`cli-startup.md`](./cli-startup.md)).

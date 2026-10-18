@@ -31,11 +31,6 @@ function allTools(...names: string[]) {
     ...buildSemanticTools({
       registry,
       embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-      searchEngine: {
-        findNeighbors: vi.fn().mockReturnValue([]),
-        findBlockNeighbors: vi.fn().mockReturnValue([]),
-        findDuplicates: vi.fn().mockReturnValue([]),
-      },
       modelKey: 'bge-micro-v2',
       similarity: TEST_SIMILARITY,
     }),

@@ -1,4 +1,4 @@
-import type { EmbeddingIdentity, SmartSource } from '../../lib/obsidian/corpus/types.js';
+import type { EmbeddingIdentity } from '../../lib/obsidian/corpus/types.js';
 import type {
   ListMatchingPaths,
   NoteFilter,
@@ -7,7 +7,7 @@ import type {
 export type { SmartBlock, SmartSource } from '../../lib/obsidian/corpus/types.js';
 export type { ListMatchingPaths, NoteFilter };
 
-// Engine-level result types — what SearchEngine.findNeighbors and friends return.
+// Engine-level result types — what a corpus read returns for one hit.
 // These describe a single hit; they have no notion of "which query" or "expansion".
 export interface BlockSearchResult {
   path: string;
@@ -80,28 +80,6 @@ export interface EmbeddingProvider extends QueryEmbedder {
   readonly maxBatchSize: number;
   /** Embeds document texts (no query prefix), vectors in input order. */
   embedDocuments(texts: string[]): Promise<number[][]>;
-  /**
-   * Releases a connection the provider holds, rejecting what is pending on
-   * it. Optional: the in-process provider holds none.
-   */
-  close?(): void;
-}
-
-export interface SearchEngine {
-  findNeighbors(args: {
-    queryVector: ArrayLike<number>;
-    sources: Iterable<SmartSource>;
-    threshold: number;
-    limit?: number;
-    excludePath?: string;
-  }): SearchResult[];
-  findBlockNeighbors(args: {
-    queryVector: ArrayLike<number>;
-    sources: Iterable<SmartSource>;
-    threshold: number;
-    limit?: number;
-  }): BlockSearchResult[];
-  findDuplicates(args: { sources: Iterable<SmartSource>; threshold: number }): DuplicatePair[];
 }
 
 export type SearchMode = 'quick' | 'deep';
@@ -130,19 +108,6 @@ export interface GetSimilarNotesInput {
 
 export interface FindDuplicatesInput {
   threshold?: number;
-}
-
-export type PathExistsCheck = (vaultRelativePath: string) => Promise<boolean>;
-
-export interface ToolHandlerDependencies {
-  loader: {
-    sources: Map<string, SmartSource>;
-  };
-  embeddingProvider: QueryEmbedder;
-  searchEngine: SearchEngine;
-  modelKey: string;
-  pathExists?: PathExistsCheck;
-  listMatchingPaths: ListMatchingPaths;
 }
 
 export type ToolHandlerErrorCode =

@@ -12,21 +12,26 @@ import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
-import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
+import type { SmartSource } from '../../../src/modules/semantic/types.js';
 import {
   MODEL_KEY,
   makeVaultFixture,
   makeFakeGraph,
   makeSearchDeps,
-  findNeighbors,
-  findDuplicates,
-  findBlockNeighbors,
   makeTestRegistry,
   makeFakeCorpusIndex,
+  makeSyntheticSource,
   toBackend,
   runSearch,
 } from './_helpers.js';
-import { engineReturning, makeLexicalVault, sourcesWithEmbeddingFor } from './_hybrid-helpers.js';
+import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.js';
+import { createDaemonSemanticBackend } from '../../../src/modules/semantic/backend/daemon-backend.js';
+import {
+  DaemonTimeoutError,
+  type IDaemonLink,
+} from '../../../src/modules/semantic/daemon-connection.js';
+import type { ISharedServices } from '../../../src/modules/semantic/shared-services.js';
+import { makeLexicalVault, sourcesScoring, sourcesWithEmbeddingFor } from './_hybrid-helpers.js';
 
 // Lightweight helpers for mock-only tests (no real corpus needed)
 function makeMockSource(p: string, embedding: number[] = [1, 0]): SmartSource {
@@ -41,20 +46,12 @@ function makeMockSources(paths: string[]): Map<string, SmartSource> {
   return new Map(paths.map((p) => [p, makeMockSource(p)]));
 }
 
-function makeMockSearchEngine(
-  overrides: Partial<{
-    findNeighbors: SearchEngine['findNeighbors'];
-    findBlockNeighbors: SearchEngine['findBlockNeighbors'];
-    findDuplicates: SearchEngine['findDuplicates'];
-  }> = {},
-): SearchEngine {
-  return {
-    findNeighbors: vi.fn().mockReturnValue([]),
-    findBlockNeighbors: vi.fn().mockReturnValue([]),
-    findDuplicates: vi.fn().mockReturnValue([]),
-    ...overrides,
-  };
+/** The 2-D unit vector `degrees` counter-clockwise from the query vector `[1, 0]`. */
+function at(degrees: number): number[] {
+  const radians = (degrees * Math.PI) / 180;
+  return [Math.cos(radians), Math.sin(radians)];
 }
+const cosDeg = (degrees: number): number => Math.cos((degrees * Math.PI) / 180);
 
 describe('searchNotes', () => {
   it('filters out search results whose paths no longer exist on disk', async () => {
@@ -70,7 +67,6 @@ describe('searchNotes', () => {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
         embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
         absentPaths: new Set(['Folder/note-b.md']),
       });
@@ -110,7 +106,6 @@ describe('searchNotes', () => {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
         embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
       const tool = buildSearchNotesTool(deps);
@@ -151,7 +146,6 @@ describe('searchNotes', () => {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
         embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
       const tool = buildSearchNotesTool(deps);
@@ -180,10 +174,7 @@ describe('searchNotes', () => {
     const warn = vi.fn();
     const { deps, cleanup } = await makeLexicalVault(
       { [notePath]: 'нотатка про пошук' },
-      {
-        sources: sourcesWithEmbeddingFor(notePath, [1, 0]),
-        engine: engineReturning([{ path: notePath, similarity: 0.9 }]),
-      },
+      { sources: sourcesWithEmbeddingFor(notePath, [1, 0]) },
     );
     try {
       const embed = vi.fn().mockRejectedValue(new Error('model unavailable'));
@@ -215,21 +206,18 @@ describe('searchNotes', () => {
     }
   });
 
-  it('degrades to the lexical leg when the corpus snapshot cannot be read', async () => {
+  it('degrades to the lexical leg when the corpus read fails', async () => {
     const notePath = 'Notes/a.md';
     const warn = vi.fn();
     const { deps, cleanup } = await makeLexicalVault(
       { [notePath]: 'нотатка про пошук' },
-      {
-        sources: sourcesWithEmbeddingFor(notePath, [1, 0]),
-        engine: engineReturning([{ path: notePath, similarity: 0.9 }]),
-      },
+      { sources: sourcesWithEmbeddingFor(notePath, [1, 0]) },
     );
     try {
       const entry = deps.registry.list()[0];
       entry.backend = {
         ...entry.backend!,
-        snapshot: vi.fn().mockRejectedValue(new Error('corpus shard a.json is not valid JSON')),
+        nearest: vi.fn().mockRejectedValue(new Error('corpus shard a.json is not valid JSON')),
       };
       const tool = buildSearchNotesTool({ ...deps, warn });
       const reg = registerTool(tool);
@@ -245,6 +233,94 @@ describe('searchNotes', () => {
         note: expect.stringContaining('lexical-only'),
       });
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('not valid JSON'));
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('a status timeout degrades to lexical with unavailable', async () => {
+    // The real daemon backend over a connection whose `vault.status` never
+    // answers in time: one search degrades, and the next one asks again.
+    const notePath = 'Notes/a.md';
+    const { deps, cleanup } = await makeLexicalVault({ [notePath]: 'нотатка про пошук' });
+    const request = vi.fn(async (method: string, params: Record<string, unknown>) => {
+      if (method === 'vault.attach') {
+        return { vault: params.vault, profiles: { [MODEL_KEY]: { state: 'ready' } } };
+      }
+      if (method === 'vault.status') {
+        throw new DaemonTimeoutError('daemon request vault.status timed out after 10000 ms');
+      }
+      throw new Error(`the corpus must not be read: ${method}`);
+    });
+    const services: ISharedServices = {
+      mode: 'daemon',
+      connection: { epoch: 1, ensure: async () => {}, close: () => {}, request } as IDaemonLink,
+      ensure: async () => 'daemon',
+      close: () => {},
+    };
+    try {
+      const entry = deps.registry.list()[0];
+      entry.backend = createDaemonSemanticBackend({
+        services,
+        vaultRoot: entry.path,
+        profile: MODEL_KEY,
+        local: () => {
+          throw new Error('never local');
+        },
+      });
+      // The startup attach has answered.
+      expect(await entry.backend.status()).toEqual({ state: 'ready' });
+      const reg = registerTool(buildSearchNotesTool(deps));
+
+      for (let call = 0; call < 2; call += 1) {
+        const result = await callTool<SearchNotesOutput>(reg, { query: 'пошук' });
+        expect(result.semantic_status).toEqual({
+          state: 'unavailable',
+          note: expect.stringContaining('lexical-only'),
+        });
+        expect(result.matches.length).toBeGreaterThan(0);
+        expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+          true,
+        );
+      }
+      expect(request.mock.calls.map(([method]) => method)).toEqual([
+        'vault.attach',
+        'vault.status',
+        'vault.status',
+      ]);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('a read refused as not ready degrades to lexical, reporting the status it carries', async () => {
+    const notePath = 'Notes/a.md';
+    const warn = vi.fn();
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      { sources: sourcesWithEmbeddingFor(notePath, [1, 0]) },
+    );
+    try {
+      const entry = deps.registry.list()[0];
+      entry.backend = {
+        ...entry.backend!,
+        nearest: vi
+          .fn()
+          .mockRejectedValue(new CorpusNotReadyError({ state: 'indexing', indexed: 1, total: 6 })),
+      };
+      const reg = registerTool(buildSearchNotesTool({ ...deps, warn }));
+
+      const result = await callTool<SearchNotesOutput>(reg, { query: 'пошук' });
+
+      expect(result.semantic_status).toEqual({
+        state: 'indexing',
+        indexed: 1,
+        total: 6,
+        note: expect.stringContaining('lexical-only'),
+      });
+      expect(result.matches.every((m) => m.found_in.every((f) => f.startsWith('lexical:')))).toBe(
+        true,
+      );
     } finally {
       await cleanup();
     }
@@ -285,7 +361,6 @@ describe('searchNotes', () => {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: 'bge-micro-v2',
       });
       const tool = buildSearchNotesTool(deps);
@@ -327,7 +402,6 @@ describe('searchNotes', () => {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
         embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
       const tool = buildSearchNotesTool(deps);
@@ -361,7 +435,6 @@ describe('searchNotes', () => {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
       const tool = buildSearchNotesTool(deps);
@@ -385,7 +458,6 @@ describe('searchNotes', () => {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
       const tool = buildSearchNotesTool(deps);
@@ -416,7 +488,6 @@ describe('searchNotes', () => {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
         embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
       const tool = buildSearchNotesTool(deps);
@@ -445,7 +516,6 @@ describe('searchNotes', () => {
       const { deps, cleanup } = await makeSearchDeps({
         sources,
         embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
       });
       const tool = buildSearchNotesTool(deps);
@@ -477,7 +547,6 @@ describe('searchNotes', () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-      searchEngine: makeMockSearchEngine(),
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
@@ -496,7 +565,6 @@ describe('searchNotes', () => {
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-      searchEngine: makeMockSearchEngine(),
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
@@ -513,13 +581,9 @@ describe('searchNotes', () => {
   it('query: array length 1 still carries matched_queries on results', async () => {
     const sources = makeMockSources(['note-a.md']);
     const embed = vi.fn().mockResolvedValue([1, 0]);
-    const searchEngine = makeMockSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([{ path: 'note-a.md', similarity: 0.9 }]),
-    });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      searchEngine,
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
@@ -536,23 +600,18 @@ describe('searchNotes', () => {
   });
 
   it('multi-query: matched_queries lists only queries that returned the path (above-threshold)', async () => {
-    // Q1 returns note-a.md at 0.9; Q2 returns only note-b.md at 0.8.
-    // note-a.md should have matched_queries = ['q1'] only.
+    // Q1 reaches only note-a.md, Q2 only note-b.md (each orthogonal to the
+    // other note, under the threshold). note-a.md should have
+    // matched_queries = ['q1'] only.
     const sources = makeMockSources(['note-a.md', 'note-b.md']);
+    sources.get('note-b.md')!.embedding = new Float32Array([0, 1]);
     const embed = vi
       .fn()
       .mockResolvedValueOnce([1, 0]) // q1
       .mockResolvedValueOnce([0, 1]); // q2
-    const searchEngine = makeMockSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }]) // q1
-        .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]), // q2 — note-a not returned
-    });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      searchEngine,
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
@@ -560,7 +619,7 @@ describe('searchNotes', () => {
     try {
       const output = await callTool<SearchNotesOutput>(reg, {
         query: ['q1', 'q2'],
-        threshold: 0,
+        threshold: 0.5,
       });
 
       const byPath = new Map(output.matches.map((r) => [r.path, r]));
@@ -572,20 +631,16 @@ describe('searchNotes', () => {
   });
 
   it('multi-query expansion (deep): an expansion-only neighbour surfaces with expansion_similarity, not similarity', async () => {
+    // The seed sits 40° off the query (0.77); exp.md 45° further on is out
+    // of the query's reach (0.09) but 0.71 from the seed.
     const sources = makeMockSources(['note-a.md', 'exp.md']);
-    sources.get('note-a.md')!.embedding = new Float32Array([1, 0]);
+    sources.get('note-a.md')!.embedding = Float32Array.from(at(40));
+    sources.get('exp.md')!.embedding = Float32Array.from(at(85));
 
     const embed = vi.fn().mockResolvedValue([1, 0]);
-    const searchEngine = makeMockSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }]) // query
-        .mockReturnValueOnce([{ path: 'exp.md', similarity: 0.7 }]), // expansion for note-a
-    });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      searchEngine,
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
@@ -594,7 +649,7 @@ describe('searchNotes', () => {
       const output = await callTool<SearchNotesOutput>(reg, {
         query: ['q1'],
         effort: 'deep',
-        threshold: 0,
+        threshold: 0.5,
       });
 
       const noteA = output.matches.find((r) => r.path === 'note-a.md')!;
@@ -604,7 +659,7 @@ describe('searchNotes', () => {
       const exp = output.matches.find((r) => r.path === 'exp.md')!;
       expect(exp).toBeDefined();
       expect(exp.found_in).toEqual(['expansion']);
-      expect(exp.expansion_similarity).toBe(0.7);
+      expect(exp.expansion_similarity).toBeCloseTo(cosDeg(45), 6);
       expect(exp.similarity).toBeUndefined();
     } finally {
       await cleanup();
@@ -612,18 +667,15 @@ describe('searchNotes', () => {
   });
 
   it('quick mode multi-query never surfaces expansion-only entries', async () => {
-    const sources = makeMockSources(['note-a.md', 'note-b.md']);
-    const embed = vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]);
-    const searchEngine = makeMockSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }])
-        .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]),
-    });
+    // Same geometry as the deep case above: exp.md is reachable only by
+    // expanding from note-a.md, which quick effort never does.
+    const sources = makeMockSources(['note-a.md', 'exp.md']);
+    sources.get('note-a.md')!.embedding = Float32Array.from(at(40));
+    sources.get('exp.md')!.embedding = Float32Array.from(at(85));
+    const embed = vi.fn().mockResolvedValue([1, 0]);
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      searchEngine,
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
@@ -632,12 +684,12 @@ describe('searchNotes', () => {
       const output = await callTool<SearchNotesOutput>(reg, {
         query: ['q1', 'q2'],
         effort: 'quick',
-        threshold: 0,
+        threshold: 0.5,
       });
 
       expect(output.matches.every((r) => !r.found_in.includes('expansion'))).toBe(true);
       expect(output.matches.every((r) => r.expansion_similarity === undefined)).toBe(true);
-      expect(searchEngine.findNeighbors).toHaveBeenCalledTimes(2);
+      expect(output.matches.map((r) => r.path)).toEqual(['note-a.md']);
     } finally {
       await cleanup();
     }
@@ -645,19 +697,13 @@ describe('searchNotes', () => {
 
   it('single-query deep mode surfaces the expansion neighbour of the seed', async () => {
     const sources = makeMockSources(['note-a.md', 'exp.md']);
-    sources.get('note-a.md')!.embedding = new Float32Array([1, 0]);
+    sources.get('note-a.md')!.embedding = Float32Array.from(at(40));
+    sources.get('exp.md')!.embedding = Float32Array.from(at(85));
 
     const embed = vi.fn().mockResolvedValue([1, 0]);
-    const searchEngine = makeMockSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }])
-        .mockReturnValueOnce([{ path: 'exp.md', similarity: 0.7 }]),
-    });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      searchEngine,
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
@@ -666,35 +712,31 @@ describe('searchNotes', () => {
       const output = await callTool<SearchNotesOutput>(reg, {
         query: 'test query',
         effort: 'deep',
-        threshold: 0,
+        threshold: 0.5,
       });
 
       const exp = output.matches.find((r) => r.path === 'exp.md')!;
       expect(exp.found_in).toEqual(['expansion']);
-      expect(exp.expansion_similarity).toBe(0.7);
+      expect(exp.expansion_similarity).toBeCloseTo(cosDeg(45), 6);
     } finally {
       await cleanup();
     }
   });
 
   it("multi-query deep: the same expansion neighbour fuses once at its best seed's expansion_similarity", async () => {
+    // q1 sits on seed-a (0°), q2 on seed-b (20°); under the 0.95 threshold
+    // each reaches only its own seed. shared.md at 50° is out of both
+    // queries' reach but a neighbour of both seeds: cos 50° via seed-a, cos
+    // 30° via seed-b.
     const sources = makeMockSources(['seed-a.md', 'seed-b.md', 'shared.md']);
-    sources.get('seed-a.md')!.embedding = new Float32Array([1, 0]);
-    sources.get('seed-b.md')!.embedding = new Float32Array([0.9, 0.1]);
+    sources.get('seed-a.md')!.embedding = Float32Array.from(at(0));
+    sources.get('seed-b.md')!.embedding = Float32Array.from(at(20));
+    sources.get('shared.md')!.embedding = Float32Array.from(at(50));
 
-    const embed = vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0.9, 0.1]);
-    const searchEngine = makeMockSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([{ path: 'seed-a.md', similarity: 0.95 }]) // q1 seed
-        .mockReturnValueOnce([{ path: 'seed-b.md', similarity: 0.92 }]) // q2 seed
-        .mockReturnValueOnce([{ path: 'shared.md', similarity: 0.85 }]) // related of seed-a
-        .mockReturnValueOnce([{ path: 'shared.md', similarity: 0.81 }]), // related of seed-b
-    });
+    const embed = vi.fn().mockResolvedValueOnce(at(0)).mockResolvedValueOnce(at(20));
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      searchEngine,
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
@@ -703,15 +745,14 @@ describe('searchNotes', () => {
       const output = await callTool<SearchNotesOutput>(reg, {
         query: ['q1', 'q2'],
         effort: 'deep',
-        threshold: 0,
+        threshold: 0.95,
       });
 
-      // "shared.md" is a neighbour of both seeds (0.85 via seed-a, 0.81 via
-      // seed-b); flattened expansion dedups to a single entry at the best
-      // (max) similarity.
+      // "shared.md" is a neighbour of both seeds; flattened expansion dedups
+      // to a single entry at the best (max) similarity — seed-b's.
       const shared = output.matches.filter((r) => r.path === 'shared.md');
       expect(shared).toHaveLength(1);
-      expect(shared[0].expansion_similarity).toBe(0.85);
+      expect(shared[0].expansion_similarity).toBeCloseTo(cosDeg(30), 6);
       expect(shared[0].similarity).toBeUndefined();
     } finally {
       await cleanup();
@@ -721,17 +762,10 @@ describe('searchNotes', () => {
   it('enriches single-query results with backlink_count from the graph', async () => {
     const sources = makeMockSources(['note-a.md', 'note-b.md']);
     const embed = vi.fn().mockResolvedValue([1, 0]);
-    const searchEngine = makeMockSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([
-        { path: 'note-a.md', similarity: 0.9 },
-        { path: 'note-b.md', similarity: 0.8 },
-      ]),
-    });
     const graph = makeFakeGraph({ 'note-a.md': 3, 'note-b.md': 0 });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      searchEngine,
       modelKey: MODEL_KEY,
       graph,
     });
@@ -752,17 +786,10 @@ describe('searchNotes', () => {
   it('enriches multi-query results with backlink_count from the graph', async () => {
     const sources = makeMockSources(['note-a.md', 'note-b.md']);
     const embed = vi.fn().mockResolvedValueOnce([1, 0]).mockResolvedValueOnce([0, 1]);
-    const searchEngine = makeMockSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }])
-        .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]),
-    });
     const graph = makeFakeGraph({ 'note-a.md': 5, 'note-b.md': 1 });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      searchEngine,
       modelKey: MODEL_KEY,
       graph,
     });
@@ -784,28 +811,18 @@ describe('searchNotes', () => {
   });
 
   it('multi-query final cap: limit=2 with 3 queries each returning 2 unique results → length ≤ 2', async () => {
-    const sources = makeMockSources(['a-0.md', 'a-1.md', 'b-0.md', 'b-1.md', 'c-0.md', 'c-1.md']);
+    const sources = sourcesScoring([
+      { path: 'a-0.md', similarity: 0.9 },
+      { path: 'a-1.md', similarity: 0.8 },
+      { path: 'b-0.md', similarity: 0.7 },
+      { path: 'b-1.md', similarity: 0.6 },
+      { path: 'c-0.md', similarity: 0.5 },
+      { path: 'c-1.md', similarity: 0.4 },
+    ]);
     const embed = vi.fn().mockResolvedValue([1, 0]);
-    const searchEngine = makeMockSearchEngine({
-      findNeighbors: vi
-        .fn()
-        .mockReturnValueOnce([
-          { path: 'a-0.md', similarity: 0.9 },
-          { path: 'a-1.md', similarity: 0.8 },
-        ])
-        .mockReturnValueOnce([
-          { path: 'b-0.md', similarity: 0.7 },
-          { path: 'b-1.md', similarity: 0.6 },
-        ])
-        .mockReturnValueOnce([
-          { path: 'c-0.md', similarity: 0.5 },
-          { path: 'c-1.md', similarity: 0.4 },
-        ]),
-    });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      searchEngine,
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
@@ -828,16 +845,9 @@ describe('searchNotes', () => {
   it('stamps vault name on every result item (single query)', async () => {
     const sources = makeMockSources(['note-a.md', 'note-b.md']);
     const embed = vi.fn().mockResolvedValue([1, 0]);
-    const searchEngine = makeMockSearchEngine({
-      findNeighbors: vi.fn().mockReturnValue([
-        { path: 'note-a.md', similarity: 0.9 },
-        { path: 'note-b.md', similarity: 0.8 },
-      ]),
-    });
     const { deps, cleanup } = await makeSearchDeps({
       sources,
       embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      searchEngine,
       modelKey: MODEL_KEY,
     });
     const tool = buildSearchNotesTool(deps);
@@ -875,14 +885,6 @@ describe('searchNotes', () => {
       await fs2.writeFile(path2.join(vaultRoot2, 'note-b.md'), '', 'utf8');
 
       try {
-        const searchEngine = {
-          findNeighbors: vi
-            .fn()
-            .mockReturnValueOnce([{ path: 'note-a.md', similarity: 0.9 }])
-            .mockReturnValueOnce([{ path: 'note-b.md', similarity: 0.8 }]),
-          findBlockNeighbors: vi.fn().mockReturnValue([]),
-          findDuplicates: vi.fn().mockReturnValue([]),
-        };
         const registry = makeTestRegistry([
           {
             name: 'v1',
@@ -902,7 +904,6 @@ describe('searchNotes', () => {
         const tool = buildSearchNotesTool({
           registry,
           embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
-          searchEngine,
           modelKey: MODEL_KEY,
           similarity: TEST_SIMILARITY,
         });
@@ -958,11 +959,6 @@ describe('searchNotes', () => {
       await fs2.writeFile(path2.join(vaultRoot1, 'note-a.md'), '', 'utf8');
 
       try {
-        const searchEngine = {
-          findNeighbors: vi.fn().mockReturnValue([{ path: 'note-a.md', similarity: 0.9 }]),
-          findBlockNeighbors: vi.fn().mockReturnValue([]),
-          findDuplicates: vi.fn().mockReturnValue([]),
-        };
         const registry = makeTestRegistry([
           {
             name: 'v1',
@@ -982,7 +978,6 @@ describe('searchNotes', () => {
         const tool = buildSearchNotesTool({
           registry,
           embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
-          searchEngine,
           modelKey: MODEL_KEY,
           similarity: TEST_SIMILARITY,
         });
@@ -1050,11 +1045,6 @@ describe('searchNotes', () => {
         const tool = buildSearchNotesTool({
           registry,
           embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
-          searchEngine: {
-            findNeighbors: vi.fn().mockReturnValue([{ path: 'note-a.md', similarity: 0.9 }]),
-            findBlockNeighbors: vi.fn().mockReturnValue([]),
-            findDuplicates: vi.fn().mockReturnValue([]),
-          },
           modelKey: MODEL_KEY,
           similarity: TEST_SIMILARITY,
         });
@@ -1098,7 +1088,6 @@ describe('searchNotes', () => {
       const tool = buildSearchNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
         similarity: TEST_SIMILARITY,
       });
@@ -1163,15 +1152,42 @@ describe('semantic_status', () => {
     }
   });
 
-  it('reports the state in lexical mode without reading a snapshot', async () => {
-    const snapshot = vi.fn();
+  it('reports the state in lexical mode without reading the corpus', async () => {
+    const corpus = makeFakeCorpusIndex(
+      new Map([['Notes/a.md', makeSyntheticSource('Notes/a.md')]]),
+    );
     const result = await runSearch({
       backendStatus: { state: 'ready' },
-      snapshot,
+      corpus,
       input: { query: 'x', mode: 'lexical' },
     });
     expect(result.semantic_status).toEqual({ state: 'ready' });
-    expect(snapshot).not.toHaveBeenCalled();
+    expect(corpus.nearest).not.toHaveBeenCalled();
+    expect(corpus.nearestBlocks).not.toHaveBeenCalled();
+  });
+
+  it('reads the status once for a search whose semantic leg makes several corpus reads', async () => {
+    // Deep effort over two queries: seeds, blocks and expansion are separate
+    // corpus reads; the vault's status is read once for the whole call.
+    const sources = new Map(
+      ['Notes/a.md', 'Notes/b.md'].map((p) => [p, makeSyntheticSource(p)] as const),
+    );
+    const { deps, backend, cleanup } = await makeSearchDeps({
+      sources,
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0, 0]) },
+      modelKey: MODEL_KEY,
+    });
+    try {
+      const reg = registerTool(buildSearchNotesTool(deps));
+      const result = await callTool<SearchNotesOutput>(reg, {
+        query: ['x', 'y'],
+        effort: 'deep',
+      });
+      expect(result.matches.some((m) => m.found_in.includes('semantic'))).toBe(true);
+      expect(backend.status).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanup();
+    }
   });
 
   it('reports the state on the empty-filter early return', async () => {
@@ -1201,7 +1217,6 @@ describe('semantic_status', () => {
       const tool = buildSearchNotesTool({
         registry,
         embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-        searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
         modelKey: MODEL_KEY,
         similarity: TEST_SIMILARITY,
       });
@@ -1219,7 +1234,7 @@ describe('semantic_status', () => {
   it('drops a corpus path whose note is gone before the next reconcile', async () => {
     const result = await runSearch({
       backendStatus: { state: 'ready' },
-      snapshotPaths: ['Notes/gone.md', 'Notes/here.md'],
+      corpusPaths: ['Notes/gone.md', 'Notes/here.md'],
       existingPaths: ['Notes/here.md'],
       input: { query: 'x' },
     });
@@ -1227,7 +1242,7 @@ describe('semantic_status', () => {
   });
 
   it('pins semantic_status to the value captured up front, even if status() flips indexing -> ready mid-request', async () => {
-    // The mock engine returns a semantic hit for ANY query. If the leg
+    // The corpus holds a semantic hit for the query. If the leg
     // decision below re-read `status()` after a mid-request indexing ->
     // ready flip (the transition a warming vault makes), the semantic leg
     // would run and this hit would surface (found_in: ["semantic"]) even
@@ -1240,15 +1255,14 @@ describe('semantic_status', () => {
       {
         backendStatus: { state: 'indexing', indexed: 3, total: 9 },
         sources: sourcesWithEmbeddingFor(notePath, [1, 0]),
-        engine: engineReturning([{ path: notePath, similarity: 0.9 }]),
       },
     );
     try {
       const entry = deps.registry.list()[0];
       const status = vi
         .fn()
-        .mockReturnValueOnce({ state: 'indexing', indexed: 3, total: 9 })
-        .mockReturnValue({ state: 'ready' });
+        .mockResolvedValueOnce({ state: 'indexing', indexed: 3, total: 9 })
+        .mockResolvedValue({ state: 'ready' });
       entry.backend = { ...entry.backend!, status };
 
       const tool = buildSearchNotesTool(deps);
@@ -1288,7 +1302,6 @@ describe('search_notes advertised description', () => {
     return {
       registry,
       embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
-      searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
       modelKey: MODEL_KEY,
       similarity: TEST_SIMILARITY,
     };
@@ -1438,16 +1451,9 @@ describe('query_stats fallback note', () => {
   it('names the active profile’s fallback threshold', async () => {
     // Hits at 0.45: below the quick default (0.5), above this profile's 0.42
     // fallback, so the leg's hits exist only because the retry ran.
-    const engine: SearchEngine = {
-      findNeighbors: vi.fn(({ threshold }: { threshold: number }) =>
-        threshold <= 0.42 ? [{ path: 'note.md', similarity: 0.45 }] : [],
-      ),
-      findBlockNeighbors: vi.fn().mockReturnValue([]),
-      findDuplicates: vi.fn().mockReturnValue([]),
-    };
     const { deps, cleanup } = await makeLexicalVault(
       { 'note.md': 'зміст' },
-      { sources: sourcesWithEmbeddingFor('note.md', [1, 0]), engine },
+      { sources: sourcesScoring([{ path: 'note.md', similarity: 0.45 }]) },
     );
     try {
       const tool = buildSearchNotesTool({

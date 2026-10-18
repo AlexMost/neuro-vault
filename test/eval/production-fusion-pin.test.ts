@@ -7,11 +7,6 @@ import { FsVaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../../src/lib/obsidian/vault-scope-config.js';
 import { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import {
-  findBlockNeighbors,
-  findDuplicates,
-  findNeighbors,
-} from '../../src/modules/semantic/search-engine.js';
-import {
   buildSearchNotesTool,
   type SearchNotesOutput,
 } from '../../src/modules/semantic/tools/search-notes.js';
@@ -19,6 +14,7 @@ import type { SmartSource } from '../../src/modules/semantic/types.js';
 import { EVAL_TOP_K, createFusedContext, rankQuery } from '../../eval/pipelines.js';
 import { makeFakeCorpusIndex, makeTestRegistry, toBackend } from '../semantic/tools/_helpers.js';
 import { TEST_SIMILARITY } from '../_identity.js';
+import { corpusOver } from '../_memory-corpus.js';
 
 // The harness's central validity claim: a `fused` eval run measures the REAL
 // production ordering, not a reimplementation of it. Nothing else in the suite
@@ -99,7 +95,6 @@ async function productionOrder(
   const tool = buildSearchNotesTool({
     registry,
     embeddingProvider: { initialize: () => Promise.resolve(), embedQuery: embed },
-    searchEngine: { findNeighbors, findBlockNeighbors, findDuplicates },
     modelKey: 'k',
     similarity: TEST_SIMILARITY,
   });
@@ -127,7 +122,7 @@ describe('fused pipeline pins the production fused ordering', () => {
       pipeline: 'fused',
       query: QUERY,
       queryVector: QUERY_VECTOR,
-      sources: fixture.sources,
+      corpus: corpusOver(fixture.sources),
       fusedContext,
       similarity: TEST_SIMILARITY,
     });

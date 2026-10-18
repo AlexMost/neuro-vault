@@ -20,6 +20,7 @@ import type { EmbedDocumentsFn, EmbeddingIdentity } from './lib/obsidian/corpus/
 import { createQueuedEmbedder } from './modules/semantic/embed-queue.js';
 import type { ModelProfile } from './lib/model-profiles.js';
 import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
+import { createSharedServices } from './modules/semantic/shared-services.js';
 
 interface OutStream {
   isTTY?: boolean;
@@ -92,7 +93,7 @@ function defaultEmbedder(
 ): IndexEmbedder {
   // Shared by default: an `index` run next to a live server embeds through the
   // daemon that already holds the model instead of loading a second copy.
-  const provider = createEmbeddingProvider({ profile, ...opts });
+  const provider = createEmbeddingProvider({ profile, ...opts }, createSharedServices(opts));
   // Through the queue so `index` buckets by length exactly as the server does.
   return {
     identity: provider.identity,

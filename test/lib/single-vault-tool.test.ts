@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { buildSingleVaultTool } from '../../src/lib/single-vault-tool.js';
-import type { SemanticBackend } from '../../src/lib/obsidian/semantic-backend.js';
+import {
+  CorpusNotReadyError,
+  type ISemanticBackend,
+} from '../../src/lib/obsidian/semantic-backend.js';
 import { registerTool } from '../../src/lib/tool-registry.js';
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 import { EXPLICIT_VAULT_SUFFIX } from '../../src/lib/vault-param.js';
@@ -11,7 +14,7 @@ import { callTool, expectToolError } from '../_gate.js';
 
 interface FakeEntrySpec {
   name: string;
-  backend?: SemanticBackend;
+  backend?: ISemanticBackend;
 }
 
 function registryOf(...specs: Array<string | FakeEntrySpec>): IVaultRegistry {
@@ -33,10 +36,10 @@ function registryOf(...specs: Array<string | FakeEntrySpec>): IVaultRegistry {
   };
 }
 
-const readyBackend = { status: () => ({ state: 'ready' as const }) } as SemanticBackend;
+const readyBackend = { status: async () => ({ state: 'ready' as const }) } as ISemanticBackend;
 const indexingBackend = {
-  status: () => ({ state: 'indexing' as const, indexed: 1, total: 3 }),
-} as SemanticBackend;
+  status: async () => ({ state: 'indexing' as const, indexed: 1, total: 3 }),
+} as ISemanticBackend;
 
 interface Input {
   vault?: string;
@@ -123,13 +126,32 @@ describe('buildSingleVaultTool', () => {
         inputShape: {},
         runForEntry: async (entry) => {
           ran = true;
-          return entry.backend.status().state;
+          return (await entry.backend.status()).state;
         },
       }),
     );
     const payload = await expectToolError(reg, { vault: 'a' });
     expect(payload.code).toBe('SEMANTIC_INDEX_BUILDING');
     expect(ran).toBe(false);
+  });
+
+  it('semantic: true reports a read refused as not ready the way the gate would', async () => {
+    const registry = registryOf({ name: 'a', backend: readyBackend }, { name: 'b' });
+    const reg = registerTool(
+      buildSingleVaultTool<Input, string>(registry, {
+        name: 'find_duplicates',
+        title: 'Fake Semantic',
+        description: 'Domain prose.',
+        semantic: true,
+        inputShape: {},
+        runForEntry: async () => {
+          throw new CorpusNotReadyError({ state: 'indexing', indexed: 2, total: 5 });
+        },
+      }),
+    );
+    const payload = await expectToolError(reg, { vault: 'a' });
+    expect(payload.code).toBe('SEMANTIC_INDEX_BUILDING');
+    expect(payload.details).toMatchObject({ vault: 'a', indexed: 2, total: 5 });
   });
 
   it('semantic: true hands a ready entry with a typed backend to the per-vault function', async () => {
@@ -141,7 +163,7 @@ describe('buildSingleVaultTool', () => {
         description: 'Domain prose.',
         semantic: true,
         inputShape: {},
-        runForEntry: async (entry) => entry.backend.status().state,
+        runForEntry: async (entry) => (await entry.backend.status()).state,
       }),
     );
     expect(await callTool(reg, { vault: 'a' })).toBe('ready');

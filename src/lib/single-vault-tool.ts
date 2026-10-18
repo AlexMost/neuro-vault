@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-import type { SemanticBackend } from './obsidian/semantic-backend.js';
-import { resolveSemanticVault, resolveVault } from './resolve-vault.js';
+import { CorpusNotReadyError, type ISemanticBackend } from './obsidian/semantic-backend.js';
+import { resolveSemanticVault, resolveVault, semanticReadinessError } from './resolve-vault.js';
 import type { ToolName } from './tool-names.js';
 import type { ITool } from './tool-registry.js';
 import { describeMultiVault, EXPLICIT_VAULT_SUFFIX, vaultParamShape } from './vault-param.js';
@@ -34,7 +34,8 @@ export interface ISingleVaultToolSpec<
  * The `semantic: true` variant resolves through `resolveSemanticVault`, which
  * owns the readiness gate (SEMANTIC_INDEX_BUILDING / SEMANTIC_DISABLED /
  * SEMANTIC_INDEX_NOT_FOUND) — so the per-vault function sees a backend that is
- * present and ready, typed as such.
+ * present and ready, typed as such. A `CorpusNotReadyError` the per-vault
+ * function lets through is reported with the same codes.
  */
 export interface ISemanticVaultToolSpec<
   TInput extends { vault?: string },
@@ -42,7 +43,7 @@ export interface ISemanticVaultToolSpec<
 > extends ISingleVaultSpecBase {
   semantic: true;
   runForEntry: (
-    entry: IRegisteredVault & { backend: SemanticBackend },
+    entry: IRegisteredVault & { backend: ISemanticBackend },
     input: TInput,
   ) => Promise<TOutput>;
 }
@@ -65,9 +66,22 @@ export function buildSingleVaultTool<TInput extends { vault?: string }, TOutput>
     title: spec.title,
     description: block === '' ? spec.description : `${spec.description}\n\n${block}`,
     inputSchema: z.object({ ...vaultParamShape(registry), ...spec.inputShape }),
-    handler: async (input) =>
-      spec.semantic === true
-        ? await spec.runForEntry(resolveSemanticVault(input, registry, { tool: spec.name }), input)
-        : await spec.runForEntry(resolveVault(input, registry, { tool: spec.name }), input),
+    handler: async (input) => {
+      if (spec.semantic !== true) {
+        return spec.runForEntry(resolveVault(input, registry, { tool: spec.name }), input);
+      }
+      const entry = await resolveSemanticVault(input, registry, { tool: spec.name });
+      try {
+        return await spec.runForEntry(entry, input);
+      } catch (error) {
+        // The status the gate read was `ready`, but a read the corpus refused
+        // since (a daemon respawned and indexing again, say) is reported the
+        // way the gate reports that state.
+        if (error instanceof CorpusNotReadyError) {
+          throw semanticReadinessError(entry, error.status);
+        }
+        throw error;
+      }
+    },
   };
 }

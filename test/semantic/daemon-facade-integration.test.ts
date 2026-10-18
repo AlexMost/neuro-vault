@@ -13,6 +13,7 @@ import {
   DaemonConnectionError,
 } from '../../src/modules/semantic/daemon-connection.js';
 import { DaemonEmbeddingProvider } from '../../src/modules/semantic/daemon-embedding-provider.js';
+import type { ISharedServices } from '../../src/modules/semantic/shared-services.js';
 import { identityOf, resolveModelProfile } from '../../src/lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../src/modules/semantic/types.js';
 
@@ -91,14 +92,22 @@ describe.skipIf(!posix)('DaemonEmbeddingProvider over a real daemon socket', () 
       closeFd: () => {},
       mkdirp: () => {},
     });
+    const services: ISharedServices = {
+      mode: 'daemon',
+      connection,
+      ensure: async () => {
+        await connection.ensure();
+        return 'daemon';
+      },
+      close: () => connection.close(),
+    };
     const provider = new DaemonEmbeddingProvider({
       profile,
-      connection,
+      services,
       createFallback: () => {
         throw new Error('must not fall back');
       },
       initialMaxBatchSize: 8,
-      stderr: { write: () => true },
     });
     return { provider, connection };
   }

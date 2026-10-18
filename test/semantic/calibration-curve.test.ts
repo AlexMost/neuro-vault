@@ -6,14 +6,13 @@ import { makeCalibrationFixture } from './tools/_calibration-fixture.js';
 
 describe('calibration fixture baseline (default inputs)', () => {
   it('deep defaults: 8 seeds, expansion populated, truncated', async () => {
-    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const { corpus, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
-      sources,
+      corpus,
       embeddingProvider,
-      searchEngine,
     });
     expect(output.results).toHaveLength(8);
     expect(output.truncated).toBe(true);
@@ -80,14 +79,13 @@ describe('calibration fixture baseline (default inputs)', () => {
   });
 
   it('quick defaults: 3 seeds, no expansion', async () => {
-    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const { corpus, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'quick',
-      sources,
+      corpus,
       embeddingProvider,
-      searchEngine,
     });
     expect(output.results).toHaveLength(3);
     expect(output.results.every((r) => r.related.length === 0)).toBe(true);
@@ -97,14 +95,13 @@ describe('calibration fixture baseline (default inputs)', () => {
   });
 
   it('multi-query deep defaults keep the same shape', async () => {
-    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const { corpus, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries: ['q1', 'q2'],
       mode: 'deep',
-      sources,
+      corpus,
       embeddingProvider,
-      searchEngine,
     });
     expect(output.results).toHaveLength(8);
     expect(JSON.stringify(output.results)).toMatchInlineSnapshot(
@@ -115,15 +112,14 @@ describe('calibration fixture baseline (default inputs)', () => {
 
 describe('split thresholds on the calibration fixture', () => {
   it('expansionFloor 0.93 floors expansion at 0.93; 0.99 empties expansion', async () => {
-    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const { corpus, embeddingProvider } = makeCalibrationFixture();
     const at93 = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       expansionFloor: 0.93,
-      sources,
+      corpus,
       embeddingProvider,
-      searchEngine,
     });
     const survivors93 = new Set(at93.results.flatMap((r) => r.related.map((n) => n.path)));
     expect(survivors93.size).toBeGreaterThan(0);
@@ -136,15 +132,14 @@ describe('split thresholds on the calibration fixture', () => {
       queries: ['q'],
       mode: 'deep',
       expansionFloor: 0.99,
-      sources,
+      corpus,
       embeddingProvider,
-      searchEngine,
     });
     expect(at99.results.every((r) => r.related.length === 0)).toBe(true);
   });
 
   it('an explicit threshold no longer shapes expansion', async () => {
-    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const { corpus, embeddingProvider } = makeCalibrationFixture();
     // 0.6: below the band (all 8 seeds survive), far above the old
     // accidental expansion coupling's bite point.
     const output = await executeRetrieval({
@@ -152,46 +147,42 @@ describe('split thresholds on the calibration fixture', () => {
       queries: ['q'],
       mode: 'deep',
       threshold: 0.6,
-      sources,
+      corpus,
       embeddingProvider,
-      searchEngine,
     });
     const defaults = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
-      sources,
+      corpus,
       embeddingProvider,
-      searchEngine,
     });
     expect(output.results.map((r) => r.related)).toEqual(defaults.results.map((r) => r.related));
   });
 
   it('explicit threshold 0.99 yields honest zero seeds (deep)', async () => {
-    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const { corpus, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       threshold: 0.99,
-      sources,
+      corpus,
       embeddingProvider,
-      searchEngine,
     });
     expect(output.results).toEqual([]);
     expect(output.per_query_fallback).toEqual({ q: false });
   });
 
   it('an in-band explicit threshold filters partially', async () => {
-    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const { corpus, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
       threshold: 0.787,
-      sources,
+      corpus,
       embeddingProvider,
-      searchEngine,
     });
     expect(output.results.length).toBeGreaterThan(0);
     expect(output.results.length).toBeLessThan(8);
@@ -199,7 +190,7 @@ describe('split thresholds on the calibration fixture', () => {
   });
 
   it('an explicit note threshold does not thin block evidence', async () => {
-    const { sources, searchEngine, embeddingProvider } = makeCalibrationFixture();
+    const { corpus, embeddingProvider } = makeCalibrationFixture();
     // Band blocks sit ~0.2 below their note (inside (0.35, band)); with the
     // old coupling a 0.787 note threshold silently dropped them to backfill.
     const output = await executeRetrieval({
@@ -207,9 +198,8 @@ describe('split thresholds on the calibration fixture', () => {
       queries: ['q'],
       mode: 'deep',
       threshold: 0.787,
-      sources,
+      corpus,
       embeddingProvider,
-      searchEngine,
     });
     for (const r of output.results) {
       expect(r.blocks.length).toBeGreaterThan(0);

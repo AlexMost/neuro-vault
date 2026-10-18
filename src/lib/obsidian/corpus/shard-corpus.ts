@@ -16,7 +16,7 @@ import {
 } from './scoring.js';
 import type { ShardStore } from './shard-store.js';
 import type { CorpusShard, SmartBlock, StoredManifest } from './types.js';
-import { decodeVector } from './vector-codec.js';
+import { decodeVector, encodeVector } from './vector-codec.js';
 
 interface IResident {
   entry: ICorpusEntry;
@@ -43,6 +43,23 @@ function residentOf(shard: CorpusShard): IResident {
   };
 }
 
+/** The record a resident was decoded from: float32 survives the round trip exactly. */
+function shardOf(notePath: string, { entry, vector, blocks }: IResident): CorpusShard {
+  return {
+    path: notePath,
+    content_hash: entry.content_hash,
+    mtime: entry.mtime,
+    size: entry.size,
+    embedding: vector === null ? null : encodeVector(Array.from(vector)),
+    blocks: blocks.map((b) => ({
+      key: b.key,
+      heading: b.heading,
+      lines: b.lines,
+      embedding: encodeVector(Array.from(b.embedding)),
+    })),
+  };
+}
+
 /**
  * The vector an anchor stands for; null when a path anchor has none. Resolved
  * from the map the read captured, not the live one: a read yields between
@@ -54,9 +71,10 @@ function queryOf(anchor: CorpusAnchor, memory: Map<string, IResident>): ArrayLik
 
 /**
  * The in-memory {@link ICorpus} over a {@link ShardStore}: every write goes to the shard files
- * first and to memory only once that write resolved, so memory never claims more than disk holds.
- * Ranking is the brute-force scan the session path runs (same scoring, same ordering), with
- * `allowed` / `exclude` applied before `limit`.
+ * first and to memory only once that write resolved, so memory never claims more than disk holds
+ * (a directory `index --prune` removed is written back by the next `ensureIdentity`).
+ * Ranking is a brute-force scan over every resident vector (`scoring.ts`'s scores and order),
+ * with `allowed` / `exclude` applied before `limit`.
  */
 export class ShardCorpus implements ICorpus {
   private memory: Map<string, IResident> | null = null;
@@ -91,8 +109,12 @@ export class ShardCorpus implements ICorpus {
     this.memory = next;
   }
 
-  refresh(): Promise<void> {
-    return this.load();
+  async refresh(): Promise<void> {
+    // No manifest under a loaded corpus: `index --prune` removed the directory, or the manifest
+    // is unreadable. There is nothing to reload from, so memory keeps serving and the next
+    // ensureIdentity writes it back (or, over shards of unknown provenance, rebuilds).
+    if (this.memory !== null && (await this.store.readManifest()) === null) return;
+    await this.load();
   }
 
   dispose(): void {
@@ -148,7 +170,7 @@ export class ShardCorpus implements ICorpus {
       const hits: IBlockHit[] = [];
       for (const notePath of new Set(opts.paths)) {
         const resident = memory.get(notePath);
-        // A note without a note vector is out of the corpus as the session path sees it, blocks too.
+        // A note without a note vector takes no part in ranking, and neither do its blocks.
         if (resident === undefined || resident.vector === null) continue;
         for (const block of resident.blocks) {
           if (block.embedding.length === 0) continue;
@@ -210,7 +232,22 @@ export class ShardCorpus implements ICorpus {
     const result = await this.store.ensureManifest(expected);
     // A rebuild cleared every shard, so the empty store is what memory now mirrors.
     if (result.rebuilt) this.memory = new Map();
+    // No manifest and no shards under a loaded corpus: `index --prune` removed the directory
+    // this corpus serves. Memory is what was there, so it goes back to disk: reconcile compares
+    // notes against memory, so each would be `reused` with nothing on disk behind it.
+    else if (result.previous === null && this.memory !== null && this.memory.size > 0) {
+      await this.writeBack(this.memory);
+    }
     return result;
+  }
+
+  /** Writes every resident's record, after the manifest ensureManifest just wrote. */
+  private async writeBack(memory: Map<string, IResident>): Promise<void> {
+    let sinceYield = 0;
+    for (const [notePath, resident] of memory) {
+      await this.store.writeShard(shardOf(notePath, resident));
+      if (++sinceYield % LOAD_YIELD_EVERY === 0) await this.yieldEvery();
+    }
   }
 
   private resident(): Map<string, IResident> {

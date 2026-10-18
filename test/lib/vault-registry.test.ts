@@ -9,7 +9,6 @@ import {
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import { createVaultScope } from '../../src/lib/obsidian/vault-scope.js';
 import { loadVaultScope } from '../../src/lib/obsidian/vault-scope-config.js';
-import { buildBasenameIndex } from '../../src/lib/obsidian/link-resolver.js';
 import type { IVaultConfig } from '../../src/types.js';
 
 // Type-level guard: provider must be required on IRegisteredVault. If anyone
@@ -30,8 +29,9 @@ function fakeDeps(): IRegisteredVaultDeps {
       ({ vaultName, vaultRoot, reader }) as never,
     vaultConfigFactory: async () => ({}),
     semanticBackendFactory: () => ({
-      snapshot: async () => ({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
-      status: () => ({ state: 'ready' as const }),
+      nearest: async () => [],
+      nearestBlocks: async () => [],
+      status: async () => ({ state: 'ready' as const }),
       dispose: async () => {},
     }),
     conventionsReaderFactory: () => async () => null,
@@ -147,7 +147,7 @@ describe('createVaultRegistry', () => {
       { vaults: [vault('a', '/v/a')], semanticEnabled: true },
       fakeDeps(),
     );
-    expect(registry.list()[0].backend?.status()).toEqual({ state: 'ready' });
+    expect(await registry.list()[0].backend?.status()).toEqual({ state: 'ready' });
   });
 
   it('leaves the backend absent when semantic is globally off', async () => {
@@ -165,8 +165,9 @@ describe('createVaultRegistry', () => {
     deps.semanticBackendFactory = (opts) => {
       seen.push(opts.enabled);
       return {
-        snapshot: async () => ({ sources: new Map(), basenameIndex: buildBasenameIndex([]) }),
-        status: () => ({ state: 'disabled' as const }),
+        nearest: async () => [],
+        nearestBlocks: async () => [],
+        status: async () => ({ state: 'disabled' as const }),
         dispose: async () => {},
       };
     };

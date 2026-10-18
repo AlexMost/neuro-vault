@@ -1,19 +1,19 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CorpusIdentity } from '../../../../src/lib/obsidian/corpus/identity.js';
+import { modelCorpusDir } from '../../../../src/lib/obsidian/corpus/layout.js';
 import { ShardCorpus } from '../../../../src/lib/obsidian/corpus/shard-corpus.js';
 import { ShardStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
-import { loadCorpusSnapshot } from '../../../../src/lib/obsidian/corpus/snapshot.js';
-import type { CorpusShard } from '../../../../src/lib/obsidian/corpus/types.js';
-import { encodeVector } from '../../../../src/lib/obsidian/corpus/vector-codec.js';
-import {
-  findBlockNeighbors,
-  findNeighbors,
-} from '../../../../src/modules/semantic/search-engine.js';
+import type { CorpusShard, SmartSource } from '../../../../src/lib/obsidian/corpus/types.js';
+import { decodeVector, encodeVector } from '../../../../src/lib/obsidian/corpus/vector-codec.js';
 import { TEST_IDENTITY } from '../../../_identity.js';
+import {
+  legacyFindBlockNeighbors as findBlockNeighbors,
+  legacyFindNeighbors as findNeighbors,
+} from '../../../semantic/_legacy-retrieval.js';
 
 const DIMS = 4;
 const MODEL_KEY = TEST_IDENTITY.model_key;
@@ -56,6 +56,20 @@ const FIXTURE: CorpusShard[] = [
 
 const QUERY = [0.9, 0.3, 0.1, 0];
 
+/** The fixture decoded as the in-memory scan read it: notes with a vector only. */
+function sourcesOf(shards: CorpusShard[]): Map<string, SmartSource> {
+  const sources = new Map<string, SmartSource>();
+  for (const s of shards) {
+    if (s.embedding === null) continue;
+    sources.set(s.path, {
+      path: s.path,
+      embedding: decodeVector(s.embedding),
+      blocks: s.blocks.map((b) => ({ ...b, embedding: decodeVector(b.embedding) })),
+    });
+  }
+  return sources;
+}
+
 async function makeRoot(): Promise<string> {
   return mkdtemp(path.join(tmpdir(), 'nv-shard-corpus-'));
 }
@@ -74,8 +88,8 @@ async function setup(shards: CorpusShard[] = FIXTURE) {
 
 describe('ShardCorpus', () => {
   it('nearest matches findNeighbors for a query vector', async () => {
-    const { store, corpus } = await setup();
-    const { sources } = await loadCorpusSnapshot(store);
+    const { corpus } = await setup();
+    const sources = sourcesOf(FIXTURE);
 
     for (const threshold of [0, 0.3, 0.8]) {
       for (const limit of [undefined, 2]) {
@@ -88,8 +102,8 @@ describe('ShardCorpus', () => {
   });
 
   it('nearestBlocks matches findBlockNeighbors within paths', async () => {
-    const { store, corpus } = await setup();
-    const { sources } = await loadCorpusSnapshot(store);
+    const { corpus } = await setup();
+    const sources = sourcesOf(FIXTURE);
     const paths = ['a.md', 'c.md'];
     const subset = [...sources.values()].filter((s) => paths.includes(s.path));
 
@@ -377,6 +391,46 @@ describe('ShardCorpus', () => {
     expect(Array.from(corpus.vectorOf('f.md') ?? [])).toEqual([0, 0, 0, 1]);
     expect(corpus.vectorOf('a.md')).toBeNull();
     expect((await corpus.entries()).has('a.md')).toBe(false);
+  });
+
+  it('ensureIdentity over a pruned model directory writes memory back, re-embedding nothing', async () => {
+    const { root, store, corpus } = await setup();
+    const before = await store.listShards();
+    await rm(modelCorpusDir(root, MODEL_KEY), { recursive: true, force: true });
+
+    const result = await corpus.ensureIdentity(IDENTITY);
+
+    expect(result).toEqual({ rebuilt: false, previous: null });
+    expect((await store.readManifest())?.model_id).toBe(IDENTITY.model_id);
+    // The encoded strings compare equal, so every vector decodes to the same floats.
+    expect(await store.listShards()).toEqual(before);
+    expect(corpus.size()).toBe(5);
+  });
+
+  it('refresh over a pruned model directory keeps serving from memory', async () => {
+    const { root, corpus } = await setup();
+    const [before] = await corpus.nearest([{ vector: QUERY }], { threshold: 0 });
+    await rm(modelCorpusDir(root, MODEL_KEY), { recursive: true, force: true });
+
+    await corpus.refresh();
+
+    expect(corpus.size()).toBe(5);
+    expect((await corpus.entries()).size).toBe(FIXTURE.length);
+    expect(await corpus.nearest([{ vector: QUERY }], { threshold: 0 })).toEqual([before]);
+  });
+
+  it('an unparsable manifest over shards still rebuilds', async () => {
+    const { root, store, corpus } = await setup();
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await writeFile(path.join(modelCorpusDir(root, MODEL_KEY), 'manifest.json'), '{not json');
+
+    await corpus.refresh();
+    const result = await corpus.ensureIdentity(IDENTITY);
+
+    expect(result).toEqual({ rebuilt: true, previous: null });
+    expect(corpus.size()).toBe(0);
+    expect(await store.listShards()).toEqual(new Map());
+    warn.mockRestore();
   });
 
   it('dispose drops memory', async () => {

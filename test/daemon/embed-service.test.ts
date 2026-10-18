@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createEmbedService } from '../../src/daemon/services/embed.js';
+import { createEmbedService, LOAD_FAILURE_MEMO_MS } from '../../src/daemon/services/embed.js';
 import { DaemonRpcError } from '../../src/daemon/protocol.js';
 import {
   identityOf,
@@ -246,19 +246,59 @@ describe('embed service', () => {
       expect(vectors).toHaveLength(20);
     });
 
-    it('reports a load failure as EMBED_FAILED and retries on the next call', async () => {
+    it('reports a load failure as EMBED_FAILED and retries after the failure memo expires', async () => {
       let fail = true;
+      let clock = 0;
       const createProvider = vi.fn((p: { key: string }) =>
         fakeProvider(p.key, { failInit: fail ? 'no weights' : undefined }),
       );
-      const service = createEmbedService({ createProvider });
+      const service = createEmbedService({ createProvider, now: () => clock });
       const embed = service.documentsFor('granite-97m');
       await expect(embed(['x'])).rejects.toMatchObject({
         code: 'EMBED_FAILED',
         message: 'no weights',
       });
       fail = false;
+      clock = LOAD_FAILURE_MEMO_MS;
       await expect(embed(['x'])).resolves.toEqual([[0, 1, 0]]);
+      expect(createProvider).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects with the same error, loading and logging once, while the failure is remembered', async () => {
+      let clock = 0;
+      const log = vi.fn();
+      const createProvider = vi.fn((p: { key: string }) =>
+        fakeProvider(p.key, { failInit: 'no weights' }),
+      );
+      const service = createEmbedService({ createProvider, log, now: () => clock });
+      const embed = service.documentsFor('granite-97m');
+      const first = await embed(['a']).catch((error: unknown) => error);
+
+      // A pass embeds many batches: none of them reloads the model or logs again.
+      clock = LOAD_FAILURE_MEMO_MS - 1;
+      for (const text of ['b', 'c', 'd']) {
+        await expect(embed([text])).rejects.toBe(first);
+      }
+      expect(createProvider).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('failed to load granite-97m'));
+    });
+
+    it('leaves embed.initialize retrying while documents remember a failed load', async () => {
+      let fail = true;
+      const createProvider = vi.fn((p: { key: string }) =>
+        fakeProvider(p.key, { failInit: fail ? 'no weights' : undefined }),
+      );
+      const service = createEmbedService({ createProvider, now: () => 0 });
+      await expect(service.documentsFor('granite-97m')(['x'])).rejects.toMatchObject({
+        code: 'EMBED_FAILED',
+      });
+      fail = false;
+      await expect(
+        service.handlers.initialize({ profile: 'granite-97m' }, testCtx()),
+      ).resolves.toMatchObject({ max_batch_size: 8 });
+      // Loaded since: the memo no longer stands between documents and the provider.
+      await expect(service.documentsFor('granite-97m')(['x'])).resolves.toEqual([[0, 1, 0]]);
     });
 
     it('refuses a non-finite vector', async () => {

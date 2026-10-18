@@ -125,12 +125,11 @@ const indexing = (): BackendStatus => ({ state: 'indexing', indexed: 0, total: 0
 
 /**
  * One vault's reconcile loop over every attached model profile (design D5):
- * `createCorpusBackend`'s state machine kept per profile, with one pass at a
- * time for the vault. A pass takes the vault's lock once, scans once, and
+ * a status state machine per profile, with one pass at a time for the vault. A pass takes the vault's lock once, scans once, and
  * reconciles the profiles enabled when it began, in the order they were added;
  * a profile added later is built by the next pass.
  *
- * Each profile keeps the backend's rules: a compatible corpus with records is
+ * Each profile follows the same rules: a compatible corpus with records is
  * `ready` the moment its startup selection loaded it; a pass that throws for a
  * profile makes that profile `unavailable` and moves on to the next; a pass
  * that waited for another holder refreshes each corpus before reconciling it;

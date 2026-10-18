@@ -34,8 +34,9 @@ describe('runFanOut', () => {
       {
         name: 'a',
         backend: {
-          snapshot: async () => ({ sources: new Map(), basenameIndex: new Map() }) as never,
-          status: () => ({ state: 'ready' }),
+          nearest: async () => [],
+          nearestBlocks: async () => [],
+          status: async () => ({ state: 'ready' }),
           dispose: async () => {},
         },
       },

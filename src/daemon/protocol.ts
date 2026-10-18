@@ -1,6 +1,7 @@
 import type { JSONRPCMessage, JSONRPCRequest, RequestId } from '@modelcontextprotocol/sdk/types.js';
 import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
+import type { IBlockHit, INoteHit } from '../lib/obsidian/corpus/corpus.js';
 import type { EmbeddingIdentity } from '../lib/obsidian/corpus/types.js';
 import type { IVaultInfo } from '../lib/vault-entry/index.js';
 
@@ -26,6 +27,32 @@ export interface EmbedDocumentsParams {
 export interface EmbedDocumentsResult {
   vectors: number[][];
 }
+/** What a `corpus.*` read is anchored on: a query vector, or a note already in the corpus. */
+export type CorpusAnchorParam = { vector: number[] } | { path: string };
+export interface CorpusNearestParams {
+  vault: string;
+  profile: string;
+  anchors: CorpusAnchorParam[];
+  threshold: number;
+  limit?: number;
+  allowed?: string[];
+  exclude?: string[];
+}
+/** One list per anchor, in order; `null` for a path anchor whose note has no vector. */
+export interface CorpusNearestResult {
+  hits: (INoteHit[] | null)[];
+}
+export interface CorpusNearestBlocksParams {
+  vault: string;
+  profile: string;
+  anchors: CorpusAnchorParam[];
+  paths: string[];
+  threshold: number;
+  limit?: number;
+}
+export interface CorpusNearestBlocksResult {
+  hits: (IBlockHit[] | null)[];
+}
 export interface DaemonInfoResult {
   name: string;
   version: string;
@@ -44,6 +71,8 @@ export type DaemonErrorCode =
   | 'SHUTTING_DOWN'
   | 'NOT_ATTACHED'
   | 'VAULT_UNAVAILABLE'
+  | 'CORPUS_NOT_READY'
+  | 'CORPUS_FAILED'
   | 'INTERNAL';
 
 // `ErrorCode.ConnectionClosed` (-32000) is the SDK's JSON-RPC server-error slot for a closed connection.
@@ -55,6 +84,8 @@ const JSON_RPC_CODE: Record<DaemonErrorCode, number> = {
   SHUTTING_DOWN: ErrorCode.ConnectionClosed,
   NOT_ATTACHED: ErrorCode.InvalidParams,
   VAULT_UNAVAILABLE: ErrorCode.InvalidParams,
+  CORPUS_NOT_READY: ErrorCode.InternalError,
+  CORPUS_FAILED: ErrorCode.InternalError,
   INTERNAL: ErrorCode.InternalError,
 };
 

@@ -6,11 +6,7 @@ import { vi } from 'vitest';
 
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import type { BackendStatus } from '../../../src/lib/obsidian/semantic-backend.js';
-import type {
-  ListMatchingPaths,
-  SearchEngine,
-  SmartSource,
-} from '../../../src/modules/semantic/types.js';
+import type { ListMatchingPaths, SmartSource } from '../../../src/modules/semantic/types.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
 import { makeTestRegistry, makeFakeGraph, makeFakeCorpusIndex, toBackend } from './_helpers.js';
 
@@ -18,17 +14,6 @@ import { makeTestRegistry, makeFakeGraph, makeFakeCorpusIndex, toBackend } from 
 // lexical+semantic orchestration, and the end-to-end sanity fixture). Lives
 // in its own (non-`.test.ts`) module so both test files can import it without
 // re-executing another file's top-level `describe`/`it` registrations.
-
-// No explicit `SearchEngine` return-type annotation: callers that mutate the
-// mock after creation (e.g. `engine.findNeighbors.mockReturnValue(...)`) rely
-// on the inferred vi.Mock type, not the widened interface type.
-export function makeMockEngine() {
-  return {
-    findNeighbors: vi.fn().mockReturnValue([]),
-    findBlockNeighbors: vi.fn().mockReturnValue([]),
-    findDuplicates: vi.fn().mockReturnValue([]),
-  };
-}
 
 export function sourcesWithEmbeddingFor(
   notePath: string,
@@ -39,12 +24,24 @@ export function sourcesWithEmbeddingFor(
   ]);
 }
 
-export function engineReturning(hits: Array<{ path: string; similarity: number }>): SearchEngine {
-  return {
-    findNeighbors: vi.fn().mockReturnValue(hits),
-    findBlockNeighbors: vi.fn().mockReturnValue([]),
-    findDuplicates: vi.fn().mockReturnValue([]),
-  };
+/**
+ * The 2-D unit vector whose cosine with the default query vector `[1, 0]` is
+ * `similarity` (up to float32 rounding — compare with `toBeCloseTo`).
+ */
+export function vectorScoring(similarity: number): number[] {
+  return [similarity, Math.sqrt(1 - similarity * similarity)];
+}
+
+/** Notes the semantic leg ranks at these similarities for the default query vector. */
+export function sourcesScoring(
+  hits: Array<{ path: string; similarity: number }>,
+): Map<string, SmartSource> {
+  return new Map(
+    hits.map(({ path: notePath, similarity }) => [
+      notePath,
+      { path: notePath, embedding: Float32Array.from(vectorScoring(similarity)), blocks: [] },
+    ]),
+  );
 }
 
 export async function makeLexicalVault(
@@ -52,7 +49,6 @@ export async function makeLexicalVault(
   opts: {
     semantic?: boolean;
     sources?: Map<string, SmartSource>;
-    engine?: SearchEngine;
     listMatchingPaths?: ListMatchingPaths;
     backendStatus?: BackendStatus;
   } = {},
@@ -79,7 +75,6 @@ export async function makeLexicalVault(
   const deps = {
     registry,
     embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
-    searchEngine: opts.engine ?? makeMockEngine(),
     modelKey: 'k',
     similarity: TEST_SIMILARITY,
   };

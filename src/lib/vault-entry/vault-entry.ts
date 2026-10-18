@@ -217,19 +217,21 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
 
   /**
    * Runs a read over the anchors the scope keeps and answers `null` for a path
-   * anchor on an excluded note — what the session's snapshot answers, as an
-   * excluded note is not in it. Such a note can still be in the corpus until a
+   * anchor on an excluded note — as for a note the corpus does not hold, which
+   * is what an excluded note is to every caller. Such a note can still be in the corpus until a
    * pass sweeps it, and its vector would otherwise anchor a search.
    */
   async function foldAnchors<T>(
     anchors: readonly CorpusAnchor[],
     read: (kept: readonly CorpusAnchor[]) => Promise<(T | null)[]>,
   ): Promise<(T | null)[]> {
-    const excluded = (anchor: CorpusAnchor) => 'path' in anchor && scope.isExcluded(anchor.path);
-    if (!anchors.some(excluded)) return read(anchors);
-    const answers = await read(anchors.filter((anchor) => !excluded(anchor)));
+    // Decided once, before the read: a scope change while it runs must not move the answers
+    // off the anchors they belong to.
+    const excluded = anchors.map((anchor) => 'path' in anchor && scope.isExcluded(anchor.path));
+    if (!excluded.includes(true)) return read(anchors);
+    const answers = await read(anchors.filter((_, index) => !excluded[index]));
     let next = 0;
-    return anchors.map((anchor) => (excluded(anchor) ? null : answers[next++]));
+    return excluded.map((skip) => (skip ? null : answers[next++]));
   }
 
   function status(key: string): BackendStatus {

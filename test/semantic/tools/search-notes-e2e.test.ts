@@ -1,17 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   buildSearchNotesTool,
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
-import type { SearchEngine, SmartSource } from '../../../src/modules/semantic/types.js';
+import type { SmartSource } from '../../../src/modules/semantic/types.js';
 import { callTool } from '../../_gate.js';
-import { makeLexicalVault } from './_hybrid-helpers.js';
+import { makeLexicalVault, sourcesScoring } from './_hybrid-helpers.js';
 
 // End-to-end sanity fixture for hybrid `search_notes`: a real vault on disk
 // (real `FsVaultReader`, real markdown parser via `LexicalIndex`), with only
-// the embedding layer (corpus sources + `SearchEngine`) faked. Each `it` is
+// the embedding layer (corpus sources + query vectors) faked. Each `it` is
 // an independent vault fixture exercising one behavior called out in
 // openspec/changes/search-notes-unified-rank/specs/hybrid-search/spec.md —
 // now asserted against the unified `matches[]`/`found_in` shape.
@@ -19,19 +19,12 @@ import { makeLexicalVault } from './_hybrid-helpers.js';
 describe('search_notes end-to-end sanity fixture', () => {
   it('a note hit by BOTH legs surfaces once in matches[] with both provenance kinds', async () => {
     const notePath = 'Retrieval eval harness.md';
-    const sources = new Map<string, SmartSource>([
-      [notePath, { path: notePath, embedding: new Float32Array([1, 0]), blocks: [] }],
-    ]);
-    // The semantic leg's neighbor lookup is faked to surface the SAME path
-    // that the lexical leg finds via a title match, wiring the intersection.
-    const engine: SearchEngine = {
-      findNeighbors: vi.fn().mockReturnValue([{ path: notePath, similarity: 0.92 }]),
-      findBlockNeighbors: vi.fn().mockReturnValue([]),
-      findDuplicates: vi.fn().mockReturnValue([]),
-    };
+    // The semantic leg surfaces the SAME path that the lexical leg finds via
+    // a title match, wiring the intersection.
+    const sources = sourcesScoring([{ path: notePath, similarity: 0.92 }]);
     const { deps, cleanup } = await makeLexicalVault(
       { [notePath]: 'Notes on building a retrieval evaluation harness for the search stack.\n' },
-      { sources, engine },
+      { sources },
     );
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
@@ -42,7 +35,7 @@ describe('search_notes end-to-end sanity fixture', () => {
       expect(m.path).toBe(notePath);
       expect(m.found_in).toContain('semantic');
       expect(m.found_in).toContain('lexical:title');
-      expect(m.similarity).toBe(0.92);
+      expect(m.similarity).toBeCloseTo(0.92, 6);
       expect(m.lexical?.[0]).toMatchObject({ matched_in: 'title' });
     } finally {
       await cleanup();
@@ -78,23 +71,15 @@ describe('search_notes end-to-end sanity fixture', () => {
       [tasksPath, { path: tasksPath, embedding: new Float32Array([1, 0]), blocks: [] }],
       [archivePath, { path: archivePath, embedding: new Float32Array([1, 0]), blocks: [] }],
     ]);
-    // Echoes back whatever sources it was actually given, so if `Archive/`
-    // leaks past the filter into the semantic leg's candidate set, it shows
-    // up in the result — proving the filter narrows the corpus, not just the
-    // final output.
-    const engine: SearchEngine = {
-      findNeighbors: vi.fn(({ sources: passed }) =>
-        [...(passed as Iterable<SmartSource>)].map((s) => ({ path: s.path, similarity: 0.9 })),
-      ),
-      findBlockNeighbors: vi.fn().mockReturnValue([]),
-      findDuplicates: vi.fn().mockReturnValue([]),
-    };
+    // Both notes sit on the query vector, so if `Archive/` leaks past the
+    // filter into the semantic leg's candidate set, it shows up in the result
+    // — proving the filter narrows the corpus, not just the final output.
     const { deps, cleanup } = await makeLexicalVault(
       {
         [tasksPath]: 'пошук у задачах\n',
         [archivePath]: 'пошук в архіві\n',
       },
-      { sources, engine, listMatchingPaths: async () => new Set([tasksPath]) },
+      { sources, listMatchingPaths: async () => new Set([tasksPath]) },
     );
     try {
       const reg = registerTool(buildSearchNotesTool(deps));

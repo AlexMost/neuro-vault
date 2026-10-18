@@ -28,7 +28,7 @@ The service also exposes `identity` (`provider`, `model_key`, `model_id`, `revis
 
 ## Where the model lives
 
-No caller constructs a provider directly. `createEmbeddingProvider({ profile, shared, cliPath, … })` (`src/modules/semantic/provider-factory.ts`) is the one place a provider is chosen. The server, `index` and the daemon's `embed` service all call it ([ADR-0018](../adr/0018-shared-services-daemon.md)):
+No caller constructs a provider directly. `createEmbeddingProvider({ profile, shared, cliPath, … }, services?)` (`src/modules/semantic/provider-factory.ts`) is the one place a provider is chosen; a process passes the one `ISharedServices` it built, so its embedding and its corpus reads share one connection and one switch. The server, `index` and the daemon's `embed` service all call it ([ADR-0018](../adr/0018-shared-services-daemon.md)):
 
 | Caller | `shared` | What it gets |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ No caller constructs a provider directly. `createEmbeddingProvider({ profile, sh
 | Server, `index` with `--no-shared` | `false` | `EmbeddingService` in this process, as before the daemon existed |
 | The daemon's `embed` service | always `false` | `EmbeddingService`, built by `daemonProviderFor` (`src/cli-daemon.ts`); a facade there would connect to the daemon itself |
 
-The facade has the same contract as `EmbeddingService` and the same `identity`, computed locally from the profile, so a corpus built through one is served by the other without a rebuild. Its `maxBatchSize` is the daemon's, reported by `embed.initialize`. When the daemon cannot be found or started, it falls back once per process to an in-process `EmbeddingService`. The connection, the spawn, the timeouts and the fallback rules are in [`shared-daemon.md`](./shared-daemon.md#the-session-side-facade). Everything below this section describes `EmbeddingService` itself, wherever it runs.
+The facade has the same contract as `EmbeddingService` and the same `identity`, computed locally from the profile, so a corpus built through one is served by the other without a rebuild. Its `maxBatchSize` is the daemon's, reported by `embed.initialize`. When the daemon cannot be found or started, the process's one switch (`ISharedServices`, shared with the corpus reads) flips to in-process for good, and the facade embeds through an in-process `EmbeddingService` from then on. The connection, the spawn, the timeouts and the fallback rules are in [`shared-daemon.md`](./shared-daemon.md#the-session-side-facades). Everything below this section describes `EmbeddingService` itself, wherever it runs.
 
 ## Why it exists
 
@@ -95,7 +95,7 @@ The provider has two entry points because the two inputs are not the same kind o
 
 ## Batching
 
-A call is one forward pass: its rows are padded to the longest and run together. That is a throughput win for the indexer, which hands every input of one note (the note-level text plus its blocks) to `embedDocuments` in a single call. Padding costs compute, though, and a note's own text contains all its blocks, so it is nearly always its longest input — batched with them, it would pad every block to its length. [`embed-queue.ts`](../../src/modules/semantic/embed-queue.ts) therefore splits a call into **length buckets** before it reaches the provider: texts are sorted shortest-first and grouped into batches of at most `maxBatchSize` whose longest text is at most twice the shortest (by character count). Each bucket is one queue entry and one forward pass, and the vectors are put back in the caller's order. The queue also keeps live queries ahead of indexing batches and isolates one call's failure from another's — see [`semantic-backend.md`](./semantic-backend.md#the-shared-embed-queue).
+A call is one forward pass: its rows are padded to the longest and run together. That is a throughput win for the indexer, which hands every input of one note (the note-level text plus its blocks) to `embedDocuments` in a single call. Padding costs compute, though, and a note's own text contains all its blocks, so it is nearly always its longest input — batched with them, it would pad every block to its length. [`embed-queue.ts`](../../src/modules/semantic/embed-queue.ts) therefore splits a call into **length buckets** before it reaches the provider: texts are sorted shortest-first and grouped into batches of at most `maxBatchSize` whose longest text is at most twice the shortest (by character count). Each bucket is one queue entry and one forward pass, and the vectors are put back in the caller's order. The queue also keeps live queries ahead of indexing batches and isolates one call's failure from another's — see [`semantic-backend.md`](./semantic-backend.md#the-embed-queue).
 
 ## Pooling
 
@@ -110,7 +110,7 @@ The contract: **positions come from the attention mask, never from token ids.** 
 - A row is never longer than `maxTokens` and always ends in the tokenizer's real template suffix: truncation removes content, never the special tokens a last-token model pools from.
 - No prefix is ever added by a caller; the provider applies the profile's `queryPrefix` / `documentPrefix` and nothing else does.
 - One provider call is one forward pass over at most `maxBatchSize` rows.
-- The output dimension must match the corpus dimension. The corpus store checks every vector it writes against the identity's `dims`; the search engine does the per-call check at query time.
+- The output dimension must match the corpus dimension. The corpus store checks every vector it writes against the identity's `dims`; the corpus checks again on every read: a stored vector of another width throws, and the daemon's corpus service refuses a query vector of the wrong width before it reads.
 
 ## Boundaries
 

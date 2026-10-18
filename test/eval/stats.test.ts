@@ -11,7 +11,9 @@ import {
   quantiles,
   thresholdForPassRate,
 } from '../../eval/stats.js';
+import type { SmartSource } from '../../src/lib/obsidian/corpus/types.js';
 import { TEST_SIMILARITY } from '../_identity.js';
+import { corpusOver } from '../_memory-corpus.js';
 
 describe('quantiles', () => {
   it('summarises a population by nearest lower rank', () => {
@@ -112,9 +114,17 @@ describe('collectPopulations + computeCalibrationStats', () => {
   ]);
   // topK 2 < the three notes, so the ranked and unranked populations differ.
   const shape = { seedPool: 1, expansionLimit: 1, topK: 2 };
+  /** The populations of `queryVectors` over `notes`, read through the corpus reads. */
+  const populationsOf = (queryVectors: number[][], notes: Map<string, SmartSource> = sources) =>
+    collectPopulations({
+      queryVectors,
+      corpus: corpusOver(notes),
+      paths: [...notes.keys()],
+      ...shape,
+    });
 
-  it('collects the ranked and the unranked populations', () => {
-    const p = collectPopulations({ queryVectors: [[1, 0]], sources, ...shape });
+  it('collects the ranked and the unranked populations', async () => {
+    const p = await populationsOf([[1, 0]]);
     expect(p.query_candidates).toHaveLength(2);
     expect(p.query_all).toHaveLength(3);
     expect(p.expansion_neighbours).toEqual([expect.closeTo(0.8)]);
@@ -125,8 +135,8 @@ describe('collectPopulations + computeCalibrationStats', () => {
     expect(p.note_all).toHaveLength(6); // 3 sources × 2 others, ordered pairs
   });
 
-  it('reports a quantile summary for every population', () => {
-    const populations = collectPopulations({ queryVectors: [[1, 0]], sources, ...shape });
+  it('reports a quantile summary for every population', async () => {
+    const populations = await populationsOf([[1, 0]]);
     const stats = computeCalibrationStats({
       populations,
       similarity: TEST_SIMILARITY,
@@ -138,8 +148,8 @@ describe('collectPopulations + computeCalibrationStats', () => {
     expect(stats.populations.note_all.n).toBe(6);
   });
 
-  it('reports, per default, the threshold and pass rate over its own population', () => {
-    const populations = collectPopulations({ queryVectors: [[1, 0]], sources, ...shape });
+  it('reports, per default, the threshold and pass rate over its own population', async () => {
+    const populations = await populationsOf([[1, 0]]);
     const stats = computeCalibrationStats({
       populations,
       similarity: TEST_SIMILARITY,
@@ -161,8 +171,8 @@ describe('collectPopulations + computeCalibrationStats', () => {
     expect(stats.suggested).toBeUndefined();
   });
 
-  it('suggests, per default, the threshold reproducing a baseline pass rate', () => {
-    const populations = collectPopulations({ queryVectors: [[1, 0]], sources, ...shape });
+  it('suggests, per default, the threshold reproducing a baseline pass rate', async () => {
+    const populations = await populationsOf([[1, 0]]);
     const baseline = computeCalibrationStats({
       populations,
       similarity: TEST_SIMILARITY,
@@ -170,15 +180,14 @@ describe('collectPopulations + computeCalibrationStats', () => {
       deepPool: 8,
     });
     // A "new model" whose similarities sit lower: every vector pair is rotated apart.
-    const shifted = collectPopulations({
-      queryVectors: [[0.6, 0.8]],
-      sources: new Map([
+    const shifted = await populationsOf(
+      [[0.6, 0.8]],
+      new Map([
         ['a.md', { path: 'a.md', embedding: new Float32Array([1, 0]), blocks: [] }],
         ['b.md', { path: 'b.md', embedding: new Float32Array([0.6, 0.8]), blocks: [] }],
         ['c.md', { path: 'c.md', embedding: new Float32Array([0, 1]), blocks: [] }],
       ]),
-      ...shape,
-    });
+    );
     const again = computeCalibrationStats({
       populations: shifted,
       similarity: TEST_SIMILARITY,
@@ -197,8 +206,8 @@ describe('collectPopulations + computeCalibrationStats', () => {
     );
   });
 
-  it('suggests nothing, rather than failing, for a default whose population is empty', () => {
-    const populations = collectPopulations({ queryVectors: [[1, 0]], sources, ...shape });
+  it('suggests nothing, rather than failing, for a default whose population is empty', async () => {
+    const populations = await populationsOf([[1, 0]]);
     const baseline = computeCalibrationStats({
       populations,
       similarity: TEST_SIMILARITY,

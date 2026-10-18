@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SmartSource } from '../../src/lib/obsidian/corpus/types.js';
 import { TEST_SIMILARITY } from '../_identity.js';
+import { corpusOver } from '../_memory-corpus.js';
 import {
   EVAL_TOP_K,
   bestRelevantSimilarity,
@@ -30,7 +31,7 @@ describe('semantic pipeline', () => {
       pipeline: 'semantic',
       query: 'q',
       queryVector: QUERY_VECTOR,
-      sources: SOURCES,
+      corpus: corpusOver(SOURCES),
       similarity: TEST_SIMILARITY,
     });
     const top = ranked.map((r) => r.path);
@@ -63,7 +64,7 @@ describe('fused pipeline', () => {
       pipeline: 'fused',
       query: 'quirkyterm',
       queryVector: QUERY_VECTOR,
-      sources: SOURCES,
+      corpus: corpusOver(SOURCES),
       fusedContext,
       similarity: TEST_SIMILARITY,
     });
@@ -81,13 +82,15 @@ describe('fused pipeline', () => {
 });
 
 describe('bestRelevantSimilarity', () => {
-  it('reaches relevant notes outside the top list', () => {
-    const sources = new Map([
-      ['far.md', { path: 'far.md', embedding: new Float32Array([0.6, 0.8]), blocks: [] }],
-      ['near.md', { path: 'near.md', embedding: new Float32Array([1, 0]), blocks: [] }],
-    ]);
-    expect(bestRelevantSimilarity([1, 0], ['far.md', 'gone.md'], sources)).toBeCloseTo(0.6);
-    expect(bestRelevantSimilarity([1, 0], ['gone.md'], sources)).toBeNull();
+  it('reaches relevant notes outside the top list', async () => {
+    const corpus = corpusOver(
+      new Map([
+        ['far.md', { path: 'far.md', embedding: new Float32Array([0.6, 0.8]), blocks: [] }],
+        ['near.md', { path: 'near.md', embedding: new Float32Array([1, 0]), blocks: [] }],
+      ]),
+    );
+    expect(await bestRelevantSimilarity([1, 0], ['far.md', 'gone.md'], corpus)).toBeCloseTo(0.6);
+    expect(await bestRelevantSimilarity([1, 0], ['gone.md'], corpus)).toBeNull();
   });
 });
 

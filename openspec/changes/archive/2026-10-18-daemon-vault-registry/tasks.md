@@ -41,36 +41,36 @@ Parallelism: groups 1 and 3 are parallel-safe with each other (no shared files).
 ## 6. PR 1 delivery
 
 - [x] 6.1 Docs: new `docs/architecture/vault-entry.md`; `shared-daemon.md` (vault service, connection context, status lines), `own-corpus.md` (`ShardStore`, corpus interface, reconcile split), `vault-scope.md` (`isSubtreeExcluded`, watcher), `docs/architecture/README.md` map.
-- [ ] 6.2 `npm test && npm run lint && npm run typecheck && npm run format && npm run build`; PR 1 to `main` with `Refs #158`, `Refs #175`. Pause for review and merge.
+- [x] 6.2 `npm test && npm run lint && npm run typecheck && npm run format && npm run build`; PR 1 to `main` with `Refs #158`, `Refs #175`. Pause for review and merge.
 
 ## PR 2 — sessions read through the daemon, `Refs #158`, `Closes #175`, `Closes #106`
 
 ## 7. One connection and one switch (needs PR 1)
 
-- [ ] 7.1 `SharedServices` (`src/modules/semantic/shared-services.ts`): one `DaemonConnection`, one switch, one stderr line; `createEmbeddingProvider` and `DaemonEmbeddingProvider` take it instead of owning the fallback. Existing embedding-provider tests pass; new test: a failing attach and an embed share one fallback line.
-- [ ] 7.2 `DaemonConnection` surfaces error `data` on `DaemonRpcError`.
+- [x] 7.1 `SharedServices` (`src/modules/semantic/shared-services.ts`): one `DaemonConnection`, one switch, one stderr line; `createEmbeddingProvider` and `DaemonEmbeddingProvider` take it instead of owning the fallback. Existing embedding-provider tests pass; new test: a failing attach and an embed share one fallback line.
+- [x] 7.2 `DaemonConnection` surfaces error `data` on `DaemonRpcError`.
 
 ## 8. Corpus service in the daemon (parallel-safe with 9.1–9.2)
 
-- [ ] 8.1 `DaemonErrorCode` += `CORPUS_NOT_READY` (with `data.status`), `CORPUS_FAILED`; `corpus` service (`nearest`, `nearestBlocks`) over `VaultEntries`: attach check, profile check, dimension check, scope folded into `allowed`/`exclude`, yield between anchors; unit and socket tests.
+- [x] 8.1 `DaemonErrorCode` += `CORPUS_NOT_READY` (with `data.status`), `CORPUS_FAILED`; `corpus` service (`nearest`, `nearestBlocks`) over `VaultEntries`: attach check, profile check, dimension check, scope folded into `allowed`/`exclude`, yield between anchors; unit and socket tests.
 
 ## 9. The session over `ICorpusReader`
 
-- [ ] 9.1 `executeRetrieval` over `ICorpusReader` (design D13), with a frozen copy of today's function as a test oracle (`test/semantic/_legacy-retrieval.ts`) and a parity test over a fixture corpus (`quick`, `deep`, with and without `allowed`, explicit and default thresholds, a fallback-threshold query); `runRetrievalPipeline` and `eval` switch to it through a `ICorpusReader` built over the snapshot until 9.3.
-- [ ] 9.2 `get_similar_notes` (path anchor, `NOT_FOUND` on `null`, forward links via a basename index of `entry.reader.scan()`) and `find_duplicates` (batches of 64, folded pairs, same order) over `ICorpusReader`, through the same snapshot-built reader; tests for the short-note `forward_link` case and single reporting of a pair.
-- [ ] 9.3 Swap `SemanticBackend` to `ICorpusReader + status(): Promise<BackendStatus> + dispose()` with every call site in one task: `LocalSemanticBackend` (in-process `VaultEntries`) and `DaemonSemanticBackend` (attach per epoch, `vault.status` per call with the timeout rule, `corpus.*`, error mapping); `semanticBackendFactory`, `resolveSemanticVault`, `search_notes`' `semantic_status`, server warmup gate, the three tools, `eval`; delete `createCorpusBackend`, `loadCorpusSnapshot`, `CorpusSnapshot`, the snapshot-built reader and `SearchEngine` from tool deps.
+- [x] 9.1 `executeRetrieval` over `ICorpusReader` (design D13), with a frozen copy of today's function as a test oracle (`test/semantic/_legacy-retrieval.ts`) and a parity test over a fixture corpus (`quick`, `deep`, with and without `allowed`, explicit and default thresholds, a fallback-threshold query); `runRetrievalPipeline` and `eval` switch to it through a `ICorpusReader` built over the snapshot until 9.3.
+- [x] 9.2 `get_similar_notes` (path anchor, `NOT_FOUND` on `null`, forward links via a basename index of `entry.reader.scan()`) and `find_duplicates` (batches of 64, folded pairs, same order) over `ICorpusReader`, through the same snapshot-built reader; tests for the short-note `forward_link` case and single reporting of a pair.
+- [x] 9.3 Swap `SemanticBackend` to `ICorpusReader + status(): Promise<BackendStatus> + dispose()` with every call site in one task: `LocalSemanticBackend` (in-process `VaultEntries`) and `DaemonSemanticBackend` (attach per epoch, `vault.status` per call with the timeout rule, `corpus.*`, error mapping); `semanticBackendFactory`, `resolveSemanticVault`, `search_notes`' `semantic_status`, server warmup gate, the three tools, `eval`; delete `createCorpusBackend`, `loadCorpusSnapshot`, `CorpusSnapshot`, the snapshot-built reader and `SearchEngine` from tool deps.
 
 ## 10. Startup and teardown
 
-- [ ] 10.1 Eager background attach of every semantically enabled vault at startup (`indexing 0/0` until answered); transport close releases the connection (detach) or disposes the local entries; `--no-shared` builds local entries up front. Server tests for each path, including one fallback line when the daemon cannot start.
+- [x] 10.1 Eager background attach of every semantically enabled vault at startup (`indexing 0/0` until answered); transport close releases the connection (detach) or disposes the local entries; `--no-shared` builds local entries up front. Server tests for each path, including one fallback line when the daemon cannot start.
 
 ## 11. Docs and ADR
 
-- [ ] 11.1 ADR-0020 "Per-vault state lives in the daemon's vault entry" (after the owner's ack; supersedes ADR-0014's in-process watcher in part), `docs/adr/INDEX.md`.
-- [ ] 11.2 `semantic-backend.md`, `search-engine.md`, `vault-registry.md`, `shared-daemon.md`, `vault-entry.md`, `own-corpus.md`, and a sweep of `docs/guide/` and `README.md` for snapshot, in-process watcher and per-session memory claims.
+- [x] 11.1 ADR-0020 "Per-vault state lives in the daemon's vault entry" (after the owner's ack; supersedes ADR-0014's in-process watcher in part), `docs/adr/INDEX.md`.
+- [x] 11.2 `semantic-backend.md`, `search-engine.md`, `vault-registry.md`, `shared-daemon.md`, `vault-entry.md`, `own-corpus.md`, and a sweep of `docs/guide/` and `README.md` for snapshot, in-process watcher and per-session memory claims.
 
 ## 12. Verify, retrospective, archive, PR 2
 
-- [ ] 12.1 `/opsx:verify` → `verify.md`: gates, `npm run eval` scores before and after, and by hand on the owner's vault: N sessions → `daemon status` shows one entry with `clients N` and no watcher in any session; killed daemon → next call reconnects; `--no-shared` in-process; per-session footprint at +300 s against the baseline on #158, posted there.
-- [ ] 12.2 `retrospective.md`.
-- [ ] 12.3 `npx openspec archive -y`, then PR 2 to `main` with `Refs #158`, `Closes #175`, `Closes #106`.
+- [x] 12.1 `/opsx:verify` → `verify.md`: gates, `npm run eval` scores before and after, and by hand on the owner's vault: N sessions → `daemon status` shows one entry with `clients N` and no watcher in any session; killed daemon → next call reconnects; `--no-shared` in-process; per-session footprint at +300 s against the baseline on #158, posted there.
+- [x] 12.2 `retrospective.md`.
+- [x] 12.3 `npx openspec archive -y`, then PR 2 to `main` with `Refs #158`, `Closes #175`, `Closes #106`.

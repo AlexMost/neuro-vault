@@ -430,7 +430,7 @@ Start from `main` after PR 1 merged. Each task below states its interfaces; the 
 ```ts
 export interface SharedServices {
   readonly mode: 'pending' | 'daemon' | 'local';
-  readonly connection: DaemonLink;
+  readonly connection: IDaemonLink;
   /** ensure() the connection; on DaemonUnavailableError flip to 'local' once, write one stderr line, and return 'local'. */
   ensure(): Promise<'daemon' | 'local'>;
   close(): void;
@@ -519,7 +519,7 @@ export function createDaemonSemanticBackend(opts: { services: SharedServices; va
 
   The daemon backend: per connection epoch, `vault.attach {vault: vaultRoot, profiles: [profile]}` before the first call (10 s), remembering the realpath key; `status()` = `vault.status` (10 s; timeout → `{state: 'unavailable', reason: 'daemon did not answer'}`); reads = `corpus.*` (30 s); `CORPUS_NOT_READY` → a readiness error carrying `data.status` that `resolveSemanticVault` and `search_notes` map as today; `CORPUS_FAILED` / `NOT_ATTACHED` → `DEPENDENCY_ERROR`; when `services.ensure()` returns `'local'`, every call delegates to `local()` (built once). `semanticBackendFactory` builds the daemon backend when `--shared` (default) and the local one under `--no-shared`; both are given the same lazily created in-process `VaultEntries` for the fallback.
 
-- [ ] **Step 1: Write the failing tests:** local backend `serves reads after the vault is ready`, `status is async`; daemon backend with a fake `DaemonLink`: `attaches once per epoch`, `re-attaches after a new epoch`, `status timeout reads unavailable`, `CORPUS_NOT_READY maps to the readiness error`, `switches to local once services is local`; `search_notes` `a status timeout degrades to lexical with unavailable`; `get_similar_notes` `SEMANTIC_INDEX_BUILDING while indexing` through the new status.
+- [ ] **Step 1: Write the failing tests:** local backend `serves reads after the vault is ready`, `status is async`; daemon backend with a fake `IDaemonLink`: `attaches once per epoch`, `re-attaches after a new epoch`, `status timeout reads unavailable`, `CORPUS_NOT_READY maps to the readiness error`, `switches to local once services is local`; `search_notes` `a status timeout degrades to lexical with unavailable`; `get_similar_notes` `SEMANTIC_INDEX_BUILDING while indexing` through the new status.
 - [ ] **Step 2:** Run `npx vitest run test` — expected: the new tests FAIL.
 - [ ] **Step 3:** Swap the interface and every call site in this one task; delete the files listed above.
 - [ ] **Step 4:** Run `npm test && npm run typecheck && npm run lint` — expected: PASS.

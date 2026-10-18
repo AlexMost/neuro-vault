@@ -4,7 +4,7 @@ import type { VaultScope } from './obsidian/vault-scope.js';
 import type { WikilinkGraphIndex } from './obsidian/wikilink-graph.js';
 import type { ListMatchingPaths } from './obsidian/query/index.js';
 import type { VaultProvider } from './obsidian/vault-provider.js';
-import type { SemanticBackend } from './obsidian/semantic-backend.js';
+import type { ISemanticBackend } from './obsidian/semantic-backend.js';
 import type { VaultConfigFile } from './obsidian/vault-config.js';
 import type { IVaultConfig } from '../types.js';
 
@@ -35,7 +35,7 @@ export interface IRegisteredVault {
    * Filter vault-relative note paths down to those still present on this
    * vault's disk. The corpus this server owns is watched, but only after a
    * debounce (design D6) and only while a reconcile pass is not already in
-   * flight, so a snapshot can still name a note deleted seconds ago; every
+   * flight, so the corpus can still name a note deleted seconds ago; every
    * tool returning corpus-derived paths runs them through here first. One
    * implementation, so no consumer can disagree about what "exists" means or
    * forget the check entirely.
@@ -49,7 +49,7 @@ export interface IRegisteredVault {
    * globally off (`semanticEnabled: false`) — a per-vault `semantic: false`
    * config still gets a backend, just one built `enabled: false`.
    */
-  backend?: SemanticBackend;
+  backend?: ISemanticBackend;
 }
 
 export interface IRegisteredVaultDeps {
@@ -66,13 +66,15 @@ export interface IRegisteredVaultDeps {
     vaultRoot: string;
     reader: VaultReader;
   }) => VaultProvider;
+  /**
+   * The vault entry reads its own scope from the vault (design D7), so the
+   * backend needs only where the vault is and whether it embeds at all.
+   */
   semanticBackendFactory: (opts: {
     vaultRoot: string;
     vaultName: string;
-    reader: VaultReader;
-    scope: VaultScope;
     enabled: boolean;
-  }) => SemanticBackend;
+  }) => ISemanticBackend;
   conventionsReaderFactory: (opts: { vaultRoot: string }) => () => Promise<string | null>;
   existingPathFilterFactory: (opts: { vaultRoot: string }) => FilterExistingPaths;
 }
@@ -140,8 +142,6 @@ export class VaultRegistry implements IVaultRegistry {
         ? deps.semanticBackendFactory({
             vaultRoot: v.path,
             vaultName: v.name,
-            reader,
-            scope,
             enabled: vaultConfig.semantic !== false,
           })
         : undefined;

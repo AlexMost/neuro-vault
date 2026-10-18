@@ -16,6 +16,7 @@ import type { Timers } from './lib/timers.js';
 import { cliBuild, daemonPaths, type CliBuild, type DaemonPaths } from './daemon/paths.js';
 import { cleanStaleSocket, defaultConnect, type SocketConnect } from './daemon/probe.js';
 import { ServiceRegistry } from './daemon/protocol.js';
+import { createCorpusService } from './daemon/services/corpus.js';
 import { createDaemonService } from './daemon/services/daemon.js';
 import { createEmbedService } from './daemon/services/embed.js';
 import { createVaultService } from './daemon/services/vault.js';
@@ -238,6 +239,7 @@ async function startServing(
   const registry = new ServiceRegistry();
   registry.register('embed', embed.handlers);
   registry.register('vault', createVaultService(entries));
+  registry.register('corpus', createCorpusService(entries));
 
   const stop = createStop(paths, r, server, entries);
   const startedAt = r.now().toISOString();

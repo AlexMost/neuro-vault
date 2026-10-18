@@ -1,5 +1,8 @@
-## ADDED Requirements
+# shared-corpus-reads Specification
 
+## Purpose
+How a session reads a vault's corpus without holding its vectors: the daemon's `corpus.nearest` / `corpus.nearestBlocks` reads over a vault entry's corpus (path or vector anchors, `allowed` / `exclude`, `CORPUS_NOT_READY` / `CORPUS_FAILED`), the session's one semantic-backend facade with an asynchronous status, background attach at startup, reconnect after a daemon dies, and the semantic leg, `get_similar_notes` and `find_duplicates` composed in the session over those reads with unchanged ranking. Rationale: ADR-0019, ADR-0020; mechanism: `docs/architecture/semantic-backend.md`, `docs/architecture/retrieval-policy.md`.
+## Requirements
 ### Requirement: corpus.nearest and corpus.nearestBlocks serve the corpus's reads
 
 The daemon SHALL serve `corpus.nearest { vault, profile, anchors, threshold, limit?, allowed?, exclude? }` answering `{ hits: ({ path, similarity }[] | null)[] }`, and `corpus.nearestBlocks { vault, profile, anchors, paths, threshold, limit? }` answering `{ hits: ({ path, heading, lines, similarity }[] | null)[] }`, each within 30 seconds. An anchor SHALL be either `{ vector }` or `{ path }`; for a path anchor the corpus SHALL use that note's own vector. `hits` SHALL hold one list per anchor, in order: `null` for a path anchor whose note has no vector, `[]` when nothing reaches the threshold. Results SHALL be ordered by similarity, then by path. `allowed` and `exclude` SHALL restrict note results before `limit` applies. No note or block vector SHALL appear in any answer. A call for a vault and profile this connection did not attach SHALL be answered `NOT_ATTACHED`; a vector anchor whose length is not the corpus's dimension `INVALID_PARAMS`; an unknown profile `UNKNOWN_PROFILE`. The daemon SHALL yield to its event loop between the anchors of one call.
@@ -55,7 +58,12 @@ A session SHALL reach each vault's corpus only through its semantic backend, whi
 
 ### Requirement: Sessions attach every vault in the background at startup
 
-At startup a session SHALL attach every semantically enabled vault with its profile, in the background, without delaying the MCP handshake; until the answer arrives the vault's status SHALL read `{ state: "indexing", indexed: 0, total: 0 }`. A session SHALL re-send `vault.attach` for each vault once per connection to the daemon before its first call on that connection.
+At startup a session SHALL attach every semantically enabled vault with its profile, in the background, without delaying the MCP handshake; the vault's status SHALL read `{ state: "indexing", indexed: 0, total: 0 }` until the attach answers, including while the daemon is still being located or started, without waiting for either. A session SHALL re-send `vault.attach` for each vault once per connection to the daemon before its first call on that connection.
+
+#### Scenario: A call during a cold start does not wait
+
+- **WHEN** no daemon is running, the session has just started one, and `search_notes` arrives before the daemon listens
+- **THEN** the call reads the vault's status as `indexing` 0/0 at once and answers from its lexical leg, and the vault attaches once the daemon answers
 
 #### Scenario: A reconnect re-attaches
 
@@ -66,7 +74,7 @@ At startup a session SHALL attach every semantically enabled vault with its prof
 
 ### Requirement: A daemon that dies mid-session is reconnected, not replaced
 
-When the connection to the daemon closes or a request times out, the call in flight SHALL fail and the next call SHALL reconnect, spawning the daemon if needed. The session SHALL NOT build an in-process watcher, reconcile loop or corpus because a connection dropped. It SHALL switch to the in-process vault entry only on the same condition, and through the same one-way switch, as the embedding provider: when the daemon cannot be located or started.
+When the connection to the daemon closes, the call in flight SHALL fail and the next call SHALL reconnect, spawning the daemon if needed; a request that times out SHALL fail that call only, and the connection SHALL stay up. The session SHALL NOT build an in-process watcher, reconcile loop or corpus because a connection dropped. It SHALL switch to the in-process vault entry only on the same condition, and through the same one-way switch, as the embedding provider: when the daemon cannot be located or started.
 
 #### Scenario: Killed daemon
 
@@ -104,3 +112,4 @@ When the connection to the daemon closes or a request times out, the call in fli
 
 - **WHEN** two notes are near-identical
 - **THEN** `find_duplicates` reports one pair for them, not two
+

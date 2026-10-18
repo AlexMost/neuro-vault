@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ShardStore } from '../../src/lib/obsidian/corpus/shard-store.js';
 import { TEST_DIMS, TEST_IDENTITY } from '../_identity.js';
 import { encodeVector } from '../../src/lib/obsidian/corpus/vector-codec.js';
-import { BackendError, loadSnapshot } from '../../eval/backends.js';
+import { BackendError, loadCorpus, notesWithVectors } from '../../eval/backends.js';
 
 function unitVec(hot: number): number[] {
   const v = new Array<number>(TEST_DIMS).fill(0);
@@ -13,11 +13,11 @@ function unitVec(hot: number): number[] {
   return v;
 }
 
-describe('own backend snapshot', () => {
+describe('own corpus', () => {
   let vaultRoot: string;
   afterEach(async () => rm(vaultRoot, { recursive: true, force: true }));
 
-  it('decodes shards into SmartSource entries and skips vectorless notes', async () => {
+  it('loads the shards into a corpus that ranks only the notes with a vector', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-own-'));
     const store = new ShardStore(vaultRoot, {
       modelKey: TEST_IDENTITY.model_key,
@@ -41,18 +41,20 @@ describe('own backend snapshot', () => {
       blocks: [],
     });
 
-    const sources = await loadSnapshot(vaultRoot, TEST_IDENTITY);
-    expect([...sources.keys()]).toEqual(['Notes/a.md']);
-    const a = sources.get('Notes/a.md')!;
-    expect(a.embedding[0]).toBe(1);
-    expect(a.blocks).toHaveLength(1);
-    expect(a.blocks[0]).toMatchObject({ key: '#H1', heading: 'H1', lines: [1, 4] });
-    expect(a.blocks[0].embedding[1]).toBe(1);
+    const corpus = await loadCorpus(vaultRoot, TEST_IDENTITY);
+    expect(corpus.size()).toBe(1);
+    expect(await notesWithVectors(corpus)).toEqual(['Notes/a.md']);
+    expect(corpus.vectorOf('Notes/a.md')?.[0]).toBe(1);
+    const [blocks] = await corpus.nearestBlocks([{ vector: unitVec(1) }], {
+      paths: ['Notes/a.md', 'Notes/short.md'],
+      threshold: 0.5,
+    });
+    expect(blocks).toEqual([{ path: 'Notes/a.md', heading: 'H1', lines: [1, 4], similarity: 1 }]);
   });
 
   it('fails an empty corpus pointing at the index command', async () => {
     vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-own-empty-'));
-    const err = await loadSnapshot(vaultRoot, TEST_IDENTITY).catch((e: unknown) => e);
+    const err = await loadCorpus(vaultRoot, TEST_IDENTITY).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BackendError);
     expect((err as Error).message).toContain('neuro-vault-mcp index');
     expect((err as Error).message).toContain('--model bge-micro-v2');
@@ -78,7 +80,7 @@ describe('own backend snapshot', () => {
       blocks: [],
     });
     await expect(
-      loadSnapshot(vaultRoot, { ...TEST_IDENTITY, model_key: 'harrier-270m' }),
+      loadCorpus(vaultRoot, { ...TEST_IDENTITY, model_key: 'harrier-270m' }),
     ).rejects.toThrow(
       `was indexed with harrier-270m (embed_version ${TEST_IDENTITY.embed_version + 1}), not harrier-270m (embed_version ${TEST_IDENTITY.embed_version}) — rebuild it for this model with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
     );
@@ -89,7 +91,7 @@ describe('own backend snapshot', () => {
     vaultRoot = base;
     const spaced = path.join(base, "My Vault's copy");
     await mkdir(spaced);
-    const err = await loadSnapshot(spaced, TEST_IDENTITY).catch((e: unknown) => e);
+    const err = await loadCorpus(spaced, TEST_IDENTITY).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(BackendError);
     const quoted = `'${spaced.replaceAll("'", `'\\''`)}'`;
     expect((err as Error).message).toContain(`--vault ${quoted} --model bge-micro-v2`);
@@ -110,7 +112,7 @@ describe('own backend snapshot', () => {
       embedding: encodeVector(unitVec(0)),
       blocks: [],
     });
-    await expect(loadSnapshot(vaultRoot, TEST_IDENTITY)).rejects.toThrow(
+    await expect(loadCorpus(vaultRoot, TEST_IDENTITY)).rejects.toThrow(
       `has no readable manifest — rebuild it with: neuro-vault-mcp index --vault ${vaultRoot} --model bge-micro-v2`,
     );
   });
@@ -128,7 +130,7 @@ describe('own backend snapshot', () => {
     });
     const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      await expect(loadSnapshot(vaultRoot, TEST_IDENTITY)).rejects.toThrow(
+      await expect(loadCorpus(vaultRoot, TEST_IDENTITY)).rejects.toThrow(
         'has no readable manifest',
       );
       // Decoding would have warned once per shard and then read as "missing or empty".
@@ -153,7 +155,7 @@ describe('own backend snapshot', () => {
     const manifest = path.join(vaultRoot, '.neuro-vault/corpus/granite-97m/manifest.json');
     const before = await readFile(manifest, 'utf8');
 
-    const err = await loadSnapshot(vaultRoot, {
+    const err = await loadCorpus(vaultRoot, {
       ...TEST_IDENTITY,
       model_key: 'harrier-270m',
     }).catch((e: unknown) => e);
@@ -176,7 +178,7 @@ describe('own backend snapshot', () => {
       JSON.stringify({ ...TEST_IDENTITY, created: 'x' }),
     );
 
-    await expect(loadSnapshot(vaultRoot, TEST_IDENTITY)).rejects.toThrow('is missing or empty');
+    await expect(loadCorpus(vaultRoot, TEST_IDENTITY)).rejects.toThrow('is missing or empty');
     expect((await stat(path.join(corpus, 'manifest.json'))).isFile()).toBe(true);
     await expect(stat(path.join(corpus, 'reconcile.lock'))).rejects.toMatchObject({
       code: 'ENOENT',

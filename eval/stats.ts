@@ -1,6 +1,5 @@
-import type { SmartSource } from '../src/lib/obsidian/corpus/types.js';
+import type { ICorpusReader } from '../src/lib/obsidian/corpus/corpus.js';
 import type { SimilarityDefaults } from '../src/lib/model-profiles.js';
-import { findNeighbors } from '../src/modules/semantic/search-engine.js';
 import type { QueryScore } from './metrics.js';
 
 export interface Quantiles {
@@ -146,34 +145,43 @@ export function thresholdForPassRate(values: number[], rate: number): number | n
  */
 export const MAX_STATS_SOURCES = 11_000;
 
-export function collectPopulations(args: {
+export async function collectPopulations(args: {
   queryVectors: number[][];
-  sources: Map<string, SmartSource>;
+  corpus: ICorpusReader;
+  /** Every note the corpus holds a vector for. */
+  paths: readonly string[];
   seedPool: number;
   expansionLimit: number;
   topK: number;
-}): Populations {
-  const { sources } = args;
+}): Promise<Populations> {
+  const { corpus } = args;
+  /** Every note's similarity to `anchor`, best first; null for a note without a vector. */
+  const rankAll = async (
+    anchor: { vector: number[] } | { path: string },
+    exclude?: string,
+  ): Promise<{ path: string; similarity: number }[] | null> => {
+    const [hits] = await corpus.nearest([anchor], {
+      threshold: -1,
+      ...(exclude === undefined ? {} : { exclude: [exclude] }),
+    });
+    return hits;
+  };
   const query_candidates: number[] = [];
   const query_all: number[] = [];
   const expansion_neighbours: number[] = [];
   const seed_all: number[] = [];
-  // Each vector is ranked once over every source; the ranked populations are slices of it.
+  // Each vector is ranked once over every note; the ranked populations are slices of it.
   for (const queryVector of args.queryVectors) {
-    const all = findNeighbors({ queryVector, sources: sources.values(), threshold: -1 });
+    const all = (await rankAll({ vector: queryVector })) ?? [];
     query_all.push(...all.map((r) => r.similarity));
     const ranked = all.slice(0, args.topK);
     query_candidates.push(...ranked.map((r) => r.similarity));
     const seeds = ranked.slice(0, args.seedPool);
     const seedSet = new Set(seeds.map((s) => s.path));
     for (const seed of seeds) {
-      const source = sources.get(seed.path);
-      if (!source) continue;
-      const others = findNeighbors({
-        queryVector: source.embedding,
-        sources: sources.values(),
-        threshold: -1,
-      }).filter((n) => !seedSet.has(n.path));
+      const neighbours = await rankAll({ path: seed.path });
+      if (!neighbours) continue;
+      const others = neighbours.filter((n) => !seedSet.has(n.path));
       seed_all.push(...others.map((n) => n.similarity));
       // Mirrors the production expansion leg, minus its floor.
       expansion_neighbours.push(...others.slice(0, args.expansionLimit).map((n) => n.similarity));
@@ -182,13 +190,8 @@ export function collectPopulations(args: {
   const note_all: number[] = [];
   const note_top10: number[] = [];
   const note_max: number[] = [];
-  for (const source of sources.values()) {
-    const others = findNeighbors({
-      queryVector: source.embedding,
-      sources: sources.values(),
-      threshold: -1,
-      excludePath: source.path,
-    });
+  for (const notePath of args.paths) {
+    const others = (await rankAll({ path: notePath }, notePath)) ?? [];
     note_all.push(...others.map((n) => n.similarity));
     note_top10.push(...others.slice(0, 10).map((n) => n.similarity));
     const [nearest] = others;

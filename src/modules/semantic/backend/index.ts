@@ -1,129 +1,122 @@
-import { buildReconcileFsDeps } from '../../../lib/obsidian/corpus/fs-deps.js';
-import type { CorpusIdentity } from '../../../lib/obsidian/corpus/identity.js';
-import { reconcileCorpus } from '../../../lib/obsidian/corpus/reconcile.js';
-import { ShardStore } from '../../../lib/obsidian/corpus/shard-store.js';
-import { loadCorpusSnapshot } from '../../../lib/obsidian/corpus/snapshot.js';
-import type { SemanticBackend } from '../../../lib/obsidian/semantic-backend.js';
-import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
-import type { VaultScope } from '../../../lib/obsidian/vault-scope.js';
-import { startVaultWatcher, type WatcherFactory } from '../../../lib/vault-entry/watcher.js';
-import type { QueuedEmbedder } from '../embed-queue.js';
 import {
-  createCorpusBackend,
-  type CorpusBackend,
-  type CorpusBackendDeps,
-} from './corpus-backend.js';
+  CorpusNotReadyError,
+  type BackendStatus,
+  type ISemanticBackend,
+} from '../../../lib/obsidian/semantic-backend.js';
+import { VaultEntries, type IVaultEntriesDeps } from '../../../lib/vault-entry/index.js';
+import type { QueuedEmbedder } from '../embed-queue.js';
+import type { ISharedServices } from '../shared-services.js';
+import { createDaemonSemanticBackend } from './daemon-backend.js';
+import { createLocalSemanticBackend } from './local-backend.js';
 
-export interface OwnCorpusBackendFactoryDeps {
-  /** Shared process-wide (design D7) — one model, one embed in flight. */
+export { createDaemonSemanticBackend } from './daemon-backend.js';
+export { createLocalSemanticBackend } from './local-backend.js';
+
+/** The one connection id this process attaches its in-process vault entries under. */
+export const LOCAL_CONNECTION_ID = 0;
+
+export interface ISemanticBackendsOptions {
+  /** The process's connection and one-way switch. */
+  services: ISharedServices;
+  /** `--shared` (default): the daemon serves the corpus; `--no-shared`: this process does. */
+  shared: boolean;
+  /** The one model profile this process serves. */
+  profile: string;
+  /** Shared process-wide (design D7): the in-process entries index through it. */
   embedder: QueuedEmbedder;
-  /** What the embedder's vectors are — the manifest records it and a stored corpus must match it. */
-  identity: CorpusIdentity;
-  /** Injected by tests; production defaults to the chokidar-backed one. */
-  createWatcher?: WatcherFactory;
-  /**
-   * Injected by tests; production defaults to {@link createCorpusBackend}.
-   * Whether this factory disposes the backend it built — and in what order
-   * relative to the watcher — is otherwise unobservable from the outside, since
-   * `SemanticBackend` exposes nothing that changes once disposed.
-   */
-  createBackend?: (deps: CorpusBackendDeps) => CorpusBackend;
-  /** Defaults to console.error — warnings must never touch stdout (the MCP transport). */
-  warn?: (message: string) => void;
+  /** Injected by tests; production builds a {@link VaultEntries}. */
+  createEntries?: (deps: IVaultEntriesDeps) => VaultEntries;
 }
 
-export interface OwnCorpusBackendOptions {
+export interface ISemanticBackendOptions {
   vaultRoot: string;
-  vaultName: string;
-  reader: VaultReader;
-  /**
-   * The vault's discovery scope. Applied to every decoded snapshot, so a note
-   * excluded after the corpus was written is never rankable — the corpus only
-   * catches up when a reconcile sweeps it, and until then the semantic leg
-   * would otherwise expose what the lexical leg (which reads through the
-   * scoped reader) already hides.
-   */
-  scope: VaultScope;
   /** Global `--semantic` AND the per-vault `semantic` key, already resolved. */
   enabled: boolean;
 }
 
+export interface ISemanticBackends {
+  /** The registry's `semanticBackendFactory`: one vault in, its backend out. */
+  factory: (opts: ISemanticBackendOptions) => ISemanticBackend;
+  /**
+   * Disposes the in-process vault entries, if any vault ever needed them. Final:
+   * a backend that needs them afterwards reads `unavailable` and fails its reads.
+   */
+  dispose(): Promise<void>;
+}
+
 /**
- * The production `semanticBackendFactory`: one vault in, one live backend over
- * that vault's own corpus out (design D3).
- *
- * This is where the pieces meet — the corpus store under the vault, the
- * filesystem reconcile deps, the shared embed queue, the shard→snapshot decode,
- * and the debounced watcher that asks for another pass once the vault goes
- * quiet. Nothing here is awaited: the factory is synchronous by contract so
- * registry construction — and therefore startup — never waits on indexing.
- *
- * A disabled vault gets a backend that reports `disabled` and runs nothing, and
- * no watcher at all: `requestReconcile()` is inert on such a backend, so a
- * watcher would only burn file handles for a signal nobody acts on.
- *
- * `dispose()` closes the watcher first, then the backend. A live chokidar
- * watcher holds the event loop open, so skipping it would outlive the client
- * that started the server (design D10).
+ * The backend of a vault whose config sets `"semantic": false`: it never
+ * attaches, so neither the daemon nor this process watches or indexes it.
  */
-export function createOwnCorpusBackendFactory(
-  deps: OwnCorpusBackendFactoryDeps,
-): (opts: OwnCorpusBackendOptions) => SemanticBackend {
-  const warn = deps.warn ?? ((message: string) => console.error(message));
+export function createDisabledSemanticBackend(): ISemanticBackend {
+  const status: BackendStatus = { state: 'disabled' };
+  const refuse = (): Promise<never> => Promise.reject(new CorpusNotReadyError(status));
+  return {
+    status: () => Promise.resolve(status),
+    nearest: refuse,
+    nearestBlocks: refuse,
+    dispose: () => Promise.resolve(),
+  };
+}
 
-  const createBackend = deps.createBackend ?? createCorpusBackend;
+/**
+ * Every vault's semantic backend, and the one in-process {@link VaultEntries}
+ * the local ones share (design D11, D12). Under `--shared` a vault's backend
+ * is the daemon facade; under `--no-shared`, or once the daemon could not be
+ * located or started, it is the vault entry run in this process. The entries
+ * are built on first use, so a session the daemon serves never builds a
+ * watcher, a reconcile loop or a corpus of its own.
+ *
+ * The entries index with the session's own embedder, for the session's one
+ * profile; nothing in the process attaches another. They never idle out —
+ * the session's backends hold them for its whole life — and `dispose()`
+ * closes their watchers and stops the pass in flight, so nothing they started
+ * outlives the client (design D10).
+ */
+export function createSemanticBackends(opts: ISemanticBackendsOptions): ISemanticBackends {
+  const createEntries = opts.createEntries ?? ((deps) => new VaultEntries(deps));
+  let entries: VaultEntries | undefined;
+  let disposed = false;
 
-  return ({ vaultRoot, vaultName, reader, scope, enabled }): SemanticBackend => {
-    const store = new ShardStore(vaultRoot, {
-      warn,
-      modelKey: deps.identity.model_key,
-      dims: deps.identity.dims,
-    });
-    const fsDeps = buildReconcileFsDeps({ vaultRoot, reader });
-    const embedDocuments = deps.embedder.asDocumentEmbedFn();
-
-    const backend = createBackend({
-      vaultRoot,
-      vaultName,
-      enabled,
-      store,
-      identity: deps.identity,
-      loadSnapshot: (s, opts) =>
-        loadCorpusSnapshot(s, {
-          shards: opts?.shards,
-          isExcluded: (relPath) => scope.isExcluded(relPath),
-        }),
-      reconcile: (opts) =>
-        reconcileCorpus({ ...fsDeps, embedDocuments, store, warn, identity: deps.identity }, opts),
-      warn,
-    });
-
-    const watcher = enabled
-      ? startVaultWatcher({
-          vaultRoot,
-          vaultName,
-          scope,
-          onQuiet: () => backend.requestReconcile(),
-          createWatcher: deps.createWatcher,
-          warn,
-        })
-      : undefined;
-
-    return {
-      snapshot: () => backend.snapshot(),
-      status: () => backend.status(),
-      dispose: async () => {
-        // `finally`, not a plain sequence: a `watcher.close()` that rejects
-        // (chokidar can) must not leave the corpus backend un-disposed. The
-        // rejection still propagates — the server's disposer settles each
-        // vault independently and reports it — but both halves have run by
-        // then.
-        try {
-          await watcher?.close();
-        } finally {
-          await backend.dispose();
+  function localEntries(): VaultEntries {
+    // A call still in flight at shutdown (a daemon facade whose switch flipped
+    // after teardown, say) must not start watchers and a pass nothing disposes.
+    if (disposed) throw new Error('semantic backends disposed: the session is shutting down');
+    entries ??= createEntries({
+      embedderFor: (key) => {
+        if (key !== opts.profile) {
+          throw new Error(`this session embeds "${opts.profile}" only, not "${key}"`);
         }
+        return opts.embedder.asDocumentEmbedFn();
       },
-    };
+      idleTimeoutMs: 0,
+    });
+    return entries;
+  }
+
+  function localBackend(vaultRoot: string): ISemanticBackend {
+    return createLocalSemanticBackend({
+      entries: localEntries(),
+      connectionId: LOCAL_CONNECTION_ID,
+      vaultRoot,
+      profile: opts.profile,
+    });
+  }
+
+  return {
+    factory: ({ vaultRoot, enabled }) => {
+      if (!enabled) return createDisabledSemanticBackend();
+      if (!opts.shared) return localBackend(vaultRoot);
+      return createDaemonSemanticBackend({
+        services: opts.services,
+        vaultRoot,
+        profile: opts.profile,
+        local: () => localBackend(vaultRoot),
+      });
+    },
+    dispose: async () => {
+      disposed = true;
+      await entries?.dispose();
+    },
   };
 }

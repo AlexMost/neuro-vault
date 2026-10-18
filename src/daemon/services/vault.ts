@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import { VaultEntryError, type VaultEntries } from '../../lib/vault-entry/index.js';
+import type { VaultEntries } from '../../lib/vault-entry/index.js';
 import {
   asRecord,
   DaemonRpcError,
@@ -9,6 +9,7 @@ import {
   type IConnectionContext,
   type ServiceHandlers,
 } from '../protocol.js';
+import { wired } from './wired.js';
 
 function profilesParam(params: Record<string, unknown>): string[] {
   const value = params.profiles;
@@ -16,16 +17,6 @@ function profilesParam(params: Record<string, unknown>): string[] {
     throw new DaemonRpcError('INVALID_PARAMS', 'profiles must be an array of strings');
   }
   return value;
-}
-
-/** A `VaultEntryError` keeps its code and message on the wire; anything else stays INTERNAL. */
-async function wired<T>(work: () => Promise<T> | T): Promise<T> {
-  try {
-    return await work();
-  } catch (error) {
-    if (error instanceof VaultEntryError) throw new DaemonRpcError(error.code, error.message);
-    throw error;
-  }
 }
 
 /**

@@ -4,12 +4,13 @@ import path from 'node:path';
 
 import { vi } from 'vitest';
 
+import type { ICorpusReader } from '../../../src/lib/obsidian/corpus/corpus.js';
 import { buildBasenameIndex, type BasenameIndex } from '../../../src/lib/obsidian/index.js';
 import type {
   BackendStatus,
-  CorpusSnapshot,
-  SemanticBackend,
+  ISemanticBackend,
 } from '../../../src/lib/obsidian/semantic-backend.js';
+import type { VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import {
@@ -17,27 +18,23 @@ import {
   type SearchNotesInput,
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
-import {
-  findBlockNeighbors,
-  findDuplicates,
-  findNeighbors,
-} from '../../../src/modules/semantic/search-engine.js';
 import type {
   QueryEmbedder,
   ListMatchingPaths,
-  SearchEngine,
   SmartSource,
 } from '../../../src/modules/semantic/types.js';
 import { callTool } from '../../_gate.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
+import { corpusOver } from '../../_memory-corpus.js';
 import type { SimilarityDefaults } from '../../../src/lib/model-profiles.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 
 export const MODEL_KEY = 'bge-micro-v2';
 
-/** A minimal `SemanticBackend`-shaped corpus, snapshot-only. Tests build fakes against this. */
-export interface CorpusLike {
-  snapshot(): Promise<CorpusSnapshot>;
+/** A corpus whose two reads are spies, so a test can assert on what reached the corpus. */
+export interface CorpusLike extends ICorpusReader {
+  nearest: ReturnType<typeof vi.fn<ICorpusReader['nearest']>>;
+  nearestBlocks: ReturnType<typeof vi.fn<ICorpusReader['nearestBlocks']>>;
 }
 
 // Three fixed notes/blocks, one per fixture "name" — what the old Smart
@@ -152,26 +149,43 @@ export function makeFakeGraph(counts: Record<string, number> = {}): WikilinkGrap
   } as unknown as WikilinkGraphIndex;
 }
 
-export function makeFakeCorpusIndex(sources: Map<string, SmartSource>): CorpusLike {
-  const basenameIndex = buildBasenameIndex(sources.keys());
+/**
+ * A reader whose scoped note list is exactly the corpus' paths: what `entry.reader.scan()`
+ * returns for a vault whose every note carries a record (a short note is a path in the scan
+ * with an empty vector in `sources`).
+ */
+export function readerOf(sources: Map<string, SmartSource>): VaultReader {
   return {
-    snapshot: vi.fn().mockResolvedValue({ sources, basenameIndex }),
+    scan: async () => [...sources.keys()].sort(),
+    readNotes: async () => [],
+  };
+}
+
+/** The real corpus ranking over `sources`, behind spies. */
+export function makeFakeCorpusIndex(sources: Map<string, SmartSource>): CorpusLike {
+  const corpus = corpusOver(sources);
+  return {
+    nearest: vi.fn<ICorpusReader['nearest']>((anchors, opts) => corpus.nearest(anchors, opts)),
+    nearestBlocks: vi.fn<ICorpusReader['nearestBlocks']>((anchors, opts) =>
+      corpus.nearestBlocks(anchors, opts),
+    ),
   };
 }
 
 /**
- * Wrap a snapshot-only fake (`makeFakeCorpusIndex`, or any object with a
- * `snapshot()`) as a `SemanticBackend` for `entry.backend`. `snapshot` is the
- * same function reference as `corpus.snapshot` — a caller holding onto
- * `corpus` can still assert on its mock's call count via `backend.snapshot`.
+ * Wrap a corpus (`makeFakeCorpusIndex`, or any `ICorpusReader`) as an
+ * `ISemanticBackend` for `entry.backend`, parked in `status`. The reads are the
+ * corpus's own function references, so a caller holding onto the corpus can
+ * still assert on its spies.
  */
 export function toBackend(
-  corpus: Pick<CorpusLike, 'snapshot'>,
+  corpus: ICorpusReader,
   status: BackendStatus = { state: 'ready' },
-): SemanticBackend {
+): ISemanticBackend & { status: ReturnType<typeof vi.fn<ISemanticBackend['status']>> } {
   return {
-    snapshot: corpus.snapshot,
-    status: () => status,
+    nearest: corpus.nearest,
+    nearestBlocks: corpus.nearestBlocks,
+    status: vi.fn<ISemanticBackend['status']>(async () => status),
     dispose: async () => {},
   };
 }
@@ -188,11 +202,10 @@ export function toBackend(
 export async function makeSearchDeps(opts: {
   sources: Map<string, SmartSource>;
   embeddingProvider: QueryEmbedder;
-  searchEngine: SearchEngine;
   modelKey: string;
   similarity?: SimilarityDefaults;
   absentPaths?: Set<string>;
-  corpus?: CorpusLike;
+  corpus?: ICorpusReader;
   graph?: WikilinkGraphIndex;
   listMatchingPaths?: ListMatchingPaths;
   backendStatus?: BackendStatus;
@@ -200,10 +213,10 @@ export async function makeSearchDeps(opts: {
   deps: {
     registry: ReturnType<typeof makeTestRegistry>;
     embeddingProvider: QueryEmbedder;
-    searchEngine: SearchEngine;
     modelKey: string;
     similarity: SimilarityDefaults;
   };
+  backend: ReturnType<typeof toBackend>;
   cleanup: () => Promise<void>;
 }> {
   const vaultRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'search-deps-'));
@@ -217,11 +230,12 @@ export async function makeSearchDeps(opts: {
   }
 
   const corpus = opts.corpus ?? makeFakeCorpusIndex(opts.sources);
+  const backend = toBackend(corpus, opts.backendStatus);
   const registry = makeTestRegistry([
     {
       name: 'v',
       path: vaultRoot,
-      backend: toBackend(corpus, opts.backendStatus),
+      backend,
       graph: opts.graph ?? makeFakeGraph(),
       listMatchingPaths: opts.listMatchingPaths ?? (async () => new Set()),
     },
@@ -231,10 +245,10 @@ export async function makeSearchDeps(opts: {
     deps: {
       registry,
       embeddingProvider: opts.embeddingProvider,
-      searchEngine: opts.searchEngine,
       modelKey: opts.modelKey,
       similarity: opts.similarity ?? TEST_SIMILARITY,
     },
+    backend,
     cleanup: () => fs.rm(vaultRoot, { recursive: true, force: true }),
   };
 }
@@ -252,13 +266,13 @@ export function makeSyntheticSource(
 
 /**
  * Thin single-vault wrapper over `makeSearchDeps` for `semantic_status`
- * tests: build a synthetic corpus from `snapshotPaths` (default: one note),
+ * tests: build a synthetic corpus from `corpusPaths` (default: one note),
  * a disk fixture where only `existingPaths` (default: all of them) actually
  * exist, wire `backendStatus` onto the vault's backend, and run
  * `search_notes` once with `input`. `allowed`, when given, becomes the
- * vault's `listMatchingPaths` result (for filter tests); `snapshot`, when
- * given, is used as the corpus's `snapshot` spy so a test can assert it was
- * (not) called. This helper's disk fixture always writes empty bodies (see
+ * vault's `listMatchingPaths` result (for filter tests); `corpus`, when
+ * given, replaces the synthetic corpus so a test can assert on its spies
+ * (see `makeFakeCorpusIndex`). This helper's disk fixture always writes empty bodies (see
  * `makeSearchDeps`, which defaults to the registry's `emptyReader` — content
  * written to disk is invisible to the lexical leg regardless); a test that
  * needs a real lexical match should use `makeLexicalVault` from
@@ -267,28 +281,24 @@ export function makeSyntheticSource(
 export async function runSearch(opts: {
   backendStatus?: BackendStatus;
   input: SearchNotesInput;
-  snapshotPaths?: string[];
+  corpusPaths?: string[];
   existingPaths?: string[];
   allowed?: Set<string>;
-  snapshot?: ReturnType<typeof vi.fn>;
+  corpus?: ICorpusReader;
 }): Promise<SearchNotesOutput> {
-  const snapshotPaths = opts.snapshotPaths ?? ['Notes/a.md'];
-  const sources = new Map(snapshotPaths.map((p) => [p, makeSyntheticSource(p)]));
-  const basenameIndex = buildBasenameIndex(sources.keys());
-  const snapshotFn = opts.snapshot ?? vi.fn();
-  snapshotFn.mockResolvedValue({ sources, basenameIndex });
+  const corpusPaths = opts.corpusPaths ?? ['Notes/a.md'];
+  const sources = new Map(corpusPaths.map((p) => [p, makeSyntheticSource(p)]));
 
-  const existingPaths = opts.existingPaths ?? snapshotPaths;
-  const absentPaths = new Set(snapshotPaths.filter((p) => !existingPaths.includes(p)));
+  const existingPaths = opts.existingPaths ?? corpusPaths;
+  const absentPaths = new Set(corpusPaths.filter((p) => !existingPaths.includes(p)));
 
   const allowed = opts.allowed;
   const { deps, cleanup } = await makeSearchDeps({
     sources,
     embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0, 0]) },
-    searchEngine: { findNeighbors, findDuplicates, findBlockNeighbors },
     modelKey: MODEL_KEY,
     absentPaths,
-    corpus: { snapshot: snapshotFn },
+    ...(opts.corpus !== undefined ? { corpus: opts.corpus } : {}),
     backendStatus: opts.backendStatus,
     ...(allowed !== undefined ? { listMatchingPaths: async () => allowed } : {}),
   });
@@ -303,5 +313,5 @@ export async function runSearch(opts: {
 
 export { makeTestRegistry };
 
-export { findNeighbors, findDuplicates, findBlockNeighbors, buildBasenameIndex };
-export type { QueryEmbedder, ListMatchingPaths, SearchEngine, SmartSource, BasenameIndex };
+export { buildBasenameIndex };
+export type { QueryEmbedder, ListMatchingPaths, SmartSource, BasenameIndex };
