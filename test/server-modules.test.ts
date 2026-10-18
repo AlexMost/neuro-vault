@@ -1154,6 +1154,101 @@ describe('startup attach', () => {
     }
   });
 
+  /** Hangs up the way a stdio client does mid-warmup, and returns what the server wrote to stderr. */
+  async function hangUpMidWarmup(opts: {
+    daemon: ReturnType<typeof fakeDaemon>;
+    services: ReturnType<typeof servicesOver>;
+    embeddingProvider: never;
+    warming: () => boolean;
+    settle: () => Promise<void>;
+  }): Promise<string[]> {
+    const root = await createTempVaultPath();
+    const vaultPath = await makeVault(root, 'alpha');
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    stdout.resume();
+    const written: string[] = [];
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
+    try {
+      await startNeuroVaultServer(
+        {
+          vaults: [{ name: 'alpha', path: vaultPath }],
+          semantic: { enabled: true, model: GRANITE, shared: true },
+        },
+        {
+          embeddingProvider: opts.embeddingProvider,
+          sharedServices: opts.services,
+          transportFactory: () => new StdioServerTransport(stdin, stdout),
+          stdin,
+        },
+      );
+      await vi.waitFor(() => expect(opts.warming()).toBe(true));
+      stdin.end();
+      await vi.waitFor(() => expect(opts.daemon.closed).toHaveLength(1));
+      await opts.settle();
+      await settle();
+      return written;
+    } finally {
+      stderr.mockRestore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }
+
+  const attachReady = ({ method }: IDaemonCall) =>
+    method === 'vault.attach'
+      ? { vault: '/real', profiles: { 'granite-97m': { state: 'ready' } } }
+      : new Promise(() => {});
+
+  it('a warmup that meets the closed services at hang-up writes nothing to stderr', async () => {
+    const daemon = fakeDaemon(attachReady);
+    const services = servicesOver(daemon);
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let initialized: Promise<unknown> | undefined;
+    const provider = fakeProvider();
+    // The warmup reaches the services only once the session has hung up.
+    provider.initialize = vi.fn(async () => {
+      await released;
+      await services.ensure();
+    });
+    const written = await hangUpMidWarmup({
+      daemon,
+      services,
+      embeddingProvider: provider as never,
+      warming: () => provider.initialize.mock.calls.length > 0,
+      settle: async () => {
+        initialized = provider.initialize.mock.results[0]?.value as Promise<unknown>;
+        release();
+        await initialized?.catch(() => {});
+      },
+    });
+    await expect(initialized).rejects.toThrow('shared services closed');
+    expect(written.filter((line) => line.includes('semantic warmup failed'))).toEqual([]);
+  });
+
+  it('a warmup whose daemon handshake is in flight at hang-up writes nothing to stderr', async () => {
+    const daemon = fakeDaemon(attachReady);
+    const services = servicesOver(daemon);
+    const embeddingProvider = new DaemonEmbeddingProvider({
+      profile: GRANITE,
+      services,
+      createFallback: () => fakeProvider(),
+      initialMaxBatchSize: 8,
+    });
+    const written = await hangUpMidWarmup({
+      daemon,
+      services,
+      embeddingProvider: embeddingProvider as never,
+      // `embed.initialize` is never answered: the hang-up lands mid-handshake.
+      warming: () => daemon.calls.some((call) => call.method === 'embed.initialize'),
+      settle: () => settle(),
+    });
+    expect(written.filter((line) => line.includes('semantic warmup failed'))).toEqual([]);
+  });
+
   it('--no-shared builds local entries and no connection', async () => {
     const root = await createTempVaultPath();
     const alpha = await makeVault(root, 'alpha');

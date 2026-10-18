@@ -71,9 +71,10 @@ function queryOf(anchor: CorpusAnchor, memory: Map<string, IResident>): ArrayLik
 
 /**
  * The in-memory {@link ICorpus} over a {@link ShardStore}: every write goes to the shard files
- * first and to memory only once that write resolved, so memory never claims more than disk holds.
- * Ranking is the brute-force scan the session path runs (same scoring, same ordering), with
- * `allowed` / `exclude` applied before `limit`.
+ * first and to memory only once that write resolved, so memory never claims more than disk holds
+ * (a directory `index --prune` removed is written back by the next `ensureIdentity`).
+ * Ranking is a brute-force scan over every resident vector (`scoring.ts`'s scores and order),
+ * with `allowed` / `exclude` applied before `limit`.
  */
 export class ShardCorpus implements ICorpus {
   private memory: Map<string, IResident> | null = null;
@@ -169,7 +170,7 @@ export class ShardCorpus implements ICorpus {
       const hits: IBlockHit[] = [];
       for (const notePath of new Set(opts.paths)) {
         const resident = memory.get(notePath);
-        // A note without a note vector is out of the corpus as the session path sees it, blocks too.
+        // A note without a note vector takes no part in ranking, and neither do its blocks.
         if (resident === undefined || resident.vector === null) continue;
         for (const block of resident.blocks) {
           if (block.embedding.length === 0) continue;

@@ -8,7 +8,11 @@ import {
 } from './modules/semantic/index.js';
 import { createQueuedEmbedder } from './modules/semantic/embed-queue.js';
 import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
-import { createSharedServices, type ISharedServices } from './modules/semantic/shared-services.js';
+import {
+  createSharedServices,
+  SharedServicesClosedError,
+  type ISharedServices,
+} from './modules/semantic/shared-services.js';
 import type { EmbeddingProvider } from './modules/semantic/types.js';
 import { createSemanticBackends } from './modules/semantic/backend/index.js';
 import { createOperationsModule } from './modules/operations/index.js';
@@ -220,6 +224,9 @@ export async function startNeuroVaultServer(
       statuses.some((status) => status.state !== 'disabled') && !disposed ? warmup() : undefined,
     )
     .catch((error: unknown) => {
+      // A warmup in flight at hang-up meets the closed services, or loses its daemon
+      // handshake to the closed connection: teardown, not a failure worth a line.
+      if (error instanceof SharedServicesClosedError || disposed) return;
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(`semantic warmup failed: ${message}\n`);
     });
