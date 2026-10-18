@@ -15,6 +15,7 @@ import {
 } from './modules/semantic/shared-services.js';
 import type { EmbeddingProvider } from './modules/semantic/types.js';
 import { createSemanticBackends } from './modules/semantic/backend/index.js';
+import { createStandaloneLexicalReader } from './modules/semantic/lexical/index.js';
 import { createOperationsModule } from './modules/operations/index.js';
 import { VaultRegistry, type IRegisteredVaultDeps } from './lib/vault-registry.js';
 import { FsVaultReader } from './lib/obsidian/vault-reader.js';
@@ -110,6 +111,8 @@ function buildDefaultVaultEntryDeps(
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
     providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
     semanticBackendFactory,
+    lexicalReaderFactory: ({ vaultRoot, reader, graph }) =>
+      createStandaloneLexicalReader({ vaultRoot, reader, graph }),
     conventionsReaderFactory:
       ({ vaultRoot }) =>
       () =>

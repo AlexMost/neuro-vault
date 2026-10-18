@@ -4,6 +4,7 @@ import type { VaultScope } from './obsidian/vault-scope.js';
 import type { WikilinkGraphIndex } from './obsidian/wikilink-graph.js';
 import type { ListMatchingPaths } from './obsidian/query/index.js';
 import type { VaultProvider } from './obsidian/vault-provider.js';
+import type { ILexicalReader } from './obsidian/lexical/index.js';
 import type { ISemanticBackend } from './obsidian/semantic-backend.js';
 import type { VaultConfigFile } from './obsidian/vault-config.js';
 import type { IVaultConfig } from '../types.js';
@@ -50,6 +51,13 @@ export interface IRegisteredVault {
    * config still gets a backend, just one built `enabled: false`.
    */
   backend?: ISemanticBackend;
+  /**
+   * How `search_notes` reads this vault's lexical leg: one reader whether the
+   * cache behind it is this process's own or the shared daemon's (design D6).
+   * Present on every entry — the lexical leg runs with the semantic module off
+   * and for a vault whose own `semantic` flag is false.
+   */
+  lexical: ILexicalReader;
 }
 
 export interface IRegisteredVaultDeps {
@@ -75,6 +83,18 @@ export interface IRegisteredVaultDeps {
     vaultName: string;
     enabled: boolean;
   }) => ISemanticBackend;
+  /**
+   * `enabled` is the same flag the semantic backend gets: whether this vault
+   * takes part in semantic search, which a reader that shares a cache with
+   * other sessions needs to know when deciding to attach.
+   */
+  lexicalReaderFactory: (opts: {
+    vaultRoot: string;
+    vaultName: string;
+    reader: VaultReader;
+    graph: WikilinkGraphIndex;
+    enabled: boolean;
+  }) => ILexicalReader;
   conventionsReaderFactory: (opts: { vaultRoot: string }) => () => Promise<string | null>;
   existingPathFilterFactory: (opts: { vaultRoot: string }) => FilterExistingPaths;
 }
@@ -138,13 +158,17 @@ export class VaultRegistry implements IVaultRegistry {
       // the vault-level `semantic` flag (default true) only decides whether
       // that backend is built enabled or disabled. Startup does not await any
       // backend work — a backend decides its own readiness live (design D9).
+      const enabled = vaultConfig.semantic !== false;
       const backend = config.semanticEnabled
-        ? deps.semanticBackendFactory({
-            vaultRoot: v.path,
-            vaultName: v.name,
-            enabled: vaultConfig.semantic !== false,
-          })
+        ? deps.semanticBackendFactory({ vaultRoot: v.path, vaultName: v.name, enabled })
         : undefined;
+      const lexical = deps.lexicalReaderFactory({
+        vaultRoot: v.path,
+        vaultName: v.name,
+        reader,
+        graph,
+        enabled,
+      });
 
       entries.push({
         name: v.name,
@@ -157,6 +181,7 @@ export class VaultRegistry implements IVaultRegistry {
         readConventions,
         filterExisting,
         backend,
+        lexical,
       });
     }
     return new VaultRegistry(entries);

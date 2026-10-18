@@ -56,8 +56,8 @@ function makeDeps(overrides: Partial<RetrievalPipelineDeps> = {}): RetrievalPipe
           perQueryTokenCounts: {},
           totalNotes: NOTE_COUNT + 1,
         }),
+      warm: () => Promise.resolve(),
     },
-    getBacklinkCount: () => 0,
     filterExisting: (paths) => Promise.resolve(new Set(paths)),
     embeddingProvider: {
       initialize: () => Promise.resolve(),
@@ -93,6 +93,23 @@ describe('runRetrievalPipeline', () => {
     expect(result.lexical.perQueryCounts).toEqual({ quirkyterm: 2 });
   });
 
+  it('hands the lexical reader the leg options and no backlink callback', async () => {
+    const base = makeDeps().lexical;
+    const search = vi.fn(base.search);
+    await runRetrievalPipeline(
+      { ...DEEP, allowed: new Set([LEXICAL_ONLY]) },
+      makeDeps({ lexical: { ...base, search } }),
+    );
+    expect(search).toHaveBeenCalledTimes(1);
+    const opts = search.mock.calls[0][0];
+    expect(opts).toEqual({
+      queries: ['quirkyterm'],
+      allowed: new Set([LEXICAL_ONLY]),
+      noteCap: expect.any(Number),
+      perNoteCap: expect.any(Number),
+    });
+  });
+
   it('cap slices the fused list and reports merged-cap truncation', async () => {
     const result = await runRetrievalPipeline({ ...DEEP, cap: 3 }, makeDeps());
     expect(result.candidates).toHaveLength(3);
@@ -110,6 +127,7 @@ describe('runRetrievalPipeline', () => {
             perQueryTokenCounts: {},
             totalNotes: NOTE_COUNT + 1,
           }),
+        warm: () => Promise.resolve(),
       },
     });
     const result = await runRetrievalPipeline({ ...DEEP, cap: 50 }, deps);

@@ -8,8 +8,10 @@ import {
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
+import { LexicalSearchError } from '../../../src/lib/obsidian/lexical/reader.js';
+import type { IFanOutResult } from '../../../src/lib/fan-out.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
-import { callTool } from '../../_gate.js';
+import { callTool, expectToolError } from '../../_gate.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { SmartSource } from '../../../src/modules/semantic/types.js';
@@ -1466,6 +1468,65 @@ describe('query_stats fallback note', () => {
       );
     } finally {
       await cleanup();
+    }
+  });
+});
+
+describe('lexical reader failure', () => {
+  const failingReader = {
+    search: vi.fn().mockRejectedValue(new LexicalSearchError('boom')),
+    warm: vi.fn().mockResolvedValue(undefined),
+  };
+
+  it('a lexical failure is DEPENDENCY_ERROR', async () => {
+    const { deps, cleanup } = await makeLexicalVault({ 'note.md': 'зміст' });
+    try {
+      deps.registry.list()[0].lexical = failingReader;
+      const reg = registerTool(buildSearchNotesTool(deps));
+      const payload = await expectToolError(reg, { query: 'зміст' });
+      expect(payload.code).toBe('DEPENDENCY_ERROR');
+      expect(payload.message).toBe('Lexical search failed');
+      expect(payload.details).toMatchObject({ vault: 'v', operation: 'search_notes' });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('a lexical failure never flips the semantic fallback status', async () => {
+    // The lexical leg runs first and its failure is not a semantic failure, so
+    // the call fails as a whole rather than answering with a degraded status.
+    const { deps, cleanup } = await makeLexicalVault(
+      { 'note.md': 'зміст' },
+      { sources: sourcesWithEmbeddingFor('note.md'), backendStatus: { state: 'ready' } },
+    );
+    try {
+      deps.registry.list()[0].lexical = failingReader;
+      const reg = registerTool(buildSearchNotesTool(deps));
+      const payload = await expectToolError(reg, { query: 'зміст' });
+      expect(payload.code).toBe('DEPENDENCY_ERROR');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('in a multi-vault fan-out it is one vault failing, not the whole call', async () => {
+    const a = await makeLexicalVault({ 'пошук a.md': '' });
+    const b = await makeLexicalVault({ 'пошук b.md': '' }, { semantic: false });
+    const registry = makeTestRegistry([...a.deps.registry.list(), ...b.deps.registry.list()]);
+    registry.list()[1].name = 'w';
+    registry.list()[1].lexical = failingReader;
+    try {
+      const reg = registerTool(buildSearchNotesTool({ ...a.deps, registry }));
+      const out = await callTool<IFanOutResult<SearchNotesOutput>>(reg, { query: 'пошук' });
+      expect(out.results_by_vault.map((r) => r.vault)).toEqual(['v']);
+      expect(out.failed_vaults).toHaveLength(1);
+      expect(out.failed_vaults[0]).toMatchObject({
+        vault: 'w',
+        error: { code: 'DEPENDENCY_ERROR', message: 'Lexical search failed' },
+      });
+    } finally {
+      await a.cleanup();
+      await b.cleanup();
     }
   });
 });
