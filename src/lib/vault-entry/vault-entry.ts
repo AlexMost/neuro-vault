@@ -104,7 +104,7 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
   let fsDeps: ReconcileFsDeps = fsDepsFor(scope);
   /** In attach order: the order `info()` lists them. */
   const slots = new Map<string, IProfileSlot>();
-  /** Watchers being closed after a scope change; dispose waits for them. */
+  /** Watchers being closed (scope change, last corpus gone); dispose waits for them. */
   const closing = new Set<Promise<void>>();
   let disposing: Promise<void> | null = null;
 
@@ -127,12 +127,14 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
     onVaultRestored: () => restartWatcher(),
   });
 
-  let watcher = startWatcher();
+  /** Runs only while some profile holds a corpus (design D3): a corpus-less vault watches nothing. */
+  let watcher: WatcherHandle | null = null;
 
-  function startWatcher(): WatcherHandle {
+  function startWatcher(): void {
+    if (watcher !== null || disposing !== null) return;
     // startVaultWatcher contains its own failures: a vault without a watcher
     // still reconciles on every attach (VaultEntries asks for a pass on each).
-    return startVaultWatcher({
+    watcher = startVaultWatcher({
       vaultRoot,
       vaultName,
       scope,
@@ -143,13 +145,25 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
     });
   }
 
-  /** Swaps in a watcher over the current scope; the old one closes in the background. */
-  function restartWatcher(): void {
-    if (disposing !== null) return;
+  /** Closes the watcher in the background; dispose waits for it. */
+  function stopWatcher(): void {
     const previous = watcher;
-    watcher = startWatcher();
+    if (previous === null) return;
+    watcher = null;
     const closed = closeWatcher(previous).finally(() => closing.delete(closed));
     closing.add(closed);
+  }
+
+  /** Swaps in a watcher over the current scope; only a running watcher is restarted. */
+  function restartWatcher(): void {
+    if (disposing !== null || watcher === null) return;
+    stopWatcher();
+    startWatcher();
+  }
+
+  function hasCorpus(): boolean {
+    for (const slot of slots.values()) if (slot.corpus !== null) return true;
+    return false;
   }
 
   function closeWatcher(handle: WatcherHandle): Promise<void> {
@@ -193,6 +207,7 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
       embedDocuments: opts.embedderFor(slot.key),
       enabled: true,
     });
+    startWatcher();
   }
 
   function detachCorpus(slot: IProfileSlot): void {
@@ -201,6 +216,7 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
     slot.corpus.dispose();
     slot.corpus = null;
     slot.excluded = [];
+    if (!hasCorpus()) stopWatcher();
   }
 
   function slotOf(key: string): IProfileSlot {
@@ -337,7 +353,8 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
       disposing ??= (async () => {
         // The loop is aborted at once, beside the watcher close: the pass in flight
         // holds the vault's reconcile lock until it stops. closeWatcher never rejects.
-        await Promise.all([closeWatcher(watcher), ...closing, loop.dispose()]);
+        if (watcher !== null) stopWatcher();
+        await Promise.all([...closing, loop.dispose()]);
         for (const slot of slots.values()) slot.corpus?.dispose();
       })();
       return disposing;

@@ -29,6 +29,7 @@ import type { WatcherFactory } from '../../../src/lib/vault-entry/watcher.js';
 import { identityOf, MODEL_PROFILES } from '../../../src/lib/model-profiles.js';
 
 const HARRIER = 'harrier-270m';
+const OTHER = 'harrier-0.6b';
 const IDENTITY = corpusIdentityOf(identityOf(MODEL_PROFILES[HARRIER]));
 const DIMS = IDENTITY.dims;
 
@@ -410,12 +411,85 @@ describe('createVaultEntry', () => {
       },
     });
     entries.push(entry);
+    // The watcher runs only while a corpus is attached.
+    entry.addProfile(HARRIER);
+    vi.mocked(passes[0].requestPass).mockClear();
 
     changed();
     changed();
     expect(passes[0].requestPass).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(passes[0].requestPass).toHaveBeenCalledTimes(1), {
       timeout: 1_000,
+    });
+  });
+
+  describe('the watcher follows the corpus', () => {
+    it('profiles [] starts no watcher', async () => {
+      const h = await harness({ loop: { withLock: heldLock } });
+      expect(h.watchers.started).toHaveLength(0);
+    });
+
+    it('a vault with semantic off starts no watcher for an attached profile', async () => {
+      const h = await harness({ semantic: false, loop: { withLock: heldLock } });
+      h.entry.addProfile(HARRIER);
+      expect(h.watchers.started).toHaveLength(0);
+    });
+
+    it('the first corpus starts the watcher; a second shares it', async () => {
+      const h = await harness({ loop: { withLock: heldLock } });
+      h.entry.addProfile(HARRIER);
+      expect(h.watchers.started).toHaveLength(1);
+      h.entry.addProfile(OTHER);
+      expect(h.watchers.started).toHaveLength(1);
+    });
+
+    it('the last corpus leaving closes it, the one before does not', async () => {
+      const h = await harness({ loop: { withLock: heldLock } });
+      h.entry.addProfile(HARRIER);
+      h.entry.addProfile(OTHER);
+      h.entry.removeProfile(OTHER);
+      expect(h.watchers.started[0].close).not.toHaveBeenCalled();
+      h.entry.removeProfile(HARRIER);
+      expect(h.watchers.started[0].close).toHaveBeenCalledTimes(1);
+    });
+
+    it('setSemantic(false) closes it and setSemantic(true) starts a new one', async () => {
+      const h = await harness({ loop: { withLock: heldLock } });
+      h.entry.addProfile(HARRIER);
+      h.entry.setSemantic(false);
+      expect(h.watchers.started[0].close).toHaveBeenCalledTimes(1);
+      h.entry.setSemantic(true);
+      expect(h.watchers.started).toHaveLength(2);
+      expect(h.watchers.started[1].close).not.toHaveBeenCalled();
+    });
+
+    it('setSemantic(true) with no profile starts none', async () => {
+      const h = await harness({ semantic: false, loop: { withLock: heldLock } });
+      h.entry.setSemantic(true);
+      expect(h.watchers.started).toHaveLength(0);
+    });
+
+    it('setScope on a watcher-less entry starts none', async () => {
+      const h = await harness({ loop: { withLock: heldLock } });
+      h.entry.setScope(scopeOf(['Archive/**']));
+      expect(h.watchers.started).toHaveLength(0);
+    });
+
+    it('dispose closes the watcher a removed corpus left closing, and starts none after', async () => {
+      const h = await harness({ loop: { withLock: heldLock } });
+      h.entry.addProfile(HARRIER);
+      let closed!: () => void;
+      h.watchers.started[0].close.mockImplementation(
+        () => new Promise<void>((resolve) => (closed = resolve)),
+      );
+      h.entry.removeProfile(HARRIER);
+      let disposed = false;
+      const done = h.entry.dispose().then(() => (disposed = true));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(disposed).toBe(false);
+      closed();
+      await done;
+      expect(h.watchers.started[0].close).toHaveBeenCalledTimes(1);
     });
   });
 
