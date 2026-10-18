@@ -2,16 +2,19 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { once as onceEvent } from 'node:events';
-import { PassThrough } from 'node:stream';
+import { Duplex, PassThrough } from 'node:stream';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { ReadBuffer, serializeMessage } from '@modelcontextprotocol/sdk/shared/stdio.js';
+import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { modelCorpusDir } from '../src/lib/obsidian/corpus/layout.js';
 import type { BackendStatus, ISemanticBackend } from '../src/lib/obsidian/semantic-backend.js';
 import { main } from '../src/cli.js';
 import { DEFAULT_MODEL_KEY, identityOf, resolveModelProfile } from '../src/lib/model-profiles.js';
+import { DaemonEmbeddingProvider } from '../src/modules/semantic/daemon-embedding-provider.js';
 import { createSharedServices } from '../src/modules/semantic/shared-services.js';
 import { startNeuroVaultServer } from '../src/server.js';
 
@@ -810,6 +813,398 @@ describe('two vaults, one model', () => {
         ) as { model_key: string; dims: number };
         expect(manifest).toMatchObject({ model_key: 'granite-97m', dims: 384 });
       }
+    } finally {
+      await dispose();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * Startup attaches every vault in the background (spec: shared-corpus-reads). The
+ * session talks to a scripted daemon through the real `DaemonConnection`,
+ * `SharedServices` and daemon backend; only the socket behind them is a double.
+ */
+describe('startup attach', () => {
+  const GRANITE = resolveModelProfile('granite-97m');
+  const vector = () => Array.from({ length: GRANITE.dims }, (_, i) => (i === 0 ? 1 : 0));
+  const CLI = { size: 10, mtimeMs: 20 };
+
+  interface IDaemonCall {
+    method: string;
+    params: Record<string, unknown>;
+  }
+
+  /** A daemon on the other end of `io.connect`; `answer` returns a result, or a promise that never settles. */
+  function fakeDaemon(answer: (call: IDaemonCall) => unknown) {
+    const calls: IDaemonCall[] = [];
+    const sockets: Duplex[] = [];
+    const closed: Duplex[] = [];
+    const connect = vi.fn(async () => {
+      const read = new ReadBuffer();
+      const socket: Duplex = new Duplex({
+        read() {},
+        write(chunk: Buffer, _encoding, done) {
+          read.append(chunk);
+          for (let m = read.readMessage(); m; m = read.readMessage()) {
+            const { id, method, params } = m as unknown as {
+              id: number;
+              method: string;
+              params: Record<string, unknown>;
+            };
+            const call = { method, params };
+            calls.push(call);
+            void Promise.resolve(answer(call)).then((result) => {
+              if (!socket.destroyed) {
+                socket.push(serializeMessage({ jsonrpc: '2.0', id, result } as never));
+              }
+            });
+          }
+          done();
+        },
+      });
+      socket.once('close', () => closed.push(socket));
+      sockets.push(socket);
+      return socket;
+    });
+    return { calls, sockets, closed, connect };
+  }
+
+  function servicesOver(daemon: { connect: ReturnType<typeof vi.fn> }, lines: string[] = []) {
+    return createSharedServices({
+      shared: true,
+      cliPath: '/opt/nv/dist/cli.js',
+      version: '18.0.0',
+      env: { XDG_CACHE_HOME: '/xdg' },
+      home: '/home/u',
+      uid: 501,
+      platform: 'linux',
+      build: () => CLI,
+      stderr: { write: (line) => (lines.push(line), true) },
+      io: {
+        ensureSocketDir: () => {},
+        connect: daemon.connect as never,
+        spawn: () => {
+          throw new Error('must not spawn: the scripted daemon is listening');
+        },
+        openLog: () => -1,
+        closeFd: () => {},
+        mkdirp: () => {},
+      },
+    });
+  }
+
+  function fakeProvider(embedDocuments = vi.fn(async (texts: string[]) => texts.map(vector))) {
+    return {
+      identity: identityOf(GRANITE),
+      maxBatchSize: 64,
+      initialize: vi.fn(async () => {}),
+      embedQuery: vi.fn(),
+      embedDocuments,
+    };
+  }
+
+  async function makeVault(root: string, name: string, config?: object): Promise<string> {
+    const vaultPath = path.join(root, name);
+    await fs.mkdir(path.join(vaultPath, '.neuro-vault'), { recursive: true });
+    await fs.writeFile(
+      path.join(vaultPath, 'note.md'),
+      `${name} note. ${'Plain prose. '.repeat(20)}`,
+    );
+    if (config) {
+      await fs.writeFile(
+        path.join(vaultPath, '.neuro-vault', 'config.json'),
+        JSON.stringify(config),
+      );
+    }
+    return vaultPath;
+  }
+
+  const attachesOf = (daemon: { calls: IDaemonCall[] }) =>
+    daemon.calls.filter((call) => call.method === 'vault.attach').map((call) => call.params.vault);
+
+  it('attaches every enabled vault at startup, without waiting for a call and not a disabled one', async () => {
+    const root = await createTempVaultPath();
+    const alpha = await makeVault(root, 'alpha');
+    const beta = await makeVault(root, 'beta');
+    const off = await makeVault(root, 'off', { semantic: false });
+    const daemon = fakeDaemon(({ method }) =>
+      method === 'vault.attach'
+        ? { vault: '/real', profiles: { 'granite-97m': { state: 'ready' } } }
+        : { state: 'ready' },
+    );
+    const services = servicesOver(daemon);
+
+    const dispose = await startNeuroVaultServer(
+      {
+        vaults: [
+          { name: 'alpha', path: alpha },
+          { name: 'beta', path: beta },
+          { name: 'off', path: off },
+        ],
+        semantic: { enabled: true, model: GRANITE, shared: true },
+      },
+      {
+        embeddingProvider: fakeProvider(),
+        sharedServices: services,
+        serverFactory: () => createFakeServer() as never,
+        transportFactory: () => ({}) as never,
+        stdin: new PassThrough(),
+      },
+    );
+    try {
+      // No tool was called: the attaches are the server's own, one per enabled vault.
+      await vi.waitFor(() => expect(attachesOf(daemon)).toHaveLength(2));
+      await settle();
+      expect(attachesOf(daemon).sort()).toEqual([alpha, beta].sort());
+      // The same status reads gate the warmup: no second read per vault.
+      expect(daemon.calls.map((call) => call.method)).toEqual(['vault.attach', 'vault.attach']);
+      expect(daemon.connect).toHaveBeenCalledTimes(1);
+    } finally {
+      await dispose();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('startup does not wait for attach', async () => {
+    const root = await createTempVaultPath();
+    const vaultPath = await makeVault(root, 'alpha');
+    // The attach is answered never.
+    const daemon = fakeDaemon(() => new Promise(() => {}));
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const written: string[] = [];
+    stdout.on('data', (chunk: Buffer) => written.push(chunk.toString()));
+
+    const dispose = await startNeuroVaultServer(
+      {
+        vaults: [{ name: 'alpha', path: vaultPath }],
+        semantic: { enabled: true, model: GRANITE, shared: true },
+      },
+      {
+        embeddingProvider: fakeProvider(),
+        sharedServices: servicesOver(daemon),
+        transportFactory: () => new StdioServerTransport(stdin, stdout),
+        stdin,
+      },
+    );
+    try {
+      await vi.waitFor(() => expect(attachesOf(daemon)).toEqual([vaultPath]));
+      stdin.write(
+        `${JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: LATEST_PROTOCOL_VERSION,
+            capabilities: {},
+            clientInfo: { name: 'test', version: '0.0.0' },
+          },
+        })}\n`,
+      );
+      // The handshake completes while the attach is still unanswered.
+      await vi.waitFor(() => expect(written.join('')).toContain('"serverInfo"'));
+      expect(attachesOf(daemon)).toEqual([vaultPath]);
+    } finally {
+      await dispose();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('status reads indexing 0/0 before attach answers', async () => {
+    const root = await createTempVaultPath();
+    const vaultPath = await makeVault(root, 'alpha');
+    let answerAttach!: () => void;
+    const attachAnswered = new Promise<void>((resolve) => (answerAttach = resolve));
+    const daemon = fakeDaemon(async ({ method }) => {
+      if (method !== 'vault.attach') return { state: 'ready' };
+      await attachAnswered;
+      return { vault: '/real', profiles: { 'granite-97m': { state: 'ready' } } };
+    });
+    const server = createFakeServer();
+
+    const dispose = await startNeuroVaultServer(
+      {
+        vaults: [{ name: 'alpha', path: vaultPath }],
+        semantic: { enabled: true, model: GRANITE, shared: true },
+      },
+      {
+        embeddingProvider: fakeProvider(),
+        sharedServices: servicesOver(daemon),
+        serverFactory: () => server as never,
+        transportFactory: () => ({}) as never,
+        stdin: new PassThrough(),
+      },
+    );
+    try {
+      await vi.waitFor(() => expect(attachesOf(daemon)).toHaveLength(1));
+      const result = (await server.toolHandlers.get('find_duplicates')!({})) as {
+        isError?: boolean;
+        structuredContent?: { code?: string; details?: unknown };
+      };
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent?.code).toBe('SEMANTIC_INDEX_BUILDING');
+      expect(result.structuredContent?.details).toMatchObject({ indexed: 0, total: 0 });
+      // The call joined the attach in flight instead of sending another.
+      expect(attachesOf(daemon)).toHaveLength(1);
+
+      answerAttach();
+      await vi.waitFor(async () => {
+        const answer = (await server.toolHandlers.get('find_duplicates')!({})) as {
+          structuredContent?: { code?: string };
+        };
+        expect(answer.structuredContent?.code).not.toBe('SEMANTIC_INDEX_BUILDING');
+      });
+    } finally {
+      await dispose();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('one fallback line when the daemon cannot start', async () => {
+    const root = await createTempVaultPath();
+    const vaultPath = await makeVault(root, 'alpha');
+    const lines: string[] = [];
+    // No CLI script to key a daemon by: the first facade to ask flips the switch.
+    const services = createSharedServices({
+      shared: true,
+      stderr: { write: (line) => (lines.push(line), true) },
+    });
+    // Embedding AND corpus go through the one switch: the embedding facade falls
+    // back to a fake local provider, the corpus to this process's own vault entry.
+    const embedDocuments = vi.fn(async (texts: string[]) => texts.map(vector));
+    const localEmbedder = fakeProvider(embedDocuments);
+    const embeddingProvider = new DaemonEmbeddingProvider({
+      profile: GRANITE,
+      services,
+      createFallback: () => localEmbedder,
+      initialMaxBatchSize: 8,
+    });
+    const server = createFakeServer();
+
+    const dispose = await startNeuroVaultServer(
+      {
+        vaults: [{ name: 'alpha', path: vaultPath }],
+        semantic: { enabled: true, model: GRANITE, shared: true },
+      },
+      {
+        embeddingProvider,
+        sharedServices: services,
+        serverFactory: () => server as never,
+        transportFactory: () => ({}) as never,
+        stdin: new PassThrough(),
+      },
+    );
+    try {
+      // The vault was indexed in this process through the local embedder.
+      await vi.waitFor(() => expect(embedDocuments).toHaveBeenCalled());
+      await vi.waitFor(async () => {
+        const answer = (await server.toolHandlers.get('find_duplicates')!({})) as {
+          isError?: boolean;
+        };
+        expect(answer.isError).toBeFalsy();
+      });
+      expect(services.mode).toBe('local');
+      expect(lines).toEqual([
+        'neuro-vault-mcp: shared daemon unavailable (no CLI script path to key it by); ' +
+          'running in-process for this session\n',
+      ]);
+    } finally {
+      await dispose();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('transport close detaches', async () => {
+    const root = await createTempVaultPath();
+    const vaultPath = await makeVault(root, 'alpha');
+    const daemon = fakeDaemon(({ method }) =>
+      method === 'vault.attach'
+        ? { vault: '/real', profiles: { 'granite-97m': { state: 'ready' } } }
+        : { state: 'ready' },
+    );
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    stdout.resume();
+
+    await startNeuroVaultServer(
+      {
+        vaults: [{ name: 'alpha', path: vaultPath }],
+        semantic: { enabled: true, model: GRANITE, shared: true },
+      },
+      {
+        embeddingProvider: fakeProvider(),
+        sharedServices: servicesOver(daemon),
+        transportFactory: () => new StdioServerTransport(stdin, stdout),
+        stdin,
+      },
+    );
+    try {
+      await vi.waitFor(() => expect(attachesOf(daemon)).toHaveLength(1));
+      expect(daemon.closed).toHaveLength(0);
+
+      // The client hangs up the way a stdio client does.
+      stdin.end();
+
+      // Closing the connection is how the daemon learns this session left every vault.
+      await vi.waitFor(() => expect(daemon.closed).toHaveLength(1));
+      expect(daemon.sockets).toHaveLength(1);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('--no-shared builds local entries and no connection', async () => {
+    const root = await createTempVaultPath();
+    const alpha = await makeVault(root, 'alpha');
+    const beta = await makeVault(root, 'beta');
+    const off = await makeVault(root, 'off', { semantic: false });
+    const lines: string[] = [];
+    // A connection that would show up in the daemon's log if anything touched it.
+    const daemon = fakeDaemon(() => ({}));
+    const services = servicesOver(daemon, lines);
+    const ensure = vi.spyOn(services, 'ensure');
+    const embedDocuments = vi.fn(async (texts: string[]) => texts.map(vector));
+    const server = createFakeServer();
+
+    const dispose = await startNeuroVaultServer(
+      {
+        vaults: [
+          { name: 'alpha', path: alpha },
+          { name: 'beta', path: beta },
+          { name: 'off', path: off },
+        ],
+        semantic: { enabled: true, model: GRANITE, shared: false },
+      },
+      {
+        embeddingProvider: fakeProvider(embedDocuments),
+        sharedServices: services,
+        serverFactory: () => server as never,
+        transportFactory: () => ({}) as never,
+        stdin: new PassThrough(),
+      },
+    );
+    try {
+      // Indexing starts at startup, before any tool call: the entries were built up front
+      // and every enabled vault attached to them; the disabled one was not.
+      const embeddedTexts = () => embedDocuments.mock.calls.flatMap(([batch]) => batch);
+      await vi.waitFor(() => {
+        expect(embeddedTexts().some((t) => t.includes('alpha note'))).toBe(true);
+        expect(embeddedTexts().some((t) => t.includes('beta note'))).toBe(true);
+      });
+      expect(embeddedTexts().some((t) => t.includes('off note'))).toBe(false);
+      await vi.waitFor(async () => {
+        for (const vault of ['alpha', 'beta']) {
+          const answer = (await server.toolHandlers.get('find_duplicates')!({ vault })) as {
+            isError?: boolean;
+          };
+          expect(answer.isError).toBeFalsy();
+        }
+      });
+      // The daemon was never probed, connected to or mentioned.
+      expect(daemon.connect).not.toHaveBeenCalled();
+      expect(ensure).not.toHaveBeenCalled();
+      expect(lines).toEqual([]);
     } finally {
       await dispose();
       await fs.rm(root, { recursive: true, force: true });

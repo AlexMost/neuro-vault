@@ -197,27 +197,28 @@ export async function startNeuroVaultServer(
 
   const transport = transportFactory();
   await server.connect(transport);
+  // Every semantically enabled vault attaches now, in the background: a daemon
+  // backend's first `status()` sends `vault.attach` and a local one's attaches
+  // its in-process entry, so the corpus starts building before the first tool
+  // call. Nothing waits on these reads — a call that arrives while one is in
+  // flight reads `indexing` 0/0 (a vault that opted out with `"semantic": false`
+  // has a constant backend that never attaches). They are the one status read
+  // per vault at startup; the warmup decision below reuses them.
+  const attaches = registry
+    .list()
+    .flatMap((entry) => (entry.backend === undefined ? [] : [entry.backend.status()]));
+  /** Set once teardown starts: a warmup decided after it must not reconnect to the daemon. */
+  let disposed = false;
   // The module-level flag says the tools exist; it does not say any vault will
   // ever embed. When every registered vault opted out with `"semantic": false`,
   // no indexing pass and no query embed can run — warming the model would
   // download and initialize ONNX for work that will never arrive. The tools
   // stay registered either way: `search_notes` still answers from its lexical
   // leg, and the embeddings-only tools still report `SEMANTIC_DISABLED`.
-  //
-  // Decided in the background: a status may be a daemon round trip (the first
-  // one attaches the vault), and startup never waits on one.
-  const anyVaultEmbeds = async (): Promise<boolean> => {
-    const statuses = await Promise.all(
-      registry
-        .list()
-        .flatMap((entry) => (entry.backend === undefined ? [] : [entry.backend.status()])),
-    );
-    return statuses.some((status) => status.state !== 'disabled');
-  };
-  /** Set once teardown starts: a warmup decided after it must not reconnect to the daemon. */
-  let disposed = false;
-  void anyVaultEmbeds()
-    .then((embeds) => (embeds && !disposed ? warmup() : undefined))
+  void Promise.all(attaches)
+    .then((statuses) =>
+      statuses.some((status) => status.state !== 'disabled') && !disposed ? warmup() : undefined,
+    )
     .catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(`semantic warmup failed: ${message}\n`);
