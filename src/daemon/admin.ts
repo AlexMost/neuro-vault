@@ -322,7 +322,14 @@ function lexicalLine(raw: unknown): string | undefined {
   const last: unknown = lexical.last_refresh;
   if (typeof last === 'object' && last !== null) {
     const refresh = last as Partial<NonNullable<ILexicalInfo['last_refresh']>>;
-    parts.push(`last refresh ${refresh.at} ~${refresh.parsed} parsed ${refresh.ms} ms`);
+    // A partial object (another build's shape) prints no refresh segment rather than "undefined".
+    if (
+      typeof refresh.at === 'string' &&
+      typeof refresh.parsed === 'number' &&
+      typeof refresh.ms === 'number'
+    ) {
+      parts.push(`last refresh ${refresh.at} ~${refresh.parsed} parsed ${refresh.ms} ms`);
+    }
   }
   return `    ${parts.join('  ')}`;
 }

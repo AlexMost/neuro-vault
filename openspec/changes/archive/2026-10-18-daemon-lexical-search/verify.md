@@ -296,6 +296,8 @@ ls docs/superpowers/specs/*.md 2>/dev/null
 2. `docs/architecture/vault-entry.md` says `lexicalInfo()` reports `warming` until the first refresh completes; since the amendment the spec also says it reads `warming` again after a scope change replaces the cache. Add that clause.
 3. `messageOf` is duplicated in `daemon-reader.ts`, `local-reader.ts` and `shared-services.ts`; `lexical.ts` duplicates `corpus.ts`'s param helpers. A shared helper next to `stringParam` in `protocol.ts` would remove both.
 
+> Post-review (2026-10-18): suggestion 1's `lexicalLine` shape guard and suggestion 2's `warming`-after-scope-change clause are done in the commit `fix(daemon): guard a partial lexical refresh and fix post-review docs`; the rest of suggestion 1 and suggestion 3 stay open.
+
 ---
 
 ## Overall Decision

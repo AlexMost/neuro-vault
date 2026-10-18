@@ -57,7 +57,7 @@ The daemon SHALL serve `vault.attach { vault, profiles }`, where `vault` is an a
 
 ### Requirement: Scope is re-read on every attach and applies at once
 
-On every `vault.attach` the daemon SHALL re-read the vault's scope from the vault's own files (the root `.gitignore` and `.neuro-vault/config.json`). When the scope differs from the entry's, the entry SHALL restart its watcher, queue a reconcile pass, and apply the new scope to every later read. Nothing SHALL watch those files.
+On every `vault.attach` the daemon SHALL re-read the vault's scope from the vault's own files (the root `.gitignore` and `.neuro-vault/config.json`). When the scope differs from the entry's, the entry SHALL restart its watcher if one is running (an entry with no corpus has none), queue a reconcile pass, and apply the new scope to every later read. Nothing SHALL watch those files.
 
 #### Scenario: A new exclusion takes effect on the next attach
 

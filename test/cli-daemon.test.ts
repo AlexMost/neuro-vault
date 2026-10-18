@@ -863,6 +863,47 @@ describe('runDaemonCommand (status / stop)', () => {
     ]);
   });
 
+  it('status leaves out a partial last refresh instead of printing undefined', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ socket: '/tmp/a.sock' }));
+    h.deps.connect = () =>
+      Promise.resolve(
+        fakeInfoSocket({
+          version: '18.0.0',
+          pid: 1,
+          clients: 1,
+          loaded: [],
+          vault: [
+            {
+              vault: '/a',
+              clients: 1,
+              lexical: {
+                state: 'ready',
+                notes: 7,
+                last_refresh: { at: '2026-10-18T09:00:00.000Z' },
+              },
+              profiles: [],
+            },
+            {
+              vault: '/b',
+              clients: 1,
+              lexical: { state: 'ready', notes: 8, last_refresh: { parsed: 3, ms: '41' } },
+              profiles: [],
+            },
+          ] as unknown as IVaultInfo[],
+        }),
+      );
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    const out = h.out.join('');
+    expect(out).not.toContain('undefined');
+    expect(out.split('\n').slice(1, -1)).toEqual([
+      '  vault /a  clients 1',
+      '    lexical  ready  7 notes',
+      '  vault /b  clients 1',
+      '    lexical  ready  8 notes',
+    ]);
+  });
+
   it('a daemon without lexical prints no such line', async () => {
     const h = harness();
     addKnown(h, 'aaaaaaaaaaaa', infoJson({ socket: '/tmp/a.sock' }));
