@@ -1,17 +1,17 @@
 # Lexical Search
 
-The lexical leg of `search_notes` (`mode: "hybrid"`, the default, or `mode: "lexical"`) — a hand-rolled, deterministic exact/substring matcher over note titles, headings, and body, fully independent of the embedding corpus (it never touches the corpus loader and works on a cold or absent index).
+The lexical leg of `search_notes` (`mode: "hybrid"`, the default, or `mode: "lexical"`) — a hand-rolled, deterministic exact/substring matcher over note titles, headings, and body, fully independent of the embedding corpus (it never touches the corpus loader and works on a cold or absent index). The matcher and its cache live in the [vault entry](./vault-entry.md) — in the shared daemon by default — and a session reads them through an `ILexicalReader` ([Who holds the cache](#who-holds-the-cache)).
 
 ## What it is
 
-`src/lib/obsidian/lexical/` exports `LexicalIndex` (`lexical-index.ts`), a per-vault, in-process cache over the vault's markdown that the `search_notes` tool handler queries on every call:
+`src/lib/obsidian/lexical/` exports `LexicalIndex` (`lexical-index.ts`), a per-vault cache over the vault's markdown. It is a member of the vault entry (`IVaultEntry.lexicalSearch`, [`vault-entry.md`](./vault-entry.md#what-it-is)), so there is one cache per vault directory per daemon, whatever the number of sessions, and a session served by the daemon parses no note for this leg:
 
 ```typescript
 class LexicalIndex {
-  constructor(opts: { vaultRoot: string; reader: VaultReader; stat?: StatFn });
+  constructor(opts: { vaultRoot: string; reader: VaultReader; stat?: StatFn; readFile?: ReadFn; warn?: (message: string) => void });
   search(opts: {
     queries: string[];
-    allowed?: Set<string>; // pre-filter scope, shared with the semantic leg
+    allowed?: ReadonlySet<string>; // pre-filter scope, shared with the semantic leg
     noteCap: number;
     perNoteCap: number;
     getBacklinkCount: (path: string) => number;
@@ -22,20 +22,48 @@ class LexicalIndex {
     perQueryTokenCounts: Record<string, Record<string, number>>; // failure-path only, see below
     totalNotes: number; // scoped scan().length, pre-`filter` — feeds rank-fusion's adaptive k
   }>;
+  warm(): Promise<void>; // one refresh; never rejects
+  info(): { warmed: boolean; notes: number; lastRefresh?: { at: Date; parsed: number; ms: number } };
 }
 ```
 
-One `LexicalIndex` instance is created lazily per vault name (a module-level `Map` inside `buildSearchNotesTool`) and lives for the server process's lifetime — so its mtime cache persists across calls, not just within one request.
+The entry builds one `LexicalIndex` and one `WikilinkGraphIndex` with itself, both over its scoped reader, and `IVaultEntry.lexicalSearch` refreshes the graph, then searches with the graph's `getBacklinkCount` as the density tie-break's last key. Both live as long as the entry: a scope change rebuilds them over the new reader, and `dispose()` drops them. They have no idle timer of their own, and an entry attached with `profiles: []` (a vault with `"semantic": false`) keeps them. The cache therefore persists across calls, and across sessions.
+
+### Who holds the cache
+
+A session never builds a `LexicalIndex` for the daemon's or the fallback's sake: it holds an `ILexicalReader` (`reader.ts`), `IRegisteredVault.lexical` ([`vault-registry.md`](./vault-registry.md)), and the pipeline depends on that seam alone:
+
+```typescript
+interface ILexicalReader {
+  search(opts: { queries: string[]; allowed?: ReadonlySet<string>; noteCap: number; perNoteCap: number }): Promise<ILexicalResult>;
+  warm(): Promise<void>; // starts whatever makes the first search fast; never rejects
+}
+```
+
+`ILexicalResult` has the five fields above (`notes`, `truncated`, `perQueryCounts`, `perQueryTokenCounts`, `totalNotes`). The reader owns the backlink tie-break and the freshness of whatever feeds it, so `getBacklinkCount` is not part of the pipeline's dependencies. Three implementations (`src/modules/semantic/lexical/`), chosen per vault by the session's vault clients ([`semantic-backend.md`](./semantic-backend.md#the-vault-clients)):
+
+| Reader | Used when | What it does |
+| --- | --- | --- |
+| Daemon (`createDaemonLexicalReader`) | The default: semantic module on and `--shared` | Attaches the vault (the one attachment it shares with the semantic backend), then `lexical.search` over the daemon connection ([`shared-daemon.md`](./shared-daemon.md#the-lexical-service)), 30 s per call. Once the process's switch went in-process it delegates to the local reader. |
+| In-process entry (`createLocalLexicalReader`) | `--no-shared`, or after the daemon could not be located or started | The same `IVaultEntry.lexicalSearch` over this process's own `VaultEntries`, attached under the fixed connection id 0. |
+| Standalone (`createStandaloneLexicalReader`) | `--no-semantic` | A `LexicalIndex` over the session's own reader, tie-broken by the session's own graph, built on first search. No vault clients exist, so nothing attaches and no daemon starts. This is the path every vault had before the cache moved, and `eval/pipelines.ts` uses it. |
+
+`warm()` attaches the vault in the background at startup (every registered vault, a `"semantic": false` one included, with no profile); the standalone reader has nothing to start early. All three return byte-identical results for the same disk state: a frozen copy of the pre-move index is the oracle the parity tests compare each reader against.
+
+**Errors.** A reader throws `LexicalSearchError` and nothing else from `search`: a daemon error (`LEXICAL_FAILED`, `VAULT_UNAVAILABLE` from the attach), a timeout, a dropped connection, an entry that was detached or disposed, a search that threw. `search_notes` maps it to `DEPENDENCY_ERROR` ("Lexical search failed", `details: { vault, operation: "search_notes" }`) for that vault; it used to surface as `INTERNAL_ERROR`. The failure is that call's alone: it never flips the process's daemon-or-in-process switch (only a failed daemon start does), and a `NOT_ATTACHED` makes the reader forget its attach so the next search attaches again.
 
 `notes[]` (the ranked, capped, per-note-grouped result set) is one of the three ordered rank sources `search_notes` fuses into `matches[]` — see [`rank-fusion.md`](./rank-fusion.md). The other fields feed the tool boundary directly rather than the fusion math: `truncated` folds into the tool's top-level `truncated` (leg-level pool overflow, see [rank-fusion.md's truncated-observability section](./rank-fusion.md#truncated-observability-the-1-over-fetch)); `perQueryCounts` is the lexical half of `query_stats` (see [`docs/guide/finding-notes.md`](../guide/finding-notes.md)); `perQueryTokenCounts` is a failure-path diagnostic layered on top of `perQueryCounts` (see [Per-token diagnostic for AND-killed queries](#per-token-diagnostic-for-and-killed-queries) below); `totalNotes` is `N` in rank-fusion's adaptive-`k` formula — the scoped `scan().length` (vault-scope-excluded paths never counted, see [`vault-scope.md`](./vault-scope.md)), taken before `allowed` narrows the search, so `k` does not shrink under a `filter`.
 
 ## Pipeline
 
 ```
-VaultReader.scan()  ──► vault-scope-filtered paths (optionally further narrowed by `filter`'s allowed set)
+VaultReader.scan()  ──► vault-scope-filtered paths
    │
    ▼
 mtime cache (refresh) ──► stat every scoped file; re-parse only changed ones
+   │
+   ▼
+`filter`'s allowed set ──► narrows the candidates; evicts nothing
    │
    ▼
 mdast block extraction (blocks.ts) ──► title unit + heading/body units, each with line positions
@@ -58,11 +86,13 @@ snippet extraction (snippet.ts) ──► grapheme-safe window, raw-text coordin
 
 ### 1. Scan and scope
 
-`reader.scan()` returns every vault-relative path **visible under the vault's scope** — see [`vault-scope.md`](./vault-scope.md) for the exclusion layers (dot-paths, `Templates/`, root `.gitignore`, `.neuro-vault/config.json`); a path excluded there never reaches this leg. When `search_notes` received a `filter`, the tool handler has already computed an `allowed` path set via `listMatchingPaths` (the same pre-filter step the semantic leg uses) and passes it through; `LexicalIndex.search` intersects it with the scan before anything else runs. This is why `filter` behaves identically on both legs — same allowed-set, evaluated twice.
+`reader.scan()` returns every vault-relative path **visible under the vault's scope** — see [`vault-scope.md`](./vault-scope.md) for the exclusion layers (dot-paths, `Templates/`, root `.gitignore`, `.neuro-vault/config.json`); a path excluded there never reaches this leg. When `search_notes` received a `filter`, the tool handler has already computed an `allowed` path set via `listMatchingPaths` (the same pre-filter step the semantic leg uses) and passes it through; `LexicalIndex.search` applies it to the candidates after the refresh, so it narrows what is ranked but never what is cached. This is why `filter` behaves identically on both legs — same allowed-set, evaluated twice.
 
 ### 2. mtime cache
 
-`refresh()` stats every scan-visible file (`Promise.all`), drops cache entries for paths no longer visible (deletions, vault-scope exclusion, or notes that fell outside `allowed` on a scoped call), and re-parses only files whose `mtimeMs` differs from the cached value. A file that vanishes between `scan()` and `stat()`, or between `stat()` and `readFile()`, is dropped from the cache rather than surfaced as an error — the same "scan↔read race" tolerance `query_notes` uses.
+`refresh()` runs over the **whole scope**, never over `allowed`: it scans, drops cache entries for paths the scan no longer lists (deletions, vault-scope exclusion), stats every scanned file (`Promise.all`), and re-parses only files whose `mtimeMs` differs from the cached value. `allowed` is applied afterwards, to the candidate map handed to `rankNotes`, and **never evicts**: the cache is shared by every session, so one session's `filter` must not cost the next session a re-parse. `totalNotes` is the scoped count before `allowed`. A file that vanishes between `scan()` and `stat()`, or between `stat()` and `readFile()`, is dropped from the cache rather than surfaced as an error — the same "scan↔read race" tolerance `query_notes` uses.
+
+Refreshes are **serialised**, so a shared cache never runs two at once: a call that finds nothing running starts a refresh; a call that finds one running awaits it and then shares one follow-up refresh with every other call that arrived during the same run. A call is therefore always served by a refresh that began after it arrived (never by a scan that predates it), and a burst costs at most two refreshes. Each refresh hands its callers a snapshot of the notes it saw, so a later refresh mutating the cache cannot change what a waiting call ranks. `warm()` runs one refresh through the same rule and never rejects: a failure goes to the owner's `warn` and the next `search()` refreshes again. `info()` reports whether a refresh has completed, the cached note count and the last refresh (`at`, notes `parsed`, `ms`); the entry maps it to `daemon status`'s `lexical` line ([`shared-daemon.md`](./shared-daemon.md#reporting-vault-state)).
 
 ### 3. mdast block extraction
 
@@ -132,11 +162,16 @@ The matcher is a per-request scan over in-memory parsed blocks, not a persisted 
 
 ## Freshness model (shared with `query_notes`)
 
-Same precedent as [`query_notes`](./query.md): **no watcher, no background timers, no persisted index** — freshness comes from re-scanning per request and stat-ing every scoped file. The difference is *what* gets cached: `query_notes` does no caching at all (it re-reads frontmatter every call), while `LexicalIndex` keeps a `path → { mtime, parsed }` cache so unchanged files are not re-parsed, only re-confirmed via `stat`. This bounds the per-call cost to "stat every scoped file, parse only the ones that changed" rather than "parse the whole vault every call" — correctness against live Obsidian edits follows directly from the mtime check, by construction, exactly like `query_notes`'s per-request read.
+Same precedent as [`query_notes`](./query.md): **no persisted index, no background timers, and nothing that depends on the watcher** — freshness comes from re-scanning per request and stat-ing every scoped file. The cache never consumes watcher events or the reconcile loop's passes: a search never waits on either, and an entry without a watcher (a vault with no corpus, [`vault-entry.md`](./vault-entry.md#the-watcher-follows-the-scope)) serves the same results. The difference from `query_notes` is *what* gets cached: `query_notes` does no caching at all (it re-reads frontmatter every call), while `LexicalIndex` keeps a `path → { mtime, parsed }` cache so unchanged files are not re-parsed, only re-confirmed via `stat`. This bounds the per-call cost to "stat every scoped file, parse only the ones that changed" rather than "parse the whole vault every call" — correctness against live Obsidian edits follows directly from the mtime check, by construction, exactly like `query_notes`'s per-request read. The only background work is `warm()`, one refresh when the entry is created (and again after a scope change) so the first search finds a warm cache.
+
+The tie-break graph follows the same rule: `lexicalSearch` awaits the entry's `graph.ensureFresh()` before ranking (the graph's TTL is `DEFAULT_TTL_MS`, 3 min). The session keeps its own graph for `search_notes`' per-match `backlink_count`; the entry's graph serves only this tie-break (see [`wikilink-graph.md`](./wikilink-graph.md)).
 
 ## What it deliberately does not do
 
 - Never touches the corpus loader or the embedding provider — the lexical leg works identically whether the corpus is warm, cold, or entirely absent.
+- No readiness state on the wire: a search never waits on `warm()` beyond sharing its refresh, and `lexical: warming` appears only in `daemon status`.
+- No watcher-driven invalidation and no FTS-backed implementation. Both would fit behind `lexical.search` later; today the cache is read-through.
+- No second cache per session: a daemon-served session holds no `LexicalIndex` for this leg at all. Only the standalone reader (`--no-semantic`) builds one in the session.
 - No numeric score in the response (design decisions D3/D10) — ordinal position and `matched_in` are considered sufficient signal for an LLM consumer, and it keeps the `similarity`-is-semantic invariant intact.
 - No word-boundary, regex, or fuzzy matching — pure normalized-substring AND, chosen deliberately for recall over Ukrainian declensions (see the normalize chain above). `mode: "semantic"`-style fuzzy tolerance is out of scope for this leg by design.
 - No BM25 or other opaque scoring — ranking is six ordinal tiers plus a density tie-break, chosen for determinism (design decision D7).
