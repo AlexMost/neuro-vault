@@ -63,6 +63,7 @@ describe('createDaemonAttachment', () => {
 
     const key = attachment.key();
     expect(attachment.attaching).toBe(true);
+    expect(attachment.attached).toBe(false);
     link.epoch = 2;
     expect(attachment.attaching).toBe(false);
     link.epoch = 1;
@@ -70,6 +71,12 @@ describe('createDaemonAttachment', () => {
     answer({ vault: REAL, profiles: { [PROFILE]: { state: 'ready' } } });
     await key;
     expect(attachment.attaching).toBe(false);
+    expect(attachment.attached).toBe(true);
+    link.epoch = 2;
+    expect(attachment.attached).toBe(false);
+    link.epoch = 1;
+    attachment.forget();
+    expect(attachment.attached).toBe(false);
   });
 
   it('re-attaches after a new epoch', async () => {

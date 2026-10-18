@@ -42,11 +42,9 @@ function messageOf(error: unknown): string {
  */
 export function createLocalSemanticBackend(opts: ILocalSemanticBackendOptions): ISemanticBackend {
   const { entries, connectionId, attachment, profile } = opts;
-  /** The realpath key, once this backend has got it. */
-  let key: string | undefined;
-
   /** The profile's reader, refused unless it is `ready`. */
   async function readerFor(): Promise<ICorpusReader> {
+    let key: string;
     try {
       key = await attachment.key();
     } catch (error) {
@@ -63,10 +61,9 @@ export function createLocalSemanticBackend(opts: ILocalSemanticBackendOptions): 
   return {
     async status() {
       try {
-        if (key !== undefined) return entries.status(connectionId, key, profile);
-        if (attachment.attaching) return ATTACHING;
-        key = await attachment.key();
-        return attachment.statusOf(profile) ?? entries.status(connectionId, key, profile);
+        if (!attachment.attached && attachment.attaching) return ATTACHING;
+        // Always the live status: another facade may have attached long before this call.
+        return entries.status(connectionId, await attachment.key(), profile);
       } catch (error) {
         return { state: 'unavailable', reason: messageOf(error) };
       }

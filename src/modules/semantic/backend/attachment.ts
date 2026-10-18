@@ -1,7 +1,7 @@
 import type { BackendStatus } from '../../../lib/obsidian/semantic-backend.js';
 import type { VaultEntries } from '../../../lib/vault-entry/index.js';
 import type { ISharedServices } from '../shared-services.js';
-import { CORPUS_TIMEOUTS, isStatus } from './daemon-backend.js';
+import { CORPUS_TIMEOUTS, isStatus } from './corpus-wire.js';
 
 /**
  * One vault's attachment on one connection (design D7): the facades that read
@@ -15,6 +15,8 @@ export interface IVaultAttachment {
   forget(): void;
   /** `true` while an attach is in flight on the current epoch. */
   readonly attaching: boolean;
+  /** `true` once attached on the current epoch (and not forgotten since). */
+  readonly attached: boolean;
   /** The last answered attach's status for `profile`, or undefined. */
   statusOf(profile: string): BackendStatus | undefined;
 }
@@ -96,6 +98,9 @@ export function createDaemonAttachment(opts: IDaemonAttachmentOptions): IVaultAt
     get attaching() {
       return inFlight?.epoch === services.connection.epoch;
     },
+    get attached() {
+      return attachedEpoch === services.connection.epoch;
+    },
     statusOf(profile) {
       const status = statuses[profile];
       return isStatus(status) ? status : undefined;
@@ -137,6 +142,9 @@ export function createLocalAttachment(opts: ILocalAttachmentOptions): IVaultAtta
     },
     get attaching() {
       return inFlight !== undefined;
+    },
+    get attached() {
+      return key !== undefined;
     },
     statusOf: (profile) => statuses[profile],
   };

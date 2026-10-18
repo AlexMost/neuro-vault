@@ -155,9 +155,42 @@ describe('createDaemonSemanticBackend', () => {
       backend.nearest([{ path: 'a.md' }], { threshold: 0 }),
     ]);
     expect(other).toBe(REAL);
-    await backend.status();
+    expect(await backend.status()).toEqual({ state: 'ready' });
 
     expect(methods(link).filter((m) => m === 'vault.attach')).toHaveLength(1);
+  });
+
+  it('a first status after another facade attached reads the live status, not the attach answer', async () => {
+    const { services, link } = fakeServices({
+      'vault.attach': () => ({
+        vault: REAL,
+        profiles: { [PROFILE]: { state: 'indexing', indexed: 0, total: 3 } },
+      }),
+      'vault.status': () => ({ state: 'ready' }),
+    });
+    const attachment = attachmentOver(services);
+    const backend = backendOver(services, fakeLocal, attachment);
+
+    // The other facade attached at startup; the corpus has become ready since.
+    await attachment.key();
+    expect(await backend.status()).toEqual({ state: 'ready' });
+
+    expect(methods(link)).toEqual(['vault.attach', 'vault.status']);
+  });
+
+  it('an attach answered after the epoch moved, with nothing recorded, reads attaching', async () => {
+    let answerStale: (value: unknown) => void = () => {};
+    const { services, link } = fakeServices({
+      'vault.attach': () => new Promise((resolve) => (answerStale = resolve)),
+    });
+    const backend = backendOver(services);
+
+    const stale = backend.status();
+    await vi.waitFor(() => expect(link.request).toHaveBeenCalled());
+    link.epoch = 2;
+    answerStale({ vault: REAL, profiles: { [PROFILE]: { state: 'ready' } } });
+
+    expect(await stale).toEqual(ATTACHING);
   });
 
   it('re-attaches after a new epoch', async () => {

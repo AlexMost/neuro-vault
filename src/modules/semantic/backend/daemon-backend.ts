@@ -19,13 +19,9 @@ import {
 import { DaemonTimeoutError } from '../daemon-connection.js';
 import { SharedServicesClosedError, type ISharedServices } from '../shared-services.js';
 import type { IVaultAttachment } from './attachment.js';
+import { CORPUS_TIMEOUTS, isStatus } from './corpus-wire.js';
 
-export const CORPUS_TIMEOUTS = {
-  attach: 10_000,
-  status: 10_000,
-  /** `corpus.nearest` and `corpus.nearestBlocks`. */
-  read: 30_000,
-} as const;
+export { CORPUS_TIMEOUTS } from './corpus-wire.js';
 
 /** What a vault reads until its first attach answers (spec: sessions attach in the background). */
 const ATTACHING: BackendStatus = { state: 'indexing', indexed: 0, total: 0 };
@@ -51,14 +47,6 @@ function unreadable(error: unknown): BackendStatus {
     return { state: 'unavailable', reason: 'daemon did not answer' };
   }
   return { state: 'unavailable', reason: messageOf(error) };
-}
-
-export function isStatus(value: unknown): value is BackendStatus {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as { state?: unknown }).state === 'string'
-  );
 }
 
 /** Plain JSON for the wire: a `Float32Array` would serialize as an object of indices. */
@@ -96,11 +84,6 @@ function anchorParam(anchor: CorpusAnchor): CorpusAnchorParam {
 export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions): ISemanticBackend {
   const { services, attachment, profile } = opts;
   let localBackend: ISemanticBackend | undefined;
-  /**
-   * The epoch this backend last got the vault's key on. A status on any other
-   * epoch reads the attach's own answer instead of asking the daemon.
-   */
-  let keyedEpoch = -1;
   /** The background connect-then-attach a status started while the switch was undecided. */
   let starting: Promise<void> | undefined;
   /** Set when a background connect met the closed services: the session is gone. */
@@ -111,18 +94,10 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
     return localBackend;
   }
 
-  /** The attachment's key, attaching first when needed; remembers the epoch it was got on. */
-  async function keyOnCurrentEpoch(): Promise<string> {
-    const epoch = services.connection.epoch;
-    const key = await attachment.key();
-    keyedEpoch = epoch;
-    return key;
-  }
-
   /** The key of the vault attached on the current epoch, attaching first when it is not. */
   async function attachedKey(): Promise<string> {
     try {
-      return await keyOnCurrentEpoch();
+      return await attachment.key();
     } catch (error) {
       // Refused with the status a caller would have read: the daemon cannot open the vault.
       if (error instanceof DaemonRpcError && error.code === 'VAULT_UNAVAILABLE') {
@@ -144,7 +119,7 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
     starting ??= (async () => {
       try {
         if ((await services.ensure()) === 'local') await local().status();
-        else if (keyedEpoch !== services.connection.epoch) await keyOnCurrentEpoch();
+        else if (!attachment.attached) await attachment.key();
       } catch (error) {
         if (error instanceof SharedServicesClosedError) closed = error;
       } finally {
@@ -155,7 +130,6 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
 
   /** The daemon no longer knows the vault: the next call attaches again. */
   function forgetAttach(): void {
-    keyedEpoch = -1;
     attachment.forget();
   }
 
@@ -200,9 +174,11 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
       try {
         if ((await services.ensure()) === 'local') return await local().status();
         if (attachment.attaching) return ATTACHING;
-        if (keyedEpoch !== services.connection.epoch) {
-          // The attach's own answer: this call made it (or found it made) on this epoch.
-          await keyOnCurrentEpoch();
+        if (!attachment.attached) {
+          // This call starts the attach or joins it: it reads the attach's own answer.
+          await attachment.key();
+          // An attach answered after the epoch moved recorded nothing: the vault is still attaching.
+          if (!attachment.attached) return ATTACHING;
           return (
             attachment.statusOf(profile) ?? {
               state: 'unavailable',

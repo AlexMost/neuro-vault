@@ -139,6 +139,36 @@ describe('createLocalSemanticBackend', () => {
     expect(attach).toHaveBeenCalledWith(0, vault, [PROFILE]);
   });
 
+  it('a first status after another facade attached reads the live status', async () => {
+    let release: () => void = () => {};
+    embedGate = new Promise<void>((resolve) => (release = resolve));
+    const all = makeEntries();
+    const attachment = createLocalAttachment({
+      entries: all,
+      connectionId: 0,
+      vaultRoot: vault,
+      profiles: [PROFILE],
+    });
+    const backend = createLocalSemanticBackend({
+      entries: all,
+      connectionId: 0,
+      attachment,
+      profile: PROFILE,
+    });
+
+    // The other facade attached at startup, while the corpus was still indexing …
+    const key = await attachment.key();
+    expect(attachment.statusOf(PROFILE)?.state).toBe('indexing');
+    // … and the corpus is ready by the time the backend is first asked.
+    release();
+    await vi.waitFor(() => expect(all.status(0, key, PROFILE)).toEqual({ state: 'ready' }), {
+      timeout: 5_000,
+      interval: 20,
+    });
+
+    expect(await backend.status()).toEqual({ state: 'ready' });
+  });
+
   it('a vault that cannot be attached reads unavailable and refuses reads the same way', async () => {
     const backend = backendOver(makeEntries(), path.join(root, 'missing'));
 
