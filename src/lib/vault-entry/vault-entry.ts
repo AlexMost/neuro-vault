@@ -137,12 +137,18 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
     return new FsVaultReader({ vaultRoot, scope: next });
   }
 
-  /** A fresh index and graph over the current reader (the graph's build time starts at 0). */
+  /** A fresh index and graph over the current reader, both warmed in the background. */
   function buildLexical(): void {
     lexical = new LexicalIndex({ vaultRoot, reader: scopedReader, warn });
     graph = new WikilinkGraphIndex({ reader: scopedReader, ttlMs: opts.graphTtlMs });
     // warm never rejects; searches arriving meanwhile share its refresh.
     void lexical.warm();
+    // A search arriving meanwhile shares this build; a failed one is retried by the next search.
+    void graph.ensureFresh().catch((err: unknown) => {
+      if (disposing !== null) return;
+      const reason = err instanceof Error ? err.message : String(err);
+      warn(`neuro-vault lexical: vault "${vaultName}": tie-break graph warm failed: ${reason}`);
+    });
   }
   buildLexical();
 

@@ -14,6 +14,7 @@ import { ShardCorpus } from '../../../src/lib/obsidian/corpus/shard-corpus.js';
 import { ShardStore } from '../../../src/lib/obsidian/corpus/shard-store.js';
 import type { EmbedDocumentsFn } from '../../../src/lib/obsidian/corpus/types.js';
 import { encodeVector } from '../../../src/lib/obsidian/corpus/vector-codec.js';
+import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import { createVaultScope, type VaultScope } from '../../../src/lib/obsidian/vault-scope.js';
 import {
   createReconcileLoop,
@@ -560,6 +561,78 @@ describe('createVaultEntry lexical members', () => {
     const h = await harness({ populate: writeFixtureVault, scope: scopeOf(['Archive/**']) });
     await vi.waitFor(() => expect(h.entry.lexicalInfo().state).toBe('ready'));
     expect(h.entry.lexicalInfo().notes).toBe(scoped);
+  });
+
+  describe('the tie-break graph warms with the cache', () => {
+    /** LexicalIndex reads files itself; only the graph reads through `readNotes`. */
+    const zebraVault = async (root: string) => {
+      await mkdir(path.join(root, 'Archive'));
+      await writeFile(path.join(root, 'A.md'), 'a zebra crossing\n');
+      await writeFile(path.join(root, 'B.md'), 'a zebra crossing\n');
+      await writeFile(path.join(root, 'Archive/C.md'), 'points at [[B]]\n');
+      await writeFile(path.join(root, 'Archive/D.md'), 'also points at [[B]]\n');
+    };
+    const query = { queries: ['zebra'], ...SEARCH };
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('on creation: the first search reads no note for the graph', async () => {
+      const readNotes = vi.spyOn(FsVaultReader.prototype, 'readNotes');
+      const h = await harness({ graphTtlMs: 3_600_000, populate: zebraVault });
+      await vi.waitFor(() => {
+        expect(h.entry.lexicalInfo().state).toBe('ready');
+        expect(readNotes).toHaveBeenCalled();
+      });
+      const reads = readNotes.mock.calls.length;
+      const result = await h.entry.lexicalSearch(query);
+      expect(result.notes.map((n) => n.path)).toEqual(['B.md', 'A.md']);
+      expect(readNotes.mock.calls.length).toBe(reads);
+      expect(h.warn).not.toHaveBeenCalled();
+    });
+
+    it('after setScope: the graph is warmed again before any search', async () => {
+      const readNotes = vi.spyOn(FsVaultReader.prototype, 'readNotes');
+      const h = await harness({ graphTtlMs: 3_600_000, populate: zebraVault });
+      await vi.waitFor(() => expect(readNotes).toHaveBeenCalled());
+      await h.entry.lexicalSearch(query);
+      const before = readNotes.mock.calls.length;
+
+      h.entry.setScope(scopeOf(['Archive/**']));
+      await vi.waitFor(() => {
+        expect(h.entry.lexicalInfo().state).toBe('ready');
+        expect(readNotes.mock.calls.length).toBeGreaterThan(before);
+      });
+      const reads = readNotes.mock.calls.length;
+      const result = await h.entry.lexicalSearch(query);
+      expect(result.notes.map((n) => n.path)).toEqual(['A.md', 'B.md']);
+      expect(readNotes.mock.calls.length).toBe(reads);
+    });
+
+    it('a background build that fails is logged through warn, never unhandled', async () => {
+      vi.spyOn(FsVaultReader.prototype, 'readNotes').mockRejectedValueOnce(new Error('boom'));
+      const h = await harness({ populate: zebraVault });
+      await vi.waitFor(() =>
+        expect(h.warn).toHaveBeenCalledWith(expect.stringMatching(/graph.*boom/)),
+      );
+      // The next search builds the graph afresh.
+      const result = await h.entry.lexicalSearch(query);
+      expect(result.notes.map((n) => n.path)).toEqual(['B.md', 'A.md']);
+    });
+
+    it('a build that fails after dispose logs nothing', async () => {
+      let fail!: (err: Error) => void;
+      vi.spyOn(FsVaultReader.prototype, 'readNotes').mockImplementationOnce(
+        () => new Promise((_, reject) => (fail = reject)),
+      );
+      const h = await harness({ populate: zebraVault });
+      await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+      await h.entry.dispose();
+      fail(new Error('boom'));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(h.warn).not.toHaveBeenCalled();
+    });
   });
 
   it("lexicalSearch ranks with the entry's graph", async () => {
