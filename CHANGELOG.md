@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [17.2.0](https://github.com/AlexMost/neuro-vault/compare/v17.1.1...v17.2.0) (2026-10-18)
+
+
+### Features
+
+* **lexical:** serve search_notes' lexical leg from the daemon's vault entry ([#184](https://github.com/AlexMost/neuro-vault/issues/184)) ([d41e17d](https://github.com/AlexMost/neuro-vault/commit/d41e17da65f9e7fa330295158d7942cd4e24b752)), closes [#158](https://github.com/AlexMost/neuro-vault/issues/158) [#181](https://github.com/AlexMost/neuro-vault/issues/181) [#183](https://github.com/AlexMost/neuro-vault/issues/183) [#177](https://github.com/AlexMost/neuro-vault/issues/177) [#165](https://github.com/AlexMost/neuro-vault/issues/165) [#158](https://github.com/AlexMost/neuro-vault/issues/158) [#185](https://github.com/AlexMost/neuro-vault/issues/185) [#158](https://github.com/AlexMost/neuro-vault/issues/158) [#176](https://github.com/AlexMost/neuro-vault/issues/176)
+* sessions read the corpus through the daemon's vault entry (daemon-vault-registry 2/2) ([#182](https://github.com/AlexMost/neuro-vault/issues/182)) ([e127cba](https://github.com/AlexMost/neuro-vault/commit/e127cba838c010304652a046270a2a995b89d6b6)), closes [#158](https://github.com/AlexMost/neuro-vault/issues/158) [#175](https://github.com/AlexMost/neuro-vault/issues/175) [#106](https://github.com/AlexMost/neuro-vault/issues/106) [#158](https://github.com/AlexMost/neuro-vault/issues/158) [/github.com/AlexMost/neuro-vault/issues/158#issuecomment-6251194083](https://github.com/AlexMost//github.com/AlexMost/neuro-vault/issues/158/issues/issuecomment-6251194083)
+* **vault-entry:** vault entries in the shared daemon (PR 1, dark) ([#181](https://github.com/AlexMost/neuro-vault/issues/181)) ([4b7489b](https://github.com/AlexMost/neuro-vault/commit/4b7489bae98b4c61bdcc61032868ec3ae949d990)), closes [#175](https://github.com/AlexMost/neuro-vault/issues/175) [#175](https://github.com/AlexMost/neuro-vault/issues/175) [#158](https://github.com/AlexMost/neuro-vault/issues/158) [#106](https://github.com/AlexMost/neuro-vault/issues/106) [/github.com/AlexMost/neuro-vault/pull/181#pullrequestreview-5547884224](https://github.com/AlexMost//github.com/AlexMost/neuro-vault/pull/181/issues/pullrequestreview-5547884224) [#158](https://github.com/AlexMost/neuro-vault/issues/158)
+
+
+### Bug Fixes
+
+* **daemon:** handle ReadBuffer overflow per connection ([#169](https://github.com/AlexMost/neuro-vault/issues/169)) ([adcfa51](https://github.com/AlexMost/neuro-vault/commit/adcfa51600cd3cb1377499f5dd26feca7b09f64e)), closes [#163](https://github.com/AlexMost/neuro-vault/issues/163) [#163](https://github.com/AlexMost/neuro-vault/issues/163)
+* **scope:** expand bare config exclusions to their subtree ([#174](https://github.com/AlexMost/neuro-vault/issues/174)) ([feeb555](https://github.com/AlexMost/neuro-vault/commit/feeb555118b6093db9e46fbd61673ded104c07a3))
+* **search:** keep search_notes registered under --no-semantic ([#179](https://github.com/AlexMost/neuro-vault/issues/179)) ([13e1093](https://github.com/AlexMost/neuro-vault/commit/13e10936a09921f85c33b1e7cbb98e8cb20c591e)), closes [#150](https://github.com/AlexMost/neuro-vault/issues/150)
+
 ## [17.1.1](https://github.com/AlexMost/neuro-vault/compare/v17.1.0...v17.1.1) (2026-10-15)
 
 ## [17.1.0](https://github.com/AlexMost/neuro-vault/compare/v17.0.0...v17.1.0) (2026-10-15)
