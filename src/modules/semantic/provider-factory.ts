@@ -6,11 +6,11 @@ import type { LocalModelLoader } from './local-model-loader.js';
 import {
   createSharedServices,
   type ISharedServices,
-  type SharedServicesOptions,
+  type ISharedServicesOptions,
 } from './shared-services.js';
 import type { EmbeddingProvider } from './types.js';
 
-export interface ProviderFactoryOptions extends SharedServicesOptions {
+export interface ProviderFactoryOptions extends ISharedServicesOptions {
   profile: ModelProfile;
   /** Injected by tests; production loads through transformers.js. */
   loader?: LocalModelLoader;

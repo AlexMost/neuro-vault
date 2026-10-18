@@ -12,7 +12,7 @@ import { createDaemonSemanticBackend } from '../../../src/modules/semantic/backe
 import {
   DaemonConnectionError,
   DaemonTimeoutError,
-  type DaemonLink,
+  type IDaemonLink,
 } from '../../../src/modules/semantic/daemon-connection.js';
 import {
   createSharedServices,
@@ -46,7 +46,7 @@ function fakeServices(handlers: Record<string, Handler> = {}) {
   };
   const services = {
     mode: 'daemon' as ISharedServices['mode'],
-    connection: link as unknown as DaemonLink,
+    connection: link as unknown as IDaemonLink,
     ensure: vi.fn(async () =>
       services.mode === 'local' ? ('local' as const) : ('daemon' as const),
     ),

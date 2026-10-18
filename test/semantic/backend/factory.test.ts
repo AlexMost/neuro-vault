@@ -6,7 +6,7 @@ import {
   createSemanticBackends,
   LOCAL_CONNECTION_ID,
 } from '../../../src/modules/semantic/backend/index.js';
-import type { DaemonLink } from '../../../src/modules/semantic/daemon-connection.js';
+import type { IDaemonLink } from '../../../src/modules/semantic/daemon-connection.js';
 import type { QueuedEmbedder } from '../../../src/modules/semantic/embed-queue.js';
 import type { ISharedServices } from '../../../src/modules/semantic/shared-services.js';
 
@@ -21,7 +21,7 @@ function fakeServices(mode: ISharedServices['mode'] = 'daemon') {
   });
   const services = {
     mode,
-    connection: { epoch: 1, ensure: async () => {}, close: () => {}, request } as DaemonLink,
+    connection: { epoch: 1, ensure: async () => {}, close: () => {}, request } as IDaemonLink,
     ensure: vi.fn(async () =>
       services.mode === 'local' ? ('local' as const) : ('daemon' as const),
     ),

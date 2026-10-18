@@ -27,7 +27,7 @@ export const CONNECT_TIMEOUT_MS = 2_000;
 export const MAX_RESPAWNS = 2;
 
 /** What the facades need from a connection — `DaemonConnection` in production. */
-export interface DaemonLink {
+export interface IDaemonLink {
   /**
    * Changes on every new connection; per-connection setup (`embed.initialize`,
    * `vault.attach`) is re-sent once per value.
@@ -177,7 +177,7 @@ function isNotListening(error: unknown): boolean {
  * rejects after its own timeout. The socket is unref'd while nothing is
  * pending, so an idle connection never keeps a finished process alive.
  */
-export class DaemonConnection implements DaemonLink {
+export class DaemonConnection implements IDaemonLink {
   private socket?: Duplex;
   /** Forgets `socket` and rejects what is pending on it; set by `attach`. */
   private dropSocket?: () => void;

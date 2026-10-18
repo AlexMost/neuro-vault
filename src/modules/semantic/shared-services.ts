@@ -13,7 +13,7 @@ import {
   DaemonUnavailableError,
   type CliStamp,
   type DaemonConnectionDeps,
-  type DaemonLink,
+  type IDaemonLink,
 } from './daemon-connection.js';
 
 /** The connection's I/O, replaceable by tests; everything else is derived. */
@@ -23,7 +23,7 @@ export type ConnectionIo = Omit<
 >;
 
 /** What a process needs to reach the shared daemon, whatever model profiles it runs. */
-export interface SharedServicesOptions {
+export interface ISharedServicesOptions {
   /** false: nothing is shared with a daemon (also what the daemon itself uses). */
   shared: boolean;
   /**
@@ -54,7 +54,7 @@ export interface SharedServicesOptions {
 export interface ISharedServices {
   /** `pending` until the first `ensure()` settles; `local` is final. */
   readonly mode: 'pending' | 'daemon' | 'local';
-  readonly connection: DaemonLink;
+  readonly connection: IDaemonLink;
   /**
    * Connect to the daemon (spawning it if needed). When it cannot be located
    * or started, flip to `local` for good, write one stderr line, and answer
@@ -107,7 +107,7 @@ function stampOf(cliPath: string): CliStamp {
 }
 
 /** A link whose every `ensure` reports the daemon unavailable, for a build we cannot key. */
-function unavailableLink(reason: string): DaemonLink {
+function unavailableLink(reason: string): IDaemonLink {
   return {
     epoch: 0,
     ensure: () => Promise.reject(new DaemonUnavailableError(reason)),
@@ -125,7 +125,7 @@ class SharedServices implements ISharedServices {
   private closed = false;
 
   constructor(
-    readonly connection: DaemonLink,
+    readonly connection: IDaemonLink,
     private readonly stderr: { write(chunk: string): boolean },
     /** Named in the fallback line; absent when the build could not be identified. */
     private readonly logFile: string | undefined,
@@ -187,7 +187,7 @@ class SharedServices implements ISharedServices {
  * probed, spawned or created until the first `ensure()`. `shared: false` is
  * `local` from the start, with no connection and no line.
  */
-export function createSharedServices(opts: SharedServicesOptions): ISharedServices {
+export function createSharedServices(opts: ISharedServicesOptions): ISharedServices {
   const stderr = opts.stderr ?? process.stderr;
   if (!opts.shared) {
     return new SharedServices(unavailableLink('shared daemon disabled'), stderr, undefined, false);

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DaemonRpcError } from '../../src/daemon/protocol.js';
 import {
   DaemonConnectionError,
-  type DaemonLink,
+  type IDaemonLink,
 } from '../../src/modules/semantic/daemon-connection.js';
 import { DaemonEmbeddingProvider } from '../../src/modules/semantic/daemon-embedding-provider.js';
 import { createQueuedEmbedder } from '../../src/modules/semantic/embed-queue.js';
@@ -33,7 +33,7 @@ function fakeLink(answers: Record<string, Answer> = {}) {
 type FakeLink = ReturnType<typeof fakeLink>;
 
 /** The fake's `request` is not generic; the facade only ever reads what it asked for. */
-const asLink = (link: FakeLink): DaemonLink => link as unknown as DaemonLink;
+const asLink = (link: FakeLink): IDaemonLink => link as unknown as IDaemonLink;
 
 function initAnswer(maxBatchSize: number) {
   return { identity: identityOf(profile), max_batch_size: maxBatchSize };

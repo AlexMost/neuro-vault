@@ -28,7 +28,7 @@ import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.
 import { createDaemonSemanticBackend } from '../../../src/modules/semantic/backend/daemon-backend.js';
 import {
   DaemonTimeoutError,
-  type DaemonLink,
+  type IDaemonLink,
 } from '../../../src/modules/semantic/daemon-connection.js';
 import type { ISharedServices } from '../../../src/modules/semantic/shared-services.js';
 import { makeLexicalVault, sourcesScoring, sourcesWithEmbeddingFor } from './_hybrid-helpers.js';
@@ -254,7 +254,7 @@ describe('searchNotes', () => {
     });
     const services: ISharedServices = {
       mode: 'daemon',
-      connection: { epoch: 1, ensure: async () => {}, close: () => {}, request } as DaemonLink,
+      connection: { epoch: 1, ensure: async () => {}, close: () => {}, request } as IDaemonLink,
       ensure: async () => 'daemon',
       close: () => {},
     };
