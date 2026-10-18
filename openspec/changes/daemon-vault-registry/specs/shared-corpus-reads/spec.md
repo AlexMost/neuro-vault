@@ -55,7 +55,7 @@ A session SHALL reach each vault's corpus only through its semantic backend, whi
 
 ### Requirement: Sessions attach every vault in the background at startup
 
-At startup a session SHALL attach every semantically enabled vault with its profile, in the background, without delaying the MCP handshake; until the answer arrives the vault's status SHALL read `{ state: "indexing", indexed: 0, total: 0 }`. A session SHALL re-send `vault.attach` for each vault once per connection to the daemon before its first call on that connection.
+At startup a session SHALL attach every semantically enabled vault with its profile, in the background, without delaying the MCP handshake; while the `vault.attach` request is in flight the vault's status SHALL read `{ state: "indexing", indexed: 0, total: 0 }`, and a call that arrives while the daemon is still being located or started SHALL wait for that first. A session SHALL re-send `vault.attach` for each vault once per connection to the daemon before its first call on that connection.
 
 #### Scenario: A reconnect re-attaches
 
@@ -66,7 +66,7 @@ At startup a session SHALL attach every semantically enabled vault with its prof
 
 ### Requirement: A daemon that dies mid-session is reconnected, not replaced
 
-When the connection to the daemon closes or a request times out, the call in flight SHALL fail and the next call SHALL reconnect, spawning the daemon if needed. The session SHALL NOT build an in-process watcher, reconcile loop or corpus because a connection dropped. It SHALL switch to the in-process vault entry only on the same condition, and through the same one-way switch, as the embedding provider: when the daemon cannot be located or started.
+When the connection to the daemon closes, the call in flight SHALL fail and the next call SHALL reconnect, spawning the daemon if needed; a request that times out SHALL fail that call only, and the connection SHALL stay up. The session SHALL NOT build an in-process watcher, reconcile loop or corpus because a connection dropped. It SHALL switch to the in-process vault entry only on the same condition, and through the same one-way switch, as the embedding provider: when the daemon cannot be located or started.
 
 #### Scenario: Killed daemon
 
