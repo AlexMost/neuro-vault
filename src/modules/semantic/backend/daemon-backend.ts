@@ -177,7 +177,8 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
         if (!attachment.attached) {
           // This call starts the attach or joins it: it reads the attach's own answer.
           await attachment.key();
-          // An attach answered after the epoch moved recorded nothing: the vault is still attaching.
+          // Defensive: key() re-attaches on the current epoch, so this only guards a race in the
+          // microtask gap.
           if (!attachment.attached) return ATTACHING;
           return (
             attachment.statusOf(profile) ?? {

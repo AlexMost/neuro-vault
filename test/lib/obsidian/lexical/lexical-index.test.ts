@@ -15,6 +15,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fs.rm(vaultRoot, { recursive: true, force: true });
 });
 
@@ -204,6 +205,48 @@ describe('LexicalIndex shared refresh rule', () => {
     expect(reads).toEqual([]);
     expect(warn).not.toHaveBeenCalled();
     expect(index.info().warmed).toBe(false);
+  });
+
+  it('a read returning after dispose parses nothing', async () => {
+    await writeFixtureVault(vaultRoot);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let reading = 0;
+    const index = new LexicalIndex({
+      vaultRoot,
+      reader: new FsVaultReader({ vaultRoot }),
+      readFile: async (abs) => {
+        reading++;
+        await gate;
+        return fs.readFile(abs, 'utf8');
+      },
+    });
+
+    const warming = index.warm();
+    await vi.waitFor(() => expect(reading).toBe(12));
+    index.dispose();
+    release();
+
+    await expect(warming).resolves.toBeUndefined();
+    expect(index.info()).toEqual({ warmed: false, notes: 0 });
+  });
+
+  it('a follow-up queued before dispose scans nothing', async () => {
+    await writeFixtureVault(vaultRoot);
+    const { index, statsDone, block } = makeSpiedIndex();
+    const scan = vi.spyOn(FsVaultReader.prototype, 'scan');
+
+    const release = block();
+    const first = index.warm();
+    await vi.waitFor(() => expect(statsDone()).toBe(12));
+    const queued = index.search({ queries: ['пошук'], ...searchOpts });
+    const rejected = expect(queued).rejects.toThrow(/disposed/);
+    index.dispose();
+    release();
+
+    await first;
+    await rejected;
+    expect(scan).toHaveBeenCalledTimes(1);
   });
 
   it('a scan failing after dispose is not warned about', async () => {

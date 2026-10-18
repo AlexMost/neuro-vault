@@ -72,7 +72,7 @@ A read answers paths and similarities (and, for a block, its heading and lines),
 
 Two facades read one vault: its semantic backend and its lexical reader ([`lexical-search.md`](./lexical-search.md#who-holds-the-cache)). They share one **attachment** per vault root (`attachment.ts`, `IVaultAttachment`), so a vault makes one `vault.attach` per connection epoch whichever of them asks first, and a respawned daemon sees one attach followed by both a `corpus.*` and a `lexical.search` call:
 
-- `key()` — the realpath key on the current epoch, attaching first when needed; concurrent callers share the attach, and a refused one (`VAULT_UNAVAILABLE`) rejects as it is.
+- `key()` — the realpath key on the current epoch, attaching first when needed; concurrent callers share the attach, and a refused one (`VAULT_UNAVAILABLE`) rejects as it is. An answer that lands after the connection was replaced attached nothing on the new one, so `key()` attaches again on the current epoch and rejects once three answers in a row landed on replaced epochs.
 - `forget()` — drops the attach after a `NOT_ATTACHED`, so the next `key()` attaches again.
 - `attaching`, `attached` and `statusOf(profile)` — the state the backend's `status()` rules read: `indexing` 0/0 while the attach is in flight, the attach's own answer for the first status after it.
 

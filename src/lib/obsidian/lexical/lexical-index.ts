@@ -103,8 +103,9 @@ export class LexicalIndex {
   }
 
   /**
-   * Stops the refresh in flight (it reads and parses nothing more) and refuses later ones: a
-   * search rejects as disposed, `warm()` resolves silently. Idempotent.
+   * Stops the refresh in flight (it scans, reads and parses nothing more once the call in flight
+   * returns) and refuses later ones: a search rejects as disposed, `warm()` resolves silently.
+   * Idempotent.
    */
   dispose(): void {
     this.disposed = true;
@@ -156,6 +157,7 @@ export class LexicalIndex {
   }
 
   private async runRefresh(): Promise<RefreshResult> {
+    if (this.disposed) throw disposedError(); // a follow-up queued before dispose scans nothing
     const startedAt = Date.now();
     const paths = await this.reader.scan();
     if (this.disposed) throw disposedError();
@@ -182,7 +184,6 @@ export class LexicalIndex {
     let parsedCount = 0;
     await Promise.all(
       stats.map(async ([p, mtimeMs]) => {
-        if (this.disposed) return;
         if (mtimeMs === null) {
           this.cache.delete(p);
           return;
@@ -191,6 +192,7 @@ export class LexicalIndex {
 
         try {
           const raw = await this.readFile(path.join(this.vaultRoot, p));
+          if (this.disposed) return; // a read that returns after dispose parses nothing
           const { content } = splitFrontmatter(raw);
           // The reader strips frontmatter from `content`, but unit `lines`
           // must stay file-relative. Recover the offset from how much of the
