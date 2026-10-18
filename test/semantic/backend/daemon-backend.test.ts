@@ -178,19 +178,29 @@ describe('createDaemonSemanticBackend', () => {
     expect(methods(link)).toEqual(['vault.attach', 'vault.status']);
   });
 
-  it('an attach answered after the epoch moved, with nothing recorded, reads attaching', async () => {
+  it('an attach answered after the epoch moved attaches again and reads the new answer', async () => {
     let answerStale: (value: unknown) => void = () => {};
+    let calls = 0;
     const { services, link } = fakeServices({
-      'vault.attach': () => new Promise((resolve) => (answerStale = resolve)),
+      'vault.attach': () => {
+        calls += 1;
+        if (calls > 1)
+          return {
+            vault: REAL,
+            profiles: { [PROFILE]: { state: 'indexing', indexed: 1, total: 2 } },
+          };
+        return new Promise((resolve) => (answerStale = resolve));
+      },
     });
     const backend = backendOver(services);
 
     const stale = backend.status();
     await vi.waitFor(() => expect(link.request).toHaveBeenCalled());
     link.epoch = 2;
-    answerStale({ vault: REAL, profiles: { [PROFILE]: { state: 'ready' } } });
+    answerStale({ vault: '/stale/key', profiles: { [PROFILE]: { state: 'ready' } } });
 
-    expect(await stale).toEqual(ATTACHING);
+    expect(await stale).toEqual({ state: 'indexing', indexed: 1, total: 2 });
+    expect(methods(link)).toEqual(['vault.attach', 'vault.attach']);
   });
 
   it('re-attaches after a new epoch', async () => {

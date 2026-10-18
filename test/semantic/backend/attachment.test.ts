@@ -135,6 +135,37 @@ describe('createDaemonAttachment', () => {
     expect(link.request).toHaveBeenCalledTimes(2);
   });
 
+  it('key() asked on a replaced epoch never resolves with the key it started with', async () => {
+    let calls = 0;
+    let answerStale: (value: unknown) => void = () => {};
+    const { services, link } = fakeServices(() => {
+      calls += 1;
+      if (calls > 1) return { vault: REAL, profiles: {} };
+      return new Promise((resolve) => (answerStale = resolve));
+    });
+    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [] });
+
+    const stale = attachment.key();
+    link.epoch = 2;
+    answerStale({ vault: '/stale/key', profiles: {} });
+
+    // The answer landed on a replaced epoch: key() attaches again on the current one.
+    expect(await stale).toBe(REAL);
+    expect(attachment.attached).toBe(true);
+    expect(link.request).toHaveBeenCalledTimes(2);
+  });
+
+  it('key() rejects when every attach lands on a replaced epoch', async () => {
+    const { services, link } = fakeServices(() => {
+      link.epoch += 1;
+      return { vault: '/stale/key', profiles: {} };
+    });
+    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [] });
+
+    await expect(attachment.key()).rejects.toThrow(/connection changed/);
+    expect(attachment.attached).toBe(false);
+  });
+
   it('rejects an answer without a vault key and attaches again next time', async () => {
     let calls = 0;
     const { services, link } = fakeServices(() => {

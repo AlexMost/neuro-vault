@@ -38,6 +38,9 @@ export interface ILocalAttachmentOptions {
   profiles: string[];
 }
 
+/** How often key() re-attaches when each answer lands on a connection already replaced. */
+const MAX_ATTACH_ATTEMPTS = 3;
+
 interface IInFlight {
   epoch: number;
   answer: Promise<void>;
@@ -49,7 +52,9 @@ interface IInFlight {
  * attach, and a reconnect (a new epoch) attaches again. An answer from a
  * connection already replaced records nothing on the new one. A refused
  * attach rejects as the daemon's own error (`VAULT_UNAVAILABLE` included),
- * and the next call attaches again.
+ * and the next call attaches again. key() never returns a key the current
+ * connection did not attach: it asks again on the current epoch, and rejects
+ * once a few answers in a row land on a replaced one.
  */
 export function createDaemonAttachment(opts: IDaemonAttachmentOptions): IVaultAttachment {
   const { services, vaultRoot, profiles } = opts;
@@ -89,8 +94,13 @@ export function createDaemonAttachment(opts: IDaemonAttachmentOptions): IVaultAt
 
   return {
     async key() {
-      if (attachedEpoch !== services.connection.epoch) await attach();
-      return key;
+      // An answer that lands on a replaced epoch attached nothing here: ask again on the current
+      // one rather than hand out a key this connection never attached.
+      for (let attempt = 0; attempt < MAX_ATTACH_ATTEMPTS; attempt++) {
+        if (attachedEpoch !== services.connection.epoch) await attach();
+        if (attachedEpoch === services.connection.epoch) return key;
+      }
+      throw new Error(`vault "${vaultRoot}" could not attach: the daemon connection changed`);
     },
     forget() {
       attachedEpoch = -1;
