@@ -8,7 +8,7 @@
 **Verified at**: `2026-10-18 16:08`
 **Verifier**: Claude Sonnet 5.5 (`/opsx:verify` session). The requirement-to-scenario mapping in section 4.1 and the design adherence in 4.2 were done in the apply session; the gates, eval and by-hand results come from the controller.
 
-Scope: PR 2 of the change (PR 1 is merged as `4b7489b`). Verified at `HEAD` (`969b58c`) of `claude/daemon-vault-registry-pr2-02068c`; PR 2 is `4b7489b..HEAD`, 15 commits.
+Scope: PR 2 of the change (PR 1 is merged as `4b7489b`). Verified at `969b58c` of `claude/daemon-vault-registry-pr2-02068c` (eval, by-hand checks, footprint); gates re-run at `8bec504` after the independent review's fixes (`969b58c..8bec504`: spec wording, a `find_duplicates` Unicode-equivalent pair fold, a connection closed after a concurrent flip, `I`-prefix renames, docs). None of those fixes touches the ranking path or the session's memory, so the eval and footprint results stand.
 
 ## Summary
 
@@ -22,16 +22,17 @@ Scope: PR 2 of the change (PR 1 is merged as `4b7489b`). Verified at `HEAD` (`96
 
 ## 0. Gates
 
-At `969b58c`:
+At `8bec504` (re-run after the independent review's fixes; at `969b58c` the suite was 2339 passed / 4 skipped, every other gate the same):
 
 | gate | result |
 | --- | --- |
-| `npm test` | pass: 155 files passed, 1 skipped; **2339 tests passed / 4 skipped** |
+| `npm test` | pass: 155 files passed, 1 skipped; **2341 tests passed / 4 skipped** |
 | `npm run lint` | clean (exit 0) |
 | `npm run typecheck` | clean (exit 0) |
 | `npm run format` | clean (exit 0) |
 | `npm run build` | pass (exit 0) |
 | `npx commitlint --from origin/main --to HEAD` | pass (exit 0) |
+| `npx openspec validate --all` | 22 passed, 0 failed |
 
 ### Eval (`npm run eval`, offline retrieval quality)
 
@@ -262,10 +263,10 @@ The requirement text "`CORPUS_FAILED` and `NOT_ATTACHED` SHALL be reported as `D
 
 ## 5. Implementation Signal
 
-- [x] No unstaged files in the worktree other than this report: `git status --short` lists only `?? openspec/changes/daemon-vault-registry/verify.md`
+- [x] No unstaged files in the worktree: everything, this report included, is committed
 - [ ] All relevant commits are pushed — not checked by this run; the push comes with 12.3 (PR 2)
 
-**Commit range**: `4b7489b..969b58c` (15 commits; `969b58c docs: qualify when the daemon starts and when vault config is read` is HEAD).
+**Commit range**: `4b7489b..8bec504` (21 commits; `8bec504 docs: stop the daemon before deleting a corpus to force a rebuild` is HEAD).
 
 ---
 
