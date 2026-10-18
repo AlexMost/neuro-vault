@@ -65,7 +65,9 @@ export interface ISharedServices {
   /**
    * Drop the connection for good, which detaches this session from every
    * vault entry it attached. Final: no later `ensure()` connects again, and a
-   * connect still in flight is dropped as it lands.
+   * connect still in flight stops where it is (no poll timer left, nothing
+   * spawned after it); its `ensure()` rejects with
+   * {@link SharedServicesClosedError} and never falls back.
    */
   close(): void;
 }
