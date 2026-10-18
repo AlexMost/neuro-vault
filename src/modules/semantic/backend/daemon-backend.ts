@@ -17,7 +17,7 @@ import {
   type ISemanticBackend,
 } from '../../../lib/obsidian/semantic-backend.js';
 import { DaemonTimeoutError } from '../daemon-connection.js';
-import type { ISharedServices } from '../shared-services.js';
+import { SharedServicesClosedError, type ISharedServices } from '../shared-services.js';
 
 export const CORPUS_TIMEOUTS = {
   attach: 10_000,
@@ -105,6 +105,8 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
   let attaching: IAttach | undefined;
   /** The background connect-then-attach a status started while the switch was undecided. */
   let starting: Promise<void> | undefined;
+  /** Set when a background connect met the closed services: the session is gone. */
+  let closed: SharedServicesClosedError | undefined;
 
   function local(): ISemanticBackend {
     localBackend ??= opts.local();
@@ -160,16 +162,19 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
 
   /**
    * Connect, then attach (or attach the in-process backend), in the background.
-   * Concurrent statuses share it. It never rejects: a failure is read by the
-   * next status, which then runs the connect itself or starts this again.
+   * Concurrent statuses share it, and it never rejects. A connect that cannot
+   * be made flips the switch, and a failed attach leaves it decided: either
+   * way the next status reads through the decided path. The one failure that
+   * leaves the switch undecided is the services closing under the connect;
+   * it is remembered, so a later status reads `unavailable` with its reason.
    */
   function startInBackground(): void {
     starting ??= (async () => {
       try {
         if ((await services.ensure()) === 'local') await local().status();
         else if (attachedEpoch !== services.connection.epoch) await attach();
-      } catch {
-        // Nobody awaits this; the next status call reports what is wrong.
+      } catch (error) {
+        if (error instanceof SharedServicesClosedError) closed = error;
       } finally {
         starting = undefined;
       }
@@ -210,6 +215,7 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
     async status() {
       // The first connect may take the whole spawn-and-poll: read the vault as attaching.
       if (services.mode === 'pending') {
+        if (closed) return unreadable(closed);
         startInBackground();
         return ATTACHING;
       }

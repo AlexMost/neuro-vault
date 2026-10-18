@@ -186,9 +186,10 @@ function isNotListening(error: unknown): boolean {
  * way, and stops a connect in flight where it is: no timer of the poll is left,
  * nothing is spawned after it, a socket that connects after it is destroyed,
  * and that `ensure()` rejects with `DaemonConnectionError` — never
- * `DaemonUnavailableError`, so a hang-up is no reason to fall back. A request the daemon never answers
- * rejects after its own timeout. The socket is unref'd while nothing is
- * pending, so an idle connection never keeps a finished process alive.
+ * `DaemonUnavailableError`, so a hang-up is no reason to fall back. A request
+ * the daemon never answers rejects after its own timeout. The socket is
+ * unref'd while nothing is pending, so an idle connection never keeps a
+ * finished process alive.
  */
 export class DaemonConnection implements IDaemonLink {
   private socket?: Duplex;

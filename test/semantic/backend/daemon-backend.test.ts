@@ -456,6 +456,13 @@ describe('createDaemonSemanticBackend', () => {
     services.close();
     land(s);
     await vi.waitFor(() => expect(s.destroyed).toBe(true));
+    // The background connect met the closed services: a later status says so.
+    await vi.waitFor(async () =>
+      expect(await backend.status()).toEqual({
+        state: 'unavailable',
+        reason: 'shared services closed: the session is shutting down',
+      }),
+    );
 
     await expect(backend.nearest([{ path: 'a.md' }], { threshold: 0 })).rejects.toBeInstanceOf(
       SharedServicesClosedError,
