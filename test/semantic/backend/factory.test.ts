@@ -169,21 +169,49 @@ describe('createSemanticBackends', () => {
   });
 
   it('dispose disposes the entries, and only once they exist', async () => {
-    const { services } = fakeServices('local');
-    const { entries, createEntries } = fakeEntries();
+    const build = () => {
+      const { services } = fakeServices('local');
+      const fake = fakeEntries();
+      const backends = createSemanticBackends({
+        services,
+        shared: false,
+        profile: PROFILE,
+        embedder,
+        createEntries: fake.createEntries,
+      });
+      return { backends, ...fake };
+    };
+
+    const unused = build();
+    await unused.backends.dispose();
+    expect(unused.createEntries).not.toHaveBeenCalled();
+
+    const used = build();
+    used.backends.factory({ vaultRoot: '/v/a', enabled: true });
+    await used.backends.dispose();
+    expect(used.entries.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('a switch to local that lands after dispose builds no entries', async () => {
+    const { services } = fakeServices('daemon');
+    let flip: (mode: 'local') => void = () => {};
+    services.ensure.mockImplementation(() => new Promise((resolve) => (flip = resolve)));
+    const { createEntries } = fakeEntries();
     const backends = createSemanticBackends({
       services,
-      shared: false,
+      shared: true,
       profile: PROFILE,
       embedder,
       createEntries,
     });
+    const backend = backends.factory({ vaultRoot: '/v/a', enabled: true });
 
+    // The startup status read, still waiting on the daemon when the client hangs up.
+    const status = backend.status();
     await backends.dispose();
+    flip('local');
+
+    expect(await status).toMatchObject({ state: 'unavailable' });
     expect(createEntries).not.toHaveBeenCalled();
-
-    backends.factory({ vaultRoot: '/v/a', enabled: true });
-    await backends.dispose();
-    expect(entries.dispose).toHaveBeenCalledTimes(1);
   });
 });

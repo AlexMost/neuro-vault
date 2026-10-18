@@ -59,9 +59,23 @@ export interface ISharedServices {
    * Connect to the daemon (spawning it if needed). When it cannot be located
    * or started, flip to `local` for good, write one stderr line, and answer
    * `local`. A connection error on a later request never flips the switch.
+   * After `close()` it rejects with {@link SharedServicesClosedError}.
    */
   ensure(): Promise<'daemon' | 'local'>;
+  /**
+   * Drop the connection for good, which detaches this session from every
+   * vault entry it attached. Final: no later `ensure()` connects again, and a
+   * connect still in flight is dropped as it lands.
+   */
   close(): void;
+}
+
+/** The services were closed (the session is shutting down); nothing reconnects. */
+export class SharedServicesClosedError extends Error {
+  constructor() {
+    super('shared services closed: the session is shutting down');
+    this.name = 'SharedServicesClosedError';
+  }
 }
 
 function defaultIo(uid: number): ConnectionIo {
@@ -108,6 +122,7 @@ function messageOf(error: unknown): string {
 
 class SharedServices implements ISharedServices {
   private current: 'pending' | 'daemon' | 'local';
+  private closed = false;
 
   constructor(
     readonly connection: DaemonLink,
@@ -124,14 +139,22 @@ class SharedServices implements ISharedServices {
   }
 
   async ensure(): Promise<'daemon' | 'local'> {
+    if (this.closed) throw new SharedServicesClosedError();
     if (this.current === 'local') return 'local';
     try {
       await this.connection.ensure();
     } catch (error) {
+      // A shutdown while the daemon was being located is no reason to go in-process.
+      if (this.closed) throw new SharedServicesClosedError();
       // Only locating or starting the daemon raises it; anything else is the caller's.
       if (!(error instanceof DaemonUnavailableError)) throw error;
       this.switchToLocal(error);
       return 'local';
+    }
+    if (this.closed) {
+      // The connect landed after close(): drop it, or it would attach for a session already gone.
+      this.connection.close();
+      throw new SharedServicesClosedError();
     }
     // A concurrent caller may have flipped the switch while this one connected.
     if (this.mode === 'local') return 'local';
@@ -140,6 +163,7 @@ class SharedServices implements ISharedServices {
   }
 
   close(): void {
+    this.closed = true;
     this.connection.close();
   }
 

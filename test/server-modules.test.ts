@@ -12,6 +12,7 @@ import { modelCorpusDir } from '../src/lib/obsidian/corpus/layout.js';
 import type { BackendStatus, ISemanticBackend } from '../src/lib/obsidian/semantic-backend.js';
 import { main } from '../src/cli.js';
 import { DEFAULT_MODEL_KEY, identityOf, resolveModelProfile } from '../src/lib/model-profiles.js';
+import { createSharedServices } from '../src/modules/semantic/shared-services.js';
 import { startNeuroVaultServer } from '../src/server.js';
 
 function createTempVaultPath() {
@@ -723,6 +724,13 @@ describe('two vaults, one model', () => {
       embedDocuments,
     };
     const server = createFakeServer();
+    // No CLI script to key a daemon by: the first corpus call flips the switch
+    // and both vaults are served by this process's own vault entries.
+    const stderrLines: string[] = [];
+    const sharedServices = createSharedServices({
+      shared: true,
+      stderr: { write: (line) => (stderrLines.push(line), true) },
+    });
 
     const dispose = await startNeuroVaultServer(
       {
@@ -734,6 +742,7 @@ describe('two vaults, one model', () => {
       },
       {
         embeddingProvider: provider,
+        sharedServices,
         serverFactory: () => server as never,
         transportFactory: () => ({}) as never,
         stdin: new PassThrough(),
@@ -782,6 +791,11 @@ describe('two vaults, one model', () => {
         expect(await progressOf('beta')).toBe('ready');
       });
 
+      // One fallback line for the whole process, however many vaults switched.
+      expect(stderrLines).toEqual([
+        'neuro-vault-mcp: shared daemon unavailable (no CLI script path to key it by); ' +
+          'running in-process for this session\n',
+      ]);
       // The one provider served both vaults.
       const texts = embedDocuments.mock.calls.flatMap(([batch]) => batch);
       expect(texts.some((t) => t.includes('alpha-marker'))).toBe(true);

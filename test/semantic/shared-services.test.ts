@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { daemonPaths } from '../../src/daemon/paths.js';
 import { DaemonConnectionError } from '../../src/modules/semantic/daemon-connection.js';
-import { createSharedServices } from '../../src/modules/semantic/shared-services.js';
+import {
+  createSharedServices,
+  SharedServicesClosedError,
+} from '../../src/modules/semantic/shared-services.js';
 
 function errno(code: string): NodeJS.ErrnoException {
   return Object.assign(new Error(code), { code });
@@ -132,5 +135,67 @@ describe('createSharedServices', () => {
     await services.ensure();
     services.close();
     expect(s.destroyed).toBe(true);
+  });
+
+  it('ensure() after close() never connects again', async () => {
+    const io = {
+      ensureSocketDir: vi.fn(),
+      connect: vi.fn(async () => socket()),
+      spawn: vi.fn(),
+    };
+    const services = createSharedServices({ ...baseOptions, io });
+    await services.ensure();
+    services.close();
+
+    await expect(services.ensure()).rejects.toBeInstanceOf(SharedServicesClosedError);
+    expect(io.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('a connect that lands after close() is dropped, not used', async () => {
+    const s = socket();
+    let land: (value: Duplex) => void = () => {};
+    const io = {
+      ensureSocketDir: vi.fn(),
+      connect: vi.fn(() => new Promise<Duplex>((resolve) => (land = resolve))),
+      spawn: vi.fn(),
+    };
+    const services = createSharedServices({ ...baseOptions, io });
+    const pending = services.ensure();
+    await vi.waitFor(() => expect(io.connect).toHaveBeenCalled());
+
+    services.close();
+    land(s);
+
+    await expect(pending).rejects.toBeInstanceOf(SharedServicesClosedError);
+    expect(s.destroyed).toBe(true);
+  });
+
+  it('a daemon that cannot be started after close() writes no fallback line', async () => {
+    const lines: string[] = [];
+    let fail: (error: Error) => void = () => {};
+    const io = {
+      ensureSocketDir: vi.fn(),
+      connect: vi.fn(() => new Promise<Duplex>((_resolve, reject) => (fail = reject))),
+      spawn: vi.fn(() => {
+        throw new Error('spawn denied');
+      }),
+      openLog: vi.fn(() => 9),
+      closeFd: vi.fn(),
+      mkdirp: vi.fn(),
+    };
+    const services = createSharedServices({
+      ...baseOptions,
+      stderr: { write: (s) => (lines.push(s), true) },
+      io,
+    });
+    const pending = services.ensure();
+    await vi.waitFor(() => expect(io.connect).toHaveBeenCalled());
+
+    services.close();
+    fail(errno('ENOENT'));
+
+    await expect(pending).rejects.toBeInstanceOf(SharedServicesClosedError);
+    expect(services.mode).not.toBe('local');
+    expect(lines).toEqual([]);
   });
 });

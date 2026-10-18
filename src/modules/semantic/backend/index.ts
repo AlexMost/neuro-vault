@@ -37,7 +37,10 @@ export interface ISemanticBackendOptions {
 export interface ISemanticBackends {
   /** The registry's `semanticBackendFactory`: one vault in, its backend out. */
   factory: (opts: ISemanticBackendOptions) => ISemanticBackend;
-  /** Disposes the in-process vault entries, if any vault ever needed them. */
+  /**
+   * Disposes the in-process vault entries, if any vault ever needed them. Final:
+   * a backend that needs them afterwards reads `unavailable` and fails its reads.
+   */
   dispose(): Promise<void>;
 }
 
@@ -73,8 +76,12 @@ export function createDisabledSemanticBackend(): ISemanticBackend {
 export function createSemanticBackends(opts: ISemanticBackendsOptions): ISemanticBackends {
   const createEntries = opts.createEntries ?? ((deps) => new VaultEntries(deps));
   let entries: VaultEntries | undefined;
+  let disposed = false;
 
   function localEntries(): VaultEntries {
+    // A call still in flight at shutdown (a daemon facade whose switch flipped
+    // after teardown, say) must not start watchers and a pass nothing disposes.
+    if (disposed) throw new Error('semantic backends disposed: the session is shutting down');
     entries ??= createEntries({
       embedderFor: (key) => {
         if (key !== opts.profile) {
@@ -108,6 +115,7 @@ export function createSemanticBackends(opts: ISemanticBackendsOptions): ISemanti
       });
     },
     dispose: async () => {
+      disposed = true;
       await entries?.dispose();
     },
   };

@@ -1,3 +1,5 @@
+import { Duplex } from 'node:stream';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { DaemonRpcError } from '../../../src/daemon/protocol.js';
@@ -12,7 +14,11 @@ import {
   DaemonTimeoutError,
   type DaemonLink,
 } from '../../../src/modules/semantic/daemon-connection.js';
-import type { ISharedServices } from '../../../src/modules/semantic/shared-services.js';
+import {
+  createSharedServices,
+  SharedServicesClosedError,
+  type ISharedServices,
+} from '../../../src/modules/semantic/shared-services.js';
 
 const VAULT = '/vaults/notes';
 const REAL = '/private/vaults/notes';
@@ -114,6 +120,32 @@ describe('createDaemonSemanticBackend', () => {
     await backend.nearest([{ path: 'a.md' }], { threshold: 0 });
 
     expect(methods(link)).toEqual(['vault.attach', 'vault.attach', 'corpus.nearest']);
+  });
+
+  it('an attach answered after the epoch moved attaches nothing on the new connection', async () => {
+    let answerStale: (value: unknown) => void = () => {};
+    let calls = 0;
+    const { services, link } = fakeServices({
+      'vault.attach': () => {
+        calls += 1;
+        if (calls > 1) return { vault: REAL, profiles: { [PROFILE]: { state: 'ready' } } };
+        return new Promise((resolve) => (answerStale = resolve));
+      },
+    });
+    const backend = backendOver(services);
+
+    // An attach on epoch 1 is still out when the connection is replaced …
+    const stale = backend.status();
+    await vi.waitFor(() => expect(link.request).toHaveBeenCalled());
+    link.epoch = 2;
+    // … the new connection attaches, and only then does the old answer arrive.
+    expect(await backend.status()).toEqual({ state: 'ready' });
+    answerStale({ vault: '/stale/key', profiles: { [PROFILE]: { state: 'ready' } } });
+    await stale;
+    await backend.nearest([{ path: 'a.md' }], { threshold: 0 });
+
+    expect(methods(link)).toEqual(['vault.attach', 'vault.attach', 'corpus.nearest']);
+    expect(link.request.mock.calls[2]?.[1]).toMatchObject({ vault: REAL });
   });
 
   it('status reads indexing 0/0 while the attach is in flight', async () => {
@@ -320,5 +352,48 @@ describe('createDaemonSemanticBackend', () => {
     const makeLocal = vi.fn(fakeLocal);
     await backendOver(services, makeLocal).dispose();
     expect(makeLocal).not.toHaveBeenCalled();
+  });
+
+  it('sends no vault.attach once the services were closed under a connect', async () => {
+    const written: string[] = [];
+    const s = new Duplex({
+      read() {},
+      write: (chunk: Buffer, _encoding, cb) => {
+        written.push(chunk.toString());
+        cb();
+      },
+    });
+    let land: (value: Duplex) => void = () => {};
+    const services = createSharedServices({
+      shared: true,
+      cliPath: '/opt/nv/dist/cli.js',
+      version: '18.0.0',
+      env: { XDG_CACHE_HOME: '/xdg' },
+      home: '/home/u',
+      uid: 501,
+      platform: 'linux',
+      build: () => ({ size: 10, mtimeMs: 20 }),
+      stderr: { write: () => true },
+      io: {
+        ensureSocketDir: vi.fn(),
+        connect: vi.fn(() => new Promise<Duplex>((resolve) => (land = resolve))),
+        spawn: vi.fn(),
+      },
+    });
+    const local = vi.fn(fakeLocal);
+    const backend = backendOver(services, local);
+
+    const status = backend.status();
+    await Promise.resolve();
+    services.close();
+    land(s);
+
+    expect(await status).toMatchObject({ state: 'unavailable' });
+    await expect(backend.nearest([{ path: 'a.md' }], { threshold: 0 })).rejects.toBeInstanceOf(
+      SharedServicesClosedError,
+    );
+    expect(written).toEqual([]);
+    expect(s.destroyed).toBe(true);
+    expect(local).not.toHaveBeenCalled();
   });
 });

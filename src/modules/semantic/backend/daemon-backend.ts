@@ -119,8 +119,11 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
         if (typeof result?.vault !== 'string') {
           throw new Error('daemon answered vault.attach without a vault key');
         }
-        key = result.vault;
-        attachedEpoch = epoch;
+        // An answer from a connection already replaced attaches nothing on the new one.
+        if (epoch === services.connection.epoch) {
+          key = result.vault;
+          attachedEpoch = epoch;
+        }
         const status = result.profiles?.[profile];
         return isStatus(status)
           ? status
