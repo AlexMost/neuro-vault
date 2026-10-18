@@ -20,6 +20,8 @@ interface RefreshResult {
   notes: Map<string, ParsedNote>;
 }
 
+const disposedError = (): Error => new Error('lexical index disposed');
+
 export interface ILexicalIndexInfo {
   warmed: boolean;
   notes: number;
@@ -52,6 +54,7 @@ export class LexicalIndex {
   private running: Promise<RefreshResult> | null = null;
   private queued: Promise<RefreshResult> | null = null;
   private lastRefresh: { at: Date; parsed: number; ms: number } | undefined;
+  private disposed = false;
 
   constructor(opts: {
     vaultRoot: string;
@@ -99,11 +102,20 @@ export class LexicalIndex {
     return { ...ranked, totalNotes: paths.length };
   }
 
-  /** One refresh through the serialising rule; never rejects (a failure goes to `warn`). */
+  /**
+   * Stops the refresh in flight (it reads and parses nothing more) and refuses later ones: a
+   * search rejects as disposed, `warm()` resolves silently. Idempotent.
+   */
+  dispose(): void {
+    this.disposed = true;
+  }
+
+  /** One refresh through the serialising rule; never rejects (a failure goes to `warn`, unless disposed). */
   async warm(): Promise<void> {
     try {
       await this.refresh();
     } catch (err) {
+      if (this.disposed) return;
       this.warn(`lexical index warm failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
@@ -122,6 +134,7 @@ export class LexicalIndex {
    * the caller is served by a refresh that starts after it arrived.
    */
   private refresh(): Promise<RefreshResult> {
+    if (this.disposed) return Promise.reject(disposedError());
     if (this.queued) return this.queued;
     if (!this.running) return this.start();
     const queued: Promise<RefreshResult> = this.running
@@ -145,6 +158,7 @@ export class LexicalIndex {
   private async runRefresh(): Promise<RefreshResult> {
     const startedAt = Date.now();
     const paths = await this.reader.scan();
+    if (this.disposed) throw disposedError();
 
     // Drop cache entries for notes the scan no longer lists (deletions and
     // scope changes). `allowed` is never applied here.
@@ -163,9 +177,12 @@ export class LexicalIndex {
       }),
     );
 
+    if (this.disposed) throw disposedError();
+
     let parsedCount = 0;
     await Promise.all(
       stats.map(async ([p, mtimeMs]) => {
+        if (this.disposed) return;
         if (mtimeMs === null) {
           this.cache.delete(p);
           return;
@@ -192,6 +209,8 @@ export class LexicalIndex {
         }
       }),
     );
+
+    if (this.disposed) throw disposedError();
 
     // Snapshot for the callers this refresh serves: a later refresh may mutate
     // the cache before they resume.

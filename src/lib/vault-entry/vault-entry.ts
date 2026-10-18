@@ -139,7 +139,11 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
 
   /** A fresh index and graph over the current reader, both warmed in the background. */
   function buildLexical(): void {
-    lexical = new LexicalIndex({ vaultRoot, reader: scopedReader, warn });
+    lexical = new LexicalIndex({
+      vaultRoot,
+      reader: scopedReader,
+      warn: (message) => warn(`neuro-vault lexical: vault "${vaultName}": ${message}`),
+    });
     graph = new WikilinkGraphIndex({ reader: scopedReader, ttlMs: opts.graphTtlMs });
     // warm never rejects; searches arriving meanwhile share its refresh.
     void lexical.warm();
@@ -411,6 +415,7 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
       };
     },
     dispose() {
+      lexical?.dispose();
       lexical = null;
       graph = null;
       disposing ??= (async () => {

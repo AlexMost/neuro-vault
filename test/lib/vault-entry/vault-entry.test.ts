@@ -690,6 +690,33 @@ describe('createVaultEntry lexical members', () => {
     );
   });
 
+  it('dispose during a cold warm stops it: a warm that fails after is not logged', async () => {
+    let fail!: (err: Error) => void;
+    const scan = vi
+      .spyOn(FsVaultReader.prototype, 'scan')
+      .mockImplementationOnce(() => new Promise<string[]>((_, reject) => (fail = reject)));
+    const h = await harness({ populate: writeFixtureVault });
+    await vi.waitFor(() => expect(fail).toBeTypeOf('function'));
+    await h.entry.dispose();
+    fail(new Error('scan exploded'));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(h.warn).not.toHaveBeenCalled();
+    scan.mockRestore();
+  });
+
+  it('a failed warm names the vault', async () => {
+    const scan = vi.spyOn(FsVaultReader.prototype, 'scan');
+    scan.mockRejectedValueOnce(new Error('scan exploded'));
+    const h = await harness({ populate: writeFixtureVault });
+    await vi.waitFor(() => expect(h.warn).toHaveBeenCalled());
+    expect(h.warn.mock.calls.map((c) => c[0] as string)).toEqual([
+      expect.stringMatching(
+        /^neuro-vault lexical: vault "v": lexical index warm failed.*scan exploded/,
+      ),
+    ]);
+    scan.mockRestore();
+  });
+
   it('a search does not touch the watcher or the loop', async () => {
     const h = await harness({ populate: writeFixtureVault, loop: { withLock: heldLock } });
     h.entry.addProfile(HARRIER);

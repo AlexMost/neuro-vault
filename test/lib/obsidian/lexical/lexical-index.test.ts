@@ -188,6 +188,46 @@ describe('LexicalIndex shared refresh rule', () => {
   const editBacklog = (): Promise<void> =>
     editNote(EDITED, 'Черга задач: новеслово тут.\n', 60_000);
 
+  it('dispose during a refresh stops it: no further read, no warning, warm resolves', async () => {
+    await writeFixtureVault(vaultRoot);
+    const warn = vi.fn();
+    const { index, reads, statsDone, block } = makeSpiedIndex({ warn });
+
+    const release = block();
+    const warming = index.warm();
+    await vi.waitFor(() => expect(statsDone()).toBe(12));
+    index.dispose();
+    release();
+
+    await expect(warming).resolves.toBeUndefined();
+    await settle();
+    expect(reads).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
+    expect(index.info().warmed).toBe(false);
+  });
+
+  it('a scan failing after dispose is not warned about', async () => {
+    const warn = vi.fn();
+    let fail!: (err: Error) => void;
+    const reader = {
+      scan: () => new Promise<string[]>((_, reject) => (fail = reject)),
+      readNotes: async () => [],
+    };
+    const index = new LexicalIndex({ vaultRoot, reader, warn });
+    const warming = index.warm();
+    index.dispose();
+    fail(new Error('scan exploded'));
+    await expect(warming).resolves.toBeUndefined();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('a search after dispose rejects as disposed', async () => {
+    await writeFixtureVault(vaultRoot);
+    const { index } = makeSpiedIndex();
+    index.dispose();
+    await expect(index.search({ queries: ['пошук'], ...searchOpts })).rejects.toThrow(/disposed/);
+  });
+
   it('a filtered search evicts nothing', async () => {
     await writeFixtureVault(vaultRoot);
     const { index, reads } = makeSpiedIndex();
