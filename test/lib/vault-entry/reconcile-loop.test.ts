@@ -14,6 +14,7 @@ import {
   type NoteContent,
   type withReconcileLock,
 } from '../../../src/lib/obsidian/corpus/reconcile.js';
+import { modelCorpusDir } from '../../../src/lib/obsidian/corpus/layout.js';
 import { CorpusLockTimeoutError } from '../../../src/lib/obsidian/corpus/reconcile-lock.js';
 import { ShardCorpus } from '../../../src/lib/obsidian/corpus/shard-corpus.js';
 import { ShardStore } from '../../../src/lib/obsidian/corpus/shard-store.js';
@@ -494,6 +495,49 @@ describe('createReconcileLoop, one profile', () => {
     expect(load).toHaveBeenCalledTimes(2); // startup load + the refresh after the waited pass
     expect(refresh).toHaveBeenCalledTimes(1);
   });
+
+  it.each([true, false])(
+    'a pass after `index --prune` removed the served model directory keeps serving (waited: %s)',
+    async (waited) => {
+      const files = { 'a.md': body('a'), 'b.md': body('b') };
+      const prune: { root?: string } = {};
+      const lock = scriptedLock((call) =>
+        call === 1
+          ? {}
+          : {
+              waited,
+              // `index --model other --prune` removed this model's directory before the pass.
+              before: async () => {
+                if (prune.root) {
+                  await rm(modelCorpusDir(prune.root, TEST_IDENTITY.model_key), {
+                    recursive: true,
+                    force: true,
+                  });
+                }
+              },
+            },
+      );
+      const h = await harness(files, { withLock: lock.withLock });
+      prune.root = h.root;
+      const { store, corpus } = corpusOn(h.root);
+      await seed(store, files);
+      const embed = vi.fn(okEmbed);
+      h.loop.addProfile(profileOf('p', corpus, { embed }));
+      await h.loop.whenSettled();
+      const before = await store.listShards();
+
+      h.loop.requestPass();
+      await h.loop.whenSettled();
+
+      expect(lock.calls()).toBe(2);
+      expect(h.loop.status('p')).toEqual({ state: 'ready' });
+      expect(corpus.size()).toBe(2);
+      expect(Array.from(corpus.vectorOf('a.md') ?? [])[0]).toBeCloseTo(0.1);
+      expect(embed).not.toHaveBeenCalled();
+      // Written back from memory, so a reload after a restart serves the same corpus.
+      expect(await store.listShards()).toEqual(before);
+    },
+  );
 
   it('keeps serving through a lock timeout and retries on the backoff', async () => {
     const files = { 'a.md': body('a'), 'b.md': body('b') };

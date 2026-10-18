@@ -1,9 +1,10 @@
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CorpusIdentity } from '../../../../src/lib/obsidian/corpus/identity.js';
+import { modelCorpusDir } from '../../../../src/lib/obsidian/corpus/layout.js';
 import { ShardCorpus } from '../../../../src/lib/obsidian/corpus/shard-corpus.js';
 import { ShardStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
 import type { CorpusShard, SmartSource } from '../../../../src/lib/obsidian/corpus/types.js';
@@ -390,6 +391,46 @@ describe('ShardCorpus', () => {
     expect(Array.from(corpus.vectorOf('f.md') ?? [])).toEqual([0, 0, 0, 1]);
     expect(corpus.vectorOf('a.md')).toBeNull();
     expect((await corpus.entries()).has('a.md')).toBe(false);
+  });
+
+  it('ensureIdentity over a pruned model directory writes memory back, re-embedding nothing', async () => {
+    const { root, store, corpus } = await setup();
+    const before = await store.listShards();
+    await rm(modelCorpusDir(root, MODEL_KEY), { recursive: true, force: true });
+
+    const result = await corpus.ensureIdentity(IDENTITY);
+
+    expect(result).toEqual({ rebuilt: false, previous: null });
+    expect((await store.readManifest())?.model_id).toBe(IDENTITY.model_id);
+    // The encoded strings compare equal, so every vector decodes to the same floats.
+    expect(await store.listShards()).toEqual(before);
+    expect(corpus.size()).toBe(5);
+  });
+
+  it('refresh over a pruned model directory keeps serving from memory', async () => {
+    const { root, corpus } = await setup();
+    const [before] = await corpus.nearest([{ vector: QUERY }], { threshold: 0 });
+    await rm(modelCorpusDir(root, MODEL_KEY), { recursive: true, force: true });
+
+    await corpus.refresh();
+
+    expect(corpus.size()).toBe(5);
+    expect((await corpus.entries()).size).toBe(FIXTURE.length);
+    expect(await corpus.nearest([{ vector: QUERY }], { threshold: 0 })).toEqual([before]);
+  });
+
+  it('an unparsable manifest over shards still rebuilds', async () => {
+    const { root, store, corpus } = await setup();
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await writeFile(path.join(modelCorpusDir(root, MODEL_KEY), 'manifest.json'), '{not json');
+
+    await corpus.refresh();
+    const result = await corpus.ensureIdentity(IDENTITY);
+
+    expect(result).toEqual({ rebuilt: true, previous: null });
+    expect(corpus.size()).toBe(0);
+    expect(await store.listShards()).toEqual(new Map());
+    warn.mockRestore();
   });
 
   it('dispose drops memory', async () => {

@@ -16,7 +16,7 @@ import {
 } from './scoring.js';
 import type { ShardStore } from './shard-store.js';
 import type { CorpusShard, SmartBlock, StoredManifest } from './types.js';
-import { decodeVector } from './vector-codec.js';
+import { decodeVector, encodeVector } from './vector-codec.js';
 
 interface IResident {
   entry: ICorpusEntry;
@@ -39,6 +39,23 @@ function residentOf(shard: CorpusShard): IResident {
       heading: b.heading,
       lines: b.lines,
       embedding: decodeVector(b.embedding),
+    })),
+  };
+}
+
+/** The record a resident was decoded from: float32 survives the round trip exactly. */
+function shardOf(notePath: string, { entry, vector, blocks }: IResident): CorpusShard {
+  return {
+    path: notePath,
+    content_hash: entry.content_hash,
+    mtime: entry.mtime,
+    size: entry.size,
+    embedding: vector === null ? null : encodeVector(Array.from(vector)),
+    blocks: blocks.map((b) => ({
+      key: b.key,
+      heading: b.heading,
+      lines: b.lines,
+      embedding: encodeVector(Array.from(b.embedding)),
     })),
   };
 }
@@ -91,8 +108,12 @@ export class ShardCorpus implements ICorpus {
     this.memory = next;
   }
 
-  refresh(): Promise<void> {
-    return this.load();
+  async refresh(): Promise<void> {
+    // No manifest under a loaded corpus: `index --prune` removed the directory, or the manifest
+    // is unreadable. There is nothing to reload from, so memory keeps serving and the next
+    // ensureIdentity writes it back (or, over shards of unknown provenance, rebuilds).
+    if (this.memory !== null && (await this.store.readManifest()) === null) return;
+    await this.load();
   }
 
   dispose(): void {
@@ -210,7 +231,22 @@ export class ShardCorpus implements ICorpus {
     const result = await this.store.ensureManifest(expected);
     // A rebuild cleared every shard, so the empty store is what memory now mirrors.
     if (result.rebuilt) this.memory = new Map();
+    // No manifest and no shards under a loaded corpus: `index --prune` removed the directory
+    // this corpus serves. Memory is what was there, so it goes back to disk: reconcile compares
+    // notes against memory, so each would be `reused` with nothing on disk behind it.
+    else if (result.previous === null && this.memory !== null && this.memory.size > 0) {
+      await this.writeBack(this.memory);
+    }
     return result;
+  }
+
+  /** Writes every resident's record, after the manifest ensureManifest just wrote. */
+  private async writeBack(memory: Map<string, IResident>): Promise<void> {
+    let sinceYield = 0;
+    for (const [notePath, resident] of memory) {
+      await this.store.writeShard(shardOf(notePath, resident));
+      if (++sinceYield % LOAD_YIELD_EVERY === 0) await this.yieldEvery();
+    }
   }
 
   private resident(): Map<string, IResident> {
