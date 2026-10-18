@@ -1487,11 +1487,17 @@ describe('lexical reader failure', () => {
     const { deps, cleanup } = await makeLexicalVault({ 'note.md': 'зміст' });
     try {
       deps.registry.list()[0].lexical = failingReader;
-      const reg = registerTool(buildSearchNotesTool(deps));
+      const warn = vi.fn();
+      const reg = registerTool(buildSearchNotesTool({ ...deps, warn }));
       const payload = await expectToolError(reg, { query: 'зміст' });
       expect(payload.code).toBe('DEPENDENCY_ERROR');
       expect(payload.message).toBe('Lexical search failed');
       expect(payload.details).toMatchObject({ vault: 'v', operation: 'search_notes' });
+      // The client sees only the generic message; the cause goes to stderr.
+      expect(warn).toHaveBeenCalledTimes(1);
+      const logged = String(warn.mock.calls[0][0]);
+      expect(logged).toContain('"v"');
+      expect(logged).toContain('boom');
     } finally {
       await cleanup();
     }

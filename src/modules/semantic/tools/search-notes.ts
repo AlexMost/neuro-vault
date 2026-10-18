@@ -391,6 +391,9 @@ async function runSearchForEntry(
     // fails the vault's search outright; it never reads as a semantic failure.
     // Anything else keeps propagating as it always has.
     if (cause instanceof LexicalSearchError) {
+      // The client gets the generic message; the cause (timeout, dropped
+      // connection, daemon reason) is only ever written to stderr.
+      warn(`neuro-vault lexical: search_notes failed for vault "${entry.name}": ${cause.message}`);
       throw new ToolHandlerError('DEPENDENCY_ERROR', 'Lexical search failed', {
         details: { vault: entry.name, operation: 'search_notes' },
         cause,
