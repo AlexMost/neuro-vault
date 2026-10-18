@@ -5,6 +5,7 @@ import path from 'node:path';
 import { vi } from 'vitest';
 
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
+import { createStandaloneLexicalReader } from '../../../src/modules/semantic/lexical/index.js';
 import type { BackendStatus } from '../../../src/lib/obsidian/semantic-backend.js';
 import type { ListMatchingPaths, SmartSource } from '../../../src/modules/semantic/types.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
@@ -60,15 +61,18 @@ export async function makeLexicalVault(
     await fs.mkdir(path.dirname(full), { recursive: true });
     await fs.writeFile(full, content, 'utf8');
   }
+  const reader = new FsVaultReader({ vaultRoot });
+  const graph = makeFakeGraph();
   const registry = makeTestRegistry([
     {
       name: 'v',
       path: vaultRoot,
-      reader: new FsVaultReader({ vaultRoot }),
+      reader,
       backend: semantic
         ? toBackend(makeFakeCorpusIndex(opts.sources ?? new Map()), opts.backendStatus)
         : undefined,
-      graph: makeFakeGraph(),
+      graph,
+      lexical: createStandaloneLexicalReader({ vaultRoot, reader, graph }),
       listMatchingPaths: opts.listMatchingPaths ?? (async () => new Set(Object.keys(files))),
     },
   ]);

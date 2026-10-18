@@ -34,6 +34,16 @@ function fakeDeps(): IRegisteredVaultDeps {
       status: async () => ({ state: 'ready' as const }),
       dispose: async () => {},
     }),
+    lexicalReaderFactory: () => ({
+      search: async () => ({
+        notes: [],
+        truncated: false,
+        perQueryCounts: {},
+        perQueryTokenCounts: {},
+        totalNotes: 0,
+      }),
+      warm: async () => {},
+    }),
     conventionsReaderFactory: () => async () => null,
     existingPathFilterFactory: () => async (paths) => new Set(paths),
     scopeFactory: async () => createVaultScope(),
@@ -173,6 +183,29 @@ describe('createVaultRegistry', () => {
     };
     await VaultRegistry.create({ vaults: [vault('a', '/v/a')], semanticEnabled: true }, deps);
     expect(seen).toEqual([false]);
+  });
+
+  it('builds each entry a lexical reader from its own reader and graph, even with semantic off', async () => {
+    const deps = fakeDeps();
+    const seen: Array<{ vaultName: string; enabled: boolean; sameReader: boolean }> = [];
+    const built: unknown[] = [];
+    deps.vaultConfigFactory = async () => ({ semantic: false });
+    deps.lexicalReaderFactory = (opts) => {
+      seen.push({
+        vaultName: opts.vaultName,
+        enabled: opts.enabled,
+        sameReader: (opts.reader as unknown as { vaultRoot: string }).vaultRoot === opts.vaultRoot,
+      });
+      const reader = { search: vi.fn(), warm: vi.fn() };
+      built.push(reader);
+      return reader;
+    };
+    const registry = await VaultRegistry.create(
+      { vaults: [vault('a', '/v/a')], semanticEnabled: false },
+      deps,
+    );
+    expect(seen).toEqual([{ vaultName: 'a', enabled: false, sameReader: true }]);
+    expect(registry.list()[0].lexical).toBe(built[0]);
   });
 
   it('passes the vault reader to providerFactory', async () => {

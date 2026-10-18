@@ -1,5 +1,5 @@
 import type { ICorpusReader } from '../src/lib/obsidian/corpus/corpus.js';
-import { LexicalIndex } from '../src/lib/obsidian/lexical/index.js';
+import type { ILexicalReader } from '../src/lib/obsidian/lexical/index.js';
 import { FsVaultReader } from '../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../src/lib/obsidian/vault-scope-config.js';
 import { WikilinkGraphIndex } from '../src/lib/obsidian/wikilink-graph.js';
@@ -9,6 +9,7 @@ import {
   flattenExpansion,
   fuseRanks,
 } from '../src/modules/semantic/rank-fusion.js';
+import { createStandaloneLexicalReader } from '../src/modules/semantic/lexical/index.js';
 import { executeRetrieval } from '../src/modules/semantic/retrieval-policy.js';
 
 export type PipelineId = 'semantic' | 'fused';
@@ -38,8 +39,7 @@ export function evalConfig(similarity: SimilarityDefaults) {
 }
 
 export interface FusedContext {
-  lexical: LexicalIndex;
-  graph: WikilinkGraphIndex;
+  lexical: ILexicalReader;
 }
 
 export async function createFusedContext(vaultRoot: string): Promise<FusedContext> {
@@ -47,7 +47,7 @@ export async function createFusedContext(vaultRoot: string): Promise<FusedContex
   const reader = new FsVaultReader({ vaultRoot, scope });
   const graph = new WikilinkGraphIndex({ reader });
   await graph.ensureFresh();
-  return { lexical: new LexicalIndex({ vaultRoot, reader }), graph };
+  return { lexical: createStandaloneLexicalReader({ vaultRoot, reader, graph }) };
 }
 
 export interface RankedPath {
@@ -93,7 +93,7 @@ async function rankFused(
 ): Promise<RankedPath[]> {
   // The production legs, verbatim (design D5): executeRetrieval at deep
   // effort (pool 8, expansion on) with an explicit threshold 0, the lexical
-  // index with the real wikilink graph for its backlink tie-break, then the
+  // reader over the real wikilink graph for its backlink tie-break, then the
   // exact fusion `assembleUnified` performs — flattenExpansion + fuseRanks.
   // Every knob is passed explicitly, including the two that merely match
   // `MODE_DEFAULTS.deep` today: `config` is the report's comparability record,
@@ -117,7 +117,6 @@ async function rankFused(
     queries: [query],
     noteCap: config.lexical_note_cap,
     perNoteCap: config.lexical_per_note_cap,
-    getBacklinkCount: (p) => context.graph.getBacklinkCount(p),
   });
   const expansion = flattenExpansion(semantic.results);
   return fuseRanks({

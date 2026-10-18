@@ -10,11 +10,20 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ServiceRegistry, type DaemonInfoResult } from '../../src/daemon/protocol.js';
 import { createDaemonService } from '../../src/daemon/services/daemon.js';
 import { createCorpusService } from '../../src/daemon/services/corpus.js';
+import { createLexicalService } from '../../src/daemon/services/lexical.js';
 import { createVaultService } from '../../src/daemon/services/vault.js';
 import { startDaemonServer, type DaemonServerHandle } from '../../src/daemon/socket-server.js';
 import { MODEL_PROFILES } from '../../src/lib/model-profiles.js';
+import { FsVaultReader } from '../../src/lib/obsidian/vault-reader.js';
+import { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import { VaultEntries } from '../../src/lib/vault-entry/index.js';
 import { createVaultEntry } from '../../src/lib/vault-entry/vault-entry.js';
+import { LegacyLexicalIndex } from '../lib/obsidian/lexical/_legacy-lexical-index.js';
+import {
+  FIXTURE_PATHS,
+  QUERY_SETS,
+  writeFixtureVault,
+} from '../lib/obsidian/lexical/_fixture-vault.js';
 
 const PROFILE = 'granite-97m';
 const OTHER_PROFILE = 'harrier-270m';
@@ -164,6 +173,7 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
     const registry = new ServiceRegistry();
     registry.register('vault', createVaultService(entries));
     registry.register('corpus', createCorpusService(entries));
+    registry.register('lexical', createLexicalService(entries));
     const live = entries;
     registry.register(
       'daemon',
@@ -399,6 +409,98 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
       expect(later.vault).toBe(b.vault);
     },
   );
+
+  describe('lexical reads', () => {
+    type LexicalAnswer = {
+      notes: { path: string; matches: unknown[]; matched_queries: string[] }[];
+      truncated: boolean;
+      per_query_counts: Record<string, number>;
+      per_query_token_counts: Record<string, Record<string, number>>;
+      total_notes: number;
+    };
+
+    it(
+      'lexical.search after profiles [] returns the full ranking',
+      { timeout: 15_000 },
+      async () => {
+        await startDaemon();
+        const c = await connect();
+        const root = path.join(dir, 'fixture');
+        await writeFixtureVault(root);
+        const attached = await attach(c, root, []);
+        const reader = new FsVaultReader({ vaultRoot: root });
+        const graph = new WikilinkGraphIndex({ reader });
+        await graph.ensureFresh();
+        const oracle = new LegacyLexicalIndex({ vaultRoot: root, reader });
+
+        // At once after the attach: the search waits for the warm-up, it is not refused.
+        for (const queries of QUERY_SETS) {
+          const limits = { noteCap: 10, perNoteCap: 3 };
+          const answer = await c.result<LexicalAnswer>('lexical.search', {
+            vault: attached.vault,
+            queries,
+            note_cap: limits.noteCap,
+            per_note_cap: limits.perNoteCap,
+          });
+          const expected = await oracle.search({
+            queries,
+            ...limits,
+            getBacklinkCount: (p) => graph.getBacklinkCount(p),
+          });
+
+          expect(answer.total_notes, JSON.stringify(queries)).toBe(FIXTURE_PATHS.length);
+          expect(answer.total_notes).toBe(expected.totalNotes);
+          expect(
+            answer.notes.map(({ matched_queries, ...note }) => ({
+              ...note,
+              matchedQueries: matched_queries,
+            })),
+          ).toEqual(expected.notes);
+          expect(answer.truncated).toBe(expected.truncated);
+          expect(answer.per_query_counts).toEqual(expected.perQueryCounts);
+          expect(answer.per_query_token_counts).toEqual(expected.perQueryTokenCounts);
+        }
+      },
+    );
+
+    it('allowed narrows the ranking; an empty list matches nothing', async () => {
+      await startDaemon();
+      const c = await connect();
+      const root = path.join(dir, 'fixture');
+      await writeFixtureVault(root);
+      const attached = await attach(c, root, []);
+      const search = (allowed: string[]) =>
+        c.result<LexicalAnswer>('lexical.search', {
+          vault: attached.vault,
+          queries: ['пошук'],
+          allowed,
+          note_cap: 10,
+          per_note_cap: 3,
+        });
+
+      const some = await search(['Гібридний пошук.md']);
+      expect(some.notes.map((n) => n.path)).toEqual(['Гібридний пошук.md']);
+      expect((await search([])).notes).toEqual([]);
+    });
+
+    it('a lexical call makes a client', async () => {
+      await startDaemon();
+      const observer = await connect();
+      const caller = await connect();
+
+      // Refused (nothing attached), but still a call on a service namespace.
+      expect(
+        await caller.errorCode('lexical.search', {
+          vault: path.join(dir, 'none'),
+          queries: ['q'],
+          note_cap: 1,
+          per_note_cap: 1,
+        }),
+      ).toBe('NOT_ATTACHED');
+
+      expect((await observer.result<DaemonInfoResult>('daemon.info')).clients).toBe(1);
+    });
+  });
 
   describe('corpus reads', () => {
     type NoteAnswer = { hits: ({ path: string; similarity: number }[] | null)[] };

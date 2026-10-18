@@ -2,7 +2,7 @@
 
 How a search request becomes a ranked set of notes and blocks. This is the "policy" layer that composes query embedding and the corpus's similarity reads (`ICorpusReader`, [`own-corpus.md`](./own-corpus.md#the-corpus-interface)) into the behaviour described to the LLM. It runs in the session, whichever side serves the corpus ([ADR-0019](../adr/0019-embedding-storage-interface.md)): the reads go to the daemon's vault entry or to the in-process one ([`semantic-backend.md`](./semantic-backend.md)).
 
-This document covers the **semantic leg** of `search_notes` only. The lexical leg (exact text matching over titles, headings, and bodies) is a separate pipeline documented in [`lexical-search.md`](./lexical-search.md). The tool handler runs both legs plus a flattened expansion leg and fuses all three into one ranked `matches[]` list — see [`rank-fusion.md`](./rank-fusion.md) for the merge mechanism. This document's `results[]`/`truncated`/`per_query_hits`/`per_query_fallback` outputs are a fusion **source**, not a response shape of their own.
+This document covers the **semantic leg** of `search_notes` only. The lexical leg (exact text matching over titles, headings, and bodies) is a separate pipeline documented in [`lexical-search.md`](./lexical-search.md). The lexical leg is read through an `ILexicalReader` (the daemon's vault entry by default, [`lexical-search.md`](./lexical-search.md#who-holds-the-cache)). The tool handler runs both legs plus a flattened expansion leg and fuses all three into one ranked `matches[]` list — see [`rank-fusion.md`](./rank-fusion.md) for the merge mechanism. This document's `results[]`/`truncated`/`per_query_hits`/`per_query_fallback` outputs are a fusion **source**, not a response shape of their own.
 
 ## What it is
 
@@ -95,7 +95,7 @@ for each query:
   neighbors = hits[q].slice(0, limit)
 ```
 
-`embeddingProvider.embedQuery(query)` and every corpus read are called directly, with no `try`/`catch` anywhere in this file (`retrieval-policy.ts` has none) — if any one query's embed call rejects, the surrounding `Promise.all` (`retrieval-policy.ts:142-144`) rejects too, and so does a corpus read that fails (a daemon that did not answer, a corpus that stopped serving); the whole `executeRetrieval` call throws: there is no partial result and no per-query error isolation. The policy lets that rejection bubble all the way up. Its one caller, `runRetrievalPipeline` (`retrieval-pipeline.ts`, run by `search_notes`), wraps `executeRetrieval` and the existence check in one `try` whose `catch` **degrades rather than throws**: the lexical matches are already in hand, so the call returns them, writes the cause to stderr, and reports a `semantic_status` that describes that response ([`semantic-backend.md`](./semantic-backend.md#who-reads-the-state)).
+`embeddingProvider.embedQuery(query)` and every corpus read are called directly, with no `try`/`catch` anywhere in this file (`retrieval-policy.ts` has none) — if any one query's embed call rejects, the surrounding `Promise.all` (`retrieval-policy.ts:142-144`) rejects too, and so does a corpus read that fails (a daemon that did not answer, a corpus that stopped serving); the whole `executeRetrieval` call throws: there is no partial result and no per-query error isolation. The policy lets that rejection bubble all the way up. Its one caller, `runRetrievalPipeline` (`retrieval-pipeline.ts`, run by `search_notes`), wraps `executeRetrieval` and the existence check in one `try` whose `catch` **degrades rather than throws**: the lexical matches are already in hand, so the call returns them, writes the cause to stderr, and reports a `semantic_status` that describes that response ([`semantic-backend.md`](./semantic-backend.md#who-reads-the-state)). The lexical leg gets no such cushion: it is the leg the semantic one degrades to, so a failing reader (`LexicalSearchError`) is not caught here and `search_notes` reports it as `DEPENDENCY_ERROR`.
 
 `threshold` and `explicitThreshold` are computed once for the whole call (`input.threshold !== undefined`), not per query — every query in the array is filtered by the same threshold value:
 
@@ -236,7 +236,7 @@ That filter is one per-vault adapter (`src/lib/obsidian/existing-paths.ts`), bou
 
 | Tool | What it filters |
 | --- | --- |
-| `search_notes` | semantic seeds and their flattened expansion targets, against one set. Lexical-only matches skip the check — reading them from disk this request already proved they exist. |
+| `search_notes` | semantic seeds and their flattened expansion targets, against one set. Lexical-only matches skip the check — the lexical leg's refresh stat-ed every scoped note during this request, which already proved they exist. |
 | `find_duplicates` | both members of every pair; a pair with one missing member is dropped whole. |
 | `get_similar_notes` | every candidate, semantic or forward-linked, after `exclude_folders` has been applied. |
 

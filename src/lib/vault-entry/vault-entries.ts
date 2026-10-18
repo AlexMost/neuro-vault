@@ -209,6 +209,22 @@ export class VaultEntries {
     };
   }
 
+  /**
+   * Entry-level, unlike {@link reader}: lexical search needs no profile, so any
+   * connection attached to the vault (even with `profiles: []`) may search it.
+   */
+  lexical(connectionId: number, vault: string): Pick<IVaultEntry, 'lexicalSearch'> {
+    const record = this.records.get(vault);
+    if (record === undefined || !record.ids.has(connectionId)) {
+      throw new VaultEntryError(
+        'NOT_ATTACHED',
+        `vault "${vault}" is not attached on this connection`,
+      );
+    }
+    const { entry } = record;
+    return { lexicalSearch: (opts) => entry.lexicalSearch(opts) };
+  }
+
   detach(connectionId: number): void {
     const flight = this.inFlight.get(connectionId);
     if (flight !== undefined) flight.detached = true;

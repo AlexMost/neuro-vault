@@ -8,6 +8,10 @@ import {
   type BackendStatus,
   type ISemanticBackend,
 } from '../../../src/lib/obsidian/semantic-backend.js';
+import {
+  createDaemonAttachment,
+  type IVaultAttachment,
+} from '../../../src/modules/semantic/backend/attachment.js';
 import { createDaemonSemanticBackend } from '../../../src/modules/semantic/backend/daemon-backend.js';
 import {
   DaemonConnectionError,
@@ -70,8 +74,16 @@ function fakeLocal(): ISemanticBackend {
   };
 }
 
-function backendOver(services: ISharedServices, local: () => ISemanticBackend = fakeLocal) {
-  return createDaemonSemanticBackend({ services, vaultRoot: VAULT, profile: PROFILE, local });
+function attachmentOver(services: ISharedServices): IVaultAttachment {
+  return createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [PROFILE] });
+}
+
+function backendOver(
+  services: ISharedServices,
+  local: () => ISemanticBackend = fakeLocal,
+  attachment: IVaultAttachment = attachmentOver(services),
+) {
+  return createDaemonSemanticBackend({ services, attachment, profile: PROFILE, local });
 }
 
 const ATTACHING = { state: 'indexing', indexed: 0, total: 0 };
@@ -130,6 +142,65 @@ describe('createDaemonSemanticBackend', () => {
     ]);
 
     expect(methods(link).filter((m) => m === 'vault.attach')).toHaveLength(1);
+  });
+
+  it('two facades on one attachment send one vault.attach', async () => {
+    const { services, link } = fakeServices();
+    const attachment = attachmentOver(services);
+    const backend = backendOver(services, fakeLocal, attachment);
+
+    // The other facade (a stub caller) attaches first; the backend finds the vault attached.
+    const [other] = await Promise.all([
+      attachment.key(),
+      backend.nearest([{ path: 'a.md' }], { threshold: 0 }),
+    ]);
+    expect(other).toBe(REAL);
+    expect(await backend.status()).toEqual({ state: 'ready' });
+
+    expect(methods(link).filter((m) => m === 'vault.attach')).toHaveLength(1);
+  });
+
+  it('a first status after another facade attached reads the live status, not the attach answer', async () => {
+    const { services, link } = fakeServices({
+      'vault.attach': () => ({
+        vault: REAL,
+        profiles: { [PROFILE]: { state: 'indexing', indexed: 0, total: 3 } },
+      }),
+      'vault.status': () => ({ state: 'ready' }),
+    });
+    const attachment = attachmentOver(services);
+    const backend = backendOver(services, fakeLocal, attachment);
+
+    // The other facade attached at startup; the corpus has become ready since.
+    await attachment.key();
+    expect(await backend.status()).toEqual({ state: 'ready' });
+
+    expect(methods(link)).toEqual(['vault.attach', 'vault.status']);
+  });
+
+  it('an attach answered after the epoch moved attaches again and reads the new answer', async () => {
+    let answerStale: (value: unknown) => void = () => {};
+    let calls = 0;
+    const { services, link } = fakeServices({
+      'vault.attach': () => {
+        calls += 1;
+        if (calls > 1)
+          return {
+            vault: REAL,
+            profiles: { [PROFILE]: { state: 'indexing', indexed: 1, total: 2 } },
+          };
+        return new Promise((resolve) => (answerStale = resolve));
+      },
+    });
+    const backend = backendOver(services);
+
+    const stale = backend.status();
+    await vi.waitFor(() => expect(link.request).toHaveBeenCalled());
+    link.epoch = 2;
+    answerStale({ vault: '/stale/key', profiles: { [PROFILE]: { state: 'ready' } } });
+
+    expect(await stale).toEqual({ state: 'indexing', indexed: 1, total: 2 });
+    expect(methods(link)).toEqual(['vault.attach', 'vault.attach']);
   });
 
   it('re-attaches after a new epoch', async () => {

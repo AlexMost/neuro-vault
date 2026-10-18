@@ -19,6 +19,7 @@ import { ServiceRegistry } from './daemon/protocol.js';
 import { createCorpusService } from './daemon/services/corpus.js';
 import { createDaemonService } from './daemon/services/daemon.js';
 import { createEmbedService } from './daemon/services/embed.js';
+import { createLexicalService } from './daemon/services/lexical.js';
 import { createVaultService } from './daemon/services/vault.js';
 import { ensurePrivateSocketDir } from './daemon/socket-dir.js';
 import { startDaemonServer, type DaemonServerHandle } from './daemon/socket-server.js';
@@ -240,6 +241,7 @@ async function startServing(
   registry.register('embed', embed.handlers);
   registry.register('vault', createVaultService(entries));
   registry.register('corpus', createCorpusService(entries));
+  registry.register('lexical', createLexicalService(entries));
 
   const stop = createStop(paths, r, server, entries);
   const startedAt = r.now().toISOString();

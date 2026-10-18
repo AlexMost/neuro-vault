@@ -21,7 +21,7 @@ import type {
   SearchEffort,
 } from '../types.js';
 import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
-import { LexicalIndex, type LexicalMatch } from '../../../lib/obsidian/lexical/index.js';
+import { LexicalSearchError, type LexicalMatch } from '../../../lib/obsidian/lexical/index.js';
 import {
   CorpusNotReadyError,
   type BackendState,
@@ -265,12 +265,11 @@ async function runSearchForEntry(
   entry: IRegisteredVault,
   input: SearchNotesInput,
   deps: Pick<SearchNotesDeps, 'embeddingProvider' | 'modelKey' | 'similarity'> & {
-    lexicalFor: (entry: IRegisteredVault) => LexicalIndex;
     warn: (message: string) => void;
   },
 ): Promise<SearchNotesOutput> {
   const { graph, listMatchingPaths } = entry;
-  const { embeddingProvider, modelKey, similarity, lexicalFor, warn } = deps;
+  const { embeddingProvider, modelKey, similarity, warn } = deps;
 
   // Read once, up front — it describes the vault's index, not this
   // request, so every return path below (including the empty-filter early
@@ -358,31 +357,50 @@ async function runSearchForEntry(
 
   const cap = limit ?? EFFORT_PROFILES[effort].mergedCap;
 
+  // The session keeps its own graph for each match's `backlink_count`; the
+  // lexical reader keeps whatever it needs for its tie-break.
   await graph.ensureFresh();
   const backend = entry.backend;
   // The pipeline owns leg wiring, narrowing, existence filtering, fusion and
   // the degrade-on-semantic-failure policy; this handler decides only WHETHER
   // the semantic leg should run — from the channel and the status pinned
   // above, never a fresh status() read — and how to word the outcome.
-  const result = await runRetrievalPipeline(
-    {
-      queries,
-      effort,
-      semantic: channel !== 'lexical' && backend !== undefined && semantic_status.state === 'ready',
-      threshold,
-      expansionFloor,
-      cap,
-      allowed,
-    },
-    {
-      ...(backend !== undefined ? { corpus: backend } : {}),
-      lexical: lexicalFor(entry),
-      getBacklinkCount: (p) => graph.getBacklinkCount(p),
-      filterExisting: (paths) => entry.filterExisting(paths),
-      embeddingProvider,
-      similarity,
-    },
-  );
+  let result: Awaited<ReturnType<typeof runRetrievalPipeline>>;
+  try {
+    result = await runRetrievalPipeline(
+      {
+        queries,
+        effort,
+        semantic:
+          channel !== 'lexical' && backend !== undefined && semantic_status.state === 'ready',
+        threshold,
+        expansionFloor,
+        cap,
+        allowed,
+      },
+      {
+        ...(backend !== undefined ? { corpus: backend } : {}),
+        lexical: entry.lexical,
+        filterExisting: (paths) => entry.filterExisting(paths),
+        embeddingProvider,
+        similarity,
+      },
+    );
+  } catch (cause) {
+    // The lexical leg is the one the semantic leg degrades to, so its failure
+    // fails the vault's search outright; it never reads as a semantic failure.
+    // Anything else keeps propagating as it always has.
+    if (cause instanceof LexicalSearchError) {
+      // The client gets the generic message; the cause (timeout, dropped
+      // connection, daemon reason) is only ever written to stderr.
+      warn(`neuro-vault lexical: search_notes failed for vault "${entry.name}": ${cause.message}`);
+      throw new ToolHandlerError('DEPENDENCY_ERROR', 'Lexical search failed', {
+        details: { vault: entry.name, operation: 'search_notes' },
+        cause,
+      });
+    }
+    throw cause;
+  }
 
   if (result.semantic.status === 'failed') {
     warn(
@@ -456,20 +474,7 @@ export function buildSearchNotesTool(
   const { registry, embeddingProvider, modelKey, similarity } = deps;
   const warn = deps.warn ?? ((message: string) => console.error(message));
 
-  // Per-vault lexical indexes, created lazily; the Map lives for the tool's
-  // lifetime. Never touches the embedding corpus — it's a read-through
-  // cache over the filesystem via `entry.reader`.
-  const lexicalIndexes = new Map<string, LexicalIndex>();
-  const lexicalFor = (entry: IRegisteredVault): LexicalIndex => {
-    let idx = lexicalIndexes.get(entry.name);
-    if (!idx) {
-      idx = new LexicalIndex({ vaultRoot: entry.path, reader: entry.reader });
-      lexicalIndexes.set(entry.name, idx);
-    }
-    return idx;
-  };
-
-  const entryDeps = { embeddingProvider, modelKey, similarity, lexicalFor, warn };
+  const entryDeps = { embeddingProvider, modelKey, similarity, warn };
   const SEARCH_NOTES_DESCRIPTION = [
     'Hybrid search over notes: fuses a semantic leg (embedding similarity — fuzzy recall, topic exploration, cross-language), a lexical leg (exact text over titles, headings and body — names, codes, terms) and, at deep effort, an expansion leg (neighbours of the semantic hits) into ONE reciprocal-rank-fused list. Pass short keyword queries (1-4 words), not sentences.',
     '',

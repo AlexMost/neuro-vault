@@ -8,7 +8,7 @@ import {
   type JSONRPCMessage,
 } from '@modelcontextprotocol/sdk/types.js';
 
-import type { IProfileInfo, IVaultInfo } from '../lib/vault-entry/index.js';
+import type { ILexicalInfo, IProfileInfo, IVaultInfo } from '../lib/vault-entry/index.js';
 import { packageMeta } from '../package-meta.js';
 
 import type { DaemonInfo } from './info.js';
@@ -283,6 +283,8 @@ async function statusOne(d: AdminDeps, entry: Entry, print: Write): Promise<void
   for (const vault of Array.isArray(vaults) ? (vaults as Array<Partial<IVaultInfo> | null>) : []) {
     if (typeof vault !== 'object' || vault === null) continue;
     print(vaultLine(vault, d.now()));
+    const lexical = lexicalLine(vault.lexical);
+    if (lexical !== undefined) print(lexical);
     const profiles: unknown = vault.profiles;
     for (const profile of Array.isArray(profiles) ? (profiles as unknown[]) : []) {
       if (typeof profile === 'object' && profile !== null)
@@ -304,6 +306,32 @@ function idleFor(since: unknown, now: Date): string {
   const minutes = Math.max(0, Math.floor((now.getTime() - at) / 60_000));
   const span = minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
   return `idle ${span} (since ${since as string})`;
+}
+
+/**
+ * The vault's lexical cache, or `undefined` when the daemon sent none: a daemon of another build
+ * answers without `lexical`, or with a shape this one does not recognise.
+ */
+function lexicalLine(raw: unknown): string | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined;
+  const lexical = raw as Partial<ILexicalInfo>;
+  if (lexical.state === 'warming') return '    lexical  warming';
+  if (lexical.state !== 'ready') return undefined;
+  const parts = ['lexical', 'ready'];
+  if (typeof lexical.notes === 'number') parts.push(`${lexical.notes} notes`);
+  const last: unknown = lexical.last_refresh;
+  if (typeof last === 'object' && last !== null) {
+    const refresh = last as Partial<NonNullable<ILexicalInfo['last_refresh']>>;
+    // A partial object (another build's shape) prints no refresh segment rather than "undefined".
+    if (
+      typeof refresh.at === 'string' &&
+      typeof refresh.parsed === 'number' &&
+      typeof refresh.ms === 'number'
+    ) {
+      parts.push(`last refresh ${refresh.at} ~${refresh.parsed} parsed ${refresh.ms} ms`);
+    }
+  }
+  return `    ${parts.join('  ')}`;
 }
 
 function profileLine(profile: IProfileInfo): string {

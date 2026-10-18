@@ -4,20 +4,34 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { daemonPaths } from '../../src/daemon/paths.js';
-import { defaultConnect } from '../../src/daemon/probe.js';
 import { ServiceRegistry } from '../../src/daemon/protocol.js';
 import { createDaemonService } from '../../src/daemon/services/daemon.js';
 import { createCorpusService } from '../../src/daemon/services/corpus.js';
+import { createLexicalService } from '../../src/daemon/services/lexical.js';
 import { createVaultService } from '../../src/daemon/services/vault.js';
 import { startDaemonServer, type DaemonServerHandle } from '../../src/daemon/socket-server.js';
 import { MODEL_PROFILES } from '../../src/lib/model-profiles.js';
 import type { BackendStatus, ISemanticBackend } from '../../src/lib/obsidian/semantic-backend.js';
+import { FsVaultReader, type VaultReader } from '../../src/lib/obsidian/vault-reader.js';
+import { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
+import { registerTool } from '../../src/lib/tool-registry.js';
 import { VaultEntries } from '../../src/lib/vault-entry/index.js';
 import { createVaultEntry } from '../../src/lib/vault-entry/vault-entry.js';
+import { createDaemonAttachment } from '../../src/modules/semantic/backend/attachment.js';
 import { createDaemonSemanticBackend } from '../../src/modules/semantic/backend/daemon-backend.js';
-import { DaemonConnection } from '../../src/modules/semantic/daemon-connection.js';
-import type { ISharedServices } from '../../src/modules/semantic/shared-services.js';
+import {
+  createDaemonLexicalReader,
+  createStandaloneLexicalReader,
+} from '../../src/modules/semantic/lexical/index.js';
+import type { DaemonConnection } from '../../src/modules/semantic/daemon-connection.js';
+import {
+  buildSearchNotesTool,
+  type SearchNotesOutput,
+} from '../../src/modules/semantic/tools/search-notes.js';
+import { callTool } from '../_gate.js';
+import { TEST_SIMILARITY } from '../_identity.js';
+import { makeTestRegistry } from '../operations/tools/_test-registry.js';
+import { daemonServices, recording, type IRecordedRequest } from './_daemon-fixture.js';
 
 const PROFILE = 'granite-97m';
 const DEBOUNCE_MS = 100;
@@ -53,6 +67,8 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
   let registry: ServiceRegistry;
   let connections: DaemonConnection[];
   let backends: ISemanticBackend[];
+  /** Every request the daemon side received since the last restart, in arrival order. */
+  let log: IRecordedRequest[];
 
   beforeEach(() => {
     // Short enough for the 104-byte sun_path limit of macOS.
@@ -60,6 +76,7 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
     socketPath = path.join(dir, 's.sock');
     connections = [];
     backends = [];
+    log = [];
     entries = new VaultEntries({
       // Vectors of the profile's own width, so the real ShardStore accepts them; no model loads.
       embedderFor: (key) => async (texts) =>
@@ -73,8 +90,9 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
       warn: () => {},
     });
     registry = new ServiceRegistry();
-    registry.register('vault', createVaultService(entries));
-    registry.register('corpus', createCorpusService(entries));
+    registry.register('vault', recording('vault', createVaultService(entries), log));
+    registry.register('corpus', recording('corpus', createCorpusService(entries), log));
+    registry.register('lexical', recording('lexical', createLexicalService(entries), log));
     registry.register(
       'daemon',
       createDaemonService({
@@ -106,50 +124,11 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
 
   /** One session: its own connection to the socket, and a backend over it for `vaultRoot`. */
   function session(vaultRoot: string) {
-    const connection = new DaemonConnection({
-      paths: {
-        ...daemonPaths({
-          version: '0.0.0',
-          build: { size: 1, mtimeMs: 1 },
-          uid: 1,
-          platform: 'linux',
-          cacheBase: dir,
-        }),
-        socketPath,
-      },
-      cliPath: '/never/spawned.js',
-      build: { size: 1, mtimeMs: 1 },
-      statBuild: () => ({ size: 1, mtimeMs: 1 }),
-      cwd: dir,
-      execPath: process.execPath,
-      platform: 'linux',
-      ensureSocketDir: () => {},
-      connect: defaultConnect,
-      spawn: () => {
-        throw new Error('must not spawn: the test daemon owns the socket');
-      },
-      openLog: () => -1,
-      closeFd: () => {},
-      mkdirp: () => {},
-    });
-    const sent: string[] = [];
-    const request = connection.request.bind(connection);
-    connection.request = (method, params, timeoutMs) => {
-      sent.push(method);
-      return request(method, params, timeoutMs);
-    };
-    const services: ISharedServices = {
-      mode: 'daemon',
-      connection,
-      ensure: async () => {
-        await connection.ensure();
-        return 'daemon';
-      },
-      close: () => connection.close(),
-    };
+    const { connection, services, sent } = daemonServices({ dir, socketPath });
+    const attachment = createDaemonAttachment({ services, vaultRoot, profiles: [PROFILE] });
     const backend = createDaemonSemanticBackend({
       services,
-      vaultRoot,
+      attachment,
       profile: PROFILE,
       local: () => {
         throw new Error('must not fall back: the daemon is listening');
@@ -157,7 +136,7 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
     });
     connections.push(connection);
     backends.push(backend);
-    return { connection, backend, sent };
+    return { connection, services, attachment, backend, sent };
   }
 
   function makeVault(): string {
@@ -224,9 +203,12 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
     await startServer();
 
     // The call that finds the connection gone fails or reads unavailable...
-    await vi.waitFor(async () => {
-      expect((await backend.status()).state).toBe('ready');
-    });
+    await vi.waitFor(
+      async () => {
+        expect((await backend.status()).state).toBe('ready');
+      },
+      { timeout: 10_000 },
+    );
     // ...and the next one reconnected, attached again and serves.
     expect(connection.epoch).toBeGreaterThan(epoch);
     expect(sent.filter((method) => method === 'vault.attach')).toHaveLength(2);
@@ -237,5 +219,170 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
       async () => entries.info()[0]?.clients,
       (clients) => clients === 1,
     );
+  });
+  /** The vault key the daemon answered `vault.attach` with: the realpath of the root. */
+  const keyOf = (root: string) => fs.realpathSync(root);
+
+  /**
+   * A `search_notes` tool over one session: the daemon backend and lexical reader share the
+   * session's one attachment, and the session keeps its own graph over `reader`.
+   */
+  function searchOver(s: ReturnType<typeof session>, root: string, reader: VaultReader) {
+    const dims = MODEL_PROFILES[PROFILE].dims;
+    const queryVector = new Array<number>(dims).fill(0);
+    queryVector[0] = 1;
+    const lexical = createDaemonLexicalReader({
+      services: s.services,
+      attachment: s.attachment,
+      local: () => {
+        throw new Error('must not fall back: the daemon is listening');
+      },
+    });
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        path: root,
+        reader,
+        graph: new WikilinkGraphIndex({ reader }),
+        backend: s.backend,
+        lexical,
+      },
+    ]);
+    const tool = registerTool(
+      buildSearchNotesTool({
+        registry,
+        embeddingProvider: { initialize: async () => {}, embedQuery: async () => queryVector },
+        modelKey: PROFILE,
+        similarity: TEST_SIMILARITY,
+      }),
+    );
+    return (input: Record<string, unknown>) => callTool<SearchNotesOutput>(tool, input);
+  }
+
+  it('a restarted server sees one attach before both legs', { timeout: 25_000 }, async () => {
+    await startServer();
+    const root = makeVault();
+    const s = session(root);
+    const search = searchOver(s, root, new FsVaultReader({ vaultRoot: root }));
+    await untilReady(s.backend);
+    const before = await search({ query: 'alpha' });
+    expect(before.matches[0]?.found_in).toEqual(expect.arrayContaining(['semantic']));
+
+    // The daemon dies and a fresh one listens on the same path; the log is the new one's.
+    await handle!.close();
+    handle = undefined;
+    fs.rmSync(socketPath, { force: true });
+    log.length = 0;
+    await startServer();
+
+    // The call that finds the connection gone fails or degrades; a later one is served whole.
+    const after = await vi.waitFor(
+      async () => {
+        const out = await search({ query: 'alpha' });
+        expect(out.matches[0]?.found_in).toEqual(
+          expect.arrayContaining(['semantic', 'lexical:title']),
+        );
+        return out;
+      },
+      { timeout: 10_000 },
+    );
+    expect(after.matches.map((m) => m.path)).toEqual(before.matches.map((m) => m.path));
+
+    const key = keyOf(root);
+    const methods = log.map((request) => request.method);
+    expect(methods.filter((method) => method === 'vault.attach')).toHaveLength(1);
+    expect(methods[0]).toBe('vault.attach');
+    // Both legs went out after the one attach, on the key the daemon answered.
+    const corpus = log.find((request) => request.method.startsWith('corpus.'));
+    const lexical = log.find((request) => request.method === 'lexical.search');
+    expect(corpus?.params).toMatchObject({ vault: key });
+    expect(lexical?.params).toMatchObject({ vault: key, queries: ['alpha'] });
+    for (const request of log.filter((r) => r.method !== 'vault.attach')) {
+      expect(request.params).toMatchObject({ vault: key });
+    }
+    // The new connection is one client of the entry; the dead one detached.
+    await poll(
+      async () => entries.info()[0]?.clients,
+      (clients) => clients === 1,
+    );
+  });
+
+  describe('a daemon-served session reads no note for a lexical call', () => {
+    /** A reader over `root` that counts every way a note can be read. */
+    function spiedReader(root: string) {
+      const readFile = vi.fn<(p: string) => void>();
+      const reader = new FsVaultReader({
+        vaultRoot: root,
+        readFile: (p, enc) => {
+          readFile(p);
+          return fs.promises.readFile(p, enc);
+        },
+      });
+      const scan = vi.spyOn(reader, 'scan');
+      const readNotes = vi.spyOn(reader, 'readNotes');
+      return {
+        reader,
+        reset: () => {
+          scan.mockClear();
+          readNotes.mockClear();
+          readFile.mockClear();
+        },
+        calls: () => ({
+          scan: scan.mock.calls.length,
+          readNotes: readNotes.mock.calls.length,
+          readFile: readFile.mock.calls.length,
+        }),
+      };
+    }
+
+    it('the second lexical call, inside the graph TTL, touches the reader not at all', async () => {
+      await startServer();
+      const root = makeVault();
+      const s = session(root);
+      const { reader, reset, calls } = spiedReader(root);
+      const search = searchOver(s, root, reader);
+
+      // The first call builds the session's own graph, which reads notes through its reader.
+      const first = await search({ query: 'alpha', mode: 'lexical' });
+      expect(first.matches.map((m) => m.path)).toContain('alpha.md');
+      expect(calls().readNotes).toBeGreaterThan(0);
+
+      reset();
+      const second = await search({ query: 'alpha', mode: 'lexical' });
+
+      expect(calls()).toEqual({ scan: 0, readNotes: 0, readFile: 0 });
+      // Still answered, by the daemon.
+      expect(second.matches.map((m) => m.path)).toEqual(first.matches.map((m) => m.path));
+      expect(log.filter((r) => r.method === 'lexical.search')).toHaveLength(2);
+    });
+
+    it('the standalone reader scans on the second call, so the spy would catch a read', async () => {
+      const root = makeVault();
+      const { reader, reset, calls } = spiedReader(root);
+      const graph = new WikilinkGraphIndex({ reader });
+      const registry = makeTestRegistry([
+        {
+          name: 'v',
+          path: root,
+          reader,
+          graph,
+          lexical: createStandaloneLexicalReader({ vaultRoot: root, reader, graph }),
+        },
+      ]);
+      const tool = registerTool(
+        buildSearchNotesTool({
+          registry,
+          embeddingProvider: { initialize: async () => {}, embedQuery: async () => [1] },
+          modelKey: PROFILE,
+          similarity: TEST_SIMILARITY,
+        }),
+      );
+
+      await callTool<SearchNotesOutput>(tool, { query: 'alpha', mode: 'lexical' });
+      reset();
+      await callTool<SearchNotesOutput>(tool, { query: 'alpha', mode: 'lexical' });
+
+      expect(calls().scan).toBeGreaterThan(0);
+    });
   });
 });

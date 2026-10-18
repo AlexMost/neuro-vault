@@ -1,5 +1,5 @@
 import type { ICorpusReader } from '../../lib/obsidian/corpus/corpus.js';
-import type { LexicalIndex, RankedNote } from '../../lib/obsidian/lexical/index.js';
+import type { ILexicalReader, RankedNote } from '../../lib/obsidian/lexical/index.js';
 import { EFFORT_PROFILES, LEXICAL_PER_NOTE_CAP } from './effort-profiles.js';
 import { flattenExpansion, fuseRanks, type ExpansionCandidate } from './rank-fusion.js';
 import type { SimilarityDefaults } from '../../lib/model-profiles.js';
@@ -8,14 +8,13 @@ import type { QueryEmbedder, NoteResultNode, SearchEffort } from './types.js';
 
 /**
  * What `runRetrievalPipeline` needs to run a search: the semantic corpus
- * (absent when there is no backend), the lexical index, backlink lookup, an
- * existence filter for post-retrieval survivor checks, and the embedding
+ * (absent when there is no backend), the lexical reader (which owns its own
+ * backlink tie-break), an existence filter for post-retrieval survivor checks, and the embedding
  * provider `executeRetrieval` drives.
  */
 export interface RetrievalPipelineDeps {
   corpus?: ICorpusReader;
-  lexical: Pick<LexicalIndex, 'search'>;
-  getBacklinkCount: (path: string) => number;
+  lexical: ILexicalReader;
   filterExisting: (paths: string[]) => Promise<Set<string>>;
   embeddingProvider: QueryEmbedder;
   /** The active model profile's default thresholds. */
@@ -76,7 +75,6 @@ export async function runRetrievalPipeline(
     allowed: input.allowed,
     noteCap: profile.lexicalNoteCap,
     perNoteCap: LEXICAL_PER_NOTE_CAP,
-    getBacklinkCount: deps.getBacklinkCount,
   });
 
   let semanticNodes: NoteResultNode[] = [];
