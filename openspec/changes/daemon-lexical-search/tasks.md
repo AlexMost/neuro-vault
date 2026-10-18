@@ -43,6 +43,6 @@ Parallelism: group 1 (the shared `LexicalIndex` refresh rule and the frozen orac
 ## 9. Verify, retrospective, archive, PR
 
 - [x] 9.1 `/opsx:verify` → `verify.md`: gates (`npm test`, `npm run lint`, `npm run typecheck`, `npm run format`, `npm run build`), `npm run eval` scores before and after identical on both pipelines, and by hand on the owner's vault with `npm run build` + `node dist/cli.js`: N sessions → `daemon status` shows one entry with `clients N` and one `lexical ready` line; an opted-out vault attaches with `profiles: []`; `--no-semantic` spawns no daemon; `--no-shared` serves in-process; a killed daemon fails the next `search_notes` with `DEPENDENCY_ERROR` and the one after succeeds.
-- [ ] 9.2 `retrospective.md`.
+- [x] 9.2 `retrospective.md`.
 - [ ] 9.3 `npx openspec archive -y`; `npx openspec validate --all --strict`; all gates and `npm run build`; push; PR to `main` with `Refs #158`, `Closes #176`.
 - [ ] 9.4 After the merge, by hand (design D11): footprint for N = 1, 3, 5 at +15/+60/+120/+300 s, sessions and daemon per run, one daemon run to +900 s, the `--no-semantic` floor once, posted on #158 next to the change 1 numbers with the effort's percentage against the settled baseline. No script in the repo.
