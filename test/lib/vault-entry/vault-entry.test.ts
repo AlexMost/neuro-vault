@@ -27,6 +27,7 @@ import {
 } from '../../../src/lib/vault-entry/vault-entry.js';
 import type { WatcherFactory } from '../../../src/lib/vault-entry/watcher.js';
 import { identityOf, MODEL_PROFILES } from '../../../src/lib/model-profiles.js';
+import { FIXTURE_PATHS, writeFixtureVault } from '../obsidian/lexical/_fixture-vault.js';
 
 const HARRIER = 'harrier-270m';
 const OTHER = 'harrier-0.6b';
@@ -73,10 +74,14 @@ async function harness(
     semantic?: boolean;
     embed?: EmbedDocumentsFn;
     loop?: Partial<IReconcileLoopDeps>;
+    /** Fills the vault before the entry is created (its lexical cache warms at creation). */
+    populate?: (root: string) => Promise<void>;
+    graphTtlMs?: number;
   } = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'nv-vault-entry-'));
   roots.push(root);
+  await opts.populate?.(root);
   const watchers = fakeWatchers();
   const loops: IReconcileLoop[] = [];
   const warn = vi.fn();
@@ -87,6 +92,7 @@ async function harness(
     semantic: opts.semantic ?? true,
     embedderFor: () => opts.embed ?? okEmbed,
     warn,
+    graphTtlMs: opts.graphTtlMs,
     createWatcher: watchers.factory,
     createLoop: (deps) => {
       const loop = createReconcileLoop({ ...deps, ...opts.loop });
@@ -528,5 +534,96 @@ describe('createVaultEntry', () => {
     expect(aborted).toBe(true);
     closed();
     await disposed;
+  });
+});
+
+describe('createVaultEntry lexical members', () => {
+  const SEARCH = { noteCap: 20, perNoteCap: 3 };
+  const scoped = FIXTURE_PATHS.filter((p) => !p.startsWith('Archive/')).length;
+
+  it('warms on creation', async () => {
+    const h = await harness({ populate: writeFixtureVault });
+    expect(h.entry.lexicalInfo()).toEqual({ state: 'warming' });
+    await vi.waitFor(() => expect(h.entry.lexicalInfo().state).toBe('ready'));
+    const info = h.entry.lexicalInfo();
+    expect(info.notes).toBe(FIXTURE_PATHS.length);
+    expect(info.last_refresh).toMatchObject({
+      at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      parsed: FIXTURE_PATHS.length,
+      ms: expect.any(Number),
+    });
+    expect(h.entry.info(0).lexical).toEqual(info);
+    expect(h.warn).not.toHaveBeenCalled();
+  });
+
+  it('warms to the scoped count under a scope', async () => {
+    const h = await harness({ populate: writeFixtureVault, scope: scopeOf(['Archive/**']) });
+    await vi.waitFor(() => expect(h.entry.lexicalInfo().state).toBe('ready'));
+    expect(h.entry.lexicalInfo().notes).toBe(scoped);
+  });
+
+  it("lexicalSearch ranks with the entry's graph", async () => {
+    const h = await harness({
+      populate: async (root) => {
+        await writeFile(path.join(root, 'A.md'), 'a zebra crossing\n');
+        await writeFile(path.join(root, 'B.md'), 'a zebra crossing\n');
+        await writeFile(path.join(root, 'C.md'), 'points at [[B]]\n');
+        await writeFile(path.join(root, 'D.md'), 'also points at [[B]]\n');
+      },
+    });
+    const result = await h.entry.lexicalSearch({ queries: ['zebra'], ...SEARCH });
+    // A and B tie on the match; B's two backlinks put it first (path order would put A first).
+    expect(result.notes.map((n) => n.path)).toEqual(['B.md', 'A.md']);
+    expect(result.totalNotes).toBe(4);
+  });
+
+  it('setScope drops excluded notes on the next search', async () => {
+    const h = await harness({ populate: writeFixtureVault });
+    const before = await h.entry.lexicalSearch({ queries: ['пошук'], ...SEARCH });
+    expect(before.notes.some((n) => n.path.startsWith('Archive/'))).toBe(true);
+    expect(before.totalNotes).toBe(FIXTURE_PATHS.length);
+
+    h.entry.setScope(scopeOf(['Archive/**']));
+
+    const after = await h.entry.lexicalSearch({ queries: ['пошук'], ...SEARCH });
+    expect(after.notes.some((n) => n.path.startsWith('Archive/'))).toBe(false);
+    expect(after.totalNotes).toBe(scoped);
+    await vi.waitFor(() => expect(h.entry.lexicalInfo().notes).toBe(scoped));
+  });
+
+  it('setScope resets the graph so the new scope shows in tie-breaks', async () => {
+    const h = await harness({
+      graphTtlMs: 3_600_000,
+      populate: async (root) => {
+        await mkdir(path.join(root, 'Archive'));
+        await writeFile(path.join(root, 'A.md'), 'a zebra crossing\n');
+        await writeFile(path.join(root, 'B.md'), 'a zebra crossing\n');
+        await writeFile(path.join(root, 'Archive/C.md'), 'points at [[B]]\n');
+        await writeFile(path.join(root, 'Archive/D.md'), 'also points at [[B]]\n');
+      },
+    });
+    const query = { queries: ['zebra'], ...SEARCH };
+    expect((await h.entry.lexicalSearch(query)).notes.map((n) => n.path)).toEqual(['B.md', 'A.md']);
+    h.entry.setScope(scopeOf(['Archive/**']));
+    // The backlinks lived in the excluded subtree: with a fresh graph over the new reader they are gone.
+    expect((await h.entry.lexicalSearch(query)).notes.map((n) => n.path)).toEqual(['A.md', 'B.md']);
+  });
+
+  it('dispose frees the members: a later search rejects', async () => {
+    const h = await harness({ populate: writeFixtureVault });
+    await h.entry.dispose();
+    await expect(h.entry.lexicalSearch({ queries: ['пошук'], ...SEARCH })).rejects.toThrow(
+      /disposed/,
+    );
+  });
+
+  it('a search does not touch the watcher or the loop', async () => {
+    const h = await harness({ populate: writeFixtureVault, loop: { withLock: heldLock } });
+    h.entry.addProfile(HARRIER);
+    const requests = vi.mocked(h.loop().requestPass).mock.calls.length;
+    const started = h.watchers.started.length;
+    await h.entry.lexicalSearch({ queries: ['пошук'], ...SEARCH });
+    expect(vi.mocked(h.loop().requestPass).mock.calls.length).toBe(requests);
+    expect(h.watchers.started).toHaveLength(started);
   });
 });

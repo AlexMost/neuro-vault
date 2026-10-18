@@ -7,6 +7,7 @@ export {
 } from './vault-entries.js';
 export {
   createVaultEntry,
+  type ILexicalInfo,
   type IProfileInfo,
   type IVaultEntry,
   type IVaultEntryOptions,

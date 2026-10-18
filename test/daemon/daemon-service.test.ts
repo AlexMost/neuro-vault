@@ -60,6 +60,7 @@ describe('daemon service', () => {
     const notes: IVaultInfo = {
       vault: '/vaults/notes',
       clients: 2,
+      lexical: { state: 'warming' },
       profiles: [{ profile: 'harrier-270m', state: 'ready', notes: 955 }],
     };
     deps.vaultInfo.mockReturnValue([notes]);

@@ -750,6 +750,7 @@ describe('runDaemonCommand (status / stop)', () => {
             {
               vault: '/vaults/notes',
               clients: 2,
+              lexical: { state: 'ready', notes: 955 },
               profiles: [
                 {
                   profile: 'harrier-270m',
@@ -769,6 +770,7 @@ describe('runDaemonCommand (status / stop)', () => {
               vault: '/vaults/work',
               clients: 0,
               idle_since: '2026-10-14T09:48:00Z',
+              lexical: { state: 'warming' },
               profiles: [{ profile: 'harrier-270m', state: 'indexing', indexed: 120, total: 840 }],
             },
           ],
@@ -799,6 +801,7 @@ describe('runDaemonCommand (status / stop)', () => {
             {
               vault: '/v',
               clients: 1,
+              lexical: { state: 'warming' },
               profiles: [
                 { profile: 'a', state: 'unavailable' },
                 { profile: 'b', state: 'disabled' },

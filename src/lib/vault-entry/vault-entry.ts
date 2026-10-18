@@ -4,8 +4,11 @@ import { corpusIdentityOf, type CorpusIdentity } from '../obsidian/corpus/identi
 import { ShardCorpus } from '../obsidian/corpus/shard-corpus.js';
 import { ShardStore } from '../obsidian/corpus/shard-store.js';
 import type { EmbedDocumentsFn } from '../obsidian/corpus/types.js';
+import { LexicalIndex } from '../obsidian/lexical/lexical-index.js';
+import type { ILexicalResult, ILexicalSearchOptions } from '../obsidian/lexical/reader.js';
 import type { BackendState, BackendStatus } from '../obsidian/semantic-backend.js';
 import { FsVaultReader } from '../obsidian/vault-reader.js';
+import { WikilinkGraphIndex } from '../obsidian/wikilink-graph.js';
 import type { VaultScope } from '../obsidian/vault-scope.js';
 import { identityOf, MODEL_PROFILES } from '../model-profiles.js';
 import {
@@ -27,10 +30,18 @@ export interface IProfileInfo {
   last_reconcile?: ILastReconcile;
 }
 
+/** The entry's lexical cache: `warming` until its first refresh completes. */
+export interface ILexicalInfo {
+  state: 'warming' | 'ready';
+  notes?: number;
+  last_refresh?: { at: string; parsed: number; ms: number };
+}
+
 export interface IVaultInfo {
   vault: string;
   clients: number;
   idle_since?: string;
+  lexical: ILexicalInfo;
   profiles: IProfileInfo[];
 }
 
@@ -44,6 +55,8 @@ export interface IVaultEntryOptions {
   semantic: boolean;
   embedderFor: (profileKey: string) => EmbedDocumentsFn;
   warn: (message: string) => void;
+  /** The tie-break graph's TTL; tests shorten or stretch it, production keeps the default. */
+  graphTtlMs?: number;
   /** Quiet interval before a change schedules a pass; production keeps the watcher's default. */
   debounceMs?: number;
   /** Injected by tests; production defaults to the chokidar-backed watcher. */
@@ -73,6 +86,12 @@ export interface IVaultEntry {
   status(key: string): BackendStatus;
   /** The profile's corpus with the scope folded into every read: candidates and path anchors. */
   reader(key: string): ICorpusReader;
+  /**
+   * Lexical search over the scoped vault, ranked with the entry's own wikilink graph.
+   * Read-through: it never waits on a reconcile pass and never touches the watcher.
+   */
+  lexicalSearch(opts: ILexicalSearchOptions): Promise<ILexicalResult>;
+  lexicalInfo(): ILexicalInfo;
   info(clients: number, idleSince?: string): IVaultInfo;
   dispose(): Promise<void>;
 }
@@ -101,19 +120,31 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
   const { vaultRoot, vaultName, warn } = opts;
   let scope = opts.scope;
   let semantic = opts.semantic;
-  let fsDeps: ReconcileFsDeps = fsDepsFor(scope);
   /** In attach order: the order `info()` lists them. */
   const slots = new Map<string, IProfileSlot>();
   /** Watchers being closed (scope change, last corpus gone); dispose waits for them. */
   const closing = new Set<Promise<void>>();
+
+  /** The scoped reader behind `fsDeps` and the lexical members: one scan rule for all three. */
+  let scopedReader: FsVaultReader = readerFor(scope);
+  let fsDeps: ReconcileFsDeps = buildReconcileFsDeps({ vaultRoot, reader: scopedReader });
+  /** null once disposed: a later search rejects and the members can be collected. */
+  let lexical: LexicalIndex | null = null;
+  let graph: WikilinkGraphIndex | null = null;
   let disposing: Promise<void> | null = null;
 
-  function fsDepsFor(next: VaultScope): ReconcileFsDeps {
-    return buildReconcileFsDeps({
-      vaultRoot,
-      reader: new FsVaultReader({ vaultRoot, scope: next }),
-    });
+  function readerFor(next: VaultScope): FsVaultReader {
+    return new FsVaultReader({ vaultRoot, scope: next });
   }
+
+  /** A fresh index and graph over the current reader (the graph's build time starts at 0). */
+  function buildLexical(): void {
+    lexical = new LexicalIndex({ vaultRoot, reader: scopedReader, warn });
+    graph = new WikilinkGraphIndex({ reader: scopedReader, ttlMs: opts.graphTtlMs });
+    // warm never rejects; searches arriving meanwhile share its refresh.
+    void lexical.warm();
+  }
+  buildLexical();
 
   const loop = (opts.createLoop ?? createReconcileLoop)({
     vaultRoot,
@@ -254,6 +285,19 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
     return slotOf(key).corpus === null ? { state: 'disabled' } : loop.status(key);
   }
 
+  function lexicalInfo(): ILexicalInfo {
+    const info = lexical?.info();
+    if (info === undefined || !info.warmed || info.lastRefresh === undefined) {
+      return { state: 'warming' };
+    }
+    const { at, parsed, ms } = info.lastRefresh;
+    return {
+      state: 'ready',
+      notes: info.notes,
+      last_refresh: { at: at.toISOString(), parsed, ms },
+    };
+  }
+
   return {
     vaultRoot,
     get scope() {
@@ -281,7 +325,9 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
     setScope(next) {
       if (disposing !== null) return;
       scope = next;
-      fsDeps = fsDepsFor(next);
+      scopedReader = readerFor(next);
+      fsDeps = buildReconcileFsDeps({ vaultRoot, reader: scopedReader });
+      buildLexical();
       restartWatcher();
       for (const slot of slots.values()) recompute(slot);
       loop.requestPass();
@@ -326,6 +372,14 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
         },
       };
     },
+    async lexicalSearch(searchOpts) {
+      const index = lexical;
+      const links = graph;
+      if (index === null || links === null) throw new Error('vault entry: disposed');
+      await links.ensureFresh();
+      return index.search({ ...searchOpts, getBacklinkCount: (p) => links.getBacklinkCount(p) });
+    },
+    lexicalInfo,
     info(clients, idleSince) {
       const profiles = [...slots.values()].map((slot): IProfileInfo => {
         const current = status(slot.key);
@@ -345,11 +399,14 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
       return {
         vault: vaultRoot,
         clients,
+        lexical: lexicalInfo(),
         ...(clients === 0 && idleSince !== undefined ? { idle_since: idleSince } : {}),
         profiles,
       };
     },
     dispose() {
+      lexical = null;
+      graph = null;
       disposing ??= (async () => {
         // The loop is aborted at once, beside the watcher close: the pass in flight
         // holds the vault's reconcile lock until it stops. closeWatcher never rejects.

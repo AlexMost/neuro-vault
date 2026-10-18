@@ -15,6 +15,7 @@ import {
 import {
   createVaultEntry,
   type IVaultEntry,
+  type ILexicalInfo,
   type IVaultEntryOptions,
   type IVaultInfo,
 } from '../../../src/lib/vault-entry/vault-entry.js';
@@ -60,9 +61,18 @@ function fakeEntry(opts: IVaultEntryOptions) {
       return entry.semantic ? { state: 'indexing', indexed: 0, total: 0 } : { state: 'disabled' };
     },
     reader: () => reader,
+    lexicalSearch: vi.fn(async () => ({
+      notes: [],
+      truncated: false,
+      perQueryCounts: {},
+      perQueryTokenCounts: {},
+      totalNotes: 0,
+    })),
+    lexicalInfo: (): ILexicalInfo => ({ state: 'warming' }),
     info: (clients: number, idleSince?: string): IVaultInfo => ({
       vault: opts.vaultRoot,
       clients,
+      lexical: { state: 'warming' },
       ...(idleSince === undefined ? {} : { idle_since: idleSince }),
       profiles: profiles.map((profile) => ({ profile, state: entry.status(profile).state })),
     }),
@@ -341,7 +351,14 @@ describe('VaultEntries over real entries', () => {
     const { root, entries } = await realSetup(true);
     const result = await entries.attach(1, `${root}/`, []);
     expect(result).toEqual({ vault: root, profiles: {} });
-    expect(entries.info()).toEqual([{ vault: root, clients: 1, profiles: [] }]);
+    expect(entries.info()).toEqual([
+      {
+        vault: root,
+        clients: 1,
+        lexical: expect.objectContaining({ state: expect.any(String) }),
+        profiles: [],
+      },
+    ]);
     await entries.dispose();
     expect(await exists(path.join(root, '.neuro-vault'))).toBe(false);
   });
@@ -367,6 +384,38 @@ describe('VaultEntries.status and reader', () => {
   });
 });
 
+describe('VaultEntries.lexical', () => {
+  const QUERY = { queries: ['q'], noteCap: 5, perNoteCap: 1 };
+
+  it('is entry-level: a profiles: [] attach gets the reader', async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', []);
+    await expect(s.entries.lexical(1, '/v').lexicalSearch(QUERY)).resolves.toMatchObject({
+      totalNotes: 0,
+    });
+    expect(s.created[0].lexicalSearch).toHaveBeenCalledWith(QUERY);
+  });
+
+  it('NOT_ATTACHED for a connection that attached another vault, or none', async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', []);
+    await s.entries.attach(2, '/w', [HARRIER]);
+    expect(await codeOf(() => s.entries.lexical(2, '/v'))).toBe('NOT_ATTACHED');
+    expect(await codeOf(() => s.entries.lexical(3, '/v'))).toBe('NOT_ATTACHED');
+    expect(await codeOf(() => s.entries.lexical(1, '/missing'))).toBe('NOT_ATTACHED');
+    expect(() => s.entries.lexical(2, '/v')).toThrow(
+      'vault "/v" is not attached on this connection',
+    );
+  });
+
+  it('NOT_ATTACHED once the connection detached', async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', []);
+    s.entries.detach(1);
+    expect(await codeOf(() => s.entries.lexical(1, '/v'))).toBe('NOT_ATTACHED');
+  });
+});
+
 describe('VaultEntries idle', () => {
   it('detach starts the entry and profile timers; firing drops them', async () => {
     const s = setup({ now: () => new Date('2026-01-02T03:04:05.000Z') });
@@ -377,6 +426,7 @@ describe('VaultEntries idle', () => {
         vault: '/v',
         clients: 0,
         idle_since: '2026-01-02T03:04:05.000Z',
+        lexical: { state: 'warming' },
         profiles: [{ profile: HARRIER, state: 'indexing' }],
       },
     ]);
