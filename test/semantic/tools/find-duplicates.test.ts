@@ -344,6 +344,23 @@ describe('findDuplicates', () => {
       expect(results.map((r) => [r.note_a, r.note_b])).toEqual([['Folder/a.md', 'Folder/b.md']]);
     });
 
+    it('reports one pair once when two paths differ only by Unicode normalisation', async () => {
+      const nfc = 'Folder/Caf\u00e9.md';
+      const nfd = 'Folder/Cafe\u0301.md';
+      // The premise: localeCompare calls them equal, so only a code-unit tie-break orders them
+      // (NFD first: 'e' is below 'é' by code unit).
+      expect(nfc.localeCompare(nfd)).toBe(0);
+      expect(nfc).not.toBe(nfd);
+      const sources = new Map([
+        [nfd, makeSyntheticSource(nfd, [1, 0, 0])],
+        [nfc, makeSyntheticSource(nfc, [1, 0, 0])],
+      ]);
+
+      const results = await callTool<DuplicateResults>(toolOf(sources), { threshold: 0.95 });
+
+      expect(results.map((r) => [r.note_a, r.note_b])).toEqual([[nfd, nfc]]);
+    });
+
     it('find_duplicates batches anchors by 64', async () => {
       expect(DUPLICATE_ANCHOR_BATCH).toBe(64);
       const sources = new Map<string, SmartSource>();

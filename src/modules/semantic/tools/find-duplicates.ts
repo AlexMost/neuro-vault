@@ -27,11 +27,20 @@ export interface FindDuplicatesDeps {
 /** How many notes one `nearest` read carries as anchors. */
 export const DUPLICATE_ANCHOR_BATCH = 64;
 
+/**
+ * `compareStrings`, with a code-unit tie-break: `localeCompare` reads canonically equivalent
+ * but byte-different paths (NFC and NFD of one name) as equal, and two such paths must still
+ * order the same way from either side.
+ */
+function comparePaths(left: string, right: string): number {
+  return compareStrings(left, right) || (left < right ? -1 : left > right ? 1 : 0);
+}
+
 function comparePairs(left: DuplicatePair, right: DuplicatePair): number {
   return (
     right.similarity - left.similarity ||
-    compareStrings(left.note_a, right.note_a) ||
-    compareStrings(left.note_b, right.note_b)
+    comparePaths(left.note_a, right.note_a) ||
+    comparePaths(left.note_b, right.note_b)
   );
 }
 
@@ -56,10 +65,11 @@ async function collectDuplicatePairs(args: {
     batch.forEach((anchor, index) => {
       for (const hit of lists[index] ?? []) {
         if (hit.path === anchor) continue;
-        const ordered = compareStrings(anchor, hit.path) <= 0;
+        const ordered = comparePaths(anchor, hit.path) <= 0;
         const note_a = ordered ? anchor : hit.path;
         const note_b = ordered ? hit.path : anchor;
-        const key = `${note_a}\0${note_b}`;
+        // The key orders by code units, so both anchors of a pair fold to one key.
+        const key = anchor < hit.path ? `${anchor}\0${hit.path}` : `${hit.path}\0${anchor}`;
         if (!pairs.has(key)) pairs.set(key, { note_a, note_b, similarity: hit.similarity });
       }
     });
