@@ -277,6 +277,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         sharedServices,
         vaultEntryDeps: {
           semanticBackendFactory: () => fakeBackend(),
+          lexicalReaderFactory: standaloneLexical,
         },
         serverFactory: () => createFakeServer() as never,
         transportFactory: () => ({}) as never,
