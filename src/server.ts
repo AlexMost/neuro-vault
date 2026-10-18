@@ -14,7 +14,7 @@ import {
   type ISharedServices,
 } from './modules/semantic/shared-services.js';
 import type { EmbeddingProvider } from './modules/semantic/types.js';
-import { createSemanticBackends } from './modules/semantic/backend/index.js';
+import { createVaultClients, type IVaultClients } from './modules/semantic/backend/index.js';
 import { createStandaloneLexicalReader } from './modules/semantic/lexical/index.js';
 import { createOperationsModule } from './modules/operations/index.js';
 import { VaultRegistry, type IRegisteredVaultDeps } from './lib/vault-registry.js';
@@ -99,8 +99,25 @@ function defaultTransportFactory(): StdioServerTransport {
   return new StdioServerTransport();
 }
 
+/**
+ * The vault factories of a `--no-semantic` session (brainstorm F1): no vault
+ * clients, so nothing attaches and no daemon starts. Every vault's lexical leg
+ * is the session's own cache over its reader. The registry builds no backend
+ * when `semanticEnabled` is false, so the semantic factory is never called.
+ */
+const NO_SEMANTIC_FACTORIES: Pick<
+  IRegisteredVaultDeps,
+  'semanticBackendFactory' | 'lexicalReaderFactory'
+> = {
+  semanticBackendFactory: () => {
+    throw new Error('no semantic backend is built under --no-semantic');
+  },
+  lexicalReaderFactory: ({ vaultRoot, reader, graph }) =>
+    createStandaloneLexicalReader({ vaultRoot, reader, graph }),
+};
+
 function buildDefaultVaultEntryDeps(
-  semanticBackendFactory: IRegisteredVaultDeps['semanticBackendFactory'],
+  factories: Pick<IRegisteredVaultDeps, 'semanticBackendFactory' | 'lexicalReaderFactory'>,
   overrides: Partial<IRegisteredVaultDeps> = {},
 ): IRegisteredVaultDeps {
   return {
@@ -110,9 +127,8 @@ function buildDefaultVaultEntryDeps(
     graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
     listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
     providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
-    semanticBackendFactory,
-    lexicalReaderFactory: ({ vaultRoot, reader, graph }) =>
-      createStandaloneLexicalReader({ vaultRoot, reader, graph }),
+    semanticBackendFactory: factories.semanticBackendFactory,
+    lexicalReaderFactory: factories.lexicalReaderFactory,
     conventionsReaderFactory:
       ({ vaultRoot }) =>
       () =>
@@ -149,21 +165,20 @@ export async function startNeuroVaultServer(
     deps.embeddingProvider ??
     createEmbeddingProvider({ profile: config.semantic.model, shared }, services);
   const embedder = createQueuedEmbedder(provider);
-  // Each vault's corpus: the daemon's vault entry, or this process's own when
-  // `--no-shared` or the daemon cannot be started (design D11, D12).
-  const backends = createSemanticBackends({
-    services,
-    shared,
-    profile: config.semantic.model.key,
-    embedder,
-  });
+  // Each vault's corpus and lexical cache: the daemon's vault entry, or this
+  // process's own when `--no-shared` or the daemon cannot be started (design
+  // D8, D11, D12). Under `--no-semantic` there are no vault clients at all
+  // (brainstorm F1): nothing calls `services.ensure()`, so no daemon starts.
+  const clients: IVaultClients | undefined = config.semantic.enabled
+    ? createVaultClients({ services, shared, profile: config.semantic.model.key, embedder })
+    : undefined;
 
   const registry = await VaultRegistry.create(
     {
       vaults: config.vaults,
       semanticEnabled: config.semantic.enabled,
     },
-    buildDefaultVaultEntryDeps(backends.factory, deps.vaultEntryDeps),
+    buildDefaultVaultEntryDeps(clients ?? NO_SEMANTIC_FACTORIES, deps.vaultEntryDeps),
   );
 
   const serverFactory = deps.serverFactory ?? defaultServerFactory;
@@ -204,18 +219,24 @@ export async function startNeuroVaultServer(
 
   const transport = transportFactory();
   await server.connect(transport);
-  // Every semantically enabled vault attaches now, in the background: a daemon
-  // backend's first `status()` starts the connect and `vault.attach` and a
-  // local one's attaches its in-process entry, so the corpus starts building
-  // before the first tool call. Nothing waits on these reads — a call that
-  // arrives before an attach answers, even while the daemon is still being
-  // located or started, reads `indexing` 0/0, and so do these reads then (a
-  // vault that opted out with `"semantic": false` has a constant backend that
-  // never attaches). They are the one status read per vault at startup; the
-  // warmup decision below reuses them, and `indexing` counts as embedding.
+  // Every vault attaches now, in the background, so the corpus and the lexical
+  // cache start building before the first tool call. A daemon backend's first
+  // `status()` starts the connect and `vault.attach` and a local one's attaches
+  // its in-process entry; a vault's lexical reader shares that one attach, and
+  // its `warm()` is what attaches a vault that opted out with
+  // `"semantic": false` — with no profile, so nothing indexes it (its backend
+  // is a constant that never attaches). The status reads start first, so each
+  // backend's first answer is its own attach; the standalone reader of a
+  // `--no-semantic` session has nothing to warm. Nothing waits on any of this
+  // — a call that arrives before an attach answers, even while the daemon is
+  // still being located or started, reads `indexing` 0/0, and so do these
+  // reads then — and a warm never rejects. The status reads are the one per
+  // vault at startup; the warmup decision below reuses them, and `indexing`
+  // counts as embedding.
   const attaches = registry
     .list()
     .flatMap((entry) => (entry.backend === undefined ? [] : [entry.backend.status()]));
+  for (const entry of registry.list()) void entry.lexical.warm();
   /** Set once teardown starts: a warmup decided after it must not reconnect to the daemon. */
   let disposed = false;
   // The module-level flag says the tools exist; it does not say any vault will
@@ -261,7 +282,7 @@ export async function startNeuroVaultServer(
     // The in-process vault entries, if any vault needed them: their watchers,
     // timers and the pass in flight would otherwise outlive the client.
     try {
-      await backends.dispose();
+      await clients?.dispose();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(`semantic vault entries disposal failed: ${message}\n`);

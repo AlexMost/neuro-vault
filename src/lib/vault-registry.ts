@@ -85,8 +85,9 @@ export interface IRegisteredVaultDeps {
   }) => ISemanticBackend;
   /**
    * `enabled` is the same flag the semantic backend gets: whether this vault
-   * takes part in semantic search, which a reader that shares a cache with
-   * other sessions needs to know when deciding to attach.
+   * takes part in semantic search. A reader over a vault entry attaches the
+   * vault either way, and the flag decides what with: the session's profile,
+   * or none for a vault that opted out (design D7, D8).
    */
   lexicalReaderFactory: (opts: {
     vaultRoot: string;

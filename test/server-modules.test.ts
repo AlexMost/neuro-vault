@@ -14,8 +14,11 @@ import { modelCorpusDir } from '../src/lib/obsidian/corpus/layout.js';
 import type { BackendStatus, ISemanticBackend } from '../src/lib/obsidian/semantic-backend.js';
 import { main } from '../src/cli.js';
 import { DEFAULT_MODEL_KEY, identityOf, resolveModelProfile } from '../src/lib/model-profiles.js';
+import { VaultEntries } from '../src/lib/vault-entry/index.js';
 import { DaemonEmbeddingProvider } from '../src/modules/semantic/daemon-embedding-provider.js';
 import { createSharedServices } from '../src/modules/semantic/shared-services.js';
+import { createStandaloneLexicalReader } from '../src/modules/semantic/lexical/index.js';
+import type { IRegisteredVaultDeps } from '../src/lib/vault-registry.js';
 import { startNeuroVaultServer } from '../src/server.js';
 
 function createTempVaultPath() {
@@ -59,6 +62,16 @@ function fakeBackend(
 }
 
 /**
+ * The lexical leg for a test whose semantic backend is a double: the session's
+ * own cache over its reader, so no vault entry is built and no daemon is asked.
+ */
+const standaloneLexical: IRegisteredVaultDeps['lexicalReaderFactory'] = ({
+  vaultRoot,
+  reader,
+  graph,
+}) => createStandaloneLexicalReader({ vaultRoot, reader, graph });
+
+/**
  * Boot the server over a real temp vault with the semantic backend replaced by
  * one parked in a fixed state. What is under test is what the *server* does
  * with a non-`ready` backend — startup tolerance, and the error every semantic
@@ -86,6 +99,7 @@ async function startWithBackendStatus(
         embeddingServiceFactory: () => ({ initialize, embedQuery: vi.fn() }),
       },
       vaultEntryDeps: {
+        lexicalReaderFactory: standaloneLexical,
         semanticBackendFactory: () => ({
           ...fakeBackend(status),
           nearest: () => Promise.reject(new Error('the corpus must not be read when not ready')),
@@ -148,6 +162,7 @@ async function startForShutdown(opts: {
       transportFactory: () => transport as never,
       stdin: new PassThrough(),
       vaultEntryDeps: {
+        lexicalReaderFactory: standaloneLexical,
         semanticBackendFactory: ({ vaultName }) =>
           fakeBackend({ state: 'ready' }, () => opts.backendDispose(vaultName)),
       },
@@ -196,6 +211,7 @@ async function startOverPipedStdin(opts: {
       transportFactory: () => new StdioServerTransport(stdin, stdout),
       stdin,
       vaultEntryDeps: {
+        lexicalReaderFactory: standaloneLexical,
         semanticBackendFactory: () => fakeBackend({ state: 'ready' }, opts.backendDispose),
       },
     },
@@ -291,6 +307,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         embeddingProvider: provider,
         vaultEntryDeps: {
           semanticBackendFactory: () => fakeBackend(),
+          lexicalReaderFactory: standaloneLexical,
         },
         serverFactory: () => createFakeServer() as never,
         transportFactory: () => ({}) as never,
@@ -609,6 +626,48 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
+  it('--no-semantic opens no connection, at startup or on a search_notes call', async () => {
+    const tempRoot = await createTempVaultPath();
+    const vaultPath = path.join(tempRoot, 'vault');
+    await fs.mkdir(vaultPath, { recursive: true });
+    await fs.writeFile(path.join(vaultPath, 'Heron.md'), '# Heron\n\nA wading bird.\n');
+    const request = vi.fn();
+    const sharedServices = {
+      mode: 'pending' as const,
+      connection: { epoch: 1, ensure: vi.fn(), close: vi.fn(), request } as never,
+      ensure: vi.fn(async () => 'daemon' as const),
+      close: vi.fn(),
+    };
+    const server = createFakeServer();
+
+    const dispose = await startNeuroVaultServer(
+      {
+        vaults: [{ name: 'vault', path: vaultPath }],
+        semantic: { enabled: false, model: resolveModelProfile(DEFAULT_MODEL_KEY), shared: true },
+      },
+      {
+        sharedServices,
+        serverFactory: () => server as never,
+        transportFactory: () => ({}) as never,
+        stdin: new PassThrough(),
+      },
+    );
+    try {
+      await settle();
+      const result = (await server.toolHandlers.get('search_notes')!({ query: 'heron' })) as {
+        isError?: boolean;
+        structuredContent?: { matches: { path: string }[] };
+      };
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent!.matches.map((m) => m.path)).toEqual(['Heron.md']);
+      expect(sharedServices.ensure).not.toHaveBeenCalled();
+      expect(request).not.toHaveBeenCalled();
+    } finally {
+      await dispose();
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('registers fourteen tools (3 semantic + 11 operations) when both modules are enabled', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
@@ -629,6 +688,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         server: {
           vaultEntryDeps: {
             semanticBackendFactory: () => fakeBackend(),
+            lexicalReaderFactory: standaloneLexical,
             providerFactory: () => fakeProvider,
             readerFactory: () => ({
               readNotes: vi.fn().mockResolvedValue([]),
@@ -923,7 +983,7 @@ describe('startup attach', () => {
   const attachesOf = (daemon: { calls: IDaemonCall[] }) =>
     daemon.calls.filter((call) => call.method === 'vault.attach').map((call) => call.params.vault);
 
-  it('attaches every enabled vault at startup, without waiting for a call and not a disabled one', async () => {
+  it('attaches every vault at startup without waiting for a call, an opted-out vault with profiles []', async () => {
     const root = await createTempVaultPath();
     const alpha = await makeVault(root, 'alpha');
     const beta = await makeVault(root, 'beta');
@@ -953,12 +1013,27 @@ describe('startup attach', () => {
       },
     );
     try {
-      // No tool was called: the attaches are the server's own, one per enabled vault.
-      await vi.waitFor(() => expect(attachesOf(daemon)).toHaveLength(2));
+      // No tool was called: the attaches are the server's own, one per vault. The opted-out
+      // vault attaches for its lexical leg alone; the others for their profile as well.
+      await vi.waitFor(() => expect(attachesOf(daemon)).toHaveLength(3));
       await settle();
-      expect(attachesOf(daemon).sort()).toEqual([alpha, beta].sort());
-      // The same status reads gate the warmup: no second read per vault.
-      expect(daemon.calls.map((call) => call.method)).toEqual(['vault.attach', 'vault.attach']);
+      const profilesByVault = Object.fromEntries(
+        daemon.calls
+          .filter((call) => call.method === 'vault.attach')
+          .map((call) => [call.params.vault, call.params.profiles]),
+      );
+      expect(profilesByVault).toEqual({
+        [alpha]: ['granite-97m'],
+        [beta]: ['granite-97m'],
+        [off]: [],
+      });
+      // The backend and the lexical reader of a vault share its attach, and the same
+      // status reads gate the warmup: no second read per vault.
+      expect(daemon.calls.map((call) => call.method)).toEqual([
+        'vault.attach',
+        'vault.attach',
+        'vault.attach',
+      ]);
       expect(daemon.connect).toHaveBeenCalledTimes(1);
     } finally {
       await dispose();
@@ -1281,7 +1356,8 @@ describe('startup attach', () => {
     );
     try {
       // Indexing starts at startup, before any tool call: the entries were built up front
-      // and every enabled vault attached to them; the disabled one was not.
+      // and every vault attached to them; the opted-out one with no profile, so it embeds
+      // nothing.
       const embeddedTexts = () => embedDocuments.mock.calls.flatMap(([batch]) => batch);
       await vi.waitFor(() => {
         expect(embeddedTexts().some((t) => t.includes('alpha note'))).toBe(true);
@@ -1300,6 +1376,96 @@ describe('startup attach', () => {
       expect(daemon.connect).not.toHaveBeenCalled();
       expect(ensure).not.toHaveBeenCalled();
       expect(lines).toEqual([]);
+    } finally {
+      await dispose();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('--no-shared serves the lexical leg from the in-process entry', async () => {
+    const root = await createTempVaultPath();
+    const alpha = await makeVault(root, 'alpha');
+    await fs.writeFile(path.join(alpha, 'Heron.md'), '# Heron\n\nA wading bird.\n');
+    const daemon = fakeDaemon(() => ({}));
+    const services = servicesOver(daemon);
+    const ensure = vi.spyOn(services, 'ensure');
+    const lexical = vi.spyOn(VaultEntries.prototype, 'lexical');
+    const server = createFakeServer();
+    const provider = fakeProvider();
+    provider.embedQuery = vi.fn(async () => vector());
+
+    const dispose = await startNeuroVaultServer(
+      {
+        vaults: [{ name: 'alpha', path: alpha }],
+        semantic: { enabled: true, model: GRANITE, shared: false },
+      },
+      {
+        embeddingProvider: provider,
+        sharedServices: services,
+        serverFactory: () => server as never,
+        transportFactory: () => ({}) as never,
+        stdin: new PassThrough(),
+      },
+    );
+    try {
+      const result = (await server.toolHandlers.get('search_notes')!({
+        query: 'heron',
+        mode: 'lexical',
+      })) as {
+        isError?: boolean;
+        structuredContent?: { matches: { path: string }[] };
+      };
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent!.matches.map((m) => m.path)).toEqual(['Heron.md']);
+      // The lexical leg read the in-process entry's cache, and nothing touched the daemon.
+      expect(lexical).toHaveBeenCalled();
+      expect(daemon.connect).not.toHaveBeenCalled();
+      expect(ensure).not.toHaveBeenCalled();
+    } finally {
+      lexical.mockRestore();
+      await dispose();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("startup warms every vault's lexical reader, after the backend status reads", async () => {
+    const root = await createTempVaultPath();
+    const alpha = await makeVault(root, 'alpha');
+    const beta = await makeVault(root, 'beta', { semantic: false });
+    const order: string[] = [];
+
+    const dispose = await startNeuroVaultServer(
+      {
+        vaults: [
+          { name: 'alpha', path: alpha },
+          { name: 'beta', path: beta },
+        ],
+        semantic: { enabled: true, model: GRANITE, shared: false },
+      },
+      {
+        embeddingProvider: fakeProvider(),
+        serverFactory: () => createFakeServer() as never,
+        transportFactory: () => ({}) as never,
+        stdin: new PassThrough(),
+        vaultEntryDeps: {
+          semanticBackendFactory: ({ vaultName }) => ({
+            ...fakeBackend(),
+            status: async () => {
+              order.push(`status:${vaultName}`);
+              return { state: 'ready' };
+            },
+          }),
+          lexicalReaderFactory: ({ vaultName }) => ({
+            search: () => Promise.reject(new Error('not searched here')),
+            warm: async () => {
+              order.push(`warm:${vaultName}`);
+            },
+          }),
+        },
+      },
+    );
+    try {
+      expect(order).toEqual(['status:alpha', 'status:beta', 'warm:alpha', 'warm:beta']);
     } finally {
       await dispose();
       await fs.rm(root, { recursive: true, force: true });
