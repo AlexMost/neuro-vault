@@ -28,7 +28,7 @@ The decisions are in `brainstorm.md` (settled items 1–11, Q1–Q12, forks F1 a
 
 ### D1: The lexical cache and its graph are members of `IVaultEntry`
 
-- **Choice**: `createVaultEntry` builds, with the entry, one `LexicalIndex` and one `WikilinkGraphIndex`, both over the entry's scoped `FsVaultReader` (the reader `fsDepsFor(scope)` already builds; `setScope` rebuilds both over the new reader and the graph's build time is reset so its next `ensureFresh()` rebuilds). `IVaultEntry` gains:
+- **Choice**: `createVaultEntry` builds, with the entry, one `LexicalIndex` and one `WikilinkGraphIndex`, both over the entry's scoped `FsVaultReader` (the reader `fsDepsFor(scope)` already builds; `setScope` rebuilds both over the new reader). Both are warmed in the background on creation and after a scope change: `lexical.warm()` and `graph.ensureFresh()`, a failed graph build logged through the entry's `warn` (nothing after dispose) and retried by the next search. `IVaultEntry` gains:
 
   ```ts
   lexicalSearch(opts: ILexicalSearchOptions): Promise<ILexicalResult>;
@@ -92,7 +92,7 @@ The decisions are in `brainstorm.md` (settled items 1–11, Q1–Q12, forks F1 a
   ```
 
   `src/modules/semantic/lexical/` holds the three implementations and their factory:
-  - `createDaemonLexicalReader({ services, attachment, vaultRoot, local })`: `search` runs `services.ensure()`; `local` → delegates to the in-process reader (built once); else `attachment.key()` then `lexical.search` (30 s) and maps `matched_queries` → `matchedQueries`. `warm()` is `attachment.key()` swallowed. Errors: `LEXICAL_FAILED`, `DaemonTimeoutError`, `DaemonConnectionError`, `VAULT_UNAVAILABLE` (from the attach) → `LexicalSearchError` with the reason; `NOT_ATTACHED` → `attachment.forget()` then `LexicalSearchError`. Nothing here touches the switch.
+  - `createDaemonLexicalReader({ services, attachment, vaultRoot, local })`: `search` runs `services.ensure()`; `local` → delegates to the in-process reader (built once); else `attachment.key()` then `lexical.search` (30 s) and maps `matched_queries` → `matchedQueries`. `warm()` is `attachment.key()` swallowed. Errors: `LEXICAL_FAILED`, `DaemonTimeoutError`, `DaemonConnectionError`, `VAULT_UNAVAILABLE` (from the attach) → `LexicalSearchError` with the reason; `NOT_ATTACHED` → `attachment.forget()` then `LexicalSearchError`. None of these flips the switch; only `services.ensure()` does, when the daemon cannot be located or started, and `search` is then served by the in-process reader.
   - `createLocalLexicalReader({ entries, attachment })`: `attachment.key()` (the local attachment, D7) then `entries.lexical(LOCAL_CONNECTION_ID, key).lexicalSearch(opts)`; a `VaultEntryError` → `LexicalSearchError`.
   - `createStandaloneLexicalReader({ vaultRoot, reader, graph })`: today's path — a `LexicalIndex` over the session's reader, `graph.ensureFresh()` then `search` with `graph.getBacklinkCount`. `warm()` is a no-op: a `--no-semantic` session builds its cache on first search, as today, so the `--no-semantic` floor does not move. `eval/pipelines.ts` uses it.
   - `RetrievalPipelineDeps` becomes `{ corpus?; lexical: ILexicalReader; filterExisting; embeddingProvider; similarity }`; `getBacklinkCount` leaves it. `IRegisteredVault.lexical: ILexicalReader`, built by `IRegisteredVaultDeps.lexicalReaderFactory({ vaultRoot, vaultName, reader, graph, enabled })`. `buildSearchNotesTool` drops its `Map` and reads `entry.lexical`; `runSearchForEntry` catches `LexicalSearchError` from the pipeline and throws `DEPENDENCY_ERROR` (`wrapDependencyError`, message "Lexical search failed", `details: { vault, operation: 'search_notes' }`).
@@ -145,7 +145,7 @@ The decisions are in `brainstorm.md` (settled items 1–11, Q1–Q12, forks F1 a
 
 ## Risks / Trade-offs
 
-- [Risk] A daemon that is slow or gone makes `search_notes` fail where today's lexical leg never did → Mitigation: the 30 s timeout fails only that call; a dropped connection reconnects (respawning the daemon) on the next call; `--no-shared` keeps the leg in-process; never a fallback flip (#165, ADR-0020). Accepted by the owner in #165.
+- [Risk] A daemon that is slow or gone makes `search_notes` fail where today's lexical leg never did → Mitigation: the 30 s timeout fails only that call; a dropped connection reconnects (respawning the daemon) on the next call; `--no-shared` keeps the leg in-process; a timeout or a dropped connection never flips the fallback switch, only a daemon that cannot be located or started does, as for every facade (#165, ADR-0020). Accepted by the owner in #165.
 - [Risk] Ranking or rendering drift from the refresh change → Mitigation: D10's oracle over the #177 query sets, through three readers and the tool gate; `npm run eval` before and after.
 - [Risk] Serialised refreshes add latency under concurrent sessions → Mitigation: at most two refreshes per burst, each a scan plus one `stat` per note (tens of milliseconds for ~1,000 notes); parse cost is paid only for changed notes. A test with a barrier on `stat` pins "served by a refresh that began after the call".
 - [Risk] The daemon warms a cache for every attached vault, searched or not → accepted: that is the one copy the change exists to hold; the measurement records the daemon per run.

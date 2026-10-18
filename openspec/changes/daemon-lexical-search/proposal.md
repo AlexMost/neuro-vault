@@ -8,13 +8,13 @@ After `daemon-vault-registry` (#175) a session the daemon serves holds no corpus
 
 **The lexical cache and its tie-break graph become members of the vault entry**
 - From: each session keeps one `LexicalIndex` per vault inside `buildSearchNotesTool`, refreshed per call over the session's reader and evicting every path outside a filtered call's `allowed` set; the tie-break reads the session's wikilink graph.
-- To: each vault entry holds one lexical cache over its own scoped reader and one wikilink graph (lazy, TTL, used only by lexical ranking), created with the entry, warmed in the background on creation and after a scope change, and dropped with the entry. Freshness stays read-through: refreshes of one entry are serialised and a call is never served by a refresh that began before it arrived; `allowed` narrows ranking and never evicts; `total_notes` counts the entry's scope before `allowed`.
+- To: each vault entry holds one lexical cache over its own scoped reader and one wikilink graph (TTL, used only by lexical ranking), created with the entry, warmed in the background on creation and after a scope change, and dropped with the entry. Freshness stays read-through: refreshes of one cache are serialised and a call is never served by a refresh that began before it arrived; `allowed` narrows ranking and never evicts; `total_notes` counts the entry's scope before `allowed`.
 - Reason: one copy per vault directory instead of one per session; ranking unchanged.
 - Impact: non-breaking. A vault with `"semantic": false` now attaches (with `profiles: []`) so its lexical leg is served too; its entry runs no watcher and no corpus.
 
 **`lexical.search` on the wire**
 - From: no lexical method; `lexical.*` is named in the daemon's docs as the next service.
-- To: `lexical.search { vault, queries, allowed?, note_cap, per_note_cap }` answers today's ranked evidence with snippets built in the daemon (`notes[]` with `matches[]` and `matched_queries`, `truncated`, `per_query_counts`, `per_query_token_counts`, `total_notes`) within 30 s; `NOT_ATTACHED` for a vault this connection did not attach; new error code `LEXICAL_FAILED` when the implementation throws. No readiness state: a cold cache waits for its warm. `daemon.info` reports the cache per entry and `daemon status` prints a `lexical` line under each vault.
+- To: `lexical.search { vault, queries, allowed?, note_cap, per_note_cap }` answers today's ranked evidence with snippets built in the daemon (`notes[]` with `matches[]` and `matched_queries`, `truncated`, `per_query_counts`, `per_query_token_counts`, `total_notes`), the session waiting at most 30 s; `NOT_ATTACHED` for a vault this connection did not attach; new error code `LEXICAL_FAILED` when the implementation throws. No readiness state: a cold cache waits for its warm. `daemon.info` reports the cache per entry and `daemon status` prints a `lexical` line under each vault.
 - Impact: non-breaking (a new method and code; no existing method changes).
 
 **The session reads the lexical leg through a facade**
@@ -40,6 +40,7 @@ After `daemon-vault-registry` (#175) a session the daemon serves holds no corpus
 - `shared-services-daemon`: the unknown-method scenario no longer uses `lexical.search`; `daemon.info` and `daemon status` report the lexical cache per vault entry; `LEXICAL_FAILED` joins the error table.
 - `hybrid-search`: lexical freshness is a per-vault-entry read-through cache shared by every session on the vault, with the serialised-refresh and never-evict rules; a lexical failure is `DEPENDENCY_ERROR`.
 - `semantic-backend-lifecycle`: a vault that turned semantics off still attaches for its lexical leg, unwatched and unindexed.
+- `daemon-embedding-provider`: the process's one-way switch is also shared by the lexical reader, so a daemon that cannot be located or started moves the lexical reads in-process too.
 
 ## Impact
 

@@ -61,7 +61,7 @@ interface IncomingLink {
 
 The graph is built once at server startup (`src/server.ts`) using the shared `FsVaultReader`, then passed into both `createSemanticModule` and `createOperationsModule` as a dependency. Each module's tool factory accepts an optional `graph` so that tests can substitute a fake without booting the server.
 
-The vault entry (`IVaultEntry`) builds its own `WikilinkGraphIndex` over its scoped reader, the lexical leg's tie-break ([`lexical-search.md`](./lexical-search.md)): in the daemon it is the one copy for the vault directory, and under `--no-shared` it is a second graph beside the registry's (about 0.7 MB each on a ~1,000-note vault). The session's graph still serves `get_note_links`, `query_notes` and `search_notes`' per-match `backlink_count`; the tie-break is the only thing the entry's graph answers.
+The vault entry (`IVaultEntry`) builds its own `WikilinkGraphIndex` over its scoped reader, the lexical leg's tie-break ([`lexical-search.md`](./lexical-search.md)), and starts its first build in the background with the entry and again after a scope change (later rebuilds follow the TTL, on demand): in the daemon it is the one copy for the vault directory, and under `--no-shared` it is a second graph beside the registry's (about 0.7 MB each on a ~1,000-note vault). The session's graph still serves `get_note_links`, `query_notes` and `search_notes`' per-match `backlink_count`; the tie-break is the only thing the entry's graph answers.
 
 When a module is constructed in isolation (direct unit tests, hypothetical embed-elsewhere usage), it builds its own graph from a default `FsVaultReader` — the server-level shared instance is an optimisation, not a requirement.
 

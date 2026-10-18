@@ -7,7 +7,7 @@ Each vault entry SHALL hold one lexical cache (parsed titles, headings and body 
 #### Scenario: N sessions, one cache
 
 - **WHEN** three sessions attach one vault and each runs `search_notes` in `mode: "lexical"`
-- **THEN** the daemon holds one lexical cache and one graph for that vault, and no session process parses a note for its lexical leg
+- **THEN** the daemon holds one lexical cache and one graph for that vault, and no session process parses a note for its lexical leg (a session still builds its own wikilink graph for each match's `backlink_count`)
 
 #### Scenario: An opted-out vault is served
 
@@ -23,7 +23,7 @@ Each vault entry SHALL hold one lexical cache (parsed titles, headings and body 
 
 ### Requirement: lexical.search serves the lexical leg over the wire
 
-The daemon SHALL serve `lexical.search { vault, queries, allowed?, note_cap, per_note_cap }` — `vault` the realpath key `vault.attach` returned, `queries` a non-empty list of strings, `allowed` an optional list of vault-relative paths, `note_cap` and `per_note_cap` positive integers, and nothing else — answering `{ notes: [{ path, matches: [{ matched_in, snippet, lines?, heading? }], matched_queries }], truncated, per_query_counts, per_query_token_counts, total_notes }` within 30 seconds, with snippets built in the daemon. The ranking, the matching rules, the caps and the evidence SHALL be those of the hybrid-search capability's lexical leg, with the entry's own graph supplying `backlink_count` for the tie-break. The call SHALL carry no profile. A call for a vault this connection did not attach, with any profile list including an empty one, SHALL be answered `NOT_ATTACHED`; malformed params `INVALID_PARAMS`; a failure inside the search `LEXICAL_FAILED` with the reason. There SHALL be no readiness state: a call on a cache that is still warming SHALL wait for the warm.
+The daemon SHALL serve `lexical.search { vault, queries, allowed?, note_cap, per_note_cap }` — `vault` the realpath key `vault.attach` returned, `queries` a non-empty list of strings, `allowed` an optional list of vault-relative paths, `note_cap` and `per_note_cap` positive integers, and nothing else — answering `{ notes: [{ path, matches: [{ matched_in, snippet, lines?, heading? }], matched_queries }], truncated, per_query_counts, per_query_token_counts, total_notes }`, with snippets built in the daemon; the session SHALL wait at most 30 seconds for the answer. The ranking, the matching rules, the caps and the evidence SHALL be those of the hybrid-search capability's lexical leg, with the entry's own graph supplying `backlink_count` for the tie-break. The call SHALL carry no profile. A call for a vault this connection did not attach, with any profile list including an empty one, SHALL be answered `NOT_ATTACHED`; malformed params `INVALID_PARAMS`; a failure inside the search `LEXICAL_FAILED` with the reason. There SHALL be no readiness state: a call on a cache that is still warming SHALL wait for the warm.
 
 #### Scenario: Same evidence as in-process
 
@@ -54,7 +54,7 @@ The daemon SHALL serve `lexical.search { vault, queries, allowed?, note_cap, per
 
 ### Requirement: The entry's lexical cache is read-through, refreshed serially, and never evicts on allowed
 
-The entry's lexical cache SHALL reflect the disk at call time: each `lexical.search` SHALL be served by a refresh that began after the call arrived, where a refresh scans the entry's current scope, drops cached notes the scan no longer lists, stats every scanned note and re-parses those whose mtime changed. Refreshes of one entry SHALL NOT overlap: a call that arrives during a refresh SHALL wait for it and SHALL share one follow-up refresh with every other call that arrived during the same run. `allowed` SHALL narrow the ranked candidates only, after the refresh, and SHALL NOT evict any cached note. `total_notes` SHALL be the number of notes in the entry's scope before `allowed`. The entry's watcher and reconcile loop SHALL NOT touch the cache, and a lexical hit SHALL need no existence check.
+The entry's lexical cache SHALL reflect the disk at call time: each `lexical.search` SHALL be served by a refresh that began after the call arrived, where a refresh scans the scope the cache was built for (a scope change replaces the cache; the next call is served by the new one), drops cached notes the scan no longer lists, stats every scanned note and re-parses those whose mtime changed. Refreshes of one cache SHALL NOT overlap: a call that arrives during a refresh SHALL wait for it and SHALL share one follow-up refresh with every other call that arrived during the same run. `allowed` SHALL narrow the ranked candidates only, after the refresh, and SHALL NOT evict any cached note. `total_notes` SHALL be the number of notes in the entry's scope before `allowed`. The entry's watcher and reconcile loop SHALL NOT touch the cache, and a lexical hit SHALL need no existence check.
 
 #### Scenario: An edit is visible to the next call from any session
 
@@ -85,7 +85,7 @@ The entry's lexical cache SHALL reflect the disk at call time: each `lexical.sea
 
 ### Requirement: The session reads the lexical leg through one reader
 
-A session SHALL reach each vault's lexical leg only through that vault's lexical reader, which SHALL expose `search(queries, allowed?, noteCap, perNoteCap)` answering the leg's ranked notes, `truncated`, per-query counts, per-query token counts and `totalNotes`, and `warm()`. With the shared daemon the reader SHALL use `lexical.search` over the process's one connection and the vault's one attachment; under `--no-shared`, or once the process's switch went `local`, it SHALL use the in-process vault entry; under `--no-semantic`, and in the retrieval-eval harness, it SHALL be a standalone in-process lexical index over the session's reader and graph, and such a session SHALL start no daemon. The reader SHALL resolve the backlink tie-break itself; `search_notes` SHALL NOT pass a backlink function to the leg. A lexical failure (`LEXICAL_FAILED`, a timeout, a dropped connection, `NOT_ATTACHED`, `VAULT_UNAVAILABLE`, or an in-process throw) SHALL fail the `search_notes` call with `DEPENDENCY_ERROR`, SHALL NOT switch the process to the in-process fallback, and on `NOT_ATTACHED` SHALL forget the attach so the next call attaches again.
+A session SHALL reach each vault's lexical leg only through that vault's lexical reader, which SHALL expose `search(queries, allowed?, noteCap, perNoteCap)` answering the leg's ranked notes, `truncated`, per-query counts, per-query token counts and `totalNotes`, and `warm()`. With the shared daemon the reader SHALL use `lexical.search` over the process's one connection and the vault's one attachment; under `--no-shared`, or once the process's switch went `local`, it SHALL use the in-process vault entry; under `--no-semantic`, and in the retrieval-eval harness, it SHALL be a standalone in-process lexical index over the session's reader and graph, and such a session SHALL start no daemon. The reader SHALL resolve the backlink tie-break itself; `search_notes` SHALL NOT pass a backlink function to the leg. A lexical failure (`LEXICAL_FAILED`, a timeout, a dropped connection, `NOT_ATTACHED`, `VAULT_UNAVAILABLE`, or an in-process throw) SHALL fail that vault's search with `DEPENDENCY_ERROR` (the whole `search_notes` call for a single-vault target; its `failed_vaults` entry in a fan-out), SHALL NOT switch the process to the in-process fallback, and on `NOT_ATTACHED` SHALL forget the attach so the next call attaches again.
 
 #### Scenario: One payload whichever reader serves
 
@@ -116,7 +116,7 @@ A session SHALL reach each vault's lexical leg only through that vault's lexical
 
 ### Requirement: daemon.info reports the lexical cache per entry
 
-`daemon.info` SHALL report, for each vault entry, `lexical: { state, notes?, last_refresh? }` where `state` is `warming` until the first refresh completes and `ready` afterwards, `notes` the number of cached notes once ready, and `last_refresh` the last refresh's time, the number of notes it re-parsed and its duration.
+`daemon.info` SHALL report, for each vault entry, `lexical: { state, notes?, last_refresh? }` where `state` is `warming` until the cache's first successful refresh, and again after a scope change replaces the cache, and `ready` otherwise, `notes` the number of cached notes once ready, and `last_refresh` the last refresh's time, the number of notes it re-parsed and its duration.
 
 #### Scenario: Warming then ready
 

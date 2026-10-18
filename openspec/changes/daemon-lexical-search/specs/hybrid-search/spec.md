@@ -23,7 +23,7 @@ Lexical matching SHALL reflect the vault state at request time: content is re-re
 
 ### Requirement: Lexical leg is independent of the embedding corpus
 
-The lexical leg SHALL function whatever state the vault's embedding corpus is in — absent, still building, disabled, or unreadable — and `mode: "lexical"` SHALL NOT read a corpus snapshot at all. Semantic-leg failure or emptiness SHALL NOT fail the lexical leg. A failure of the lexical leg itself (the shared daemon's lexical search failed, timed out or was unreachable, or the in-process index threw) SHALL fail the call with `DEPENDENCY_ERROR` and SHALL NOT switch the process to its in-process fallback.
+The lexical leg SHALL function whatever state the vault's embedding corpus is in — absent, still building, disabled, or unreadable — and `mode: "lexical"` SHALL NOT read a corpus snapshot at all. Semantic-leg failure or emptiness SHALL NOT fail the lexical leg. A failure of the lexical leg itself (the shared daemon's lexical search failed or timed out, the connection dropped during it, or the in-process index threw) SHALL fail that vault's search with `DEPENDENCY_ERROR` (the whole call for a single-vault target; its `failed_vaults` entry in a fan-out) and SHALL NOT switch the process to its in-process fallback; a daemon that cannot be located or started flips the process's one-way switch as for every other facade, and the leg is then served in-process.
 
 #### Scenario: lexical search works without a corpus
 
