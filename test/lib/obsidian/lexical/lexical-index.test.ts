@@ -2,10 +2,11 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FsVaultReader } from '../../../../src/lib/obsidian/vault-reader.js';
 import { LexicalIndex } from '../../../../src/lib/obsidian/lexical/lexical-index.js';
+import { FIXTURE_PATHS, writeFixtureVault } from './_fixture-vault.js';
 
 let vaultRoot: string;
 
@@ -119,5 +120,139 @@ describe('LexicalIndex', () => {
       ретеншн: 0,
       алертів: 1,
     });
+  });
+});
+
+describe('LexicalIndex shared refresh rule', () => {
+  const EDITED = 'Tasks/Backlog.md';
+
+  /** A real reader plus spies on `stat` (per path) and `readFile` (per call). */
+  function makeSpiedIndex(extra: { warn?: (m: string) => void } = {}) {
+    const statCalls = new Map<string, number>();
+    const reads: string[] = [];
+    let gate: Promise<void> = Promise.resolve();
+    const index = new LexicalIndex({
+      vaultRoot,
+      reader: new FsVaultReader({ vaultRoot }),
+      // The barrier sits AFTER the real stat, so a blocked refresh keeps the
+      // mtimes it saw before the test edits a note.
+      stat: async (abs) => {
+        const rel = path.relative(vaultRoot, abs);
+        statCalls.set(rel, (statCalls.get(rel) ?? 0) + 1);
+        const s = await fs.stat(abs);
+        await gate;
+        return s;
+      },
+      readFile: async (abs) => {
+        reads.push(path.relative(vaultRoot, abs));
+        return fs.readFile(abs, 'utf8');
+      },
+      ...extra,
+    });
+    return {
+      index,
+      statCalls,
+      reads,
+      block(): () => void {
+        let release!: () => void;
+        gate = new Promise<void>((r) => {
+          release = r;
+        });
+        return release;
+      },
+    };
+  }
+
+  async function editBacklog(): Promise<void> {
+    const full = path.join(vaultRoot, EDITED);
+    await fs.writeFile(full, 'Черга задач: новеслово тут.\n', 'utf8');
+    const later = new Date(Date.now() + 60_000);
+    await fs.utimes(full, later, later);
+  }
+
+  it('a filtered search evicts nothing', async () => {
+    await writeFixtureVault(vaultRoot);
+    const { index, reads } = makeSpiedIndex();
+    const filtered = await index.search({
+      queries: ['пошук'],
+      allowed: new Set(FIXTURE_PATHS.slice(0, 2)),
+      ...searchOpts,
+    });
+    const readsAfterFirst = reads.length;
+    const unfiltered = await index.search({ queries: ['пошук'], ...searchOpts });
+    expect(reads.length).toBe(readsAfterFirst);
+    expect(filtered.totalNotes).toBe(12);
+    expect(unfiltered.totalNotes).toBe(12);
+  });
+
+  it('a call during a refresh is served by the next one', async () => {
+    await writeFixtureVault(vaultRoot);
+    const { index, statCalls, block } = makeSpiedIndex();
+    await index.warm();
+    statCalls.clear();
+
+    const release = block();
+    const a = index.search({ queries: ['новеслово'], ...searchOpts });
+    await vi.waitFor(() => expect(statCalls.size).toBe(12));
+    await editBacklog();
+    const b = index.search({ queries: ['новеслово'], ...searchOpts });
+    release();
+
+    // A began before the edit and keeps the state it scanned.
+    expect((await a).notes).toHaveLength(0);
+    expect((await b).notes.map((n) => n.path)).toEqual([EDITED]);
+    expect([...statCalls.values()]).toEqual(new Array(12).fill(2));
+  });
+
+  it('concurrent waiters share one follow-up', async () => {
+    await writeFixtureVault(vaultRoot);
+    const { index, statCalls, block } = makeSpiedIndex();
+    await index.warm();
+    statCalls.clear();
+
+    const release = block();
+    const a = index.search({ queries: ['новеслово'], ...searchOpts });
+    await vi.waitFor(() => expect(statCalls.size).toBe(12));
+    await editBacklog();
+    const b = index.search({ queries: ['новеслово'], ...searchOpts });
+    const c = index.search({ queries: ['новеслово'], ...searchOpts });
+    release();
+
+    const [ra, rb, rc] = await Promise.all([a, b, c]);
+    expect(ra.notes).toHaveLength(0);
+    expect(rb.notes.map((n) => n.path)).toEqual([EDITED]);
+    expect(rc.notes.map((n) => n.path)).toEqual([EDITED]);
+    // A's refresh, then ONE follow-up for B and C: two refreshes, not three.
+    expect([...statCalls.values()]).toEqual(new Array(12).fill(2));
+  });
+
+  it('warm then info', async () => {
+    await writeFixtureVault(vaultRoot);
+    const { index } = makeSpiedIndex();
+    expect(index.info()).toEqual({ warmed: false, notes: 0 });
+
+    await index.warm();
+    const first = index.info();
+    expect(first).toMatchObject({ warmed: true, notes: 12, lastRefresh: { parsed: 12 } });
+    expect(first.lastRefresh?.at).toBeInstanceOf(Date);
+    expect(first.lastRefresh?.ms).toBeGreaterThanOrEqual(0);
+
+    await index.warm();
+    expect(index.info().lastRefresh?.parsed).toBe(0);
+    expect(index.info().notes).toBe(12);
+  });
+
+  it('warm never rejects', async () => {
+    const warn = vi.fn();
+    const reader = {
+      scan: async (): Promise<string[]> => {
+        throw new Error('scan exploded');
+      },
+      readNotes: async () => [],
+    };
+    const index = new LexicalIndex({ vaultRoot, reader, warn });
+    await expect(index.warm()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(index.info()).toEqual({ warmed: false, notes: 0 });
   });
 });
