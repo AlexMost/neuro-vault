@@ -5,23 +5,23 @@ The vault entry: the shared per-vault state for one vault directory (keyed by it
 ## Requirements
 ### Requirement: The daemon keeps one vault entry per vault directory, keyed by its realpath
 
-The daemon SHALL keep at most one vault entry per vault directory, keyed by the directory's realpath as the daemon resolves it, holding that vault's scope, one watcher, one reconcile loop and one corpus per attached profile. Every method that addresses a vault after `vault.attach` (`vault.status`, `corpus.*`) SHALL carry that realpath key. The same vault-entry module SHALL serve the in-process fallback of a session.
+The daemon SHALL keep at most one vault entry per vault directory, keyed by the directory's realpath as the daemon resolves it, holding that vault's scope, one reconcile loop, one lexical cache with its tie-break graph, one corpus per attached profile, and one watcher while at least one profile with a corpus is attached. Every method that addresses a vault after `vault.attach` (`vault.status`, `corpus.*`, `lexical.search`) SHALL carry that realpath key. The same vault-entry module SHALL serve the in-process fallback of a session.
 
 #### Scenario: Two paths to one directory share an entry
 
 - **WHEN** one connection attaches `/vaults/notes` and another attaches a symlink that resolves to it
-- **THEN** both receive the same realpath key, and the daemon runs one watcher and one reconcile loop for that directory
+- **THEN** both receive the same realpath key, and the daemon runs one watcher, one reconcile loop and one lexical cache for that directory
 
 #### Scenario: Two directories get two entries
 
 - **WHEN** two connections attach two different vault directories
-- **THEN** the daemon holds two entries, each with its own watcher, reconcile loop and corpora
+- **THEN** the daemon holds two entries, each with its own watcher, reconcile loop, lexical cache and corpora
 
 ---
 
 ### Requirement: vault.attach attaches a connection to an entry and its profiles
 
-The daemon SHALL serve `vault.attach { vault, profiles }`, where `vault` is an absolute path and `profiles` is a possibly empty list of profile keys, and SHALL answer `{ vault: <realpath>, profiles: { [profile]: BackendStatus } }` within 10 seconds, without waiting for any corpus load or reconcile pass, which SHALL run in the background. Attach SHALL be idempotent and additive per connection: attaching again adds profiles and changes nothing else. A profile SHALL report `disabled` when the vault's own config sets `"semantic": false`. An unknown profile key SHALL be answered `UNKNOWN_PROFILE`; a path that cannot be resolved, or that is not a directory, SHALL be answered `VAULT_UNAVAILABLE` with the reason. The params SHALL carry nothing else: no scope, no exclusions, no corpus identity.
+The daemon SHALL serve `vault.attach { vault, profiles }`, where `vault` is an absolute path and `profiles` is a possibly empty list of profile keys, and SHALL answer `{ vault: <realpath>, profiles: { [profile]: BackendStatus } }` within 10 seconds, without waiting for any corpus load, reconcile pass or lexical refresh, which SHALL run in the background. Attach SHALL be idempotent and additive per connection: attaching again adds profiles and changes nothing else. A profile SHALL report `disabled` when the vault's own config sets `"semantic": false`. An unknown profile key SHALL be answered `UNKNOWN_PROFILE`; a path that cannot be resolved, or that is not a directory, SHALL be answered `VAULT_UNAVAILABLE` with the reason. The params SHALL carry nothing else: no scope, no exclusions, no corpus identity.
 
 #### Scenario: A cold vault attaches at once
 
@@ -36,12 +36,12 @@ The daemon SHALL serve `vault.attach { vault, profiles }`, where `vault` is an a
 #### Scenario: An empty profile list attaches the vault alone
 
 - **WHEN** a connection attaches a vault with `profiles: []`
-- **THEN** the answer carries the realpath and no profile, and no corpus is loaded or built
+- **THEN** the answer carries the realpath and no profile, no corpus is loaded or built, no watcher is started, and the entry's lexical cache warms in the background
 
 #### Scenario: A vault that disabled semantics
 
 - **WHEN** a connection attaches a vault whose config contains `{ "semantic": false }` with `profiles: ["harrier-270m"]`
-- **THEN** `harrier-270m` is reported `disabled`, and nothing is read from or written under `.neuro-vault/corpus/`
+- **THEN** `harrier-270m` is reported `disabled`, nothing is read from or written under `.neuro-vault/corpus/`, and the entry serves `lexical.search`
 
 #### Scenario: Attaching twice adds a profile
 
@@ -131,7 +131,7 @@ Each entry SHALL run exactly one reconcile loop. A pass SHALL acquire the vault'
 
 ### Requirement: The entry's watcher follows the vault scope
 
-Each entry SHALL watch its vault directory with one watcher, started when the entry is created and restarted when its scope changes. The watcher SHALL prune a directory only when the scope proves the whole subtree excluded — a dot segment, or a match against a scope pattern ending in `/**` — and SHALL schedule a pass, after the debounce interval of quiet, only for an add, change or unlink of a `.md` path the scope does not exclude. Paths SHALL be judged relative to the vault root with `/` separators. A watcher that fails to start or fails later SHALL be logged and SHALL leave the entry on reconcile-on-attach without failing any request.
+Each entry SHALL watch its vault directory with one watcher while at least one profile with a corpus is attached to it: started when the first such profile is attached, closed when the last one leaves, and restarted when the scope changes while it runs. An entry with no corpus (attached with `profiles: []`, or a vault that set `"semantic": false`) SHALL run no watcher. The watcher SHALL prune a directory only when the scope proves the whole subtree excluded — a dot segment, or a match against a scope pattern ending in `/**` — and SHALL schedule a pass, after the debounce interval of quiet, only for an add, change or unlink of a `.md` path the scope does not exclude. Paths SHALL be judged relative to the vault root with `/` separators. A watcher that fails to start or fails later SHALL be logged and SHALL leave the entry on reconcile-on-attach without failing any request.
 
 #### Scenario: An edit in an excluded subtree schedules nothing
 
@@ -153,7 +153,15 @@ Each entry SHALL watch its vault directory with one watcher, started when the en
 - **WHEN** the watcher receives `C:\vault\Archive\note.md` for a vault rooted at `C:\vault` that excludes `Archive/**`
 - **THEN** it judges the path as `Archive/note.md` and schedules nothing
 
----
+#### Scenario: No corpus, no watcher
+
+- **WHEN** an entry is attached with `profiles: []` only
+- **THEN** no watcher is started for it, and attaching a profile afterwards starts one
+
+#### Scenario: The last corpus leaves
+
+- **WHEN** an entry's only profile idles out while a connection still holds the entry with `profiles: []`
+- **THEN** the watcher is closed and the entry keeps serving `lexical.search`
 
 ### Requirement: An entry's corpus is written per note and read with the scope folded in
 
