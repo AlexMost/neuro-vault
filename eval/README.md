@@ -84,7 +84,8 @@ immediately — naming the supported values where there are any.
 
 The run reads `<vault>/.neuro-vault/corpus/<model_key>/` — the shard store this
 server owns and reconciles, in the directory of the profile you pass to
-`--model`. It never builds, migrates, locks or deletes anything there: that
+`--model` — and loads it in-process into the same `ShardCorpus` a vault entry
+serves; it never goes through the shared daemon. It never builds, migrates, locks or deletes anything there: that
 model's corpus must already exist **and have been built by the profile you pass
 to `--model`**, or the run fails naming the `neuro-vault-mcp index` command that
 fixes it (see below). A vault still on the single-corpus layout that preceded
@@ -143,7 +144,7 @@ reports on `--pipeline semantic` (see [Scoring](#scoring)).
 
 - **`--pipeline`** — the ranking method.
   - `semantic` — embed the query, rank by pure embedding similarity
-    (`findNeighbors`, threshold 0, top 10).
+    (`corpus.nearest` over the loaded corpus, threshold 0, top 10).
   - `fused` — the production RRF pipeline, run at deep effort: `executeRetrieval`
     (semantic leg at threshold 0, pool 8; expansion leg on, per-seed limit 3,
     expansion floor from the selected profile) + `LexicalIndex.search`

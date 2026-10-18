@@ -125,10 +125,10 @@ Add `--prune` to delete the corpora other models have left in the vault once the
 
 ## What runs in the background
 
-The first time a session needs an embedding, it starts one background process, `neuro-vault-mcp daemon`, and every later session on the machine shares it. This is new in 17.1. The model then sits in memory once, in that process, instead of once per session. On a measured laptop, three sessions took about 1.3 GB in total with the daemon, against 2.4–2.6 GB as three separate processes.
+When a session starts, it starts one background process, `neuro-vault-mcp daemon`, unless one is already running, and every later session on the machine shares it. This is new in 17.1. The model then sits in memory once, in that process, instead of once per session, and so does each vault's index, with the watcher that keeps it fresh: sessions on one vault share one copy. On a measured laptop, three sessions took about 1.3 GB in total with the daemon, against 2.4–2.6 GB as three separate processes.
 
 - **It belongs to you and to this installed version.** It runs as your user and listens on a local socket, `/tmp/neuro-vault-<uid>/<key>.sock`, in a directory only you can open. It opens no network port. After an upgrade, new sessions start a new daemon, and the old one stays only while sessions of the old version are open. Restart those sessions to move them to the new version.
-- **It leaves on its own.** It exits 30 minutes after its last session disconnects.
+- **It leaves on its own.** It exits 30 minutes after its last session disconnects. A vault's index stays loaded for the same 30 minutes after the last session using it leaves, so a restarted session finds it warm.
 - **Its files** are under `~/.cache/neuro-vault/daemons/<key>/` (or `$XDG_CACHE_HOME/neuro-vault/daemons/<key>/`): `daemon.log` (its output), `daemon.json` (pid, version, socket) and `daemon.lock`.
 - **Inspect or end it** with `neuro-vault-mcp daemon status` and `neuro-vault-mcp daemon stop`.
-- **Opt out** with `--no-shared` in the server's `args` (and on `index`): the session then loads the model itself, as before 17.1. If the daemon cannot be started, the session does the same on its own and says so once on stderr. Windows is untested: there the daemon listens on a named pipe, and any failure falls back the same way.
+- **Opt out** with `--no-shared` in the server's `args` (and on `index`): the session then loads the model itself and indexes and watches its own vaults. If the daemon cannot be started, the session does the same on its own and says so once on stderr. Windows is untested: there the daemon listens on a named pipe, and any failure falls back the same way.

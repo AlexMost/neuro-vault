@@ -1,108 +1,121 @@
 # The Semantic Backend
 
-The per-vault seam every semantic tool ranks and reports through: the `SemanticBackend` contract, the four states a vault's index can be in, the startup and freshness machinery that moves between them, and the process-wide embed queue that machinery shares with live search. The decisions behind this are [ADR-0013](../adr/0013-own-embedding-corpus.md) (the server owns a corpus) and [ADR-0014](../adr/0014-background-corpus-freshness.md) (it stays fresh in the background). The daemon's vault entry runs this same state machine per model profile for a vault shared by many sessions ([`vault-entry.md`](./vault-entry.md)); no session attaches to it yet, so this file still describes what a session does. The corpus mechanism itself — extraction, shard layout, atomic writes, reconcile — is documented in [`own-corpus.md`](./own-corpus.md); this page is about the runtime lifecycle wrapped around it.
+The per-vault seam a session's semantic tools read through: the `ISemanticBackend` contract, its three implementations (the daemon facade, the in-process fallback, and the backend of a vault that opted out), how a vault's status is read and mapped to tool behaviour, the background attach at startup, the embed queue, and teardown. The corpus behind it, with its startup selection, per-note writes, freshness and retries, belongs to the vault entry, documented in [`vault-entry.md`](./vault-entry.md). The session holds no vector, no watcher and no reconcile loop of its own, except when it runs the vault entry itself as the fallback. The decisions are [ADR-0013](../adr/0013-own-embedding-corpus.md) (the server owns a corpus), [ADR-0019](../adr/0019-embedding-storage-interface.md) (sessions read the corpus, never its vectors) and [ADR-0020](../adr/0020-per-vault-state-in-the-daemon.md) (per-vault state lives in the daemon's vault entry).
 
 ## The contract
 
-`src/lib/obsidian/semantic-backend.ts` defines what every semantic tool depends on and nothing more:
+`src/lib/obsidian/semantic-backend.ts` defines what every semantic tool depends on, over the corpus reads of `src/lib/obsidian/corpus/corpus.ts` ([`own-corpus.md`](./own-corpus.md#the-corpus-interface)):
 
 ```typescript
-interface CorpusSnapshot {
-  sources: Map<string, SmartSource>;
-  basenameIndex: BasenameIndex;
-}
-
 type BackendState = 'ready' | 'indexing' | 'disabled' | 'unavailable';
 
 interface BackendStatus {
   state: BackendState;
-  indexed?: number; // present only while state === 'indexing'
+  indexed?: number; // present only while state === 'indexing'; 0/0 until the scan lands
   total?: number; // present only while state === 'indexing'
-  reason?: string; // present only for state === 'unavailable'
+  reason?: string; // present for state === 'unavailable'
 }
 
-interface SemanticBackend {
-  snapshot(): Promise<CorpusSnapshot>;
-  status(): BackendStatus;
+interface ICorpusReader {
+  // One list per anchor, in order; null for a path anchor whose note has no vector.
+  nearest(anchors: CorpusAnchor[], opts: INearestOptions): Promise<(INoteHit[] | null)[]>;
+  nearestBlocks(anchors: CorpusAnchor[], opts: INearestBlocksOptions): Promise<(IBlockHit[] | null)[]>;
+}
+
+interface ISemanticBackend extends ICorpusReader {
+  status(): Promise<BackendStatus>; // never rejects: an unreadable status is `unavailable` with the reason
   dispose(): Promise<void>;
+}
+
+class CorpusNotReadyError extends Error {
+  readonly status: BackendStatus; // a read the corpus refused because it is not `ready`
 }
 ```
 
-`IRegisteredVault.backend?: SemanticBackend` ([`vault-registry.md`](./vault-registry.md)) carries one of these per vault. It is absent only when the semantic module is globally off (`--no-semantic`) — `get_similar_notes` and `find_duplicates` are not registered in that case, and `search_notes` (registered with the lexical leg only) reads the absent backend as `disabled`. A per-vault `"semantic": false` in `.neuro-vault/config.json` still gets a backend; that backend is simply built `enabled: false` and permanently reports `disabled`.
+A read answers paths and similarities (and, for a block, its heading and lines), never a vector. An anchor is a query vector or a note path whose own vector the corpus uses, so a note vector never reaches the session.
 
-`disabled` and `unavailable` mean different things and must never be confused: `disabled` is a deliberate choice (the vault turned semantics off); `unavailable` is broken (a reconcile failed, or there is nothing usable yet and never has been). `src/modules/semantic/backend/corpus-backend.ts` never reports a failure as `disabled`.
+`IRegisteredVault.backend?: ISemanticBackend` ([`vault-registry.md`](./vault-registry.md)) carries one per vault. It is absent only when the semantic module is globally off (`--no-semantic`): `get_similar_notes` and `find_duplicates` are not registered then, and `search_notes` (registered with the lexical leg only) reads the absent backend as `disabled`. A vault whose `.neuro-vault/config.json` sets `"semantic": false` still gets a backend, the disabled one below.
 
-## Startup: serve what you can, then catch up
+`disabled` and `unavailable` mean different things and must never be confused: `disabled` is a deliberate choice (the vault turned semantics off); `unavailable` is broken (a pass failed, nothing usable was ever built, the vault directory is gone, or the status could not be read). No backend and no vault entry reports a failure as `disabled`.
 
-`createCorpusBackend` (`src/modules/semantic/backend/corpus-backend.ts`) decides a vault's starting state without blocking construction — `VaultRegistry.create` never awaits a backend, so server startup is not gated on any vault's index:
+## Three implementations, one factory
 
-| Condition | Outcome |
+`createSemanticBackends` (`src/modules/semantic/backend/index.ts`) is built once per process by `startNeuroVaultServer` and hands the registry its `semanticBackendFactory`. For each vault:
+
+| Vault | Backend |
 | --- | --- |
-| `enabled: false` (module off or vault opted out) | `disabled`. No reconcile ever runs; nothing is read from or written under `.neuro-vault/corpus/`. |
-| Stored manifest is compatible with the active embedding identity (every manifest field but `created`), and shards exist | Snapshot decoded immediately, state `ready`; a reconcile still runs in the background to catch up on anything since the last write. |
-| No compatible manifest, or no shards | State `indexing`; a reconcile builds that model's corpus from scratch, promoting to `ready` when it finishes. When shards exist but the manifest is incompatible — a pinned revision moved, say; another `--model` selects another directory and is not a mismatch — the discard is announced on stderr first (`neuro-vault corpus: vault "<name>" was indexed with <model_key> (embed_version <n>); active model is <model_key> (embed_version <m>) — discarding the corpus and re-indexing in the background`; a missing or unparsable manifest reads `an unreadable or missing manifest` on the stored side); a vault with no corpus yet logs nothing. |
-| A reconcile pass throws | State `unavailable`, with `reason` set from the error. The vault keeps whatever snapshot it already had — an empty one if it never had any. |
-| A reconcile pass returns, having left nothing rankable to serve | State `unavailable`, with a `reason` naming the counts. `reconcileCorpus` is per-note tolerant — a rejected `embedDocuments` call is counted in `summary.failed` and the pass returns normally — so a cold vault with no reachable embedding model would otherwise be promoted to `ready` over an empty corpus. The guard is exactly three clauses: the decoded snapshot is empty _and_ `total > 0` _and_ `failed > 0`. An empty vault has no `total`; a healthy vault whose notes are all below the size gate has no `failed`; a healthy incremental pass that lost one note has a non-empty snapshot, because a failed note keeps the shard it already had. Note the guard deliberately does _not_ require `embedded === 0`: a below-gate note calls `embedDocuments` zero times and still counts as `embedded`, so one stub note would otherwise mask a wholly failed pass — durably, since the stub is `reused` from the next pass on. |
-| A pass times out waiting for another process's lock | State and snapshot unchanged; one stderr line names the vault, the holder's pid (and host) and the lock file; re-armed on the retry backoff. Not `unavailable`: someone is still building, and the vault is not broken. |
+| `"semantic": false` | `createDisabledSemanticBackend()`: `status()` is `disabled`, every read rejects with `CorpusNotReadyError` carrying that status. It never attaches, so neither the daemon nor this process watches or indexes the vault. |
+| `--no-shared` | `createLocalSemanticBackend`, over the process's in-process `VaultEntries`. |
+| default (`--shared`) | `createDaemonSemanticBackend`, the facade onto the daemon's vault entry, which turns into the in-process backend for good once the process's switch goes `local`. |
 
-`unavailable` is not terminal. It is not a decision frozen at startup the way the corpus that preceded this design (`semanticAvailable: false`, decided once and never revisited) used to be — the next pass, whether from the watcher or an explicit request, re-runs the same reconcile and promotes back to `ready` on success.
+### The daemon facade
 
-That recovery does not depend on anyone touching the vault. A pass that ends `unavailable` re-arms itself on a doubling backoff (`RETRY_BASE_MS` 30 s to `RETRY_MAX_MS` 15 min, `src/lib/obsidian/corpus/pass-outcome.ts`), reset on the first pass that does not fail; a watcher event or an explicit request supersedes the pending retry, since that pass _is_ the retry. Without it the watcher would be the only path back, and a vault nobody edits — a read-only reference vault, or one whose watcher failed to start — would stay broken until the process restarted, long after the cause (an absent model, a full disk, a lost network) had cleared. The retry timer is `unref`'d, so it never keeps the process alive on its own.
+`createDaemonSemanticBackend` (`daemon-backend.ts`) forwards to the daemon's `vault` and `corpus` services ([`shared-daemon.md`](./shared-daemon.md#the-vault-service)) over the process's one connection, `ISharedServices` ([`shared-daemon.md`](./shared-daemon.md#the-session-side-facades)). Every call first runs `services.ensure()`.
 
-A retry pass reports `indexing`, with counters, for its duration: a rebuild in flight is a build in flight, and reporting `unavailable` across it would tell a caller to run a second, competing `neuro-vault-mcp index` against the corpus that pass is already writing. A reconcile behind a corpus that is already `ready` is the one case that does _not_ change state — that vault is still serving.
+- **Attach once per connection epoch.** Before its first call on a connection, the facade sends `vault.attach { vault: <vault root>, profiles: [<this session's profile>] }`; concurrent callers share that one attach, and a reconnect (a new `DaemonConnection.epoch`) attaches again. Every later call carries the realpath key the daemon answered with. An attach answer that lands after the connection was replaced records nothing.
+- **`status()`.** While this epoch's attach is in flight it answers `{ state: 'indexing', indexed: 0, total: 0 }` without waiting. With no attach on this epoch yet, it attaches and answers with the attach's status for the profile. After that it sends `vault.status` on every call. A status that cannot be read is `unavailable` for that call only: `reason: "daemon did not answer"` for a timeout (`DaemonTimeoutError`), the error's message otherwise (a dropped connection, say). The next call reads again, through a reconnect if the connection is gone.
+- **Reads** are `corpus.nearest` and `corpus.nearestBlocks`, with vectors sent as plain JSON number arrays. A `CORPUS_NOT_READY` answer rejects with `CorpusNotReadyError` carrying the daemon's `data.status`. An attach refused with `VAULT_UNAVAILABLE` rejects a read with `CorpusNotReadyError({ state: 'unavailable', reason })`, and the next call attaches again. Any other failure (`CORPUS_FAILED`, `NOT_ATTACHED`, a timeout, a dropped connection, an answer without one list per anchor) rejects as itself; `NOT_ATTACHED` also forgets the attach, so the next call makes a new one.
+- **Timeouts** (`CORPUS_TIMEOUTS`): `vault.attach` 10 s, `vault.status` 10 s, `corpus.*` 30 s. A request that runs out rejects; the connection stays up.
+- **After the switch.** Once `services.ensure()` answers `local` (the daemon could not be located or started), every call goes to an in-process backend for the same vault, built on the first call that needs it.
+- **`dispose()`** disposes that in-process backend if one was built. The connection is the process's, and closing it is the server's job (below).
 
-## Live promotion
+### The in-process backend
 
-`snapshot()` never touches disk — it returns whatever `CorpusSnapshot` is currently held in memory. A background pass replaces that value in a single assignment only when it changed something (`embedded + renamed + deleted > 0` from the reconcile summary) or when nothing has ever been decoded yet (so a vault that started `indexing` or recovered from `unavailable` does not get stuck serving the empty placeholder), or when the pass had to wait for another process's lock. The last case exists because the holder may have changed the corpus: a note it re-embedded is `reused` by the pass that waited, so the counts alone would leave this process serving the old vectors. A pass that times out on the lock changes nothing — it keeps the state the vault reported before the pass began (a retry pass from `unavailable` first reports `indexing`; the timeout puts `unavailable` and its reason back) and its snapshot, and re-arms on the same backoff as a failed pass (30 s doubling to 15 min). See [`own-corpus.md` § Concurrency](./own-corpus.md#concurrency-the-reconcile-lock). A caller already holding a reference from an in-flight call keeps ranking against a coherent snapshot; the next call sees the promoted one.
+`createLocalSemanticBackend` (`local-backend.ts`) runs the vault entry inside the session: the same `VaultEntries` module the daemon runs ([`vault-entry.md`](./vault-entry.md)), so the vault's scope, watcher, reconcile loop and corpus live in this process instead.
 
-Every decode applies the vault's scope (`VaultScope.isExcluded`), so `sources` and `basenameIndex` never name an excluded note. The corpus on disk only agrees with the scope after a reconcile has swept the out-of-scope shards as orphans, which leaves two windows where it does not: between a `.gitignore`/`config.json` change and the pass that acts on it — including the warm snapshot served at startup, decoded before any pass runs — and after a shard deletion that failed. Neither is covered by `filterExisting`, which tests existence on disk, not membership. Filtering at decode closes both, and keeps the semantic leg from surfacing what the lexical leg (reading through the scoped reader) already hides.
+- Every vault of the process attaches under one fixed connection id (`LOCAL_CONNECTION_ID`, 0). The first call attaches; concurrent first callers share that attach, and `status()` reads `indexing` 0/0 while it is in flight. A vault that cannot be attached (`VAULT_UNAVAILABLE`) reads `unavailable` with the reason and is attached again on the next call.
+- Reads refuse with `CorpusNotReadyError` carrying the profile's status unless it is `ready`, as the daemon's corpus service answers `CORPUS_NOT_READY`, so a caller sees one error vocabulary whichever side serves the vault.
+- The process's `VaultEntries` is built on first use, so a session the daemon serves never builds a watcher, a reconcile loop or a corpus. Its entries embed documents through the session's own queue (`asDocumentEmbedFn`), for the session's one profile only, and never idle out (`idleTimeoutMs: 0`): the session holds them for its whole life. Under `--no-shared` every vault's backend is built over it at startup.
+- `dispose()` releases nothing of its own: the entries are the process's, disposed by `createSemanticBackends().dispose()`. Once that has run, no backend builds them again; a backend that would need them reads `unavailable` and fails its reads.
 
-## Freshness: the watcher and the debounce
+## Startup: every vault attaches in the background
 
-Each enabled backend gets one `chokidar` watcher over its vault root (`src/lib/vault-entry/watcher.ts`). What it watches follows the vault scope ([`vault-scope.md`](./vault-scope.md#the-watcher-prune-vs-filter)): only an add, change or unlink of a `.md` path the scope does not exclude counts, and chokidar skips a subtree only where the scope proves all of it excluded. Dot-paths are always excluded, so the server's own corpus writes cannot feed the watcher back into itself. The same watcher is what the daemon's vault entry runs ([`vault-entry.md`](./vault-entry.md#the-watcher-follows-the-scope)). Any such event resets a debounce timer; `DEBOUNCE_MS` (10,000 ms, `watcher.ts`) after the last event, `onQuiet` fires and calls `backend.requestReconcile()`.
+`VaultRegistry.create` never awaits a backend, so server startup is not gated on any vault's corpus. Right after the transport connects, `startNeuroVaultServer` (`src/server.ts`) issues one `status()` per vault that has a backend, and awaits none of them. A daemon facade's first `status()` sends `vault.attach` (connecting to, or spawning, the daemon first); an in-process one attaches its entry; the disabled backend answers at once. Every corpus therefore starts loading or building before the first tool call, and in practice the process's switch is decided then too. A tool call that arrives while an attach is in flight reads `indexing` 0/0.
 
-`requestReconcile()` on the corpus backend coalesces: a request that arrives while a pass is already running just sets a flag, and exactly one follow-up pass runs when the current one finishes — however many requests arrived in between. This is the same `reconcileCorpus` pass startup runs; there is one definition of "changed" in the system, not two.
-
-A watcher that fails to start, or errors once running, degrades rather than fails: it logs to stderr and returns a no-op handle (start failure) or simply keeps running past the error (runtime failure) — either way the vault falls back to reconcile-on-start, and the server keeps serving every vault, including the degraded one, on whatever corpus it already has. See [ADR-0014](../adr/0014-background-corpus-freshness.md) for the rationale and the dependency it costs.
-
-## The shared embed queue
-
-One `QueuedEmbedder` (`src/modules/semantic/embed-queue.ts`) wraps the single process-wide embedding provider in a FIFO queue with two lanes. The provider is the daemon facade by default and an in-process `EmbeddingService` with `--no-shared` ([`embedding-pipeline.md`](./embedding-pipeline.md#where-the-model-lives)):
-
-- `embedQuery` enqueues on the **query lane** — the retrieval path (`asProvider()`, wired into `search_notes`/`get_similar_notes`/`find_duplicates`) uses this.
-- `embedDocuments` enqueues one entry per length bucket on the **index lane** — reconcile (`asDocumentEmbedFn()`, wired into every backend's `reconcile` dependency) hands it each note's text and blocks in one call, which the queue splits into length buckets (at most 8 texts each, the longest at most twice the shortest — see [`embedding-pipeline.md`](./embedding-pipeline.md#batching)). Each bucket is one forward pass. A blank text rejects the call up front, naming its index in the caller's input. Once one bucket fails, the call's still-queued buckets skip their forward pass.
-
-The pump always drains the query lane first. A query issued while a vault is cold-indexing therefore waits for at most the one batch already in flight (roughly half a second for a typical batch on `harrier-270m` — a bake-off estimate; a full 8 × 512-token batch takes longer), never behind the thousands of queued indexing batches — one model instance serves every vault's indexing and every live query without either starving the other.
-
-With the shared daemon there are two queues of the same kind, one in front of the other ([`shared-daemon.md`](./shared-daemon.md#the-embed-service)):
-
-- **This process's queue**, in front of the facade. It orders this session's own queries ahead of its own indexing, buckets by length with the batch size the daemon reported, and keeps one request in flight per process.
-- **The daemon's queue**, one per loaded profile. It orders requests from every connected session, so session B's query waits for at most the one batch in flight, not for session A's queued indexing. Because each session has at most one request in flight, its depth is bounded by the number of connected sessions.
+Those same reads decide the embedding warmup: the model is warmed only when at least one vault's status is not `disabled`, and not after teardown has begun.
 
 ## Who reads the state
 
-Three tools, two different postures:
+Three tools, two postures:
 
-- **`search_notes`** never fails on backend state. It reads `status()` once per call into a `semantic_status: { state, indexed?, total? }` field that rides on every response, in every mode, including `mode: "lexical"` and the empty-filter early return — the field describes the vault's index, not whether this particular request touched it. Anything other than `ready` (`indexing`, `disabled`, `unavailable`) — and an absent backend, which reports `disabled` — makes the call degrade to its lexical leg rather than error.
+- **`search_notes`** never fails on backend state. It reads `status()` once per call into a `semantic_status: { state, indexed?, total? }` field that rides on every response, in every mode, including `mode: "lexical"` and the empty-filter early return: the field describes the vault's index, not whether this request touched it. Anything other than `ready`, and an absent backend (read as `disabled`), makes the call run its lexical leg only.
 
-  Degradation also covers the leg failing on a backend that _reported_ `ready` — a rejected query embedding (no model on disk, an unwritable cache, an ONNX load failure) or an unreadable snapshot. The lexical matches are already computed by then, so the call returns them instead of discarding them for a `DEPENDENCY_ERROR`, writes the cause to stderr, and reports `semantic_status: { state: "unavailable" }`: the payload has to describe the response the client is holding, and a lexical-only result labelled `ready` would contradict itself. A failure _outside_ the semantic leg (the wikilink graph, the filter set) still errors as before.
-- **`get_similar_notes`** and **`find_duplicates`** have no non-semantic leg, so they fail structurally instead. Both are built with `buildSingleVaultTool`'s `semantic: true` variant (`src/lib/single-vault-tool.ts`), which resolves their vault through `resolveSemanticVault` (`src/lib/resolve-vault.ts`) before the per-vault function runs — see [`fan-out.md`](./fan-out.md#the-two-dispatch-builders). That resolver maps `status()` to one of three `ToolHandlerError` codes:
+  Degradation also covers the leg failing on a backend that _reported_ `ready`: a rejected query embedding, or a corpus read that failed. The lexical matches are already computed, so the call returns them, writes the cause to stderr, and reports a `semantic_status` that describes the response the client is holding. When the failure is a `CorpusNotReadyError` (the corpus stopped serving between the status read and the leg, `indexing` after a daemon respawn, say), it reports the status that error carries; for any other failure it reports `unavailable`. A failure _outside_ the semantic leg (the wikilink graph, the filter set) still errors.
+- **`get_similar_notes`** and **`find_duplicates`** have no non-semantic leg, so they fail structurally instead. Both are built with `buildSingleVaultTool`'s `semantic: true` variant (`src/lib/single-vault-tool.ts`), which resolves their vault through `resolveSemanticVault` (`src/lib/resolve-vault.ts`) before the per-vault function runs ([`fan-out.md`](./fan-out.md#the-two-dispatch-builders)). It awaits `status()` once per call and maps a vault that is not `ready` through `semanticReadinessError`:
 
   | `status().state` | Error code | `details` |
   | --- | --- | --- |
   | `indexing` | `SEMANTIC_INDEX_BUILDING` | `{ vault, indexed, total }` |
   | `disabled` | `SEMANTIC_DISABLED` | `{ vault, hint }` naming the config key |
-  | `unavailable`, or `entry.backend` absent | `SEMANTIC_INDEX_NOT_FOUND` | `{ vault, reason, hint }` — the backend's reason, and a `hint` whose text is `build it with: neuro-vault-mcp index --vault <path>`, with no `--model`; a reader running it adds their server's own `--model`, so that `index` and the server agree |
-  | `ready` | — call proceeds | — |
+  | `unavailable`, or `entry.backend` absent | `SEMANTIC_INDEX_NOT_FOUND` | `{ vault, reason, hint }`: the backend's reason, and a `hint` whose text is `build it with: neuro-vault-mcp index --vault <path>`, with no `--model`; a reader running it adds their server's own `--model`, so that `index` and the server agree |
+  | `ready` | the call proceeds | — |
 
-  An absent backend (semantic module off server-wide) is folded into the same `unavailable` branch with a fixed reason, rather than a fourth code — from a caller's point of view "no backend" and "a backend that never became usable" need the same response.
+  An absent backend (semantic module off server-wide) is folded into the `unavailable` branch with a fixed reason: from a caller's point of view "no backend" and "a backend that never became usable" need the same response. A read that the corpus refuses _after_ the gate let the call in (`CorpusNotReadyError`) is mapped through the same `semanticReadinessError`, so it reports the same codes as the gate. Any other read failure is a `DEPENDENCY_ERROR`.
 
-## Disposal
+## The embed queue
 
-A live `chokidar` watcher holds the Node event loop open, so it is a resource the server must release explicitly rather than let the process exit around. `createOwnCorpusBackendFactory` (`src/modules/semantic/backend/index.ts`) composes each vault's `dispose()` to close the watcher first, then the underlying corpus backend, `finally`-chained so a rejecting `watcher.close()` still lets the backend dispose. `startNeuroVaultServer` (`src/server.ts`) chains onto the MCP SDK's own `transport.onclose` — never replacing it — and calls every vault entry's `backend?.dispose()` via `Promise.allSettled`, so one vault's disposal failure is reported to stderr without blocking the others. This is what lets the stdio process exit when its client disconnects instead of hanging on an open watcher.
+One `QueuedEmbedder` (`src/modules/semantic/embed-queue.ts`) wraps the process's embedding provider in a FIFO queue with two lanes. The provider is the daemon facade by default and an in-process `EmbeddingService` with `--no-shared` or once the switch went `local` ([`embedding-pipeline.md`](./embedding-pipeline.md#where-the-model-lives)):
 
-Closing the watcher is not enough on its own while a vault is indexing. A cold pass is thousands of reads and embeds, each an active libuv request, so `dispose()` also aborts the reconcile in flight: it passes an `AbortSignal` into `reconcileCorpus`, which checks it at each note boundary and returns a partial summary, skipping the orphan sweep and the gitignore write. The caller that aborted discards that summary — a disposed backend promotes nothing. Shutdown is therefore bounded by the single note in flight rather than by the rest of the index.
+- `embedQuery` enqueues on the **query lane**: the retrieval path (`asProvider()`, wired into `search_notes`, `get_similar_notes` and `find_duplicates`) uses it.
+- `embedDocuments` enqueues one entry per length bucket on the **index lane**: in-process indexing (`asDocumentEmbedFn()`, wired into the in-process vault entries) hands it each note's text and blocks in one call, which the queue splits into length buckets (at most 8 texts each, the longest at most twice the shortest, [`embedding-pipeline.md`](./embedding-pipeline.md#batching)). Each bucket is one forward pass. A blank text rejects the call up front, naming its index in the caller's input. Once one bucket fails, the call's still-queued buckets skip their forward pass.
+
+The pump always drains the query lane first. A query issued while a vault is cold-indexing waits for at most the one batch already in flight (roughly half a second for a typical batch on `harrier-270m`, a bake-off estimate; a full 8 × 512-token batch takes longer), never behind the thousands of queued indexing batches.
+
+With the daemon there are two queues of the same kind, one in front of the other ([`shared-daemon.md`](./shared-daemon.md#the-embed-service)):
+
+- **This process's queue**, in front of the facade. It buckets by length with the batch size the daemon reported and keeps one request in flight per process. A server session served by the daemon sends it only queries, because its vaults are indexed in the daemon; an `index` run sends its document batches through it too.
+- **The daemon's queue**, one per loaded profile. It orders requests from every connected client, and the vault entries' indexing through the same documents lane (`embed.documentsFor`), so one session's query waits for at most the one batch in flight, not for any vault's queued indexing.
+
+## Teardown
+
+`startNeuroVaultServer` builds a `dispose()` and chains it onto the MCP SDK's own `transport.onclose` (never replacing it), and reads end of input on stdin as the client hanging up ([`mcp-server-shape.md`](./mcp-server-shape.md#startup-and-shutdown-own-background-work)). It never rejects, and runs, in order:
+
+1. **Close the shared services** (`services.close()`). Closing the daemon connection detaches this session from every vault entry it attached, and rejects whatever request was still pending on it, so a cold `embed.initialize` cannot hold the process open. It is final: a later `ensure()` rejects with `SharedServicesClosedError`, and a connect still in flight is dropped as it lands, so a status read that was waiting on the daemon cannot reconnect, attach or fall back for a session already gone.
+2. **Dispose every vault's backend** (`backend?.dispose()`), through `Promise.allSettled`, so one vault's failure is written to stderr without blocking the others.
+3. **Dispose the in-process vault entries** (`backends.dispose()`), if any vault ever needed them: every watcher closes, retry and idle timers clear, and the pass in flight is aborted. A cold pass is thousands of reads and embeds, each an active libuv request, so the loop passes an `AbortSignal` into reconcile, which checks it at each note boundary; shutdown is bounded by the single note in flight. From then on nothing builds the entries again.
+
+A session the daemon serves holds no watcher and no timer of its own, so for it the first step is all the work; the daemon's entry outlives the session by its idle timeout ([`vault-entry.md`](./vault-entry.md#idle-per-entry-and-per-corpus)).
 
 ## Boundaries
 
-This page is about the runtime lifecycle only. Extraction, the shard/manifest on-disk format, and the reconcile algorithm itself belong to [`own-corpus.md`](./own-corpus.md). Ranking, fusion, and the quick/deep retrieval modes belong to [`retrieval-policy.md`](./retrieval-policy.md) and [`rank-fusion.md`](./rank-fusion.md) — this backend hands them a `CorpusSnapshot` and nothing more.
+This page is about the session's side only. The corpus lifecycle (startup selection, the reconcile loop, the watcher, the excluded-path fold, idle) belongs to [`vault-entry.md`](./vault-entry.md); extraction, the shard and manifest format, scoring and the reconcile algorithm to [`own-corpus.md`](./own-corpus.md); the wire protocol and the connection to [`shared-daemon.md`](./shared-daemon.md). Ranking, fusion and the quick/deep modes belong to [`retrieval-policy.md`](./retrieval-policy.md) and [`rank-fusion.md`](./rank-fusion.md): this backend hands them an `ICorpusReader` and nothing more.
