@@ -750,7 +750,11 @@ describe('runDaemonCommand (status / stop)', () => {
             {
               vault: '/vaults/notes',
               clients: 2,
-              lexical: { state: 'ready', notes: 955 },
+              lexical: {
+                state: 'ready',
+                notes: 955,
+                last_refresh: { at: '2026-10-18T09:00:00.000Z', parsed: 3, ms: 41 },
+              },
               profiles: [
                 {
                   profile: 'harrier-270m',
@@ -780,8 +784,10 @@ describe('runDaemonCommand (status / stop)', () => {
     expect(h.out.join('').split('\n')).toEqual([
       '17.2.0  pid 4242  clients 2  loaded [harrier-270m]  alive  /tmp/a.sock',
       '  vault /vaults/notes  clients 2',
+      '    lexical  ready  955 notes  last refresh 2026-10-18T09:00:00.000Z ~3 parsed 41 ms',
       '    harrier-270m  ready  955 notes  last reconcile 2026-10-16T09:00:00Z +1 ~0 -0 340 ms',
       '  vault /vaults/work  idle 12m (since 2026-10-14T09:48:00Z)',
+      '    lexical  warming',
       '    harrier-270m  indexing 120/840',
       '',
     ]);
@@ -815,10 +821,67 @@ describe('runDaemonCommand (status / stop)', () => {
     await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
     expect(h.out.join('').split('\n').slice(1, -1)).toEqual([
       '  vault /v  clients 1',
+      '    lexical  warming',
       '    a  unavailable',
       '    b  disabled',
       '    c  ready  3 notes',
       '    d  indexing',
+    ]);
+  });
+
+  it('status prints a ready lexical line without a last refresh, and tolerates a malformed lexical', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ socket: '/tmp/a.sock' }));
+    h.deps.connect = () =>
+      Promise.resolve(
+        fakeInfoSocket({
+          version: '18.0.0',
+          pid: 1,
+          clients: 1,
+          loaded: [],
+          vault: [
+            { vault: '/a', clients: 1, lexical: { state: 'ready', notes: 7 }, profiles: [] },
+            {
+              vault: '/b',
+              clients: 1,
+              lexical: 'ready',
+              profiles: [{ profile: 'p', state: 'ready' }],
+            },
+            { vault: '/c', clients: 1, lexical: { state: 'bogus' }, profiles: [] },
+            { vault: '/d', clients: 1, lexical: null, profiles: [] },
+          ] as unknown as IVaultInfo[],
+        }),
+      );
+    await expect(runDaemonCommand({ action: 'status', ...RUN }, h.deps)).resolves.toBe(0);
+    expect(h.out.join('').split('\n').slice(1, -1)).toEqual([
+      '  vault /a  clients 1',
+      '    lexical  ready  7 notes',
+      '  vault /b  clients 1',
+      '    p  ready',
+      '  vault /c  clients 1',
+      '  vault /d  clients 1',
+    ]);
+  });
+
+  it('a daemon without lexical prints no such line', async () => {
+    const h = harness();
+    addKnown(h, 'aaaaaaaaaaaa', infoJson({ socket: '/tmp/a.sock' }));
+    h.deps.connect = () =>
+      Promise.resolve(
+        fakeInfoSocket({
+          version: '17.0.0',
+          pid: 1,
+          clients: 1,
+          loaded: [],
+          vault: [
+            { vault: '/v', clients: 1, profiles: [{ profile: 'p', state: 'ready', notes: 2 }] },
+          ] as unknown as IVaultInfo[],
+        }),
+      );
+    await runDaemonCommand({ action: 'status', ...RUN }, h.deps);
+    expect(h.out.join('').split('\n').slice(1, -1)).toEqual([
+      '  vault /v  clients 1',
+      '    p  ready  2 notes',
     ]);
   });
 
