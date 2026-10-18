@@ -156,8 +156,12 @@ class SharedServices implements ISharedServices {
       this.connection.close();
       throw new SharedServicesClosedError();
     }
-    // A concurrent caller may have flipped the switch while this one connected.
-    if (this.mode === 'local') return 'local';
+    // A concurrent caller may have flipped the switch while this one connected: the socket
+    // would count as a daemon client for the rest of the session, so drop it.
+    if (this.mode === 'local') {
+      this.connection.close();
+      return 'local';
+    }
     this.current = 'daemon';
     return 'daemon';
   }

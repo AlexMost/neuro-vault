@@ -110,6 +110,41 @@ describe('createSharedServices', () => {
     expect(lines).toEqual([]);
   });
 
+  it('closes a connection that lands after another caller flipped the switch', async () => {
+    const landed = socket();
+    const io = {
+      ensureSocketDir: vi.fn(),
+      // The first establish finds no daemon and cannot start one; the second connects.
+      connect: vi.fn().mockRejectedValueOnce(errno('ENOENT')).mockResolvedValue(landed),
+      spawn: vi.fn(() => {
+        throw new Error('spawn denied');
+      }),
+      openLog: vi.fn(() => 9),
+      closeFd: vi.fn(),
+      mkdirp: vi.fn(),
+    };
+    const services = createSharedServices({
+      ...baseOptions,
+      stderr: { write: () => true },
+      io,
+    });
+
+    // This caller shares the first establish and, registered ahead of `ensure()`'s own
+    // continuation, starts the second one before the first caller has flipped the switch.
+    let second: Promise<'daemon' | 'local'> | undefined;
+    const watcher = services.connection.ensure().catch(() => {
+      second = services.ensure();
+    });
+    const first = services.ensure();
+
+    await expect(first).resolves.toBe('local');
+    await watcher;
+    await expect(second).resolves.toBe('local');
+    expect(services.mode).toBe('local');
+    expect(io.connect).toHaveBeenCalledTimes(2);
+    expect(landed.destroyed).toBe(true);
+  });
+
   it('is local from the start, with no line and no connection, when not shared', async () => {
     const lines: string[] = [];
     const io = { connect: vi.fn(), spawn: vi.fn(), ensureSocketDir: vi.fn() };
