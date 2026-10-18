@@ -58,7 +58,12 @@ A session SHALL reach each vault's corpus only through its semantic backend, whi
 
 ### Requirement: Sessions attach every vault in the background at startup
 
-At startup a session SHALL attach every semantically enabled vault with its profile, in the background, without delaying the MCP handshake; while the `vault.attach` request is in flight the vault's status SHALL read `{ state: "indexing", indexed: 0, total: 0 }`, and a call that arrives while the daemon is still being located or started SHALL wait for that first. A session SHALL re-send `vault.attach` for each vault once per connection to the daemon before its first call on that connection.
+At startup a session SHALL attach every semantically enabled vault with its profile, in the background, without delaying the MCP handshake; the vault's status SHALL read `{ state: "indexing", indexed: 0, total: 0 }` until the attach answers, including while the daemon is still being located or started, without waiting for either. A session SHALL re-send `vault.attach` for each vault once per connection to the daemon before its first call on that connection.
+
+#### Scenario: A call during a cold start does not wait
+
+- **WHEN** no daemon is running, the session has just started one, and `search_notes` arrives before the daemon listens
+- **THEN** the call reads the vault's status as `indexing` 0/0 at once and answers from its lexical leg, and the vault attaches once the daemon answers
 
 #### Scenario: A reconnect re-attaches
 

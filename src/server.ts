@@ -202,12 +202,14 @@ export async function startNeuroVaultServer(
   const transport = transportFactory();
   await server.connect(transport);
   // Every semantically enabled vault attaches now, in the background: a daemon
-  // backend's first `status()` sends `vault.attach` and a local one's attaches
-  // its in-process entry, so the corpus starts building before the first tool
-  // call. Nothing waits on these reads — a call that arrives while one is in
-  // flight reads `indexing` 0/0 (a vault that opted out with `"semantic": false`
-  // has a constant backend that never attaches). They are the one status read
-  // per vault at startup; the warmup decision below reuses them.
+  // backend's first `status()` starts the connect and `vault.attach` and a
+  // local one's attaches its in-process entry, so the corpus starts building
+  // before the first tool call. Nothing waits on these reads — a call that
+  // arrives before an attach answers, even while the daemon is still being
+  // located or started, reads `indexing` 0/0, and so do these reads then (a
+  // vault that opted out with `"semantic": false` has a constant backend that
+  // never attaches). They are the one status read per vault at startup; the
+  // warmup decision below reuses them, and `indexing` counts as embedding.
   const attaches = registry
     .list()
     .flatMap((entry) => (entry.backend === undefined ? [] : [entry.backend.status()]));

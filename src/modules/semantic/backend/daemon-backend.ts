@@ -17,7 +17,7 @@ import {
   type ISemanticBackend,
 } from '../../../lib/obsidian/semantic-backend.js';
 import { DaemonTimeoutError } from '../daemon-connection.js';
-import type { ISharedServices } from '../shared-services.js';
+import { SharedServicesClosedError, type ISharedServices } from '../shared-services.js';
 
 export const CORPUS_TIMEOUTS = {
   attach: 10_000,
@@ -77,7 +77,11 @@ function anchorParam(anchor: CorpusAnchor): CorpusAnchorParam {
  * Per connection epoch, `vault.attach` goes out before the first call on it —
  * concurrent callers share one attach, and a reconnect (a new epoch) attaches
  * again — and every later call carries the realpath key the daemon answered
- * with. While an attach is in flight the vault reads `indexing` 0/0. A status
+ * with. While an attach is in flight the vault reads `indexing` 0/0, and so it
+ * does while the switch is still undecided (`services.mode` is `pending`, the
+ * daemon being located or started): such a status does not wait for the
+ * connect, it starts the attach — or the in-process backend, if the switch
+ * goes `local` — in the background. A later reconnect is waited for. A status
  * the daemon does not give in time reads `unavailable` ("daemon did not
  * answer") for that call only, as does a dropped connection: the next call
  * reconnects through `services`. A vault the daemon cannot attach
@@ -99,6 +103,10 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
   let attachedEpoch = -1;
   let key = vaultRoot;
   let attaching: IAttach | undefined;
+  /** The background connect-then-attach a status started while the switch was undecided. */
+  let starting: Promise<void> | undefined;
+  /** Set when a background connect met the closed services: the session is gone. */
+  let closed: SharedServicesClosedError | undefined;
 
   function local(): ISemanticBackend {
     localBackend ??= opts.local();
@@ -152,6 +160,27 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
     return key;
   }
 
+  /**
+   * Connect, then attach (or attach the in-process backend), in the background.
+   * Concurrent statuses share it, and it never rejects. A connect that cannot
+   * be made flips the switch, and a failed attach leaves it decided: either
+   * way the next status reads through the decided path. The one failure that
+   * leaves the switch undecided is the services closing under the connect;
+   * it is remembered, so a later status reads `unavailable` with its reason.
+   */
+  function startInBackground(): void {
+    starting ??= (async () => {
+      try {
+        if ((await services.ensure()) === 'local') await local().status();
+        else if (attachedEpoch !== services.connection.epoch) await attach();
+      } catch (error) {
+        if (error instanceof SharedServicesClosedError) closed = error;
+      } finally {
+        starting = undefined;
+      }
+    })();
+  }
+
   /** A `corpus.*` call's own params; the vault key and profile are added here. */
   type ReadParams =
     | Omit<CorpusNearestParams, 'vault' | 'profile'>
@@ -184,6 +213,12 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
 
   return {
     async status() {
+      // The first connect may take the whole spawn-and-poll: read the vault as attaching.
+      if (services.mode === 'pending') {
+        if (closed) return unreadable(closed);
+        startInBackground();
+        return ATTACHING;
+      }
       try {
         if ((await services.ensure()) === 'local') return await local().status();
         if (attaching?.epoch === services.connection.epoch) return ATTACHING;

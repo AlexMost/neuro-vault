@@ -624,3 +624,96 @@ describe('DaemonConnection — requests', () => {
     expect(c.epoch).toBe(2);
   });
 });
+
+describe('DaemonConnection — close() during a connect', () => {
+  it('cancels a poll in flight: no timer left, no respawn, a non-Unavailable rejection', async () => {
+    vi.useFakeTimers();
+    const children: ReturnType<typeof fakeChild>[] = [];
+    const spawn = vi.fn(() => {
+      const child = fakeChild();
+      children.push(child);
+      return child;
+    });
+    const d = deps({
+      connect: vi.fn(async () => {
+        throw errno('ECONNREFUSED');
+      }),
+      spawn,
+      pollIntervalMs: 50,
+      pollTimeoutMs: 10_000,
+    });
+    const c = new DaemonConnection(d);
+    const ensuring = c.ensure();
+    const outcome = ensuring.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(120);
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    c.close();
+    // The daemon it started exits: an establish still running would respawn it.
+    children[0].emit('exit', 1, null);
+    const error = await outcome;
+    expect(error).toBeInstanceOf(DaemonConnectionError);
+    expect(error).not.toBeInstanceOf(DaemonUnavailableError);
+    expect(vi.getTimerCount()).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
+  it('spawns nothing when the first connect fails after close()', async () => {
+    let refuse: (error: Error) => void = () => {};
+    const d = deps({
+      connect: vi.fn(() => new Promise<Duplex>((_resolve, reject) => (refuse = reject))),
+    });
+    const c = new DaemonConnection(d);
+    const ensuring = c.ensure();
+    await vi.waitFor(() => expect(d.connect).toHaveBeenCalled());
+
+    c.close();
+    refuse(errno('ENOENT'));
+    await expect(ensuring).rejects.toBeInstanceOf(DaemonConnectionError);
+    expect(d.spawn).not.toHaveBeenCalled();
+    expect(d.mkdirp).not.toHaveBeenCalled();
+  });
+
+  it('destroys a socket that connects after close()', async () => {
+    let land: (socket: Duplex) => void = () => {};
+    const d = deps({
+      connect: vi.fn(() => new Promise<Duplex>((resolve) => (land = resolve))),
+    });
+    const c = new DaemonConnection(d);
+    const ensuring = c.ensure();
+    await vi.waitFor(() => expect(d.connect).toHaveBeenCalled());
+
+    c.close();
+    const socket = echo();
+    land(socket);
+    await expect(ensuring).rejects.toBeInstanceOf(DaemonConnectionError);
+    expect(socket.destroyed).toBe(true);
+    expect(c.epoch).toBe(0);
+    await expect(c.request('embed.query', {}, 1000)).rejects.toThrow(/closed before/);
+  });
+
+  it('a later ensure() connects again: close() cancels only the connect in flight', async () => {
+    let land: (socket: Duplex) => void = () => {};
+    const connect = vi
+      .fn<(socketPath: string) => Promise<Duplex>>()
+      .mockImplementationOnce(() => new Promise<Duplex>((resolve) => (land = resolve)))
+      .mockImplementation(async () => echo());
+    const d = deps({ connect });
+    const c = new DaemonConnection(d);
+    const ensuring = c.ensure();
+    await vi.waitFor(() => expect(connect).toHaveBeenCalled());
+    c.close();
+    land(echo());
+    await expect(ensuring).rejects.toBeInstanceOf(DaemonConnectionError);
+
+    await c.ensure();
+    await expect(c.request('daemon.info', {}, 1000)).resolves.toEqual({ ok: 'daemon.info' });
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(c.epoch).toBe(1);
+  });
+});

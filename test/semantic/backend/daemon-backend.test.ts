@@ -74,6 +74,27 @@ function backendOver(services: ISharedServices, local: () => ISemanticBackend = 
   return createDaemonSemanticBackend({ services, vaultRoot: VAULT, profile: PROFILE, local });
 }
 
+const ATTACHING = { state: 'indexing', indexed: 0, total: 0 };
+
+/** What `promise` has settled with after one macrotask, or 'still waiting'. */
+async function settledSoon<T>(promise: Promise<T>): Promise<T | 'still waiting'> {
+  return Promise.race([
+    promise,
+    new Promise<'still waiting'>((resolve) => setTimeout(() => resolve('still waiting'), 0)),
+  ]);
+}
+
+/** Makes every `services.ensure()` wait until `decide` is called, which also sets the mode. */
+function holdEnsure(services: ReturnType<typeof fakeServices>['services']) {
+  let resolve: (mode: 'daemon' | 'local') => void = () => {};
+  const decided = new Promise<'daemon' | 'local'>((r) => (resolve = r));
+  services.ensure.mockImplementation(() => decided);
+  return (mode: 'daemon' | 'local'): void => {
+    services.mode = mode;
+    resolve(mode);
+  };
+}
+
 describe('createDaemonSemanticBackend', () => {
   it('attaches once per epoch', async () => {
     const { services, link } = fakeServices();
@@ -163,6 +184,53 @@ describe('createDaemonSemanticBackend', () => {
     answer({ vault: REAL, profiles: { [PROFILE]: { state: 'indexing', indexed: 1, total: 4 } } });
     // The caller that started the attach reads the status the attach answered.
     expect(await first).toEqual({ state: 'indexing', indexed: 1, total: 4 });
+  });
+
+  it('status reads indexing 0/0 at once while the first ensure locates the daemon', async () => {
+    const { services, link } = fakeServices();
+    services.mode = 'pending';
+    const decide = holdEnsure(services);
+    const backend = backendOver(services);
+
+    expect(await settledSoon(backend.status())).toEqual(ATTACHING);
+    expect(await settledSoon(backend.status())).toEqual(ATTACHING);
+    // Both calls joined one ensure, and nothing reached the daemon yet.
+    expect(services.ensure).toHaveBeenCalledTimes(1);
+    expect(methods(link)).toEqual([]);
+
+    decide('daemon');
+    // The attach goes out once the daemon is reached, without another call.
+    await vi.waitFor(() => expect(methods(link)).toEqual(['vault.attach']));
+    expect(await backend.status()).toEqual({ state: 'ready' });
+    expect(methods(link)).toEqual(['vault.attach', 'vault.status']);
+  });
+
+  it('a first ensure that goes local attaches the in-process backend in the background', async () => {
+    const { services, link } = fakeServices();
+    services.mode = 'pending';
+    const decide = holdEnsure(services);
+    const local = fakeLocal();
+    const backend = backendOver(services, () => local);
+
+    expect(await settledSoon(backend.status())).toEqual(ATTACHING);
+    decide('local');
+    await vi.waitFor(() => expect(local.status).toHaveBeenCalledTimes(1));
+    expect(await backend.status()).toEqual({ state: 'indexing', indexed: 2, total: 5 });
+    expect(methods(link)).toEqual([]);
+  });
+
+  it('once the switch is decided, status waits for a reconnect, then attaches', async () => {
+    const { services, link } = fakeServices();
+    const backend = backendOver(services);
+    await backend.status();
+    link.epoch = 2;
+    const decide = holdEnsure(services);
+
+    const status = backend.status();
+    expect(await settledSoon(status)).toBe('still waiting');
+    decide('daemon');
+    expect(await status).toEqual({ state: 'ready' });
+    expect(methods(link)).toEqual(['vault.attach', 'vault.attach']);
   });
 
   it('status timeout reads unavailable', async () => {
@@ -383,12 +451,19 @@ describe('createDaemonSemanticBackend', () => {
     const local = vi.fn(fakeLocal);
     const backend = backendOver(services, local);
 
-    const status = backend.status();
-    await Promise.resolve();
+    // The switch is undecided while the daemon is located: the status reads attaching.
+    expect(await backend.status()).toEqual(ATTACHING);
     services.close();
     land(s);
+    await vi.waitFor(() => expect(s.destroyed).toBe(true));
+    // The background connect met the closed services: a later status says so.
+    await vi.waitFor(async () =>
+      expect(await backend.status()).toEqual({
+        state: 'unavailable',
+        reason: 'shared services closed: the session is shutting down',
+      }),
+    );
 
-    expect(await status).toMatchObject({ state: 'unavailable' });
     await expect(backend.nearest([{ path: 'a.md' }], { threshold: 0 })).rejects.toBeInstanceOf(
       SharedServicesClosedError,
     );

@@ -35,7 +35,11 @@ export interface IDaemonLink {
   readonly epoch: number;
   /** Connect (spawning the daemon if needed); `DaemonUnavailableError` when that fails. */
   ensure(): Promise<void>;
-  /** Drop the connection, rejecting what is pending on it; the next `ensure()` reconnects. */
+  /**
+   * Drop the connection, rejecting what is pending on it, and stop a connect in
+   * flight (its `ensure()` rejects with `DaemonConnectionError`); the next
+   * `ensure()` reconnects.
+   */
   close(): void;
   /** One request on the current connection; never connects. */
   request<T>(method: string, params: Record<string, unknown>, timeoutMs: number): Promise<T>;
@@ -147,6 +151,11 @@ interface Refable {
   unref?: () => unknown;
 }
 
+/** The rejection of an `ensure()` whose connect `close()` stopped. */
+function closedWhileConnecting(): DaemonConnectionError {
+  return new DaemonConnectionError('daemon connection closed while connecting');
+}
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -173,15 +182,21 @@ function isNotListening(error: unknown): boolean {
  *
  * A socket that closes, errors or is ended by the daemon rejects every pending
  * request with `DaemonConnectionError` and is forgotten; the next `ensure()`
- * connects again (respawning if needed). A request the daemon never answers
- * rejects after its own timeout. The socket is unref'd while nothing is
- * pending, so an idle connection never keeps a finished process alive.
+ * connects again (respawning if needed). `close()` drops the socket the same
+ * way, and stops a connect in flight where it is: no timer of the poll is left,
+ * nothing is spawned after it, a socket that connects after it is destroyed,
+ * and that `ensure()` rejects with `DaemonConnectionError` — never
+ * `DaemonUnavailableError`, so a hang-up is no reason to fall back. A request
+ * the daemon never answers rejects after its own timeout. The socket is
+ * unref'd while nothing is pending, so an idle connection never keeps a
+ * finished process alive.
  */
 export class DaemonConnection implements IDaemonLink {
   private socket?: Duplex;
   /** Forgets `socket` and rejects what is pending on it; set by `attach`. */
   private dropSocket?: () => void;
-  private connecting?: Promise<void>;
+  /** The establish in flight; `close()` aborts it. */
+  private connecting?: { done: Promise<void>; abort: AbortController };
   private readonly pending = new Map<number, Pending>();
   private nextId = 1;
   private connections = 0;
@@ -201,10 +216,17 @@ export class DaemonConnection implements IDaemonLink {
     // A socket ended or destroyed whose `close` has not arrived yet is already gone.
     if (this.socket && (this.socket.destroyed || this.socket.writableEnded)) this.dropSocket?.();
     if (this.socket) return Promise.resolve();
-    this.connecting ??= this.establish().finally(() => {
-      this.connecting = undefined;
-    });
-    return this.connecting;
+    if (this.connecting) return this.connecting.done;
+    const abort = new AbortController();
+    const attempt = {
+      abort,
+      done: this.establish(abort.signal).finally(() => {
+        // close() may have forgotten this attempt and a later ensure() started another.
+        if (this.connecting === attempt) this.connecting = undefined;
+      }),
+    };
+    this.connecting = attempt;
+    return attempt.done;
   }
 
   /**
@@ -231,10 +253,13 @@ export class DaemonConnection implements IDaemonLink {
   }
 
   close(): void {
+    // Only the attempt in flight stops: the next ensure() starts a fresh one.
+    this.connecting?.abort.abort();
+    this.connecting = undefined;
     this.dropSocket?.();
   }
 
-  private async establish(): Promise<void> {
+  private async establish(signal: AbortSignal): Promise<void> {
     const { paths, platform } = this.deps;
     if (platform !== 'win32') {
       try {
@@ -245,33 +270,49 @@ export class DaemonConnection implements IDaemonLink {
     }
     let socket: Duplex;
     try {
-      socket = await this.connectOnce();
+      socket = await this.connectOnce(signal);
     } catch (error) {
+      if (signal.aborted) throw closedWhileConnecting();
       if (!isNotListening(error)) {
         throw error instanceof DaemonUnavailableError
           ? error
           : new DaemonUnavailableError(`cannot reach the daemon: ${messageOf(error)}`);
       }
       this.checkSpawnable();
-      socket = await this.poll(this.launch());
+      socket = await this.poll(this.launch(), signal);
+    }
+    if (signal.aborted) {
+      socket.destroy();
+      throw closedWhileConnecting();
     }
     this.attach(socket);
   }
 
-  /** `connect`, bounded: a late socket after the timeout is destroyed, never leaked. */
-  private connectOnce(): Promise<Duplex> {
+  /**
+   * `connect`, bounded: a late socket after the timeout or an abort is
+   * destroyed, never leaked.
+   */
+  private connectOnce(signal: AbortSignal): Promise<Duplex> {
     const socketPath = this.deps.paths.socketPath;
     const timeoutMs = this.deps.connectTimeoutMs ?? CONNECT_TIMEOUT_MS;
     return new Promise<Duplex>((resolve, reject) => {
       let settled = false;
+      const onAbort = (): void => {
+        if (settled) return;
+        settled = true;
+        this.timers.clearTimeout(timer);
+        reject(closedWhileConnecting());
+      };
       const timer = this.timers.setTimeout(() => {
         settled = true;
+        signal.removeEventListener('abort', onAbort);
         reject(
           new DaemonUnavailableError(
             `connect to ${socketPath} did not settle within ${timeoutMs} ms`,
           ),
         );
       }, timeoutMs);
+      signal.addEventListener('abort', onAbort, { once: true });
       // Started inside a chain so a synchronous throw from `connect` is a rejection.
       Promise.resolve()
         .then(() => this.deps.connect(socketPath))
@@ -283,12 +324,14 @@ export class DaemonConnection implements IDaemonLink {
             }
             settled = true;
             this.timers.clearTimeout(timer);
+            signal.removeEventListener('abort', onAbort);
             resolve(socket);
           },
           (error: unknown) => {
             if (settled) return;
             settled = true;
             this.timers.clearTimeout(timer);
+            signal.removeEventListener('abort', onAbort);
             reject(error instanceof Error ? error : new Error(String(error)));
           },
         );
@@ -371,20 +414,21 @@ export class DaemonConnection implements IDaemonLink {
    * a race loser exits too, but by then its winner usually listens, so the
    * connect below succeeds before a respawn is considered.
    */
-  private async poll(first: Launch): Promise<Duplex> {
+  private async poll(first: Launch, signal: AbortSignal): Promise<Duplex> {
     const interval = this.deps.pollIntervalMs ?? POLL_INTERVAL_MS;
     const budget = this.deps.pollTimeoutMs ?? POLL_TIMEOUT_MS;
     let current = first;
     let respawns = 0;
     for (let waited = 0; waited <= budget; waited += interval) {
-      await new Promise<void>((resolve) => void this.timers.setTimeout(resolve, interval));
+      await this.sleep(interval, signal);
       const failed = current.failure();
       if (failed) {
         throw new DaemonUnavailableError(`could not start the daemon: ${failed.message}`);
       }
       try {
-        return await this.connectOnce();
+        return await this.connectOnce(signal);
       } catch (error) {
+        if (signal.aborted) throw closedWhileConnecting();
         if (!isNotListening(error)) {
           throw error instanceof DaemonUnavailableError
             ? error
@@ -400,6 +444,21 @@ export class DaemonConnection implements IDaemonLink {
     throw new DaemonUnavailableError(
       `the daemon did not answer within ${budget} ms (see ${this.deps.paths.logFile})`,
     );
+  }
+
+  /** One poll interval; an abort clears the timer and rejects at once. */
+  private sleep(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const onAbort = (): void => {
+        this.timers.clearTimeout(timer);
+        reject(closedWhileConnecting());
+      };
+      const timer = this.timers.setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
   }
 
   private attach(socket: Duplex): void {
