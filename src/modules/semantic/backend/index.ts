@@ -6,6 +6,11 @@ import {
 import { VaultEntries, type IVaultEntriesDeps } from '../../../lib/vault-entry/index.js';
 import type { QueuedEmbedder } from '../embed-queue.js';
 import type { ISharedServices } from '../shared-services.js';
+import {
+  createDaemonAttachment,
+  createLocalAttachment,
+  type IVaultAttachment,
+} from './attachment.js';
 import { createDaemonSemanticBackend } from './daemon-backend.js';
 import { createLocalSemanticBackend } from './local-backend.js';
 
@@ -77,6 +82,9 @@ export function createSemanticBackends(opts: ISemanticBackendsOptions): ISemanti
   const createEntries = opts.createEntries ?? ((deps) => new VaultEntries(deps));
   let entries: VaultEntries | undefined;
   let disposed = false;
+  /** One attachment per vault root and side: both facades of a vault share it. */
+  const daemonAttachments = new Map<string, IVaultAttachment>();
+  const localAttachments = new Map<string, IVaultAttachment>();
 
   function localEntries(): VaultEntries {
     // A call still in flight at shutdown (a daemon facade whose switch flipped
@@ -94,11 +102,38 @@ export function createSemanticBackends(opts: ISemanticBackendsOptions): ISemanti
     return entries;
   }
 
+  function localAttachment(vaultRoot: string): IVaultAttachment {
+    let attachment = localAttachments.get(vaultRoot);
+    if (attachment === undefined) {
+      attachment = createLocalAttachment({
+        entries: localEntries(),
+        connectionId: LOCAL_CONNECTION_ID,
+        vaultRoot,
+        profiles: [opts.profile],
+      });
+      localAttachments.set(vaultRoot, attachment);
+    }
+    return attachment;
+  }
+
+  function daemonAttachment(vaultRoot: string): IVaultAttachment {
+    let attachment = daemonAttachments.get(vaultRoot);
+    if (attachment === undefined) {
+      attachment = createDaemonAttachment({
+        services: opts.services,
+        vaultRoot,
+        profiles: [opts.profile],
+      });
+      daemonAttachments.set(vaultRoot, attachment);
+    }
+    return attachment;
+  }
+
   function localBackend(vaultRoot: string): ISemanticBackend {
     return createLocalSemanticBackend({
       entries: localEntries(),
       connectionId: LOCAL_CONNECTION_ID,
-      vaultRoot,
+      attachment: localAttachment(vaultRoot),
       profile: opts.profile,
     });
   }
@@ -109,7 +144,7 @@ export function createSemanticBackends(opts: ISemanticBackendsOptions): ISemanti
       if (!opts.shared) return localBackend(vaultRoot);
       return createDaemonSemanticBackend({
         services: opts.services,
-        vaultRoot,
+        attachment: daemonAttachment(vaultRoot),
         profile: opts.profile,
         local: () => localBackend(vaultRoot),
       });

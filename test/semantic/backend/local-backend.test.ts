@@ -12,6 +12,7 @@ import {
 import { createVaultScope } from '../../../src/lib/obsidian/vault-scope.js';
 import { VaultEntries, type IVaultEntriesDeps } from '../../../src/lib/vault-entry/index.js';
 import { createVaultEntry } from '../../../src/lib/vault-entry/vault-entry.js';
+import { createLocalAttachment } from '../../../src/modules/semantic/backend/attachment.js';
 import { createLocalSemanticBackend } from '../../../src/modules/semantic/backend/local-backend.js';
 
 const PROFILE = 'granite-97m';
@@ -19,6 +20,21 @@ const PROFILE = 'granite-97m';
 /** A note long enough to be embedded (`MIN_CHARS`), distinct per `seed`. */
 const noteBody = (seed: string) =>
   `# ${seed}\n\n${`${seed} is a note that talks about one thing in some detail. `.repeat(8)}\n`;
+
+/** A local backend over its own attachment of `vaultRoot`, as the factory builds it. */
+function backendOver(entries: VaultEntries, vaultRoot: string) {
+  return createLocalSemanticBackend({
+    entries,
+    connectionId: 0,
+    attachment: createLocalAttachment({
+      entries,
+      connectionId: 0,
+      vaultRoot,
+      profiles: [PROFILE],
+    }),
+    profile: PROFILE,
+  });
+}
 
 describe('createLocalSemanticBackend', () => {
   let root: string;
@@ -71,24 +87,14 @@ describe('createLocalSemanticBackend', () => {
   }
 
   it('status is async', async () => {
-    const backend = createLocalSemanticBackend({
-      entries: makeEntries(),
-      connectionId: 0,
-      vaultRoot: vault,
-      profile: PROFILE,
-    });
+    const backend = backendOver(makeEntries(), vault);
     const pending = backend.status();
     expect(pending).toBeInstanceOf(Promise);
     expect((await pending).state).toMatch(/^(indexing|ready)$/);
   });
 
   it('serves reads after the vault is ready', async () => {
-    const backend = createLocalSemanticBackend({
-      entries: makeEntries(),
-      connectionId: 0,
-      vaultRoot: vault,
-      profile: PROFILE,
-    });
+    const backend = backendOver(makeEntries(), vault);
     await untilReady(() => backend.status());
 
     const [hits] = await backend.nearest([{ path: 'a.md' }], { threshold: -1, exclude: ['a.md'] });
@@ -102,12 +108,7 @@ describe('createLocalSemanticBackend', () => {
 
   it('reads are refused with CorpusNotReadyError while indexing', async () => {
     embedGate = new Promise(() => {});
-    const backend = createLocalSemanticBackend({
-      entries: makeEntries(),
-      connectionId: 0,
-      vaultRoot: vault,
-      profile: PROFILE,
-    });
+    const backend = backendOver(makeEntries(), vault);
     expect((await backend.status()).state).toBe('indexing');
 
     const error = await backend.nearest([{ path: 'a.md' }], { threshold: 0 }).catch((e) => e);
@@ -125,12 +126,7 @@ describe('createLocalSemanticBackend', () => {
       },
     });
     const attach = vi.spyOn(all, 'attach');
-    const backend = createLocalSemanticBackend({
-      entries: all,
-      connectionId: 0,
-      vaultRoot: vault,
-      profile: PROFILE,
-    });
+    const backend = backendOver(all, vault);
 
     const first = backend.status();
     expect(await backend.status()).toEqual({ state: 'indexing', indexed: 0, total: 0 });
@@ -144,12 +140,7 @@ describe('createLocalSemanticBackend', () => {
   });
 
   it('a vault that cannot be attached reads unavailable and refuses reads the same way', async () => {
-    const backend = createLocalSemanticBackend({
-      entries: makeEntries(),
-      connectionId: 0,
-      vaultRoot: path.join(root, 'missing'),
-      profile: PROFILE,
-    });
+    const backend = backendOver(makeEntries(), path.join(root, 'missing'));
 
     const status = await backend.status();
     expect(status.state).toBe('unavailable');

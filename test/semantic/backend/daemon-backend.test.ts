@@ -8,6 +8,10 @@ import {
   type BackendStatus,
   type ISemanticBackend,
 } from '../../../src/lib/obsidian/semantic-backend.js';
+import {
+  createDaemonAttachment,
+  type IVaultAttachment,
+} from '../../../src/modules/semantic/backend/attachment.js';
 import { createDaemonSemanticBackend } from '../../../src/modules/semantic/backend/daemon-backend.js';
 import {
   DaemonConnectionError,
@@ -70,8 +74,16 @@ function fakeLocal(): ISemanticBackend {
   };
 }
 
-function backendOver(services: ISharedServices, local: () => ISemanticBackend = fakeLocal) {
-  return createDaemonSemanticBackend({ services, vaultRoot: VAULT, profile: PROFILE, local });
+function attachmentOver(services: ISharedServices): IVaultAttachment {
+  return createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [PROFILE] });
+}
+
+function backendOver(
+  services: ISharedServices,
+  local: () => ISemanticBackend = fakeLocal,
+  attachment: IVaultAttachment = attachmentOver(services),
+) {
+  return createDaemonSemanticBackend({ services, attachment, profile: PROFILE, local });
 }
 
 const ATTACHING = { state: 'indexing', indexed: 0, total: 0 };
@@ -128,6 +140,22 @@ describe('createDaemonSemanticBackend', () => {
       backend.nearest([{ path: 'a.md' }], { threshold: 0 }),
       backend.nearestBlocks([{ path: 'a.md' }], { paths: ['a.md'], threshold: 0 }),
     ]);
+
+    expect(methods(link).filter((m) => m === 'vault.attach')).toHaveLength(1);
+  });
+
+  it('two facades on one attachment send one vault.attach', async () => {
+    const { services, link } = fakeServices();
+    const attachment = attachmentOver(services);
+    const backend = backendOver(services, fakeLocal, attachment);
+
+    // The other facade (a stub caller) attaches first; the backend finds the vault attached.
+    const [other] = await Promise.all([
+      attachment.key(),
+      backend.nearest([{ path: 'a.md' }], { threshold: 0 }),
+    ]);
+    expect(other).toBe(REAL);
+    await backend.status();
 
     expect(methods(link).filter((m) => m === 'vault.attach')).toHaveLength(1);
   });

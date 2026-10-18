@@ -27,6 +27,7 @@ import {
   runSearch,
 } from './_helpers.js';
 import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.js';
+import { createDaemonAttachment } from '../../../src/modules/semantic/backend/attachment.js';
 import { createDaemonSemanticBackend } from '../../../src/modules/semantic/backend/daemon-backend.js';
 import {
   DaemonTimeoutError,
@@ -264,7 +265,11 @@ describe('searchNotes', () => {
       const entry = deps.registry.list()[0];
       entry.backend = createDaemonSemanticBackend({
         services,
-        vaultRoot: entry.path,
+        attachment: createDaemonAttachment({
+          services,
+          vaultRoot: entry.path,
+          profiles: [MODEL_KEY],
+        }),
         profile: MODEL_KEY,
         local: () => {
           throw new Error('never local');

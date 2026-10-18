@@ -15,6 +15,7 @@ import { MODEL_PROFILES } from '../../src/lib/model-profiles.js';
 import type { BackendStatus, ISemanticBackend } from '../../src/lib/obsidian/semantic-backend.js';
 import { VaultEntries } from '../../src/lib/vault-entry/index.js';
 import { createVaultEntry } from '../../src/lib/vault-entry/vault-entry.js';
+import { createDaemonAttachment } from '../../src/modules/semantic/backend/attachment.js';
 import { createDaemonSemanticBackend } from '../../src/modules/semantic/backend/daemon-backend.js';
 import { DaemonConnection } from '../../src/modules/semantic/daemon-connection.js';
 import type { ISharedServices } from '../../src/modules/semantic/shared-services.js';
@@ -149,7 +150,7 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
     };
     const backend = createDaemonSemanticBackend({
       services,
-      vaultRoot,
+      attachment: createDaemonAttachment({ services, vaultRoot, profiles: [PROFILE] }),
       profile: PROFILE,
       local: () => {
         throw new Error('must not fall back: the daemon is listening');

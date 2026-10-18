@@ -18,6 +18,7 @@ import {
 } from '../../../lib/obsidian/semantic-backend.js';
 import { DaemonTimeoutError } from '../daemon-connection.js';
 import { SharedServicesClosedError, type ISharedServices } from '../shared-services.js';
+import type { IVaultAttachment } from './attachment.js';
 
 export const CORPUS_TIMEOUTS = {
   attach: 10_000,
@@ -32,16 +33,12 @@ const ATTACHING: BackendStatus = { state: 'indexing', indexed: 0, total: 0 };
 export interface IDaemonSemanticBackendOptions {
   /** The process's connection and one-way switch, shared with the embedding facade. */
   services: ISharedServices;
-  vaultRoot: string;
+  /** The vault's one attachment on the connection, shared with every other facade of it. */
+  attachment: IVaultAttachment;
   /** The model profile this session serves. */
   profile: string;
   /** The in-process backend, built once, on the first call after the switch went `local`. */
   local: () => ISemanticBackend;
-}
-
-interface IAttach {
-  epoch: number;
-  answer: Promise<BackendStatus>;
 }
 
 function messageOf(error: unknown): string {
@@ -56,7 +53,7 @@ function unreadable(error: unknown): BackendStatus {
   return { state: 'unavailable', reason: messageOf(error) };
 }
 
-function isStatus(value: unknown): value is BackendStatus {
+export function isStatus(value: unknown): value is BackendStatus {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -97,12 +94,13 @@ function anchorParam(anchor: CorpusAnchor): CorpusAnchorParam {
  * or started — every call goes to the in-process backend instead.
  */
 export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions): ISemanticBackend {
-  const { services, vaultRoot, profile } = opts;
+  const { services, attachment, profile } = opts;
   let localBackend: ISemanticBackend | undefined;
-  /** The epoch the vault is attached on, and the key the daemon answered with. */
-  let attachedEpoch = -1;
-  let key = vaultRoot;
-  let attaching: IAttach | undefined;
+  /**
+   * The epoch this backend last got the vault's key on. A status on any other
+   * epoch reads the attach's own answer instead of asking the daemon.
+   */
+  let keyedEpoch = -1;
   /** The background connect-then-attach a status started while the switch was undecided. */
   let starting: Promise<void> | undefined;
   /** Set when a background connect met the closed services: the session is gone. */
@@ -113,51 +111,25 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
     return localBackend;
   }
 
-  /** `vault.attach` on the current epoch; concurrent callers share it. */
-  function attach(): Promise<BackendStatus> {
+  /** The attachment's key, attaching first when needed; remembers the epoch it was got on. */
+  async function keyOnCurrentEpoch(): Promise<string> {
     const epoch = services.connection.epoch;
-    if (attaching?.epoch === epoch) return attaching.answer;
-    const answer = services.connection
-      .request<{ vault?: unknown; profiles?: Record<string, unknown> }>(
-        'vault.attach',
-        { vault: vaultRoot, profiles: [profile] },
-        CORPUS_TIMEOUTS.attach,
-      )
-      .then((result): BackendStatus => {
-        if (typeof result?.vault !== 'string') {
-          throw new Error('daemon answered vault.attach without a vault key');
-        }
-        // An answer from a connection already replaced attaches nothing on the new one.
-        if (epoch === services.connection.epoch) {
-          key = result.vault;
-          attachedEpoch = epoch;
-        }
-        const status = result.profiles?.[profile];
-        return isStatus(status)
-          ? status
-          : { state: 'unavailable', reason: `daemon answered vault.attach without "${profile}"` };
-      })
-      .finally(() => {
-        if (attaching?.answer === answer) attaching = undefined;
-      });
-    attaching = { epoch, answer };
-    return answer;
+    const key = await attachment.key();
+    keyedEpoch = epoch;
+    return key;
   }
 
-  /** The key of a vault attached on the current epoch, attaching first when it is not. */
+  /** The key of the vault attached on the current epoch, attaching first when it is not. */
   async function attachedKey(): Promise<string> {
-    if (attachedEpoch !== services.connection.epoch) {
-      try {
-        await attach();
-      } catch (error) {
-        // Refused with the status a caller would have read: the daemon cannot open the vault.
-        if (error instanceof DaemonRpcError && error.code === 'VAULT_UNAVAILABLE') {
-          throw new CorpusNotReadyError({ state: 'unavailable', reason: error.message });
-        }
-        throw error;
+    try {
+      return await keyOnCurrentEpoch();
+    } catch (error) {
+      // Refused with the status a caller would have read: the daemon cannot open the vault.
+      if (error instanceof DaemonRpcError && error.code === 'VAULT_UNAVAILABLE') {
+        throw new CorpusNotReadyError({ state: 'unavailable', reason: error.message });
       }
+      throw error;
     }
-    return key;
   }
 
   /**
@@ -172,13 +144,19 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
     starting ??= (async () => {
       try {
         if ((await services.ensure()) === 'local') await local().status();
-        else if (attachedEpoch !== services.connection.epoch) await attach();
+        else if (keyedEpoch !== services.connection.epoch) await keyOnCurrentEpoch();
       } catch (error) {
         if (error instanceof SharedServicesClosedError) closed = error;
       } finally {
         starting = undefined;
       }
     })();
+  }
+
+  /** The daemon no longer knows the vault: the next call attaches again. */
+  function forgetAttach(): void {
+    keyedEpoch = -1;
+    attachment.forget();
   }
 
   /** A `corpus.*` call's own params; the vault key and profile are added here. */
@@ -206,7 +184,7 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
           error.message,
         );
       }
-      if (error instanceof DaemonRpcError && error.code === 'NOT_ATTACHED') attachedEpoch = -1;
+      if (error instanceof DaemonRpcError && error.code === 'NOT_ATTACHED') forgetAttach();
       throw error;
     }
   }
@@ -221,17 +199,26 @@ export function createDaemonSemanticBackend(opts: IDaemonSemanticBackendOptions)
       }
       try {
         if ((await services.ensure()) === 'local') return await local().status();
-        if (attaching?.epoch === services.connection.epoch) return ATTACHING;
-        if (attachedEpoch !== services.connection.epoch) return await attach();
+        if (attachment.attaching) return ATTACHING;
+        if (keyedEpoch !== services.connection.epoch) {
+          // The attach's own answer: this call made it (or found it made) on this epoch.
+          await keyOnCurrentEpoch();
+          return (
+            attachment.statusOf(profile) ?? {
+              state: 'unavailable',
+              reason: `daemon answered vault.attach without "${profile}"`,
+            }
+          );
+        }
         const status = await services.connection.request<unknown>(
           'vault.status',
-          { vault: key, profile },
+          { vault: await attachment.key(), profile },
           CORPUS_TIMEOUTS.status,
         );
         if (!isStatus(status)) throw new Error('daemon answered vault.status without a state');
         return status;
       } catch (error) {
-        if (error instanceof DaemonRpcError && error.code === 'NOT_ATTACHED') attachedEpoch = -1;
+        if (error instanceof DaemonRpcError && error.code === 'NOT_ATTACHED') forgetAttach();
         return unreadable(error);
       }
     },

@@ -5,6 +5,7 @@ import {
   type ISemanticBackend,
 } from '../../../lib/obsidian/semantic-backend.js';
 import { VaultEntryError, type VaultEntries } from '../../../lib/vault-entry/index.js';
+import type { IVaultAttachment } from './attachment.js';
 
 /** What a vault reads until its first attach answers (spec: sessions attach in the background). */
 const ATTACHING: BackendStatus = { state: 'indexing', indexed: 0, total: 0 };
@@ -14,7 +15,8 @@ export interface ILocalSemanticBackendOptions {
   entries: VaultEntries;
   /** The fixed connection id this process attaches under. */
   connectionId: number;
-  vaultRoot: string;
+  /** The vault's one attachment over {@link entries}, shared with every other facade of it. */
+  attachment: IVaultAttachment;
   /** The model profile this session serves. */
   profile: string;
 }
@@ -39,37 +41,20 @@ function messageOf(error: unknown): string {
  * disposed (watchers, timers, the pass in flight) by whoever built them.
  */
 export function createLocalSemanticBackend(opts: ILocalSemanticBackendOptions): ISemanticBackend {
-  const { entries, connectionId, vaultRoot, profile } = opts;
-  /** The realpath key, once attached. */
+  const { entries, connectionId, attachment, profile } = opts;
+  /** The realpath key, once this backend has got it. */
   let key: string | undefined;
-  let attaching: Promise<BackendStatus> | undefined;
-
-  function attach(): Promise<BackendStatus> {
-    attaching ??= entries
-      .attach(connectionId, vaultRoot, [profile])
-      .then((result) => {
-        key = result.vault;
-        return result.profiles[profile] ?? entries.status(connectionId, result.vault, profile);
-      })
-      .finally(() => {
-        attaching = undefined;
-      });
-    return attaching;
-  }
 
   /** The profile's reader, refused unless it is `ready`. */
   async function readerFor(): Promise<ICorpusReader> {
-    if (key === undefined) {
-      try {
-        await attach();
-      } catch (error) {
-        if (error instanceof VaultEntryError && error.code === 'VAULT_UNAVAILABLE') {
-          throw new CorpusNotReadyError({ state: 'unavailable', reason: error.message });
-        }
-        throw error;
+    try {
+      key = await attachment.key();
+    } catch (error) {
+      if (error instanceof VaultEntryError && error.code === 'VAULT_UNAVAILABLE') {
+        throw new CorpusNotReadyError({ state: 'unavailable', reason: error.message });
       }
+      throw error;
     }
-    if (key === undefined) throw new Error(`vault "${vaultRoot}" attached without a key`);
     const { reader, status } = entries.reader(connectionId, key, profile);
     if (status.state !== 'ready') throw new CorpusNotReadyError(status);
     return reader;
@@ -79,8 +64,9 @@ export function createLocalSemanticBackend(opts: ILocalSemanticBackendOptions): 
     async status() {
       try {
         if (key !== undefined) return entries.status(connectionId, key, profile);
-        if (attaching !== undefined) return ATTACHING;
-        return await attach();
+        if (attachment.attaching) return ATTACHING;
+        key = await attachment.key();
+        return attachment.statusOf(profile) ?? entries.status(connectionId, key, profile);
       } catch (error) {
         return { state: 'unavailable', reason: messageOf(error) };
       }
