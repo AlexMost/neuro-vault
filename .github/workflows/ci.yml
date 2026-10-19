@@ -12,10 +12,17 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# onnxruntime-node (via @huggingface/transformers) runs a postinstall that, on linux/x64, downloads
+# the CUDA 12 execution provider from NuGet unless ONNXRUNTIME_NODE_INSTALL=skip. The CPU binaries
+# ship inside the npm package either way. No job here uses a GPU, so every job skips the download:
+# CI stays fast and does not depend on NuGet being up. The default (non-skipped) install path is
+# not exercised in CI.
 jobs:
   check:
     name: Lint · Typecheck · Build · Test
     runs-on: ubuntu-latest
+    env:
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,6 +48,8 @@ jobs:
   commitlint:
     name: Commitlint
     runs-on: ubuntu-latest
+    env:
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v4
         with:
@@ -63,6 +72,7 @@ jobs:
     timeout-minutes: 15
     env:
       NEURO_VAULT_HF_TESTS: '1'
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -70,8 +80,6 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-        env:
-          ONNXRUNTIME_NODE_INSTALL: skip
       - uses: actions/cache@v4
         with:
           path: ~/.cache/neuro-vault/models
