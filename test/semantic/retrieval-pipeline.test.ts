@@ -90,7 +90,18 @@ describe('runRetrievalPipeline', () => {
       [...makeSources().keys()].slice(0, result.candidates.length),
     );
     expect(result.semantic).toMatchObject({ status: 'ran', perQueryHits: { quirkyterm: 8 } });
-    expect(result.lexical.perQueryCounts).toEqual({ quirkyterm: 2 });
+    expect(result.lexical).toMatchObject({ status: 'ran', perQueryCounts: { quirkyterm: 2 } });
+  });
+
+  it('reports the lexical leg as a ran record with its counts', async () => {
+    const result = await runRetrievalPipeline({ ...DEEP }, makeDeps());
+    expect(result.lexical).toEqual({
+      status: 'ran',
+      perQueryCounts: { quirkyterm: 2 },
+      perQueryTokenCounts: {},
+      totalNotes: NOTE_COUNT + 1,
+      truncated: false,
+    });
   });
 
   it('hands the lexical reader the leg options and no backlink callback', async () => {
@@ -114,9 +125,10 @@ describe('runRetrievalPipeline', () => {
     const result = await runRetrievalPipeline({ ...DEEP, cap: 3 }, makeDeps());
     expect(result.candidates).toHaveLength(3);
     expect(result.truncated).toBe(true);
+    expect(result.lexical).toMatchObject({ truncated: false });
   });
 
-  it('surfaces a leg pool overflow even when the merged cap is not hit', async () => {
+  it('records a leg pool overflow on that leg, not as a merged-cap cut', async () => {
     const deps = makeDeps({
       lexical: {
         search: () =>
@@ -132,7 +144,43 @@ describe('runRetrievalPipeline', () => {
     });
     const result = await runRetrievalPipeline({ ...DEEP, cap: 50 }, deps);
     expect(result.candidates.length).toBeLessThan(50);
-    expect(result.truncated).toBe(true);
+    expect(result.truncated).toBe(false);
+    expect(result.lexical).toMatchObject({ status: 'ran', truncated: true });
+  });
+
+  it('records the semantic pool cut on its own record', async () => {
+    // 10 seeds above threshold 0 against deep's pool of 8.
+    const result = await runRetrievalPipeline({ ...DEEP, cap: 50 }, makeDeps());
+    expect(result.truncated).toBe(false);
+    expect(result.semantic).toMatchObject({ status: 'ran', truncated: true });
+  });
+
+  it('keeps pre-cap per-query counts under a merged cap of one', async () => {
+    const result = await runRetrievalPipeline({ ...DEEP, cap: 1 }, makeDeps());
+    expect(result.candidates).toHaveLength(1);
+    expect(result.semantic).toMatchObject({ status: 'ran', perQueryHits: { quirkyterm: 8 } });
+    expect(result.lexical).toMatchObject({ status: 'ran', perQueryCounts: { quirkyterm: 2 } });
+  });
+
+  it('reads neither leg over an empty allowed set', async () => {
+    const base = makeDeps();
+    const search = vi.fn(base.lexical.search);
+    const embedQuery = vi.fn(base.embeddingProvider.embedQuery);
+    const result = await runRetrievalPipeline(
+      { ...DEEP, allowed: new Set() },
+      makeDeps({
+        lexical: { ...base.lexical, search },
+        embeddingProvider: { ...base.embeddingProvider, embedQuery },
+      }),
+    );
+    expect(search).not.toHaveBeenCalled();
+    expect(embedQuery).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      candidates: [],
+      truncated: false,
+      semantic: { status: 'skipped' },
+      lexical: { status: 'skipped' },
+    });
   });
 
   it('existence-filters seeds and their expansion targets before fusion', async () => {
