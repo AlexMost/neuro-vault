@@ -174,12 +174,14 @@ describe('the graph service over the in-process link', () => {
       incoming: [{ source: 'a.md' }, { source: 'b.md' }],
       outgoing: [],
     });
-    await expect(
-      link.request('graph.resolve', { vault, targets: ['Alpha'], extra: 1 }, 0),
-    ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
-    await expect(
-      link.request('graph.resolve', { vault, targets: ['Alpha'], extra: 1 }, 0),
-    ).rejects.toBeInstanceOf(DaemonRpcError);
+    const refused = await link
+      .request('graph.resolve', { vault, targets: ['Alpha'], extra: 1 }, 0)
+      .catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(DaemonRpcError);
+    expect(refused).toMatchObject({
+      code: 'INVALID_PARAMS',
+      message: '<root>: Unrecognized key: "extra"',
+    });
     link.close();
   });
 });

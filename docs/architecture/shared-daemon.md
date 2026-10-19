@@ -175,7 +175,7 @@ Errors are JSON-RPC errors with a numeric `code` and the daemon's own code in `d
 | `CORPUS_NOT_READY` | -32603 | `corpus.*` while the profile is not `ready`; `data.status` is its `BackendStatus` |
 | `CORPUS_FAILED` | -32603 | A `corpus.*` read threw inside the corpus; the message is the reason |
 | `LEXICAL_FAILED` | -32603 | A `lexical.search` threw inside the entry (the scan, a refresh or the ranking); the message is the reason |
-| `GRAPH_FAILED` | -32603 | A `graph.*` read threw inside the entry (a failed build, an entry disposed mid-read); the message is the reason |
+| `GRAPH_FAILED` | -32603 | A `graph.*` read threw inside the entry (a failed scan or build); the message is the reason. An entry that was dropped answers `NOT_ATTACHED`: its record goes before it is disposed |
 | `EMBED_FAILED` | -32603 | The model failed to load, inference threw, or a vector came back non-finite |
 | `SHUTTING_DOWN` | -32000 | The request was in flight, or arrived, while the daemon was stopping |
 | `INTERNAL` | -32603 | A handler threw something other than a `DaemonRpcError` |

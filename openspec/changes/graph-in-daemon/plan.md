@@ -25,7 +25,7 @@
 - **Duplicate paths in one `backlinkCounts` call** (`query_notes` merges prefixes; a caller may repeat a path) → each position answers its own count; covered in Task 1.
 - **A scope change between two reads of one tool call** → each read answers from one build; a swapped graph is seen by the next call only; covered in Task 1 (`current()` read once per call).
 - **A daemon answer of the wrong shape** (a missing `counts`, a list shorter than the request) → a `GraphReadError`, never a silent `undefined` count; covered in Task 5.
-- **A read on a disposed entry** (the last client left and the idle timer fired mid-call) → rejects with `vault entry: disposed`, mapped to `GRAPH_FAILED`; covered in Tasks 3 and 4.
+- **A read on a dropped entry** (the last client left and the idle timer fired) → a later call is `NOT_ATTACHED`, since the record goes before the entry is disposed; a read on the disposed entry itself rejects with `vault entry: disposed`; covered in Tasks 3 and 4.
 - **An attach with `profiles: []`** (a vault with `"semantic": false`) → graph reads answered, not refused; covered in Tasks 3 and 4.
 
 ---

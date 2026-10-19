@@ -15,7 +15,7 @@ import { wired } from './wired.js';
 /** The slice of the registry the service uses. */
 export type GraphEntriesPort = Pick<VaultEntries, 'graph'>;
 
-/** A read that throws inside the graph — a failed build, a disposed entry — is `GRAPH_FAILED`. */
+/** A read that throws inside the graph — a failed scan or build — is `GRAPH_FAILED`. */
 async function reading<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await work();

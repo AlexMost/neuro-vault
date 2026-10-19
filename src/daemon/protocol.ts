@@ -90,7 +90,7 @@ export interface LexicalSearchResult {
 }
 export const graphNoteLinksParams = z.strictObject({ vault: z.string(), path: z.string() });
 export type GraphNoteLinksParams = z.infer<typeof graphNoteLinksParams>;
-/** None for a note the graph does not hold. */
+/** Empty `incoming` and `outgoing` for a note the graph does not hold. */
 export type GraphNoteLinksResult = NoteLinks;
 /** An empty list passes: it answers an empty list. */
 export const graphBacklinkCountsParams = z.strictObject({ vault: z.string(), paths: strings });

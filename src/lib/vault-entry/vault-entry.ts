@@ -162,11 +162,12 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
     graph = new WikilinkGraphIndex({ reader: scopedReader, ttlMs: opts.graphTtlMs });
     // warm never rejects; searches arriving meanwhile share its refresh.
     void lexical.warm();
-    // A search arriving meanwhile shares this build; a failed one is retried by the next search.
+    // A read arriving meanwhile shares this build; a failed one is retried by the next search or
+    // graph read.
     void graph.ensureFresh().catch((err: unknown) => {
       if (disposing !== null) return;
       const reason = err instanceof Error ? err.message : String(err);
-      warn(`neuro-vault lexical: vault "${vaultName}": tie-break graph warm failed: ${reason}`);
+      warn(`neuro-vault lexical: vault "${vaultName}": graph warm failed: ${reason}`);
     });
   }
   buildLexical();
