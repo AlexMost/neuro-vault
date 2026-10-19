@@ -3,6 +3,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SmartSource } from '../../src/lib/obsidian/corpus/types.js';
+import {
+  EFFORT_PROFILES,
+  LEXICAL_PER_NOTE_CAP,
+} from '../../src/modules/semantic/effort-profiles.js';
+import { runRetrievalPipeline } from '../../src/modules/semantic/retrieval-pipeline.js';
 import { TEST_SIMILARITY } from '../_identity.js';
 import { corpusOver } from '../_memory-corpus.js';
 import {
@@ -50,15 +55,17 @@ describe('fused pipeline', () => {
   let vaultRoot: string;
   afterEach(async () => rm(vaultRoot, { recursive: true, force: true }));
 
-  it('fuses semantic and lexical legs with production fuseRanks', async () => {
-    vaultRoot = await mkdtemp(path.join(tmpdir(), 'eval-fused-'));
-    await mkdir(path.join(vaultRoot, 'Notes'), { recursive: true });
+  async function makeFusedVault(): Promise<string> {
+    const root = await mkdtemp(path.join(tmpdir(), 'eval-fused-'));
+    await mkdir(path.join(root, 'Notes'), { recursive: true });
     // lexical-only hit: matches the query text, has no vector in SOURCES
-    await writeFile(
-      path.join(vaultRoot, 'Notes/lexical-hit.md'),
-      '# quirkyterm\nquirkyterm body\n',
-    );
-    await writeFile(path.join(vaultRoot, 'a.md'), '# alpha\nunrelated text\n');
+    await writeFile(path.join(root, 'Notes/lexical-hit.md'), '# quirkyterm\nquirkyterm body\n');
+    await writeFile(path.join(root, 'a.md'), '# alpha\nunrelated text\n');
+    return root;
+  }
+
+  it('fuses semantic and lexical legs with production fuseRanks', async () => {
+    vaultRoot = await makeFusedVault();
     const fusedContext = await createFusedContext(vaultRoot);
     const ranked = await rankQuery({
       pipeline: 'fused',
@@ -79,6 +86,58 @@ describe('fused pipeline', () => {
     // Semantic leg still contributes its threshold-0 ranking.
     expect(top).toContain('a.md');
   });
+
+  it('ranks exactly as runRetrievalPipeline at deep effort, threshold 0, cap top-k', async () => {
+    vaultRoot = await makeFusedVault();
+    const fusedContext = await createFusedContext(vaultRoot);
+    const ranked = await rankQuery({
+      pipeline: 'fused',
+      query: 'quirkyterm',
+      queryVector: QUERY_VECTOR,
+      corpus: corpusOver(SOURCES),
+      fusedContext,
+      similarity: TEST_SIMILARITY,
+    });
+    const { candidates } = await runRetrievalPipeline(
+      {
+        queries: ['quirkyterm'],
+        effort: 'deep',
+        semantic: true,
+        threshold: 0,
+        expansionFloor: TEST_SIMILARITY.expansionFloor,
+        cap: EVAL_TOP_K,
+      },
+      {
+        corpus: corpusOver(SOURCES),
+        lexical: fusedContext.lexical,
+        filterExisting: (paths) => Promise.resolve(new Set(paths)),
+        embeddingProvider: {
+          initialize: () => Promise.resolve(),
+          embedQuery: () => Promise.resolve(QUERY_VECTOR),
+        },
+        similarity: TEST_SIMILARITY,
+      },
+    );
+    expect(ranked).toEqual(candidates.map((c) => ({ path: c.path, score: c.score })));
+    expect(ranked.length).toBeGreaterThan(1);
+  });
+
+  it('fails instead of reporting a lexical-only run when the semantic leg throws', async () => {
+    vaultRoot = await makeFusedVault();
+    const fusedContext = await createFusedContext(vaultRoot);
+    const broken = corpusOver(SOURCES);
+    broken.nearest = () => Promise.reject(new Error('corpus down'));
+    await expect(
+      rankQuery({
+        pipeline: 'fused',
+        query: 'quirkyterm',
+        queryVector: QUERY_VECTOR,
+        corpus: broken,
+        fusedContext,
+        similarity: TEST_SIMILARITY,
+      }),
+    ).rejects.toThrow('corpus down');
+  });
 });
 
 describe('bestRelevantSimilarity', () => {
@@ -95,15 +154,15 @@ describe('bestRelevantSimilarity', () => {
 });
 
 describe('evalConfig', () => {
-  it('records every knob the run used', () => {
+  it('records every knob the run used, read from the deep effort profile', () => {
     expect(evalConfig(TEST_SIMILARITY)).toMatchObject({
       top_k: 10,
       semantic_threshold: 0,
-      semantic_pool: 8,
-      expansion_limit: 3,
+      semantic_pool: EFFORT_PROFILES.deep.semanticPool,
+      expansion_limit: EFFORT_PROFILES.deep.expansionLimit,
       expansion_floor: 0.35,
-      lexical_note_cap: 10,
-      lexical_per_note_cap: 3,
+      lexical_note_cap: EFFORT_PROFILES.deep.lexicalNoteCap,
+      lexical_per_note_cap: LEXICAL_PER_NOTE_CAP,
       expansion_weight: 0.85,
       k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
     });

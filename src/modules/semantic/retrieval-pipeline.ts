@@ -35,6 +35,8 @@ export interface RetrievalPipelineInput {
 /** One fused candidate, tagged with whichever leg(s) produced it. */
 export interface PipelineCandidate {
   path: string;
+  /** The candidate's fused `fuseRanks` score; candidates arrive best first. */
+  score: number;
   semantic?: NoteResultNode;
   lexical?: RankedNote;
   expansion?: ExpansionCandidate;
@@ -169,6 +171,7 @@ export async function runRetrievalPipeline(
     const exp = expansionByPath.get(c.path);
     return {
       path: c.path,
+      score: c.score,
       ...(sem !== undefined ? { semantic: sem } : {}),
       ...(lex !== undefined ? { lexical: lex } : {}),
       ...(exp !== undefined ? { expansion: exp } : {}),

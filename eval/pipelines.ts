@@ -4,13 +4,10 @@ import { FsVaultReader } from '../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../src/lib/obsidian/vault-scope-config.js';
 import { WikilinkGraphIndex } from '../src/lib/obsidian/wikilink-graph.js';
 import type { SimilarityDefaults } from '../src/lib/model-profiles.js';
-import {
-  EXPANSION_WEIGHT,
-  flattenExpansion,
-  fuseRanks,
-} from '../src/modules/semantic/rank-fusion.js';
+import { EFFORT_PROFILES, LEXICAL_PER_NOTE_CAP } from '../src/modules/semantic/effort-profiles.js';
+import { EXPANSION_WEIGHT } from '../src/modules/semantic/rank-fusion.js';
 import { createStandaloneLexicalReader } from '../src/modules/semantic/lexical/index.js';
-import { executeRetrieval } from '../src/modules/semantic/retrieval-policy.js';
+import { runRetrievalPipeline } from '../src/modules/semantic/retrieval-pipeline.js';
 
 export type PipelineId = 'semantic' | 'fused';
 export type EmbedFn = (text: string) => Promise<number[]>;
@@ -22,17 +19,19 @@ export const EVAL_TOP_K = 10;
  * run with different knobs must be distinguishable. Query-side thresholds are
  * 0 — eval counts positions. The expansion floor is the profile's own default,
  * so `fused` stays the production pipeline for that profile (design D12).
- * Everything else mirrors production deep effort.
+ * The pool numbers are read from the deep effort profile `runRetrievalPipeline`
+ * itself reads, so the record cannot drift from the run.
  */
 export function evalConfig(similarity: SimilarityDefaults) {
+  const deep = EFFORT_PROFILES.deep;
   return {
     top_k: EVAL_TOP_K,
     semantic_threshold: 0,
-    semantic_pool: 8,
-    expansion_limit: 3,
+    semantic_pool: deep.semanticPool,
+    expansion_limit: deep.expansionLimit,
     expansion_floor: similarity.expansionFloor,
-    lexical_note_cap: 10,
-    lexical_per_note_cap: 3,
+    lexical_note_cap: deep.lexicalNoteCap,
+    lexical_per_note_cap: LEXICAL_PER_NOTE_CAP,
     expansion_weight: EXPANSION_WEIGHT,
     k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
   } as const;
@@ -91,44 +90,36 @@ async function rankFused(
   context: FusedContext,
   similarity: SimilarityDefaults,
 ): Promise<RankedPath[]> {
-  // The production legs, verbatim (design D5): executeRetrieval at deep
-  // effort (pool 8, expansion on) with an explicit threshold 0, the lexical
-  // reader over the real wikilink graph for its backlink tie-break, then the
-  // exact fusion `assembleUnified` performs — flattenExpansion + fuseRanks.
-  // Every knob is passed explicitly, including the two that merely match
-  // `MODE_DEFAULTS.deep` today: `config` is the report's comparability record,
-  // and a silent lie there is worse than the drift it would hide.
+  // The production pipeline itself (design D7): deep effort with an explicit
+  // threshold 0 and the profile's expansion floor, the lexical reader over the
+  // real wikilink graph for its backlink tie-break, the merged cap at top-k.
+  // The existence filter admits every path: eval measures ranking over the
+  // corpus as loaded, not a vault's deletions since.
   const config = evalConfig(similarity);
-  const semantic = await executeRetrieval({
-    queries: [query],
-    mode: 'deep',
-    limit: config.semantic_pool,
-    threshold: config.semantic_threshold,
-    expansionLimit: config.expansion_limit,
-    expansionFloor: config.expansion_floor,
-    corpus,
-    embeddingProvider: {
-      initialize: () => Promise.resolve(),
-      embedQuery: () => Promise.resolve(queryVector),
+  const { candidates, semantic } = await runRetrievalPipeline(
+    {
+      queries: [query],
+      effort: 'deep',
+      semantic: true,
+      threshold: config.semantic_threshold,
+      expansionFloor: config.expansion_floor,
+      cap: config.top_k,
     },
-    similarity,
-  });
-  const lexical = await context.lexical.search({
-    queries: [query],
-    noteCap: config.lexical_note_cap,
-    perNoteCap: config.lexical_per_note_cap,
-  });
-  const expansion = flattenExpansion(semantic.results);
-  return fuseRanks({
-    sources: {
-      semantic: semantic.results.map((n) => n.path),
-      lexical: lexical.notes.map((n) => n.path),
-      expansion: expansion.map((e) => e.path),
+    {
+      corpus,
+      lexical: context.lexical,
+      filterExisting: (paths) => Promise.resolve(new Set(paths)),
+      embeddingProvider: {
+        initialize: () => Promise.resolve(),
+        embedQuery: () => Promise.resolve(queryVector),
+      },
+      similarity,
     },
-    totalNotes: lexical.totalNotes,
-  })
-    .slice(0, EVAL_TOP_K)
-    .map((c) => ({ path: c.path, score: c.score }));
+  );
+  // The pipeline degrades a failed semantic leg to lexical-only; a measurement
+  // must fail instead of reporting a lexical-only run as fused.
+  if (semantic.status === 'failed') throw semantic.error;
+  return candidates.map((c) => ({ path: c.path, score: c.score }));
 }
 
 export async function rankQuery(args: {
