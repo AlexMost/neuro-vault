@@ -69,6 +69,11 @@ function fakeEntry(opts: IVaultEntryOptions) {
       totalNotes: 0,
     })),
     lexicalInfo: (): ILexicalInfo => ({ state: 'warming' }),
+    graph: {
+      noteLinks: vi.fn(async () => ({ incoming: [], outgoing: [] })),
+      backlinkCounts: vi.fn(async (paths: readonly string[]) => paths.map(() => 0)),
+      resolve: vi.fn(async (targets: readonly string[]) => targets.map(() => null)),
+    },
     info: (clients: number, idleSince?: string): IVaultInfo => ({
       vault: opts.vaultRoot,
       clients,
@@ -413,6 +418,33 @@ describe('VaultEntries.lexical', () => {
     await s.entries.attach(1, '/v', []);
     s.entries.detach(1);
     expect(await codeOf(() => s.entries.lexical(1, '/v'))).toBe('NOT_ATTACHED');
+  });
+});
+
+describe('VaultEntries.graph', () => {
+  it("is entry-level: a profiles: [] attach gets the entry's graph", async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', []);
+    const graph = s.entries.graph(1, '/v');
+    expect(graph).toBe(s.created[0].graph);
+    await expect(graph.backlinkCounts(['a.md'])).resolves.toEqual([0]);
+  });
+
+  it('two clients on one vault read the same graph', async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', []);
+    await s.entries.attach(2, '/v', [HARRIER]);
+    expect(s.entries.graph(2, '/v')).toBe(s.entries.graph(1, '/v'));
+  });
+
+  it('NOT_ATTACHED for a connection that attached another vault, or none', async () => {
+    const s = setup();
+    await s.entries.attach(1, '/v', []);
+    await s.entries.attach(2, '/w', [HARRIER]);
+    expect(await codeOf(() => s.entries.graph(2, '/v'))).toBe('NOT_ATTACHED');
+    expect(await codeOf(() => s.entries.graph(3, '/v'))).toBe('NOT_ATTACHED');
+    expect(await codeOf(() => s.entries.graph(1, '/missing'))).toBe('NOT_ATTACHED');
+    expect(() => s.entries.graph(2, '/v')).toThrow('vault "/v" is not attached on this connection');
   });
 });
 

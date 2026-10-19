@@ -785,6 +785,61 @@ describe('createVaultEntry lexical members', () => {
     expect((await h.entry.lexicalSearch(query)).notes.map((n) => n.path)).toEqual(['A.md', 'B.md']);
   });
 
+  describe("the entry's one graph", () => {
+    /** `A.md` and `B.md` link `[[T]]`; `Archive/C.md` links it too, outside a narrowed scope. */
+    const linkedVault = async (root: string) => {
+      await mkdir(path.join(root, 'Archive'));
+      await writeFile(path.join(root, 'T.md'), 'the target\n');
+      await writeFile(path.join(root, 'A.md'), 'see [[T]] and [[Nowhere]]\n');
+      await writeFile(path.join(root, 'B.md'), 'also [[T]]\n');
+      await writeFile(path.join(root, 'Archive/C.md'), 'archived [[T]]\n');
+    };
+
+    it('answers over the scoped vault', async () => {
+      const h = await harness({ populate: linkedVault, scope: scopeOf(['Archive/**']) });
+      await expect(h.entry.graph.backlinkCounts(['T.md', 'A.md', 'Archive/C.md'])).resolves.toEqual(
+        [2, 0, 0],
+      );
+      await expect(h.entry.graph.resolve(['T', 'C', 'Nowhere'])).resolves.toEqual([
+        'T.md',
+        null,
+        null,
+      ]);
+      await expect(h.entry.graph.noteLinks('A.md')).resolves.toEqual({
+        incoming: [],
+        outgoing: [
+          { target: 'T', resolved: true, path: 'T.md' },
+          { target: 'Nowhere', resolved: false },
+        ],
+      });
+    });
+
+    it("reads the tie-break's build: a new link within the TTL shows in neither", async () => {
+      const h = await harness({ graphTtlMs: 3_600_000, populate: linkedVault });
+      await h.entry.lexicalSearch({ queries: ['target'], ...SEARCH });
+      await writeFile(path.join(h.root, 'D.md'), 'one more [[T]]\n');
+      await expect(h.entry.graph.backlinkCounts(['T.md'])).resolves.toEqual([3]);
+    });
+
+    it('setScope replaces the graph its reads answer from', async () => {
+      const h = await harness({ graphTtlMs: 3_600_000, populate: linkedVault });
+      await expect(h.entry.graph.backlinkCounts(['T.md'])).resolves.toEqual([3]);
+      h.entry.setScope(scopeOf(['Archive/**']));
+      await expect(h.entry.graph.backlinkCounts(['T.md'])).resolves.toEqual([2]);
+      await expect(h.entry.graph.noteLinks('Archive/C.md')).resolves.toEqual({
+        incoming: [],
+        outgoing: [],
+      });
+    });
+
+    it('rejects every read once the entry is disposed', async () => {
+      const h = await harness({ populate: linkedVault });
+      await h.entry.dispose();
+      await expect(h.entry.graph.noteLinks('A.md')).rejects.toThrow('vault entry: disposed');
+      await expect(h.entry.graph.backlinkCounts(['T.md'])).rejects.toThrow(/disposed/);
+    });
+  });
+
   it('dispose frees the members: a later search rejects', async () => {
     const h = await harness({ populate: writeFixtureVault });
     await h.entry.dispose();
