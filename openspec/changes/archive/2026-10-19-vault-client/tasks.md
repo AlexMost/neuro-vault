@@ -47,4 +47,4 @@ Parallelism: groups 1 and 2 are parallel-safe with each other (protocol + daemon
 ## 9. PR 2 docs sweep, verify, archive, PR (sequential after 7, 8)
 
 - [x] 9.1 Sweep all of `docs/` (architecture, guide, README) and `GLOSSARY.md` for the old facade names, `LOCAL_CONNECTION_ID`, `connectionId`; `docs/architecture/lexical-search.md` updated.
-- [ ] 9.2 `/opsx:verify` → `verify.md`; `retrospective.md`; `/opsx:archive`; gates; PR with `Closes #193`.
+- [x] 9.2 `/opsx:verify` → `verify.md`; `retrospective.md`; `/opsx:archive`; gates; PR with `Closes #193`.
