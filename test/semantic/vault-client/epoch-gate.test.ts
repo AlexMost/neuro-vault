@@ -88,6 +88,23 @@ describe('createEpochGate', () => {
     expect(gate.done).toBe(true);
   });
 
+  it('an older run settling after a newer run started leaves the newer slot in place', async () => {
+    const { link, runs, run, gate } = setup();
+    const old = gate.pass();
+    link.epoch = 2;
+    const fresh = gate.pass();
+    expect(run).toHaveBeenCalledTimes(2);
+    runs[0]?.resolve('old');
+    await old;
+    expect(gate.running).toBe(true);
+    const joined = gate.pass();
+    expect(run).toHaveBeenCalledTimes(2);
+    runs[1]?.resolve('new');
+    await Promise.all([fresh, joined]);
+    expect(gate.done).toBe(true);
+    expect(gate.running).toBe(false);
+  });
+
   it('a rejected run leaves it undone and the next pass runs again', async () => {
     const { runs, run, gate } = setup();
     const failed = gate.pass();
