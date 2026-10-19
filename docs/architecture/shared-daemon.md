@@ -247,13 +247,13 @@ IVaultInfo = {
 
 ## The session-side facades
 
-A process reaches the daemon through **one connection and one switch**, shared by every facade it runs. `createSharedServices` (`src/modules/semantic/shared-services.ts`) builds that `ISharedServices` once per process: the server builds it in `startNeuroVaultServer` and hands it to both the embedding provider and the semantic backends; `index` builds its own for its embedding provider. It is called with the realpath of the running `cli.js`, which `src/cli.ts` resolves once and passes to every command, and it computes the same key the daemon computes for itself: version, plus that file's size and mtime. Construction only stats that file; it probes, spawns and creates nothing. `ISharedServices` holds the `DaemonConnection` (`src/modules/semantic/daemon-connection.ts`) and the switch `mode`: `pending` until the first `ensure()` settles, then `daemon` or `local`; `local` is final, and `--no-shared` starts there with no connection and no line.
+A process reaches the daemon through **one connection and one switch**, shared by every facade it runs. `createSharedServices` (`src/modules/semantic/shared-services.ts`) builds that `ISharedServices` once per process: the server builds it in `startNeuroVaultServer` and hands it to both the embedding provider and the vault clients (`createVaultClients`); `index` builds its own for its embedding provider. It is called with the realpath of the running `cli.js`, which `src/cli.ts` resolves once and passes to every command, and it computes the same key the daemon computes for itself: version, plus that file's size and mtime. Construction only stats that file; it probes, spawns and creates nothing. `ISharedServices` holds the `DaemonConnection` (`src/modules/semantic/daemon-connection.ts`) and the switch `mode`: `pending` until the first `ensure()` settles, then `daemon` or `local`; `local` is final, and `--no-shared` starts there with no connection and no line.
 
-Three facades run over it:
+Over it run the embedding provider and, per vault root, one vault client ([ADR-0021](../adr/0021-vault-client.md)):
 
-- **`DaemonEmbeddingProvider`** (`src/modules/semantic/daemon-embedding-provider.ts`) implements `EmbeddingProvider`. `createEmbeddingProvider` builds it for `shared: true` ([`embedding-pipeline.md`](./embedding-pipeline.md#where-the-model-lives)).
-- **The daemon semantic backend** (`createDaemonSemanticBackend`, `src/modules/semantic/backend/daemon-backend.ts`) implements a vault's `ISemanticBackend` over `vault.attach`, `vault.status` and `corpus.*`; it is described in [`semantic-backend.md`](./semantic-backend.md#the-daemon-facade).
-- **The daemon lexical reader** (`createDaemonLexicalReader`, `src/modules/semantic/lexical/daemon-reader.ts`) implements a vault's `ILexicalReader` over `lexical.search`; it is described in [`lexical-search.md`](./lexical-search.md#who-holds-the-cache). It shares the vault's one attachment with the semantic backend ([`semantic-backend.md`](./semantic-backend.md#the-vault-clients)), so a vault makes one `vault.attach` per connection whichever facade asks first, and it never flips the switch: only `ensure()` does.
+- **`DaemonEmbeddingProvider`** (`src/modules/semantic/daemon-embedding-provider.ts`) implements `EmbeddingProvider`. `createEmbeddingProvider` builds it for `shared: true` ([`embedding-pipeline.md`](./embedding-pipeline.md#where-the-model-lives)). It is per profile and process-wide, with no vault key and no attach, so it is not a vault client; it runs its own `embed.initialize` handshake per connection epoch.
+- **The daemon vault client** (`createDaemonVaultClient`, `src/modules/semantic/vault-client/daemon-client.ts`) is a vault root's `IVaultClient` on the daemon side: `call(method, params)` over the rows of `VaultMethods` (`src/daemon/protocol.ts`), `status(profile)`, `warm()` and `dispose()`. It owns, for that vault, the one consult of the switch, the attach per connection epoch (`vault.attach`, then `vault.status`), the per-method timeouts and the `NOT_ATTACHED` forget; it is described in [`semantic-backend.md`](./semantic-backend.md#the-vault-client). Once the switch goes `local` it hands every call to the vault's in-process client, the same core over a loopback that calls this daemon's own `vault`, `corpus` and `lexical` handlers in the session ([`semantic-backend.md`](./semantic-backend.md#the-in-process-side)).
+- **Views over the client** implement the interfaces the session's code depends on. The semantic backend is `createSemanticBackendView` (`src/modules/semantic/backend/view.ts`), over `corpus.*`. The lexical reader is still the earlier facade (`createDaemonLexicalReader`, `src/modules/semantic/lexical/daemon-reader.ts`) over `lexical.search` until the vault-client change completes (#193); it is described in [`lexical-search.md`](./lexical-search.md#who-holds-the-cache). It shares the vault's one attachment with the client ([`semantic-backend.md`](./semantic-backend.md#the-vault-clients)), so a vault makes one `vault.attach` per connection whichever reader asks first. Neither flips the switch: only `ensure()` does.
 
 **The embedding contract is the in-process one.** `identity` is computed locally from the profile, so it equals `EmbeddingService`'s and a corpus built through either is served by the other. `maxBatchSize` starts at the in-process value (8) and becomes the daemon's `max_batch_size` once `embed.initialize` answers. A document batch larger than that is split before it is sent. The process keeps its own `createQueuedEmbedder` in front of the facade, so its own queries still go ahead of its own document batches, and it has one request in flight at a time.
 
@@ -295,7 +295,7 @@ A request that runs out rejects with `DaemonTimeoutError`, naming the method. Th
 - a poll that runs out;
 - no CLI script path at all, or one `createSharedServices` could not stat at startup.
 
-On it, `ISharedServices` flips its switch to `local` for every facade of the process at once and writes one stderr line. From then on the embedding facade embeds through an in-process `EmbeddingService` for the same profile, and each vault's backend and lexical reader run the vault entry in the process ([`semantic-backend.md`](./semantic-backend.md#the-in-process-backend)), each built on its first call after the flip:
+On it, `ISharedServices` flips its switch to `local` for every facade of the process at once and writes one stderr line. From then on the embedding facade embeds through an in-process `EmbeddingService` for the same profile, and each vault's backend and lexical reader run the vault entry in the process ([`semantic-backend.md`](./semantic-backend.md#the-in-process-side)), each built on its first call after the flip:
 
 ```
 neuro-vault-mcp: shared daemon unavailable (<reason>); running in-process for this session — see <daemon.log>
@@ -311,15 +311,29 @@ From then on the process never touches the connection again. Every other failure
 
 ## How a new service attaches
 
-A service is one more registry entry. In `startServing` (`src/cli-daemon.ts`), next to `embed`:
+A service is one more registry entry. In `startServing` (`src/cli-daemon.ts`), next to `embed`, the daemon registers each entry of the per-vault service map:
 
 ```typescript
-registry.register('lexical', createLexicalService(entries));
+registry.register('embed', embed.handlers);
+for (const [name, handlers] of Object.entries(createVaultEntryServices(entries))) {
+  registry.register(name, handlers);
+}
 ```
 
 Framing, discovery, the key, the lock and the lifecycle do not move. `vault`, `corpus` and `lexical` are the second, third and fourth services built this way, all over the one `VaultEntries` that `startServing` builds; `lexical` was the member of the vault entry that the earlier services named as the next candidate (the per-vault lexical cache, which cost hundreds of MB per session on large vaults). A service that wants to appear in `daemon.info` extends `DaemonInfoResult.services`, which today names `embed` and `vault` (the lexical cache appears inside each `IVaultInfo`, not as a service of its own).
 
-The session side follows one pattern, the facade. The session keeps the interface its code already depends on, and a facade implements it by forwarding to the daemon: `DaemonEmbeddingProvider` for `embed`, the daemon semantic backend for `vault` and `corpus`, the daemon lexical reader for `lexical` ([above](#the-session-side-facades)). The lexical reader followed the rules a later facade was to follow: the caller (`runRetrievalPipeline`) did not change beyond depending on `ILexicalReader`, the reader runs over the process's one `ISharedServices` rather than a connection or a switch of its own, and any doubt resolves to in-process behaviour.
+The session side follows one pattern, the facade: the session keeps the interface its code already depends on, and implements it by forwarding to the daemon, with an in-process fallback. For the model that is `DaemonEmbeddingProvider`. For a vault's state it is a view over the vault's client ([above](#the-session-side-facades)), which brings the switch, the attach, the timeouts and the fallback with it.
+
+### How a new per-vault read is added
+
+A read of the vault entry (the wikilink graph, say) costs four pieces, and none of them is in the client, its two adapters, the link, the attachment or the timeouts:
+
+1. **The entry's method**, on `IVaultEntry` and `VaultEntries` (`src/lib/vault-entry/`).
+2. **A service handler**, registered once in `createVaultEntryServices` (`src/daemon/services/vault-entry-services.ts`): a new namespace is one line there, a new method one more handler in its service. The daemon registers the map and the in-process loopback calls the same map, so both sides serve the read and answer with the same codes.
+3. **A row in `VaultMethods`** (`src/daemon/protocol.ts`): the method name with its params and result types, which the handler's result and the view's call both type against. A method that needs a wait other than the 30 s default adds an entry to `VAULT_CALL_TIMEOUTS` (`src/modules/semantic/vault-client/timeouts.ts`); nothing else is per method.
+4. **A view** over `IVaultClient`: `client.call('<ns>.<method>', params)`, and the mapping of the protocol's codes to its interface's own errors.
+
+`test/semantic/vault-client/new-read.test.ts` holds that claim: a row added by declaration merging, its handler beside `createVaultEntryServices`, and a three-line view reach the entry over a real socket and in-process through the production adapters, and the file typechecks. A view of a new interface still needs a factory in `createVaultClients` and a field on `IRegisteredVault` ([`vault-registry.md`](./vault-registry.md)) for the tools to reach it. `daemon status` needs nothing: in-process clients are not connections, and the daemon's connections are counted as before.
 
 ## How a remote embedding provider would fit
 

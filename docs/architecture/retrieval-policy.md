@@ -252,5 +252,5 @@ Path_prefix-only filters use a fast-path inside `listMatchingPaths` that calls `
 
 - The policy does not validate inputs (the tool handler does that).
 - The policy does not know about MCP, error codes, or response envelopes. It returns a plain object; the layer above wraps it.
-- The policy does not assume the corpus is in memory or in this process. It reads through `ICorpusReader` — the daemon facade or the in-process vault entry, and a hosted store would be one more implementation — and the same pipeline applies to each; only the cost shape changes.
+- The policy does not assume the corpus is in memory or in this process. It reads through `ICorpusReader` — a view over the vault's client, served by the daemon's vault entry or the in-process one, and a hosted store would be one more implementation — and the same pipeline applies to each; only the cost shape changes.
 - The policy does not handle structural filtering — that is a pre-step in the tool handler.
