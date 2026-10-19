@@ -33,7 +33,7 @@ Parallelism: groups 1 and 2 are parallel-safe with each other (protocol + daemon
 ## 6. PR 1 docs, ADR, gates, PR (sequential after 5)
 
 - [x] 6.1 ADR-0021 and its `INDEX.md` row; `GLOSSARY.md` "vault client"; `docs/architecture/shared-daemon.md` (session-side facades, how a new service attaches), `semantic-backend.md`, `vault-entry.md`, `module-structure.md`, `vault-registry.md` updated for what PR 1 changed (design D11).
-- [ ] 6.2 `npm test`, `npm run lint`, `npm run typecheck`, `npm run format`, `npm run build`; `npx commitlint --from origin/main --to HEAD`; PR with `Refs #193`; pause and report.
+- [x] 6.2 `npm test`, `npm run lint`, `npm run typecheck`, `npm run format`, `npm run build`; `npx commitlint --from origin/main --to HEAD`; PR with `Refs #193`; pause and report.
 
 ## 7. The lexical reader as a view (PR 2; parallel-safe with 8)
 
