@@ -47,6 +47,19 @@ export type ParsedCli =
   | { kind: 'daemon'; options: DaemonCliOptions }
   | { kind: 'handled' };
 
+/**
+ * An argv error yargs has already reported. When parsing fails, yargs writes
+ * the usage text and then the message to stderr itself, and with
+ * `.exitProcess(false)` rejects with that same message instead of exiting. The
+ * entrypoint sets the exit code for this error but does not print it again.
+ */
+export class ReportedArgvError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = 'ReportedArgvError';
+  }
+}
+
 function buildVaultConfig(rawPath: string): IVaultConfig {
   if (!path.isAbsolute(rawPath)) {
     throw new Error(`--vault: path must be absolute, got "${rawPath}"`);
@@ -178,7 +191,7 @@ function readDaemonAction(raw: unknown): DaemonCliOptions['action'] {
 }
 
 export async function parseConfig(argv: string[]): Promise<ParsedCli> {
-  const args = await yargs(hideBin(argv))
+  const parser = yargs(hideBin(argv))
     .scriptName('neuro-vault-mcp')
     .usage('$0 --vault <path> [--vault <path> ...]\n\nMCP server for one or more Obsidian vaults.')
     .command('$0', 'Run the MCP server over stdio (default)', (y) =>
@@ -213,8 +226,15 @@ export async function parseConfig(argv: string[]): Promise<ParsedCli> {
     .strict()
     .help()
     .version(packageMeta.version)
-    .exitProcess(false)
-    .parse();
+    .exitProcess(false);
+
+  let args: Awaited<ReturnType<typeof parser.parse>>;
+  try {
+    args = await parser.parse();
+  } catch (error) {
+    // Every rejection of parse() went through yargs' fail path, which printed it.
+    throw new ReportedArgvError(error);
+  }
 
   // yargs already satisfied this invocation by printing help or the version.
   // `.exitProcess(false)` means it did not exit for us, so stop here — running
