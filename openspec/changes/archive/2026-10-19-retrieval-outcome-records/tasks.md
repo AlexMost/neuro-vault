@@ -19,12 +19,12 @@ Parallelism: groups 1 → 2 → 3 → 4 are sequential (each rewrites files the 
 
 ## 4. Eval runs the shared pipeline (tail PR)
 
-- [ ] 4.1 `PipelineCandidate` carries the fused `score`
-- [ ] 4.2 `rankFused` invokes `runRetrievalPipeline` (deep, threshold 0, profile floor, cap = top-k, admit-all existence filter); `evalConfig` reads `EFFORT_PROFILES.deep` / `LEXICAL_PER_NOTE_CAP`; drop the restating comment in `effort-profiles.ts`
-- [ ] 4.3 Delete `test/eval/production-fusion-pin.test.ts`; adjust `test/eval/pipelines.test.ts` to the new wiring
-- [ ] 4.4 `npm run eval` (semantic + fused) after; compare per-query top lists with the baseline in verify.md
+- [x] 4.1 `PipelineCandidate` carries the fused `score`
+- [x] 4.2 `rankFused` invokes `runRetrievalPipeline` (deep, threshold 0, profile floor, cap = top-k, admit-all existence filter); `evalConfig` reads `EFFORT_PROFILES.deep` / `LEXICAL_PER_NOTE_CAP`; drop the restating comment in `effort-profiles.ts`
+- [x] 4.3 Delete `test/eval/production-fusion-pin.test.ts`; adjust `test/eval/pipelines.test.ts` to the new wiring
+- [x] 4.4 `npm run eval` (semantic + fused) after; compare per-query top lists with the baseline in verify.md
 
 ## 5. Docs and close-out (tail PR)
 
-- [ ] 5.1 Sweep `docs/architecture/retrieval-policy.md`, `rank-fusion.md`, `module-structure.md`, the docs map, `eval/README.md` and every `docs/guide/` mention of `assembleUnified`, the pin, `buildQueryStats` or the restated eval numbers
-- [ ] 5.2 verify.md, retrospective.md, `openspec archive` (specs synced), PR with `Closes #110` and `Closes #109`
+- [x] 5.1 Sweep `docs/architecture/retrieval-policy.md`, `rank-fusion.md`, `module-structure.md`, the docs map, `eval/README.md` and every `docs/guide/` mention of `assembleUnified`, the pin, `buildQueryStats` or the restated eval numbers
+- [x] 5.2 verify.md, retrospective.md, `openspec archive` (specs synced), PR with `Closes #110` and `Closes #109`

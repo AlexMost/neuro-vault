@@ -9,6 +9,8 @@ The codebase is organized into two modules under `src/modules/`:
 - `semantic/` — search and similarity over the vault — 3 tools. Hosts hybrid `search_notes` (a semantic leg composed over the vault's own corpus, whose reads the shared daemon serves — see [`semantic-backend.md`](./semantic-backend.md) — plus a lexical leg via `src/lib/obsidian/lexical/`, whose cache lives in the same vault entry and which needs no embeddings — see [`lexical-search.md`](./lexical-search.md)), `get_similar_notes`, and `find_duplicates`
 - `operations/` — direct vault operations — 10 tools, grouped as note body (`read_notes`, `create_note`, `edit_note`, `read_daily`), structured queries (`query_notes`), frontmatter properties (`set_property`, `remove_property`), tags (`list_tags`), and vault overview (`get_vault_overview`)
 
+Inside `semantic/`, `search_notes` is layered so each step is one file: `tools/search-notes.ts` validates the request, pins the backend status and shapes the MCP payload; `retrieval-pipeline.ts` (`runRetrievalPipeline`) runs the semantic leg (`retrieval-policy.ts`) and the lexical leg, fuses them (`rank-fusion.ts`), and returns the candidates with one outcome record per leg; `search-observability.ts` (`deriveObservability`) is the pure step from those records to `truncated`, `semantic_status`, `query_stats` and the stderr warning. `effort-profiles.ts` holds the quick/deep pool numbers every layer reads. The retrieval eval harness (`eval/`) calls `runRetrievalPipeline` directly. See [`retrieval-policy.md`](./retrieval-policy.md#leg-outcome-records-and-observability) and [`rank-fusion.md`](./rank-fusion.md).
+
 Each module exports `createXModule(config, deps) → { tools: ToolRegistration[], resources: ResourceRegistration[], warmup? }`. `src/server.ts` aggregates registrations from enabled modules and registers them with the underlying `McpServer`. Modules also expose `resources: ResourceRegistration[]`. Operations exposes one — `vault://overview`, a JSON snapshot of vault structure backed by the same `computeVaultOverview` function that powers the `get_vault_overview` tool. Semantic exposes no resources today. A module with no resources returns an empty array.
 
 ## Why it exists
@@ -61,7 +63,7 @@ flowchart LR
         subgraph Semantic[Semantic module]
             direction TB
             Backend[Semantic backend<br/>view over the vault client:<br/>daemon, or in-process loopback]
-            Retrieval[Retrieval policy<br/>effort: quick / deep]
+            Retrieval[Retrieval pipeline<br/>legs + RRF, effort: quick / deep]
             Embed["Embedding service<br/>model profile (--model)"]
             Lexical["Lexical reader<br/>daemon by default,<br/>in-process entry with --no-shared,<br/>own cache with --no-semantic"]
         end

@@ -2,12 +2,11 @@ import type { SearchEffort } from './types.js';
 
 /**
  * The single source of the quick/deep retrieval profile's model-independent
- * knobs. Retrieval-policy defaults, the pipeline's pool caps, and the
- * search_notes description prose all read this file, so a retune here reaches
- * every one of them. The similarity thresholds are not here: they depend on
- * the embedding model's score scale, so they live on `ModelProfile.similarity`.
- * (The eval config under `eval/` still restates these numbers as literals — it
- * is not yet wired to this file.)
+ * knobs. Retrieval-policy defaults, the pipeline's pool caps, the
+ * search_notes description prose and the eval report's `config` all read this
+ * file, so a retune here reaches every one of them. The similarity thresholds
+ * are not here: they depend on the embedding model's score scale, so they live
+ * on `ModelProfile.similarity`.
  */
 export interface EffortProfile {
   /** Semantic-leg seed pool (retrieval-policy `limit`). */

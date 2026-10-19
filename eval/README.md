@@ -2,10 +2,10 @@
 
 An offline tool that measures the ranking pipeline's retrieval quality against
 a hand-curated golden set. It runs as a plain script — no MCP client, no
-running server — by importing the production ranking modules directly
-(`executeRetrieval`, `flattenExpansion`, `fuseRanks`) and the standalone
-lexical reader (`createStandaloneLexicalReader`, a `LexicalIndex` over the
-vault's reader with the eval's graph), calling them the way `search_notes` does. It exists to replace "judge a
+running server — by calling the production retrieval pipeline directly
+(`runRetrievalPipeline`, the one `search_notes` calls) over the vault's loaded
+corpus and the standalone lexical reader (`createStandaloneLexicalReader`, a
+`LexicalIndex` over the vault's reader with the eval's graph). It exists to replace "judge a
 ranking change by hand-running a few queries" with a repeatable number: every
 RRF weight (`EXPANSION_WEIGHT`, pool sizes, adaptive `k`) was hand-picked and
 can only be re-tuned against measured data.
@@ -146,18 +146,20 @@ reports on `--pipeline semantic` (see [Scoring](#scoring)).
 - **`--pipeline`** — the ranking method.
   - `semantic` — embed the query, rank by pure embedding similarity
     (`corpus.nearest` over the loaded corpus, threshold 0, top 10).
-  - `fused` — the production RRF pipeline, run at deep effort: `executeRetrieval`
-    (semantic leg at threshold 0, pool 8; expansion leg on, per-seed limit 3,
-    expansion floor from the selected profile) + the standalone lexical reader
-    (`createStandaloneLexicalReader`)
-    (note cap 10, per-note cap 3, real wikilink-graph backlink tie-break) +
-    `flattenExpansion` + `fuseRanks` (expansion weight 0.85). This is the same
-    sequence `search_notes` calls internally to assemble its unified list,
-    minus the MCP response envelope — so a `fused` eval run measures the real
-    production ordering, not a reimplementation of it. That claim is pinned:
-    `test/eval/production-fusion-pin.test.ts` ranks one query both ways over a
-    fixture vault and asserts the two path orders are identical, so a change
-    to production's fusion that the harness doesn't follow fails the suite.
+  - `fused` — the production RRF pipeline itself: `runRetrievalPipeline`, the
+    function `search_notes` calls, at deep effort — semantic leg at threshold 0,
+    expansion on with the selected profile's expansion floor, the standalone
+    lexical reader (`createStandaloneLexicalReader`) with its real
+    wikilink-graph backlink tie-break, RRF fusion, and the merged list capped
+    at top 10. The pool sizes come from `EFFORT_PROFILES.deep` and
+    `LEXICAL_PER_NOTE_CAP` (`src/modules/semantic/effort-profiles.ts`), the
+    same values the pipeline reads, so the pool numbers the report's `config`
+    records cannot drift from the run. The existence filter admits every path: eval ranks the corpus as
+    loaded. A `fused` run measures the production ordering because it is the
+    production code path, minus the MCP response envelope — there is no
+    reimplementation to keep in sync. One difference is deliberate: where
+    `search_notes` degrades a failed semantic leg to lexical-only matches, eval
+    fails the run, so a lexical-only ranking is never reported as `fused`.
 
 ## Scoring
 

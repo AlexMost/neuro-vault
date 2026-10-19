@@ -6,6 +6,7 @@ import {
   type RetrievalPipelineDeps,
   type RetrievalPipelineInput,
 } from '../../src/modules/semantic/retrieval-pipeline.js';
+import { flattenExpansion, fuseRanks } from '../../src/modules/semantic/rank-fusion.js';
 import { corpusOver } from '../_memory-corpus.js';
 import type { SmartSource } from '../../src/modules/semantic/types.js';
 import { TEST_SIMILARITY } from '../_identity.js';
@@ -91,6 +92,28 @@ describe('runRetrievalPipeline', () => {
     );
     expect(result.semantic).toMatchObject({ status: 'ran', perQueryHits: { quirkyterm: 8 } });
     expect(result.lexical).toMatchObject({ status: 'ran', perQueryCounts: { quirkyterm: 2 } });
+  });
+
+  it('carries each candidate’s fuseRanks score, best first', async () => {
+    const result = await runRetrievalPipeline({ ...DEEP }, makeDeps());
+    const byPath = new Map(result.candidates.map((c) => [c.path, c]));
+    // All 11 notes fit under deep's merged cap, so the seeds (n0..n7 by geometry) are all here.
+    const seeds = Array.from({ length: 8 }, (_, i) => byPath.get(notePath(i))?.semantic);
+    expect(seeds.every((s) => s !== undefined)).toBe(true);
+    const seedNodes = seeds.filter((s) => s !== undefined);
+    const expected = fuseRanks({
+      sources: {
+        semantic: seedNodes.map((n) => n.path),
+        lexical: [LEXICAL_ONLY, notePath(9)],
+        expansion: flattenExpansion(seedNodes).map((e) => e.path),
+      },
+      totalNotes: NOTE_COUNT + 1,
+    });
+    expect(result.candidates.map((c) => ({ path: c.path, score: c.score }))).toEqual(
+      expected.map((c) => ({ path: c.path, score: c.score })),
+    );
+    const scores = result.candidates.map((c) => c.score);
+    expect(scores).toEqual([...scores].sort((a, b) => b - a));
   });
 
   it('reports the lexical leg as a ran record with its counts', async () => {

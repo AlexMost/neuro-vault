@@ -6,7 +6,7 @@ This document covers the **semantic leg** of `search_notes` only. The lexical le
 
 ## What it is
 
-`src/modules/semantic/retrieval-policy.ts` exports a single function, `executeRetrieval(input)`, that takes `queries: string[]` and runs one pipeline over it — there is no separate single-query entry point. A single-query call is the degenerate case of the array form: the tool handler always wraps a scalar `query` into a one-element array before calling in (`src/modules/semantic/tools/search-notes.ts:313-321` — `queries = [normalizeQuery(input.query)]` when `input.query` is a string), and the policy itself has no branch on array length. Query arity is a surfacing concern the tool layer decides afterwards (whether `matched_queries` and `query_stats` reach the MCP response), not a retrieval-path concern.
+`src/modules/semantic/retrieval-policy.ts` exports a single function, `executeRetrieval(input)`, that takes `queries: string[]` and runs one pipeline over it — there is no separate single-query entry point. A single-query call is the degenerate case of the array form: the tool handler always wraps a scalar `query` into a one-element array before calling `runRetrievalPipeline`, which hands that array to the policy unchanged (`src/modules/semantic/tools/search-notes.ts` — `queries = [normalizeQuery(input.query)]` when `input.query` is a string), and the policy itself has no branch on array length. Query arity is a surfacing concern the tool layer decides afterwards (whether `matched_queries` and `query_stats` reach the MCP response), not a retrieval-path concern.
 
 The pipeline:
 
@@ -95,7 +95,7 @@ for each query:
   neighbors = hits[q].slice(0, limit)
 ```
 
-`embeddingProvider.embedQuery(query)` and every corpus read are called directly, with no `try`/`catch` anywhere in this file (`retrieval-policy.ts` has none) — if any one query's embed call rejects, the surrounding `Promise.all` (`retrieval-policy.ts:142-144`) rejects too, and so does a corpus read that fails (a daemon that did not answer, a corpus that stopped serving); the whole `executeRetrieval` call throws: there is no partial result and no per-query error isolation. The policy lets that rejection bubble all the way up. Its one caller, `runRetrievalPipeline` (`retrieval-pipeline.ts`, run by `search_notes`), wraps `executeRetrieval` and the existence check in one `try` whose `catch` **degrades rather than throws**: the lexical matches are already in hand, so the call returns them, writes the cause to stderr, and reports a `semantic_status` that describes that response ([`semantic-backend.md`](./semantic-backend.md#who-reads-the-state)). The lexical leg gets no such cushion: it is the leg the semantic one degrades to, so a failing reader (`LexicalSearchError`) is not caught here and `search_notes` reports it as `DEPENDENCY_ERROR`.
+`embeddingProvider.embedQuery(query)` and every corpus read are called directly, with no `try`/`catch` anywhere in this file (`retrieval-policy.ts` has none) — if any one query's embed call rejects, the surrounding `Promise.all` (`retrieval-policy.ts:142-144`) rejects too, and so does a corpus read that fails (a daemon that did not answer, a corpus that stopped serving); the whole `executeRetrieval` call throws: there is no partial result and no per-query error isolation. The policy lets that rejection bubble all the way up. Its one caller, `runRetrievalPipeline` (`retrieval-pipeline.ts`, run by `search_notes`), wraps `executeRetrieval` and the existence check in one `try` whose `catch` **degrades rather than throws**: the lexical matches are already in hand, so the call returns them with the semantic leg recorded as `failed` (carrying the error), and `deriveObservability` turns that record into the stderr warning and a `semantic_status` that describes that response ([Leg outcome records](#leg-outcome-records-and-observability) below; [`semantic-backend.md`](./semantic-backend.md#who-reads-the-state)). The lexical leg gets no such cushion: it is the leg the semantic one degrades to, so a failing reader (`LexicalSearchError`) is not caught here and `search_notes` reports it as `DEPENDENCY_ERROR`.
 
 `threshold` and `explicitThreshold` are computed once for the whole call (`input.threshold !== undefined`), not per query — every query in the array is filtered by the same threshold value:
 
@@ -104,7 +104,7 @@ for each query:
 
 Each query over-fetches `limit + 1` neighbours (`retrieval-policy.ts:147,157`) so a per-query pool overflow is observable via `neighbors.length > limit`, then is immediately sliced back to `limit` (`retrieval-policy.ts:169-170`) — `neighbors` (and therefore `per_query_hits` and the merge step below) keep exactly `limit`-bounded semantics; `overflow` is the only extra signal carried out of this step.
 
-`per_query_hits: Record<string, number>` and `per_query_fallback: Record<string, boolean>` (built at `retrieval-policy.ts:175-180`) record, per query, the post-slice hit count and whether that query's hits came from the fallback retry — `true` only when the retry fired and returned something for that query, always `false` for an explicit threshold. The tool layer surfaces a `true` entry as `semantic_fallback: true` in that query's `query_stats` object; `false` entries surface as an absent key — see [`docs/guide/finding-notes.md`](../guide/finding-notes.md#query_stats-array-queries-only).
+`per_query_hits: Record<string, number>` and `per_query_fallback: Record<string, boolean>` (built at `retrieval-policy.ts:175-180`) record, per query, the post-slice hit count and whether that query's hits came from the fallback retry — `true` only when the retry fired and returned something for that query, always `false` for an explicit threshold. `deriveObservability` surfaces a `true` entry as `semantic_fallback: true` in that query's `query_stats` object; `false` entries surface as an absent key — see [`docs/guide/finding-notes.md`](../guide/finding-notes.md#query_stats-array-queries-only).
 
 ## Step 2 — Merge across queries and cap to `limit`
 
@@ -228,6 +228,19 @@ The thresholds were set so that each profile treats the same share of the vault 
 
 `deep` and `similarNotes` come from the far tail of their populations (the bge-micro-v2 defaults cut 0.09 % and 0.03 %), so their calibrated values rest on a few dozen and a few hundred extreme pairs and move with them. Calibration ran on a single vault with a 25-query golden set (21 `ua`, 4 `en`); another vault will see somewhat different absolute scores, which is why every default stays overridable per call (`threshold`, `expansion_floor`).
 
+## Leg outcome records and observability
+
+`executeRetrieval` is one leg; `runRetrievalPipeline` (`src/modules/semantic/retrieval-pipeline.ts`) runs it beside the lexical leg, fuses them ([`rank-fusion.md`](./rank-fusion.md)), and returns the fused candidates — each with its fused `score` and per-leg evidence — plus one **outcome record per leg**, the single account of which legs ran and what survived:
+
+| Record | Variants |
+| --- | --- |
+| `semantic` | `skipped` (the caller opted out — `mode: "lexical"`, a non-`ready` pinned status — the vault has no corpus, or an empty allowed set, which skips both legs) · `failed` with the `error` (the leg threw; the response degrades to lexical-only) · `ran` with `perQueryHits`, `perQueryFallback` and its own pool `truncated` |
+| `lexical` | `skipped` (an empty allowed set) · `ran` with `perQueryCounts`, `perQueryTokenCounts`, `totalNotes` and its own note-cap `truncated` |
+
+The lexical record has no `failed` variant: the lexical leg is what a semantic failure degrades to, so its failure throws `LexicalSearchError` and fails the vault instead. The pipeline's top-level `truncated` is the merged cap's cut only; each leg's pool cut stays on its own record. The tool still decides whether the semantic leg should run — that is request policy — and the records report what happened given that decision.
+
+`deriveObservability` (`src/modules/semantic/search-observability.ts`) is a pure function from those records, plus the backend status `search_notes` pinned before the legs ran, to every observability field of one vault's payload: `truncated` (the merged cut OR either leg's pool cut), `semantic_status` (the pinned status, or the status a `CorpusNotReadyError` carries when the leg failed on one, or `unavailable` for any other failure), `query_stats` for an array query (`semantic: null` whenever the semantic leg did not run), and the stderr `warning` for a failed leg. It owns `SemanticStatusField`, `QueryStatsEntry` and every note sentence, so `search_notes` makes one pipeline call, one `deriveObservability` call, and has one return. The retrieval eval harness calls the same `runRetrievalPipeline` ([`eval/README.md`](../../eval/README.md#axis-pipeline)), so a `fused` eval run measures this code path, not a copy of it.
+
 ## Stale-path filtering
 
 The corpus is kept current by the vault entry's watcher, but only after its debounce settles and only while no reconcile is already in flight (see [`vault-entry.md`](./vault-entry.md)) — so a corpus-derived path is a claim about the index, not a promise about the filesystem. When a file is moved or deleted between reconciles, a corpus read can still return a path that no longer exists on disk. The MCP `search_notes`, `get_similar_notes`, and `find_duplicates` handlers post-filter results through `entry.filterExisting(paths)` and drop entries (and duplicate pairs) whose paths are missing.
@@ -244,7 +257,7 @@ That filter is one per-vault adapter (`src/lib/obsidian/existing-paths.ts`), bou
 
 When `search_notes` receives a `filter` parameter, the tool handler computes an allowed-paths set via `listMatchingPaths(filter)` (lib/obsidian/query), and `runRetrievalPipeline` passes it to `executeRetrieval` as `allowed`. The policy hands `allowed` to every `nearest` read — the seeds, the fallback retry and the expansion — and the corpus applies it to every candidate before any `limit`, so a filter can never leave a list short. Block reads need no `allowed`: they are scoped to the seeds, which already passed it.
 
-Empty allowed set short-circuits to an empty result without invoking `embeddingProvider.embedQuery` or any corpus read. Errors from `listMatchingPaths` map as: `INVALID_FILTER` → `INVALID_ARGUMENT`; anything else → `DEPENDENCY_ERROR`.
+An empty allowed set short-circuits inside `runRetrievalPipeline` to an empty result with both legs recorded as `skipped`, without invoking `embeddingProvider.embedQuery`, any corpus read or the lexical reader. Errors from `listMatchingPaths` map as: `INVALID_FILTER` → `INVALID_ARGUMENT`; anything else → `DEPENDENCY_ERROR`.
 
 Path_prefix-only filters use a fast-path inside `listMatchingPaths` that calls `vaultReader.scan({ pathPrefix })` and skips frontmatter reads entirely. The paths that scan returns are already scope-filtered — every result runs through the vault's `VaultScope.isExcluded` predicate, prefixed scans included — so the fast-path needs no exclusion logic of its own. See [`vault-scope.md`](vault-scope.md).
 
