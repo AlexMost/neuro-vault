@@ -135,9 +135,10 @@ The decisions are in `brainstorm.md` (Q1–Q13), made by this session on the evi
     /** Releases what this client built on its own; the connection and the entries are the process's. */
     dispose(): Promise<void>;
   }
-  export const VAULT_CALL_TIMEOUTS: { readonly default: 30_000; 'vault.attach': 10_000; 'vault.status': 10_000 };
   export function createLinkedVaultClient(opts: { link: IVaultLink; attachment: IVaultAttachment }): IVaultClient;
   ```
+
+  The timeouts live in `vault-client/timeouts.ts` (`VAULT_CALL_TIMEOUTS`: `default` 30 s, `vault.attach` and `vault.status` 10 s; `timeoutOf(method)`), one home shared by the attachment and the core; a new row needs no entry.
 
   The core over one link:
   - `call`: `await attachment.key()`, then `link.request(method, { ...params, vault: key }, timeout)`; a `DaemonRpcError` `NOT_ATTACHED` forgets the attach; every failure is rethrown as is.
