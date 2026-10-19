@@ -42,7 +42,7 @@ Parallelism: groups 1 and 2 are parallel-safe with each other (protocol + daemon
 
 ## 8. The embedding handshake on the epoch gate (PR 2; parallel-safe with 7)
 
-- [ ] 8.1 `DaemonEmbeddingProvider.handshake` runs on `createEpochGate` (commit: the batch size, on the epoch it ran on); `test/semantic/daemon-embedding-provider*` unchanged and passing, plus one test that a handshake answered on a replaced epoch commits nothing.
+- [x] 8.1 `DaemonEmbeddingProvider.handshake` runs on `createEpochGate` (commit: the batch size, on the epoch it ran on); `test/semantic/daemon-embedding-provider*` unchanged and passing, plus one test that a handshake answered on a replaced epoch commits nothing.
 
 ## 9. PR 2 docs sweep, verify, archive, PR (sequential after 7, 8)
 

@@ -8,6 +8,7 @@ import type { EmbeddingIdentity } from '../../lib/obsidian/corpus/types.js';
 import type { ISharedServices } from './shared-services.js';
 import { identityOf, type ModelProfile } from '../../lib/model-profiles.js';
 import type { EmbeddingProvider } from './types.js';
+import { createEpochGate, type IEpochGate } from './vault-client/epoch-gate.js';
 
 export const REQUEST_TIMEOUTS = {
   /** The first load downloads the weights: minutes, not seconds. */
@@ -40,6 +41,9 @@ function isPositiveInteger(value: unknown): value is number {
  * `embed.initialize` goes out first on every new connection, whatever the
  * call: it makes the connection one of the daemon's clients at once (which
  * holds off its idle exit), loads the profile, and refreshes the batch size.
+ * It runs on an epoch gate, as a vault's attach does: concurrent calls share
+ * one handshake per connection, and an answer that lands after a reconnect
+ * records no batch size, so the new connection handshakes again.
  *
  * Fallback is the services' one-way switch per process (design D11). Once the
  * daemon could not be located or started, `services.ensure()` answers `local`
@@ -54,12 +58,24 @@ export class DaemonEmbeddingProvider implements EmbeddingProvider {
   readonly identity: EmbeddingIdentity;
   private daemonBatchSize: number;
   private fallback?: EmbeddingProvider;
-  private handshakeEpoch = -1;
-  private handshaking?: Promise<void>;
+  /** `embed.initialize` once per connection epoch. */
+  private readonly handshake: IEpochGate;
 
   constructor(private readonly deps: DaemonEmbeddingProviderDeps) {
     this.identity = identityOf(deps.profile);
     this.daemonBatchSize = deps.initialMaxBatchSize;
+    this.handshake = createEpochGate(
+      deps.services.connection,
+      () =>
+        deps.services.connection.request<EmbedInitializeResult>(
+          'embed.initialize',
+          { profile: deps.profile.key },
+          REQUEST_TIMEOUTS.initialize,
+        ),
+      (result) => {
+        if (isPositiveInteger(result.max_batch_size)) this.daemonBatchSize = result.max_batch_size;
+      },
+    );
   }
 
   get maxBatchSize(): number {
@@ -123,28 +139,8 @@ export class DaemonEmbeddingProvider implements EmbeddingProvider {
     if (this.fallback) return viaFallback(this.fallback);
     // The switch is the services': it flips once for every facade of the process.
     if ((await this.deps.services.ensure()) === 'local') return viaFallback(this.localProvider());
-    await this.handshake();
+    await this.handshake.pass();
     return viaDaemon();
-  }
-
-  /** `embed.initialize` once per connection; concurrent callers share it. */
-  private handshake(): Promise<void> {
-    const epoch = this.deps.services.connection.epoch;
-    if (this.handshakeEpoch === epoch) return Promise.resolve();
-    this.handshaking ??= this.deps.services.connection
-      .request<EmbedInitializeResult>(
-        'embed.initialize',
-        { profile: this.deps.profile.key },
-        REQUEST_TIMEOUTS.initialize,
-      )
-      .then((result) => {
-        if (isPositiveInteger(result.max_batch_size)) this.daemonBatchSize = result.max_batch_size;
-        this.handshakeEpoch = epoch;
-      })
-      .finally(() => {
-        this.handshaking = undefined;
-      });
-    return this.handshaking;
   }
 
   private localProvider(): EmbeddingProvider {
