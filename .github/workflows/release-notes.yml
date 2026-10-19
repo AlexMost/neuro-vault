@@ -18,6 +18,10 @@ jobs:
   publish:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
+    env:
+      # Skip onnxruntime-node's CUDA provider download (linux/x64 postinstall);
+      # this job never loads a model. See ci.yml.
+      ONNXRUNTIME_NODE_INSTALL: skip
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

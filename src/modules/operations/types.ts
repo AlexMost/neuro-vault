@@ -14,7 +14,6 @@ export type OperationsErrorCode =
   | 'NOTE_EXISTS'
   | 'PATH_NOT_FOUND'
   | 'PROPERTY_NOT_FOUND'
-  | 'UNSUPPORTED_VALUE_TYPE'
   | 'READ_FAILED'
   | 'WRITE_FAILED'
   | 'AMBIGUOUS_MATCH'

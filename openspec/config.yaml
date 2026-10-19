@@ -10,7 +10,7 @@ context: |
   cosine search over an embedding corpus the server builds and owns) and
   **direct vault operations** (notes, frontmatter properties, tags, structured
   queries).
-  TypeScript, ESM, Node ≥ 20; consumed over stdio by MCP clients (Claude Code,
+  TypeScript, ESM, Node ≥ 20.19; consumed over stdio by MCP clients (Claude Code,
   Cursor, Windsurf). Two modules: `semantic/` (4 tools) and `operations/`
   (12 tools).
 
