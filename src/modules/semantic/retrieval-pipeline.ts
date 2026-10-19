@@ -40,7 +40,10 @@ export interface PipelineCandidate {
   expansion?: ExpansionCandidate;
 }
 
-/** What happened to the semantic leg: never ran, ran and produced hits, or threw. */
+/**
+ * What happened to the semantic leg: never ran, threw, or ran — with its pre-cap per-query
+ * counts and whether its own pool cap dropped candidates (`truncated`).
+ */
 export type SemanticLegOutcome =
   | { status: 'skipped' }
   | { status: 'failed'; error: unknown }
@@ -48,18 +51,35 @@ export type SemanticLegOutcome =
       status: 'ran';
       perQueryHits: Record<string, number>;
       perQueryFallback: Record<string, boolean>;
+      truncated: boolean;
     };
 
-/** The fused candidate list plus enough per-leg provenance to build a caller-facing response. */
+/**
+ * What happened to the lexical leg: never ran (a filter that matched no notes), or ran — with
+ * its pre-cap per-query counts and whether its note cap dropped candidates (`truncated`). It
+ * has no `failed` variant: the lexical leg is what a semantic failure degrades to, so its
+ * failure fails the search, and `runRetrievalPipeline` throws `LexicalSearchError` instead.
+ */
+export type LexicalLegOutcome =
+  | { status: 'skipped' }
+  | {
+      status: 'ran';
+      perQueryCounts: Record<string, number>;
+      perQueryTokenCounts: Record<string, Record<string, number>>;
+      totalNotes: number;
+      truncated: boolean;
+    };
+
+/**
+ * The fused candidate list and one outcome record per leg — the single account of which legs
+ * ran and what survived. `truncated` is the merged cap's cut only; each leg's pool cut lives
+ * on its own record.
+ */
 export interface RetrievalPipelineResult {
   candidates: PipelineCandidate[];
   truncated: boolean;
   semantic: SemanticLegOutcome;
-  lexical: {
-    perQueryCounts: Record<string, number>;
-    perQueryTokenCounts: Record<string, Record<string, number>>;
-    totalNotes: number;
-  };
+  lexical: LexicalLegOutcome;
 }
 
 export async function runRetrievalPipeline(
@@ -68,6 +88,16 @@ export async function runRetrievalPipeline(
 ): Promise<RetrievalPipelineResult> {
   const profile = EFFORT_PROFILES[input.effort];
   const cap = input.cap ?? profile.mergedCap;
+
+  // A filter that matched no notes leaves neither leg anything to read.
+  if (input.allowed?.size === 0) {
+    return {
+      candidates: [],
+      truncated: false,
+      semantic: { status: 'skipped' },
+      lexical: { status: 'skipped' },
+    };
+  }
 
   // The lexical leg always runs — it is what a semantic failure degrades to.
   const lexical = await deps.lexical.search({
@@ -78,7 +108,6 @@ export async function runRetrievalPipeline(
   });
 
   let semanticNodes: NoteResultNode[] = [];
-  let semanticTruncated = false;
   let semantic: SemanticLegOutcome = { status: 'skipped' };
   if (input.semantic && deps.corpus !== undefined) {
     try {
@@ -110,11 +139,11 @@ export async function runRetrievalPipeline(
       semanticNodes = leg.results
         .filter((n) => existing.has(n.path))
         .map((n) => ({ ...n, related: n.related.filter((rel) => existing.has(rel.path)) }));
-      semanticTruncated = leg.truncated;
       semantic = {
         status: 'ran',
         perQueryHits: leg.per_query_hits,
         perQueryFallback: leg.per_query_fallback,
+        truncated: leg.truncated,
       };
     } catch (error) {
       semanticNodes = [];
@@ -148,12 +177,14 @@ export async function runRetrievalPipeline(
 
   return {
     candidates,
-    truncated: fused.length > cap || lexical.truncated || semanticTruncated,
+    truncated: fused.length > cap,
     semantic,
     lexical: {
+      status: 'ran',
       perQueryCounts: lexical.perQueryCounts,
       perQueryTokenCounts: lexical.perQueryTokenCounts,
       totalNotes: lexical.totalNotes,
+      truncated: lexical.truncated,
     },
   };
 }

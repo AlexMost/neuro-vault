@@ -244,6 +244,36 @@ describe('searchNotes', () => {
     }
   });
 
+  it('reports a failed semantic leg as one that did not run in query_stats', async () => {
+    const notePath = 'Notes/a.md';
+    const { deps, cleanup } = await makeLexicalVault(
+      { [notePath]: 'нотатка про пошук' },
+      { sources: sourcesWithEmbeddingFor(notePath, [1, 0]) },
+    );
+    try {
+      const entry = deps.registry.list()[0];
+      entry.backend = {
+        ...entry.backend!,
+        nearest: vi.fn().mockRejectedValue(new Error('shard broken')),
+      };
+      const reg = registerTool(buildSearchNotesTool({ ...deps, warn: vi.fn() }));
+
+      const result = await callTool<SearchNotesOutput>(reg, { query: ['пошук', 'нема'] });
+
+      expect(result.semantic_status.state).toBe('unavailable');
+      expect(result.query_stats).toEqual({
+        пошук: { semantic: null, lexical: 1 },
+        нема: {
+          semantic: null,
+          lexical: 0,
+          note: 'No hits in any leg that ran — rephrase or drop this variant.',
+        },
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('a status timeout degrades to lexical with unavailable', async () => {
     // The real daemon backend over a connection whose `vault.status` never
     // answers in time: one search degrades, and the next one asks again.
@@ -1142,25 +1172,6 @@ describe('searchNotes', () => {
 });
 
 describe('semantic_status', () => {
-  it('reports a ready backend with no counters', async () => {
-    const result = await runSearch({ backendStatus: { state: 'ready' }, input: { query: 'x' } });
-    expect(result.semantic_status).toEqual({ state: 'ready' });
-  });
-
-  it('carries no note when the backend is ready', async () => {
-    const result = await runSearch({ backendStatus: { state: 'ready' }, input: { query: 'x' } });
-    expect(result.semantic_status).not.toHaveProperty('note');
-  });
-
-  it.each(['disabled', 'unavailable'] as const)(
-    'explains a %s state on the response itself',
-    async (state) => {
-      const result = await runSearch({ backendStatus: { state }, input: { query: 'x' } });
-      expect(result.semantic_status.note).toMatch(/semantic leg did not run/i);
-      expect(result.semantic_status.note).toMatch(/lexical-only/i);
-    },
-  );
-
   it('reports progress while indexing and still returns lexical matches', async () => {
     // `makeLexicalVault` writes a real on-disk body and wires a real
     // `FsVaultReader` (unlike `runSearch`'s fixture, which always writes an
@@ -1229,7 +1240,7 @@ describe('semantic_status', () => {
     }
   });
 
-  it('reports the state on the empty-filter early return', async () => {
+  it('reports the state when the filter matches no notes', async () => {
     const result = await runSearch({
       backendStatus: { state: 'disabled' },
       allowed: new Set<string>(),
@@ -1483,29 +1494,6 @@ describe('search_notes advertised description', () => {
     const shape = JSON.stringify(spec.inputSchema);
     expect(shape).toMatch(/threshold/);
     expect(shape).toMatch(/expansion_floor/);
-  });
-});
-
-describe('query_stats fallback note', () => {
-  it('names the active profile’s fallback threshold', async () => {
-    // Hits at 0.45: below the quick default (0.5), above this profile's 0.42
-    // fallback, so the leg's hits exist only because the retry ran.
-    const { deps, cleanup } = await makeLexicalVault(
-      { 'note.md': 'зміст' },
-      { sources: sourcesScoring([{ path: 'note.md', similarity: 0.45 }]) },
-    );
-    try {
-      const tool = buildSearchNotesTool({
-        ...deps,
-        similarity: { ...TEST_SIMILARITY, fallback: 0.42 },
-      });
-      const out = await callTool<SearchNotesOutput>(registerTool(tool), { query: ['щось'] });
-      expect(out.query_stats!['щось'].note).toBe(
-        'Semantic hits came from the 0.42 fallback retry, so they are weaker than a normal result.',
-      );
-    } finally {
-      await cleanup();
-    }
   });
 });
 

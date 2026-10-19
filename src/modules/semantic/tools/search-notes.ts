@@ -7,6 +7,11 @@ import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.
 import { EFFORT_PROFILES } from '../effort-profiles.js';
 import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { runRetrievalPipeline } from '../retrieval-pipeline.js';
+import {
+  deriveObservability,
+  type QueryStatsEntry,
+  type SemanticStatusField,
+} from '../search-observability.js';
 import { normalizeQuery, normalizeQueryArray, wrapDependencyError } from '../tool-helpers.js';
 import type {
   BlockMatch,
@@ -17,11 +22,6 @@ import type {
 } from '../types.js';
 import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 import { LexicalSearchError, type LexicalMatch } from '../../../lib/obsidian/lexical/index.js';
-import {
-  CorpusNotReadyError,
-  type BackendState,
-  type BackendStatus,
-} from '../../../lib/obsidian/semantic-backend.js';
 
 const prefixSchema = z.union([z.string(), z.array(z.string()).min(1)]);
 
@@ -62,69 +62,14 @@ export interface UnifiedMatch {
   matched_queries?: string[];
 }
 
-/**
- * Describes the vault's semantic INDEX, not this request — required on every
- * `search_notes` payload (design D5), including `mode: "lexical"` and the
- * empty-filter early return, so a client never has to read an omitted field
- * as "healthy". `indexed`/`total` ride along only while `state ===
- * "indexing"`. `reason` (present on `BackendStatus` for `unavailable`) is
- * deliberately NOT exposed here — it belongs on error payloads, not on a
- * successful search result.
- */
-export interface SemanticStatusField {
-  state: BackendState;
-  indexed?: number;
-  total?: number;
-  /** Present for every state but `ready` — see `DEGRADED_NOTES`. */
-  note?: string;
-}
+export type { SemanticStatusField };
 
 export type SearchNotesOutput = {
   matches: UnifiedMatch[];
   truncated: boolean;
   semantic_status: SemanticStatusField;
-  query_stats?: Record<
-    string,
-    {
-      semantic: number | null;
-      lexical: number;
-      lexical_tokens?: Record<string, number>;
-      semantic_fallback?: true;
-      /** Present only for an entry worth acting on — see `queryStatsNote`. */
-      note?: string;
-    }
-  >;
+  query_stats?: Record<string, QueryStatsEntry>;
 };
-
-// What a non-`ready` state did to THIS response, in one sentence per state.
-// It rides on the payload rather than in the tool's description because a
-// description is paid for on every `tools/list` while this is read only on
-// the responses it applies to — the response channel of ADR-0010. Not the
-// backend's `reason`: that is why the backend is in this state, it travels on
-// error payloads, and it is deliberately not exposed here.
-const DEGRADED_NOTES: Record<Exclude<BackendState, 'ready'>, string> = {
-  indexing:
-    'The semantic leg did not run — the index is still building, so these matches are lexical-only.',
-  disabled:
-    'The semantic leg did not run — semantic search is turned off (for this vault, or server-wide), so these matches are lexical-only.',
-  unavailable:
-    'The semantic leg did not run — this vault has no usable semantic index, so these matches are lexical-only.',
-};
-
-// An absent backend means the semantic module is globally off for this
-// server (`--no-semantic`), which is the same `disabled` state a vault's own
-// `"semantic": false` reports — the response is lexical-only for the same
-// reason, and a caller needs no second vocabulary for it.
-function toStatusField(status: BackendStatus | undefined): SemanticStatusField {
-  const state = status?.state ?? 'disabled';
-  return {
-    state,
-    ...(status?.state === 'indexing'
-      ? { indexed: status.indexed ?? 0, total: status.total ?? 0 }
-      : {}),
-    ...(state === 'ready' ? {} : { note: DEGRADED_NOTES[state] }),
-  };
-}
 
 export interface SearchNotesDeps {
   registry: IVaultRegistry;
@@ -150,101 +95,6 @@ function isFilterEmpty(filter: NoteFilter): boolean {
   return !hasInclude && !hasExclude && !hasTags && !hasFm;
 }
 
-// Pre-cap per-query hit counts for array queries. `semantic` is `null` when
-// the semantic leg never executed (lexical mode, no corpus, empty-filter
-// early return) — a number always means the leg ran and counted (0 = ran,
-// found nothing). `lexical` counts over the leg's candidate set pre
-// `noteCap` (0 over an empty filter set). `lexical_tokens` rides along only
-// where it explains a zero: a multi-token query with `lexical: 0` maps each
-// normalized token to how many notes it matches alone. Counts are taken
-// before the cross-query merge and before the final `matches[]` cap.
-// `undefined` for a single string query — `query_stats` is array-query-only.
-// What to do about a query variant that misfired, decided per entry and
-// emitted only when there is something to do. This is the response channel of
-// ADR-0010: the same guidance in the tool's description would be paid for on
-// every `tools/list`, in every session, while a dead variant is rare — and a
-// caller reading one of these entries is holding the numbers the advice is
-// about. Ordered by what a caller acts on first: a variant that hit nothing
-// anywhere is dropped before its tokens are worth diagnosing, and a token
-// diagnosis outranks a note about the quality of hits that did come back.
-function queryStatsNote(args: {
-  semantic: number | null;
-  lexical: number;
-  tokenCounts: Record<string, number> | undefined;
-  fallback: boolean;
-  fallbackThreshold: number;
-}): string | undefined {
-  const { semantic, lexical, tokenCounts, fallback, fallbackThreshold } = args;
-  if (lexical === 0 && (semantic === null || semantic === 0)) {
-    if (tokenCounts === undefined) {
-      return 'No hits in any leg that ran — rephrase or drop this variant.';
-    }
-    const dead = Object.keys(tokenCounts).filter((token) => tokenCounts[token] === 0);
-    if (dead.length > 0) {
-      return `No hits: ${dead.map((t) => `"${t}"`).join(', ')} match no note alone, which kills the AND match — drop or replace ${dead.length > 1 ? 'them' : 'it'}.`;
-    }
-    return 'No hits: every token matches on its own but they never co-occur in one title, heading or paragraph — split this variant into separate array entries.';
-  }
-  if (fallback) {
-    return `Semantic hits came from the ${fallbackThreshold} fallback retry, so they are weaker than a normal result.`;
-  }
-  return undefined;
-}
-
-function buildQueryStats(args: {
-  isMulti: boolean;
-  queries: string[];
-  lexicalPerQueryCounts: Record<string, number>;
-  lexicalPerQueryTokenCounts: Record<string, Record<string, number>>;
-  semanticPerQueryHits: Record<string, number>;
-  semanticPerQueryFallback: Record<string, boolean>;
-  semanticRan: boolean;
-  /** The active profile's fallback-retry threshold, named in the fallback note. */
-  fallbackThreshold: number;
-  /**
-   * False on the empty-filter early return, where neither leg executed. A
-   * zero there says the filter matched no notes, not that the variant is
-   * dead — diagnosing it as dead would send the caller to rewrite a query
-   * that was never tried.
-   */
-  lexicalRan: boolean;
-}): SearchNotesOutput['query_stats'] {
-  const {
-    isMulti,
-    queries,
-    lexicalPerQueryCounts,
-    lexicalPerQueryTokenCounts,
-    semanticPerQueryHits,
-    semanticPerQueryFallback,
-    semanticRan,
-    fallbackThreshold,
-    lexicalRan,
-  } = args;
-  if (!isMulti) return undefined;
-  return Object.fromEntries(
-    queries.map((q) => {
-      const tokenCounts = lexicalPerQueryTokenCounts[q];
-      const semantic = semanticRan ? (semanticPerQueryHits[q] ?? 0) : null;
-      const lexical = lexicalPerQueryCounts[q] ?? 0;
-      const fallback = semanticRan && semanticPerQueryFallback[q] === true;
-      const note =
-        semanticRan || lexicalRan
-          ? queryStatsNote({ semantic, lexical, tokenCounts, fallback, fallbackThreshold })
-          : undefined;
-      return [
-        q,
-        {
-          semantic,
-          lexical,
-          ...(tokenCounts !== undefined ? { lexical_tokens: tokenCounts } : {}),
-          ...(fallback ? { semantic_fallback: true as const } : {}),
-          ...(note !== undefined ? { note } : {}),
-        },
-      ];
-    }),
-  );
-}
-
 async function runSearchForEntry(
   entry: IRegisteredVault,
   input: SearchNotesInput,
@@ -256,11 +106,10 @@ async function runSearchForEntry(
   const { embeddingProvider, modelKey, similarity, warn } = deps;
 
   // Read once, up front — it describes the vault's index, not this
-  // request, so every return path below (including the empty-filter early
-  // return and `mode: "lexical"`, which never touch the backend otherwise)
-  // carries the same value (design D5), and the semantic leg's go/no-go
-  // below is decided from it rather than from a second read.
-  const semantic_status = toStatusField(await entry.backend?.status());
+  // request, so the payload carries the value the call started from (design
+  // D5) whichever legs run, and the semantic leg's go/no-go below is decided
+  // from it rather than from a second read.
+  const pinnedStatus = await entry.backend?.status();
 
   // `channel` picks which retrieval leg(s) run. `effort` maps onto the
   // internal quick|deep retrieval-policy vocabulary. `threshold` is
@@ -282,9 +131,7 @@ async function runSearchForEntry(
     );
   }
 
-  // Normalized after filter-shape validation above but before the
-  // empty-filter early return below, which needs `queries` to attach
-  // `query_stats` (array queries only).
+  // Normalized after filter-shape validation above.
   let isMulti: boolean;
   let queries: string[];
   if (Array.isArray(input.query)) {
@@ -309,46 +156,27 @@ async function runSearchForEntry(
         operation: 'search_notes',
       });
     }
-
-    if (allowed.size === 0) {
-      const query_stats = buildQueryStats({
-        isMulti,
-        queries,
-        lexicalPerQueryCounts: {},
-        lexicalPerQueryTokenCounts: {},
-        semanticPerQueryHits: {},
-        semanticPerQueryFallback: {},
-        semanticRan: false,
-        fallbackThreshold: similarity.fallback,
-        lexicalRan: false,
-      });
-      return {
-        matches: [],
-        truncated: false,
-        semantic_status,
-        ...(query_stats !== undefined ? { query_stats } : {}),
-      };
-    }
   }
 
   const cap = limit ?? EFFORT_PROFILES[effort].mergedCap;
 
   // The session keeps its own graph for each match's `backlink_count`; the
-  // lexical reader keeps whatever it needs for its tie-break.
-  await graph.ensureFresh();
+  // lexical reader keeps whatever it needs for its tie-break. A filter that
+  // matched no notes leaves nothing to stamp, so it never refreshes the graph.
+  if (allowed?.size !== 0) await graph.ensureFresh();
   const backend = entry.backend;
-  // The pipeline owns leg wiring, narrowing, existence filtering, fusion and
-  // the degrade-on-semantic-failure policy; this handler decides only WHETHER
-  // the semantic leg should run — from the channel and the status pinned
-  // above, never a fresh status() read — and how to word the outcome.
+  // The pipeline owns leg wiring, narrowing (a filter matching no notes reads
+  // neither leg), existence filtering, fusion and the degrade-on-semantic-failure
+  // policy, and reports what each leg did; this handler decides only WHETHER the
+  // semantic leg should run — from the channel and the status pinned above,
+  // never a fresh status() read.
   let result: Awaited<ReturnType<typeof runRetrievalPipeline>>;
   try {
     result = await runRetrievalPipeline(
       {
         queries,
         effort,
-        semantic:
-          channel !== 'lexical' && backend !== undefined && semantic_status.state === 'ready',
+        semantic: channel !== 'lexical' && backend !== undefined && pinnedStatus?.state === 'ready',
         threshold,
         expansionFloor,
         cap,
@@ -378,34 +206,14 @@ async function runSearchForEntry(
     throw cause;
   }
 
-  if (result.semantic.status === 'failed') {
-    warn(
-      `neuro-vault semantic: search_notes fell back to its lexical leg for vault "${entry.name}": ${String(result.semantic.error)}`,
-    );
-  }
-  // A corpus that stopped serving between the status read and the leg says
-  // what it is now (`indexing` after a daemon respawn, say); any other failure
-  // is the vault's semantic index being unusable for this call.
-  const status =
-    result.semantic.status !== 'failed'
-      ? semantic_status
-      : result.semantic.error instanceof CorpusNotReadyError
-        ? toStatusField(result.semantic.error.status)
-        : { state: 'unavailable' as const, note: DEGRADED_NOTES.unavailable };
-
-  const semanticOutcome = result.semantic;
-  const semanticRan = semanticOutcome.status === 'ran';
-  const query_stats = buildQueryStats({
-    isMulti,
+  const { warning, ...observability } = deriveObservability(result, {
+    pinnedStatus,
     queries,
-    lexicalPerQueryCounts: result.lexical.perQueryCounts,
-    lexicalPerQueryTokenCounts: result.lexical.perQueryTokenCounts,
-    semanticPerQueryHits: semanticRan ? semanticOutcome.perQueryHits : {},
-    semanticPerQueryFallback: semanticRan ? semanticOutcome.perQueryFallback : {},
-    semanticRan,
+    isMulti,
     fallbackThreshold: similarity.fallback,
-    lexicalRan: true,
+    vault: entry.name,
   });
+  if (warning !== undefined) warn(warning);
 
   const kindOrder = ['title', 'heading', 'body'] as const;
   const matches: UnifiedMatch[] = result.candidates.map((c) => {
@@ -425,7 +233,7 @@ async function runSearchForEntry(
     return {
       path: c.path,
       vault: entry.name,
-      backlink_count: entry.graph.getBacklinkCount(c.path),
+      backlink_count: graph.getBacklinkCount(c.path),
       found_in,
       ...(sem
         ? { similarity: sem.similarity, ...(sem.blocks.length > 0 ? { blocks: sem.blocks } : {}) }
@@ -436,12 +244,7 @@ async function runSearchForEntry(
     };
   });
 
-  return {
-    matches,
-    truncated: result.truncated,
-    semantic_status: status,
-    ...(query_stats !== undefined ? { query_stats } : {}),
-  };
+  return { matches, ...observability };
 }
 
 export function buildSearchNotesTool(
