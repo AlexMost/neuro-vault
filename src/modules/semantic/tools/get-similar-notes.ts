@@ -1,10 +1,6 @@
 import { z } from 'zod';
 
-import {
-  buildBasenameIndex,
-  getNoteLinks,
-  type BasenameIndex,
-} from '../../../lib/obsidian/index.js';
+import { getNoteLinks } from '../../../lib/obsidian/index.js';
 import type { ICorpusReader } from '../../../lib/obsidian/corpus/corpus.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
@@ -77,17 +73,22 @@ async function collectSemanticCandidates(args: {
   return candidates;
 }
 
+/**
+ * The note's forward links, read from its current text and resolved by the vault's graph.
+ * The graph resolves against the vault's scoped note list, not the corpus: a note too short
+ * to carry a vector is still a note a link can resolve to.
+ */
 async function resolveForwardLinks(args: {
   notePath: string;
   entry: IRegisteredVault;
-  basenameIndex: BasenameIndex;
 }): Promise<Set<string>> {
+  await args.entry.graph.ensureFresh();
   try {
     return await getNoteLinks({
       notePath: args.notePath,
       readNoteContent: (vaultRelativePath) =>
         readNoteContentForEntry(args.entry, vaultRelativePath),
-      basenameIndex: args.basenameIndex,
+      resolver: args.entry.graph,
     });
   } catch (err) {
     if (isEnoent(err)) {
@@ -197,14 +198,7 @@ export function buildGetSimilarNotesTool(
           });
         }
 
-        // The vault's scoped note list, not the corpus: a note too short to carry a vector
-        // is still a note a link can resolve to.
-        const basenameIndex = buildBasenameIndex(await entry.reader.scan());
-        const linkedPaths = await resolveForwardLinks({
-          notePath,
-          entry,
-          basenameIndex,
-        });
+        const linkedPaths = await resolveForwardLinks({ notePath, entry });
         mergeForwardLinks(candidates, linkedPaths);
         const filtered = await filterCandidates({
           candidates: candidates.values(),

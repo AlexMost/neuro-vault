@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
-import type { NoteLinks, WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
+import type { NoteLinks } from '../../../lib/obsidian/wikilink-graph.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument } from '../tool-helpers.js';
@@ -50,6 +50,3 @@ export function buildGetNoteLinksTool(
     },
   });
 }
-
-// Re-export for type consumers that reference the old standalone graph dep shape
-export type { WikilinkGraphIndex };

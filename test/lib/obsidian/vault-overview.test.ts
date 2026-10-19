@@ -7,7 +7,7 @@ import {
 } from '../../../src/lib/obsidian/vault-overview.js';
 import { CONVENTIONS_CHAR_CAP } from '../../../src/lib/obsidian/vault-conventions.js';
 import type { ReadNotesItem, VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
-import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
+import { makeVaultGraph } from '../../_vault-graph.js';
 
 const noConventions = async (): Promise<string | null> => null;
 
@@ -41,19 +41,10 @@ function readerOver(
   };
 }
 
-function makeGraph(overrides: Partial<WikilinkGraphIndex> = {}): WikilinkGraphIndex {
-  return {
-    ensureFresh: vi.fn().mockResolvedValue(undefined),
-    getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
-    getBacklinkCount: vi.fn(() => 0),
-    ...overrides,
-  } as unknown as WikilinkGraphIndex;
-}
-
 describe('computeVaultOverview', () => {
   it('returns zeroed snapshot for an empty vault', async () => {
     const reader = makeReader();
-    const graph = makeGraph();
+    const graph = makeVaultGraph();
 
     const result = await computeVaultOverview({ reader, graph, readConventions: noConventions });
 
@@ -73,7 +64,7 @@ describe('computeVaultOverview', () => {
         .fn()
         .mockResolvedValue(['Projects/a.md', 'Projects/sub/b.md', 'Notes/c.md', 'root.md']),
     });
-    const graph = makeGraph();
+    const graph = makeVaultGraph();
 
     const result = await computeVaultOverview({ reader, graph, readConventions: noConventions });
 
@@ -97,7 +88,7 @@ describe('computeVaultOverview', () => {
 
     const result = await computeVaultOverview({
       reader,
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
       readConventions: noConventions,
     });
 
@@ -116,7 +107,7 @@ describe('computeVaultOverview', () => {
 
     const result = await computeVaultOverview({
       reader: readerOver(notes),
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
       readConventions: noConventions,
     });
 
@@ -133,7 +124,7 @@ describe('computeVaultOverview', () => {
 
     const result = await computeVaultOverview({
       reader,
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
       readConventions: noConventions,
     });
 
@@ -154,7 +145,7 @@ describe('computeVaultOverview', () => {
       'Projects/Beta.md': 5,
       'Notes/Gamma.md': 1,
     };
-    const graph = makeGraph({
+    const graph = makeVaultGraph({
       getBacklinkCount: vi.fn((p: string) => backlinks[p] ?? 0),
     });
 
@@ -172,7 +163,7 @@ describe('computeVaultOverview', () => {
     const reader = makeReader({
       scan: vi.fn().mockResolvedValue(paths),
     });
-    const graph = makeGraph({
+    const graph = makeVaultGraph({
       getBacklinkCount: vi.fn((p: string) => Number(p.replace(/[^0-9]/g, ''))),
     });
 
@@ -191,7 +182,7 @@ describe('computeVaultOverview', () => {
 
     const result = await computeVaultOverview({
       reader,
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
       readConventions: noConventions,
     });
 
@@ -205,7 +196,7 @@ describe('computeVaultOverview', () => {
 
     const result = await computeVaultOverview({
       reader,
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
       readConventions: noConventions,
     });
 
@@ -217,7 +208,7 @@ describe('computeVaultOverview conventions', () => {
   it('carries the conventions file content when present', async () => {
     const result = await computeVaultOverview({
       reader: makeReader(),
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
       readConventions: async () => '# Conventions\n- No writes to Resources/',
     });
     expect(result.conventions).toBe('# Conventions\n- No writes to Resources/');
@@ -227,7 +218,7 @@ describe('computeVaultOverview conventions', () => {
   it('omits the key entirely when there are no conventions', async () => {
     const result = await computeVaultOverview({
       reader: makeReader(),
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
       readConventions: async () => null,
     });
     expect(result).not.toHaveProperty('conventions');
@@ -238,7 +229,7 @@ describe('computeVaultOverview conventions', () => {
     const huge = 'x '.repeat(CONVENTIONS_CHAR_CAP);
     const result = await computeVaultOverview({
       reader: makeReader(),
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
       readConventions: async () => huge,
     });
     expect(result.conventions_truncated).toBe(true);
@@ -249,7 +240,7 @@ describe('computeVaultOverview conventions', () => {
     const reader = makeReader({ scan: vi.fn().mockResolvedValue(['Notes/a.md']) });
     const result = await computeVaultOverview({
       reader,
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
       readConventions: async () => {
         throw new Error('EACCES');
       },
@@ -262,7 +253,7 @@ describe('computeVaultOverview conventions', () => {
     let current = 'first';
     const deps = {
       reader: makeReader(),
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
       readConventions: async () => current,
     };
     expect((await computeVaultOverview(deps)).conventions).toBe('first');

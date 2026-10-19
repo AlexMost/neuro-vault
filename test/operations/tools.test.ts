@@ -4,7 +4,7 @@ import { buildOperationsTools } from '../../src/modules/operations/tools/index.j
 import { FAN_OUT_SUFFIX } from '../../src/lib/vault-param.js';
 import type { VaultProvider } from '../../src/lib/obsidian/vault-provider.js';
 import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
-import type { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
+import { makeVaultGraph } from '../_vault-graph.js';
 import type { IVaultRegistry } from '../../src/lib/vault-registry.js';
 
 const noopProvider = {
@@ -19,11 +19,7 @@ const noopReader = {
   scan: vi.fn(),
 } as unknown as VaultReader;
 
-const noopGraph = {
-  ensureFresh: vi.fn().mockResolvedValue(undefined),
-  getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
-  getBacklinkCount: vi.fn(() => 0),
-} as unknown as WikilinkGraphIndex;
+const noopGraph = makeVaultGraph();
 
 const noopEntry = {
   name: 'test',

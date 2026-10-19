@@ -10,7 +10,8 @@ import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
 import { type ReadNotesItem, type VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
-import { makeGraph, makeProvider } from './_helpers.js';
+import { makeProvider } from './_helpers.js';
+import { makeVaultGraph } from '../../_vault-graph.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 interface FakeNote {
@@ -63,7 +64,7 @@ describe('operations.readDaily handler', () => {
         ),
     });
     const registry = makeTestRegistry([
-      { name: 'v', path: tmpDir, provider, reader: buildReader([]), graph: makeGraph() },
+      { name: 'v', path: tmpDir, provider, reader: buildReader([]), graph: makeVaultGraph() },
     ]);
     await expect(
       callTool(registerTool(buildReadDailyTool({ registry })), {}),
@@ -75,7 +76,7 @@ describe('operations.readDaily handler', () => {
 
   it('forwards to provider.readDaily and returns daily fields with vault', async () => {
     const provider = dailyProvider('Daily/2026-05-12.md', 'today');
-    const graph = makeGraph();
+    const graph = makeVaultGraph();
     const registry = makeTestRegistry([
       { name: 'v', path: tmpDir, provider, reader: buildReader([]), graph },
     ]);
@@ -100,7 +101,7 @@ describe('operations.readDaily handler', () => {
         reader: buildReader([
           { path: 'Notes/old.md', frontmatter: { created: '2026-05-01', type: 'reflection' } },
         ]),
-        graph: makeGraph(),
+        graph: makeVaultGraph(),
       },
     ]);
     const result = await callTool<ReadDailyHandlerResult>(
@@ -126,7 +127,7 @@ describe('operations.readDaily handler', () => {
           { path: 'Tasks/buy-milk.md', frontmatter: { created: '2026-05-12', type: 'task' } },
           { path: 'Notes/old.md', frontmatter: { created: '2026-05-11', type: 'reflection' } },
         ]),
-        graph: makeGraph(),
+        graph: makeVaultGraph(),
       },
     ]);
     const result = await callTool<ReadDailyHandlerResult>(
@@ -160,7 +161,7 @@ describe('operations.readDaily handler', () => {
             frontmatter: { created: '2026-05-13T00:00:00', type: 'reflection' },
           },
         ]),
-        graph: makeGraph(),
+        graph: makeVaultGraph(),
       },
     ]);
     const result = await callTool<ReadDailyHandlerResult>(
@@ -175,7 +176,7 @@ describe('operations.readDaily handler', () => {
   });
 
   it('projects each entry to { vault, path, frontmatter, backlink_count } and drops content', async () => {
-    const graph = makeGraph({
+    const graph = makeVaultGraph({
       getBacklinkCount: vi.fn((p: string) => (p === 'Reflections/morning.md' ? 2 : 0)),
     });
     const registry = makeTestRegistry([
@@ -222,7 +223,7 @@ describe('operations.readDaily handler', () => {
           { path: 'A.md', frontmatter: { created: '2026-05-12' } },
           { path: 'B.md', frontmatter: { created: '2026-05-12' } },
         ]),
-        graph: makeGraph(),
+        graph: makeVaultGraph(),
       },
     ]);
     const result = await callTool<ReadDailyHandlerResult>(
@@ -244,7 +245,7 @@ describe('operations.readDaily handler', () => {
         path: tmpDir,
         provider: dailyProvider('Daily/2026-05-12.md'),
         reader: buildReader(oversized),
-        graph: makeGraph(),
+        graph: makeVaultGraph(),
       },
     ]);
     const result = await callTool<ReadDailyHandlerResult>(
@@ -277,7 +278,7 @@ describe('operations.readDaily handler', () => {
           { path: 'Notes/match.md', frontmatter: { created: todayStr, type: 'reflection' } },
           { path: 'Notes/old.md', frontmatter: { created: '2020-01-01', type: 'reflection' } },
         ]),
-        graph: makeGraph(),
+        graph: makeVaultGraph(),
       },
     ]);
     const result = await callTool<ReadDailyHandlerResult>(
@@ -295,7 +296,7 @@ describe('operations.readDaily handler', () => {
         path: tmpDir,
         provider: dailyProvider('Daily/2026-05-12.md'),
         reader: buildReader([]),
-        graph: makeGraph(),
+        graph: makeVaultGraph(),
       },
     ]);
 
@@ -316,7 +317,7 @@ describe('operations.readDaily handler', () => {
         path: tmpDir,
         provider: dailyProvider('Daily/2026-05-12.md'),
         reader: buildReader([]),
-        graph: makeGraph(),
+        graph: makeVaultGraph(),
       },
     ]);
 

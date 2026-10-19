@@ -356,4 +356,62 @@ describe('WikilinkGraphIndex', () => {
     expect(graph.getBacklinkCount('A.md')).toBe(1);
     stderrSpy.mockRestore();
   });
+
+  describe('resolve', () => {
+    it('resolves nothing before the first build', () => {
+      const { reader } = createReader({ 'A.md': { content: '' } });
+      const graph = new WikilinkGraphIndex({ reader, now: clock });
+
+      expect(graph.resolve('A')).toBeNull();
+    });
+
+    it('resolves by exact path, unique suffix and basename, as the edges do', async () => {
+      const { reader } = createReader({
+        'Notes/A.md': { content: '' },
+        'Org/Teams/_index.md': { content: '' },
+        'Org/People/j-doe.md': { content: '' },
+        'Zeta/Dup.md': { content: '' },
+        'Alpha/Dup.md': { content: '' },
+      });
+      const graph = new WikilinkGraphIndex({ reader, now: clock });
+      await graph.ensureFresh();
+
+      expect(graph.resolve('Notes/A.md')).toBe('Notes/A.md');
+      expect(graph.resolve('Notes/A')).toBe('Notes/A.md');
+      expect(graph.resolve('Teams/_index')).toBe('Org/Teams/_index.md');
+      expect(graph.resolve('j-doe')).toBe('Org/People/j-doe.md');
+      // Several notes share the basename: the lexicographically smallest path.
+      expect(graph.resolve('Dup')).toBe('Alpha/Dup.md');
+      expect(graph.resolve('Ghost')).toBeNull();
+    });
+
+    it('agrees with the outgoing edges of the same build', async () => {
+      const { reader } = createReader({
+        'A.md': { content: '[[B]] [[Sub/C]] [[Ghost]]\n' },
+        'B.md': { content: '' },
+        'X/Sub/C.md': { content: '' },
+      });
+      const graph = new WikilinkGraphIndex({ reader, now: clock });
+      await graph.ensureFresh();
+
+      for (const edge of graph.getNoteLinks('A.md').outgoing) {
+        expect(graph.resolve(edge.target)).toBe(edge.resolved ? edge.path : null);
+      }
+    });
+
+    it('answers from the last build until the TTL lets a rebuild see a new note', async () => {
+      const { reader, state } = createReader({ 'A.md': { content: '' } });
+      const graph = new WikilinkGraphIndex({ reader, now: clock, ttlMs: 1000 });
+      await graph.ensureFresh();
+
+      state.notes.set('New.md', { content: '' });
+      now += 500;
+      await graph.ensureFresh();
+      expect(graph.resolve('New')).toBeNull();
+
+      now += 1000;
+      await graph.ensureFresh();
+      expect(graph.resolve('New')).toBe('New.md');
+    });
+  });
 });

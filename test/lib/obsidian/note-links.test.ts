@@ -15,7 +15,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links].sort()).toEqual(['Folder/B.md', 'Folder/C.md']);
     expect(readNoteContent).toHaveBeenCalledWith('Folder/A.md');
@@ -26,7 +26,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links]).toEqual(['Folder/D.md']);
   });
@@ -38,7 +38,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links].sort()).toEqual(['Folder/B.md', 'Folder/C.md']);
   });
@@ -48,7 +48,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links]).toEqual(['Folder/B.md']);
   });
@@ -58,7 +58,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links]).toEqual(['Folder/B.md']);
   });
@@ -68,7 +68,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect(links.size).toBe(0);
   });
@@ -78,7 +78,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect(links.size).toBe(0);
   });
@@ -88,7 +88,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links].sort()).toEqual(['Folder/B.md', 'Folder/C.md']);
   });
@@ -98,7 +98,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links]).toEqual(['Folder/Sub/E.md']);
   });
@@ -108,7 +108,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links].sort()).toEqual(['Folder/B.md', 'Folder/C.md']);
   });
@@ -118,7 +118,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links]).toEqual(['Folder/Sub/E.md']);
   });
@@ -128,7 +128,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links]).toEqual(['Folder/B.md']);
   });
@@ -142,7 +142,7 @@ describe('getNoteLinks', () => {
       getNoteLinks({
         notePath: 'Folder/A.md',
         readNoteContent,
-        basenameIndex: makeIndex(),
+        resolver: makeIndex(),
       }),
     ).rejects.toBe(enoent);
   });
@@ -154,7 +154,7 @@ describe('getNoteLinks', () => {
     const links = await getNoteLinks({
       notePath: 'Folder/A.md',
       readNoteContent,
-      basenameIndex: makeIndex(),
+      resolver: makeIndex(),
     });
     expect([...links]).toEqual(['Folder/B.md']);
   });

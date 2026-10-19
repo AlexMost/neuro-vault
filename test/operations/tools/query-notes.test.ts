@@ -7,7 +7,8 @@ import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
-import { makeGraph, makeReader } from './_helpers.js';
+import { makeReader } from './_helpers.js';
+import { makeVaultGraph } from '../../_vault-graph.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 function registryOf(...names: string[]): IVaultRegistry {
@@ -18,7 +19,7 @@ function registryOf(...names: string[]): IVaultRegistry {
         scan: vi.fn().mockResolvedValue(['a.md']),
         readNotes: vi.fn().mockResolvedValue([{ path: 'a.md', frontmatter: {}, content: '' }]),
       }),
-      graph: makeGraph(),
+      graph: makeVaultGraph(),
     })),
   );
 }
@@ -36,7 +37,7 @@ describe('operations.queryNotes handler', () => {
         { path: 'Notes/b.md', frontmatter: { type: 'idea', created: '2026-05-13' }, content: '' },
       ]),
     });
-    const graph = makeGraph();
+    const graph = makeVaultGraph();
     const registry = makeTestRegistry([{ name: 'v', reader, graph }]);
 
     const result = await callTool<QueryNotesResultWithVault>(regOf(registry), {
@@ -59,7 +60,7 @@ describe('operations.queryNotes handler', () => {
         .fn()
         .mockResolvedValue([{ path: 'Notes/a.md', frontmatter: { type: 'task' }, content: '' }]),
     });
-    const registry = makeTestRegistry([{ name: 'v', reader, graph: makeGraph() }]);
+    const registry = makeTestRegistry([{ name: 'v', reader, graph: makeVaultGraph() }]);
 
     const result = await callTool<QueryNotesResultWithVault>(regOf(registry), {
       filter: { 'frontmatter.type': { $eq: 'nonexistent' } },
@@ -83,8 +84,8 @@ describe('operations.queryNotes handler', () => {
         .mockResolvedValue([{ path: 'b.md', frontmatter: { type: 'idea' }, content: '' }]),
     });
     const registry = makeTestRegistry([
-      { name: 'vault-a', reader: readerA, graph: makeGraph() },
-      { name: 'vault-b', reader: readerB, graph: makeGraph() },
+      { name: 'vault-a', reader: readerA, graph: makeVaultGraph() },
+      { name: 'vault-b', reader: readerB, graph: makeVaultGraph() },
     ]);
 
     const result = await callTool<{
@@ -123,8 +124,8 @@ describe('operations.queryNotes handler', () => {
       scan: vi.fn().mockRejectedValue(new ToolHandlerError('DEPENDENCY_ERROR', 'fs read failed')),
     });
     const registry = makeTestRegistry([
-      { name: 'vault-a', reader: readerA, graph: makeGraph() },
-      { name: 'vault-b', reader: readerB, graph: makeGraph() },
+      { name: 'vault-a', reader: readerA, graph: makeVaultGraph() },
+      { name: 'vault-b', reader: readerB, graph: makeVaultGraph() },
     ]);
 
     const result = await callTool<{
@@ -166,8 +167,8 @@ describe('operations.queryNotes handler', () => {
       readNotes: vi.fn().mockResolvedValue([]),
     });
     const registry = makeTestRegistry([
-      { name: 'vault-a', reader: readerA, graph: makeGraph() },
-      { name: 'vault-b', reader: readerB, graph: makeGraph() },
+      { name: 'vault-a', reader: readerA, graph: makeVaultGraph() },
+      { name: 'vault-b', reader: readerB, graph: makeVaultGraph() },
     ]);
 
     const result = await callTool<QueryNotesResultWithVault>(regOf(registry), {
@@ -208,7 +209,7 @@ describe('operations.queryNotes handler', () => {
         .fn()
         .mockResolvedValue([{ path: 'a.md', frontmatter: { type: 'idea' }, content: 'body' }]),
     });
-    const registry = makeTestRegistry([{ name: 'v', reader, graph: makeGraph() }]);
+    const registry = makeTestRegistry([{ name: 'v', reader, graph: makeVaultGraph() }]);
 
     const result = await callTool<QueryNotesResultWithVault>(regOf(registry), {
       filter: '{"frontmatter.type":{"$eq":"idea"}}',
@@ -225,7 +226,7 @@ describe('operations.queryNotes handler', () => {
       scan: vi.fn().mockResolvedValue(['Tasks/a.md', 'Other/b.md']),
       readNotes: vi.fn().mockResolvedValue([{ path: 'Tasks/a.md', frontmatter: {}, content: '' }]),
     });
-    const registry = makeTestRegistry([{ name: 'v', reader, graph: makeGraph() }]);
+    const registry = makeTestRegistry([{ name: 'v', reader, graph: makeVaultGraph() }]);
 
     const result = await callTool<QueryNotesResultWithVault>(regOf(registry), {
       filter: {},

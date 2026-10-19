@@ -1,20 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildGetNoteLinksTool } from '../../../src/modules/operations/tools/get-note-links.js';
-import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
+import type { IVaultGraph, NoteLinks } from '../../../src/lib/obsidian/wikilink-graph.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
-import { makeGraph } from './_helpers.js';
+import { makeVaultGraph } from '../../_vault-graph.js';
 import { makeTestRegistry } from './_test-registry.js';
 
-function makeLinksGraph(
-  linksFor: Record<string, ReturnType<WikilinkGraphIndex['getNoteLinks']>>,
-): WikilinkGraphIndex {
-  return {
-    ensureFresh: vi.fn().mockResolvedValue(undefined),
+function makeLinksGraph(linksFor: Record<string, NoteLinks>): IVaultGraph {
+  return makeVaultGraph({
     getNoteLinks: vi.fn((path: string) => linksFor[path] ?? { incoming: [], outgoing: [] }),
-    getBacklinkCount: vi.fn(),
-  } as unknown as WikilinkGraphIndex;
+  });
 }
 
 describe('get_note_links tool', () => {
@@ -47,7 +43,7 @@ describe('get_note_links tool', () => {
 
   it('calls ensureFresh before reading the adjacency', async () => {
     const order: string[] = [];
-    const graph = {
+    const graph = makeVaultGraph({
       ensureFresh: vi.fn(async () => {
         order.push('ensureFresh');
       }),
@@ -55,8 +51,7 @@ describe('get_note_links tool', () => {
         order.push('getNoteLinks');
         return { incoming: [], outgoing: [] };
       }),
-      getBacklinkCount: vi.fn(),
-    } as unknown as WikilinkGraphIndex;
+    });
     const registry = makeTestRegistry([{ name: 'v', graph }]);
 
     await callTool(registerTool(buildGetNoteLinksTool({ registry })), { path: 'X.md' });
@@ -103,7 +98,7 @@ describe('get_note_links tool', () => {
   });
 
   it('exposes its name and description', () => {
-    const registry = makeTestRegistry([{ name: 'v', graph: makeGraph() }]);
+    const registry = makeTestRegistry([{ name: 'v', graph: makeVaultGraph() }]);
     const tool = buildGetNoteLinksTool({ registry });
 
     expect(tool.name).toBe('get_note_links');
@@ -113,7 +108,7 @@ describe('get_note_links tool', () => {
   });
 
   it('rejects an empty path at the gate', async () => {
-    const registry = makeTestRegistry([{ name: 'v', graph: makeGraph() }]);
+    const registry = makeTestRegistry([{ name: 'v', graph: makeVaultGraph() }]);
 
     await expect(
       callTool(registerTool(buildGetNoteLinksTool({ registry })), { path: '' }),
@@ -124,7 +119,7 @@ describe('get_note_links tool', () => {
   });
 
   it('rejects a vault argument in single-vault mode', async () => {
-    const registry = makeTestRegistry([{ name: 'v', graph: makeGraph() }]);
+    const registry = makeTestRegistry([{ name: 'v', graph: makeVaultGraph() }]);
 
     await expect(
       callTool(registerTool(buildGetNoteLinksTool({ registry })), { path: 'A.md', vault: 'v' }),

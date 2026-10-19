@@ -10,14 +10,11 @@ import {
   type ReadNotesItem,
   type VaultReader,
 } from '../../../../src/lib/obsidian/vault-reader.js';
-import type { WikilinkGraphIndex } from '../../../../src/lib/obsidian/wikilink-graph.js';
+import type { IVaultGraph } from '../../../../src/lib/obsidian/wikilink-graph.js';
+import { makeVaultGraph } from '../../../_vault-graph.js';
 
-function buildFakeGraph(counts: Record<string, number>): WikilinkGraphIndex {
-  return {
-    ensureFresh: vi.fn().mockResolvedValue(undefined),
-    getBacklinkCount: vi.fn((p: string) => counts[p] ?? 0),
-    getNoteLinks: vi.fn(),
-  } as unknown as WikilinkGraphIndex;
+function buildFakeGraph(counts: Record<string, number>): IVaultGraph {
+  return makeVaultGraph({ getBacklinkCount: vi.fn((p: string) => counts[p] ?? 0) });
 }
 
 interface FakeNote {

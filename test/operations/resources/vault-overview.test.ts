@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { buildVaultOverviewResource } from '../../../src/modules/operations/resources/vault-overview.js';
 import { buildOperationsResources } from '../../../src/modules/operations/resources/index.js';
 import type { IRegisteredVault } from '../../../src/lib/vault-registry.js';
-import { makeGraph, makeReader, readerOver } from '../tools/_helpers.js';
+import { makeReader, readerOver } from '../tools/_helpers.js';
+import { makeVaultGraph } from '../../_vault-graph.js';
 import { makeTestRegistry } from '../tools/_test-registry.js';
 
 function makeEntry(overrides: Partial<IRegisteredVault> = {}): IRegisteredVault {
@@ -11,7 +12,7 @@ function makeEntry(overrides: Partial<IRegisteredVault> = {}): IRegisteredVault 
     name: 'v',
     path: '/v',
     reader: makeReader(),
-    graph: makeGraph(),
+    graph: makeVaultGraph(),
     listMatchingPaths: async () => new Set<string>(),
     readConventions: async () => null,
     ...overrides,
@@ -39,7 +40,7 @@ describe('operations.vaultOverview resource', () => {
 
   it('returns the same snapshot as computeVaultOverview, JSON-encoded', async () => {
     const reader = readerOver({ 'Notes/a.md': { frontmatter: { tags: ['x'] } } });
-    const graph = makeGraph();
+    const graph = makeVaultGraph();
     const res = buildVaultOverviewResource({
       uri: 'vault://overview',
       entry: makeEntry({ reader, graph }),

@@ -1,5 +1,5 @@
 import type { VaultReader } from './vault-reader.js';
-import type { WikilinkGraphIndex } from './wikilink-graph.js';
+import type { IVaultGraph } from './wikilink-graph.js';
 import { topByBacklinks, type TopBacklinkedNote } from './top-by-backlinks.js';
 import { capConventions } from './vault-conventions.js';
 import { listProperties, listTags } from './vault-aggregates.js';
@@ -35,7 +35,7 @@ export interface VaultOverview {
 
 export interface ComputeVaultOverviewDeps {
   reader: VaultReader;
-  graph: WikilinkGraphIndex;
+  graph: IVaultGraph;
   readConventions: () => Promise<string | null>;
 }
 

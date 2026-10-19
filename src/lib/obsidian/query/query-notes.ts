@@ -12,7 +12,7 @@ const sift: SiftFactory =
     ? siftModule
     : (siftModule as unknown as { default: SiftFactory }).default;
 import { ScanPathNotFoundError, type VaultReader } from '../vault-reader.js';
-import type { WikilinkGraphIndex } from '../wikilink-graph.js';
+import type { IVaultGraph } from '../wikilink-graph.js';
 import { toNoteRecord } from './note-record.js';
 import type {
   NoteRecord,
@@ -59,7 +59,7 @@ export interface CollectedRow {
 
 interface CollectMatchingPathsDeps {
   reader: VaultReader;
-  graph?: WikilinkGraphIndex;
+  graph?: IVaultGraph;
 }
 
 // Caller is responsible for calling `graph.ensureFresh()` before invoking
@@ -141,7 +141,7 @@ export async function collectMatchingPaths(
 export async function runQueryNotes(
   input: QueryNotesToolInput,
   reader: VaultReader,
-  graph?: WikilinkGraphIndex,
+  graph?: IVaultGraph,
 ): Promise<QueryNotesResult> {
   const validated = validateInput(input);
   validateFilter(validated.filter);

@@ -38,8 +38,8 @@ Links written _inside_ notes go through a different resolver: `buildBasenameInde
 
 | Consumer                                                                                              | Through                                                |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `get_note_links` edges; `backlink_count` on `search_notes`, `query_notes`, `get_vault_overview`      | `WikilinkGraphIndex` ([`wikilink-graph.md`](./wikilink-graph.md)) |
-| `get_similar_notes` `forward_link` candidates                                                         | `getNoteLinks` over a `BasenameIndex` of the vault's scoped scan, built per call |
+| `get_note_links` edges; `backlink_count` on `search_notes`, `query_notes`, `get_vault_overview`      | the vault's `IVaultGraph` ([`wikilink-graph.md`](./wikilink-graph.md)) |
+| `get_similar_notes` `forward_link` candidates                                                         | `getNoteLinks` with the vault's `IVaultGraph.resolve` — the same index as the edges |
 | `name`-addressed writes (`edit_note`, `set_property`, `remove_property`)                              | `resolveNoteName` (`resolveAll`, ambiguity → `AMBIGUOUS_MATCH`) |
 
 ### Target normalisation first

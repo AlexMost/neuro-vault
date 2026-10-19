@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import type { WikilinkGraphIndex } from './wikilink-graph.js';
+import type { IVaultGraph } from './wikilink-graph.js';
 
 export interface TopBacklinkedNote {
   path: string;
@@ -10,7 +10,7 @@ export interface TopBacklinkedNote {
 
 export interface TopByBacklinksInput {
   paths: string[];
-  graph: WikilinkGraphIndex;
+  graph: IVaultGraph;
   limit: number;
 }
 
