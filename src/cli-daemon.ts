@@ -16,11 +16,9 @@ import type { Timers } from './lib/timers.js';
 import { cliBuild, daemonPaths, type CliBuild, type DaemonPaths } from './daemon/paths.js';
 import { cleanStaleSocket, defaultConnect, type SocketConnect } from './daemon/probe.js';
 import { ServiceRegistry } from './daemon/protocol.js';
-import { createCorpusService } from './daemon/services/corpus.js';
 import { createDaemonService } from './daemon/services/daemon.js';
 import { createEmbedService } from './daemon/services/embed.js';
-import { createLexicalService } from './daemon/services/lexical.js';
-import { createVaultService } from './daemon/services/vault.js';
+import { createVaultEntryServices } from './daemon/services/vault-entry-services.js';
 import { ensurePrivateSocketDir } from './daemon/socket-dir.js';
 import { startDaemonServer, type DaemonServerHandle } from './daemon/socket-server.js';
 import { neuroVaultCacheBase } from './lib/cache-dir.js';
@@ -239,9 +237,9 @@ async function startServing(
   });
   const registry = new ServiceRegistry();
   registry.register('embed', embed.handlers);
-  registry.register('vault', createVaultService(entries));
-  registry.register('corpus', createCorpusService(entries));
-  registry.register('lexical', createLexicalService(entries));
+  for (const [name, handlers] of Object.entries(createVaultEntryServices(entries))) {
+    registry.register(name, handlers);
+  }
 
   const stop = createStop(paths, r, server, entries);
   const startedAt = r.now().toISOString();
