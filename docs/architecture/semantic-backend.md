@@ -61,7 +61,7 @@ The two enabled backends are one view over two clients; nothing in the backend k
 
 ### The vault client
 
-`IVaultClient` (`src/modules/semantic/vault-client/`) is one vault root on one side, the daemon's socket or the in-process loopback, and the only path the session has to that vault's entry ([ADR-0021](../adr/0021-vault-client.md)):
+`IVaultClient` (`src/modules/semantic/vault-client/`) is one vault root on one side, the daemon's socket or the in-process loopback, and the path the semantic backend takes to that vault's entry ([ADR-0021](../adr/0021-vault-client.md)). The lexical readers do not go through it yet: they share only its attachment and reach the entry themselves ([The vault clients](#the-vault-clients)):
 
 ```typescript
 interface IVaultClient {
@@ -81,9 +81,9 @@ interface IVaultClient {
 
 The socket adapter, `createDaemonVaultClient({ services, attachment, local })` (`daemon-client.ts`), is that core over the process's one connection, `ISharedServices` ([`shared-daemon.md`](./shared-daemon.md#the-session-side-facades)), plus the switch:
 
-- **One switch consult per vault.** Every call first runs `services.ensure()`, except a `status()` while the switch is undecided (below). Once `ensure()` answers `local` (the daemon could not be located or started), every call goes to the vault's in-process client, built on the first call that needs it.
+- **The switch, consulted for the backend.** Every call first runs `services.ensure()`, except a `status()` while the switch is undecided (below). Once `ensure()` answers `local` (the daemon could not be located or started), every call goes to the vault's in-process client, built on the first call that needs it.
 - **While the switch is undecided** (`services.mode` is `pending`: the first `ensure()` is locating or spawning the daemon), `status()` answers `indexing` 0/0 without waiting and starts, or joins, a background `ensure()` that then attaches on the decided side. Should the services close under that connect, the switch stays undecided and later statuses read `unavailable` with the closing reason. Once decided, a status that finds the connection gone waits for the reconnect, then reads through the core; a connect that fails reads `unavailable` for that call.
-- **Transport failures are this side's only**: `DaemonTimeoutError`, `DaemonConnectionError`, `SharedServicesClosedError`. The in-process side has no transport to fail.
+- **Transport failures** (`DaemonTimeoutError`, `DaemonConnectionError`, `SharedServicesClosedError`) reach the backend only through this adapter; the in-process side has no transport to fail. The legacy daemon lexical reader consults the switch and meets the same failures on its own.
 - **`dispose()`** disposes the in-process client if one was built. The connection is the process's, and closing it is the server's job (below).
 
 ### The in-process side

@@ -322,7 +322,7 @@ for (const [name, handlers] of Object.entries(createVaultEntryServices(entries))
 
 Framing, discovery, the key, the lock and the lifecycle do not move. `vault`, `corpus` and `lexical` are the second, third and fourth services built this way, all over the one `VaultEntries` that `startServing` builds; `lexical` was the member of the vault entry that the earlier services named as the next candidate (the per-vault lexical cache, which cost hundreds of MB per session on large vaults). A service that wants to appear in `daemon.info` extends `DaemonInfoResult.services`, which today names `embed` and `vault` (the lexical cache appears inside each `IVaultInfo`, not as a service of its own).
 
-The session side follows one pattern, the facade: the session keeps the interface its code already depends on, and implements it by forwarding to the daemon, with an in-process fallback. For the model that is `DaemonEmbeddingProvider`. For a vault's state it is a view over the vault's client ([above](#the-session-side-facades)), which brings the switch, the attach, the timeouts and the fallback with it.
+The session side follows one pattern, the facade: the session keeps the interface its code already depends on, and implements it by forwarding to the daemon, with an in-process fallback. For the model that is `DaemonEmbeddingProvider`. For a vault's corpus it is a view over the vault's client ([above](#the-session-side-facades)), which brings the switch, the attach, the timeouts and the fallback with it; a new per-vault read follows the same shape (below). The lexical reader is still a facade of its own over the vault's shared attachment until the vault-client change completes (#193).
 
 ### How a new per-vault read is added
 
