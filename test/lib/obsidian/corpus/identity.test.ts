@@ -4,6 +4,7 @@ import {
   corpusIdentityOf,
   formatIdentity,
   formatRebuild,
+  identityMatches,
   isStoredManifest,
 } from '../../../../src/lib/obsidian/corpus/identity.js';
 import { TEST_IDENTITY } from '../../../_identity.js';
@@ -79,13 +80,35 @@ describe('formatRebuild', () => {
 
   it('marks a producer field a legacy manifest lacks as unset', () => {
     const { provider: _provider, ...legacy } = active;
-    expect(formatRebuild({ ...legacy, created }, active).stored).toBe(
+    expect(formatRebuild(legacy, active).stored).toBe(
       'harrier-270m (embed_version 2, provider unset)',
     );
   });
 
   it('describes a missing manifest without comparing fields', () => {
     expect(formatRebuild(null, active).stored).toBe('an unreadable or missing manifest');
+  });
+});
+
+describe('identityMatches', () => {
+  it('matches when every identity field agrees, whatever else is recorded', () => {
+    expect(identityMatches(TEST_IDENTITY, TEST_IDENTITY)).toBe(true);
+    const manifest = { ...TEST_IDENTITY, created: 'x' };
+    expect(identityMatches(manifest, TEST_IDENTITY)).toBe(true);
+  });
+
+  it('does not match when one identity field differs', () => {
+    expect(identityMatches({ ...TEST_IDENTITY, revision: 'other' }, TEST_IDENTITY)).toBe(false);
+    expect(identityMatches({ ...TEST_IDENTITY, embed_version: 1 }, TEST_IDENTITY)).toBe(false);
+  });
+
+  it('does not match a legacy identity that lacks a producer field', () => {
+    const { pooling: _pooling, ...legacy } = TEST_IDENTITY;
+    expect(identityMatches(legacy, TEST_IDENTITY)).toBe(false);
+  });
+
+  it('never matches nothing on record', () => {
+    expect(identityMatches(null, TEST_IDENTITY)).toBe(false);
   });
 });
 

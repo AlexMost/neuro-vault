@@ -29,6 +29,7 @@ import {
 import type { WatcherFactory } from '../../../src/lib/vault-entry/watcher.js';
 import { identityOf, MODEL_PROFILES } from '../../../src/lib/model-profiles.js';
 import { FIXTURE_PATHS, writeFixtureVault } from '../obsidian/lexical/_fixture-vault.js';
+import { MemoryCorpus, memoryStore, type IMemoryStore } from '../../_memory-corpus.js';
 
 const HARRIER = 'harrier-270m';
 const OTHER = 'harrier-0.6b';
@@ -78,6 +79,7 @@ async function harness(
     /** Fills the vault before the entry is created (its lexical cache warms at creation). */
     populate?: (root: string) => Promise<void>;
     graphTtlMs?: number;
+    createCorpus?: IVaultEntryOptions['createCorpus'];
   } = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'nv-vault-entry-'));
@@ -94,6 +96,7 @@ async function harness(
     embedderFor: () => opts.embed ?? okEmbed,
     warn,
     graphTtlMs: opts.graphTtlMs,
+    createCorpus: opts.createCorpus,
     createWatcher: watchers.factory,
     createLoop: (deps) => {
       const loop = createReconcileLoop({ ...deps, ...opts.loop });
@@ -129,6 +132,34 @@ async function seed(root: string, notes: Record<string, number>) {
       ],
     });
   }
+}
+
+/** A lock that lets every pass straight in, and writes nothing to the vault. */
+const openLock = (async (_root: string, _opts: ILockedPassOptions, fn) =>
+  fn({ waited: false })) as typeof withReconcileLock;
+
+/** A memory store already holding HARRIER's identity and these notes, as {@link seed} writes. */
+function memorySeeded(notes: Record<string, number>): IMemoryStore {
+  const store = memoryStore();
+  store.identity = { ...IDENTITY };
+  for (const [notePath, axis] of Object.entries(notes)) {
+    store.records.set(notePath, {
+      path: notePath,
+      content_hash: contentHash(notePath),
+      mtime: 1,
+      size: 1,
+      embedding: encodeVector(axisVec(axis)),
+      blocks: [
+        {
+          key: `${notePath}#h`,
+          heading: 'h',
+          lines: [1, 2],
+          embedding: encodeVector(axisVec(axis)),
+        },
+      ],
+    });
+  }
+  return store;
 }
 
 const exists = (p: string) =>
@@ -535,6 +566,78 @@ describe('createVaultEntry', () => {
     expect(aborted).toBe(true);
     closed();
     await disposed;
+  });
+});
+
+describe('createVaultEntry over an injected corpus', () => {
+  it('builds each profile on the injected corpus and writes nothing under .neuro-vault/', async () => {
+    const created: Array<{ key: string; dims: number; corpus: MemoryCorpus }> = [];
+    const h = await harness({
+      loop: { withLock: openLock },
+      createCorpus: (key, identity) => {
+        const corpus = new MemoryCorpus();
+        created.push({ key, dims: identity.dims, corpus });
+        return corpus;
+      },
+      populate: async (root) => {
+        await mkdir(path.join(root, 'Notes'));
+        await writeFile(path.join(root, 'Notes', 'y.md'), `# y\n${'x'.repeat(400)}\n`);
+      },
+    });
+
+    h.entry.addProfile(HARRIER);
+    await h.loop().whenSettled();
+
+    expect(created.map(({ key, dims }) => ({ key, dims }))).toEqual([{ key: HARRIER, dims: DIMS }]);
+    const [{ corpus }] = created;
+    expect(h.entry.status(HARRIER)).toEqual({ state: 'ready' });
+    expect(corpus.store.identity).toEqual(IDENTITY);
+    expect([...(await corpus.entries()).keys()]).toEqual(['Notes/y.md']);
+    expect(h.entry.info(1).profiles[0]).toMatchObject({ state: 'ready', notes: 1 });
+    const [hits] = await h.entry.reader(HARRIER).nearest([{ path: 'Notes/y.md' }], {
+      threshold: -1,
+    });
+    expect(hits?.map((hit) => hit.path)).toEqual(['Notes/y.md']);
+    expect(await exists(path.join(h.root, '.neuro-vault'))).toBe(false);
+  });
+
+  it('folds the scope into reads of the injected corpus before any limit', async () => {
+    const store = memorySeeded({ 'Archive/x.md': 2, 'Notes/y.md': 3 });
+    const h = await harness({
+      scope: scopeOf(['Archive/**']),
+      loop: { withLock: heldLock },
+      createCorpus: () => new MemoryCorpus(store),
+    });
+    h.entry.addProfile(HARRIER);
+    await vi.waitFor(() => expect(h.entry.status(HARRIER)).toEqual({ state: 'ready' }));
+
+    const reader = h.entry.reader(HARRIER);
+    const anchor = { vector: axisVec(2) };
+    const [notes] = await reader.nearest([anchor], { threshold: -1, limit: 1 });
+    expect(notes?.map((hit) => hit.path)).toEqual(['Notes/y.md']);
+    const [blocks] = await reader.nearestBlocks([anchor], {
+      paths: ['Archive/x.md', 'Notes/y.md'],
+      threshold: -1,
+    });
+    expect(blocks?.map((hit) => hit.path)).toEqual(['Notes/y.md']);
+    expect((await reader.nearest([{ path: 'Archive/x.md' }], { threshold: -1 }))[0]).toBeNull();
+  });
+
+  it('a re-enabled vault asks the factory for a fresh corpus; a disabled one for none', async () => {
+    const createCorpus = vi.fn(() => new MemoryCorpus(memorySeeded({ 'Notes/y.md': 3 })));
+    const h = await harness({ loop: { withLock: heldLock }, createCorpus });
+    h.entry.addProfile(HARRIER);
+    await vi.waitFor(() => expect(h.entry.status(HARRIER)).toEqual({ state: 'ready' }));
+    const [first] = createCorpus.mock.results.map((result) => result.value);
+
+    h.entry.setSemantic(false);
+    expect(first.loaded).toBe(false);
+    expect(createCorpus).toHaveBeenCalledTimes(1);
+
+    h.entry.setSemantic(true);
+    expect(createCorpus).toHaveBeenCalledTimes(2);
+    expect(createCorpus).toHaveBeenLastCalledWith(HARRIER, IDENTITY);
+    await vi.waitFor(() => expect(h.entry.status(HARRIER)).toEqual({ state: 'ready' }));
   });
 });
 

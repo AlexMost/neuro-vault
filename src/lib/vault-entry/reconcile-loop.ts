@@ -1,7 +1,12 @@
 import { stat } from 'node:fs/promises';
 
 import type { ICorpus } from '../obsidian/corpus/corpus.js';
-import { formatRebuild, type CorpusIdentity } from '../obsidian/corpus/identity.js';
+import {
+  formatRebuild,
+  identityMatches,
+  type CorpusIdentity,
+  type RecordedIdentity,
+} from '../obsidian/corpus/identity.js';
 import {
   reconcileProfile,
   withReconcileLock,
@@ -14,15 +19,14 @@ import {
   unusableCorpusReason,
 } from '../obsidian/corpus/pass-outcome.js';
 import { CorpusLockTimeoutError, describeHolder } from '../obsidian/corpus/reconcile-lock.js';
-import { ensureCorpusGitignored, isManifestCompatible } from '../obsidian/corpus/shard-store.js';
-import type { EmbedDocumentsFn, StoredManifest } from '../obsidian/corpus/types.js';
+import type { EmbedDocumentsFn } from '../obsidian/corpus/types.js';
 import type { BackendStatus } from '../obsidian/semantic-backend.js';
 
 export interface ILoopProfile {
   key: string;
   identity: CorpusIdentity;
   /** `size()` is the empty-corpus guard's measure: the notes that can rank. */
-  corpus: ICorpus & { load(): Promise<void>; readonly loaded: boolean; size(): number };
+  corpus: ICorpus;
   embedDocuments: EmbedDocumentsFn;
   enabled: boolean;
 }
@@ -104,8 +108,8 @@ interface IProfileState {
 /**
  * A pass over a vault whose directory is gone (deleted, or its volume
  * unmounted) fails before the scan, which reads a missing root as an empty
- * vault and would sweep every shard. A deletion during a pass cannot bring the
- * directory back — the lock and the shard store never create the vault root —
+ * vault and would sweep every record. A deletion during a pass cannot bring the
+ * directory back — the lock and the corpus never create the vault root —
  * so the follow-up pass the deletion's events queue lands here. A mount point
  * left behind as an empty directory is indistinguishable from an empty vault;
  * that stays accepted.
@@ -182,7 +186,7 @@ export function createReconcileLoop(deps: IReconcileLoopDeps): IReconcileLoop {
   }
 
   // Never silent (design D8), whichever step finds the mismatch.
-  function announceRebuild(key: string, stored: StoredManifest | null, active: CorpusIdentity) {
+  function announceRebuild(key: string, stored: RecordedIdentity | null, active: CorpusIdentity) {
     const named = formatRebuild(stored, active);
     warn(
       `neuro-vault corpus: ${label(key)} was indexed with ${named.stored}; ` +
@@ -248,7 +252,7 @@ export function createReconcileLoop(deps: IReconcileLoopDeps): IReconcileLoop {
       // Checked before the load, so records are assumed: vectors of another
       // identity (or of none on record) rank against nothing, and the pass that
       // discards them announces it.
-      if (!isManifestCompatible(stored, identity, true)) return;
+      if (!identityMatches(stored, identity)) return;
       await corpus.load();
       if (releaseIfRemoved(state) || disposed) return;
       if ((await corpus.entries()).size > 0) state.status = { state: 'ready' };
@@ -267,7 +271,7 @@ export function createReconcileLoop(deps: IReconcileLoopDeps): IReconcileLoop {
     const { key, corpus, identity, embedDocuments } = state.profile;
     if (state.status.state === 'unavailable') state.status = indexing();
     const started = now();
-    // Another holder may have changed the shards — a note it re-embedded is
+    // Another holder may have changed the records — a note it re-embedded is
     // `reused` by this pass, so memory would otherwise keep the old vectors.
     if (waited && corpus.loaded) await corpus.refresh();
     // Cold, incompatible, or a failed startup load: reconcile reads `entries()`,
@@ -363,8 +367,6 @@ export function createReconcileLoop(deps: IReconcileLoopDeps): IReconcileLoop {
           settled.add(state);
           if (!signal.aborted) notifySettled(state);
         }
-        // Corpus maintenance, skipped on abort so a shutdown is bounded by the note in flight.
-        if (!signal.aborted) await ensureCorpusGitignored(deps.vaultRoot, { warn });
       });
     } catch (err) {
       if (signal.aborted) return;

@@ -1,8 +1,7 @@
-import type { CorpusAnchor, ICorpusReader } from '../obsidian/corpus/corpus.js';
+import type { CorpusAnchor, ICorpus, ICorpusReader } from '../obsidian/corpus/corpus.js';
 import { buildReconcileFsDeps, type ReconcileFsDeps } from '../obsidian/corpus/fs-deps.js';
 import { corpusIdentityOf, type CorpusIdentity } from '../obsidian/corpus/identity.js';
-import { ShardCorpus } from '../obsidian/corpus/shard-corpus.js';
-import { ShardStore } from '../obsidian/corpus/shard-store.js';
+import { createShardCorpus } from '../obsidian/corpus/shard-corpus.js';
 import type { EmbedDocumentsFn } from '../obsidian/corpus/types.js';
 import { LexicalIndex } from '../obsidian/lexical/lexical-index.js';
 import type { ILexicalResult, ILexicalSearchOptions } from '../obsidian/lexical/reader.js';
@@ -63,6 +62,11 @@ export interface IVaultEntryOptions {
   createWatcher?: WatcherFactory;
   /** Injected by tests; production uses {@link createReconcileLoop}. */
   createLoop?: (deps: IReconcileLoopDeps) => IReconcileLoop;
+  /**
+   * A fresh corpus for a profile, built on every attach and re-enable. Production
+   * keeps each profile's shard directory under `<vault>/.neuro-vault/corpus/`.
+   */
+  createCorpus?: (key: string, identity: CorpusIdentity) => ICorpus;
 }
 
 /** One vault directory's shared state (design D1): scope, watcher, loop, a corpus per profile. */
@@ -104,8 +108,8 @@ export function profileIdentity(key: string): CorpusIdentity {
 interface IProfileSlot {
   key: string;
   identity: CorpusIdentity;
-  /** null while the vault is disabled: no store, no corpus, nothing under `.neuro-vault/corpus/`. */
-  corpus: ShardCorpus | null;
+  /** null while the vault is disabled: no corpus, nothing created for it. */
+  corpus: ICorpus | null;
   /**
    * Corpus paths the scope excludes but no pass has swept yet. A read cannot
    * drop them from its results afterwards — a limit has already been applied —
@@ -132,6 +136,10 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
   let lexical: LexicalIndex | null = null;
   let graph: WikilinkGraphIndex | null = null;
   let disposing: Promise<void> | null = null;
+  const createCorpus =
+    opts.createCorpus ??
+    ((key: string, identity: CorpusIdentity) =>
+      createShardCorpus(vaultRoot, { key, identity }, { warn }));
 
   function readerFor(next: VaultScope): FsVaultReader {
     return new FsVaultReader({ vaultRoot, scope: next });
@@ -234,12 +242,7 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
   }
 
   function attachCorpus(slot: IProfileSlot): void {
-    const store = new ShardStore(vaultRoot, {
-      modelKey: slot.key,
-      dims: slot.identity.dims,
-      warn,
-    });
-    slot.corpus = new ShardCorpus(store);
+    slot.corpus = createCorpus(slot.key, slot.identity);
     slot.excluded = [];
     loop.addProfile({
       key: slot.key,
@@ -266,7 +269,7 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
     return slot;
   }
 
-  function corpusOf(key: string): ShardCorpus {
+  function corpusOf(key: string): ICorpus {
     const corpus = slotOf(key).corpus;
     if (corpus === null) throw new Error(`vault entry: profile "${key}" is disabled`);
     return corpus;

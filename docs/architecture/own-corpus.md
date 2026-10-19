@@ -116,15 +116,20 @@ Filenames are hashed rather than slugified: vault paths carry spaces, Cyrillic a
 
 Block entries without a vector are not written at all: in the replaced corpus two thirds of the entries were vector-less.
 
-The corpus lives inside the vault so it travels with it and multi-vault needs no extra bookkeeping. `.neuro-vault/corpus/` is a dot-path, so the vault scope excludes it unconditionally. On each run the indexer ensures the vault's root `.gitignore` ignores the corpus, appending one `.neuro-vault/corpus/` line when the file exists and does not already cover it. It never creates a `.gitignore`, never rewrites another line, and never ignores `.neuro-vault/` as a whole — other things under that directory are meant to be versioned. A failure warns on stderr and never fails indexing.
+The corpus lives inside the vault so it travels with it and multi-vault needs no extra bookkeeping. `.neuro-vault/corpus/` is a dot-path, so the vault scope excludes it unconditionally. Each time a shard corpus settles its identity (`ensureIdentity`, so on every pass and every `index` run) it ensures the vault's root `.gitignore` ignores the corpus, appending one `.neuro-vault/corpus/` line when the file exists and does not already cover it. It never creates a `.gitignore`, never rewrites another line, and never ignores `.neuro-vault/` as a whole — other things under that directory are meant to be versioned. A failure warns on stderr and never fails indexing.
 
 ## The corpus interface
 
 The shard files are the durable form; what reads and writes a model's corpus goes through an interface ([ADR-0019](../adr/0019-embedding-storage-interface.md)), declared in `corpus.ts`:
 
 - `ICorpusReader` — `nearest(anchors, { threshold, limit?, allowed?, exclude? })` and `nearestBlocks(anchors, { paths, threshold, limit? })`. An anchor is `{ vector }` or `{ path }`; one result list comes back per anchor, in order, and `null` for a path anchor whose note carries no vector. `allowed` and `exclude` apply before `limit`.
-- `ICorpusWriter` — what reconcile needs: `entries()` (a `Map` of path → `{ content_hash, mtime, size }`, no vectors), `upsert(record)`, `touch(path, stat)` (false when there is no record to touch), `delete(path)`, `identity()` (the stored manifest, or null), `ensureIdentity(expected)` (identity and reset composed: discards the whole corpus when the stored identity differs, and reports `{ rebuilt, previous }`) and `refresh()`.
-- `ICorpus` — both, plus `vectorOf(path)` and `dispose()`.
+- `ICorpusWriter` — what reconcile needs: `entries()` (a `Map` of path → `{ content_hash, mtime, size }`, no vectors), `upsert(record)`, `touch(path, stat)` (false when there is no record to touch), `delete(path)`, `identity()`, `ensureIdentity(expected)` and `refresh()`.
+  - `identity()` is the identity on record as a `RecordedIdentity` (`identity.ts`: the `CorpusIdentity` fields, with the producer fields optional for a corpus recorded before `embed_version` 2), or null when none can be read. No shard type crosses the interface; the shard corpus answers with its manifest.
+  - `ensureIdentity(expected)` is ADR-0019's `identity()` + `reset(identity)` composed inside the implementation, because which records survive depends on what the implementation holds: it leaves the corpus carrying `expected`, discards the records when the identity on record differs (or when records exist with nothing on record), and reports `{ rebuilt, previous }`.
+  - Whether an identity on record serves the active one is `identityMatches(recorded, expected)` (`identity.ts`): every field of `IDENTITY_FIELDS` agrees. The startup selection uses it directly; the shard store's `isManifestCompatible` adds the rule for a missing manifest over no shards.
+- `ICorpus` — both, plus the lifecycle the vault entry and the reconcile loop drive: `load()`, `loaded`, `size()` (the notes that carry a vector), `vectorOf(path)` and `dispose()`. The entry and the loop see only `ICorpus`; neither imports `shard-store.ts`.
+
+The vault entry builds a profile's corpus through `IVaultEntryOptions.createCorpus(key, identity)`, defaulting to `createShardCorpus` (`shard-corpus.ts`), so a corpus over another store is a factory, not an entry change. `test/_memory-corpus.ts` holds `MemoryCorpus`, an `ICorpus` with no shard anywhere, shaped like a hosted store; the loop and entry tests run over it, and `test/lib/obsidian/corpus/corpus-contract.test.ts` holds it and `ShardCorpus` to the same contract.
 
 Two implementations exist, both over a `ShardStore`:
 
@@ -159,18 +164,17 @@ The one case that throws instead is writing a vector of the wrong dimension: the
 A pass is two functions composed (`reconcile.ts`), so one process can walk several models' corpora of a vault under a single acquisition of the lock:
 
 - **`withReconcileLock(vaultRoot, opts, fn)`** takes the vault's lock, migrates a single-corpus layout (see [Concurrency](#concurrency-the-reconcile-lock) and [Migration](#migration-from-the-single-corpus-layout)), runs `fn({ waited })` and releases in a `finally`. `waited` tells `fn` whether another holder had the lock first; the result is `undefined` when the signal aborted before `fn` ran. Everything below reads the corpus, so a pass that waited sees what the previous holder left.
-- **`reconcileProfile(deps, corpus, paths, opts)`** is the per-note loop and orphan sweep for one model, over a `ICorpusWriter` and a path set the caller already scanned. It does not take the lock and does not write the `.gitignore` entry: its caller holds the lock and writes the entry once, after every profile has run.
+- **`reconcileProfile(deps, corpus, paths, opts)`** is the per-note loop and orphan sweep for one model, over a `ICorpusWriter` and a path set the caller already scanned. It does not take the lock: its caller holds it.
 
-`reconcileCorpus(deps, opts)` is the composition `index` uses: `withReconcileLock`, one `scan()`, one `reconcileProfile` over `shardWriter(store)`, then the `.gitignore` entry. It takes ports — `scan`, `stat`, `readNote`, `embedDocuments`, a `ShardStore` — and returns `{ total, embedded, added, reused, renamed, deleted, failed }`; `added` is the part of `embedded` that had no record and was not a rename. The vault entry's reconcile loop ([`vault-entry.md`](./vault-entry.md)) calls `withReconcileLock` once, scans once and calls `reconcileProfile` per profile. In order:
+`reconcileCorpus(deps, opts)` is the composition `index` uses: `withReconcileLock`, one `scan()`, one `reconcileProfile` over `shardWriter(store)`. It takes ports — `scan`, `stat`, `readNote`, `embedDocuments`, a `ShardStore` — and returns `{ total, embedded, added, reused, renamed, deleted, failed }`; `added` is the part of `embedded` that had no record and was not a rename. The vault entry's reconcile loop ([`vault-entry.md`](./vault-entry.md)) calls `withReconcileLock` once, scans once and calls `reconcileProfile` per profile. In order:
 
 0. Take the vault's lock and migrate (`withReconcileLock`, above).
-1. `ensureIdentity` (`corpus.ensureIdentity(identity)`, first thing in `reconcileProfile`) compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (every manifest field except `created`). A mismatch, or a missing manifest while shards exist, discards every shard of this model's directory and rebuilds it. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors.
+1. `ensureIdentity` (`corpus.ensureIdentity(identity)`, first thing in `reconcileProfile`) compares the stored manifest against the identity the caller passes in — the embedding provider's, under this build's extraction (every manifest field except `created`). A mismatch, or a missing manifest while shards exist, discards every shard of this model's directory and rebuilds it. A scope or exclusion change is **not** a rebuild — membership is not a property of the vectors. The shard corpus then ensures the `.gitignore` entry (above).
 2. Take the scoped path set from `scan()` (run once inside the lock, before `reconcileProfile`) and the records' metadata from `corpus.entries()`. Reconcile applies no exclusion rule of its own.
 3. Shards whose path is not in scope become deletion candidates, indexed by content hash — the only place a rename can be recognised.
 4. For each path in scope: equal `mtime` **and** `size` → reused, without opening the note. Otherwise read it; an equal `content_hash` → rewrite the shard's metadata and keep the vectors (**reused**); otherwise embed (**embedded**). A path with no shard whose hash matches a deletion candidate is a **rename**: the old shard is unlinked and the note is re-embedded under its new path.
 5. Every remaining deletion candidate is unlinked (**deleted**).
-6. Ensure the `.gitignore` entry (the caller, once per pass).
-7. Release the lock, in a `finally`.
+6. Release the lock, in a `finally`.
 
 Progress is reported once per processed note as `{ indexed, total }` counted in notes — the shape slice #3 (CLI progress) and slice #5 (`semantic_status`) consume unchanged. A failure to read, embed or store one note is counted in `failed`, warned on stderr, leaves that note's previous shard untouched, and never aborts the run.
 

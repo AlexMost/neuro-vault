@@ -5,7 +5,7 @@ import path from 'node:path';
 import writeFileAtomic from 'write-file-atomic';
 
 import { ensureCorpusDir, type MkdirFn } from './ensure-dir.js';
-import { IDENTITY_FIELDS, isStoredManifest, type CorpusIdentity } from './identity.js';
+import { identityMatches, isStoredManifest, type CorpusIdentity } from './identity.js';
 import { CORPUS_DIR, metaDirOf, modelCorpusDir } from './layout.js';
 import type { CorpusBlock, CorpusManifest, CorpusShard, StoredManifest } from './types.js';
 
@@ -39,6 +39,7 @@ export interface ShardStoreDeps {
 
 /** Reads, writes, lists, and deletes per-note shards under `<vaultRoot>/.neuro-vault/corpus/<modelKey>/notes/`. */
 export class ShardStore {
+  private readonly vaultRoot: string;
   private readonly corpusRoot: string;
   private readonly notesDir: string;
   private readonly manifestFile: string;
@@ -54,6 +55,7 @@ export class ShardStore {
   constructor(vaultRoot: string, deps: ShardStoreDeps) {
     // Throws on an unsafe key before any I/O.
     const root = modelCorpusDir(vaultRoot, deps.modelKey);
+    this.vaultRoot = vaultRoot;
     this.corpusRoot = root;
     this.notesDir = path.join(root, 'notes');
     this.manifestFile = path.join(root, 'manifest.json');
@@ -210,6 +212,11 @@ export class ShardStore {
     return { rebuilt: !compatible && hasShards, previous: stored };
   }
 
+  /** {@link ensureCorpusGitignored} for the vault this store lives in. Never throws. */
+  ensureGitignored(): Promise<void> {
+    return ensureCorpusGitignored(this.vaultRoot, { warn: this.warn });
+  }
+
   /** Whether any shard file exists — a directory listing, never a read or decode. */
   async hasAnyShards(): Promise<boolean> {
     try {
@@ -343,7 +350,7 @@ export function isManifestCompatible(
   hasShards: boolean,
 ): boolean {
   if (stored === null) return !hasShards;
-  return IDENTITY_FIELDS.every((field) => stored[field] === expected[field]);
+  return identityMatches(stored, expected);
 }
 
 /** Literal `.gitignore` lines (trimmed) that already cover the corpus directory. */

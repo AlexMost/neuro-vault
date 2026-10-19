@@ -198,7 +198,7 @@ describe('runIndexCommand', () => {
   it('announces a rebuild before the vault’s progress', async () => {
     const reconcile = vi.fn(async (_deps: ReconcileDeps, opts?: ReconcileOptions) => {
       opts?.onRebuild?.({
-        stored: { ...TEST_IDENTITY, model_key: 'harrier-270m', embed_version: 2, created: 'x' },
+        stored: { ...TEST_IDENTITY, model_key: 'harrier-270m', embed_version: 2 },
         active: TEST_IDENTITY,
       });
       opts?.onProgress?.({ indexed: 1, total: 1 });
