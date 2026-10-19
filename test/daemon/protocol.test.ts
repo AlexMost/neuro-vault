@@ -37,7 +37,7 @@ describe('ServiceRegistry.dispatch', () => {
   it('answers UNKNOWN_METHOD for an unregistered namespace or method', async () => {
     const registry = new ServiceRegistry();
     registry.register('echo', { say: async () => ({}) });
-    for (const method of ['graph.links', 'echo.shout', 'nodot', 'embed.', '.query', '']) {
+    for (const method of ['watch.subscribe', 'echo.shout', 'nodot', 'embed.', '.query', '']) {
       const response = await registry.dispatch(req(method), testCtx());
       expect(isJSONRPCErrorResponse(response)).toBe(true);
       expect(response).toMatchObject({ error: { code: -32601, data: { code: 'UNKNOWN_METHOD' } } });
@@ -154,6 +154,7 @@ describe('errorResponse', () => {
     CORPUS_NOT_READY: -32603,
     CORPUS_FAILED: -32603,
     LEXICAL_FAILED: -32603,
+    GRAPH_FAILED: -32603,
   };
 
   it.each(Object.entries(expected) as [DaemonErrorCode, number][])(
