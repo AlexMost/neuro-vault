@@ -1,11 +1,14 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CorpusIdentity } from '../../../../src/lib/obsidian/corpus/identity.js';
 import { modelCorpusDir } from '../../../../src/lib/obsidian/corpus/layout.js';
-import { ShardCorpus } from '../../../../src/lib/obsidian/corpus/shard-corpus.js';
+import {
+  createShardCorpus,
+  ShardCorpus,
+} from '../../../../src/lib/obsidian/corpus/shard-corpus.js';
 import { ShardStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
 import type { CorpusShard, SmartSource } from '../../../../src/lib/obsidian/corpus/types.js';
 import { decodeVector, encodeVector } from '../../../../src/lib/obsidian/corpus/vector-codec.js';
@@ -440,5 +443,42 @@ describe('ShardCorpus', () => {
 
     expect(corpus.loaded).toBe(false);
     await expect(corpus.entries()).rejects.toThrow('corpus not loaded');
+  });
+
+  it('ensureIdentity adds the corpus directory to the vault gitignore once', async () => {
+    const { root, corpus } = await setup();
+    await writeFile(path.join(root, '.gitignore'), 'node_modules/\n');
+
+    await corpus.ensureIdentity(IDENTITY);
+    await corpus.ensureIdentity(IDENTITY);
+
+    expect(await readFile(path.join(root, '.gitignore'), 'utf8')).toBe(
+      'node_modules/\n.neuro-vault/corpus/\n',
+    );
+  });
+
+  it('ensureIdentity creates no gitignore the vault does not have', async () => {
+    const { root, corpus } = await setup();
+
+    await corpus.ensureIdentity(IDENTITY);
+
+    await expect(access(path.join(root, '.gitignore'))).rejects.toThrow();
+  });
+});
+
+describe('createShardCorpus', () => {
+  it("keeps the profile's records in its own model directory", async () => {
+    const root = await makeRoot();
+    const corpus = createShardCorpus(root, { key: MODEL_KEY, identity: IDENTITY });
+
+    await corpus.ensureIdentity(IDENTITY);
+    await corpus.load();
+    await corpus.upsert(FIXTURE[0]);
+
+    const store = makeStore(root);
+    expect((await store.readManifest())?.model_key).toBe(MODEL_KEY);
+    expect(await store.readShard('a.md')).toEqual(FIXTURE[0]);
+    expect(corpus.size()).toBe(1);
+    await rm(root, { recursive: true, force: true });
   });
 });

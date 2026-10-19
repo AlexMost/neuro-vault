@@ -2,13 +2,13 @@ import { createHash } from 'node:crypto';
 
 import type { ICorpusWriter } from './corpus.js';
 import { buildEmbedInputs } from './embed-text.js';
-import type { CorpusIdentity } from './identity.js';
+import type { CorpusIdentity, RecordedIdentity } from './identity.js';
 import { corpusRootOf } from './layout.js';
 import { migrateLegacyCorpus } from './legacy-migration.js';
 import { acquireCorpusLock, type AcquireOptions, type CorpusLock } from './reconcile-lock.js';
-import { ShardStore, ensureCorpusGitignored } from './shard-store.js';
+import type { ShardStore } from './shard-store.js';
 import { shardWriter } from './shard-writer.js';
-import type { CorpusBlock, CorpusShard, EmbedDocumentsFn, StoredManifest } from './types.js';
+import type { CorpusBlock, CorpusShard, EmbedDocumentsFn } from './types.js';
 import { encodeVector } from './vector-codec.js';
 
 export interface NoteStat {
@@ -69,7 +69,7 @@ export interface ReconcileOptions {
    * (design D8). A stale manifest with no shards discards nothing and is not
    * reported.
    */
-  onRebuild?: (rebuild: { stored: StoredManifest | null; active: CorpusIdentity }) => void;
+  onRebuild?: (rebuild: { stored: RecordedIdentity | null; active: CorpusIdentity }) => void;
   /**
    * Called once, before anything is read, when another live process holds the
    * vault's lock and this pass starts waiting for it (design D7, D9).
@@ -131,7 +131,7 @@ export async function reconcileCorpus(
     },
     async () => {
       const paths = await deps.scan();
-      const summary = await reconcileProfile(
+      return reconcileProfile(
         {
           vaultRoot: deps.vaultRoot,
           stat: deps.stat,
@@ -144,10 +144,6 @@ export async function reconcileCorpus(
         paths,
         opts,
       );
-      // Corpus maintenance, not part of the partial result an aborted run hands
-      // back — skipped so a shutdown is bounded by the note in flight and nothing more.
-      if (!opts.signal?.aborted) await ensureCorpusGitignored(deps.vaultRoot, { warn });
-      return summary;
     },
   );
   return summary ?? emptySummary();
@@ -235,8 +231,7 @@ export interface IProfileReconcileDeps {
 
 /**
  * The per-note loop and orphan sweep for one profile (design D6 steps after
- * migration). The caller holds the vault's lock and has scanned `paths`; the
- * corpus gitignore is the caller's to write once every profile has run.
+ * migration). The caller holds the vault's lock and has scanned `paths`.
  */
 export async function reconcileProfile(
   deps: IProfileReconcileDeps,

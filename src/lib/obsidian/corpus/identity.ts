@@ -3,11 +3,20 @@ import {
   EMBED_VERSION,
   type CorpusManifest,
   type EmbeddingIdentity,
+  type ProducerField,
   type StoredManifest,
 } from './types.js';
 
 /** What a manifest records and a stored corpus is checked against. */
 export type CorpusIdentity = Omit<CorpusManifest, 'created'>;
+
+/**
+ * The identity a corpus has on record, wherever it keeps it. One recorded
+ * before embed_version 2 lacks the producer fields — still readable, so a
+ * rebuild can name what it replaces.
+ */
+export type RecordedIdentity = Omit<CorpusIdentity, ProducerField> &
+  Partial<Pick<CorpusIdentity, ProducerField>>;
 
 /** Every field a stored corpus must match to be reused (design D8); `created` is not one. */
 export const IDENTITY_FIELDS = [
@@ -43,6 +52,18 @@ export function corpusIdentityOf(embedding: EmbeddingIdentity): CorpusIdentity {
   };
 }
 
+/**
+ * Whether a corpus recorded under `recorded` can serve `expected`: every
+ * identity field agrees. Nothing on record never matches — vectors of unknown
+ * provenance are not reused.
+ */
+export function identityMatches(
+  recorded: RecordedIdentity | null,
+  expected: CorpusIdentity,
+): boolean {
+  return recorded !== null && IDENTITY_FIELDS.every((field) => recorded[field] === expected[field]);
+}
+
 /** `<model_key> (embed_version <n>)` — how a rebuild names a corpus identity. */
 export function formatIdentity(
   identity: Pick<CorpusManifest, 'model_key' | 'embed_version'> | null,
@@ -58,7 +79,7 @@ export function formatIdentity(
  * log would read "indexed with X; active model is X".
  */
 export function formatRebuild(
-  stored: StoredManifest | null,
+  stored: RecordedIdentity | null,
   active: CorpusIdentity,
 ): { stored: string; active: string } {
   const pair = { stored: formatIdentity(stored), active: formatIdentity(active) };

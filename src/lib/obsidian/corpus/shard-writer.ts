@@ -28,7 +28,12 @@ export function shardWriter(store: ShardStore): ICorpusWriter {
     },
     delete: (path) => store.deleteShard(path),
     identity: () => store.readManifest(),
-    ensureIdentity: (expected) => store.ensureManifest(expected),
+    async ensureIdentity(expected) {
+      const result = await store.ensureManifest(expected);
+      // As ShardCorpus does: a corpus kept inside the vault stays out of its git history.
+      await store.ensureGitignored();
+      return result;
+    },
     // Disk is the only copy, so there is nothing to bring up to date.
     refresh: () => Promise.resolve(),
   };

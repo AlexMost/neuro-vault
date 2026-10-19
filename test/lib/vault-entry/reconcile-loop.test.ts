@@ -1,9 +1,10 @@
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { ICorpus } from '../../../src/lib/obsidian/corpus/corpus.js';
 import {
   corpusIdentityOf,
   type CorpusIdentity,
@@ -27,6 +28,7 @@ import {
   type IReconcileLoopDeps,
 } from '../../../src/lib/vault-entry/reconcile-loop.js';
 import { TEST_DIMS, TEST_EMBEDDING_IDENTITY, TEST_IDENTITY } from '../../_identity.js';
+import { MemoryCorpus, memoryStore, type IMemoryStore } from '../../_memory-corpus.js';
 
 const SECOND_IDENTITY: CorpusIdentity = corpusIdentityOf({
   ...TEST_EMBEDDING_IDENTITY,
@@ -164,7 +166,7 @@ function corpusOn(root: string, identity: CorpusIdentity = TEST_IDENTITY) {
 
 function profileOf(
   key: string,
-  corpus: ShardCorpus,
+  corpus: ICorpus,
   opts: { identity?: CorpusIdentity; embed?: EmbedDocumentsFn; enabled?: boolean } = {},
 ): ILoopProfile {
   return {
@@ -1168,17 +1170,6 @@ describe('createReconcileLoop, many profiles', () => {
     expect(perNote[1]).toMatch(/^\[profile "b"\] neuro-vault corpus: failed to index/);
   });
 
-  it('marks the corpus gitignored once, after the profiles', async () => {
-    const t = await twoProfiles({ 'n1.md': body('1') });
-    await writeFile(path.join(t.root, '.gitignore'), 'node_modules/\n');
-    t.loop.addProfile(t.profiles.a);
-    t.loop.addProfile(t.profiles.b);
-    await t.loop.whenSettled();
-    expect(await readFile(path.join(t.root, '.gitignore'), 'utf8')).toBe(
-      'node_modules/\n.neuro-vault/corpus/\n',
-    );
-  });
-
   it('calls onSettled after each selection and after each profile a pass reconciled', async () => {
     const calls: Array<{ key: string; loaded: boolean }> = [];
     const files = { 'n1.md': body('1') };
@@ -1229,5 +1220,118 @@ describe('createReconcileLoop, many profiles', () => {
     t.loop.addProfile(t.profiles.a);
     expect(() => t.loop.addProfile(t.profiles.a)).toThrow(/already/);
     await t.loop.whenSettled();
+  });
+});
+
+/** Records matching `notes` as the fake vault reports them, under `identity`. */
+function memorySeeded(
+  notes: Record<string, string>,
+  opts: { identity?: CorpusIdentity; fill?: number } = {},
+): IMemoryStore {
+  const store = memoryStore();
+  store.identity = { ...(opts.identity ?? TEST_IDENTITY) };
+  for (const [notePath, content] of Object.entries(notes)) {
+    store.records.set(notePath, {
+      path: notePath,
+      content_hash: contentHash(content),
+      mtime: 1,
+      size: content.length,
+      embedding: encodeVector(vec(opts.fill ?? 0.1)),
+      blocks: [],
+    });
+  }
+  return store;
+}
+
+// The loop sees only ICorpus: these run it over a corpus with no shard anywhere.
+describe('createReconcileLoop over an in-memory corpus', () => {
+  it('builds a cold corpus and serves it, writing nothing under .neuro-vault/', async () => {
+    const h = await harness({ 'a.md': body('a'), 'b.md': body('b') });
+    const corpus = new MemoryCorpus();
+    h.loop.addProfile(profileOf('p', corpus));
+    await h.loop.whenSettled();
+    expect(h.loop.status('p')).toEqual({ state: 'ready' });
+    expect(corpus.size()).toBe(2);
+    expect(corpus.store.identity).toEqual(TEST_IDENTITY);
+    expect(h.loop.lastReconcile('p')).toMatchObject({ added: 2, changed: 0, removed: 0 });
+    await expect(access(path.join(h.root, '.neuro-vault'))).rejects.toThrow();
+  });
+
+  it('serves a compatible corpus at its startup selection, before the pass', async () => {
+    const files = { 'a.md': body('a') };
+    const held = gate();
+    const lock = scriptedLock(() => ({ gate: held.promise }));
+    const h = await harness(files, { withLock: lock.withLock });
+    const embed = vi.fn(okEmbed);
+    h.loop.addProfile(profileOf('p', new MemoryCorpus(memorySeeded(files)), { embed }));
+    await vi.waitFor(() => expect(h.loop.status('p')).toEqual({ state: 'ready' }));
+    held.open();
+    await h.loop.whenSettled();
+    expect(h.loop.status('p')).toEqual({ state: 'ready' });
+    expect(embed).not.toHaveBeenCalled();
+  });
+
+  it('announces and rebuilds a corpus recorded under another identity', async () => {
+    const files = { 'a.md': body('a') };
+    const h = await harness(files);
+    const corpus = new MemoryCorpus(memorySeeded(files, { identity: SECOND_IDENTITY, fill: 0.9 }));
+    h.loop.addProfile(profileOf('p', corpus));
+    await h.loop.whenSettled();
+    expect(h.warn).toHaveBeenCalledWith(
+      'neuro-vault corpus: vault "v" (profile "p") was indexed with second-model ' +
+        '(embed_version 2); active model is bge-micro-v2 (embed_version 2) — ' +
+        'discarding the corpus and re-indexing in the background',
+    );
+    expect(corpus.store.identity).toEqual(TEST_IDENTITY);
+    expect(corpus.vectorOf('a.md')?.[0]).toBeCloseTo(0.1);
+    expect(h.loop.status('p')).toEqual({ state: 'ready' });
+  });
+
+  it('follows edits and removals through the corpus writes', async () => {
+    const files = { 'a.md': body('a'), 'b.md': body('b') };
+    const h = await harness(files);
+    const corpus = new MemoryCorpus(memorySeeded(files));
+    const embed = vi.fn(okEmbed);
+    h.loop.addProfile(profileOf('p', corpus, { embed }));
+    await h.loop.whenSettled();
+    expect(embed).not.toHaveBeenCalled();
+
+    h.vault.edit('a.md', body('edited'));
+    h.vault.remove('b.md');
+    h.loop.requestPass();
+    await h.loop.whenSettled();
+
+    expect(embed).toHaveBeenCalledTimes(1);
+    expect([...(await corpus.entries()).keys()]).toEqual(['a.md']);
+    expect((await corpus.entries()).get('a.md')?.content_hash).toBe(contentHash(body('edited')));
+    expect(h.loop.lastReconcile('p')).toMatchObject({ added: 0, changed: 1, removed: 1 });
+  });
+
+  it('a pass that waited refreshes the corpus before reconciling it', async () => {
+    const files = { 'a.md': body('a') };
+    const lock = scriptedLock(() => ({ waited: true }));
+    const h = await harness(files, { withLock: lock.withLock });
+    const corpus = new MemoryCorpus(memorySeeded(files));
+    const refresh = vi.spyOn(corpus, 'refresh');
+    h.loop.addProfile(profileOf('p', corpus));
+    await h.loop.whenSettled();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('a corpus that throws makes the profile unavailable and is retried', async () => {
+    const timers: Timers = [];
+    const h = await harness({ 'a.md': body('a') }, fakeTimers(timers));
+    const corpus = new MemoryCorpus();
+    vi.spyOn(corpus, 'ensureIdentity').mockRejectedValueOnce(new Error('store unreachable'));
+    h.loop.addProfile(profileOf('p', corpus));
+    await h.loop.whenSettled();
+    expect(h.loop.status('p')).toMatchObject({
+      state: 'unavailable',
+      reason: 'Error: store unreachable',
+    });
+
+    timers[0].fn();
+    await h.loop.whenSettled();
+    expect(h.loop.status('p')).toEqual({ state: 'ready' });
   });
 });

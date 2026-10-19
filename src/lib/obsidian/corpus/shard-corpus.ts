@@ -7,15 +7,15 @@ import type {
   INearestOptions,
   INoteHit,
 } from './corpus.js';
-import type { CorpusIdentity } from './identity.js';
+import type { CorpusIdentity, RecordedIdentity } from './identity.js';
 import {
   compareBlockHits,
   compareNoteHits,
   cosineSimilarity,
   ensureSameDimensions,
 } from './scoring.js';
-import type { ShardStore } from './shard-store.js';
-import type { CorpusShard, SmartBlock, StoredManifest } from './types.js';
+import { ShardStore } from './shard-store.js';
+import type { CorpusShard, SmartBlock } from './types.js';
 import { decodeVector, encodeVector } from './vector-codec.js';
 
 interface IResident {
@@ -67,6 +67,23 @@ function shardOf(notePath: string, { entry, vector, blocks }: IResident): Corpus
  */
 function queryOf(anchor: CorpusAnchor, memory: Map<string, IResident>): ArrayLike<number> | null {
   return 'vector' in anchor ? anchor.vector : (memory.get(anchor.path)?.vector ?? null);
+}
+
+/**
+ * The production corpus for one model profile of a vault: a {@link ShardCorpus}
+ * over the profile's shard directory, `<vault>/.neuro-vault/corpus/<key>/`.
+ */
+export function createShardCorpus(
+  vaultRoot: string,
+  profile: { key: string; identity: CorpusIdentity },
+  deps: { warn?: (message: string) => void } = {},
+): ShardCorpus {
+  const store = new ShardStore(vaultRoot, {
+    modelKey: profile.key,
+    dims: profile.identity.dims,
+    warn: deps.warn,
+  });
+  return new ShardCorpus(store);
 }
 
 /**
@@ -222,13 +239,18 @@ export class ShardCorpus implements ICorpus {
     this.memory?.delete(notePath);
   }
 
-  identity(): Promise<StoredManifest | null> {
+  identity(): Promise<RecordedIdentity | null> {
     return this.store.readManifest();
   }
 
+  /**
+   * The manifest check of {@link ShardStore.ensureManifest}, then the vault's
+   * `.gitignore` line for the corpus directory: part of keeping a corpus on
+   * disk inside the vault, so done wherever the identity is settled.
+   */
   async ensureIdentity(
     expected: CorpusIdentity,
-  ): Promise<{ rebuilt: boolean; previous: StoredManifest | null }> {
+  ): Promise<{ rebuilt: boolean; previous: RecordedIdentity | null }> {
     const result = await this.store.ensureManifest(expected);
     // A rebuild cleared every shard, so the empty store is what memory now mirrors.
     if (result.rebuilt) this.memory = new Map();
@@ -238,6 +260,7 @@ export class ShardCorpus implements ICorpus {
     else if (result.previous === null && this.memory !== null && this.memory.size > 0) {
       await this.writeBack(this.memory);
     }
+    await this.store.ensureGitignored();
     return result;
   }
 
