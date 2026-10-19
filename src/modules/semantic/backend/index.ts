@@ -143,6 +143,7 @@ export function createVaultClients(opts: IVaultClientsOptions): IVaultClients {
   const profilesFor = (enabled: boolean): string[] => (enabled ? [opts.profile] : []);
 
   function localSide(vaultRoot: string, enabled: boolean): IVaultSide {
+    refuseIfDisposed();
     let side = localSides.get(vaultRoot);
     if (side === undefined) {
       const link = inProcessLink();
@@ -197,8 +198,11 @@ export function createVaultClients(opts: IVaultClientsOptions): IVaultClients {
     },
     dispose: async () => {
       disposed = true;
-      loopback?.close();
-      await entries?.dispose();
+      try {
+        loopback?.close();
+      } finally {
+        await entries?.dispose();
+      }
     },
   };
 }

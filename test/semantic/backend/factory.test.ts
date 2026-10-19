@@ -229,6 +229,50 @@ describe('createVaultClients', () => {
     );
   });
 
+  it('dispose still disposes the entries when closing the link throws', async () => {
+    const { services } = fakeServices('local');
+    const { entries, createEntries } = fakeEntries();
+    const clients = createVaultClients({
+      services,
+      shared: false,
+      profile: PROFILE,
+      embedder,
+      createEntries,
+    });
+    const backend = clients.semanticBackendFactory({
+      vaultRoot: '/v/a',
+      vaultName: 'a',
+      enabled: true,
+    });
+    expect(await backend.status()).toEqual({ state: 'ready' });
+    entries.detach.mockImplementation(() => {
+      throw new Error('detach failed');
+    });
+
+    await clients.dispose().catch(() => {});
+
+    expect(entries.detach).toHaveBeenCalledTimes(1);
+    expect(entries.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('after dispose, a root already built under --no-shared is refused like any other', async () => {
+    const { services } = fakeServices('local');
+    const { createEntries } = fakeEntries();
+    const clients = createVaultClients({
+      services,
+      shared: false,
+      profile: PROFILE,
+      embedder,
+      createEntries,
+    });
+    clients.semanticBackendFactory({ vaultRoot: '/v/a', vaultName: 'a', enabled: true });
+    await clients.dispose();
+
+    expect(() =>
+      clients.semanticBackendFactory({ vaultRoot: '/v/a', vaultName: 'a', enabled: true }),
+    ).toThrow(/vault clients disposed/);
+  });
+
   it('a switch to local that lands after dispose builds no entries', async () => {
     const { services } = fakeServices('daemon');
     let flip: (mode: 'local') => void = () => {};

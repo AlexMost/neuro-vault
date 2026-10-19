@@ -187,7 +187,7 @@ describe.skipIf(!posix)('vault clients over a daemon socket', () => {
       fs.rmSync(socketPath, { force: true });
       await startServer();
 
-      // The call that finds the connection gone reads unavailable; a later one reconnects.
+      // Some call finds the connection gone and reconnects; the status settles back to ready.
       await vi.waitFor(
         async () => {
           expect((await client.status(PROFILE)).state).toBe('ready');

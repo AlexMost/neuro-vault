@@ -211,7 +211,7 @@ describe('createLinkedVaultClient over the in-process loopback', () => {
     expect(all.info()[0]?.clients).toBe(0);
   });
 
-  it('the same read answers the same over the socket adapter and in-process', async () => {
+  it('the same read answers the same in-process and through the daemon service registry', async () => {
     const all = makeEntries();
     const { client } = clientOver(all, vault);
     await untilReady(() => client.status(PROFILE));
