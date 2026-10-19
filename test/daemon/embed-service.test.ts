@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createEmbedService, LOAD_FAILURE_MEMO_MS } from '../../src/daemon/services/embed.js';
-import { DaemonRpcError } from '../../src/daemon/protocol.js';
-import {
-  identityOf,
-  resolveModelProfile,
-  type ModelProfile,
-} from '../../src/lib/model-profiles.js';
+import { identityOf, resolveModelProfile } from '../../src/lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../src/modules/semantic/types.js';
 import { testCtx } from './_ctx.js';
 
@@ -80,7 +75,7 @@ describe('embed service', () => {
     expect(createProvider).toHaveBeenCalledTimes(2);
   });
 
-  it('serves query and documents, validating params', async () => {
+  it('serves query and documents', async () => {
     const service = createEmbedService({ createProvider: (p) => fakeProvider(p.key) });
     await expect(
       service.handlers.query({ profile: 'granite-97m', text: 'hello' }, testCtx()),
@@ -93,46 +88,18 @@ describe('embed service', () => {
         [0, 1, 0],
       ],
     });
-    await expect(
-      service.handlers.documents({ profile: 'granite-97m', texts: ['a', ' '] }, testCtx()),
-    ).rejects.toBeInstanceOf(DaemonRpcError);
-    await expect(
-      service.handlers.documents(
-        {
-          profile: 'granite-97m',
-          texts: new Array<string>(9).fill('t'),
-        },
-        testCtx(),
-      ),
-    ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
-    await expect(
-      service.handlers.query({ profile: 'granite-97m' }, testCtx()),
-    ).rejects.toMatchObject({
-      code: 'INVALID_PARAMS',
-    });
   });
 
-  it('rejects a blank query text and an empty texts array as INVALID_PARAMS', async () => {
+  // The params schemas are covered at the method edge (method-params.test.ts); the batch size
+  // is the loaded provider's, so only the handler can check it.
+  it('rejects a batch larger than the provider takes as INVALID_PARAMS', async () => {
     const service = createEmbedService({ createProvider: (p) => fakeProvider(p.key) });
     await expect(
-      service.handlers.query({ profile: 'granite-97m', text: '  \n' }, testCtx()),
-    ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
-    await expect(
-      service.handlers.documents({ profile: 'granite-97m', texts: [] }, testCtx()),
-    ).rejects.toMatchObject({ code: 'INVALID_PARAMS' });
-  });
-
-  it.each([
-    ['initialize', { profile: 'granite-97m', model: 'x' }],
-    ['query', { profile: 'granite-97m', text: 'q', prefix: 'query: ' }],
-    ['documents', { profile: 'granite-97m', texts: ['t'], batch: 2 }],
-  ] as const)('rejects an unexpected key in embed.%s as INVALID_PARAMS', async (method, params) => {
-    const createProvider = vi.fn((p: ModelProfile) => fakeProvider(p.key));
-    const service = createEmbedService({ createProvider });
-    await expect(service.handlers[method](params, testCtx())).rejects.toMatchObject({
-      code: 'INVALID_PARAMS',
-    });
-    expect(createProvider).not.toHaveBeenCalled();
+      service.handlers.documents(
+        { profile: 'granite-97m', texts: new Array<string>(9).fill('t') },
+        testCtx(),
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_PARAMS', message: 'at most 8 texts per call' });
   });
 
   it('builds the provider once when query arrives before any initialize', async () => {

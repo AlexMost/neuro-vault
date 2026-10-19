@@ -1,68 +1,85 @@
 import type { JSONRPCMessage, JSONRPCRequest, RequestId } from '@modelcontextprotocol/sdk/types.js';
 import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+import path from 'node:path';
+import { z } from 'zod';
 
 import type { IBlockHit, INoteHit } from '../lib/obsidian/corpus/corpus.js';
 import type { LexicalMatch } from '../lib/obsidian/lexical/rank.js';
 import type { BackendStatus } from '../lib/obsidian/semantic-backend.js';
 import type { EmbeddingIdentity } from '../lib/obsidian/corpus/types.js';
 import type { IVaultInfo } from '../lib/vault-entry/index.js';
+import { formatZodError } from '../lib/zod-issues.js';
 
 // ---- method shapes (the wire contract; see design D2) ----
-export interface EmbedInitializeParams {
-  profile: string;
-}
+// Each method's params are one closed zod object, the single owner of every constraint a schema
+// can express (ADR-0015, one layer down); the wire param types are inferred from it. A check that
+// needs runtime state (a known profile, a vector's width, the batch size) stays in the handler.
+
+// Refinement messages leave out the field: the issue's path names it (`texts.1: must not be blank`).
+const nonBlank = z.string().refine((text) => text.trim() !== '', 'must not be blank');
+const strings = z.array(z.string());
+
+export const embedInitializeParams = z.strictObject({ profile: z.string() });
+export type EmbedInitializeParams = z.infer<typeof embedInitializeParams>;
 export interface EmbedInitializeResult {
   identity: EmbeddingIdentity;
   max_batch_size: number;
 }
-export interface EmbedQueryParams {
-  profile: string;
-  text: string;
-}
+export const embedQueryParams = z.strictObject({ profile: z.string(), text: nonBlank });
+export type EmbedQueryParams = z.infer<typeof embedQueryParams>;
 export interface EmbedQueryResult {
   vector: number[];
 }
-export interface EmbedDocumentsParams {
-  profile: string;
-  texts: string[];
-}
+export const embedDocumentsParams = z.strictObject({
+  profile: z.string(),
+  texts: z.array(nonBlank).min(1, 'must not be empty'),
+});
+export type EmbedDocumentsParams = z.infer<typeof embedDocumentsParams>;
 export interface EmbedDocumentsResult {
   vectors: number[][];
 }
-/** What a `corpus.*` read is anchored on: a query vector, or a note already in the corpus. */
-export type CorpusAnchorParam = { vector: number[] } | { path: string };
-export interface CorpusNearestParams {
-  vault: string;
-  profile: string;
-  anchors: CorpusAnchorParam[];
-  threshold: number;
-  limit?: number;
-  allowed?: string[];
-  exclude?: string[];
-}
+/**
+ * What a `corpus.*` read is anchored on: a query vector, or a note already in the corpus.
+ * zod 4's `z.number()` refuses `NaN` and ±Infinity, so a vector is finite numbers.
+ */
+const corpusAnchorParam = z.union([
+  z.strictObject({ vector: z.array(z.number()) }),
+  z.strictObject({ path: z.string() }),
+]);
+export type CorpusAnchorParam = z.infer<typeof corpusAnchorParam>;
+/** What every `corpus.*` call carries. */
+const corpusCall = {
+  vault: z.string(),
+  profile: z.string(),
+  anchors: z.array(corpusAnchorParam),
+  threshold: z.number(),
+  limit: z.number().int().nonnegative().optional(),
+};
+export const corpusNearestParams = z.strictObject({
+  ...corpusCall,
+  allowed: strings.optional(),
+  exclude: strings.optional(),
+});
+export type CorpusNearestParams = z.infer<typeof corpusNearestParams>;
 /** One list per anchor, in order; `null` for a path anchor whose note has no vector. */
 export interface CorpusNearestResult {
   hits: (INoteHit[] | null)[];
 }
-export interface CorpusNearestBlocksParams {
-  vault: string;
-  profile: string;
-  anchors: CorpusAnchorParam[];
-  paths: string[];
-  threshold: number;
-  limit?: number;
-}
+export const corpusNearestBlocksParams = z.strictObject({ ...corpusCall, paths: strings });
+export type CorpusNearestBlocksParams = z.infer<typeof corpusNearestBlocksParams>;
 export interface CorpusNearestBlocksResult {
   hits: (IBlockHit[] | null)[];
 }
-export interface LexicalSearchParams {
-  vault: string;
-  queries: string[];
+/** Blank queries pass: the session already normalised them (it never sends fewer than one). */
+export const lexicalSearchParams = z.strictObject({
+  vault: z.string(),
+  queries: strings.min(1, 'must not be empty'),
   /** Absent: no filter. An empty list is a filter that matches nothing. */
-  allowed?: string[];
-  note_cap: number;
-  per_note_cap: number;
-}
+  allowed: strings.optional(),
+  note_cap: z.number().int().positive(),
+  per_note_cap: z.number().int().positive(),
+});
+export type LexicalSearchParams = z.infer<typeof lexicalSearchParams>;
 export interface LexicalSearchResult {
   notes: Array<{ path: string; matches: LexicalMatch[]; matched_queries: string[] }>;
   truncated: boolean;
@@ -70,18 +87,22 @@ export interface LexicalSearchResult {
   per_query_token_counts: Record<string, Record<string, number>>;
   total_notes: number;
 }
-export interface VaultAttachParams {
-  vault: string;
-  profiles: string[];
-}
+/**
+ * No scope, no exclusions, no corpus identity: the daemon reads those from the vault (spec). A
+ * relative `vault` is a malformed param, not an unavailable vault: the daemon has no cwd to
+ * resolve it against.
+ */
+export const vaultAttachParams = z.strictObject({
+  vault: z.string().refine((vault) => path.isAbsolute(vault), 'must be an absolute path'),
+  profiles: strings,
+});
+export type VaultAttachParams = z.infer<typeof vaultAttachParams>;
 export interface VaultAttachResult {
   vault: string;
   profiles: Record<string, BackendStatus>;
 }
-export interface VaultStatusParams {
-  vault: string;
-  profile: string;
-}
+export const vaultStatusParams = z.strictObject({ vault: z.string(), profile: z.string() });
+export type VaultStatusParams = z.infer<typeof vaultStatusParams>;
 
 /**
  * The per-vault read methods a session calls on the daemon: one row per wire method,
@@ -178,28 +199,29 @@ export function resultResponse(id: RequestId, result: unknown): JSONRPCMessage {
   return { jsonrpc: '2.0', id, result: result as Record<string, unknown> };
 }
 
-/** Params as an object, or `INVALID_PARAMS`. */
-export function asRecord(params: unknown): Record<string, unknown> {
-  if (typeof params !== 'object' || params === null || Array.isArray(params)) {
-    throw new DaemonRpcError('INVALID_PARAMS', 'params must be an object');
-  }
-  return params as Record<string, unknown>;
+/** One method of a service: its closed params schema, and the handler of the parsed params. */
+export interface IMethodDefinition<S extends z.ZodObject<z.ZodRawShape, z.core.$strict>, R> {
+  params: S;
+  handler: (params: z.infer<S>, ctx: IConnectionContext) => Promise<R>;
 }
 
-/** The params carry exactly `allowed`: every daemon method's params are closed. */
-export function onlyKeys(params: Record<string, unknown>, allowed: readonly string[]): void {
-  const extra = Object.keys(params).find((key) => !allowed.includes(key));
-  if (extra !== undefined) {
-    throw new DaemonRpcError('INVALID_PARAMS', `unexpected param "${extra}"`);
-  }
-}
-
-export function stringParam(params: Record<string, unknown>, name: string): string {
-  const value = params[name];
-  if (typeof value !== 'string') {
-    throw new DaemonRpcError('INVALID_PARAMS', `${name} must be a string`);
-  }
-  return value;
+/**
+ * A handler that parses its params against `params` before `handler` sees them. A mismatch is
+ * `INVALID_PARAMS`: the message names each issue (`<path>: <message>; …`) and `data.issues`
+ * lists them. The check lives in the handler, not in `ServiceRegistry.dispatch`, so the socket
+ * and the in-process loopback, which call the same handlers, validate alike.
+ */
+export function defineMethod<S extends z.ZodObject<z.ZodRawShape, z.core.$strict>, R>(
+  method: IMethodDefinition<S, R>,
+): MethodHandler {
+  return async (params, ctx) => {
+    const parsed = method.params.safeParse(params);
+    if (!parsed.success) {
+      const { message, issues } = formatZodError(parsed.error);
+      throw new DaemonRpcError('INVALID_PARAMS', message, { issues });
+    }
+    return method.handler(parsed.data, ctx);
+  };
 }
 
 /**

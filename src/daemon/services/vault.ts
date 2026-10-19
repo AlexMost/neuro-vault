@@ -1,25 +1,14 @@
-import path from 'node:path';
-
 import type { BackendStatus } from '../../lib/obsidian/semantic-backend.js';
 import type { VaultEntries } from '../../lib/vault-entry/index.js';
 import {
-  asRecord,
-  DaemonRpcError,
-  onlyKeys,
-  stringParam,
+  defineMethod,
+  vaultAttachParams,
+  vaultStatusParams,
   type IConnectionContext,
   type ServiceHandlers,
   type VaultAttachResult,
 } from '../protocol.js';
 import { wired } from './wired.js';
-
-function profilesParam(params: Record<string, unknown>): string[] {
-  const value = params.profiles;
-  if (!Array.isArray(value) || !value.every((p): p is string => typeof p === 'string')) {
-    throw new DaemonRpcError('INVALID_PARAMS', 'profiles must be an array of strings');
-  }
-  return value;
-}
 
 /**
  * `vault.attach` and `vault.status` over the daemon's vault entries (design D7).
@@ -45,26 +34,18 @@ export function createVaultService(entries: VaultEntriesPort): ServiceHandlers {
   }
 
   return {
-    attach: async (params, ctx): Promise<VaultAttachResult> => {
-      const record = asRecord(params);
-      // No scope, no exclusions, no corpus identity: the daemon reads those from the vault (spec).
-      onlyKeys(record, ['vault', 'profiles']);
-      const vault = stringParam(record, 'vault');
-      // A malformed param, not an unavailable vault: the daemon has no cwd to resolve it against.
-      if (!path.isAbsolute(vault)) {
-        throw new DaemonRpcError('INVALID_PARAMS', 'vault must be an absolute path');
-      }
-      const profiles = profilesParam(record);
-      // Hooked before the await: a connection closing mid-attach must still detach.
-      detachOnClose(ctx);
-      return wired(() => entries.attach(ctx.id, vault, profiles));
-    },
-    status: async (params, ctx): Promise<BackendStatus> => {
-      const record = asRecord(params);
-      onlyKeys(record, ['vault', 'profile']);
-      const vault = stringParam(record, 'vault');
-      const profile = stringParam(record, 'profile');
-      return wired(() => entries.status(ctx.id, vault, profile));
-    },
+    attach: defineMethod({
+      params: vaultAttachParams,
+      handler: async ({ vault, profiles }, ctx): Promise<VaultAttachResult> => {
+        // Hooked before the await: a connection closing mid-attach must still detach.
+        detachOnClose(ctx);
+        return wired(() => entries.attach(ctx.id, vault, profiles));
+      },
+    }),
+    status: defineMethod({
+      params: vaultStatusParams,
+      handler: async ({ vault, profile }, ctx): Promise<BackendStatus> =>
+        wired(() => entries.status(ctx.id, vault, profile)),
+    }),
   };
 }

@@ -1,7 +1,7 @@
 /**
  * The cost claim of the vault client: a new per-vault read costs a method-table row, its service
- * handler and a three-line view — and nothing in either vault-client adapter, the link, the
- * attachment or the client factory.
+ * handler (a params schema and the handler of the parsed params) and a three-line view — and
+ * nothing in either vault-client adapter, the link, the attachment or the client factory.
  *
  * `probe.echo` below is such a read. Its row is added by declaration merging into `VaultMethods`,
  * so it lives in this test file (the typecheck covers `test/`) instead of widening the shipped
@@ -15,10 +15,11 @@ import path from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { z } from 'zod';
+
 import {
-  asRecord,
+  defineMethod,
   ServiceRegistry,
-  stringParam,
   type ServiceHandlers,
 } from '../../../src/daemon/protocol.js';
 import { createVaultEntryServices } from '../../../src/daemon/services/vault-entry-services.js';
@@ -34,10 +35,12 @@ import {
 } from '../../../src/modules/semantic/vault-client/index.js';
 import { daemonServices } from '../../integration/_daemon-fixture.js';
 
+const probeEchoParams = z.strictObject({ vault: z.string(), text: z.string() });
+
 declare module '../../../src/daemon/protocol.js' {
   interface VaultMethods {
     'probe.echo': {
-      params: { vault: string; text: string };
+      params: z.infer<typeof probeEchoParams>;
       result: { vault: string; text: string };
     };
   }
@@ -47,10 +50,10 @@ const posix = process.platform !== 'win32';
 
 /** The new read's handler: the service side of the row. */
 const probe: ServiceHandlers = {
-  echo: async (params) => {
-    const record = asRecord(params);
-    return { vault: stringParam(record, 'vault'), text: stringParam(record, 'text') };
-  },
+  echo: defineMethod({
+    params: probeEchoParams,
+    handler: async ({ vault, text }) => ({ vault, text }),
+  }),
 };
 
 /** The new read's view: what a facade would add. */
