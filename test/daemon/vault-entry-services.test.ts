@@ -21,15 +21,17 @@ function fakeEntries() {
     detach: vi.fn(),
     reader: vi.fn(),
     lexical: vi.fn(),
+    graph: vi.fn(),
   } as unknown as VaultEntriesPorts & { attach: ReturnType<typeof vi.fn> };
 }
 
 describe('createVaultEntryServices', () => {
-  it('builds the vault, corpus and lexical services', () => {
+  it('builds the vault, corpus, lexical and graph services', () => {
     expect(Object.keys(createVaultEntryServices(fakeEntries()))).toEqual([
       'vault',
       'corpus',
       'lexical',
+      'graph',
     ]);
   });
 

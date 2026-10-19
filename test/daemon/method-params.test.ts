@@ -39,12 +39,18 @@ function setup() {
     perQueryTokenCounts: {},
     totalNotes: 0,
   }));
+  const graph = {
+    noteLinks: vi.fn(async () => ({ incoming: [], outgoing: [] })),
+    backlinkCounts: vi.fn(async (paths: readonly string[]) => paths.map(() => 0)),
+    resolve: vi.fn(async (targets: readonly string[]) => targets.map(() => null)),
+  };
   const entries = {
     attach: vi.fn(async (_id: number, vault: string) => ({ vault, profiles: {} })),
     status: vi.fn(() => ({ state: 'ready' as const })),
     detach: vi.fn(),
     reader: vi.fn(() => ({ reader, status: { state: 'ready' as const }, dims: DIMS })),
     lexical: vi.fn(() => ({ lexicalSearch })),
+    graph: vi.fn(() => graph),
   };
   const createProvider = vi.fn(() => ({
     identity: identityOf(resolveModelProfile(PROFILE)),
@@ -62,7 +68,7 @@ function setup() {
       expect(spy).not.toHaveBeenCalled();
     }
   };
-  return { services, untouched };
+  return { services, untouched, graph };
 }
 
 /** The two ways a request reaches a handler: each settles to its result or a DaemonRpcError. */
@@ -106,6 +112,9 @@ const VALID = {
     paths: ['a.md'],
   },
   'lexical.search': { vault: VAULT, queries: ['q'], note_cap: 10, per_note_cap: 3 },
+  'graph.noteLinks': { vault: VAULT, path: 'a.md' },
+  'graph.backlinkCounts': { vault: VAULT, paths: ['a.md'] },
+  'graph.resolve': { vault: VAULT, targets: ['A'] },
 } as const;
 type Method = keyof typeof VALID;
 
@@ -230,6 +239,22 @@ const CASES: ReadonlyArray<readonly [Method, string, unknown]> = [
     'allowed with a non-string',
     withParams('lexical.search', { allowed: ['a', 2] }),
   ],
+
+  ...(['graph.noteLinks', 'graph.backlinkCounts', 'graph.resolve'] as const).flatMap((method) => [
+    [method, 'no params', undefined] as const,
+    [method, 'a missing vault', without(method, 'vault')] as const,
+    [method, 'a non-string vault', withParams(method, { vault: 1 })] as const,
+    [method, 'a profile key', withParams(method, { profile: PROFILE })] as const,
+    [method, 'an unknown key', withParams(method, { extra: 1 })] as const,
+  ]),
+  ['graph.noteLinks', 'a missing path', without('graph.noteLinks', 'path')],
+  ['graph.noteLinks', 'a non-string path', withParams('graph.noteLinks', { path: ['a.md'] })],
+  ['graph.backlinkCounts', 'a missing paths', without('graph.backlinkCounts', 'paths')],
+  ['graph.backlinkCounts', 'a non-array paths', withParams('graph.backlinkCounts', { paths: 'a' })],
+  ['graph.backlinkCounts', 'a non-string path', withParams('graph.backlinkCounts', { paths: [1] })],
+  ['graph.resolve', 'a missing targets', without('graph.resolve', 'targets')],
+  ['graph.resolve', 'a non-array targets', withParams('graph.resolve', { targets: 'A' })],
+  ['graph.resolve', 'a null target', withParams('graph.resolve', { targets: ['A', null] })],
 ];
 
 describe.each(Object.entries(paths))('the method edge over the %s path', (_name, request) => {
@@ -249,6 +274,18 @@ describe.each(Object.entries(paths))('the method edge over the %s path', (_name,
       },
     });
     untouched();
+  });
+
+  it('passes empty paths and targets through to the graph', async () => {
+    const { services, graph } = setup();
+    expect(await request(services, 'graph.backlinkCounts', { vault: VAULT, paths: [] })).toEqual({
+      counts: [],
+    });
+    expect(await request(services, 'graph.resolve', { vault: VAULT, targets: [] })).toEqual({
+      paths: [],
+    });
+    expect(graph.backlinkCounts).toHaveBeenCalledWith([]);
+    expect(graph.resolve).toHaveBeenCalledWith([]);
   });
 
   it('names the field and the rule in the message', async () => {
