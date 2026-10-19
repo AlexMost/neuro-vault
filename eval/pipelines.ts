@@ -20,7 +20,7 @@ export const EVAL_TOP_K = 10;
  * 0 — eval counts positions. The expansion floor is the profile's own default,
  * so `fused` stays the production pipeline for that profile (design D12).
  * The pool numbers are read from the deep effort profile `runRetrievalPipeline`
- * itself reads, so the record cannot drift from the run.
+ * itself reads, so the recorded pool numbers cannot drift from the run.
  */
 export function evalConfig(similarity: SimilarityDefaults) {
   const deep = EFFORT_PROFILES.deep;

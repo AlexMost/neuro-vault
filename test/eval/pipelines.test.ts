@@ -1,12 +1,8 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SmartSource } from '../../src/lib/obsidian/corpus/types.js';
-import {
-  EFFORT_PROFILES,
-  LEXICAL_PER_NOTE_CAP,
-} from '../../src/modules/semantic/effort-profiles.js';
 import { runRetrievalPipeline } from '../../src/modules/semantic/retrieval-pipeline.js';
 import { TEST_SIMILARITY } from '../_identity.js';
 import { corpusOver } from '../_memory-corpus.js';
@@ -87,14 +83,47 @@ describe('fused pipeline', () => {
     expect(top).toContain('a.md');
   });
 
+  // The retired production-fusion pin's geometry: 10 unit vectors fanned away
+  // from the query, so deep's pool (8) seeds n0..n7 and leaves n8/n9
+  // expansion-only, plus a lexical-only note and two backlinks onto n9. That
+  // is 11 candidates against deep's merged cap of 12, so eval's top-k is the
+  // cut — a wrong effort, cap or pool changes the list.
+  const FAN = 10;
+  const fanPath = (i: number): string => `Notes/n${i}.md`;
+  const FAN_LEXICAL_ONLY = 'Notes/lexical-only quirkyterm.md';
+
+  function fanSources(): Map<string, SmartSource> {
+    return new Map(
+      Array.from({ length: FAN }, (_, i) => {
+        const t = i / FAN;
+        return src(fanPath(i), [Math.cos(t), Math.sin(t), 0]);
+      }),
+    );
+  }
+
+  function fanBody(i: number): string {
+    if (i === 3) return `# n3\n\n## quirkyterm section\n\nsome prose\n`;
+    if (i === 9) return `# n9\n\nprose mentioning quirkyterm inline\n`;
+    if (i === 5 || i === 6) return `# n${i}\n\nsee [[n9]]\n`;
+    return `# n${i}\n\nfiller prose\n`;
+  }
+
+  async function makeFanVault(): Promise<string> {
+    const root = await mkdtemp(path.join(tmpdir(), 'eval-fused-fan-'));
+    await mkdir(path.join(root, 'Notes'), { recursive: true });
+    for (let i = 0; i < FAN; i++) await writeFile(path.join(root, fanPath(i)), fanBody(i));
+    await writeFile(path.join(root, FAN_LEXICAL_ONLY), '# lexical only\n\nno vector here\n');
+    return root;
+  }
+
   it('ranks exactly as runRetrievalPipeline at deep effort, threshold 0, cap top-k', async () => {
-    vaultRoot = await makeFusedVault();
+    vaultRoot = await makeFanVault();
     const fusedContext = await createFusedContext(vaultRoot);
     const ranked = await rankQuery({
       pipeline: 'fused',
       query: 'quirkyterm',
       queryVector: QUERY_VECTOR,
-      corpus: corpusOver(SOURCES),
+      corpus: corpusOver(fanSources()),
       fusedContext,
       similarity: TEST_SIMILARITY,
     });
@@ -108,7 +137,7 @@ describe('fused pipeline', () => {
         cap: EVAL_TOP_K,
       },
       {
-        corpus: corpusOver(SOURCES),
+        corpus: corpusOver(fanSources()),
         lexical: fusedContext.lexical,
         filterExisting: (paths) => Promise.resolve(new Set(paths)),
         embeddingProvider: {
@@ -119,7 +148,44 @@ describe('fused pipeline', () => {
       },
     );
     expect(ranked).toEqual(candidates.map((c) => ({ path: c.path, score: c.score })));
-    expect(ranked.length).toBeGreaterThan(1);
+    // Non-vacuity: top-k is the cut, and every leg reaches the fused list.
+    expect(ranked).toHaveLength(EVAL_TOP_K);
+    expect(candidates.some((c) => c.lexical !== undefined && c.semantic === undefined)).toBe(true);
+    expect(candidates.some((c) => c.expansion !== undefined)).toBe(true);
+    expect(candidates.some((c) => c.semantic !== undefined)).toBe(true);
+  });
+
+  it('runs the legs with the knobs its config records', async () => {
+    vaultRoot = await makeFanVault();
+    const fusedContext = await createFusedContext(vaultRoot);
+    const lexicalSearch = vi.spyOn(fusedContext.lexical, 'search');
+    const corpus = corpusOver(fanSources());
+    const nearest = vi.spyOn(corpus, 'nearest');
+    await rankQuery({
+      pipeline: 'fused',
+      query: 'quirkyterm',
+      queryVector: QUERY_VECTOR,
+      corpus,
+      fusedContext,
+      similarity: TEST_SIMILARITY,
+    });
+    const config = evalConfig(TEST_SIMILARITY);
+    expect(lexicalSearch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        noteCap: config.lexical_note_cap,
+        perNoteCap: config.lexical_per_note_cap,
+      }),
+    );
+    // The seed read over-fetches one past the pool to detect overflow; the
+    // expansion read is the last, floored by the profile's expansion floor.
+    expect(nearest.mock.calls[0][1]).toMatchObject({
+      threshold: config.semantic_threshold,
+      limit: config.semantic_pool + 1,
+    });
+    expect(nearest.mock.calls.at(-1)?.[1]).toMatchObject({
+      threshold: config.expansion_floor,
+      limit: config.expansion_limit,
+    });
   });
 
   it('fails instead of reporting a lexical-only run when the semantic leg throws', async () => {
@@ -154,15 +220,13 @@ describe('bestRelevantSimilarity', () => {
 });
 
 describe('evalConfig', () => {
-  it('records every knob the run used, read from the deep effort profile', () => {
+  // The pool numbers are pinned against the run itself in 'runs the legs with
+  // the knobs its config records'; a retune must not need an edit here.
+  it('records the fixed knobs', () => {
     expect(evalConfig(TEST_SIMILARITY)).toMatchObject({
       top_k: 10,
       semantic_threshold: 0,
-      semantic_pool: EFFORT_PROFILES.deep.semanticPool,
-      expansion_limit: EFFORT_PROFILES.deep.expansionLimit,
       expansion_floor: 0.35,
-      lexical_note_cap: EFFORT_PROFILES.deep.lexicalNoteCap,
-      lexical_per_note_cap: LEXICAL_PER_NOTE_CAP,
       expansion_weight: 0.85,
       k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
     });
