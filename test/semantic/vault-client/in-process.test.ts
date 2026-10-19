@@ -13,6 +13,7 @@ import {
 } from '../../../src/daemon/protocol.js';
 import { createVaultEntryServices } from '../../../src/daemon/services/vault-entry-services.js';
 import { MODEL_PROFILES } from '../../../src/lib/model-profiles.js';
+import { LexicalSearchError } from '../../../src/lib/obsidian/lexical/reader.js';
 import type { BackendStatus } from '../../../src/lib/obsidian/semantic-backend.js';
 import { createVaultScope } from '../../../src/lib/obsidian/vault-scope.js';
 import {
@@ -20,18 +21,19 @@ import {
   VaultEntries,
   type IVaultEntriesDeps,
 } from '../../../src/lib/vault-entry/index.js';
+import { createLexicalReaderView } from '../../../src/modules/semantic/lexical/index.js';
 import {
   ATTACHING,
   createAttachment,
   createInProcessLink,
   createLinkedVaultClient,
   type IInProcessLink,
+  type IVaultAttachment,
   type IVaultClient,
 } from '../../../src/modules/semantic/vault-client/index.js';
 import { testCtx } from '../../daemon/_ctx.js';
 
 const PROFILE = 'granite-97m';
-const CLIENT_ID = 0;
 
 /** A note long enough to be embedded (`MIN_CHARS`), distinct per `seed`. */
 const noteBody = (seed: string) =>
@@ -84,10 +86,10 @@ describe('createLinkedVaultClient over the in-process loopback', () => {
   function clientOver(
     all: VaultEntries,
     vaultRoot: string,
-  ): { client: IVaultClient; link: IInProcessLink } {
-    const link = createInProcessLink(createVaultEntryServices(all), { clientId: CLIENT_ID });
+  ): { client: IVaultClient; link: IInProcessLink; attachment: IVaultAttachment } {
+    const link = createInProcessLink(createVaultEntryServices(all));
     const attachment = createAttachment({ link, vaultRoot, profiles: [PROFILE] });
-    return { client: createLinkedVaultClient({ link, attachment }), link };
+    return { client: createLinkedVaultClient({ link, attachment }), link, attachment };
   }
 
   async function untilReady(read: () => Promise<BackendStatus>): Promise<void> {
@@ -122,7 +124,7 @@ describe('createLinkedVaultClient over the in-process loopback', () => {
 
     // The statuses and the read after ready all ran on the one attach.
     expect(attach).toHaveBeenCalledTimes(1);
-    expect(attach).toHaveBeenCalledWith(CLIENT_ID, vault, [PROFILE]);
+    expect(attach).toHaveBeenCalledWith(expect.any(Number), vault, [PROFILE]);
   });
 
   it('reads answer once the profile is ready', async () => {
@@ -243,5 +245,65 @@ describe('createLinkedVaultClient over the in-process loopback', () => {
 
     expect(overSocket).toEqual(inProcess);
     expect(all.info()[0]?.clients).toBe(2);
+  });
+
+  describe('the lexical view over it', () => {
+    const SEARCH = { queries: ['alpha'], noteCap: 10, perNoteCap: 3 };
+
+    it("answers the entry's own lexicalSearch", async () => {
+      const all = makeEntries();
+      const attach = vi.spyOn(all, 'attach');
+      const { client } = clientOver(all, vault);
+
+      const actual = await createLexicalReaderView(client).search(SEARCH);
+
+      const [id] = attach.mock.calls[0] ?? [];
+      const { vault: key } = await (attach.mock.results[0]?.value as ReturnType<
+        VaultEntries['attach']
+      >);
+      const expected = await all.lexical(id, key).lexicalSearch(SEARCH);
+      expect(actual).toEqual(expected);
+      expect(actual.notes.map((note) => note.path)).toContain('alpha.md');
+    });
+
+    it('warm attaches, and never rejects for a vault that cannot be attached', async () => {
+      const all = makeEntries();
+      const { client, attachment } = clientOver(all, vault);
+      await expect(createLexicalReaderView(client).warm()).resolves.toBeUndefined();
+      expect(attachment.attached).toBe(true);
+
+      const missing = clientOver(all, path.join(root, 'missing'));
+      await expect(createLexicalReaderView(missing.client).warm()).resolves.toBeUndefined();
+      expect(missing.attachment.attached).toBe(false);
+    });
+
+    it('a vault that cannot be attached is a LexicalSearchError', async () => {
+      const { client } = clientOver(makeEntries(), path.join(root, 'missing'));
+
+      const error = await createLexicalReaderView(client)
+        .search(SEARCH)
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(LexicalSearchError);
+      expect((error as LexicalSearchError).message).toContain('cannot resolve vault');
+      expect((error as LexicalSearchError).cause).toBeInstanceOf(DaemonRpcError);
+    });
+
+    it('an entry that lost the attach answers NOT_ATTACHED once; the next search attaches again', async () => {
+      const all = makeEntries();
+      const attach = vi.spyOn(all, 'attach');
+      const { client, attachment } = clientOver(all, vault);
+      const reader = createLexicalReaderView(client);
+      await reader.search(SEARCH);
+
+      all.detach(attach.mock.calls[0][0]);
+      const error = await reader.search(SEARCH).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(LexicalSearchError);
+      expect(((error as LexicalSearchError).cause as DaemonRpcError).code).toBe('NOT_ATTACHED');
+      expect(attachment.attached).toBe(false);
+
+      await expect(reader.search(SEARCH)).resolves.toMatchObject({ truncated: false });
+      expect(attach).toHaveBeenCalledTimes(2);
+    });
   });
 });

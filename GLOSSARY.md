@@ -37,5 +37,5 @@ A session becoming a client of a vault entry. The entry lives while any session 
 _Avoid_: register, subscribe
 
 **Vault client**:
-A session's path to a vault entry, per vault directory and side: over the daemon connection, or in-process when the session runs the vault entry itself. It attaches, and the corpus reads go through it; the semantic backend is a view over it, and the lexical reader so far shares only its attach.
+A session's path to a vault entry, per vault directory and side: over the daemon connection, or in-process when the session runs the vault entry itself. It attaches, and every read of the entry goes through it; the semantic backend and the lexical reader are views over it.
 _Avoid_: facade, backend (the backend is one view), connection

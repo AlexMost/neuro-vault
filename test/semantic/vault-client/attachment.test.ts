@@ -1,13 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { DaemonRpcError } from '../../../src/daemon/protocol.js';
-import type { VaultEntries } from '../../../src/lib/vault-entry/index.js';
 import {
-  createDaemonAttachment,
-  createLocalAttachment,
-} from '../../../src/modules/semantic/backend/attachment.js';
-import type { IDaemonLink } from '../../../src/modules/semantic/daemon-connection.js';
-import type { ISharedServices } from '../../../src/modules/semantic/shared-services.js';
+  createAttachment,
+  type IVaultLink,
+} from '../../../src/modules/semantic/vault-client/index.js';
 
 const VAULT = '/vaults/notes';
 const REAL = '/private/vaults/notes';
@@ -15,11 +12,10 @@ const PROFILE = 'granite-97m';
 
 type Handler = (params: Record<string, unknown>) => unknown;
 
-function fakeServices(attach?: Handler) {
-  const link = {
+/** A link that answers `vault.attach` only; the test moves its epoch to model a reconnect. */
+function fakeLink(attach?: Handler) {
+  return {
     epoch: 1,
-    ensure: vi.fn(async () => {}),
-    close: vi.fn(),
     request: vi.fn(async (method: string, params: Record<string, unknown>, _timeoutMs: number) => {
       if (method !== 'vault.attach') throw new Error(`unexpected ${method}`);
       return (attach ?? (() => ({ vault: REAL, profiles: { [PROFILE]: { state: 'ready' } } })))(
@@ -27,19 +23,16 @@ function fakeServices(attach?: Handler) {
       );
     }),
   };
-  const services = {
-    mode: 'daemon',
-    connection: link as unknown as IDaemonLink,
-    ensure: vi.fn(async () => 'daemon' as const),
-    close: vi.fn(),
-  } as ISharedServices;
-  return { services, link };
 }
 
-describe('createDaemonAttachment', () => {
+/** The fake's `request` is not generic; the attachment only reads what it asked for. */
+const attachmentOver = (link: ReturnType<typeof fakeLink>, profiles: string[] = [PROFILE]) =>
+  createAttachment({ link: link as unknown as IVaultLink, vaultRoot: VAULT, profiles });
+
+describe('createAttachment', () => {
   it('attaches once per epoch and shares concurrent callers', async () => {
-    const { services, link } = fakeServices();
-    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [PROFILE] });
+    const link = fakeLink();
+    const attachment = attachmentOver(link);
 
     const keys = await Promise.all([attachment.key(), attachment.key()]);
     expect(keys).toEqual([REAL, REAL]);
@@ -57,8 +50,8 @@ describe('createDaemonAttachment', () => {
 
   it('reports attaching only while an attach is in flight on the current epoch', async () => {
     let answer: (value: unknown) => void = () => {};
-    const { services, link } = fakeServices(() => new Promise((resolve) => (answer = resolve)));
-    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [PROFILE] });
+    const link = fakeLink(() => new Promise((resolve) => (answer = resolve)));
+    const attachment = attachmentOver(link);
     expect(attachment.attaching).toBe(false);
 
     const key = attachment.key();
@@ -80,8 +73,8 @@ describe('createDaemonAttachment', () => {
   });
 
   it('re-attaches after a new epoch', async () => {
-    const { services, link } = fakeServices();
-    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [PROFILE] });
+    const link = fakeLink();
+    const attachment = attachmentOver(link);
     await attachment.key();
 
     link.epoch = 2;
@@ -91,8 +84,8 @@ describe('createDaemonAttachment', () => {
   });
 
   it('forget makes the next key attach again', async () => {
-    const { services, link } = fakeServices();
-    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [PROFILE] });
+    const link = fakeLink();
+    const attachment = attachmentOver(link);
     await attachment.key();
 
     attachment.forget();
@@ -102,8 +95,8 @@ describe('createDaemonAttachment', () => {
   });
 
   it('profiles [] is sent for an opted-out vault', async () => {
-    const { services, link } = fakeServices(() => ({ vault: REAL, profiles: {} }));
-    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [] });
+    const link = fakeLink(() => ({ vault: REAL, profiles: {} }));
+    const attachment = attachmentOver(link, []);
 
     expect(await attachment.key()).toBe(REAL);
 
@@ -114,12 +107,12 @@ describe('createDaemonAttachment', () => {
   it('an answer from a replaced epoch records nothing', async () => {
     let calls = 0;
     let answerStale: (value: unknown) => void = () => {};
-    const { services, link } = fakeServices(() => {
+    const link = fakeLink(() => {
       calls += 1;
       if (calls > 1) return { vault: REAL, profiles: { [PROFILE]: { state: 'ready' } } };
       return new Promise((resolve) => (answerStale = resolve));
     });
-    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [PROFILE] });
+    const attachment = attachmentOver(link);
 
     const stale = attachment.key();
     link.epoch = 2;
@@ -138,12 +131,12 @@ describe('createDaemonAttachment', () => {
   it('key() asked on a replaced epoch never resolves with the key it started with', async () => {
     let calls = 0;
     let answerStale: (value: unknown) => void = () => {};
-    const { services, link } = fakeServices(() => {
+    const link = fakeLink(() => {
       calls += 1;
       if (calls > 1) return { vault: REAL, profiles: {} };
       return new Promise((resolve) => (answerStale = resolve));
     });
-    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [] });
+    const attachment = attachmentOver(link, []);
 
     const stale = attachment.key();
     link.epoch = 2;
@@ -156,11 +149,11 @@ describe('createDaemonAttachment', () => {
   });
 
   it('key() rejects when every attach lands on a replaced epoch', async () => {
-    const { services, link } = fakeServices(() => {
+    const link = fakeLink(() => {
       link.epoch += 1;
       return { vault: '/stale/key', profiles: {} };
     });
-    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [] });
+    const attachment = attachmentOver(link, []);
 
     await expect(attachment.key()).rejects.toThrow(/connection changed/);
     expect(attachment.attached).toBe(false);
@@ -168,11 +161,11 @@ describe('createDaemonAttachment', () => {
 
   it('rejects an answer without a vault key and attaches again next time', async () => {
     let calls = 0;
-    const { services, link } = fakeServices(() => {
+    const link = fakeLink(() => {
       calls += 1;
       return calls === 1 ? { profiles: {} } : { vault: REAL, profiles: {} };
     });
-    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [] });
+    const attachment = attachmentOver(link, []);
 
     await expect(attachment.key()).rejects.toThrow('without a vault key');
     expect(await attachment.key()).toBe(REAL);
@@ -180,40 +173,13 @@ describe('createDaemonAttachment', () => {
   });
 
   it('rejects VAULT_UNAVAILABLE as the daemon error itself', async () => {
-    const { services } = fakeServices(() => {
+    const link = fakeLink(() => {
       throw new DaemonRpcError('VAULT_UNAVAILABLE', 'cannot resolve vault');
     });
-    const attachment = createDaemonAttachment({ services, vaultRoot: VAULT, profiles: [PROFILE] });
+    const attachment = attachmentOver(link);
 
     const error = await attachment.key().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(DaemonRpcError);
     expect((error as DaemonRpcError).code).toBe('VAULT_UNAVAILABLE');
-  });
-});
-
-describe('createLocalAttachment', () => {
-  it('attaches once under the fixed connection id', async () => {
-    const attach = vi.fn(async () => ({
-      vault: REAL,
-      profiles: { [PROFILE]: { state: 'ready' as const } },
-    }));
-    const entries = { attach } as unknown as VaultEntries;
-    const attachment = createLocalAttachment({
-      entries,
-      connectionId: 0,
-      vaultRoot: VAULT,
-      profiles: [PROFILE],
-    });
-
-    const keys = await Promise.all([attachment.key(), attachment.key()]);
-    expect(keys).toEqual([REAL, REAL]);
-    expect(await attachment.key()).toBe(REAL);
-    expect(attach).toHaveBeenCalledTimes(1);
-    expect(attach).toHaveBeenCalledWith(0, VAULT, [PROFILE]);
-    expect(attachment.statusOf(PROFILE)).toEqual({ state: 'ready' });
-
-    attachment.forget();
-    await attachment.key();
-    expect(attach).toHaveBeenCalledTimes(2);
   });
 });

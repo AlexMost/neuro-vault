@@ -6,9 +6,9 @@ import type { IVaultLink } from './link.js';
 import { timeoutOf } from './timeouts.js';
 
 /**
- * One vault's attachment on one connection (design D7): the facades that read
- * the vault — the semantic backend, and the lexical reader after it — each
- * ask for the key, and the first to ask makes the one `vault.attach`.
+ * One vault's attachment on one link (design D4): the vault's client asks for the key before
+ * every call, and the first call on an epoch — whichever view made it — makes the one
+ * `vault.attach`.
  */
 export interface IVaultAttachment {
   /** The realpath key on the current epoch; attaches first when needed. Rejects as the attach does. */

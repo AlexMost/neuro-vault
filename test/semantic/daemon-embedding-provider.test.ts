@@ -141,6 +141,27 @@ describe('DaemonEmbeddingProvider — through the daemon', () => {
     expect(methods(link).slice(4)).toEqual(['embed.initialize', 'embed.query']);
   });
 
+  it('a handshake answered on a replaced connection commits nothing', async () => {
+    let answer: (value: unknown) => void = () => {};
+    const link = fakeLink({
+      'embed.initialize': () => new Promise((resolve) => (answer = resolve)),
+    });
+    const p = provider(link);
+
+    const initializing = p.initialize();
+    await vi.waitFor(() => expect(methods(link)).toEqual(['embed.initialize']));
+    link.epoch = 2; // reconnected while the handshake was in flight
+    answer(initAnswer(2));
+    await initializing;
+
+    // The old connection's batch size is not this one's, and this one still needs its handshake.
+    expect(p.maxBatchSize).toBe(8);
+    link.request.mockImplementation(async () => initAnswer(4));
+    await p.initialize();
+    expect(methods(link)).toEqual(['embed.initialize', 'embed.initialize']);
+    expect(p.maxBatchSize).toBe(4);
+  });
+
   it('chunks a document batch larger than the daemon reports', async () => {
     const link = fakeLink({
       'embed.initialize': initAnswer(2),

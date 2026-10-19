@@ -37,14 +37,14 @@ Parallelism: groups 1 and 2 are parallel-safe with each other (protocol + daemon
 
 ## 7. The lexical reader as a view (PR 2; parallel-safe with 8)
 
-- [ ] 7.1 `lexical/view.ts`: `createLexicalReaderView(client)` (`call('lexical.search')` → `fromWire`; every failure a `LexicalSearchError` with today's messages; `warm()` → `client.warm()`). `createVaultClients` uses it; the loopback loses `clientId`; `LOCAL_CONNECTION_ID`, the attachment shim, `lexical/daemon-reader.ts`, `lexical/local-reader.ts`, `test/semantic/backend/attachment.test.ts`, `test/semantic/lexical/daemon-reader.test.ts`, `local-reader.test.ts` deleted after their scenarios live in view and client tests; `parity.test.ts` and `test/integration/*` ported. `createVaultClients` moves to `vault-client/index.ts`.
-- [ ] 7.2 `VaultEntries`: `connectionId` → `clientId` (parameter names and doc comments only).
+- [x] 7.1 `lexical/view.ts`: `createLexicalReaderView(client)` (`call('lexical.search')` → `fromWire`; every failure a `LexicalSearchError` with today's messages; `warm()` → `client.warm()`). `createVaultClients` uses it; the loopback loses `clientId`; `LOCAL_CONNECTION_ID`, the attachment shim, `lexical/daemon-reader.ts`, `lexical/local-reader.ts`, `test/semantic/backend/attachment.test.ts`, `test/semantic/lexical/daemon-reader.test.ts`, `local-reader.test.ts` deleted after their scenarios live in view and client tests; `parity.test.ts` and `test/integration/*` ported. `createVaultClients` moves to `vault-client/index.ts`.
+- [x] 7.2 `VaultEntries`: `connectionId` → `clientId` (parameter names and doc comments only).
 
 ## 8. The embedding handshake on the epoch gate (PR 2; parallel-safe with 7)
 
-- [ ] 8.1 `DaemonEmbeddingProvider.handshake` runs on `createEpochGate` (commit: the batch size, on the epoch it ran on); `test/semantic/daemon-embedding-provider*` unchanged and passing, plus one test that a handshake answered on a replaced epoch commits nothing.
+- [x] 8.1 `DaemonEmbeddingProvider.handshake` runs on `createEpochGate` (commit: the batch size, on the epoch it ran on); `test/semantic/daemon-embedding-provider*` unchanged and passing, plus one test that a handshake answered on a replaced epoch commits nothing.
 
 ## 9. PR 2 docs sweep, verify, archive, PR (sequential after 7, 8)
 
-- [ ] 9.1 Sweep all of `docs/` (architecture, guide, README) and `GLOSSARY.md` for the old facade names, `LOCAL_CONNECTION_ID`, `connectionId`; `docs/architecture/lexical-search.md` updated.
-- [ ] 9.2 `/opsx:verify` → `verify.md`; `retrospective.md`; `/opsx:archive`; gates; PR with `Closes #193`.
+- [x] 9.1 Sweep all of `docs/` (architecture, guide, README) and `GLOSSARY.md` for the old facade names, `LOCAL_CONNECTION_ID`, `connectionId`; `docs/architecture/lexical-search.md` updated.
+- [x] 9.2 `/opsx:verify` → `verify.md`; `retrospective.md`; `/opsx:archive`; gates; PR with `Closes #193`.

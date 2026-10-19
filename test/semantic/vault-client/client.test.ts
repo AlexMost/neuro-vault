@@ -26,6 +26,7 @@ const VAULT = '/vaults/notes';
 const REAL = '/private/vaults/notes';
 const PROFILE = 'granite-97m';
 const READ = { profile: PROFILE, anchors: [{ path: 'a.md' }], threshold: 0.5 };
+const LEXICAL = { queries: ['alpha'], note_cap: 10, per_note_cap: 3 };
 
 type Handler = (params: Record<string, unknown>) => unknown;
 
@@ -36,6 +37,13 @@ function fakeServices(handlers: Record<string, Handler> = {}) {
     'vault.status': () => ({ state: 'ready' }),
     'corpus.nearest': (p) => ({ hits: (p.anchors as unknown[]).map(() => []) }),
     'corpus.nearestBlocks': (p) => ({ hits: (p.anchors as unknown[]).map(() => []) }),
+    'lexical.search': () => ({
+      notes: [],
+      truncated: false,
+      per_query_counts: {},
+      per_query_token_counts: {},
+      total_notes: 0,
+    }),
   };
   const link = {
     epoch: 1,
@@ -447,11 +455,42 @@ describe('createDaemonVaultClient', () => {
     await client.status(PROFILE);
     await client.status(PROFILE);
     await client.call('corpus.nearest', READ);
+    await client.call('lexical.search', LEXICAL);
 
     expect(link.request.mock.calls).toEqual([
       ['vault.attach', { vault: VAULT, profiles: [PROFILE] }, 10_000],
       ['vault.status', { vault: REAL, profile: PROFILE }, 10_000],
       ['corpus.nearest', { ...READ, vault: REAL }, 30_000],
+      ['lexical.search', { ...LEXICAL, vault: REAL }, 30_000],
+    ]);
+  });
+
+  it('a call that times out or loses the connection rejects as itself, and never flips the switch', async () => {
+    const failures = [
+      new DaemonTimeoutError('daemon request lexical.search timed out after 30000 ms'),
+      new DaemonConnectionError('daemon connection closed during lexical.search'),
+    ];
+    let reads = 0;
+    const { services, link } = fakeServices({
+      'lexical.search': () => {
+        const failure = failures[reads++];
+        if (failure) throw failure;
+        return { notes: [], truncated: false };
+      },
+    });
+    const client = clientOver(services);
+
+    for (const failure of failures) {
+      await expect(client.call('lexical.search', LEXICAL)).rejects.toBe(failure);
+      expect(services.mode).toBe('daemon');
+    }
+    // The next call goes to the daemon again, on the attach it kept.
+    await expect(client.call('lexical.search', LEXICAL)).resolves.toMatchObject({ notes: [] });
+    expect(methods(link)).toEqual([
+      'vault.attach',
+      'lexical.search',
+      'lexical.search',
+      'lexical.search',
     ]);
   });
 
@@ -468,10 +507,12 @@ describe('createDaemonVaultClient', () => {
       hits: [[{ path: 'local.md', similarity: 1 }]],
     });
     await client.call('corpus.nearestBlocks', { ...READ, paths: [] });
+    await client.call('lexical.search', LEXICAL);
     await client.warm();
 
     expect(makeLocal).toHaveBeenCalledTimes(1);
     expect(local.call).toHaveBeenCalledWith('corpus.nearest', READ);
+    expect(local.call).toHaveBeenCalledWith('lexical.search', LEXICAL);
     expect(local.warm).toHaveBeenCalledTimes(1);
     // Nothing after the switch went to the daemon.
     expect(methods(link)).toEqual(['vault.attach']);

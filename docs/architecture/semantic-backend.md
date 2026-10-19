@@ -40,7 +40,7 @@ A read answers paths and similarities (and, for a block, its heading and lines),
 
 ## Two implementations, one factory
 
-`createVaultClients` (`src/modules/semantic/backend/index.ts`) is built once per process by `startNeuroVaultServer`, when the semantic module is on, and hands the registry its `semanticBackendFactory` and its `lexicalReaderFactory` (below). For each vault the semantic factory returns:
+`createVaultClients` (`src/modules/semantic/vault-client/index.ts`) is built once per process by `startNeuroVaultServer`, when the semantic module is on, and hands the registry its `semanticBackendFactory` and its `lexicalReaderFactory` (below). For each vault the semantic factory returns:
 
 | Vault | Backend |
 | --- | --- |
@@ -61,7 +61,7 @@ The two enabled backends are one view over two clients; nothing in the backend k
 
 ### The vault client
 
-`IVaultClient` (`src/modules/semantic/vault-client/`) is one vault root on one side, the daemon's socket or the in-process loopback, and the path the semantic backend takes to that vault's entry ([ADR-0021](../adr/0021-vault-client.md)). The lexical readers do not go through it yet: they share only its attachment and reach the entry themselves ([The vault clients](#the-vault-clients)):
+`IVaultClient` (`src/modules/semantic/vault-client/`) is one vault root on one side, the daemon's socket or the in-process loopback, and the one path the vault's semantic backend and its lexical reader take to that vault's entry ([ADR-0021](../adr/0021-vault-client.md)): both are views over it ([The vault clients](#the-vault-clients)):
 
 ```typescript
 interface IVaultClient {
@@ -81,9 +81,9 @@ interface IVaultClient {
 
 The socket adapter, `createDaemonVaultClient({ services, attachment, local })` (`daemon-client.ts`), is that core over the process's one connection, `ISharedServices` ([`shared-daemon.md`](./shared-daemon.md#the-session-side-facades)), plus the switch:
 
-- **The switch, consulted for the backend.** Every call first runs `services.ensure()`, except a `status()` while the switch is undecided (below). Once `ensure()` answers `local` (the daemon could not be located or started), every call goes to the vault's in-process client, built on the first call that needs it.
+- **The switch, consulted once for the vault.** Every call first runs `services.ensure()`, except a `status()` while the switch is undecided (below). Once `ensure()` answers `local` (the daemon could not be located or started), every call goes to the vault's in-process client, built on the first call that needs it.
 - **While the switch is undecided** (`services.mode` is `pending`: the first `ensure()` is locating or spawning the daemon), `status()` answers `indexing` 0/0 without waiting and starts, or joins, a background `ensure()` that then attaches on the decided side. Should the services close under that connect, the switch stays undecided and later statuses read `unavailable` with the closing reason. Once decided, a status that finds the connection gone waits for the reconnect, then reads through the core; a connect that fails reads `unavailable` for that call.
-- **Transport failures** (`DaemonTimeoutError`, `DaemonConnectionError`, `SharedServicesClosedError`) reach the backend only through this adapter; the in-process side has no transport to fail. The legacy daemon lexical reader consults the switch and meets the same failures on its own.
+- **Transport failures** (`DaemonTimeoutError`, `DaemonConnectionError`, `SharedServicesClosedError`) reach the views only through this adapter; the in-process side has no transport to fail. None of them flips the switch: only `ensure()` does.
 - **`dispose()`** disposes the in-process client if one was built. The connection is the process's, and closing it is the server's job (below).
 
 ### The in-process side
@@ -91,13 +91,13 @@ The socket adapter, `createDaemonVaultClient({ services, attachment, local })` (
 The in-process client is the same core over a loopback link instead of the socket: there is nothing left to adapt. The loopback (`createInProcessLink`, `vault-client/link.ts`) calls the daemon's own `vault`, `corpus` and `lexical` handlers, the map `createVaultEntryServices` builds (`src/daemon/services/vault-entry-services.ts`), over this process's own `VaultEntries`: the same module the daemon runs ([`vault-entry.md`](./vault-entry.md)), so the vault's scope, lexical cache, watcher, reconcile loop and corpus live in this process instead.
 
 - **One error vocabulary.** The loopback resolves `<namespace>.<method>` as the daemon's registry does and answers as the wire would: the handler's `DaemonRpcError` as it is, `UNKNOWN_METHOD` for a method that does not exist, `INTERNAL` with the message for any other throw. The handlers validate the same params the daemon does, and a read the corpus cannot serve yet answers `CORPUS_NOT_READY`, so a caller sees one error vocabulary whichever side serves the vault. The loopback ignores timeouts and its epoch never changes, so a vault attaches once, unless that attach fails or a `NOT_ATTACHED` forgets it.
-- **One loopback per process**, shared by every vault's in-process client, as the daemon side shares one connection. For now it reads under the fixed id `LOCAL_CONNECTION_ID` (0), the id the legacy in-process lexical reader reads the entry under ([`lexical-search.md`](./lexical-search.md#who-holds-the-cache)).
+- **One loopback per process**, shared by every vault's in-process client, as the daemon side shares one connection. The loopback is one client of the entries, under an id of its own (a counter in `link.ts`), so its attaches are kept and released together, as a daemon connection's are: closing it detaches it from every entry.
 - The process's `VaultEntries` and the loopback are built on first use, so a session the daemon serves never builds a watcher, a reconcile loop or a corpus. The entries embed documents through the session's own queue (`asDocumentEmbedFn`), for the session's one profile only, and never idle out (`idleTimeoutMs: 0`): the session holds them for its whole life. Under `--no-shared` every vault's backend and lexical reader is built over them at startup.
-- A client's `dispose()` releases nothing of its own: the loopback and the entries are the process's, closed by `createVaultClients().dispose()`. Once that has run, nothing builds them again; a backend that would need them reads `unavailable` and fails its reads.
+- A client's `dispose()` releases nothing of its own: the loopback and the entries are the process's, closed by `createVaultClients().dispose()`. Once that has run, nothing builds them again; a backend that would need them reads `unavailable` and fails its reads, and a lexical reader fails its searches.
 
 ### The vault clients
 
-Two readers read one vault: its semantic backend and its lexical reader ([`lexical-search.md`](./lexical-search.md#who-holds-the-cache)). `createVaultClients` builds one **attachment** and one client per vault root and side, on the first factory call for that root, and both readers share the attachment (`vault-client/attachment.ts`, `IVaultAttachment`, built by `createAttachment` over the side's link), so a vault makes one `vault.attach` per connection epoch whichever of them asks first, and a respawned daemon sees one attach followed by both a `corpus.*` and a `lexical.search` call. Until the vault-client change completes (#193), the lexical readers are still the earlier facades (`createDaemonLexicalReader`, `createLocalLexicalReader`) over that attachment rather than views over the client:
+Two views read one vault: its semantic backend and its lexical reader ([`lexical-search.md`](./lexical-search.md#who-holds-the-cache)). `createVaultClients` builds one client per vault root and side, on the first factory call for that root, and both views are built over it, so they share its one **attachment** (`vault-client/attachment.ts`, `IVaultAttachment`, built by `createAttachment` over the side's link): a vault makes one `vault.attach` per connection epoch whichever view calls first, and a respawned daemon sees one attach followed by both a `corpus.*` and a `lexical.search` call. The attachment is what the client asks before every call:
 
 - `key()` — the realpath key on the current epoch, attaching first when needed; concurrent callers share the attach, and a refused one (`VAULT_UNAVAILABLE`) rejects as it is. An answer that lands after the connection was replaced attached nothing on the new one, so `key()` attaches again on the current epoch and rejects once three answers in a row landed on replaced epochs.
 - `forget()` — drops the attach after a `NOT_ATTACHED`, so the next `key()` attaches again.

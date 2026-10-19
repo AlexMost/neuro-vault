@@ -9,7 +9,7 @@ import {
 } from '../../../src/modules/semantic/vault-client/timeouts.js';
 
 describe('createInProcessLink', () => {
-  it('calls the handler with a context carrying the link id', async () => {
+  it('calls the handler with a context carrying the link id, distinct per link', async () => {
     const seen: number[] = [];
     const services: Record<string, ServiceHandlers> = {
       vault: {
@@ -21,14 +21,11 @@ describe('createInProcessLink', () => {
     };
     const a = createInProcessLink(services);
     const b = createInProcessLink(services);
-    const fixed = createInProcessLink(services, { clientId: 0 });
     await a.request('vault.probe', {}, 1);
     await a.request('vault.probe', {}, 1);
     await b.request('vault.probe', {}, 1);
-    await fixed.request('vault.probe', {}, 1);
     expect(seen[0]).toBe(seen[1]);
     expect(seen[2]).not.toBe(seen[0]);
-    expect(seen[3]).toBe(0);
   });
 
   it('passes the params through and resolves with the handler result', async () => {

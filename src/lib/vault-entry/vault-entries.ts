@@ -67,7 +67,7 @@ interface IEntryRecord extends IClients {
   profiles: Map<string, IClients>;
 }
 
-/** A connection's attaches still awaiting I/O, and whether it closed under them. */
+/** A client's attaches still awaiting I/O, and whether it detached under them. */
 interface IInFlight {
   count: number;
   detached: boolean;
@@ -83,7 +83,9 @@ function samePatterns(a: readonly string[], b: readonly string[]): boolean {
 
 /**
  * The registry `realpath → IVaultEntry` (design D1, D7, D8): attach and status
- * per connection, and the idle policy that frees what no connection uses.
+ * per client, and the idle policy that frees what no client uses. A client id
+ * names one daemon connection, or one in-process link in a session (ADR-0021);
+ * the registry never asks which.
  *
  * Attach awaits only path checks and the vault's two small config files; every
  * corpus load and pass runs in the background behind the answer. Every attach
@@ -128,14 +130,14 @@ export class VaultEntries {
   }
 
   async attach(
-    connectionId: number,
+    clientId: number,
     vault: string,
     profiles: readonly string[],
   ): Promise<{ vault: string; profiles: Record<string, BackendStatus> }> {
     if (this.disposing !== null) throw new Error('vault entries: disposed');
-    const flight = this.inFlight.get(connectionId) ?? { count: 0, detached: false };
+    const flight = this.inFlight.get(clientId) ?? { count: 0, detached: false };
     flight.count += 1;
-    this.inFlight.set(connectionId, flight);
+    this.inFlight.set(clientId, flight);
     /** What this attach holds while it reads the scope, released in order: profiles, then entry. */
     let held: IClients[] = [];
     try {
@@ -159,7 +161,7 @@ export class VaultEntries {
       }
       // Synchronous from here: concurrent attaches of one vault cannot both create it.
       const record = this.recordFor(root, scope, semantic);
-      // A connection that closed while this attach awaited is no client: what
+      // A client that detached while this attach awaited is no client: what
       // this attach created idles out as if it had left.
       const joined = !flight.detached;
       for (const key of profiles) {
@@ -169,11 +171,11 @@ export class VaultEntries {
           attached = { ids: new Set(), holds: 0, expired: false };
           record.profiles.set(key, attached);
         }
-        if (joined) this.join(attached, connectionId);
+        if (joined) this.join(attached, clientId);
         else if (attached.ids.size === 0) this.arm(attached, () => this.free(record, key));
       }
       if (joined) {
-        this.join(record, connectionId);
+        this.join(record, clientId);
         record.idleSince = undefined;
         // The only reconcile trigger an entry whose watcher died still has
         // (spec: reconcile-on-attach); it coalesces with a pass the attach queued.
@@ -187,21 +189,21 @@ export class VaultEntries {
       };
     } finally {
       flight.count -= 1;
-      if (flight.count === 0) this.inFlight.delete(connectionId);
+      if (flight.count === 0) this.inFlight.delete(clientId);
       for (const clients of held) this.release(clients);
     }
   }
 
-  status(connectionId: number, vault: string, profile: string): BackendStatus {
-    return this.attached(connectionId, vault, profile).status(profile);
+  status(clientId: number, vault: string, profile: string): BackendStatus {
+    return this.attached(clientId, vault, profile).status(profile);
   }
 
   reader(
-    connectionId: number,
+    clientId: number,
     vault: string,
     profile: string,
   ): { reader: ICorpusReader; status: BackendStatus; dims: number } {
-    const entry = this.attached(connectionId, vault, profile);
+    const entry = this.attached(clientId, vault, profile);
     return {
       reader: entry.reader(profile),
       status: entry.status(profile),
@@ -211,11 +213,11 @@ export class VaultEntries {
 
   /**
    * Entry-level, unlike {@link reader}: lexical search needs no profile, so any
-   * connection attached to the vault (even with `profiles: []`) may search it.
+   * client attached to the vault (even with `profiles: []`) may search it.
    */
-  lexical(connectionId: number, vault: string): Pick<IVaultEntry, 'lexicalSearch'> {
+  lexical(clientId: number, vault: string): Pick<IVaultEntry, 'lexicalSearch'> {
     const record = this.records.get(vault);
-    if (record === undefined || !record.ids.has(connectionId)) {
+    if (record === undefined || !record.ids.has(clientId)) {
       throw new VaultEntryError(
         'NOT_ATTACHED',
         `vault "${vault}" is not attached on this connection`,
@@ -225,16 +227,16 @@ export class VaultEntries {
     return { lexicalSearch: (opts) => entry.lexicalSearch(opts) };
   }
 
-  detach(connectionId: number): void {
-    const flight = this.inFlight.get(connectionId);
+  detach(clientId: number): void {
+    const flight = this.inFlight.get(clientId);
     if (flight !== undefined) flight.detached = true;
     for (const record of this.records.values()) {
       for (const [key, attached] of record.profiles) {
-        if (attached.ids.delete(connectionId) && attached.ids.size === 0) {
+        if (attached.ids.delete(clientId) && attached.ids.size === 0) {
           this.arm(attached, () => this.free(record, key));
         }
       }
-      if (record.ids.delete(connectionId) && record.ids.size === 0) this.idle(record);
+      if (record.ids.delete(clientId) && record.ids.size === 0) this.idle(record);
     }
   }
 
@@ -334,8 +336,8 @@ export class VaultEntries {
     if (clients.ids.size === 0 && this.disposing === null) clients.expire?.();
   }
 
-  private join(clients: IClients, connectionId: number): void {
-    clients.ids.add(connectionId);
+  private join(clients: IClients, clientId: number): void {
+    clients.ids.add(clientId);
     clients.expired = false;
     if (clients.timer !== undefined) {
       this.timers.clearTimeout(clients.timer);
@@ -395,9 +397,9 @@ export class VaultEntries {
     });
   }
 
-  private attached(connectionId: number, vault: string, profile: string): IVaultEntry {
+  private attached(clientId: number, vault: string, profile: string): IVaultEntry {
     const record = this.records.get(vault);
-    if (record === undefined || !record.profiles.get(profile)?.ids.has(connectionId)) {
+    if (record === undefined || !record.profiles.get(profile)?.ids.has(clientId)) {
       throw new VaultEntryError(
         'NOT_ATTACHED',
         `vault "${vault}" with profile "${profile}" is not attached on this connection`,

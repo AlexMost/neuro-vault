@@ -884,7 +884,7 @@ describe('two vaults, one model', () => {
 /**
  * Startup attaches every vault in the background (spec: shared-corpus-reads). The
  * session talks to a scripted daemon through the real `DaemonConnection`,
- * `SharedServices` and daemon backend; only the socket behind them is a double.
+ * `SharedServices` and daemon vault client; only the socket behind them is a double.
  */
 describe('startup attach', () => {
   const GRANITE = resolveModelProfile('granite-97m');
