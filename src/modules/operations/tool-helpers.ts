@@ -57,32 +57,15 @@ export function validateDateValue(value: unknown, type: 'date' | 'datetime'): st
 }
 
 export function inferTypeAndValidate(
-  value: unknown,
+  value: SetPropertyToolInput['value'],
   explicitType: SetPropertyToolInput['type'],
 ): { value: PropertyValue; type: PropertyType | undefined } {
-  if (value === null || value === undefined) {
-    throw new ToolHandlerError(
-      'UNSUPPORTED_VALUE_TYPE' satisfies OperationsErrorCode,
-      'value must not be null or undefined',
-      { details: { value } },
-    );
-  }
-
   if (explicitType === 'date' || explicitType === 'datetime') {
     return { value: validateDateValue(value, explicitType), type: explicitType };
   }
 
   if (Array.isArray(value)) {
-    const stringified = value.map((v) => {
-      if (typeof v !== 'string' && typeof v !== 'number') {
-        throw new ToolHandlerError(
-          'UNSUPPORTED_VALUE_TYPE' satisfies OperationsErrorCode,
-          'list items must be string or number',
-          { details: { value } },
-        );
-      }
-      return String(v);
-    });
+    const stringified = value.map((v) => String(v));
     if (stringified.some((s) => s.includes(','))) {
       throw invalidArgument('list items must not contain commas', 'value');
     }
@@ -95,15 +78,7 @@ export function inferTypeAndValidate(
   if (typeof value === 'number') {
     return { value, type: explicitType ?? 'number' };
   }
-  if (typeof value === 'boolean') {
-    return { value, type: explicitType ?? 'checkbox' };
-  }
-
-  throw new ToolHandlerError(
-    'UNSUPPORTED_VALUE_TYPE' satisfies OperationsErrorCode,
-    `value of type ${typeof value} is not supported`,
-    { details: { value } },
-  );
+  return { value, type: explicitType ?? 'checkbox' };
 }
 
 export function normalizePath(raw: string): string {

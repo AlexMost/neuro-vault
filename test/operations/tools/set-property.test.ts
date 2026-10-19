@@ -142,16 +142,30 @@ describe('operations.setProperty handler', () => {
     expect(provider.setProperty).not.toHaveBeenCalled();
   });
 
-  // `value` is a union of string/number/boolean/string[]/number[], so `null`
-  // never survives the gate. The handler's UNSUPPORTED_VALUE_TYPE branch is
-  // what used to answer here; through the registration it is INVALID_PARAMS at
-  // `value`, which is what a real client sees.
-  it('rejects a null value at the gate', async () => {
+  // `value` is a union of string/number/boolean/string[]/number[], so none of
+  // these survives the gate: each is INVALID_PARAMS at `value`, which is what a
+  // real client sees, and the handler has no branch of its own for them.
+  it.each([
+    ['null', null],
+    ['a list item that is neither string nor number', [true]],
+    ['a list mixing strings and numbers', ['a', 1]],
+    ['an object', { a: 1 }],
+  ])('rejects %s at the gate', async (_, value) => {
     const provider = makeProvider();
 
     await expect(
-      callTool(buildReg(provider), { path: 'a.md', key: 'x', value: null }),
+      callTool(buildReg(provider), { path: 'a.md', key: 'x', value }),
     ).rejects.toMatchObject({
+      code: 'INVALID_PARAMS',
+      details: { issues: [{ path: 'value' }] },
+    });
+    expect(provider.setProperty).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing value at the gate', async () => {
+    const provider = makeProvider();
+
+    await expect(callTool(buildReg(provider), { path: 'a.md', key: 'x' })).rejects.toMatchObject({
       code: 'INVALID_PARAMS',
       details: { issues: [{ path: 'value' }] },
     });
