@@ -114,7 +114,13 @@ describe('createLinkedVaultClient over the in-process loopback', () => {
     release();
     expect((await first).state).toMatch(/^(indexing|ready)$/);
     await untilReady(() => client.status(PROFILE));
+    await client.call('corpus.nearest', {
+      profile: PROFILE,
+      anchors: [{ path: 'alpha.md' }],
+      threshold: 0,
+    });
 
+    // The statuses and the read after ready all ran on the one attach.
     expect(attach).toHaveBeenCalledTimes(1);
     expect(attach).toHaveBeenCalledWith(CLIENT_ID, vault, [PROFILE]);
   });
@@ -130,6 +136,43 @@ describe('createLinkedVaultClient over the in-process loopback', () => {
     });
     expect(hits).toHaveLength(1);
     expect(hits[0]?.map((hit) => hit.path).sort()).toEqual(['alpha.md', 'beta.md']);
+  });
+
+  it('with the embed held, the first status reads the attach answer for the profile', async () => {
+    embedGate = new Promise(() => {});
+    const all = makeEntries();
+    const attach = vi.spyOn(all, 'attach');
+    const { client } = clientOver(all, vault);
+
+    const first = await client.status(PROFILE);
+
+    const answered = await (attach.mock.results[0]?.value as ReturnType<VaultEntries['attach']>);
+    expect(answered.profiles[PROFILE]).toMatchObject({ state: 'indexing' });
+    expect(first).toEqual(answered.profiles[PROFILE]);
+  });
+
+  it('serves nearest with exclude and nearestBlocks once ready', async () => {
+    const { client } = clientOver(makeEntries(), vault);
+    await untilReady(() => client.status(PROFILE));
+
+    const { hits } = await client.call('corpus.nearest', {
+      profile: PROFILE,
+      anchors: [{ path: 'alpha.md' }],
+      threshold: -1,
+      exclude: ['alpha.md'],
+    });
+    expect(hits[0]).toEqual([
+      { path: 'beta.md', similarity: 1 },
+      { path: 'gamma.md', similarity: 0 },
+    ]);
+    const blocks = await client.call('corpus.nearestBlocks', {
+      profile: PROFILE,
+      anchors: [{ path: 'alpha.md' }],
+      paths: ['alpha.md'],
+      threshold: 0.5,
+    });
+    expect(blocks.hits).toHaveLength(1);
+    expect(blocks.hits[0]?.every((hit) => hit.path === 'alpha.md')).toBe(true);
   });
 
   it('a read while indexing is refused CORPUS_NOT_READY with the status in data', async () => {

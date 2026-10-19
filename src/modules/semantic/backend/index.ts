@@ -1,3 +1,4 @@
+import { createVaultEntryServices } from '../../../daemon/services/vault-entry-services.js';
 import {
   CorpusNotReadyError,
   type BackendStatus,
@@ -10,15 +11,15 @@ import type { QueuedEmbedder } from '../embed-queue.js';
 import { createDaemonLexicalReader, createLocalLexicalReader } from '../lexical/index.js';
 import type { ISharedServices } from '../shared-services.js';
 import {
-  createDaemonAttachment,
-  createLocalAttachment,
+  createAttachment,
+  createDaemonVaultClient,
+  createInProcessLink,
+  createLinkedVaultClient,
+  type IInProcessLink,
   type IVaultAttachment,
-} from './attachment.js';
-import { createDaemonSemanticBackend } from './daemon-backend.js';
-import { createLocalSemanticBackend } from './local-backend.js';
-
-export { createDaemonSemanticBackend } from './daemon-backend.js';
-export { createLocalSemanticBackend } from './local-backend.js';
+  type IVaultClient,
+} from '../vault-client/index.js';
+import { createSemanticBackendView } from './view.js';
 
 /** The one connection id this process attaches its in-process vault entries under. */
 export const LOCAL_CONNECTION_ID = 0;
@@ -42,9 +43,9 @@ export interface IVaultClients {
   /** The registry's `lexicalReaderFactory`: one vault in, its lexical reader out. */
   lexicalReaderFactory: IRegisteredVaultDeps['lexicalReaderFactory'];
   /**
-   * Disposes the in-process vault entries, if any vault ever needed them. Final:
-   * a backend that needs them afterwards reads `unavailable` and fails its reads,
-   * and a lexical reader fails its searches.
+   * Closes the in-process loopback, then disposes the in-process vault entries,
+   * if any vault ever needed them. Final: a backend that needs them afterwards
+   * reads `unavailable` and fails its reads, and a lexical reader fails its searches.
    */
   dispose(): Promise<void>;
 }
@@ -65,41 +66,59 @@ export function createDisabledSemanticBackend(): ISemanticBackend {
   };
 }
 
+/** One vault root on one side: its attachment, and the client over it. */
+interface IVaultSide {
+  attachment: IVaultAttachment;
+  client: IVaultClient;
+}
+
 /**
  * The process's vault-side clients (design D8): every vault's semantic backend
- * and lexical reader, and the one in-process {@link VaultEntries} the local
- * ones share (design D11, D12). Under `--shared` a vault's clients are the
- * daemon facades; under `--no-shared`, or once the daemon could not be located
- * or started, they read the vault entry run in this process. The entries are
- * built on first use, so a session the daemon serves never builds a watcher, a
- * reconcile loop or a corpus of its own.
+ * and lexical reader, over one {@link IVaultClient} per vault root and side.
+ * Under `--shared` a vault's client is the daemon client; under `--no-shared`,
+ * or once the daemon could not be located or started, it is the in-process
+ * client — the same core over a loopback that calls the daemon's own
+ * `vault`/`corpus`/`lexical` handlers on this process's {@link VaultEntries}.
+ * The one loopback and the entries under it are built on first use, so a
+ * session the daemon serves never builds a watcher, a reconcile loop or a
+ * corpus of its own.
  *
- * Each vault root has one attachment per side (design D7), built on the first
- * factory call for that root and shared by the vault's backend and reader:
- * the first of them to ask makes the one attach. It names the session's
- * profile for a vault that takes part in semantic search and none for one
- * that opted out with `"semantic": false`, which still attaches for its
- * lexical leg. The registry passes the same `enabled` to both factory calls
- * of a vault; were they ever to disagree, the first call's would win.
+ * Each vault root has one attachment per side, built on the first factory call
+ * for that root and shared by the vault's client and, until PR 2, its legacy
+ * lexical reader: the first of them to ask makes the one attach, so a vault
+ * still sends one `vault.attach` per epoch. It names the session's profile for
+ * a vault that takes part in semantic search and none for one that opted out
+ * with `"semantic": false`, which still attaches for its lexical leg. The
+ * registry passes the same `enabled` to both factory calls of a vault; were
+ * they ever to disagree, the first call's would win. The loopback attaches
+ * under {@link LOCAL_CONNECTION_ID}, the id the legacy in-process lexical
+ * reader reads the entry under.
  *
  * The entries index with the session's own embedder, for the session's one
  * profile; nothing in the process attaches another. They never idle out —
  * the session's clients hold them for its whole life — and `dispose()`
- * closes their watchers and stops the pass in flight, so nothing they started
+ * closes the loopback (which detaches it from every entry), then closes the
+ * entries' watchers and stops the pass in flight, so nothing they started
  * outlives the client (design D10).
  */
 export function createVaultClients(opts: IVaultClientsOptions): IVaultClients {
   const createEntries = opts.createEntries ?? ((deps) => new VaultEntries(deps));
   let entries: VaultEntries | undefined;
+  let loopback: IInProcessLink | undefined;
   let disposed = false;
-  /** One attachment per vault root and side: the backend and the reader of a vault share it. */
-  const daemonAttachments = new Map<string, IVaultAttachment>();
-  const localAttachments = new Map<string, IVaultAttachment>();
+  /** One attachment and client per vault root and side, shared by the vault's readers. */
+  const daemonSides = new Map<string, IVaultSide>();
+  const localSides = new Map<string, IVaultSide>();
+
+  /** Refuses once disposed: a call in flight at shutdown must not build what nothing disposes. */
+  function refuseIfDisposed(): void {
+    if (disposed) throw new Error('vault clients disposed: the session is shutting down');
+  }
 
   function localEntries(): VaultEntries {
-    // A call still in flight at shutdown (a daemon facade whose switch flipped
+    // A call still in flight at shutdown (a daemon client whose switch flipped
     // after teardown, say) must not start watchers and a pass nothing disposes.
-    if (disposed) throw new Error('vault clients disposed: the session is shutting down');
+    refuseIfDisposed();
     entries ??= createEntries({
       embedderFor: (key) => {
         if (key !== opts.profile) {
@@ -112,49 +131,52 @@ export function createVaultClients(opts: IVaultClientsOptions): IVaultClients {
     return entries;
   }
 
+  /** The one loopback over this process's entries, under the legacy local reader's id (PR 1). */
+  function inProcessLink(): IInProcessLink {
+    refuseIfDisposed();
+    loopback ??= createInProcessLink(createVaultEntryServices(localEntries()), {
+      clientId: LOCAL_CONNECTION_ID,
+    });
+    return loopback;
+  }
+
   const profilesFor = (enabled: boolean): string[] => (enabled ? [opts.profile] : []);
 
-  function localAttachment(vaultRoot: string, enabled: boolean): IVaultAttachment {
-    let attachment = localAttachments.get(vaultRoot);
-    if (attachment === undefined) {
-      attachment = createLocalAttachment({
-        entries: localEntries(),
-        connectionId: LOCAL_CONNECTION_ID,
+  function localSide(vaultRoot: string, enabled: boolean): IVaultSide {
+    let side = localSides.get(vaultRoot);
+    if (side === undefined) {
+      const link = inProcessLink();
+      const attachment = createAttachment({ link, vaultRoot, profiles: profilesFor(enabled) });
+      side = { attachment, client: createLinkedVaultClient({ link, attachment }) };
+      localSides.set(vaultRoot, side);
+    }
+    return side;
+  }
+
+  function daemonSide(vaultRoot: string, enabled: boolean): IVaultSide {
+    let side = daemonSides.get(vaultRoot);
+    if (side === undefined) {
+      const attachment = createAttachment({
+        link: opts.services.connection,
         vaultRoot,
         profiles: profilesFor(enabled),
       });
-      localAttachments.set(vaultRoot, attachment);
-    }
-    return attachment;
-  }
-
-  function daemonAttachment(vaultRoot: string, enabled: boolean): IVaultAttachment {
-    let attachment = daemonAttachments.get(vaultRoot);
-    if (attachment === undefined) {
-      attachment = createDaemonAttachment({
+      const client = createDaemonVaultClient({
         services: opts.services,
-        vaultRoot,
-        profiles: profilesFor(enabled),
+        attachment,
+        local: () => localSide(vaultRoot, enabled).client,
       });
-      daemonAttachments.set(vaultRoot, attachment);
+      side = { attachment, client };
+      daemonSides.set(vaultRoot, side);
     }
-    return attachment;
-  }
-
-  function localBackend(vaultRoot: string): ISemanticBackend {
-    return createLocalSemanticBackend({
-      entries: localEntries(),
-      connectionId: LOCAL_CONNECTION_ID,
-      attachment: localAttachment(vaultRoot, true),
-      profile: opts.profile,
-    });
+    return side;
   }
 
   function localReader(vaultRoot: string, enabled: boolean): ILexicalReader {
     return createLocalLexicalReader({
       entries: localEntries(),
       connectionId: LOCAL_CONNECTION_ID,
-      attachment: localAttachment(vaultRoot, enabled),
+      attachment: localSide(vaultRoot, enabled).attachment,
     });
   }
 
@@ -162,24 +184,20 @@ export function createVaultClients(opts: IVaultClientsOptions): IVaultClients {
     semanticBackendFactory: ({ vaultRoot, enabled }) => {
       // An opted-out vault's backend never attaches; its lexical reader does.
       if (!enabled) return createDisabledSemanticBackend();
-      if (!opts.shared) return localBackend(vaultRoot);
-      return createDaemonSemanticBackend({
-        services: opts.services,
-        attachment: daemonAttachment(vaultRoot, true),
-        profile: opts.profile,
-        local: () => localBackend(vaultRoot),
-      });
+      const side = opts.shared ? daemonSide(vaultRoot, true) : localSide(vaultRoot, true);
+      return createSemanticBackendView(side.client, opts.profile);
     },
     lexicalReaderFactory: ({ vaultRoot, enabled }) => {
       if (!opts.shared) return localReader(vaultRoot, enabled);
       return createDaemonLexicalReader({
         services: opts.services,
-        attachment: daemonAttachment(vaultRoot, enabled),
+        attachment: daemonSide(vaultRoot, enabled).attachment,
         local: () => localReader(vaultRoot, enabled),
       });
     },
     dispose: async () => {
       disposed = true;
+      loopback?.close();
       await entries?.dispose();
     },
   };
