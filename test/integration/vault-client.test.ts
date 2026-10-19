@@ -13,9 +13,12 @@ import type { BackendStatus } from '../../src/lib/obsidian/semantic-backend.js';
 import { VaultEntries } from '../../src/lib/vault-entry/index.js';
 import { createVaultEntry } from '../../src/lib/vault-entry/vault-entry.js';
 import type { DaemonConnection } from '../../src/modules/semantic/daemon-connection.js';
+import { createGraphReaderView } from '../../src/modules/semantic/graph/index.js';
 import {
   createAttachment,
   createDaemonVaultClient,
+  createInProcessLink,
+  createLinkedVaultClient,
   type IVaultClient,
 } from '../../src/modules/semantic/vault-client/index.js';
 import { daemonServices } from './_daemon-fixture.js';
@@ -209,4 +212,47 @@ describe.skipIf(!posix)('vault clients over a daemon socket', () => {
       );
     },
   );
+  it('two sessions read one entry graph', { timeout: 15_000 }, async () => {
+    await startServer();
+    const root = makeVault();
+    fs.writeFileSync(path.join(root, 'links.md'), 'see [[beta]] and [[nowhere]]\n');
+    const first = createGraphReaderView(session(root).client);
+    await expect(first.backlinkCounts(['beta.md', 'alpha.md'])).resolves.toEqual([1, 0]);
+
+    // A link written after the first build: within the TTL, every reader still sees that build.
+    fs.writeFileSync(path.join(root, 'more.md'), 'and [[beta]] again\n');
+    const second = createGraphReaderView(session(root).client);
+    await expect(second.backlinkCounts(['beta.md', 'alpha.md'])).resolves.toEqual([1, 0]);
+
+    const reads = await Promise.all(
+      [first, second].map(async (graph) => ({
+        links: await graph.noteLinks('links.md'),
+        resolved: await graph.resolve(['beta', 'nowhere']),
+      })),
+    );
+    expect(reads[0]).toEqual(reads[1]);
+    expect(reads[0]).toEqual({
+      links: {
+        incoming: [],
+        outgoing: [
+          { target: 'beta', resolved: true, path: 'beta.md' },
+          { target: 'nowhere', resolved: false },
+        ],
+      },
+      resolved: ['beta.md', null],
+    });
+    expect(entries.info()).toEqual([expect.objectContaining({ clients: 2 })]);
+
+    // The in-process client over the same entries reads the same build.
+    const link = createInProcessLink(createVaultEntryServices(entries));
+    const local = createGraphReaderView(
+      createLinkedVaultClient({
+        link,
+        attachment: createAttachment({ link, vaultRoot: root, profiles: [] }),
+      }),
+    );
+    await expect(local.backlinkCounts(['beta.md'])).resolves.toEqual([1]);
+    await expect(local.noteLinks('links.md')).resolves.toEqual(reads[0].links);
+    link.close();
+  });
 });
