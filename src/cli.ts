@@ -3,7 +3,7 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { parseConfig } from './config.js';
+import { parseConfig, ReportedArgvError } from './config.js';
 import { runIndexCommand, type IndexCommandDeps } from './cli-index.js';
 import type { DaemonCommandDeps } from './cli-daemon.js';
 import { startNeuroVaultServer, type NeuroVaultStartupDependencies } from './server.js';
@@ -53,12 +53,15 @@ export async function main(
   await startNeuroVaultServer(parsed.config, { cliPath: currentCliPath(), ...deps.server });
 }
 
-async function run(): Promise<void> {
+/** The entrypoint: run `main`, print what it throws on stderr, and exit 1. */
+export async function run(argv: string[] = process.argv): Promise<void> {
   try {
-    await main();
+    await main(argv);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(message);
+    // yargs already printed its own argv errors (usage, then the message).
+    if (!(error instanceof ReportedArgvError)) {
+      console.error(error instanceof Error ? error.message : String(error));
+    }
     process.exitCode = 1;
   }
 }
