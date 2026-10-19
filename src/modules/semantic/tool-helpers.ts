@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { CorpusNotReadyError } from '../../lib/obsidian/semantic-backend.js';
 import { ToolHandlerError } from '../../lib/tool-response.js';
 import type { IRegisteredVault } from '../../lib/vault-registry.js';
 
@@ -66,44 +67,17 @@ export function normalizeQueryArray(queries: string[]): string[] {
   return out;
 }
 
-export function readPositiveInteger(
-  value: number | undefined,
-  defaultValue: number,
-  field: string,
-): number {
-  if (value === undefined) {
-    return defaultValue;
-  }
-
-  if (!Number.isInteger(value) || value < 1) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', `${field} must be a positive integer`, {
-      details: { field },
-    });
-  }
-
-  return value;
-}
-
-export function readThreshold(
-  value: number | undefined,
-  defaultValue: number,
-  field: string,
-): number {
-  if (value === undefined) {
-    return defaultValue;
-  }
-
-  if (!Number.isFinite(value)) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', `${field} must be a finite number`, {
-      details: { field },
-    });
-  }
-
-  if (value < 0 || value > 1) {
-    throw new ToolHandlerError('INVALID_ARGUMENT', `${field} must be between 0 and 1`, {
-      details: { field },
-    });
-  }
-
-  return value;
+/**
+ * An unexpected dependency failure as `DEPENDENCY_ERROR`, keeping the cause and adding the
+ * operation context to `details`. A `ToolHandlerError` passes through as already shaped, and so
+ * does a `CorpusNotReadyError`: a corpus that stopped serving after the readiness gate let the
+ * call in is the dispatcher's to report, as the gate would.
+ */
+export function wrapDependencyError(
+  error: unknown,
+  message: string,
+  details: Record<string, unknown>,
+): ToolHandlerError | CorpusNotReadyError {
+  if (error instanceof ToolHandlerError || error instanceof CorpusNotReadyError) return error;
+  return new ToolHandlerError('DEPENDENCY_ERROR', message, { details, cause: error });
 }

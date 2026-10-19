@@ -446,6 +446,38 @@ describe('getSimilarNotes', () => {
     }
   });
 
+  it('rejects an out-of-range threshold and a non-positive or fractional limit', async () => {
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
+
+    try {
+      const registry = makeTestRegistry([{ name: 'v', path: tempRoot }]);
+      const reg = registerTool(
+        buildGetSimilarNotesTool({
+          registry,
+          embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
+          modelKey: MODEL_KEY,
+          similarity: TEST_SIMILARITY,
+        }),
+      );
+
+      for (const [field, value] of [
+        ['threshold', -0.01],
+        ['threshold', 1.01],
+        ['limit', 0],
+        ['limit', 1.5],
+      ] as const) {
+        await expect(
+          callTool(reg, { path: 'Folder/note-a.md', [field]: value }),
+        ).rejects.toMatchObject({
+          code: 'INVALID_PARAMS',
+          details: { issues: [{ path: field }] },
+        });
+      }
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects a vault argument in single-vault mode', async () => {
     const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
 

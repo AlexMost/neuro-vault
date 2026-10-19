@@ -436,6 +436,35 @@ describe('searchNotes', () => {
     }
   });
 
+  it('rejects an out-of-range expansion_floor and a non-positive or fractional limit', async () => {
+    const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
+    try {
+      const { deps, cleanup } = await makeSearchDeps({
+        sources,
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
+        modelKey: MODEL_KEY,
+      });
+      const reg = registerTool(buildSearchNotesTool(deps));
+      try {
+        for (const [field, value] of [
+          ['expansion_floor', -0.01],
+          ['expansion_floor', 1.01],
+          ['limit', 0],
+          ['limit', 1.5],
+        ] as const) {
+          await expect(callTool(reg, { query: 'alpha', [field]: value })).rejects.toMatchObject({
+            code: 'INVALID_PARAMS',
+            details: { issues: [{ path: field }] },
+          });
+        }
+      } finally {
+        await cleanup();
+      }
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects an empty query array', async () => {
     const { tempRoot, sources } = await makeVaultFixture(['note-a.ajson']);
     try {

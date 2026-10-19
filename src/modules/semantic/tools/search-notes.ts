@@ -7,12 +7,7 @@ import { buildMultiVaultTool, payloadOnly } from '../../../lib/multi-vault-tool.
 import { EFFORT_PROFILES } from '../effort-profiles.js';
 import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import { runRetrievalPipeline } from '../retrieval-pipeline.js';
-import {
-  normalizeQuery,
-  normalizeQueryArray,
-  readPositiveInteger,
-  readThreshold,
-} from '../tool-helpers.js';
+import { normalizeQuery, normalizeQueryArray, wrapDependencyError } from '../tool-helpers.js';
 import type {
   BlockMatch,
   QueryEmbedder,
@@ -139,17 +134,6 @@ export interface SearchNotesDeps {
   similarity: SimilarityDefaults;
   /** Defaults to console.error — diagnostics must never touch stdout (the MCP transport). */
   warn?: (message: string) => void;
-}
-
-function wrapDependencyError(
-  error: unknown,
-  message: string,
-  details: Record<string, unknown>,
-): ToolHandlerError {
-  if (error instanceof ToolHandlerError) {
-    return error;
-  }
-  return new ToolHandlerError('DEPENDENCY_ERROR', message, { details, cause: error });
 }
 
 function isFilterEmpty(filter: NoteFilter): boolean {
@@ -281,18 +265,10 @@ async function runSearchForEntry(
   // `channel` picks which retrieval leg(s) run. `effort` maps onto the
   // internal quick|deep retrieval-policy vocabulary. `threshold` is
   // semantic-only; the lexical leg has no similarity score to threshold.
+  // Every numeric bound is the schema's to enforce (ADR-0015).
   const channel = input.mode ?? 'hybrid';
   const effort = input.effort ?? 'quick';
-  const threshold =
-    input.threshold !== undefined
-      ? readThreshold(input.threshold, input.threshold, 'threshold')
-      : undefined;
-  const expansionFloor =
-    input.expansion_floor !== undefined
-      ? readThreshold(input.expansion_floor, input.expansion_floor, 'expansion_floor')
-      : undefined;
-  const limit =
-    input.limit !== undefined ? readPositiveInteger(input.limit, input.limit, 'limit') : undefined;
+  const { threshold, expansion_floor: expansionFloor, limit } = input;
 
   let allowed: Set<string> | undefined;
 
