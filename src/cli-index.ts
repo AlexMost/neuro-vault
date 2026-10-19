@@ -18,10 +18,12 @@ import {
   type ReconcileSummary,
 } from './lib/obsidian/corpus/reconcile.js';
 import type { EmbedDocumentsFn, EmbeddingIdentity } from './lib/obsidian/corpus/types.js';
-import { createQueuedEmbedder } from './modules/semantic/embed-queue.js';
 import type { ModelProfile } from './lib/model-profiles.js';
-import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
-import { createSharedServices } from './modules/semantic/shared-services.js';
+import {
+  createEmbeddingProvider,
+  createQueuedEmbedder,
+  createSharedServices,
+} from './modules/semantic/index.js';
 
 interface OutStream {
   isTTY?: boolean;
