@@ -17,13 +17,16 @@ import { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import { registerTool } from '../../src/lib/tool-registry.js';
 import { VaultEntries } from '../../src/lib/vault-entry/index.js';
 import { createVaultEntry } from '../../src/lib/vault-entry/vault-entry.js';
-import { createDaemonAttachment } from '../../src/modules/semantic/backend/attachment.js';
-import { createDaemonSemanticBackend } from '../../src/modules/semantic/backend/daemon-backend.js';
+import { createSemanticBackendView } from '../../src/modules/semantic/backend/view.js';
 import {
   createDaemonLexicalReader,
   createStandaloneLexicalReader,
 } from '../../src/modules/semantic/lexical/index.js';
 import type { DaemonConnection } from '../../src/modules/semantic/daemon-connection.js';
+import {
+  createAttachment,
+  createDaemonVaultClient,
+} from '../../src/modules/semantic/vault-client/index.js';
 import {
   buildSearchNotesTool,
   type SearchNotesOutput,
@@ -56,7 +59,7 @@ async function poll<T>(read: () => Promise<T>, done: (value: T) => boolean, time
 /**
  * Two sessions' worth of daemon backends against the real socket server, vault
  * and corpus services and vault entries — the daemon without its process and its
- * model. The sessions are the real `DaemonConnection` and daemon backend;
+ * model. The sessions are the real `DaemonConnection` and daemon vault client;
  * `ISharedServices` is the thin shell a session builds around the connection.
  */
 describe.skipIf(!posix)('sessions over a daemon socket', () => {
@@ -122,18 +125,25 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
     handle = await startDaemonServer({ socketPath, registry, idleTimeoutMs: 0, onIdle: () => {} });
   }
 
-  /** One session: its own connection to the socket, and a backend over it for `vaultRoot`. */
+  /**
+   * One session: its own connection to the socket, the vault's client over it for `vaultRoot`,
+   * and the semantic backend as the view over that client.
+   */
   function session(vaultRoot: string) {
     const { connection, services, sent } = daemonServices({ dir, socketPath });
-    const attachment = createDaemonAttachment({ services, vaultRoot, profiles: [PROFILE] });
-    const backend = createDaemonSemanticBackend({
+    const attachment = createAttachment({
+      link: services.connection,
+      vaultRoot,
+      profiles: [PROFILE],
+    });
+    const client = createDaemonVaultClient({
       services,
       attachment,
-      profile: PROFILE,
       local: () => {
         throw new Error('must not fall back: the daemon is listening');
       },
     });
+    const backend = createSemanticBackendView(client, PROFILE);
     connections.push(connection);
     backends.push(backend);
     return { connection, services, attachment, backend, sent };

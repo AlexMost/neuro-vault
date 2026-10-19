@@ -35,3 +35,7 @@ _Avoid_: vault registry entry, shared vault
 **Attach**:
 A session becoming a client of a vault entry. The entry lives while any session is attached, and for the idle timeout after the last one leaves.
 _Avoid_: register, subscribe
+
+**Vault client**:
+A session's path to a vault entry, per vault directory and side: over the daemon connection, or in-process when the session runs the vault entry itself. It attaches, and the corpus reads go through it; the semantic backend is a view over it, and the lexical reader so far shares only its attach.
+_Avoid_: facade, backend (the backend is one view), connection

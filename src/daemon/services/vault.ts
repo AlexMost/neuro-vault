@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import type { BackendStatus } from '../../lib/obsidian/semantic-backend.js';
 import type { VaultEntries } from '../../lib/vault-entry/index.js';
 import {
   asRecord,
@@ -8,6 +9,7 @@ import {
   stringParam,
   type IConnectionContext,
   type ServiceHandlers,
+  type VaultAttachResult,
 } from '../protocol.js';
 import { wired } from './wired.js';
 
@@ -43,7 +45,7 @@ export function createVaultService(entries: VaultEntriesPort): ServiceHandlers {
   }
 
   return {
-    attach: async (params, ctx) => {
+    attach: async (params, ctx): Promise<VaultAttachResult> => {
       const record = asRecord(params);
       // No scope, no exclusions, no corpus identity: the daemon reads those from the vault (spec).
       onlyKeys(record, ['vault', 'profiles']);
@@ -57,7 +59,7 @@ export function createVaultService(entries: VaultEntriesPort): ServiceHandlers {
       detachOnClose(ctx);
       return wired(() => entries.attach(ctx.id, vault, profiles));
     },
-    status: async (params, ctx) => {
+    status: async (params, ctx): Promise<BackendStatus> => {
       const record = asRecord(params);
       onlyKeys(record, ['vault', 'profile']);
       const vault = stringParam(record, 'vault');

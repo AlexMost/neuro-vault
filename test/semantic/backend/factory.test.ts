@@ -44,6 +44,7 @@ function fakeEntries() {
       status: { state: 'ready' as const },
       dims: 384,
     })),
+    detach: vi.fn(),
     dispose: vi.fn(async () => {}),
   };
   const createEntries = vi.fn((deps: IVaultEntriesDeps) => {
@@ -198,6 +199,78 @@ describe('createVaultClients', () => {
     used.clients.semanticBackendFactory({ vaultRoot: '/v/a', vaultName: 'a', enabled: true });
     await used.clients.dispose();
     expect(used.entries.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispose closes the in-process link before disposing the entries', async () => {
+    const { services } = fakeServices('local');
+    const { entries, createEntries } = fakeEntries();
+    const clients = createVaultClients({
+      services,
+      shared: false,
+      profile: PROFILE,
+      embedder,
+      createEntries,
+    });
+    const backend = clients.semanticBackendFactory({
+      vaultRoot: '/v/a',
+      vaultName: 'a',
+      enabled: true,
+    });
+    // The attach over the loopback hooks its close, as the daemon hooks a connection's.
+    expect(await backend.status()).toEqual({ state: 'ready' });
+    expect(entries.detach).not.toHaveBeenCalled();
+
+    await clients.dispose();
+
+    expect(entries.detach).toHaveBeenCalledExactlyOnceWith(LOCAL_CONNECTION_ID);
+    expect(entries.dispose).toHaveBeenCalledTimes(1);
+    expect(entries.detach.mock.invocationCallOrder[0]).toBeLessThan(
+      entries.dispose.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('dispose still disposes the entries when closing the link throws', async () => {
+    const { services } = fakeServices('local');
+    const { entries, createEntries } = fakeEntries();
+    const clients = createVaultClients({
+      services,
+      shared: false,
+      profile: PROFILE,
+      embedder,
+      createEntries,
+    });
+    const backend = clients.semanticBackendFactory({
+      vaultRoot: '/v/a',
+      vaultName: 'a',
+      enabled: true,
+    });
+    expect(await backend.status()).toEqual({ state: 'ready' });
+    entries.detach.mockImplementation(() => {
+      throw new Error('detach failed');
+    });
+
+    await clients.dispose().catch(() => {});
+
+    expect(entries.detach).toHaveBeenCalledTimes(1);
+    expect(entries.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('after dispose, a root already built under --no-shared is refused like any other', async () => {
+    const { services } = fakeServices('local');
+    const { createEntries } = fakeEntries();
+    const clients = createVaultClients({
+      services,
+      shared: false,
+      profile: PROFILE,
+      embedder,
+      createEntries,
+    });
+    clients.semanticBackendFactory({ vaultRoot: '/v/a', vaultName: 'a', enabled: true });
+    await clients.dispose();
+
+    expect(() =>
+      clients.semanticBackendFactory({ vaultRoot: '/v/a', vaultName: 'a', enabled: true }),
+    ).toThrow(/vault clients disposed/);
   });
 
   it('a switch to local that lands after dispose builds no entries', async () => {

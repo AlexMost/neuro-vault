@@ -27,13 +27,16 @@ import {
   runSearch,
 } from './_helpers.js';
 import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.js';
-import { createDaemonAttachment } from '../../../src/modules/semantic/backend/attachment.js';
-import { createDaemonSemanticBackend } from '../../../src/modules/semantic/backend/daemon-backend.js';
+import { createSemanticBackendView } from '../../../src/modules/semantic/backend/view.js';
 import {
   DaemonTimeoutError,
   type IDaemonLink,
 } from '../../../src/modules/semantic/daemon-connection.js';
 import type { ISharedServices } from '../../../src/modules/semantic/shared-services.js';
+import {
+  createAttachment,
+  createDaemonVaultClient,
+} from '../../../src/modules/semantic/vault-client/index.js';
 import { makeLexicalVault, sourcesScoring, sourcesWithEmbeddingFor } from './_hybrid-helpers.js';
 
 // Lightweight helpers for mock-only tests (no real corpus needed)
@@ -293,18 +296,18 @@ describe('searchNotes', () => {
     };
     try {
       const entry = deps.registry.list()[0];
-      entry.backend = createDaemonSemanticBackend({
+      const client = createDaemonVaultClient({
         services,
-        attachment: createDaemonAttachment({
-          services,
+        attachment: createAttachment({
+          link: services.connection,
           vaultRoot: entry.path,
           profiles: [MODEL_KEY],
         }),
-        profile: MODEL_KEY,
         local: () => {
           throw new Error('never local');
         },
       });
+      entry.backend = createSemanticBackendView(client, MODEL_KEY);
       // The startup attach has answered.
       expect(await entry.backend.status()).toEqual({ state: 'ready' });
       const reg = registerTool(buildSearchNotesTool(deps));

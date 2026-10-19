@@ -3,6 +3,7 @@ import { ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 import type { IBlockHit, INoteHit } from '../lib/obsidian/corpus/corpus.js';
 import type { LexicalMatch } from '../lib/obsidian/lexical/rank.js';
+import type { BackendStatus } from '../lib/obsidian/semantic-backend.js';
 import type { EmbeddingIdentity } from '../lib/obsidian/corpus/types.js';
 import type { IVaultInfo } from '../lib/vault-entry/index.js';
 
@@ -69,6 +70,32 @@ export interface LexicalSearchResult {
   per_query_token_counts: Record<string, Record<string, number>>;
   total_notes: number;
 }
+export interface VaultAttachParams {
+  vault: string;
+  profiles: string[];
+}
+export interface VaultAttachResult {
+  vault: string;
+  profiles: Record<string, BackendStatus>;
+}
+export interface VaultStatusParams {
+  vault: string;
+  profile: string;
+}
+
+/**
+ * The per-vault read methods a session calls on the daemon: one row per wire method,
+ * its params and result. `vault.attach` / `vault.status` are the lifecycle, not rows.
+ */
+export interface VaultMethods {
+  'corpus.nearest': { params: CorpusNearestParams; result: CorpusNearestResult };
+  'corpus.nearestBlocks': { params: CorpusNearestBlocksParams; result: CorpusNearestBlocksResult };
+  'lexical.search': { params: LexicalSearchParams; result: LexicalSearchResult };
+}
+export type VaultMethod = keyof VaultMethods;
+/** What a caller passes: the wire params without `vault`, which the client fills in. */
+export type VaultCallParams<M extends VaultMethod> = Omit<VaultMethods[M]['params'], 'vault'>;
+export type VaultCallResult<M extends VaultMethod> = VaultMethods[M]['result'];
 export interface DaemonInfoResult {
   name: string;
   version: string;
