@@ -27,7 +27,7 @@ class LexicalIndex {
 }
 ```
 
-The entry builds one `LexicalIndex` and one `WikilinkGraphIndex` with itself, both over its scoped reader, and `IVaultEntry.lexicalSearch` refreshes the graph, then searches with the graph's `getBacklinkCount` as the density tie-break's last key. Both live as long as the entry: a scope change rebuilds them over the new reader, and `dispose()` drops them. They have no idle timer of their own, and an entry attached with `profiles: []` (a vault with `"semantic": false`) keeps them. The cache therefore persists across calls, and across sessions.
+The entry builds one `LexicalIndex` and one `WikilinkGraphIndex` with itself, both over its scoped reader — the graph is the vault's one graph, which also answers `graph.*` ([`wikilink-graph.md`](./wikilink-graph.md#wiring)) — and `IVaultEntry.lexicalSearch` refreshes the graph, then searches with the graph's `getBacklinkCount` as the density tie-break's last key. Both live as long as the entry: a scope change rebuilds them over the new reader, and `dispose()` drops them. They have no idle timer of their own, and an entry attached with `profiles: []` (a vault with `"semantic": false`) keeps them. The cache therefore persists across calls, and across sessions.
 
 ### Who holds the cache
 
@@ -163,7 +163,7 @@ The matcher is a per-request scan over in-memory parsed blocks, not a persisted 
 
 Same precedent as [`query_notes`](./query.md): **no persisted index, no background timers, and nothing that depends on the watcher** — freshness comes from re-scanning per request and stat-ing every scoped file. The cache never consumes watcher events or the reconcile loop's passes: a search never waits on either, and an entry without a watcher (a vault with no corpus, [`vault-entry.md`](./vault-entry.md#the-watcher-follows-the-scope)) serves the same results. The difference from `query_notes` is *what* gets cached: `query_notes` does no caching at all (it re-reads frontmatter every call), while `LexicalIndex` keeps a `path → { mtime, parsed }` cache so unchanged files are not re-parsed, only re-confirmed via `stat`. This bounds the per-call cost to "stat every scoped file, parse only the ones that changed" rather than "parse the whole vault every call" — correctness against live Obsidian edits follows directly from the mtime check, by construction, exactly like `query_notes`'s per-request read. The only background work is `warm()`, one refresh when the entry is created (and again after a scope change) so the first search finds a warm cache.
 
-The tie-break graph follows the same rule: `lexicalSearch` awaits the entry's `graph.ensureFresh()` before ranking (the graph's TTL is `DEFAULT_TTL_MS`, 3 min). The session keeps its own graph for `search_notes`' per-match `backlink_count`; the entry's graph serves only this tie-break (see [`wikilink-graph.md`](./wikilink-graph.md)).
+The tie-break graph follows the same rule: `lexicalSearch` awaits the entry's `graph.ensureFresh()` before ranking (the graph's TTL is `DEFAULT_TTL_MS`, 3 min). The same build answers the `graph.*` reads; until the cut-over of #172, the session still stamps `search_notes`' per-match `backlink_count` from its own graph (see [`wikilink-graph.md`](./wikilink-graph.md)).
 
 ## What it deliberately does not do
 

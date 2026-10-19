@@ -1,6 +1,6 @@
 # Wikilink Graph
 
-In-memory adjacency index over the vault's wikilinks (`[[X]]`) and embeds (`![[X]]`), behind one interface, `IVaultGraph`: the one place a session answers link questions — a note's links, its backlink count, where a wikilink target resolves. One instance per registered vault, built by the [registry](./vault-registry.md), consumed by both the operations and semantic modules. The [vault entry](./vault-entry.md) builds a second, private one for the lexical tie-break (see [Wiring](#wiring)).
+In-memory adjacency index over the vault's wikilinks (`[[X]]`) and embeds (`![[X]]`), behind one interface, `IVaultGraph`: the one place link questions are answered — a note's links, its backlink count, where a wikilink target resolves. The [vault entry](./vault-entry.md) holds the vault directory's one graph, which tie-breaks the lexical leg and answers the daemon's batched `graph.*` reads (`IGraphReader`, see [Surface](#surface)). Until the cut-over of [#172](https://github.com/AlexMost/neuro-vault/issues/172) lands, each session also builds its own, through the [registry](./vault-registry.md), and its tools read that one (see [Wiring](#wiring)).
 
 ## Why it exists
 
@@ -50,6 +50,28 @@ interface IncomingLink {
 
 `WikilinkGraphIndex` (`src/lib/obsidian/wikilink-graph.ts`) is the one implementation. Consumers and the registry depend on `IVaultGraph`, so a test passes an in-memory double (`test/_vault-graph.ts`) or a real `WikilinkGraphIndex` over a stub reader — no casts.
 
+### Reading a graph from elsewhere: `IGraphReader`
+
+A graph that lives in the vault entry is a call away, so it is read through an async, batched interface (`src/lib/obsidian/graph-reader.ts`):
+
+```ts
+interface IGraphReader {
+  noteLinks(path: string): Promise<NoteLinks>;
+  backlinkCounts(paths: readonly string[]): Promise<number[]>; // in order; 0 for a note the graph lacks
+  resolve(targets: readonly string[]): Promise<(string | null)[]>; // in order
+}
+```
+
+Each read answers every path or target from one build, and the caller never refreshes: freshness is the host's. One call per question a tool asks, never one per note — the largest is a `backlinkCounts` over a scan's paths, the size of `lexical.search`'s `allowed`. `createGraphReader(current)` adapts an in-memory graph: each call reads `current()` once and awaits its `ensureFresh()`, so a graph swapped in by a scope change answers the next call. It wraps no errors.
+
+| Read | Wire method | Answer |
+| --- | --- | --- |
+| `noteLinks(path)` | `graph.noteLinks { vault, path }` | `{ incoming: [{ source }], outgoing: [{ target, resolved, path? }] }` |
+| `backlinkCounts(paths)` | `graph.backlinkCounts { vault, paths }` | `{ counts }`, one per path |
+| `resolve(targets)` | `graph.resolve { vault, targets }` | `{ paths }`, one vault path or `null` per target |
+
+The daemon side is the `graph` service ([`shared-daemon.md`](./shared-daemon.md#the-graph-service)); the session side is `createGraphReaderView(client)` (`src/modules/semantic/graph/view.ts`), a view over the vault's one client that maps every failure — `GRAPH_FAILED`, `NOT_ATTACHED`, a timeout, a dropped connection, an answer of the wrong shape — to a `GraphReadError` for that call. Composition stays in the session: top-by-backlinks, `query_notes`' filters and sorts, and parsing a note's current text for its forward links.
+
 ## Build pipeline
 
 `rebuild()` is straightforward:
@@ -65,7 +87,9 @@ interface IncomingLink {
 
 The registry builds one graph per vault through `IRegisteredVaultDeps.graphFactory`, over that vault's scoped `reader`, and exposes it as `entry.graph` ([`vault-registry.md`](./vault-registry.md)). Tool handlers read it off the entry: `get_note_links`, `get_vault_overview` and the `vault://overview` resource, `query_notes` and `listMatchingPaths`, `read_daily`, `search_notes`' per-match `backlink_count`, and `get_similar_notes`' forward links. Under `--no-semantic` it is also the standalone lexical reader's tie-break.
 
-The vault entry (`IVaultEntry`) builds its own `WikilinkGraphIndex` over its scoped reader, the lexical leg's tie-break ([`lexical-search.md`](./lexical-search.md)), and starts its first build in the background with the entry and again after a scope change (later rebuilds follow the TTL, on demand): in the daemon it is the one copy for the vault directory, and under `--no-shared` it is a second graph beside the registry's (about 0.7 MB each on a ~1,000-note vault). The session's graph still serves every consumer listed above; the tie-break is the only thing the entry's graph answers. Moving the session's graph into the vault entry is [#172](https://github.com/AlexMost/neuro-vault/issues/172).
+The vault entry (`IVaultEntry`) builds its own `WikilinkGraphIndex` over its scoped reader and starts its first build in the background with the entry and again after a scope change (later rebuilds follow the TTL, on demand). It is the vault directory's one graph: the lexical leg's tie-break reads it ([`lexical-search.md`](./lexical-search.md)), and `IVaultEntry.graph` exposes the same build as an `IGraphReader`, which `VaultEntries.graph(clientId, vault)` hands to the `graph` service for any connection attached to the vault, with any profiles or none. Every attached session reading `graph.*` therefore reads one build, and a scope change replaces it for all of them and the tie-break at once.
+
+The session's own graph still serves every consumer listed above while the cut-over of [#172](https://github.com/AlexMost/neuro-vault/issues/172) is in progress: nothing in the session calls `graph.*` yet. Under `--no-shared` the in-process entry's graph sits beside the registry's (about 0.7 MB each on a ~1,000-note vault).
 
 ## TTL choice
 
