@@ -12,8 +12,10 @@ import {
 import { acquireCorpusLock } from '../../../../src/lib/obsidian/corpus/reconcile-lock.js';
 import { formatIdentity } from '../../../../src/lib/obsidian/corpus/identity.js';
 import { ShardStore } from '../../../../src/lib/obsidian/corpus/shard-store.js';
+import { shardWriter } from '../../../../src/lib/obsidian/corpus/shard-writer.js';
 import { buildEmbedInputs } from '../../../../src/lib/obsidian/corpus/embed-text.js';
 import { TEST_DIMS, TEST_IDENTITY } from '../../../_identity.js';
+import { MemoryCorpus, memoryStore, type IMemoryStore } from '../../../_memory-corpus.js';
 
 function vectorFor(text: string): number[] {
   const vector = new Array<number>(TEST_DIMS).fill(0);
@@ -66,11 +68,16 @@ function fakeVault(files: Record<string, string>) {
 
 const body = (marker: string) => `# ${marker}\n${'x'.repeat(300)}\n`;
 
+/**
+ * A run over an in-memory corpus: reconcile sees only the writer interface, so
+ * the records are read back from the store the corpus keeps them in.
+ */
 async function harness(files: Record<string, string>, extra: Partial<ReconcileDeps> = {}) {
   const root = await mkdtemp(path.join(tmpdir(), 'nv-reconcile-'));
   const vault = fakeVault(files);
   const embed = fakeEmbedDocuments();
-  const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+  const store = memoryStore();
+  const corpus = new MemoryCorpus(store);
   const warn = vi.fn();
   const run = (opts: ReconcileOptions = {}) =>
     reconcileCorpus(
@@ -81,14 +88,40 @@ async function harness(files: Record<string, string>, extra: Partial<ReconcileDe
         readNote: vault.readNote,
         embedDocuments: embed,
         identity: TEST_IDENTITY,
-        store,
+        corpus,
         warn,
         ...extra,
       },
       opts,
     );
-  return { root, vault, embed, store, warn, run };
+  return { root, vault, embed, store, corpus, warn, run };
 }
+
+/** {@link harness} over the shard files, for what only the shard layout can show. */
+async function shardHarness(files: Record<string, string>) {
+  const root = await mkdtemp(path.join(tmpdir(), 'nv-reconcile-'));
+  const vault = fakeVault(files);
+  const embed = fakeEmbedDocuments();
+  const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+  const run = (opts: ReconcileOptions = {}) =>
+    reconcileCorpus(
+      {
+        vaultRoot: root,
+        scan: vault.scan,
+        stat: vault.stat,
+        readNote: vault.readNote,
+        embedDocuments: embed,
+        identity: TEST_IDENTITY,
+        corpus: shardWriter(store),
+        warn: vi.fn(),
+      },
+      opts,
+    );
+  return { root, vault, embed, store, run };
+}
+
+const recordOf = (store: IMemoryStore, notePath: string) => store.records.get(notePath) ?? null;
+const pathsOf = (store: IMemoryStore) => [...store.records.keys()].sort();
 
 describe('reconcileCorpus', () => {
   it('embeds every in-scope note on the first run', async () => {
@@ -97,7 +130,7 @@ describe('reconcileCorpus', () => {
     const summary = await run();
 
     expect(summary).toMatchObject({ total: 2, embedded: 2, reused: 0, deleted: 0, failed: 0 });
-    expect([...(await store.listShards()).keys()].sort()).toEqual(['A.md', 'Dir/B.md']);
+    expect(pathsOf(store)).toEqual(['A.md', 'Dir/B.md']);
   });
 
   it('embeds a note’s text and its blocks in one call, in order', async () => {
@@ -116,7 +149,7 @@ describe('reconcileCorpus', () => {
   it('a failed call fails only that note and keeps its previous shard', async () => {
     const { run, vault, store, embed } = await harness({ 'A.md': body('A'), 'B.md': body('B') });
     await run();
-    const before = await store.readShard('A.md');
+    const before = recordOf(store, 'A.md');
     vault.edit('A.md', body('A2'));
     vault.edit('B.md', body('B2'));
     embed.mockImplementation(async (texts: string[]) => {
@@ -125,7 +158,7 @@ describe('reconcileCorpus', () => {
     });
     const summary = await run();
     expect(summary).toMatchObject({ embedded: 1, failed: 1 });
-    expect(await store.readShard('A.md')).toEqual(before);
+    expect(recordOf(store, 'A.md')).toEqual(before);
   });
 
   it('embeds nothing on a second run over an untouched vault', async () => {
@@ -156,26 +189,26 @@ describe('reconcileCorpus', () => {
     vault.touch('A.md');
     await run();
 
-    const shard = (await store.readShard('A.md'))!;
+    const shard = recordOf(store, 'A.md')!;
     expect(shard.mtime).toBe(vault.state.get('A.md')!.mtime);
   });
 
   it('re-embeds an edited note', async () => {
     const { run, embed, vault, store } = await harness({ 'A.md': body('A') });
     await run();
-    const before = (await store.readShard('A.md'))!.embedding;
+    const before = recordOf(store, 'A.md')!.embedding;
     vault.edit('A.md', body('A EDITED'));
     embed.mockClear();
 
     expect(await run()).toMatchObject({ embedded: 1, reused: 0 });
-    expect((await store.readShard('A.md'))!.embedding).not.toBe(before);
+    expect(recordOf(store, 'A.md')!.embedding).not.toBe(before);
   });
 
   it('records a note below the size gate without a note-level vector', async () => {
     const { run, store } = await harness({ 'Short.md': '# S\ntiny\n' });
     await run();
 
-    const shard = (await store.readShard('Short.md'))!;
+    const shard = recordOf(store, 'Short.md')!;
     expect(shard.embedding).toBeNull();
     expect(shard.blocks).toEqual([]);
     expect(shard.content_hash).toEqual(expect.any(String));
@@ -196,7 +229,7 @@ describe('reconcileCorpus', () => {
     vault.state.delete('B.md');
 
     expect(await run()).toMatchObject({ deleted: 1, total: 1 });
-    expect([...(await store.listShards()).keys()]).toEqual(['A.md']);
+    expect(pathsOf(store)).toEqual(['A.md']);
   });
 
   it('drops a note that left scope and picks up one that entered it', async () => {
@@ -206,14 +239,14 @@ describe('reconcileCorpus', () => {
     vault.add('C.md', body('C'));
     await run();
 
-    expect([...(await store.listShards()).keys()]).toEqual(['C.md']);
+    expect(pathsOf(store)).toEqual(['C.md']);
   });
 
   it('does not rebuild when only membership changes', async () => {
     const { run, vault, store, embed } = await harness({ 'A.md': body('A'), 'B.md': body('B') });
     await run();
-    const manifestBefore = await store.readManifest();
-    const keptBefore = (await store.readShard('A.md'))!;
+    const identityBefore = store.identity;
+    const keptBefore = recordOf(store, 'A.md')!;
     // An exclusion change is a membership change, not a vector change: B leaves
     // scope, C enters it, and A must not be touched or re-embedded.
     vault.state.delete('B.md');
@@ -223,8 +256,8 @@ describe('reconcileCorpus', () => {
     const summary = await run();
 
     expect(summary).toMatchObject({ total: 2, embedded: 1, reused: 1, deleted: 1 });
-    expect(await store.readShard('A.md')).toEqual(keptBefore);
-    expect(await store.readManifest()).toEqual(manifestBefore);
+    expect(recordOf(store, 'A.md')).toEqual(keptBefore);
+    expect(store.identity).toBe(identityBefore);
   });
 
   it('is idempotent across repeated runs', async () => {
@@ -235,15 +268,10 @@ describe('reconcileCorpus', () => {
     expect(await run()).toMatchObject({ total: 2, embedded: 0, reused: 2, deleted: 0, failed: 0 });
   });
 
-  it('rebuilds everything when the manifest is incompatible', async () => {
+  it('rebuilds everything when the identity on record is incompatible', async () => {
     const { run, store, embed } = await harness({ 'A.md': body('A') });
     await run();
-    await store.writeManifest({
-      ...TEST_IDENTITY,
-      model_key: 'other',
-      model_id: 'other/other',
-      created: '2026-01-01T00:00:00.000Z',
-    });
+    store.identity = { ...TEST_IDENTITY, model_key: 'other', model_id: 'other/other' };
     embed.mockClear();
 
     expect(await run()).toMatchObject({ embedded: 1, reused: 0 });
@@ -251,7 +279,7 @@ describe('reconcileCorpus', () => {
   });
 
   it('names a legacy bge-micro-v2 corpus when it rebuilds it', async () => {
-    const { run, root } = await harness({ 'A.md': body('A') });
+    const { run, root } = await shardHarness({ 'A.md': body('A') });
     await run();
     await writeFile(
       path.join(root, '.neuro-vault/corpus/bge-micro-v2/manifest.json'),
@@ -273,15 +301,15 @@ describe('reconcileCorpus', () => {
   it('re-embeds a renamed note and removes its old shard', async () => {
     const { run, vault, store, embed } = await harness({ 'A.md': body('A') });
     await run();
-    const before = (await store.readShard('A.md'))!;
+    const before = recordOf(store, 'A.md')!;
     vault.move('A.md', 'Dir/A.md');
     embed.mockClear();
 
     const summary = await run();
 
     expect(summary).toMatchObject({ renamed: 1, deleted: 0, embedded: 0 });
-    expect(await store.readShard('A.md')).toBeNull();
-    const after = (await store.readShard('Dir/A.md'))!;
+    expect(recordOf(store, 'A.md')).toBeNull();
+    const after = recordOf(store, 'Dir/A.md')!;
     expect(after.content_hash).toBe(before.content_hash);
     expect(after.embedding).not.toBe(before.embedding);
     expect(embed).toHaveBeenCalled();
@@ -292,8 +320,8 @@ describe('reconcileCorpus', () => {
     const { run, store } = await harness({ 'A.md': shared, 'Dir/A.md': shared });
     await run();
 
-    const a = (await store.readShard('A.md'))!;
-    const b = (await store.readShard('Dir/A.md'))!;
+    const a = recordOf(store, 'A.md')!;
+    const b = recordOf(store, 'Dir/A.md')!;
     expect(a.content_hash).toBe(b.content_hash);
     expect(a.embedding).not.toBe(b.embedding);
   });
@@ -318,7 +346,7 @@ describe('reconcileCorpus', () => {
     await scratch.run();
 
     const normalize = async (h: Awaited<ReturnType<typeof harness>>) =>
-      [...(await h.store.listShards()).entries()]
+      [...h.store.records.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([p, shard]) => [p, { ...shard, mtime: 0, size: 0 }]);
 
@@ -338,7 +366,7 @@ describe('reconcileCorpus', () => {
         readNote: vault.readNote,
         embedDocuments: fakeEmbedDocuments(),
         identity: TEST_IDENTITY,
-        store: new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS }),
+        corpus: new MemoryCorpus(),
       },
       { onProgress: (p) => seen.push({ ...p }) },
     );
@@ -355,7 +383,7 @@ describe('reconcileCorpus', () => {
       if (texts.some((t) => t.includes('Bad'))) throw new Error('model exploded');
       return texts.map(() => new Array<number>(TEST_DIMS).fill(0.1));
     });
-    const store = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
+    const store = memoryStore();
     const warn = vi.fn();
 
     const summary = await reconcileCorpus({
@@ -365,19 +393,19 @@ describe('reconcileCorpus', () => {
       readNote: vault.readNote,
       embedDocuments: embed,
       identity: TEST_IDENTITY,
-      store,
+      corpus: new MemoryCorpus(store),
       warn,
     });
 
     expect(summary).toMatchObject({ total: 3, embedded: 2, failed: 1 });
-    expect([...(await store.listShards()).keys()].sort()).toEqual(['A.md', 'C.md']);
+    expect(pathsOf(store)).toEqual(['A.md', 'C.md']);
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('leaves the previous shard intact when a re-embed fails', async () => {
-    const { run, store, vault, root } = await harness({ 'A.md': body('A') });
+    const { run, store, corpus, vault, root } = await harness({ 'A.md': body('A') });
     await run();
-    const before = (await store.readShard('A.md'))!;
+    const before = recordOf(store, 'A.md')!;
     vault.edit('A.md', body('A v2'));
 
     const summary = await reconcileCorpus({
@@ -389,18 +417,18 @@ describe('reconcileCorpus', () => {
         throw new Error('nope');
       }),
       identity: TEST_IDENTITY,
-      store,
+      corpus,
       warn: vi.fn(),
     });
 
     expect(summary).toMatchObject({ total: 1, failed: 1, embedded: 0 });
-    expect(await store.readShard('A.md')).toEqual(before);
+    expect(recordOf(store, 'A.md')).toEqual(before);
   });
 
   it('keeps the old shard when the re-embed of a renamed note fails', async () => {
-    const { run, store, vault, root } = await harness({ 'A.md': body('A') });
+    const { run, store, corpus, vault, root } = await harness({ 'A.md': body('A') });
     await run();
-    const before = (await store.readShard('A.md'))!;
+    const before = recordOf(store, 'A.md')!;
     vault.move('A.md', 'Dir/A.md');
 
     const summary = await reconcileCorpus({
@@ -412,17 +440,17 @@ describe('reconcileCorpus', () => {
         throw new Error('model exploded');
       }),
       identity: TEST_IDENTITY,
-      store,
+      corpus,
       warn: vi.fn(),
     });
 
     expect(summary).toMatchObject({ failed: 1, renamed: 0, deleted: 0 });
-    expect(await store.readShard('A.md')).toEqual(before);
-    expect(await store.readShard('Dir/A.md')).toBeNull();
+    expect(recordOf(store, 'A.md')).toEqual(before);
+    expect(recordOf(store, 'Dir/A.md')).toBeNull();
   });
 
   it('contains a throwing onProgress callback', async () => {
-    const { run, root, vault, store, warn } = await harness({
+    const { run, root, vault, corpus, warn } = await harness({
       'A.md': body('A'),
       'B.md': body('B'),
     });
@@ -437,7 +465,7 @@ describe('reconcileCorpus', () => {
         readNote: vault.readNote,
         embedDocuments: fakeEmbedDocuments(),
         identity: TEST_IDENTITY,
-        store,
+        corpus,
         warn,
       },
       {
@@ -453,7 +481,7 @@ describe('reconcileCorpus', () => {
   });
 
   it('appends the corpus entry to the vault gitignore once', async () => {
-    const { root, run } = await harness({ 'A.md': body('A') });
+    const { root, run } = await shardHarness({ 'A.md': body('A') });
     await writeFile(path.join(root, '.gitignore'), '.obsidian/\n', 'utf8');
 
     await run();
@@ -468,8 +496,8 @@ describe('reconcileCorpus', () => {
   });
 
   it('leaves a corpus of another vault untouched', async () => {
-    const first = await harness({ 'A.md': body('A') });
-    const second = await harness({ 'B.md': body('B') });
+    const first = await shardHarness({ 'A.md': body('A') });
+    const second = await shardHarness({ 'B.md': body('B') });
     await first.run();
     await second.run();
 
@@ -478,7 +506,7 @@ describe('reconcileCorpus', () => {
   });
 
   it('re-embeds a note whose shard is corrupt', async () => {
-    const { root, run, store, embed } = await harness({ 'A.md': body('A') });
+    const { root, run, store, embed } = await shardHarness({ 'A.md': body('A') });
     await run();
     const shardFile = path.join(
       root,
@@ -497,9 +525,9 @@ describe('reconcileCorpus', () => {
   // manifest write, the full scan and the full shard listing are seconds of
   // disk work on a large corpus, and they all precede the per-note loop.
   it('does no work at all when the signal is already aborted', async () => {
-    const { run, store, vault, embed } = await harness({ 'A.md': body('A') });
-    const ensureManifest = vi.spyOn(store, 'ensureManifest');
-    const listShards = vi.spyOn(store, 'listShards');
+    const { run, corpus, vault, embed } = await harness({ 'A.md': body('A') });
+    const ensureIdentity = vi.spyOn(corpus, 'ensureIdentity');
+    const entries = vi.spyOn(corpus, 'entries');
 
     const summary = await run({ signal: AbortSignal.abort() });
 
@@ -512,8 +540,8 @@ describe('reconcileCorpus', () => {
       deleted: 0,
       failed: 0,
     });
-    expect(ensureManifest).not.toHaveBeenCalled();
-    expect(listShards).not.toHaveBeenCalled();
+    expect(ensureIdentity).not.toHaveBeenCalled();
+    expect(entries).not.toHaveBeenCalled();
     expect(vault.readNote).not.toHaveBeenCalled();
     expect(embed).not.toHaveBeenCalled();
   });
@@ -536,7 +564,7 @@ describe('reconcileCorpus', () => {
 
     expect(summary.total).toBe(3);
     expect(summary.embedded).toBe(1);
-    expect([...(await store.listShards()).keys()]).toEqual(['A.md']);
+    expect(pathsOf(store)).toEqual(['A.md']);
   });
 
   it('leaves the orphan sweep for the next pass when aborted', async () => {
@@ -558,18 +586,14 @@ describe('reconcileCorpus', () => {
     expect(summary.deleted).toBe(0);
     // The shard survives because the sweep never ran, not because deleting it
     // failed — so the next unaborted pass still collects it.
-    expect((await store.listShards()).has('Gone.md')).toBe(true);
+    expect(store.records.has('Gone.md')).toBe(true);
     expect((await run()).deleted).toBe(1);
   });
 
   it('reports the stored identity it replaces, once, before any note', async () => {
     const { run, store } = await harness({ 'A.md': body('A') });
     await run();
-    await store.writeManifest({
-      ...TEST_IDENTITY,
-      model_key: 'other',
-      created: '2026-01-01T00:00:00.000Z',
-    });
+    store.identity = { ...TEST_IDENTITY, model_key: 'other' };
     const events: string[] = [];
     await run({
       onRebuild: ({ stored, active }) => events.push(`${stored?.model_key} -> ${active.model_key}`),
@@ -590,7 +614,7 @@ describe('reconcileCorpus', () => {
   it('a throwing onRebuild is contained', async () => {
     const { run, store, warn } = await harness({ 'A.md': body('A') });
     await run();
-    await store.writeManifest({ ...TEST_IDENTITY, model_key: 'other', created: 'x' });
+    store.identity = { ...TEST_IDENTITY, model_key: 'other' };
     const summary = await run({
       onRebuild: () => {
         throw new Error('boom');
@@ -600,13 +624,13 @@ describe('reconcileCorpus', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('onRebuild callback threw'));
   });
 
-  it('does not report a stale manifest that had no shards, but still writes the active one', async () => {
+  it('does not report a stale identity that had no records, but still records the active one', async () => {
     const { run, store } = await harness({ 'A.md': body('A') });
-    await store.writeManifest({ ...TEST_IDENTITY, model_key: 'other', created: 'x' });
+    store.identity = { ...TEST_IDENTITY, model_key: 'other' };
     const onRebuild = vi.fn();
     await run({ onRebuild });
     expect(onRebuild).not.toHaveBeenCalled();
-    expect((await store.readManifest())?.model_key).toBe(TEST_IDENTITY.model_key);
+    expect(store.identity?.model_key).toBe(TEST_IDENTITY.model_key);
   });
 });
 
@@ -629,9 +653,9 @@ function deferred() {
 }
 
 describe('reconcileCorpus across processes', () => {
-  it('migrates under the lock, before reading the manifest, and releases last', async () => {
+  it('migrates under the lock, before settling the identity, and releases last', async () => {
     const calls: string[] = [];
-    const { store, run } = await harness(
+    const { corpus, run } = await harness(
       { 'A.md': body('A') },
       {
         acquireLock: async () => {
@@ -647,17 +671,20 @@ describe('reconcileCorpus across processes', () => {
         },
       },
     );
-    const readManifest = store.readManifest.bind(store);
-    vi.spyOn(store, 'readManifest').mockImplementation(async () => {
-      calls.push('manifest');
-      return readManifest();
+    const ensureIdentity = corpus.ensureIdentity.bind(corpus);
+    vi.spyOn(corpus, 'ensureIdentity').mockImplementation(async (expected) => {
+      calls.push('identity');
+      return ensureIdentity(expected);
     });
     await run();
-    expect(calls).toEqual(['acquire', 'migrate', 'manifest', 'release']);
+    expect(calls).toEqual(['acquire', 'migrate', 'identity', 'release']);
   });
 
   it('reuses a single-corpus layout after moving it into the model directory', async () => {
-    const { root, run, embed, store } = await harness({ 'A.md': body('A'), 'B.md': body('B') });
+    const { root, run, embed, store } = await shardHarness({
+      'A.md': body('A'),
+      'B.md': body('B'),
+    });
     await run();
     const corpus = path.join(root, '.neuro-vault/corpus');
     const modelDir = path.join(corpus, TEST_IDENTITY.model_key);
@@ -728,12 +755,11 @@ describe('reconcileCorpus across processes', () => {
    * pids, the real lock file. The holder's embed is gated until the other pass
    * has seen the lock held, so the test cannot pass by one finishing first.
    */
-  async function twoPasses(
-    files: Record<string, string>,
-    prepare?: (root: string) => Promise<void>,
-  ) {
+  async function twoPasses(files: Record<string, string>, prepare?: (store: IMemoryStore) => void) {
     const root = await mkdtemp(path.join(tmpdir(), 'nv-reconcile-'));
-    await prepare?.(root);
+    // What both processes' corpora keep their records in.
+    const shared = memoryStore();
+    prepare?.(shared);
     const vault = fakeVault(files);
     const gate = deferred();
     const embed = vi.fn(async (texts: string[]) => {
@@ -752,7 +778,7 @@ describe('reconcileCorpus across processes', () => {
           readNote: vault.readNote,
           embedDocuments: embed,
           identity: TEST_IDENTITY,
-          store: new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS }),
+          corpus: new MemoryCorpus(shared),
           warn: vi.fn(),
           acquireLock: (opts) =>
             acquireCorpusLock(
@@ -792,15 +818,10 @@ describe('reconcileCorpus across processes', () => {
   });
 
   it('a pass that waited on a rebuild reads the new manifest and discards nothing', async () => {
-    const { results, rebuilds, waits } = await twoPasses({ 'A.md': body('A') }, async (root) => {
-      // A corpus of this model at another embed_version, with a shard to lose.
-      const stale = new ShardStore(root, { modelKey: TEST_IDENTITY.model_key, dims: TEST_DIMS });
-      await stale.writeManifest({
-        ...TEST_IDENTITY,
-        embed_version: TEST_IDENTITY.embed_version + 1,
-        created: 'x',
-      });
-      await stale.writeShard({
+    const { results, rebuilds, waits } = await twoPasses({ 'A.md': body('A') }, (store) => {
+      // A corpus of this model at another embed_version, with a record to lose.
+      store.identity = { ...TEST_IDENTITY, embed_version: TEST_IDENTITY.embed_version + 1 };
+      store.records.set('A.md', {
         path: 'A.md',
         content_hash: 'old',
         mtime: 0,

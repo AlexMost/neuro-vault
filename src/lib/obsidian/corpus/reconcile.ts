@@ -6,8 +6,6 @@ import type { CorpusIdentity, RecordedIdentity } from './identity.js';
 import { corpusRootOf } from './layout.js';
 import { migrateLegacyCorpus } from './legacy-migration.js';
 import { acquireCorpusLock, type AcquireOptions, type CorpusLock } from './reconcile-lock.js';
-import type { ShardStore } from './shard-store.js';
-import { shardWriter } from './shard-writer.js';
 import type { CorpusBlock, CorpusShard, EmbedDocumentsFn } from './types.js';
 import { encodeVector } from './vector-codec.js';
 
@@ -35,7 +33,11 @@ export interface ReconcileDeps {
   readNote: (relPath: string) => Promise<NoteContent>;
   /** One call per note: its text and its blocks' texts together, vectors back in order. */
   embedDocuments: EmbedDocumentsFn;
-  store: ShardStore;
+  /**
+   * The corpus the run brings into agreement. `neuro-vault-mcp index` passes
+   * `shardWriter` over the model's shard directory: disk only, nothing resident.
+   */
+  corpus: ICorpusWriter;
   /** The identity the corpus must carry — the provider's, under this build's extraction. */
   identity: CorpusIdentity;
   /**
@@ -140,7 +142,7 @@ export async function reconcileCorpus(
           identity: deps.identity,
           warn,
         },
-        shardWriter(deps.store),
+        deps.corpus,
         paths,
         opts,
       );

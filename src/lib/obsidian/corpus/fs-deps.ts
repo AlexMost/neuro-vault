@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { VaultReader } from '../vault-reader.js';
 import type { NoteContent, NoteStat, ReconcileDeps } from './reconcile.js';
 
-/** The filesystem half of {@link ReconcileDeps} — everything but `embed` and `store`. */
+/** The filesystem half of {@link ReconcileDeps} — everything but the embedder, the corpus and the identity. */
 export type ReconcileFsDeps = Pick<ReconcileDeps, 'vaultRoot' | 'scan' | 'stat' | 'readNote'>;
 
 /**

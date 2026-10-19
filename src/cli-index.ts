@@ -9,6 +9,7 @@ import { corpusRootOf } from './lib/obsidian/corpus/layout.js';
 import { pruneOtherCorpora } from './lib/obsidian/corpus/prune.js';
 import { acquireCorpusLock, describeHolder } from './lib/obsidian/corpus/reconcile-lock.js';
 import { ShardStore } from './lib/obsidian/corpus/shard-store.js';
+import { shardWriter } from './lib/obsidian/corpus/shard-writer.js';
 import { corpusIdentityOf, formatRebuild } from './lib/obsidian/corpus/identity.js';
 import {
   reconcileCorpus,
@@ -139,7 +140,8 @@ async function reconcileOne(
     {
       ...buildReconcileFsDeps({ vaultRoot: vault.path, reader }),
       embedDocuments: embedder.embedDocuments,
-      store,
+      // Disk only: an index run serves no reads, so it never decodes the corpus.
+      corpus: shardWriter(store),
       identity,
     },
     {

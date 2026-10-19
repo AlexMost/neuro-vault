@@ -197,13 +197,17 @@ export class MemoryCorpus implements ICorpus {
     return Promise.resolve(this.store.identity);
   }
 
-  /** Records with nothing on record are of unknown provenance, so they do not survive. */
+  /**
+   * Records with nothing on record are of unknown provenance, so they do not survive. A matching
+   * identity is left as recorded, as the shard store leaves its manifest unwritten.
+   */
   ensureIdentity(expected: CorpusIdentity) {
     const previous = this.store.identity;
     const hasRecords = this.store.records.size > 0;
-    const keep = identityMatches(previous, expected) || (previous === null && !hasRecords);
+    const matches = identityMatches(previous, expected);
+    const keep = matches || (previous === null && !hasRecords);
     if (!keep) this.store.records.clear();
-    this.store.identity = { ...expected };
+    if (!matches) this.store.identity = { ...expected };
     return Promise.resolve({ rebuilt: !keep && hasRecords, previous });
   }
 
