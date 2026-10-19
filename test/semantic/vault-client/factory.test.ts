@@ -1,14 +1,20 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
+import { MODEL_PROFILES } from '../../../src/lib/model-profiles.js';
 import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.js';
-import type { IVaultEntriesDeps, VaultEntries } from '../../../src/lib/vault-entry/index.js';
 import {
-  createVaultClients,
-  LOCAL_CONNECTION_ID,
-} from '../../../src/modules/semantic/backend/index.js';
+  createVaultEntry,
+  VaultEntries,
+  type IVaultEntriesDeps,
+} from '../../../src/lib/vault-entry/index.js';
 import type { IDaemonLink } from '../../../src/modules/semantic/daemon-connection.js';
 import type { QueuedEmbedder } from '../../../src/modules/semantic/embed-queue.js';
 import type { ISharedServices } from '../../../src/modules/semantic/shared-services.js';
+import { createVaultClients } from '../../../src/modules/semantic/vault-client/index.js';
 
 const PROFILE = 'granite-97m';
 
@@ -54,6 +60,13 @@ function fakeEntries() {
   return { entries, createEntries, built };
 }
 
+/** The client id every in-process attach went out under: the one loopback's. */
+function loopbackIdOf(entries: ReturnType<typeof fakeEntries>['entries']): number {
+  const ids = new Set(entries.attach.mock.calls.map(([id]) => id));
+  expect(ids.size).toBe(1);
+  return [...ids][0];
+}
+
 const embedFn = vi.fn(async (texts: string[]) => texts.map(() => [1]));
 const embedder = { asDocumentEmbedFn: () => embedFn } as unknown as QueuedEmbedder;
 
@@ -75,8 +88,9 @@ describe('createVaultClients', () => {
     expect(await b.status()).toEqual({ state: 'ready' });
 
     expect(createEntries).toHaveBeenCalledTimes(1);
-    expect(entries.attach).toHaveBeenCalledWith(LOCAL_CONNECTION_ID, '/v/a', [PROFILE]);
-    expect(entries.attach).toHaveBeenCalledWith(LOCAL_CONNECTION_ID, '/v/b', [PROFILE]);
+    const id = loopbackIdOf(entries);
+    expect(entries.attach).toHaveBeenCalledWith(id, '/v/a', [PROFILE]);
+    expect(entries.attach).toHaveBeenCalledWith(id, '/v/b', [PROFILE]);
     expect(request).not.toHaveBeenCalled();
   });
 
@@ -164,7 +178,9 @@ describe('createVaultClients', () => {
         enabled: false,
       });
       expect(await backend.status()).toEqual({ state: 'disabled' });
-      const error = await backend.nearest([{ path: 'x.md' }], { threshold: 0 }).catch((e) => e);
+      const error = await backend
+        .nearest([{ path: 'x.md' }], { threshold: 0 })
+        .catch((e: unknown) => e);
       expect(error).toBeInstanceOf(CorpusNotReadyError);
       expect((error as CorpusNotReadyError).status).toEqual({ state: 'disabled' });
       await expect(
@@ -222,7 +238,7 @@ describe('createVaultClients', () => {
 
     await clients.dispose();
 
-    expect(entries.detach).toHaveBeenCalledExactlyOnceWith(LOCAL_CONNECTION_ID);
+    expect(entries.detach).toHaveBeenCalledExactlyOnceWith(loopbackIdOf(entries));
     expect(entries.dispose).toHaveBeenCalledTimes(1);
     expect(entries.detach.mock.invocationCallOrder[0]).toBeLessThan(
       entries.dispose.mock.invocationCallOrder[0],
@@ -314,7 +330,7 @@ describe('createVaultClients', () => {
       enabled,
     });
 
-  it('the semantic backend and the lexical reader of a vault share one attachment', async () => {
+  it('the semantic backend and the lexical reader of a vault share one attach', async () => {
     const { services, request } = fakeServices('daemon');
     const { createEntries } = fakeEntries();
     const clients = createVaultClients({
@@ -340,7 +356,7 @@ describe('createVaultClients', () => {
     expect(createEntries).not.toHaveBeenCalled();
   });
 
-  it('--no-shared: the local backend and reader of a vault share one in-process attach', async () => {
+  it('--no-shared: the backend and the reader of a vault share one in-process attach', async () => {
     const { services, request } = fakeServices('local');
     const { entries, createEntries } = fakeEntries();
     const clients = createVaultClients({
@@ -362,7 +378,7 @@ describe('createVaultClients', () => {
 
     expect(createEntries).toHaveBeenCalledTimes(1);
     expect(entries.attach).toHaveBeenCalledTimes(1);
-    expect(entries.attach).toHaveBeenCalledWith(LOCAL_CONNECTION_ID, '/v/a', [PROFILE]);
+    expect(entries.attach).toHaveBeenCalledWith(expect.any(Number), '/v/a', [PROFILE]);
     expect(services.ensure).not.toHaveBeenCalled();
     expect(request).not.toHaveBeenCalled();
   });
@@ -395,7 +411,7 @@ describe('createVaultClients', () => {
         );
         expect(createEntries).not.toHaveBeenCalled();
       } else {
-        expect(entries.attach).toHaveBeenCalledWith(LOCAL_CONNECTION_ID, '/v/off', []);
+        expect(entries.attach).toHaveBeenCalledWith(expect.any(Number), '/v/off', []);
         expect(request).not.toHaveBeenCalled();
       }
     }
@@ -422,9 +438,76 @@ describe('createVaultClients', () => {
     await backend.status();
 
     expect(createEntries).toHaveBeenCalledTimes(1);
-    // The local backend and the local reader share the vault's one in-process attach.
+    // The backend and the reader share the vault's one in-process client, so one attach.
     expect(entries.attach).toHaveBeenCalledTimes(1);
-    expect(entries.attach).toHaveBeenCalledWith(LOCAL_CONNECTION_ID, '/v/a', [PROFILE]);
+    expect(entries.attach).toHaveBeenCalledWith(expect.any(Number), '/v/a', [PROFILE]);
     expect(request).not.toHaveBeenCalled();
   });
+});
+
+describe('createVaultClients --no-shared over real vault entries', () => {
+  /** A note long enough to be embedded (`MIN_CHARS`), distinct per `seed`. */
+  const noteBody = (seed: string) =>
+    `# ${seed}\n\n${`${seed} is a note that talks about one thing in some detail. `.repeat(8)}\n`;
+
+  it(
+    'both views of a vault read through the loopback, with Float32Array anchors',
+    { timeout: 15_000 },
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nv-vault-clients-'));
+      const dims = MODEL_PROFILES[PROFILE].dims;
+      // alpha and beta point one way, gamma the other; no model loads.
+      const embed = async (texts: string[]) =>
+        texts.map((text) => {
+          const v = new Array<number>(dims).fill(0);
+          v[text.includes('gamma') ? 1 : 0] = 1;
+          return v;
+        });
+      const { services, request } = fakeServices('local');
+      const clients = createVaultClients({
+        services,
+        shared: false,
+        profile: PROFILE,
+        embedder: { asDocumentEmbedFn: () => embed } as unknown as QueuedEmbedder,
+        createEntries: (deps) =>
+          new VaultEntries({
+            ...deps,
+            createEntry: (opts) => createVaultEntry({ ...opts, debounceMs: 100 }),
+            warn: () => {},
+          }),
+      });
+      try {
+        for (const seed of ['alpha', 'beta', 'gamma']) {
+          await fs.writeFile(path.join(root, `${seed}.md`), noteBody(seed));
+        }
+        const backend = clients.semanticBackendFactory({
+          vaultRoot: root,
+          vaultName: 'v',
+          enabled: true,
+        });
+        const lexical = clients.lexicalReaderFactory({
+          vaultRoot: root,
+          vaultName: 'v',
+          reader: {} as never,
+          graph: {} as never,
+          enabled: true,
+        });
+        await vi.waitFor(async () => expect(await backend.status()).toEqual({ state: 'ready' }), {
+          timeout: 10_000,
+          interval: 20,
+        });
+
+        const anchor = new Float32Array(dims);
+        anchor[0] = 1;
+        const [hits] = await backend.nearest([{ vector: anchor }], { threshold: 0.5 });
+        expect(hits?.map((hit) => hit.path).sort()).toEqual(['alpha.md', 'beta.md']);
+        const found = await lexical.search({ queries: ['gamma'], noteCap: 10, perNoteCap: 3 });
+        expect(found.notes.map((note) => note.path)).toContain('gamma.md');
+        expect(request).not.toHaveBeenCalled();
+      } finally {
+        await clients.dispose();
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 });

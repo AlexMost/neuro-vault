@@ -7,7 +7,7 @@ import type {
 
 /**
  * How a session reaches a vault entry: one request on a connection. The daemon socket
- * connection and the in-process loopback both are one, so the attachment and the facades
+ * connection and the in-process loopback both are one, so the attachment and the views
  * above never ask which they hold.
  */
 export interface IVaultLink {
@@ -26,7 +26,7 @@ export interface IInProcessLink extends IVaultLink {
   close(): void;
 }
 
-/** Ids for links made without a fixed one; unique per process. */
+/** One client id per link, unique per process: the entries tell the links' attaches apart by it. */
 let nextClientId = 1;
 
 /** `<namespace>.<method>` → handler; own properties only, so `toString` etc. never resolve. */
@@ -49,11 +49,8 @@ function lookup(
  * `timeoutMs` is ignored — a call in this process has no wire to wait on — and the epoch
  * never changes.
  */
-export function createInProcessLink(
-  services: Record<string, ServiceHandlers>,
-  opts: { clientId?: number } = {},
-): IInProcessLink {
-  const id = opts.clientId ?? nextClientId++;
+export function createInProcessLink(services: Record<string, ServiceHandlers>): IInProcessLink {
+  const id = nextClientId++;
   const closers: Array<() => void> = [];
   let closed = false;
 

@@ -275,7 +275,7 @@ describe('searchNotes', () => {
   });
 
   it('a status timeout degrades to lexical with unavailable', async () => {
-    // The real daemon backend over a connection whose `vault.status` never
+    // The real daemon vault client over a connection whose `vault.status` never
     // answers in time: one search degrades, and the next one asks again.
     const notePath = 'Notes/a.md';
     const { deps, cleanup } = await makeLexicalVault({ [notePath]: 'нотатка про пошук' });

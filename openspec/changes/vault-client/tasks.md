@@ -37,7 +37,7 @@ Parallelism: groups 1 and 2 are parallel-safe with each other (protocol + daemon
 
 ## 7. The lexical reader as a view (PR 2; parallel-safe with 8)
 
-- [ ] 7.1 `lexical/view.ts`: `createLexicalReaderView(client)` (`call('lexical.search')` → `fromWire`; every failure a `LexicalSearchError` with today's messages; `warm()` → `client.warm()`). `createVaultClients` uses it; the loopback loses `clientId`; `LOCAL_CONNECTION_ID`, the attachment shim, `lexical/daemon-reader.ts`, `lexical/local-reader.ts`, `test/semantic/backend/attachment.test.ts`, `test/semantic/lexical/daemon-reader.test.ts`, `local-reader.test.ts` deleted after their scenarios live in view and client tests; `parity.test.ts` and `test/integration/*` ported. `createVaultClients` moves to `vault-client/index.ts`.
+- [x] 7.1 `lexical/view.ts`: `createLexicalReaderView(client)` (`call('lexical.search')` → `fromWire`; every failure a `LexicalSearchError` with today's messages; `warm()` → `client.warm()`). `createVaultClients` uses it; the loopback loses `clientId`; `LOCAL_CONNECTION_ID`, the attachment shim, `lexical/daemon-reader.ts`, `lexical/local-reader.ts`, `test/semantic/backend/attachment.test.ts`, `test/semantic/lexical/daemon-reader.test.ts`, `local-reader.test.ts` deleted after their scenarios live in view and client tests; `parity.test.ts` and `test/integration/*` ported. `createVaultClients` moves to `vault-client/index.ts`.
 - [ ] 7.2 `VaultEntries`: `connectionId` → `clientId` (parameter names and doc comments only).
 
 ## 8. The embedding handshake on the epoch gate (PR 2; parallel-safe with 7)

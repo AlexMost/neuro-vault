@@ -14,7 +14,7 @@ import {
   type ISharedServices,
 } from './modules/semantic/shared-services.js';
 import type { EmbeddingProvider } from './modules/semantic/types.js';
-import { createVaultClients, type IVaultClients } from './modules/semantic/backend/index.js';
+import { createVaultClients, type IVaultClients } from './modules/semantic/vault-client/index.js';
 import { createStandaloneLexicalReader } from './modules/semantic/lexical/index.js';
 import { createOperationsModule } from './modules/operations/index.js';
 import { VaultRegistry, type IRegisteredVaultDeps } from './lib/vault-registry.js';
@@ -220,9 +220,10 @@ export async function startNeuroVaultServer(
   const transport = transportFactory();
   await server.connect(transport);
   // Every vault attaches now, in the background, so the corpus and the lexical
-  // cache start building before the first tool call. A daemon backend's first
-  // `status()` starts the connect and `vault.attach` and a local one's attaches
-  // its in-process entry; a vault's lexical reader shares that one attach, and
+  // cache start building before the first tool call. A backend's first
+  // `status()` makes its vault client attach — the connect and `vault.attach`
+  // on the daemon side, the in-process entry on the other; the vault's lexical
+  // reader is a view over the same client, so it shares that one attach, and
   // its `warm()` is what attaches a vault that opted out with
   // `"semantic": false` — with no profile, so nothing indexes it (its backend
   // is a constant that never attaches). The status reads start first, so each

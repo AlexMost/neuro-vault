@@ -3,7 +3,7 @@ import type { IVaultAttachment } from './attachment.js';
 import { ATTACHING, createLinkedVaultClient, unreadable, type IVaultClient } from './client.js';
 
 export interface IDaemonVaultClientOptions {
-  /** The process's connection and one-way switch, shared with every other daemon facade. */
+  /** The process's connection and one-way switch, shared with every vault's client. */
   services: ISharedServices;
   /** The vault's attachment over `services.connection`, shared with every other reader of it. */
   attachment: IVaultAttachment;

@@ -19,7 +19,7 @@ import { VaultEntries } from '../../src/lib/vault-entry/index.js';
 import { createVaultEntry } from '../../src/lib/vault-entry/vault-entry.js';
 import { createSemanticBackendView } from '../../src/modules/semantic/backend/view.js';
 import {
-  createDaemonLexicalReader,
+  createLexicalReaderView,
   createStandaloneLexicalReader,
 } from '../../src/modules/semantic/lexical/index.js';
 import type { DaemonConnection } from '../../src/modules/semantic/daemon-connection.js';
@@ -57,7 +57,7 @@ async function poll<T>(read: () => Promise<T>, done: (value: T) => boolean, time
 }
 
 /**
- * Two sessions' worth of daemon backends against the real socket server, vault
+ * Two sessions' worth of daemon vault clients against the real socket server, vault
  * and corpus services and vault entries — the daemon without its process and its
  * model. The sessions are the real `DaemonConnection` and daemon vault client;
  * `ISharedServices` is the thin shell a session builds around the connection.
@@ -146,7 +146,7 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
     const backend = createSemanticBackendView(client, PROFILE);
     connections.push(connection);
     backends.push(backend);
-    return { connection, services, attachment, backend, sent };
+    return { connection, services, client, backend, sent };
   }
 
   function makeVault(): string {
@@ -234,20 +234,14 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
   const keyOf = (root: string) => fs.realpathSync(root);
 
   /**
-   * A `search_notes` tool over one session: the daemon backend and lexical reader share the
-   * session's one attachment, and the session keeps its own graph over `reader`.
+   * A `search_notes` tool over one session: the semantic backend and the lexical reader are views
+   * over the session's one vault client, and the session keeps its own graph over `reader`.
    */
   function searchOver(s: ReturnType<typeof session>, root: string, reader: VaultReader) {
     const dims = MODEL_PROFILES[PROFILE].dims;
     const queryVector = new Array<number>(dims).fill(0);
     queryVector[0] = 1;
-    const lexical = createDaemonLexicalReader({
-      services: s.services,
-      attachment: s.attachment,
-      local: () => {
-        throw new Error('must not fall back: the daemon is listening');
-      },
-    });
+    const lexical = createLexicalReaderView(s.client);
     const registry = makeTestRegistry([
       {
         name: 'v',

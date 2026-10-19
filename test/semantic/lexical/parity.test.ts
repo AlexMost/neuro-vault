@@ -5,9 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { ServiceRegistry } from '../../../src/daemon/protocol.js';
-import { createCorpusService } from '../../../src/daemon/services/corpus.js';
-import { createLexicalService } from '../../../src/daemon/services/lexical.js';
-import { createVaultService } from '../../../src/daemon/services/vault.js';
+import { createVaultEntryServices } from '../../../src/daemon/services/vault-entry-services.js';
 import { startDaemonServer, type DaemonServerHandle } from '../../../src/daemon/socket-server.js';
 import type { ILexicalReader } from '../../../src/lib/obsidian/lexical/reader.js';
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
@@ -15,20 +13,22 @@ import { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js'
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { VaultEntries } from '../../../src/lib/vault-entry/index.js';
 import { createVaultEntry } from '../../../src/lib/vault-entry/vault-entry.js';
-import {
-  createDaemonAttachment,
-  createLocalAttachment,
-} from '../../../src/modules/semantic/backend/attachment.js';
 import { createDisabledSemanticBackend } from '../../../src/modules/semantic/backend/index.js';
 import {
-  createDaemonLexicalReader,
-  createLocalLexicalReader,
+  createLexicalReaderView,
   createStandaloneLexicalReader,
 } from '../../../src/modules/semantic/lexical/index.js';
 import {
   buildSearchNotesTool,
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
+import {
+  createAttachment,
+  createDaemonVaultClient,
+  createInProcessLink,
+  createLinkedVaultClient,
+  type IInProcessLink,
+} from '../../../src/modules/semantic/vault-client/index.js';
 import { callTool } from '../../_gate.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
 import { daemonServices } from '../../integration/_daemon-fixture.js';
@@ -52,9 +52,10 @@ const FILTERS: Array<[string, Set<string> | undefined]> = [
 
 /**
  * The three readers over one fixture vault, as a session builds them: the standalone one over the
- * session's reader and graph, the local one over in-process vault entries, and the daemon one
- * over a real socket server with the vault and lexical services. `[]` profiles throughout: the
- * lexical leg needs no corpus, so no model is loaded and nothing is embedded.
+ * session's reader and graph, and the lexical view over the vault's two clients — the in-process
+ * one over a loopback on in-process vault entries, and the daemon one over a real socket server
+ * with the vault entry's services. `[]` profiles throughout: the lexical leg needs no corpus, so
+ * no model is loaded and nothing is embedded.
  */
 describe.skipIf(!posix)('the three lexical readers give one answer', () => {
   let dir: string;
@@ -63,6 +64,7 @@ describe.skipIf(!posix)('the three lexical readers give one answer', () => {
   let handle: DaemonServerHandle | undefined;
   let daemonEntries: VaultEntries | undefined;
   let localEntries: VaultEntries | undefined;
+  let loopback: IInProcessLink | undefined;
   let closers: Array<() => void>;
   let reader: FsVaultReader;
   let graph: WikilinkGraphIndex;
@@ -88,40 +90,41 @@ describe.skipIf(!posix)('the three lexical readers give one answer', () => {
 
     daemonEntries = newEntries();
     const registry = new ServiceRegistry();
-    registry.register('vault', createVaultService(daemonEntries));
-    registry.register('corpus', createCorpusService(daemonEntries));
-    registry.register('lexical', createLexicalService(daemonEntries));
+    for (const [name, handlers] of Object.entries(createVaultEntryServices(daemonEntries))) {
+      registry.register(name, handlers);
+    }
     handle = await startDaemonServer({ socketPath, registry, idleTimeoutMs: 0, onIdle: () => {} });
     const { services } = daemonServices({ dir, socketPath });
     closers.push(() => services.close());
 
     localEntries = newEntries();
-    const localAttachment = createLocalAttachment({
-      entries: localEntries,
-      connectionId: 1,
-      vaultRoot,
-      profiles: [],
-    });
+    loopback = createInProcessLink(createVaultEntryServices(localEntries));
+    const link = loopback;
 
     readers = {
       standalone: createStandaloneLexicalReader({ vaultRoot, reader, graph }),
-      local: createLocalLexicalReader({
-        entries: localEntries,
-        connectionId: 1,
-        attachment: localAttachment,
-      }),
-      daemon: createDaemonLexicalReader({
-        services,
-        attachment: createDaemonAttachment({ services, vaultRoot, profiles: [] }),
-        local: () => {
-          throw new Error('must not fall back: the daemon is listening');
-        },
-      }),
+      local: createLexicalReaderView(
+        createLinkedVaultClient({
+          link,
+          attachment: createAttachment({ link, vaultRoot, profiles: [] }),
+        }),
+      ),
+      daemon: createLexicalReaderView(
+        createDaemonVaultClient({
+          services,
+          attachment: createAttachment({ link: services.connection, vaultRoot, profiles: [] }),
+          local: () => {
+            throw new Error('must not fall back: the daemon is listening');
+          },
+        }),
+      ),
     };
   });
 
   afterEach(async () => {
     for (const close of closers) close();
+    loopback?.close();
+    loopback = undefined;
     await handle?.close();
     await daemonEntries?.dispose();
     await localEntries?.dispose();
