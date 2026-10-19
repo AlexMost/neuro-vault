@@ -24,8 +24,7 @@ import { startDaemonServer, type DaemonServerHandle } from './daemon/socket-serv
 import { neuroVaultCacheBase } from './lib/cache-dir.js';
 import { VaultEntries, type IVaultEntriesDeps } from './lib/vault-entry/index.js';
 import type { ModelProfile } from './lib/model-profiles.js';
-import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
-import type { EmbeddingProvider } from './modules/semantic/types.js';
+import { createEmbeddingProvider, type EmbeddingProvider } from './modules/semantic/index.js';
 import { packageMeta } from './package-meta.js';
 import type { DaemonCliOptions } from './types.js';
 

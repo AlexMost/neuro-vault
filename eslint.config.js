@@ -59,10 +59,10 @@ export default defineConfig(
     },
   },
   {
-    // The composition root reaches a module only through its barrel
+    // The composition roots reach a module only through its barrel
     // (docs/architecture/module-structure.md, ADR-0022): what a module hands
-    // the server is exactly what its index.ts exports.
-    files: ['src/server.ts'],
+    // the server and the CLI commands is exactly what its index.ts exports.
+    files: ['src/server.ts', 'src/cli-index.ts', 'src/cli-daemon.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
