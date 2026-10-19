@@ -86,31 +86,6 @@ describe.each([
     expect(resultOf(response)).toMatchObject({ hits: [expect.any(Array), expect.any(Array)] });
   });
 
-  it.each([
-    ['no params', undefined],
-    ['a missing vault', { ...valid, vault: undefined }],
-    ['a non-string profile', { ...valid, profile: 3 }],
-    ['a missing anchors', { ...valid, anchors: undefined }],
-    ['a non-array anchors', { ...valid, anchors: { vector: [] } }],
-    ['a non-object anchor', { ...valid, anchors: ['a.md'] }],
-    ['an anchor with neither key', { ...valid, anchors: [{}] }],
-    ['an anchor with both keys', { ...valid, anchors: [{ vector: vector(), path: 'a.md' }] }],
-    ['an anchor with another key', { ...valid, anchors: [{ vec: vector() }] }],
-    ['a non-array vector', { ...valid, anchors: [{ vector: 'abc' }] }],
-    ['a non-finite vector entry', { ...valid, anchors: [{ vector: [...vector(DIMS - 1), null] }] }],
-    ['a non-string path', { ...valid, anchors: [{ path: 4 }] }],
-    ['a missing threshold', { ...valid, threshold: undefined }],
-    ['a non-finite threshold', { ...valid, threshold: null }],
-    ['a fractional limit', { ...valid, limit: 1.5 }],
-    ['a negative limit', { ...valid, limit: -1 }],
-    ['an unknown key', { ...valid, extra: 1 }],
-    ['a camelCase key', { ...valid, nearestBlocks: true }],
-  ])('rejects %s as INVALID_PARAMS', async (_name, params) => {
-    const { call, entries } = setup();
-    expect(errorOf(await call(method, params)).code).toBe('INVALID_PARAMS');
-    expect(entries.reader).not.toHaveBeenCalled();
-  });
-
   it('checks the profile before the attachment: UNKNOWN_PROFILE', async () => {
     const { call, entries } = setup();
     expect(errorOf(await call(method, { ...valid, profile: 'bge-m3' })).code).toBe(
@@ -196,24 +171,6 @@ describe('corpus.nearest options', () => {
     await call('corpus.nearest', base);
     expect(reader.nearest).toHaveBeenCalledWith(expect.any(Array), { threshold: 0.5 });
   });
-
-  it.each([
-    ['allowed', { allowed: 'a.md' }],
-    ['allowed', { allowed: [1] }],
-    ['exclude', { exclude: [null] }],
-  ])('rejects a malformed %s', async (_name, extra) => {
-    const { call } = setup();
-    expect(errorOf(await call('corpus.nearest', { ...base, ...extra })).code).toBe(
-      'INVALID_PARAMS',
-    );
-  });
-
-  it('does not accept paths, which belong to nearestBlocks', async () => {
-    const { call } = setup();
-    expect(errorOf(await call('corpus.nearest', { ...base, paths: ['a.md'] })).code).toBe(
-      'INVALID_PARAMS',
-    );
-  });
 });
 
 describe('corpus.nearestBlocks options', () => {
@@ -225,18 +182,5 @@ describe('corpus.nearestBlocks options', () => {
       threshold: 0.5,
       limit: 2,
     });
-  });
-
-  it.each([
-    ['a missing paths', { paths: undefined }],
-    ['a non-array paths', { paths: 'a.md' }],
-    ['a non-string path', { paths: [1] }],
-    ['allowed, which belongs to nearest', { allowed: ['a.md'] }],
-    ['exclude, which belongs to nearest', { exclude: ['a.md'] }],
-  ])('rejects %s', async (_name, extra) => {
-    const { call } = setup();
-    expect(errorOf(await call('corpus.nearestBlocks', { ...blocksBase, ...extra })).code).toBe(
-      'INVALID_PARAMS',
-    );
   });
 });

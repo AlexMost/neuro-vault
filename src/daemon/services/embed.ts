@@ -3,10 +3,11 @@ import { createQueuedEmbedder, type QueuedEmbedder } from '../../modules/semanti
 import { isProfileKey, MODEL_PROFILES, type ModelProfile } from '../../lib/model-profiles.js';
 import type { EmbeddingProvider } from '../../modules/semantic/types.js';
 import {
-  asRecord,
   DaemonRpcError,
-  onlyKeys,
-  stringParam,
+  defineMethod,
+  embedDocumentsParams,
+  embedInitializeParams,
+  embedQueryParams,
   type EmbedDocumentsResult,
   type EmbedInitializeResult,
   type EmbedQueryResult,
@@ -41,13 +42,6 @@ export const LOAD_FAILURE_MEMO_MS = 30_000;
 function profileOf(key: string): ModelProfile {
   if (!isProfileKey(key)) throw new DaemonRpcError('UNKNOWN_PROFILE', `unknown profile "${key}"`);
   return MODEL_PROFILES[key];
-}
-
-/** The params of an `embed.*` call: exactly `profile` plus `allowed`. */
-function readParams(params: unknown, ...allowed: string[]) {
-  const record = asRecord(params);
-  onlyKeys(record, ['profile', ...allowed]);
-  return { record, profile: profileOf(stringParam(record, 'profile')) };
 }
 
 function assertFinite(vector: number[]): number[] {
@@ -134,44 +128,43 @@ export function createEmbedService(deps: EmbedServiceDeps): {
   }
 
   const handlers: ServiceHandlers = {
-    initialize: async (params): Promise<EmbedInitializeResult> => {
-      const { provider } = await get(readParams(params).profile);
-      return { identity: provider.identity, max_batch_size: provider.maxBatchSize };
-    },
-    query: async (params): Promise<EmbedQueryResult> => {
-      const { record, profile } = readParams(params, 'text');
-      const text = record.text;
-      if (typeof text !== 'string' || text.trim() === '') {
-        throw new DaemonRpcError('INVALID_PARAMS', 'text must be a non-blank string');
-      }
-      const { queue } = await get(profile);
-      const vector = await embedding(`embed.query failed for ${profile.key}`, async () =>
-        assertFinite(await queue.embedQuery(text)),
-      );
-      return { vector };
-    },
-    documents: async (params): Promise<EmbedDocumentsResult> => {
-      const { record, profile } = readParams(params, 'texts');
-      const texts = record.texts;
-      if (!Array.isArray(texts) || !texts.every((t): t is string => typeof t === 'string')) {
-        throw new DaemonRpcError('INVALID_PARAMS', 'texts must be an array of strings');
-      }
-      if (texts.length === 0) throw new DaemonRpcError('INVALID_PARAMS', 'texts must not be empty');
-      const blank = texts.findIndex((t) => t.trim() === '');
-      if (blank !== -1) throw new DaemonRpcError('INVALID_PARAMS', `document ${blank} is blank`);
-      const { provider, queue } = await get(profile);
-      if (texts.length > provider.maxBatchSize) {
-        throw new DaemonRpcError(
-          'INVALID_PARAMS',
-          `at most ${provider.maxBatchSize} texts per call`,
+    initialize: defineMethod({
+      params: embedInitializeParams,
+      handler: async ({ profile: key }): Promise<EmbedInitializeResult> => {
+        const { provider } = await get(profileOf(key));
+        return { identity: provider.identity, max_batch_size: provider.maxBatchSize };
+      },
+    }),
+    query: defineMethod({
+      params: embedQueryParams,
+      handler: async ({ profile: key, text }): Promise<EmbedQueryResult> => {
+        const profile = profileOf(key);
+        const { queue } = await get(profile);
+        const vector = await embedding(`embed.query failed for ${profile.key}`, async () =>
+          assertFinite(await queue.embedQuery(text)),
         );
-      }
-      const vectors = await embedding(
-        `embed.documents failed for ${profile.key} (${texts.length} texts)`,
-        async () => (await queue.embedDocuments(texts)).map(assertFinite),
-      );
-      return { vectors };
-    },
+        return { vector };
+      },
+    }),
+    documents: defineMethod({
+      params: embedDocumentsParams,
+      handler: async ({ profile: key, texts }): Promise<EmbedDocumentsResult> => {
+        const profile = profileOf(key);
+        const { provider, queue } = await get(profile);
+        // The batch size is the loaded provider's, so this check cannot live in the schema.
+        if (texts.length > provider.maxBatchSize) {
+          throw new DaemonRpcError(
+            'INVALID_PARAMS',
+            `at most ${provider.maxBatchSize} texts per call`,
+          );
+        }
+        const vectors = await embedding(
+          `embed.documents failed for ${profile.key} (${texts.length} texts)`,
+          async () => (await queue.embedDocuments(texts)).map(assertFinite),
+        );
+        return { vectors };
+      },
+    }),
   };
 
   function documentsFor(profileKey: string): EmbedDocumentsFn {

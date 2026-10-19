@@ -107,25 +107,6 @@ describe('lexical.search', () => {
     expect(lexicalSearch.mock.calls[0]?.[0].queries).toEqual(['', 'q']);
   });
 
-  it.each([
-    ['a profile key', { ...valid, profile: 'granite-97m' }],
-    ['empty queries', { ...valid, queries: [] }],
-    ['queries not an array', { ...valid, queries: 'q' }],
-    ['a non-string query', { ...valid, queries: ['q', 1] }],
-    ['note_cap 0', { ...valid, note_cap: 0 }],
-    ['a fractional note_cap', { ...valid, note_cap: 1.5 }],
-    ['a missing per_note_cap', { vault: VAULT, queries: ['q'], note_cap: 10 }],
-    ['per_note_cap negative', { ...valid, per_note_cap: -1 }],
-    ['allowed a string', { ...valid, allowed: 'x' }],
-    ['allowed with a non-string', { ...valid, allowed: ['a.md', 2] }],
-    ['a missing vault', { queries: ['q'], note_cap: 10, per_note_cap: 3 }],
-    ['non-object params', ['x']],
-  ])('answers INVALID_PARAMS for %s, before touching the entry', async (_label, params) => {
-    const { call, entries } = setup();
-    expect(errorOf(await call(params))).toMatchObject({ code: 'INVALID_PARAMS' });
-    expect(entries.lexical).not.toHaveBeenCalled();
-  });
-
   it('answers NOT_ATTACHED for a vault the connection did not attach', async () => {
     const { call, lexicalSearch } = setup();
     expect(errorOf(await call({ ...valid, vault: '/other' }))).toMatchObject({

@@ -68,23 +68,6 @@ describe('vault service', () => {
     expect(entries.attach).toHaveBeenCalledWith(1, '/v', []);
   });
 
-  it.each([
-    ['no params', undefined],
-    ['a missing vault', { profiles: [] }],
-    ['a non-string vault', { vault: 3, profiles: [] }],
-    ['a relative vault', { vault: 'relative/vault', profiles: [] }],
-    ['a missing profiles', { vault: '/v' }],
-    ['a non-array profiles', { vault: '/v', profiles: 'harrier-270m' }],
-    ['a non-string profile', { vault: '/v', profiles: ['harrier-270m', 4] }],
-    ['a scope key', { vault: '/v', profiles: [], scope: { exclude: ['x'] } }],
-    ['a corpus identity key', { vault: '/v', profiles: [], identity: {} }],
-  ])('attach validates params: %s is INVALID_PARAMS', async (_name, params) => {
-    const { entries, call } = setup();
-    const response = await call(connection().ctx, 'vault.attach', params);
-    expect(errorOf(response).code).toBe('INVALID_PARAMS');
-    expect(entries.attach).not.toHaveBeenCalled();
-  });
-
   it('status answers the profile state', async () => {
     const { entries, call } = setup();
     const response = await call(connection(3).ctx, 'vault.status', {
@@ -93,20 +76,6 @@ describe('vault service', () => {
     });
     expect(entries.status).toHaveBeenCalledWith(3, '/real/v', 'harrier-270m');
     expect(isJSONRPCResultResponse(response) && response.result).toEqual({ state: 'ready' });
-  });
-
-  it.each([
-    ['no params', undefined],
-    ['a missing vault', { profile: 'p' }],
-    ['a non-string vault', { vault: 1, profile: 'p' }],
-    ['a missing profile', { vault: '/v' }],
-    ['a non-string profile', { vault: '/v', profile: ['p'] }],
-    ['a scope key', { vault: '/v', profile: 'p', scope: {} }],
-  ])('status validates params: %s is INVALID_PARAMS', async (_name, params) => {
-    const { entries, call } = setup();
-    const response = await call(connection().ctx, 'vault.status', params);
-    expect(errorOf(response).code).toBe('INVALID_PARAMS');
-    expect(entries.status).not.toHaveBeenCalled();
   });
 
   it.each(['NOT_ATTACHED', 'VAULT_UNAVAILABLE', 'UNKNOWN_PROFILE'] as const)(

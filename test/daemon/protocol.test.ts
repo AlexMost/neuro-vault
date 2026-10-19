@@ -3,12 +3,14 @@ import {
   isJSONRPCResponse,
   type JSONRPCRequest,
 } from '@modelcontextprotocol/sdk/types.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { z } from 'zod';
 
 import {
-  asRecord,
   type DaemonErrorCode,
   DaemonRpcError,
+  defineMethod,
   errorResponse,
   ServiceRegistry,
 } from '../../src/daemon/protocol.js';
@@ -182,25 +184,51 @@ describe('errorResponse data', () => {
   });
 });
 
-describe('asRecord', () => {
-  it.each([
-    ['undefined', undefined],
-    ['null', null],
-    ['an array', [1, 2]],
-    ['a string', 'x'],
-  ])('throws INVALID_PARAMS for %s', (_label, value) => {
-    let thrown: unknown;
-    try {
-      asRecord(value);
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(DaemonRpcError);
-    expect((thrown as DaemonRpcError).code).toBe('INVALID_PARAMS');
+describe('defineMethod', () => {
+  const schema = z.strictObject({ name: z.string(), count: z.number().int().optional() });
+
+  it('hands the handler the parsed params and the context', async () => {
+    const handler = vi.fn(async (params: z.infer<typeof schema>) => ({ got: params }));
+    const method = defineMethod({ params: schema, handler });
+    const ctx = testCtx(4);
+    await expect(method({ name: 'a', count: 2 }, ctx)).resolves.toEqual({
+      got: { name: 'a', count: 2 },
+    });
+    expect(handler).toHaveBeenCalledWith({ name: 'a', count: 2 }, ctx);
   });
 
-  it('returns the object unchanged', () => {
-    const params = { profile: 'default', text: 'hi' };
-    expect(asRecord(params)).toBe(params);
+  it.each([
+    ['undefined', undefined, '<root>'],
+    ['null', null, '<root>'],
+    ['an array', [1, 2], '<root>'],
+    ['a string', 'x', '<root>'],
+    ['a missing key', {}, 'name'],
+    ['a wrong type', { name: 1 }, 'name'],
+    ['an unknown key', { name: 'a', extra: true }, '<root>'],
+  ])(
+    'throws INVALID_PARAMS with the issues for %s, without calling the handler',
+    async (_label, params, path) => {
+      const handler = vi.fn(async () => ({}));
+      const thrown = await defineMethod({ params: schema, handler })(params, testCtx()).catch(
+        (error: unknown) => error,
+      );
+      expect(thrown).toBeInstanceOf(DaemonRpcError);
+      expect(thrown).toMatchObject({
+        code: 'INVALID_PARAMS',
+        message: expect.stringMatching(new RegExp(`^${path}: `)),
+        data: { issues: [expect.objectContaining({ path })] },
+      });
+      expect(handler).not.toHaveBeenCalled();
+    },
+  );
+
+  it('carries the issues to the wire beside the code', async () => {
+    const registry = new ServiceRegistry();
+    registry.register('x', { y: defineMethod({ params: schema, handler: async () => ({}) }) });
+    const response = await registry.dispatch(req('x.y', { name: 3 }), testCtx());
+    expect(isJSONRPCErrorResponse(response) && response.error).toMatchObject({
+      code: -32602,
+      data: { code: 'INVALID_PARAMS', issues: [expect.objectContaining({ path: 'name' })] },
+    });
   });
 });
