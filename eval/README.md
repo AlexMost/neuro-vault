@@ -153,8 +153,8 @@ reports on `--pipeline semantic` (see [Scoring](#scoring)).
     wikilink-graph backlink tie-break, RRF fusion, and the merged list capped
     at top 10. The pool sizes come from `EFFORT_PROFILES.deep` and
     `LEXICAL_PER_NOTE_CAP` (`src/modules/semantic/effort-profiles.ts`), the
-    same values the pipeline reads, so the report's `config` cannot drift from
-    the run. The existence filter admits every path: eval ranks the corpus as
+    same values the pipeline reads, so the pool numbers the report's `config`
+    records cannot drift from the run. The existence filter admits every path: eval ranks the corpus as
     loaded. A `fused` run measures the production ordering because it is the
     production code path, minus the MCP response envelope — there is no
     reimplementation to keep in sync. One difference is deliberate: where

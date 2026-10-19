@@ -6,7 +6,7 @@ This document covers the **semantic leg** of `search_notes` only. The lexical le
 
 ## What it is
 
-`src/modules/semantic/retrieval-policy.ts` exports a single function, `executeRetrieval(input)`, that takes `queries: string[]` and runs one pipeline over it — there is no separate single-query entry point. A single-query call is the degenerate case of the array form: the tool handler always wraps a scalar `query` into a one-element array before calling in (`src/modules/semantic/tools/search-notes.ts` — `queries = [normalizeQuery(input.query)]` when `input.query` is a string), and the policy itself has no branch on array length. Query arity is a surfacing concern the tool layer decides afterwards (whether `matched_queries` and `query_stats` reach the MCP response), not a retrieval-path concern.
+`src/modules/semantic/retrieval-policy.ts` exports a single function, `executeRetrieval(input)`, that takes `queries: string[]` and runs one pipeline over it — there is no separate single-query entry point. A single-query call is the degenerate case of the array form: the tool handler always wraps a scalar `query` into a one-element array before calling `runRetrievalPipeline`, which hands that array to the policy unchanged (`src/modules/semantic/tools/search-notes.ts` — `queries = [normalizeQuery(input.query)]` when `input.query` is a string), and the policy itself has no branch on array length. Query arity is a surfacing concern the tool layer decides afterwards (whether `matched_queries` and `query_stats` reach the MCP response), not a retrieval-path concern.
 
 The pipeline:
 
@@ -234,7 +234,7 @@ The thresholds were set so that each profile treats the same share of the vault 
 
 | Record | Variants |
 | --- | --- |
-| `semantic` | `skipped` (the caller opted out — `mode: "lexical"`, a non-`ready` pinned status — or the vault has no corpus) · `failed` with the `error` (the leg threw; the response degrades to lexical-only) · `ran` with `perQueryHits`, `perQueryFallback` and its own pool `truncated` |
+| `semantic` | `skipped` (the caller opted out — `mode: "lexical"`, a non-`ready` pinned status — the vault has no corpus, or an empty allowed set, which skips both legs) · `failed` with the `error` (the leg threw; the response degrades to lexical-only) · `ran` with `perQueryHits`, `perQueryFallback` and its own pool `truncated` |
 | `lexical` | `skipped` (an empty allowed set) · `ran` with `perQueryCounts`, `perQueryTokenCounts`, `totalNotes` and its own note-cap `truncated` |
 
 The lexical record has no `failed` variant: the lexical leg is what a semantic failure degrades to, so its failure throws `LexicalSearchError` and fails the vault instead. The pipeline's top-level `truncated` is the merged cap's cut only; each leg's pool cut stays on its own record. The tool still decides whether the semantic leg should run — that is request policy — and the records report what happened given that decision.
