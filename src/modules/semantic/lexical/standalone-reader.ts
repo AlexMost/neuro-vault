@@ -6,7 +6,7 @@ import {
   type ILexicalSearchOptions,
 } from '../../../lib/obsidian/lexical/index.js';
 import type { VaultReader } from '../../../lib/obsidian/vault-reader.js';
-import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js';
+import type { IVaultGraph } from '../../../lib/obsidian/wikilink-graph.js';
 
 /**
  * The session's own lexical leg: a {@link LexicalIndex} over the session's
@@ -22,7 +22,7 @@ import type { WikilinkGraphIndex } from '../../../lib/obsidian/wikilink-graph.js
 export function createStandaloneLexicalReader(opts: {
   vaultRoot: string;
   reader: VaultReader;
-  graph: Pick<WikilinkGraphIndex, 'ensureFresh' | 'getBacklinkCount'>;
+  graph: Pick<IVaultGraph, 'ensureFresh' | 'getBacklinkCount'>;
 }): ILexicalReader {
   const { graph } = opts;
   const index = new LexicalIndex({ vaultRoot: opts.vaultRoot, reader: opts.reader });

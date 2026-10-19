@@ -1,7 +1,7 @@
 import { ToolHandlerError } from './tool-response.js';
 import type { VaultReader } from './obsidian/vault-reader.js';
 import type { VaultScope } from './obsidian/vault-scope.js';
-import type { WikilinkGraphIndex } from './obsidian/wikilink-graph.js';
+import type { IVaultGraph } from './obsidian/wikilink-graph.js';
 import type { ListMatchingPaths } from './obsidian/query/index.js';
 import type { VaultProvider } from './obsidian/vault-provider.js';
 import type { ILexicalReader } from './obsidian/lexical/index.js';
@@ -22,7 +22,7 @@ export interface IRegisteredVault {
   scope: VaultScope;
   reader: VaultReader;
   provider: VaultProvider;
-  graph: WikilinkGraphIndex;
+  graph: IVaultGraph;
   listMatchingPaths: ListMatchingPaths;
   /**
    * Best-effort read of this vault's `.neuro-vault/for-external-agents.md`,
@@ -64,10 +64,10 @@ export interface IRegisteredVaultDeps {
   readerFactory: (opts: { vaultRoot: string; scope: VaultScope }) => VaultReader;
   vaultConfigFactory: (opts: { vaultRoot: string }) => Promise<VaultConfigFile>;
   scopeFactory: (opts: { vaultRoot: string; config: VaultConfigFile }) => Promise<VaultScope>;
-  graphFactory: (opts: { reader: VaultReader }) => WikilinkGraphIndex;
+  graphFactory: (opts: { reader: VaultReader }) => IVaultGraph;
   listMatchingPathsFactory: (opts: {
     reader: VaultReader;
-    graph: WikilinkGraphIndex;
+    graph: IVaultGraph;
   }) => ListMatchingPaths;
   providerFactory: (opts: {
     vaultName: string;
@@ -93,7 +93,7 @@ export interface IRegisteredVaultDeps {
     vaultRoot: string;
     vaultName: string;
     reader: VaultReader;
-    graph: WikilinkGraphIndex;
+    graph: IVaultGraph;
     enabled: boolean;
   }) => ILexicalReader;
   conventionsReaderFactory: (opts: { vaultRoot: string }) => () => Promise<string | null>;

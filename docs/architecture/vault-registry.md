@@ -15,7 +15,7 @@ An `IRegisteredVault` bundles everything a module or tool handler needs to reach
 | `scope`                     | always                                   | `VaultScope` — which files are discoverable; see [`vault-scope.md`](./vault-scope.md) |
 | `reader`                    | always                                   | `FsVaultReader` — direct disk reads, filtered through `scope`             |
 | `provider`                  | always                                   | `FsVaultProvider` — every direct disk write to a single note: creates, daily notes, properties, in-place edits |
-| `graph`                     | always                                   | `WikilinkGraphIndex` — lazy wikilink adjacency                            |
+| `graph`                     | always                                   | `IVaultGraph` — lazy wikilink adjacency and link resolution; see [`wikilink-graph.md`](./wikilink-graph.md) |
 | `listMatchingPaths`         | always                                   | Factory-produced function for structured path queries                     |
 | `readConventions`           | always                                   | Best-effort read of this vault's `.neuro-vault/for-external-agents.md`    |
 | `filterExisting`            | always                                   | Filters vault-relative paths down to those still present on disk          |

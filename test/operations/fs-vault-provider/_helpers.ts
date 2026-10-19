@@ -2,10 +2,7 @@ import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { vi } from 'vitest';
-
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
-import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 import { FsVaultProvider } from '../../../src/modules/operations/fs-vault-provider.js';
 import type { FsReadFile, FsWriteFile } from '../../../src/modules/operations/fs-vault-provider.js';
 
@@ -29,15 +26,6 @@ export function makeProvider(
     reader: new FsVaultReader({ vaultRoot: root }),
     ...fs,
   });
-}
-
-/** A stub WikilinkGraphIndex for `computeVaultOverview` integration tests. */
-export function makeMockGraph(): WikilinkGraphIndex {
-  return {
-    ensureFresh: vi.fn().mockResolvedValue(undefined),
-    getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
-    getBacklinkCount: vi.fn(() => 0),
-  } as unknown as WikilinkGraphIndex;
 }
 
 /** Today's basename in the default `YYYY-MM-DD` daily-note format (local time, timezone-safe). */

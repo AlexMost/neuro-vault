@@ -1,20 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { topByBacklinks } from '../../../src/lib/obsidian/top-by-backlinks.js';
-import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
-
-function makeGraph(overrides: Partial<WikilinkGraphIndex> = {}): WikilinkGraphIndex {
-  return {
-    ensureFresh: vi.fn().mockResolvedValue(undefined),
-    getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
-    getBacklinkCount: vi.fn(() => 0),
-    ...overrides,
-  } as unknown as WikilinkGraphIndex;
-}
+import { makeVaultGraph } from '../../_vault-graph.js';
 
 describe('topByBacklinks', () => {
   it('returns [] for empty paths', () => {
-    const graph = makeGraph();
+    const graph = makeVaultGraph();
     expect(topByBacklinks({ paths: [], graph, limit: 10 })).toEqual([]);
   });
 
@@ -25,7 +16,7 @@ describe('topByBacklinks', () => {
       'Notes/Gamma.md': 1,
       'Notes/Delta.md': 8,
     };
-    const graph = makeGraph({
+    const graph = makeVaultGraph({
       getBacklinkCount: vi.fn((p: string) => backlinks[p] ?? 0),
     });
 
@@ -44,7 +35,7 @@ describe('topByBacklinks', () => {
   });
 
   it('extracts title from nested path basename without .md extension', () => {
-    const graph = makeGraph();
+    const graph = makeVaultGraph();
     const result = topByBacklinks({
       paths: ['Folder/Nested/My Note.md'],
       graph,
@@ -54,7 +45,7 @@ describe('topByBacklinks', () => {
   });
 
   it('keeps non-.md paths verbatim as title (basename only)', () => {
-    const graph = makeGraph();
+    const graph = makeVaultGraph();
     const result = topByBacklinks({
       paths: ['Folder/file.txt'],
       graph,
@@ -65,7 +56,7 @@ describe('topByBacklinks', () => {
 
   it('slices to limit', () => {
     const paths = Array.from({ length: 15 }, (_, i) => `n${i}.md`);
-    const graph = makeGraph({
+    const graph = makeVaultGraph({
       getBacklinkCount: vi.fn((p: string) => Number(p.replace(/[^0-9]/g, ''))),
     });
 
@@ -76,7 +67,7 @@ describe('topByBacklinks', () => {
   });
 
   it('returns [] when limit is 0', () => {
-    const graph = makeGraph({
+    const graph = makeVaultGraph({
       getBacklinkCount: vi.fn(() => 5),
     });
     const result = topByBacklinks({ paths: ['a.md', 'b.md'], graph, limit: 0 });

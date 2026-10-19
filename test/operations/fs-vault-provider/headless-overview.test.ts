@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { computeVaultOverview } from '../../../src/lib/obsidian/vault-overview.js';
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
-import { makeMockGraph, makeVault } from './_helpers.js';
+import { makeVault } from './_helpers.js';
+import { makeVaultGraph } from '../../_vault-graph.js';
 
 const noConventions = async (): Promise<string | null> => null;
 
@@ -17,7 +18,7 @@ describe('disk → get_vault_overview (integration)', () => {
 
     const overview = await computeVaultOverview({
       reader,
-      graph: makeMockGraph(),
+      graph: makeVaultGraph(),
       readConventions: noConventions,
     });
 
@@ -37,7 +38,7 @@ describe('disk → get_vault_overview (integration)', () => {
 
     const overview = await computeVaultOverview({
       reader,
-      graph: makeMockGraph(),
+      graph: makeVaultGraph(),
       readConventions: noConventions,
     });
 
@@ -59,7 +60,7 @@ describe('disk → get_vault_overview (integration)', () => {
 
     const overview = await computeVaultOverview({
       reader,
-      graph: makeMockGraph(),
+      graph: makeVaultGraph(),
       readConventions: noConventions,
     });
 
@@ -76,7 +77,7 @@ describe('disk → get_vault_overview (integration)', () => {
 
     const overview = await computeVaultOverview({
       reader,
-      graph: makeMockGraph(),
+      graph: makeVaultGraph(),
       readConventions: noConventions,
     });
 
@@ -101,7 +102,7 @@ describe('disk → get_vault_overview (integration)', () => {
 
     const overview = await computeVaultOverview({
       reader,
-      graph: makeMockGraph(),
+      graph: makeVaultGraph(),
       readConventions: noConventions,
     });
 

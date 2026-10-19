@@ -11,7 +11,7 @@ import type {
   ISemanticBackend,
 } from '../../../src/lib/obsidian/semantic-backend.js';
 import type { VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
-import type { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
+import type { IVaultGraph } from '../../../src/lib/obsidian/wikilink-graph.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import {
   buildSearchNotesTool,
@@ -28,6 +28,7 @@ import { TEST_SIMILARITY } from '../../_identity.js';
 import { corpusOver } from '../../_memory-corpus.js';
 import type { SimilarityDefaults } from '../../../src/lib/model-profiles.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
+import { makeVaultGraph } from '../../_vault-graph.js';
 
 export const MODEL_KEY = 'bge-micro-v2';
 
@@ -141,12 +142,8 @@ export function createDuplicateCorpus(sources: Map<string, SmartSource>) {
   return { sources: merged };
 }
 
-export function makeFakeGraph(counts: Record<string, number> = {}): WikilinkGraphIndex {
-  return {
-    ensureFresh: vi.fn().mockResolvedValue(undefined),
-    getBacklinkCount: vi.fn((p: string) => counts[p] ?? 0),
-    getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
-  } as unknown as WikilinkGraphIndex;
+export function makeFakeGraph(counts: Record<string, number> = {}): IVaultGraph {
+  return makeVaultGraph({ getBacklinkCount: vi.fn((p: string) => counts[p] ?? 0) });
 }
 
 /**
@@ -206,7 +203,7 @@ export async function makeSearchDeps(opts: {
   similarity?: SimilarityDefaults;
   absentPaths?: Set<string>;
   corpus?: ICorpusReader;
-  graph?: WikilinkGraphIndex;
+  graph?: IVaultGraph;
   listMatchingPaths?: ListMatchingPaths;
   backendStatus?: BackendStatus;
 }): Promise<{

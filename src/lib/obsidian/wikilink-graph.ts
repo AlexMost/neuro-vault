@@ -32,16 +32,39 @@ interface NoteAdjacency {
   incoming: IncomingLink[];
 }
 
+/**
+ * A vault's wikilink graph: the one place a session answers link questions — a
+ * note's links, its backlink count, where a wikilink target resolves. Every
+ * read answers from the last build; `ensureFresh()` rebuilds when that build is
+ * stale, so a caller awaits it before reading. Before the first build every
+ * read answers as for an empty vault.
+ */
+export interface IVaultGraph {
+  ensureFresh(): Promise<void>;
+  getNoteLinks(notePath: string): NoteLinks;
+  getBacklinkCount(notePath: string): number;
+  /**
+   * The vault path a wikilink target resolves to, or `null` when it resolves
+   * to no note (or is ambiguous by suffix). `target` is already normalized
+   * (`normalizeWikilinkTarget`). Resolution order is the basename index's:
+   * exact path, unique suffix, basename (`note-path-resolution.md`).
+   */
+  resolve(target: string): string | null;
+}
+
 // In-memory wikilink graph over the vault. Tracks resolved + unresolved
 // outgoing links and resolved incoming links per note; embeds (`![[X]]`) and
 // regular wikilinks are recorded uniformly. Built lazily on first query and
 // rebuilt synchronously when `ensureFresh()` runs after the TTL has passed.
-export class WikilinkGraphIndex {
+// The basename index a rebuild resolves edges with is kept, so `resolve()`
+// answers from the same note list the edges were built from.
+export class WikilinkGraphIndex implements IVaultGraph {
   private readonly reader: VaultReader;
   private readonly ttlMs: number;
   private readonly now: () => number;
 
   private byPath: Map<string, NoteAdjacency> = new Map();
+  private basenameIndex: BasenameIndex = buildBasenameIndex([]);
   private lastBuildAt = 0;
   private buildPromise: Promise<void> | null = null;
 
@@ -80,6 +103,10 @@ export class WikilinkGraphIndex {
 
   getBacklinkCount(notePath: string): number {
     return this.byPath.get(notePath)?.incoming.length ?? 0;
+  }
+
+  resolve(target: string): string | null {
+    return this.basenameIndex.resolve(target);
   }
 
   private async rebuild(): Promise<void> {
@@ -123,6 +150,7 @@ export class WikilinkGraphIndex {
     }
 
     this.byPath = next;
+    this.basenameIndex = basenameIndex;
   }
 }
 

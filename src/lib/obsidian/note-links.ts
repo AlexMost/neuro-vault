@@ -1,12 +1,15 @@
 import { extractWikilinksFromFrontmatter } from './frontmatter-links.js';
 import { splitFrontmatter } from './frontmatter.js';
-import type { BasenameIndex } from './link-resolver.js';
 import { normalizeWikilinkTarget, parseWikilinks } from './wikilink.js';
 
 export interface GetNoteLinksOptions {
   notePath: string;
   readNoteContent: (vaultRelativePath: string) => Promise<string>;
-  basenameIndex: BasenameIndex;
+  /**
+   * Where a normalized wikilink target resolves, `null` for none. A vault's
+   * graph in production (`IVaultGraph.resolve`); a `BasenameIndex` also fits.
+   */
+  resolver: { resolve(target: string): string | null };
 }
 
 /**
@@ -18,7 +21,7 @@ export interface GetNoteLinksOptions {
  * map them to MCP error codes.
  */
 export async function getNoteLinks(opts: GetNoteLinksOptions): Promise<Set<string>> {
-  const { notePath, readNoteContent, basenameIndex } = opts;
+  const { notePath, readNoteContent, resolver } = opts;
 
   const raw = await readNoteContent(notePath);
   const { content: body, frontmatter } = splitFrontmatter(raw);
@@ -32,7 +35,7 @@ export async function getNoteLinks(opts: GetNoteLinksOptions): Promise<Set<strin
   for (const target of rawTargets) {
     const normalized = normalizeWikilinkTarget(target);
     if (!normalized) continue;
-    const path = basenameIndex.resolve(normalized);
+    const path = resolver.resolve(normalized);
     if (!path) continue;
     if (path === notePath) continue;
     resolved.add(path);

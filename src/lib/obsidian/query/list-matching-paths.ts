@@ -1,6 +1,6 @@
 import { ToolHandlerError } from '../../tool-response.js';
 import type { VaultReader } from '../vault-reader.js';
-import type { WikilinkGraphIndex } from '../wikilink-graph.js';
+import type { IVaultGraph } from '../wikilink-graph.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
 import {
   matchesAnyPrefix,
@@ -21,7 +21,7 @@ export type ListMatchingPaths = (filter: NoteFilter) => Promise<Set<string>>;
 
 export interface ListMatchingPathsDeps {
   reader: VaultReader;
-  graph?: WikilinkGraphIndex;
+  graph?: IVaultGraph;
 }
 
 export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchingPaths {

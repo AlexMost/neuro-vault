@@ -22,6 +22,7 @@ import {
 import type { SmartSource } from './_helpers.js';
 import { legacyFindNeighbors } from '../_legacy-retrieval.js';
 import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.js';
+import { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 
 type SimilarResults = Awaited<ReturnType<ReturnType<typeof buildGetSimilarNotesTool>['handler']>>;
 
@@ -543,12 +544,14 @@ describe('getSimilarNotes — graph signals', () => {
     }
     const { vaultRoot, cleanup } = await makeTempVault(notes);
     const corpusIndex = makeFakeCorpusIndex(sources);
+    const reader = readerOf(sources);
     const registry = makeTestRegistry([
       {
         name: 'v',
         path: vaultRoot,
         backend: toBackend(corpusIndex),
-        reader: readerOf(sources),
+        reader,
+        graph: new WikilinkGraphIndex({ reader }),
       },
     ]);
     const tool = buildGetSimilarNotesTool({
@@ -712,6 +715,54 @@ describe('getSimilarNotes — graph signals', () => {
       for (const r of results) {
         expect(r.signals.forward_link).toBe(true);
       }
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('resolves forward links through the vault graph, not a scan per call', async () => {
+    const sources = makeSources();
+    const { vaultRoot, cleanup } = await makeTempVault({
+      'Folder/A.md': '# A\n\n[[B]] and [[C]]\n',
+      'Folder/B.md': '# B\n',
+      'Folder/C.md': '# C\n',
+    });
+    const reader = readerOf(sources);
+    const scan = vi.spyOn(reader, 'scan');
+    const graph = new WikilinkGraphIndex({ reader });
+    const resolve = vi.spyOn(graph, 'resolve');
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        path: vaultRoot,
+        backend: toBackend(makeFakeCorpusIndex(sources)),
+        reader,
+        graph,
+      },
+    ]);
+    const reg = registerTool(
+      buildGetSimilarNotesTool({
+        registry,
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
+        modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
+      }),
+    );
+    try {
+      for (let call = 0; call < 2; call += 1) {
+        const results = await callTool<SimilarResults>(reg, {
+          path: 'Folder/A.md',
+          threshold: 0.9,
+        });
+        expect(results.filter((r) => r.signals.forward_link).map((r) => r.path)).toEqual([
+          'Folder/B.md',
+          'Folder/C.md',
+        ]);
+      }
+      // One scan for the graph's one build; the second call reuses it.
+      expect(scan).toHaveBeenCalledTimes(1);
+      expect(resolve).toHaveBeenCalledWith('B');
+      expect(resolve).toHaveBeenCalledWith('C');
     } finally {
       await cleanup();
     }

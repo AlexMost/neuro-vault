@@ -396,7 +396,7 @@ Array<{
 Behaviour:
 
 - A result reachable purely via a forward link has **no** top-level `similarity`. Code that ranks by `similarity` must guard for `undefined`.
-- Forward links resolve against every note the vault scope lets the server see, not only notes with an embedding: a link to a note too short to be embedded still comes back, as `forward_link` with no `similarity`.
+- Forward links resolve against every note the vault scope lets the server see, not only notes with an embedding: a link to a note too short to be embedded still comes back, as `forward_link` with no `similarity`. They resolve through the same wikilink graph as `get_note_links`, so a note created within its 3-minute refresh window may not resolve yet.
 - `threshold` filters the **semantic** branch only — forward-linked results bypass it. Omitted, it is the active model's `similarNotes` default (0.22 on `harrier-270m`, 0.67 on `granite-97m`; the full [table](#tuning-threshold-semantic-leg) has all three). An explicit value is on the active model's scale and does not carry over to another `--model`.
 - Forward-linked results rank ahead of semantic-only ones; within each bucket, by `signals.semantic` desc, then path asc.
 - `exclude_folders` matches case-sensitively as `path === entry || path.startsWith(entry + '/')`. Defaults to `[]` (no exclusions); pass folder names to scope the search.
