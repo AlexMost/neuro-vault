@@ -59,6 +59,25 @@ export default defineConfig(
     },
   },
   {
+    // The composition root reaches a module only through its barrel
+    // (docs/architecture/module-structure.md, ADR-0022): what a module hands
+    // the server is exactly what its index.ts exports.
+    files: ['src/server.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['./modules/*/**', '!./modules/*/index.js'],
+              message: 'Import a module through its barrel (./modules/<name>/index.js).',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Test-only relaxation: these rules false-positive on the mock/fixture
     // idiom — async interface conformance without await, expect(mock.method),
     // probing unknown payloads. Promise-safety rules (no-floating-promises,

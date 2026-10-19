@@ -2,30 +2,25 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 
 import {
+  createEmbeddingProvider,
   createLexicalOnlyTools,
+  createQueuedEmbedder,
   createSemanticModule,
-  type ISemanticModuleDeps,
-} from './modules/semantic/index.js';
-import { createQueuedEmbedder } from './modules/semantic/embed-queue.js';
-import { createEmbeddingProvider } from './modules/semantic/provider-factory.js';
-import {
   createSharedServices,
+  createVaultClients,
+  lexicalOnlyVaultFactories,
   SharedServicesClosedError,
+  type EmbeddingProvider,
+  type ISemanticModuleDeps,
   type ISharedServices,
-} from './modules/semantic/shared-services.js';
-import type { EmbeddingProvider } from './modules/semantic/types.js';
-import { createVaultClients, type IVaultClients } from './modules/semantic/vault-client/index.js';
-import { createStandaloneLexicalReader } from './modules/semantic/lexical/index.js';
-import { createOperationsModule } from './modules/operations/index.js';
-import { VaultRegistry, type IRegisteredVaultDeps } from './lib/vault-registry.js';
-import { FsVaultReader } from './lib/obsidian/vault-reader.js';
-import { WikilinkGraphIndex } from './lib/obsidian/wikilink-graph.js';
-import { createListMatchingPaths } from './lib/obsidian/query/index.js';
-import { FsVaultProvider } from './modules/operations/fs-vault-provider.js';
-import { createExistingPathFilter } from './lib/obsidian/existing-paths.js';
-import { readVaultConventions } from './lib/obsidian/vault-conventions.js';
-import { loadVaultConfig } from './lib/obsidian/vault-config.js';
-import { loadVaultScope } from './lib/obsidian/vault-scope-config.js';
+  type IVaultClients,
+} from './modules/semantic/index.js';
+import { createOperationsModule, operationsVaultFactories } from './modules/operations/index.js';
+import {
+  defaultVaultDeps,
+  VaultRegistry,
+  type IRegisteredVaultDeps,
+} from './lib/vault-registry.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ResourceRegistration } from './lib/resource-registration.js';
 import type { ServerConfig } from './types.js';
@@ -100,45 +95,6 @@ function defaultTransportFactory(): StdioServerTransport {
 }
 
 /**
- * The vault factories of a `--no-semantic` session (brainstorm F1): no vault
- * clients, so nothing attaches and no daemon starts. Every vault's lexical leg
- * is the session's own cache over its reader. The registry builds no backend
- * when `semanticEnabled` is false, so the semantic factory is never called.
- */
-const NO_SEMANTIC_FACTORIES: Pick<
-  IRegisteredVaultDeps,
-  'semanticBackendFactory' | 'lexicalReaderFactory'
-> = {
-  semanticBackendFactory: () => {
-    throw new Error('no semantic backend is built under --no-semantic');
-  },
-  lexicalReaderFactory: ({ vaultRoot, reader, graph }) =>
-    createStandaloneLexicalReader({ vaultRoot, reader, graph }),
-};
-
-function buildDefaultVaultEntryDeps(
-  factories: Pick<IRegisteredVaultDeps, 'semanticBackendFactory' | 'lexicalReaderFactory'>,
-  overrides: Partial<IRegisteredVaultDeps> = {},
-): IRegisteredVaultDeps {
-  return {
-    readerFactory: ({ vaultRoot, scope }) => new FsVaultReader({ vaultRoot, scope }),
-    vaultConfigFactory: ({ vaultRoot }) => loadVaultConfig(vaultRoot),
-    scopeFactory: ({ vaultRoot, config }) => loadVaultScope(vaultRoot, { config }),
-    graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
-    listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
-    providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
-    semanticBackendFactory: factories.semanticBackendFactory,
-    lexicalReaderFactory: factories.lexicalReaderFactory,
-    conventionsReaderFactory:
-      ({ vaultRoot }) =>
-      () =>
-        readVaultConventions(vaultRoot),
-    existingPathFilterFactory: ({ vaultRoot }) => createExistingPathFilter({ vaultRoot }),
-    ...overrides,
-  };
-}
-
-/**
  * Boots the server and returns a disposer that releases every vault's
  * background resources. The disposer also runs on transport close, and
  * end-of-input on stdin closes the transport — so a client that disconnects
@@ -178,7 +134,10 @@ export async function startNeuroVaultServer(
       vaults: config.vaults,
       semanticEnabled: config.semantic.enabled,
     },
-    buildDefaultVaultEntryDeps(clients ?? NO_SEMANTIC_FACTORIES, deps.vaultEntryDeps),
+    defaultVaultDeps(
+      { ...operationsVaultFactories, ...(clients ?? lexicalOnlyVaultFactories) },
+      deps.vaultEntryDeps,
+    ),
   );
 
   const serverFactory = deps.serverFactory ?? defaultServerFactory;

@@ -68,6 +68,10 @@ The registry does not feed the MCP `instructions` string. That is `SERVER_INSTRU
 
 `server.ts` is the only caller of `VaultRegistry.create`. Both module factories receive the whole registry rather than individual entries so they can fan out without knowing vault count at compile time.
 
+## Where the production factories come from
+
+`defaultVaultDeps(modules, overrides)`, beside `VaultRegistry` in `src/lib/vault-registry.ts`, is the production `IRegisteredVaultDeps`. It builds every factory `src/lib/` can build itself — reader, config, scope, graph, `listMatchingPaths`, conventions reader, existing-path filter — and takes the rest as `modules: IModuleVaultFactories`: `providerFactory` from `operationsVaultFactories`, and `semanticBackendFactory` with `lexicalReaderFactory` from either the semantic module's vault clients or, under `--no-semantic`, its `lexicalOnlyVaultFactories`. `server.ts` picks the slices and passes `NeuroVaultStartupDependencies.vaultEntryDeps` as `overrides`, which is how tests swap one factory. A new per-vault capability built from `src/lib/` touches this one file: the entry field, the factory on `IRegisteredVaultDeps`, the construction line in `create`, and its default. See [ADR-0022](../adr/0022-modules-hand-the-composition-root-their-factories.md).
+
 Tool handlers access the registry through three patterns:
 
 1. **Single named vault** — `registry.require(input.vault)` when the caller supplied an explicit `vault` parameter.

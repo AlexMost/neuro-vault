@@ -1,12 +1,19 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 import {
+  defaultVaultDeps,
   VaultRegistry,
+  type IModuleVaultFactories,
   type IRegisteredVault,
   type IRegisteredVaultDeps,
 } from '../../src/lib/vault-registry.js';
-import type { VaultReader } from '../../src/lib/obsidian/vault-reader.js';
+import { FsVaultReader, type VaultReader } from '../../src/lib/obsidian/vault-reader.js';
+import { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import { createVaultScope } from '../../src/lib/obsidian/vault-scope.js';
 import { loadVaultScope } from '../../src/lib/obsidian/vault-scope-config.js';
 import type { IVaultConfig } from '../../src/types.js';
@@ -333,5 +340,60 @@ describe('createVaultRegistry', () => {
     expect(registry.require('bad').scope.isExcluded('Templates/Daily.md')).toBe(true);
     expect(registry.require('bad').scope.isExcluded('Projects/a.md')).toBe(false);
     expect(warn).toHaveBeenCalledOnce();
+  });
+});
+
+describe('defaultVaultDeps', () => {
+  /** The modules' slice from fakeDeps, so a test can tell it passed through untouched. */
+  function moduleSlice(): IModuleVaultFactories {
+    const { providerFactory, semanticBackendFactory, lexicalReaderFactory } = fakeDeps();
+    return { providerFactory, semanticBackendFactory, lexicalReaderFactory };
+  }
+
+  it("builds every src/lib capability over the vault on disk, and takes the modules' slice as given", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'default-deps-'));
+    try {
+      await fs.mkdir(path.join(root, 'Notes'), { recursive: true });
+      await fs.writeFile(path.join(root, 'Notes/A.md'), '[[B]]\n', 'utf8');
+      await fs.writeFile(path.join(root, 'Notes/B.md'), 'leaf\n', 'utf8');
+      await fs.mkdir(path.join(root, '.neuro-vault'), { recursive: true });
+      await fs.writeFile(path.join(root, '.neuro-vault/for-external-agents.md'), 'Be kind.\n');
+      const modules = moduleSlice();
+
+      const registry = await VaultRegistry.create(
+        { vaults: [vault('v', root)], semanticEnabled: false },
+        defaultVaultDeps(modules),
+      );
+      const entry = registry.require('v');
+
+      expect(entry.reader).toBeInstanceOf(FsVaultReader);
+      expect(entry.graph).toBeInstanceOf(WikilinkGraphIndex);
+      await entry.graph.ensureFresh();
+      expect(entry.graph.resolve('B')).toBe('Notes/B.md');
+      expect(entry.graph.getBacklinkCount('Notes/B.md')).toBe(1);
+      expect(await entry.listMatchingPaths({ path_prefix: 'Notes/' })).toEqual(
+        new Set(['Notes/A.md', 'Notes/B.md']),
+      );
+      expect(await entry.readConventions()).toBe('Be kind.');
+      expect(await entry.filterExisting(['Notes/A.md', 'Gone.md'])).toEqual(
+        new Set(['Notes/A.md']),
+      );
+      expect(entry.provider).toEqual({ vaultName: 'v', vaultRoot: root, reader: entry.reader });
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('lets an override replace one factory and keeps the rest', () => {
+    const modules = moduleSlice();
+    const graphFactory = vi.fn();
+
+    const deps = defaultVaultDeps(modules, { graphFactory });
+
+    expect(deps.graphFactory).toBe(graphFactory);
+    expect(deps.providerFactory).toBe(modules.providerFactory);
+    expect(deps.semanticBackendFactory).toBe(modules.semanticBackendFactory);
+    expect(deps.lexicalReaderFactory).toBe(modules.lexicalReaderFactory);
+    expect(deps.readerFactory).toBeTypeOf('function');
   });
 });
