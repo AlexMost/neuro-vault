@@ -1,12 +1,15 @@
 import { ToolHandlerError } from './tool-response.js';
-import type { VaultReader } from './obsidian/vault-reader.js';
+import { createExistingPathFilter } from './obsidian/existing-paths.js';
+import { FsVaultReader, type VaultReader } from './obsidian/vault-reader.js';
 import type { VaultScope } from './obsidian/vault-scope.js';
-import type { IVaultGraph } from './obsidian/wikilink-graph.js';
-import type { ListMatchingPaths } from './obsidian/query/index.js';
+import { loadVaultScope } from './obsidian/vault-scope-config.js';
+import { WikilinkGraphIndex, type IVaultGraph } from './obsidian/wikilink-graph.js';
+import { createListMatchingPaths, type ListMatchingPaths } from './obsidian/query/index.js';
 import type { VaultProvider } from './obsidian/vault-provider.js';
 import type { ILexicalReader } from './obsidian/lexical/index.js';
 import type { ISemanticBackend } from './obsidian/semantic-backend.js';
-import type { VaultConfigFile } from './obsidian/vault-config.js';
+import { loadVaultConfig, type VaultConfigFile } from './obsidian/vault-config.js';
+import { readVaultConventions } from './obsidian/vault-conventions.js';
 import type { IVaultConfig } from '../types.js';
 
 /** Filter vault-relative note paths down to those present on disk. */
@@ -98,6 +101,45 @@ export interface IRegisteredVaultDeps {
   }) => ILexicalReader;
   conventionsReaderFactory: (opts: { vaultRoot: string }) => () => Promise<string | null>;
   existingPathFilterFactory: (opts: { vaultRoot: string }) => FilterExistingPaths;
+}
+
+/**
+ * The per-vault factories a module contributes: what `src/lib/` cannot build
+ * itself, because the implementation lives in a module (`FsVaultProvider` in
+ * operations; the semantic backend and the lexical reader in semantic). Each
+ * module hands its slice over through its barrel; the server picks which.
+ */
+export type IModuleVaultFactories = Pick<
+  IRegisteredVaultDeps,
+  'providerFactory' | 'semanticBackendFactory' | 'lexicalReaderFactory'
+>;
+
+/**
+ * The production `IRegisteredVaultDeps`: every factory `src/lib/` can build,
+ * plus the modules' slices. `overrides` replace any of them — tests swap a
+ * factory without rebuilding the rest. A new per-vault capability built from
+ * `src/lib/` lands here, beside the entry field and construction line it feeds.
+ */
+export function defaultVaultDeps(
+  modules: IModuleVaultFactories,
+  overrides: Partial<IRegisteredVaultDeps> = {},
+): IRegisteredVaultDeps {
+  return {
+    readerFactory: ({ vaultRoot, scope }) => new FsVaultReader({ vaultRoot, scope }),
+    vaultConfigFactory: ({ vaultRoot }) => loadVaultConfig(vaultRoot),
+    scopeFactory: ({ vaultRoot, config }) => loadVaultScope(vaultRoot, { config }),
+    graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
+    listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
+    providerFactory: modules.providerFactory,
+    semanticBackendFactory: modules.semanticBackendFactory,
+    lexicalReaderFactory: modules.lexicalReaderFactory,
+    conventionsReaderFactory:
+      ({ vaultRoot }) =>
+      () =>
+        readVaultConventions(vaultRoot),
+    existingPathFilterFactory: ({ vaultRoot }) => createExistingPathFilter({ vaultRoot }),
+    ...overrides,
+  };
 }
 
 export interface IVaultRegistryConfig {

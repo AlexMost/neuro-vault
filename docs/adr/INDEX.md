@@ -29,3 +29,4 @@ Template: [0000-template.md](0000-template.md).
 | 0019 | [The corpus is an interface inside the daemon; sessions read it, never its vectors](0019-embedding-storage-interface.md) | Accepted |
 | 0020 | [Per-vault state lives in the daemon's vault entry](0020-per-vault-state-in-the-daemon.md) | Accepted; "the fallback runs the same module" refined in part by [0021](0021-vault-client.md) |
 | 0021 | [One vault client per vault root; per-vault reads are views over it](0021-vault-client.md) | Accepted |
+| 0022 | [Modules hand the composition root their factories through their barrels](0022-modules-hand-the-composition-root-their-factories.md) | Accepted |

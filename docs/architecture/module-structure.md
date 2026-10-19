@@ -23,7 +23,7 @@ Different users want different things. Some want semantic search and are fine wi
 
 ## Boundaries
 
-- A module exposes only `tools` (and an optional `warmup`). Anything else is internal.
+- A module's barrel (`src/modules/<name>/index.ts`) is its whole public surface: its tools, resources and optional `warmup`, plus what the composition root builds a session from — its slice of each vault's factories (`operationsVaultFactories`; the semantic vault clients or `lexicalOnlyVaultFactories`) and, for semantic, the session-wide constructors (shared services, embedding provider and queue, vault clients). Anything else is internal. `src/server.ts` imports a module only through its barrel, enforced by `no-restricted-imports` in `eslint.config.js` ([ADR-0022](../adr/0022-modules-hand-the-composition-root-their-factories.md)).
 - Modules do not call each other. If two modules ever need to share data, that data should live in `src/lib/` and both consume it from there.
 - Module-specific types live inside the module (`modules/<name>/types.ts`). `src/types.ts` only contains the shared `ServerConfig`.
 
@@ -33,7 +33,7 @@ Different users want different things. Some want semantic search and are fine wi
 parseConfig(argv) → ServerConfig
    │
    ▼
-VaultRegistry.create(config, deps) → VaultRegistry
+VaultRegistry.create(config, defaultVaultDeps(moduleSlices)) → VaultRegistry
    │  (one IRegisteredVault per --vault name:path; each vault's semantic
    │   backend decides its own readiness live, never throws)
    ▼

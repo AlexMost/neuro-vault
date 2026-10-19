@@ -1,6 +1,7 @@
 import { buildOperationsTools, type IOperationsToolDeps } from './tools/index.js';
 import { buildOperationsResources } from './resources/index.js';
-import type { IVaultRegistry } from '../../lib/vault-registry.js';
+import { FsVaultProvider } from './fs-vault-provider.js';
+import type { IRegisteredVaultDeps, IVaultRegistry } from '../../lib/vault-registry.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
 import type { ResourceRegistration } from '../../lib/resource-registration.js';
 
@@ -22,3 +23,11 @@ export function createOperationsModule(
     resources: buildOperationsResources({ registry }),
   };
 }
+
+/**
+ * The operations module's slice of each vault's factories: the one disk
+ * module that owns note writes (ADR-0016), bound to the vault's reader.
+ */
+export const operationsVaultFactories: Pick<IRegisteredVaultDeps, 'providerFactory'> = {
+  providerFactory: ({ vaultRoot, reader }) => new FsVaultProvider({ vaultRoot, reader }),
+};

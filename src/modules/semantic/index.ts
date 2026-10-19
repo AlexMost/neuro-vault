@@ -7,7 +7,21 @@ import {
 } from './tools/index.js';
 import type { QueryEmbedder } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
-import type { IVaultRegistry } from '../../lib/vault-registry.js';
+import type { IRegisteredVaultDeps, IVaultRegistry } from '../../lib/vault-registry.js';
+import { createStandaloneLexicalReader } from './lexical/index.js';
+
+// What the composition root builds a session's semantic side from (ADR-0022):
+// the process's daemon connection, the embedding provider and its queue, and
+// the vault clients whose views are each vault's backend and lexical reader.
+export {
+  createSharedServices,
+  SharedServicesClosedError,
+  type ISharedServices,
+} from './shared-services.js';
+export { createEmbeddingProvider } from './provider-factory.js';
+export { createQueuedEmbedder } from './embed-queue.js';
+export { createVaultClients, type IVaultClients } from './vault-client/index.js';
+export type { EmbeddingProvider } from './types.js';
 
 export interface ISemanticModuleConfig {
   profile: ModelProfile;
@@ -56,3 +70,20 @@ export function createLexicalOnlyTools(
 ): ToolRegistration[] {
   return buildLexicalOnlyTools(registry, config.profile);
 }
+
+/**
+ * The vault factories of a `--no-semantic` session (brainstorm F1): no vault
+ * clients, so nothing attaches and no daemon starts. Every vault's lexical leg
+ * is the session's own cache over its reader. The registry builds no backend
+ * when `semanticEnabled` is false, so the semantic factory is never called.
+ */
+export const lexicalOnlyVaultFactories: Pick<
+  IRegisteredVaultDeps,
+  'semanticBackendFactory' | 'lexicalReaderFactory'
+> = {
+  semanticBackendFactory: () => {
+    throw new Error('no semantic backend is built under --no-semantic');
+  },
+  lexicalReaderFactory: ({ vaultRoot, reader, graph }) =>
+    createStandaloneLexicalReader({ vaultRoot, reader, graph }),
+};
