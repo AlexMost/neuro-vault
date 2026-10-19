@@ -1,13 +1,11 @@
 import { z } from 'zod';
 
 import type { ITool } from '../../../lib/tool-registry.js';
-import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
 import type { ICorpusReader } from '../../../lib/obsidian/corpus/corpus.js';
-import { CorpusNotReadyError } from '../../../lib/obsidian/semantic-backend.js';
 import { compareStrings } from '../../../lib/obsidian/corpus/scoring.js';
-import { readThreshold } from '../tool-helpers.js';
+import { wrapDependencyError } from '../tool-helpers.js';
 import type { DuplicatePair } from '../types.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 
@@ -97,7 +95,7 @@ export function buildFindDuplicatesTool(
         ),
     },
     runForEntry: async (entry, input) => {
-      const threshold = readThreshold(input.threshold, similarity.duplicates, 'threshold');
+      const threshold = input.threshold ?? similarity.duplicates;
       try {
         const pairs = await collectDuplicatePairs({
           corpus: entry.backend,
@@ -109,12 +107,9 @@ export function buildFindDuplicatesTool(
           .filter((p) => existing.has(p.note_a) && existing.has(p.note_b))
           .map((p) => ({ vault: entry.name, ...p }));
       } catch (error) {
-        // A corpus that stopped serving after the readiness gate let the call in
-        // is the dispatcher's to report, as the gate would.
-        if (error instanceof ToolHandlerError || error instanceof CorpusNotReadyError) throw error;
-        throw new ToolHandlerError('DEPENDENCY_ERROR', 'Failed to find duplicate notes', {
-          details: { modelKey, operation: 'find_duplicates' },
-          cause: error,
+        throw wrapDependencyError(error, 'Failed to find duplicate notes', {
+          modelKey,
+          operation: 'find_duplicates',
         });
       }
     },

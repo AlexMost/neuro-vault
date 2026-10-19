@@ -6,13 +6,12 @@ import {
   type BasenameIndex,
 } from '../../../lib/obsidian/index.js';
 import type { ICorpusReader } from '../../../lib/obsidian/corpus/corpus.js';
-import { CorpusNotReadyError } from '../../../lib/obsidian/semantic-backend.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
 import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
-import { readNoteContentForEntry, readPositiveInteger, readThreshold } from '../tool-helpers.js';
+import { readNoteContentForEntry, wrapDependencyError } from '../tool-helpers.js';
 import type { QueryEmbedder, SimilarNoteResult } from '../types.js';
 import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 
@@ -42,18 +41,6 @@ function isEnoent(error: unknown): boolean {
   return (
     typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ENOENT'
   );
-}
-
-function wrapDependencyError(
-  error: unknown,
-  message: string,
-  details: Record<string, unknown>,
-): ToolHandlerError | CorpusNotReadyError {
-  if (error instanceof ToolHandlerError) return error;
-  // The corpus stopped serving after the readiness gate let the call in: the
-  // dispatcher reports it as the gate would.
-  if (error instanceof CorpusNotReadyError) return error;
-  return new ToolHandlerError('DEPENDENCY_ERROR', message, { details, cause: error });
 }
 
 function normalizeExcludeEntry(entry: string): string {
@@ -194,8 +181,8 @@ export function buildGetSimilarNotesTool(
           details: { field: 'path' },
         });
       }
-      const limit = readPositiveInteger(input.limit, DEFAULT_LIMIT, 'limit');
-      const threshold = readThreshold(input.threshold, similarity.similarNotes, 'threshold');
+      const limit = input.limit ?? DEFAULT_LIMIT;
+      const threshold = input.threshold ?? similarity.similarNotes;
       const excludePrefixes = (input.exclude_folders ?? []).map(normalizeExcludeEntry);
 
       try {

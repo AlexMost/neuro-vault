@@ -228,6 +228,26 @@ describe('findDuplicates', () => {
     await expect(callTool(reg, {})).rejects.toMatchObject({ code: 'SEMANTIC_DISABLED' });
   });
 
+  it('rejects an out-of-range threshold', async () => {
+    const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
+
+    try {
+      const registry = makeTestRegistry([{ name: 'v', path: tempRoot }]);
+      const reg = registerTool(
+        buildFindDuplicatesTool({ registry, modelKey: MODEL_KEY, similarity: TEST_SIMILARITY }),
+      );
+
+      for (const threshold of [-0.01, 1.01]) {
+        await expect(callTool(reg, { threshold })).rejects.toMatchObject({
+          code: 'INVALID_PARAMS',
+          details: { issues: [{ path: 'threshold' }] },
+        });
+      }
+    } finally {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it('rejects a vault argument in single-vault mode', async () => {
     const { tempRoot } = await makeVaultFixture(['note-a.ajson']);
 
