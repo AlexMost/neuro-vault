@@ -1,6 +1,6 @@
 # Agent Working Notes
 
-`neuro-vault-mcp` is an MCP server that gives an AI assistant two things over an Obsidian vault: semantic search (over the server's own embedding corpus) and direct vault operations (notes, properties, tags, structured queries). TypeScript, ESM, Node ≥ 20.9.
+`neuro-vault-mcp` is an MCP server that gives an AI assistant two things over an Obsidian vault: semantic search (over the server's own embedding corpus) and direct vault operations (notes, properties, tags, structured queries). TypeScript, ESM, Node 20.19+ / 22.12+ / 23+.
 
 This is a cheat sheet for working in the repo — deeper docs live under `docs/` (map: [`docs/README.md`](docs/README.md)), decisions in [`docs/adr/`](docs/adr/INDEX.md). It does not repeat them.
 
