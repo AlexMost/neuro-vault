@@ -1,25 +1,10 @@
 import type { BackendStatus } from '../../../lib/obsidian/semantic-backend.js';
 import type { VaultEntries } from '../../../lib/vault-entry/index.js';
 import type { ISharedServices } from '../shared-services.js';
-import { CORPUS_TIMEOUTS, isStatus } from './corpus-wire.js';
+import { createAttachment } from '../vault-client/attachment.js';
+import type { IVaultAttachment } from '../vault-client/attachment.js';
 
-/**
- * One vault's attachment on one connection (design D7): the facades that read
- * the vault — the semantic backend, and the lexical reader after it — each
- * ask for the key, and the first to ask makes the one `vault.attach`.
- */
-export interface IVaultAttachment {
-  /** The realpath key on the current epoch; attaches first when needed. Rejects as the attach does. */
-  key(): Promise<string>;
-  /** Forget the attach so the next key() attaches again (after NOT_ATTACHED). */
-  forget(): void;
-  /** `true` while an attach is in flight on the current epoch. */
-  readonly attaching: boolean;
-  /** `true` once attached on the current epoch (and not forgotten since). */
-  readonly attached: boolean;
-  /** The last answered attach's status for `profile`, or undefined. */
-  statusOf(profile: string): BackendStatus | undefined;
-}
+export type { IVaultAttachment } from '../vault-client/attachment.js';
 
 export interface IDaemonAttachmentOptions {
   /** The process's connection and one-way switch. The caller has ensured it. */
@@ -38,89 +23,20 @@ export interface ILocalAttachmentOptions {
   profiles: string[];
 }
 
-/** How often key() re-attaches when each answer lands on a connection already replaced. */
-const MAX_ATTACH_ATTEMPTS = 3;
-
-interface IInFlight {
-  epoch: number;
-  answer: Promise<void>;
-}
-
-/**
- * The attachment over the shared daemon. Per connection epoch, `vault.attach`
- * goes out before the first key is handed out — concurrent callers share one
- * attach, and a reconnect (a new epoch) attaches again. An answer from a
- * connection already replaced records nothing on the new one. A refused
- * attach rejects as the daemon's own error (`VAULT_UNAVAILABLE` included),
- * and the next call attaches again. key() never returns a key the current
- * connection did not attach: it asks again on the current epoch, and rejects
- * once a few answers in a row land on a replaced one.
- */
+/** The attachment over the shared daemon: `createAttachment` over the process's connection. */
 export function createDaemonAttachment(opts: IDaemonAttachmentOptions): IVaultAttachment {
-  const { services, vaultRoot, profiles } = opts;
-  /** The epoch the vault is attached on, and the key the daemon answered with. */
-  let attachedEpoch = -1;
-  let key = vaultRoot;
-  let statuses: Record<string, unknown> = {};
-  let inFlight: IInFlight | undefined;
-
-  /** `vault.attach` on the current epoch; concurrent callers share it. */
-  function attach(): Promise<void> {
-    const epoch = services.connection.epoch;
-    if (inFlight?.epoch === epoch) return inFlight.answer;
-    const answer = services.connection
-      .request<{ vault?: unknown; profiles?: Record<string, unknown> }>(
-        'vault.attach',
-        { vault: vaultRoot, profiles },
-        CORPUS_TIMEOUTS.attach,
-      )
-      .then((result) => {
-        if (typeof result?.vault !== 'string') {
-          throw new Error('daemon answered vault.attach without a vault key');
-        }
-        // An answer from a connection already replaced attaches nothing on the new one.
-        if (epoch === services.connection.epoch) {
-          key = result.vault;
-          statuses = result.profiles ?? {};
-          attachedEpoch = epoch;
-        }
-      })
-      .finally(() => {
-        if (inFlight?.answer === answer) inFlight = undefined;
-      });
-    inFlight = { epoch, answer };
-    return answer;
-  }
-
-  return {
-    async key() {
-      // An answer that lands on a replaced epoch attached nothing here: ask again on the current
-      // one rather than hand out a key this connection never attached.
-      for (let attempt = 0; attempt < MAX_ATTACH_ATTEMPTS; attempt++) {
-        if (attachedEpoch !== services.connection.epoch) await attach();
-        if (attachedEpoch === services.connection.epoch) return key;
-      }
-      throw new Error(`vault "${vaultRoot}" could not attach: the daemon connection changed`);
-    },
-    forget() {
-      attachedEpoch = -1;
-    },
-    get attaching() {
-      return inFlight?.epoch === services.connection.epoch;
-    },
-    get attached() {
-      return attachedEpoch === services.connection.epoch;
-    },
-    statusOf(profile) {
-      const status = statuses[profile];
-      return isStatus(status) ? status : undefined;
-    },
-  };
+  return createAttachment({
+    link: opts.services.connection,
+    vaultRoot: opts.vaultRoot,
+    profiles: opts.profiles,
+  });
 }
 
 /**
  * The attachment over this process's own vault entries: the same single-flight
  * attach, with no connection to replace — a fixed connection id, no epochs.
+ *
+ * @deprecated PR 2 removes it: the in-process path attaches over `createInProcessLink` instead.
  */
 export function createLocalAttachment(opts: ILocalAttachmentOptions): IVaultAttachment {
   const { entries, connectionId, vaultRoot, profiles } = opts;

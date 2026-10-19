@@ -27,4 +27,5 @@ Template: [0000-template.md](0000-template.md).
 | 0017 | [Embedding models are a closed set of verified profiles](0017-embedding-model-profiles.md) | Accepted; per-profile directories adopted 2026-10-14 |
 | 0018 | [A shared-services daemon per installed build; the embedding provider is its first client](0018-shared-services-daemon.md) | Accepted |
 | 0019 | [The corpus is an interface inside the daemon; sessions read it, never its vectors](0019-embedding-storage-interface.md) | Accepted |
-| 0020 | [Per-vault state lives in the daemon's vault entry](0020-per-vault-state-in-the-daemon.md) | Accepted |
+| 0020 | [Per-vault state lives in the daemon's vault entry](0020-per-vault-state-in-the-daemon.md) | Accepted; "the fallback runs the same module" refined in part by [0021](0021-vault-client.md) |
+| 0021 | [One vault client per vault root; per-vault reads are views over it](0021-vault-client.md) | Accepted |
