@@ -10,7 +10,7 @@ Template: [0000-template.md](0000-template.md).
 | ---- | ----------------------------------------------------------------------------------------------------- | -------- |
 | 0001 | [Spec workflow: OpenSpec + superpowers-bridge](0001-spec-workflow-openspec-superpowers.md)            | Accepted; doc-altitude map superseded in part by [0011](0011-retire-frozen-doc-layer.md) |
 | 0002 | [ESM + TypeScript strict; `tsc --noEmit` is the build source of truth](0002-esm-typescript-strict.md) | Accepted |
-| 0003 | [Structured tool errors via `ToolHandlerError`](0003-structured-errors-toolhandlererror.md)           | Accepted; input-validation instruction refined in part by [0015](0015-input-gate-owns-schema-validation.md) |
+| 0003 | [Structured tool errors via `ToolHandlerError`](0003-structured-errors-toolhandlererror.md)           | Accepted; input-validation instruction refined in part by [0015](0015-input-gate-owns-schema-validation.md); extended to resources by [0023](0023-resource-errors-carry-the-error-code.md) |
 | 0004 | [External processes via `execFile`, never a shell string](0004-execfile-no-shell.md)                  | Accepted |
 | 0005 | [MCP parameter dictionary: one concept = one name](0005-mcp-parameter-dictionary.md)                  | Accepted |
 | 0006 | [Smart Connections as the read-only embedding corpus](0006-smart-connections-corpus.md)               | Superseded by [0013](0013-own-embedding-corpus.md), [0014](0014-background-corpus-freshness.md) |
@@ -30,3 +30,4 @@ Template: [0000-template.md](0000-template.md).
 | 0020 | [Per-vault state lives in the daemon's vault entry](0020-per-vault-state-in-the-daemon.md) | Accepted; "the fallback runs the same module" refined in part by [0021](0021-vault-client.md) |
 | 0021 | [One vault client per vault root; per-vault reads are views over it](0021-vault-client.md) | Accepted |
 | 0022 | [Modules hand the composition root their factories through their barrels](0022-modules-hand-the-composition-root-their-factories.md) | Accepted |
+| 0023 | [Resource read errors carry the error code in JSON-RPC `data`](0023-resource-errors-carry-the-error-code.md) | Accepted |
