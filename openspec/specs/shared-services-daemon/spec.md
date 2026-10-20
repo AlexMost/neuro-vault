@@ -47,7 +47,7 @@ Before listening, `daemon` SHALL create `daemon.lock` exclusively, writing its p
 
 ### Requirement: The daemon speaks JSON-RPC 2.0 over stdio framing with namespaced methods
 
-Each connection SHALL carry JSON-RPC 2.0 messages, one per line, exactly as the MCP stdio transport frames them. Methods SHALL be named `<service>.<method>`. The daemon SHALL serve `daemon.info` (returning `name`, `version`, `pid`, `started_at`, `idle_timeout_min`, `clients`, and per-service state) and `daemon.shutdown`, and SHALL route any other method to the registered service of its namespace, together with the identity of the connection it arrived on, so a service can keep per-connection state and release it when that connection closes. An unknown namespace or method SHALL receive a JSON-RPC error whose `data.code` is `UNKNOWN_METHOD`; malformed params `INVALID_PARAMS`; a request arriving during shutdown `SHUTTING_DOWN`; a lexical search that fails inside the entry `LEXICAL_FAILED`. An error MAY carry further fields in `data` beside `code`. A line that is not a valid JSON-RPC message SHALL close that connection and SHALL NOT affect other connections.
+Each connection SHALL carry JSON-RPC 2.0 messages, one per line, exactly as the MCP stdio transport frames them. Methods SHALL be named `<service>.<method>`. The daemon SHALL serve `daemon.info` (returning `name`, `version`, `pid`, `started_at`, `idle_timeout_min`, `clients`, and per-service state) and `daemon.shutdown`, and SHALL route any other method to the registered service of its namespace, together with the identity of the connection it arrived on, so a service can keep per-connection state and release it when that connection closes. An unknown namespace or method SHALL receive a JSON-RPC error whose `data.code` is `UNKNOWN_METHOD`; malformed params `INVALID_PARAMS`; a request arriving during shutdown `SHUTTING_DOWN`; a lexical search that fails inside the entry `LEXICAL_FAILED`; a graph read that fails inside the entry `GRAPH_FAILED`. An error MAY carry further fields in `data` beside `code`. A line that is not a valid JSON-RPC message SHALL close that connection and SHALL NOT affect other connections.
 
 #### Scenario: Info over the socket
 
@@ -56,7 +56,7 @@ Each connection SHALL carry JSON-RPC 2.0 messages, one per line, exactly as the 
 
 #### Scenario: Unknown method
 
-- **WHEN** a client sends method `graph.links` to a daemon without a `graph` service
+- **WHEN** a client sends method `watch.subscribe` to a daemon without a `watch` service
 - **THEN** it receives a JSON-RPC error with `data.code` `UNKNOWN_METHOD` and the connection stays open
 
 #### Scenario: A bad line isolates one client
@@ -83,8 +83,6 @@ Each connection SHALL carry JSON-RPC 2.0 messages, one per line, exactly as the 
 
 - **WHEN** a connection's first request outside the `daemon.` namespace is `lexical.search`
 - **THEN** the daemon counts it as a client, as it does for `embed.*` and `vault.*`
-
----
 
 ### Requirement: The daemon exits after its last client has been gone for the idle timeout
 

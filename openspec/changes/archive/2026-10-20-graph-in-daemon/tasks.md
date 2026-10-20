@@ -48,4 +48,4 @@ Parallelism: groups 1 and 2 are parallel-safe with each other (`src/lib/obsidian
 
 ## 10. Close out (sequential, last)
 
-- [ ] 10.1 `/opsx:verify` → `verify.md`; retrospective; `/opsx:archive` (spec sync); gates; PR 2 with `Closes #172`.
+- [x] 10.1 `/opsx:verify` → `verify.md`; retrospective; `/opsx:archive` (spec sync); gates; PR 2 with `Closes #172`.
