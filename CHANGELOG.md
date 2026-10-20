@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [17.3.0](https://github.com/AlexMost/neuro-vault/compare/v17.2.0...v17.3.0) (2026-10-20)
+
+
+### Features
+
+* **graph:** the vault entry's wikilink graph as graph.* reads (dark) ([#210](https://github.com/AlexMost/neuro-vault/issues/210)) ([ba5dad3](https://github.com/AlexMost/neuro-vault/commit/ba5dad3a5ed8b50b393cc63f62764a5003b7646c)), closes [#129](https://github.com/AlexMost/neuro-vault/issues/129) [#172](https://github.com/AlexMost/neuro-vault/issues/172)
+* **resources:** carry a ToolHandlerError's code and details on the wire ([#215](https://github.com/AlexMost/neuro-vault/issues/215)) ([2b09b4d](https://github.com/AlexMost/neuro-vault/commit/2b09b4dd1d6f1d58cad5553832c8acfed114ef16)), closes [#213](https://github.com/AlexMost/neuro-vault/issues/213) [#214](https://github.com/AlexMost/neuro-vault/issues/214)
+
+
+### Bug Fixes
+
+* **cli:** print a yargs validation error once ([#194](https://github.com/AlexMost/neuro-vault/issues/194)) ([a6a3132](https://github.com/AlexMost/neuro-vault/commit/a6a3132a7542b9c4c639e306ef12121f76f18fbd)), closes [#139](https://github.com/AlexMost/neuro-vault/issues/139)
+* **graph:** map a failed graph read to DEPENDENCY_ERROR ([#213](https://github.com/AlexMost/neuro-vault/issues/213)) ([413d6e0](https://github.com/AlexMost/neuro-vault/commit/413d6e0e49d6820fda6eb28a4372b070922e5760)), closes [#212](https://github.com/AlexMost/neuro-vault/issues/212)
+* **package:** raise engines.node to the floor yargs 18 declares ([#191](https://github.com/AlexMost/neuro-vault/issues/191)) ([c0ff2d9](https://github.com/AlexMost/neuro-vault/commit/c0ff2d9ce4129d7c0560cc690c465d7f699f3c40)), closes [#137](https://github.com/AlexMost/neuro-vault/issues/137)
+
 ## [17.2.0](https://github.com/AlexMost/neuro-vault/compare/v17.1.1...v17.2.0) (2026-10-18)
 
 
