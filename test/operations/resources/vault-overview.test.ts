@@ -6,6 +6,7 @@ import type { IRegisteredVault } from '../../../src/lib/vault-registry.js';
 import { makeReader, readerOver } from '../tools/_helpers.js';
 import { failingGraph, makeVaultGraph } from '../../_vault-graph.js';
 import { makeTestRegistry } from '../tools/_test-registry.js';
+import { readErrorOverWire } from '../../_resource-wire.js';
 
 function makeEntry(overrides: Partial<IRegisteredVault> = {}): IRegisteredVault {
   return {
@@ -174,4 +175,32 @@ describe('operations.vaultOverview resource: a failed graph read', () => {
       }
     },
   );
+
+  it('vault://overview reports DEPENDENCY_ERROR and details to an SDK client', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const resource = buildVaultOverviewResource({
+        uri: 'vault://overview',
+        entry: makeEntry({
+          reader: readerOver({ 'a.md': { frontmatter: {} } }),
+          graph: failingGraph('backlinkCounts', 'lost'),
+        }),
+      });
+
+      const error = await readErrorOverWire(resource);
+
+      expect(error).toMatchObject({
+        code: -32603,
+        message: 'MCP error -32603: Graph read failed',
+        data: {
+          code: 'DEPENDENCY_ERROR',
+          details: { vault: 'v', operation: 'vault://overview' },
+        },
+      });
+      expect(JSON.stringify((error as { data: unknown }).data)).not.toContain('lost');
+      expect((error as Error).message).not.toContain('lost');
+    } finally {
+      stderr.mockRestore();
+    }
+  });
 });
