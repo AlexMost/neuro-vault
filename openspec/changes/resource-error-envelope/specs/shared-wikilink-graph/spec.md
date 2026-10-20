@@ -21,7 +21,7 @@ A graph read that fails SHALL fail that vault's tool call or resource read with 
 #### Scenario: The overview resource reports the code and hides the cause
 
 - **WHEN** a graph read fails during a `vault://overview` resource read
-- **THEN** the read fails with the message `Graph read failed` and `data: { code: "DEPENDENCY_ERROR", details: { vault, operation: "vault://overview" } }`, and the cause is written to stderr only
+- **THEN** the read fails with the JSON-RPC error message `Graph read failed` and `data: { code: "DEPENDENCY_ERROR", details: { vault, operation: "vault://overview" } }`, and the cause is written to stderr only
 
 #### Scenario: A failed no-semantic build is a graph read failure
 

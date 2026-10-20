@@ -30,7 +30,7 @@ The constant's last paragraph points at `get_vault_overview` for a vault's owner
 
 Resources are registered through the same module aggregation as tools. Each module returns `{ tools, resources }`; the server iterates both lists and calls `server.registerTool` / `server.registerResource` respectively. The resource scaffolding lives in `src/lib/resource-registration.ts` and `src/lib/resource-registry.ts`, mirroring the tool primitives.
 
-A resource read has no tool envelope, so `registerResource` maps errors itself. The SDK builds a resource's JSON-RPC error from the thrown error's `code` (only when it is an integer), `message` and `data`. A `ToolHandlerError` is therefore rethrown as a `ResourceReadError`: code `-32603` (InternalError), the same message, and `data: { code, details }`, with `details` left out when there are none. The cause never reaches the wire. Any other error passes through, and the client gets `-32603` and its message with no `data`. See [ADR-0023](../adr/0023-resource-errors-carry-the-error-code.md).
+A resource read has no tool envelope, so `registerResource` maps errors itself. The SDK builds a resource's JSON-RPC error from the thrown error's `code` (only when it is an integer), `message` and `data`. A `ToolHandlerError` is therefore rethrown as a `ResourceReadError`: code `-32603` (InternalError), the same message, and `data: { code, details }`, with `details` left out when there are none. The cause never reaches the wire. Any other error is rethrown unchanged and the SDK answers it as before: a plain `Error` reaches the client as `-32603` with its message and no `data`. See [ADR-0023](../adr/0023-resource-errors-carry-the-error-code.md).
 
 ## Resource URIs in single-vault vs. multi-vault mode
 
