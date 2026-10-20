@@ -187,6 +187,10 @@ describe('operations.readDaily handler', () => {
             path: 'Reflections/morning.md',
             frontmatter: { created: '2026-05-12', type: 'reflection' },
           },
+          {
+            path: 'Reflections/old.md',
+            frontmatter: { created: '2026-05-01', type: 'reflection' },
+          },
         ]),
         graph,
       },
@@ -204,8 +208,11 @@ describe('operations.readDaily handler', () => {
         backlink_count: 2,
       },
     ]);
-    // One graph read for the one scan.
-    expect(graph.backlinkCounts).toHaveBeenCalledExactlyOnceWith(['Reflections/morning.md']);
+    // One graph read for the one scan, over every scanned note.
+    expect(graph.backlinkCounts).toHaveBeenCalledExactlyOnceWith([
+      'Reflections/morning.md',
+      'Reflections/old.md',
+    ]);
     for (const item of result.notes_today) {
       expect(item).not.toHaveProperty('content');
       expect(item).not.toHaveProperty('tags');

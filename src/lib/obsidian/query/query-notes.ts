@@ -88,18 +88,24 @@ export async function collectMatchingPaths(
     return [];
   }
 
-  const backlinks = new Map<string, number>();
-  if (graph) {
-    const counts = await graph.backlinkCounts(paths);
-    paths.forEach((p, i) => backlinks.set(p, counts[i] ?? 0));
-  }
-
   let matcher: (record: NoteRecord) => boolean;
   try {
     matcher = sift(filter);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new ToolHandlerError('INVALID_FILTER', `filter rejected by sift: ${message}`);
+  }
+
+  // Asked once the filter compiled, for the paths the exclusions keep.
+  const backlinks = new Map<string, number>();
+  if (graph) {
+    const { excludePathPrefixes } = input;
+    const counted =
+      excludePathPrefixes === undefined
+        ? paths
+        : paths.filter((p) => !matchesAnyPrefix(p, excludePathPrefixes));
+    const counts = counted.length === 0 ? [] : await graph.backlinkCounts(counted);
+    counted.forEach((p, i) => backlinks.set(p, counts[i] ?? 0));
   }
 
   const fields = includeContent

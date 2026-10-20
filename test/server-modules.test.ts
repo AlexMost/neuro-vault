@@ -635,11 +635,15 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('--no-semantic opens no connection, at startup or on a search_notes call', async () => {
+  it('--no-semantic opens no connection, at startup or on a search_notes or get_note_links call', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
-    await fs.writeFile(path.join(vaultPath, 'Heron.md'), '# Heron\n\nA wading bird.\n');
+    await fs.writeFile(
+      path.join(vaultPath, 'Heron.md'),
+      '# Heron\n\nA wading bird, see [[Egret]].\n',
+    );
+    await fs.writeFile(path.join(vaultPath, 'Egret.md'), 'A white bird.\n');
     const request = vi.fn();
     const sharedServices = {
       mode: 'pending' as const,
@@ -669,6 +673,13 @@ describe('Neuro Vault MCP server bootstrap', () => {
       };
       expect(result.isError).not.toBe(true);
       expect(result.structuredContent!.matches.map((m) => m.path)).toEqual(['Heron.md']);
+      // The session's own graph answers: the link is there, and nothing asked a daemon.
+      const links = (await server.toolHandlers.get('get_note_links')!({ path: 'Egret.md' })) as {
+        isError?: boolean;
+        structuredContent?: { incoming: { source: string }[] };
+      };
+      expect(links.isError).not.toBe(true);
+      expect(links.structuredContent!.incoming).toEqual([{ source: 'Heron.md' }]);
       expect(sharedServices.ensure).not.toHaveBeenCalled();
       expect(request).not.toHaveBeenCalled();
     } finally {

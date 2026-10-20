@@ -8,6 +8,7 @@ import {
   type SearchNotesOutput,
 } from '../../../src/modules/semantic/tools/search-notes.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
+import { createListMatchingPaths } from '../../../src/lib/obsidian/query/index.js';
 import { LexicalSearchError } from '../../../src/lib/obsidian/lexical/reader.js';
 import type { IFanOutResult } from '../../../src/lib/fan-out.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
@@ -866,6 +867,38 @@ describe('searchNotes', () => {
       const output = await callTool<SearchNotesOutput>(reg, { query: 'topic', threshold: 0 });
 
       expect(output.matches).toEqual([]);
+      expect(graph.backlinkCounts).not.toHaveBeenCalled();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('computes a filter over the notes without reading the graph', async () => {
+    const graph = makeFakeGraph({ 'a.md': 3 });
+    const reader = {
+      scan: vi.fn(async () => ['a.md', 'b.md']),
+      readNotes: vi.fn(async ({ paths }: { paths: string[] }) =>
+        paths.map((path) => ({ path, frontmatter: { tags: ['y'] }, content: '' })),
+      ),
+    };
+    const { deps, cleanup } = await makeSearchDeps({
+      sources: makeMockSources(['a.md', 'b.md']),
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
+      modelKey: MODEL_KEY,
+      graph,
+      // The production filter, over notes none of which carries the tag.
+      listMatchingPaths: createListMatchingPaths({ reader }),
+    });
+    const reg = registerTool(buildSearchNotesTool(deps));
+    try {
+      const output = await callTool<SearchNotesOutput>(reg, {
+        query: 'topic',
+        threshold: 0,
+        filter: { tags: ['x'] },
+      });
+
+      expect(output.matches).toEqual([]);
+      expect(reader.readNotes).toHaveBeenCalled();
       expect(graph.backlinkCounts).not.toHaveBeenCalled();
     } finally {
       await cleanup();

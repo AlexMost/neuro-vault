@@ -8,7 +8,7 @@ import { callTool } from '../../_gate.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { makeReader, readerOver } from './_helpers.js';
-import { makeVaultGraph } from '../../_vault-graph.js';
+import { graphWithBacklinks, makeVaultGraph } from '../../_vault-graph.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 type SingleOverview = { vault: string } & VaultOverview;
@@ -47,6 +47,28 @@ describe('operations.getVaultOverview tool', () => {
     expect(result.total_notes).toBe(1);
     expect(result.top_tags).toEqual([{ name: 'x', count: 1 }]);
     expect(graph.backlinkCounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes one graph read over every scanned note', async () => {
+    const reader = readerOver({
+      'Notes/a.md': { frontmatter: {} },
+      'Notes/b.md': { frontmatter: {} },
+      'c.md': { frontmatter: {} },
+    });
+    const graph = graphWithBacklinks({ 'Notes/b.md': 2 });
+    const registry = makeTestRegistry([{ name: 'v', reader, graph }]);
+    const result = await callTool<SingleOverview>(
+      registerTool(buildGetVaultOverviewTool({ registry })),
+      {},
+    );
+
+    expect(result.top_by_backlinks[0]).toMatchObject({ path: 'Notes/b.md', backlink_count: 2 });
+    expect(graph.backlinkCounts).toHaveBeenCalledTimes(1);
+    expect([...(vi.mocked(graph.backlinkCounts).mock.calls[0]?.[0] ?? [])].sort()).toEqual([
+      'Notes/a.md',
+      'Notes/b.md',
+      'c.md',
+    ]);
   });
 
   it('fans out across two vaults when vault: is omitted in multi-vault mode', async () => {

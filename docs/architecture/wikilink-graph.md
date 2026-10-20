@@ -44,7 +44,7 @@ interface IncomingLink {
 }
 ```
 
-`ensureFresh()` is the gate: every consumer awaits it before reading, and concurrent calls deduplicate to a single rebuild. After a successful build, queries within the TTL (3 minutes by default) return immediately.
+`ensureFresh()` is the gate: the graph's host awaits it before every read (`createGraphReader` does so for each `IGraphReader` call, and the entry's lexical search before ranking), and concurrent calls deduplicate to a single rebuild. Tools never call it. After a successful build, queries within the TTL (3 minutes by default) return immediately.
 
 `getNoteLinks` and `getBacklinkCount` return defensive copies / scalars — callers cannot mutate internal state. `resolve` answers from the same build as the edges; before the first build it resolves nothing.
 
