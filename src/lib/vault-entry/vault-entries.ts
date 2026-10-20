@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import type { ICorpusReader } from '../obsidian/corpus/corpus.js';
 import type { EmbedDocumentsFn } from '../obsidian/corpus/types.js';
+import type { IGraphReader } from '../obsidian/graph-reader.js';
 import type { BackendStatus } from '../obsidian/semantic-backend.js';
 import { loadVaultConfig } from '../obsidian/vault-config.js';
 import { loadVaultScope } from '../obsidian/vault-scope-config.js';
@@ -216,15 +217,16 @@ export class VaultEntries {
    * client attached to the vault (even with `profiles: []`) may search it.
    */
   lexical(clientId: number, vault: string): Pick<IVaultEntry, 'lexicalSearch'> {
-    const record = this.records.get(vault);
-    if (record === undefined || !record.ids.has(clientId)) {
-      throw new VaultEntryError(
-        'NOT_ATTACHED',
-        `vault "${vault}" is not attached on this connection`,
-      );
-    }
-    const { entry } = record;
+    const entry = this.attachedEntry(clientId, vault);
     return { lexicalSearch: (opts) => entry.lexicalSearch(opts) };
+  }
+
+  /**
+   * Entry-level, like {@link lexical}: the vault's one wikilink graph, for any
+   * client attached to the vault (even with `profiles: []`).
+   */
+  graph(clientId: number, vault: string): IGraphReader {
+    return this.attachedEntry(clientId, vault).graph;
   }
 
   detach(clientId: number): void {
@@ -257,6 +259,18 @@ export class VaultEntries {
       ]);
     })();
     return this.disposing;
+  }
+
+  /** The entry `clientId` attached under `vault`, whatever its profiles; else `NOT_ATTACHED`. */
+  private attachedEntry(clientId: number, vault: string): IVaultEntry {
+    const record = this.records.get(vault);
+    if (record === undefined || !record.ids.has(clientId)) {
+      throw new VaultEntryError(
+        'NOT_ATTACHED',
+        `vault "${vault}" is not attached on this connection`,
+      );
+    }
+    return record.entry;
   }
 
   private async resolve(vault: string): Promise<string> {

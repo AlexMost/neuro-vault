@@ -15,6 +15,7 @@ import { ShardStore } from '../../../src/lib/obsidian/corpus/shard-store.js';
 import type { EmbedDocumentsFn } from '../../../src/lib/obsidian/corpus/types.js';
 import { encodeVector } from '../../../src/lib/obsidian/corpus/vector-codec.js';
 import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
+import { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
 import { createVaultScope, type VaultScope } from '../../../src/lib/obsidian/vault-scope.js';
 import {
   createReconcileLoop,
@@ -783,6 +784,89 @@ describe('createVaultEntry lexical members', () => {
     h.entry.setScope(scopeOf(['Archive/**']));
     // The backlinks lived in the excluded subtree: with a fresh graph over the new reader they are gone.
     expect((await h.entry.lexicalSearch(query)).notes.map((n) => n.path)).toEqual(['A.md', 'B.md']);
+  });
+
+  describe("the entry's one graph", () => {
+    /** `A.md` and `B.md` link `[[T]]`; `Archive/C.md` links it too, outside a narrowed scope. */
+    const linkedVault = async (root: string) => {
+      await mkdir(path.join(root, 'Archive'));
+      await writeFile(path.join(root, 'T.md'), 'the target\n');
+      await writeFile(path.join(root, 'A.md'), 'see [[T]] and [[Nowhere]]\n');
+      await writeFile(path.join(root, 'B.md'), 'also [[T]]\n');
+      await writeFile(path.join(root, 'Archive/C.md'), 'archived [[T]]\n');
+    };
+
+    it('answers over the scoped vault', async () => {
+      const h = await harness({ populate: linkedVault, scope: scopeOf(['Archive/**']) });
+      await expect(h.entry.graph.backlinkCounts(['T.md', 'A.md', 'Archive/C.md'])).resolves.toEqual(
+        [2, 0, 0],
+      );
+      await expect(h.entry.graph.resolve(['T', 'C', 'Nowhere'])).resolves.toEqual([
+        'T.md',
+        null,
+        null,
+      ]);
+      await expect(h.entry.graph.noteLinks('A.md')).resolves.toEqual({
+        incoming: [],
+        outgoing: [
+          { target: 'T', resolved: true, path: 'T.md' },
+          { target: 'Nowhere', resolved: false },
+        ],
+      });
+    });
+
+    it("reads the tie-break's build: one build, and a new link within the TTL shows in neither", async () => {
+      // A private method, spied on the prototype: every graph the entry builds counts here.
+      const rebuild = vi.spyOn(
+        WikilinkGraphIndex.prototype as unknown as { rebuild: () => Promise<void> },
+        'rebuild',
+      );
+      const h = await harness({
+        graphTtlMs: 3_600_000,
+        populate: async (root) => {
+          // Z.md and Y.md tie on the match; Z's one backlink puts it first.
+          await writeFile(path.join(root, 'Y.md'), 'a zebra crossing\n');
+          await writeFile(path.join(root, 'Z.md'), 'a zebra crossing\n');
+          await writeFile(path.join(root, 'A.md'), 'see [[Z]]\n');
+        },
+      });
+      const query = { queries: ['zebra'], ...SEARCH };
+      expect((await h.entry.lexicalSearch(query)).notes.map((n) => n.path)).toEqual([
+        'Z.md',
+        'Y.md',
+      ]);
+      await expect(h.entry.graph.backlinkCounts(['Y.md', 'Z.md'])).resolves.toEqual([0, 1]);
+
+      // Two links to Y would put it first in a fresh build; within the TTL neither reader sees them.
+      await writeFile(path.join(h.root, 'B.md'), 'see [[Y]]\n');
+      await writeFile(path.join(h.root, 'C.md'), 'also [[Y]]\n');
+      expect((await h.entry.lexicalSearch(query)).notes.map((n) => n.path)).toEqual([
+        'Z.md',
+        'Y.md',
+      ]);
+      await expect(h.entry.graph.backlinkCounts(['Y.md', 'Z.md'])).resolves.toEqual([0, 1]);
+      expect(rebuild).toHaveBeenCalledTimes(1);
+      rebuild.mockRestore();
+    });
+
+    it('setScope replaces the graph its reads answer from', async () => {
+      const h = await harness({ graphTtlMs: 3_600_000, populate: linkedVault });
+      await expect(h.entry.graph.backlinkCounts(['T.md'])).resolves.toEqual([3]);
+      h.entry.setScope(scopeOf(['Archive/**']));
+      await expect(h.entry.graph.backlinkCounts(['T.md'])).resolves.toEqual([2]);
+      await expect(h.entry.graph.noteLinks('Archive/C.md')).resolves.toEqual({
+        incoming: [],
+        outgoing: [],
+      });
+    });
+
+    it('rejects every read once the entry is disposed', async () => {
+      const h = await harness({ populate: linkedVault });
+      await h.entry.dispose();
+      await expect(h.entry.graph.noteLinks('A.md')).rejects.toThrow('vault entry: disposed');
+      await expect(h.entry.graph.backlinkCounts(['T.md'])).rejects.toThrow(/disposed/);
+      await expect(h.entry.graph.resolve(['T'])).rejects.toThrow(/disposed/);
+    });
   });
 
   it('dispose frees the members: a later search rejects', async () => {

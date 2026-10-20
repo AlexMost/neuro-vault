@@ -6,6 +6,7 @@ import { z } from 'zod';
 import type { IBlockHit, INoteHit } from '../lib/obsidian/corpus/corpus.js';
 import type { LexicalMatch } from '../lib/obsidian/lexical/rank.js';
 import type { BackendStatus } from '../lib/obsidian/semantic-backend.js';
+import type { NoteLinks } from '../lib/obsidian/wikilink-graph.js';
 import type { EmbeddingIdentity } from '../lib/obsidian/corpus/types.js';
 import type { IVaultInfo } from '../lib/vault-entry/index.js';
 import { formatZodError } from '../lib/zod-issues.js';
@@ -87,6 +88,24 @@ export interface LexicalSearchResult {
   per_query_token_counts: Record<string, Record<string, number>>;
   total_notes: number;
 }
+export const graphNoteLinksParams = z.strictObject({ vault: z.string(), path: z.string() });
+export type GraphNoteLinksParams = z.infer<typeof graphNoteLinksParams>;
+/** Empty `incoming` and `outgoing` for a note the graph does not hold. */
+export type GraphNoteLinksResult = NoteLinks;
+/** An empty list passes: it answers an empty list. */
+export const graphBacklinkCountsParams = z.strictObject({ vault: z.string(), paths: strings });
+export type GraphBacklinkCountsParams = z.infer<typeof graphBacklinkCountsParams>;
+/** One count per path, in order; 0 for a note the graph does not hold. */
+export interface GraphBacklinkCountsResult {
+  counts: number[];
+}
+/** Each target already normalized; an empty list passes and answers an empty list. */
+export const graphResolveParams = z.strictObject({ vault: z.string(), targets: strings });
+export type GraphResolveParams = z.infer<typeof graphResolveParams>;
+/** One vault path or `null` per target, in order. */
+export interface GraphResolveResult {
+  paths: (string | null)[];
+}
 /**
  * No scope, no exclusions, no corpus identity: the daemon reads those from the vault (spec). A
  * relative `vault` is a malformed param, not an unavailable vault: the daemon has no cwd to
@@ -112,6 +131,9 @@ export interface VaultMethods {
   'corpus.nearest': { params: CorpusNearestParams; result: CorpusNearestResult };
   'corpus.nearestBlocks': { params: CorpusNearestBlocksParams; result: CorpusNearestBlocksResult };
   'lexical.search': { params: LexicalSearchParams; result: LexicalSearchResult };
+  'graph.noteLinks': { params: GraphNoteLinksParams; result: GraphNoteLinksResult };
+  'graph.backlinkCounts': { params: GraphBacklinkCountsParams; result: GraphBacklinkCountsResult };
+  'graph.resolve': { params: GraphResolveParams; result: GraphResolveResult };
 }
 export type VaultMethod = keyof VaultMethods;
 /** What a caller passes: the wire params without `vault`, which the client fills in. */
@@ -138,6 +160,7 @@ export type DaemonErrorCode =
   | 'CORPUS_NOT_READY'
   | 'CORPUS_FAILED'
   | 'LEXICAL_FAILED'
+  | 'GRAPH_FAILED'
   | 'INTERNAL';
 
 // `ErrorCode.ConnectionClosed` (-32000) is the SDK's JSON-RPC server-error slot for a closed connection.
@@ -152,6 +175,7 @@ const JSON_RPC_CODE: Record<DaemonErrorCode, number> = {
   CORPUS_NOT_READY: ErrorCode.InternalError,
   CORPUS_FAILED: ErrorCode.InternalError,
   LEXICAL_FAILED: ErrorCode.InternalError,
+  GRAPH_FAILED: ErrorCode.InternalError,
   INTERNAL: ErrorCode.InternalError,
 };
 

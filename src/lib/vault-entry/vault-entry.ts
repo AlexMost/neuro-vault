@@ -6,6 +6,7 @@ import type { EmbedDocumentsFn } from '../obsidian/corpus/types.js';
 import { LexicalIndex } from '../obsidian/lexical/lexical-index.js';
 import type { ILexicalResult, ILexicalSearchOptions } from '../obsidian/lexical/reader.js';
 import type { BackendState, BackendStatus } from '../obsidian/semantic-backend.js';
+import { createGraphReader, type IGraphReader } from '../obsidian/graph-reader.js';
 import { FsVaultReader } from '../obsidian/vault-reader.js';
 import { WikilinkGraphIndex } from '../obsidian/wikilink-graph.js';
 import type { VaultScope } from '../obsidian/vault-scope.js';
@@ -54,7 +55,7 @@ export interface IVaultEntryOptions {
   semantic: boolean;
   embedderFor: (profileKey: string) => EmbedDocumentsFn;
   warn: (message: string) => void;
-  /** The tie-break graph's TTL; tests shorten or stretch it, production keeps the default. */
+  /** The wikilink graph's TTL; tests shorten or stretch it, production keeps the default. */
   graphTtlMs?: number;
   /** Quiet interval before a change schedules a pass; production keeps the watcher's default. */
   debounceMs?: number;
@@ -91,10 +92,16 @@ export interface IVaultEntry {
   /** The profile's corpus with the scope folded into every read: candidates and path anchors. */
   reader(key: string): ICorpusReader;
   /**
-   * Lexical search over the scoped vault, ranked with the entry's own wikilink graph.
-   * Read-through: it never waits on a reconcile pass and never touches the watcher.
+   * Lexical search over the scoped vault, its backlink tie-break read from the entry's one
+   * wikilink graph. Read-through: it never waits on a reconcile pass and never touches the watcher.
    */
   lexicalSearch(opts: ILexicalSearchOptions): Promise<ILexicalResult>;
+  /**
+   * The vault's one wikilink graph, over the scoped vault: the build the tie-break reads, and
+   * the one every attached session reads. A scope change replaces it for both at once; every
+   * read rejects once the entry is disposed.
+   */
+  readonly graph: IGraphReader;
   lexicalInfo(): ILexicalInfo;
   info(clients: number, idleSince?: string): IVaultInfo;
   dispose(): Promise<void>;
@@ -155,14 +162,21 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
     graph = new WikilinkGraphIndex({ reader: scopedReader, ttlMs: opts.graphTtlMs });
     // warm never rejects; searches arriving meanwhile share its refresh.
     void lexical.warm();
-    // A search arriving meanwhile shares this build; a failed one is retried by the next search.
+    // A read arriving meanwhile shares this build; a failed one is retried by the next search or
+    // graph read.
     void graph.ensureFresh().catch((err: unknown) => {
       if (disposing !== null) return;
       const reason = err instanceof Error ? err.message : String(err);
-      warn(`neuro-vault lexical: vault "${vaultName}": tie-break graph warm failed: ${reason}`);
+      warn(`neuro-vault lexical: vault "${vaultName}": graph warm failed: ${reason}`);
     });
   }
   buildLexical();
+
+  /** Reads whichever graph is current, so a scope change reaches the next read. */
+  const graphReader = createGraphReader(() => {
+    if (graph === null) throw new Error('vault entry: disposed');
+    return graph;
+  });
 
   const loop = (opts.createLoop ?? createReconcileLoop)({
     vaultRoot,
@@ -393,6 +407,7 @@ export function createVaultEntry(opts: IVaultEntryOptions): IVaultEntry {
       return index.search({ ...searchOpts, getBacklinkCount: (p) => links.getBacklinkCount(p) });
     },
     lexicalInfo,
+    graph: graphReader,
     info(clients, idleSince) {
       const profiles = [...slots.values()].map((slot): IProfileInfo => {
         const current = status(slot.key);

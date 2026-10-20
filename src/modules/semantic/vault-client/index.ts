@@ -49,7 +49,7 @@ export interface IVaultClients {
  * side. Under `--shared` a vault's client is the daemon client; under
  * `--no-shared`, or once the daemon could not be located or started, it is the
  * in-process client — the same core over a loopback that calls the daemon's own
- * `vault`/`corpus`/`lexical` handlers on this process's {@link VaultEntries}.
+ * `vault`/`corpus`/`lexical`/`graph` handlers on this process's {@link VaultEntries}.
  * The one loopback and the entries under it are built on first use, so a
  * session the daemon serves never builds a watcher, a reconcile loop or a
  * corpus of its own.

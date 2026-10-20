@@ -174,7 +174,7 @@ describe.skipIf(!posix)('startDaemonServer', () => {
     void client.closed().then(() => {
       closed = true;
     });
-    client.send({ jsonrpc: '2.0', id: 1, method: 'graph.links', params: {} });
+    client.send({ jsonrpc: '2.0', id: 1, method: 'watch.subscribe', params: {} });
     expect(await client.next()).toMatchObject({
       id: 1,
       error: { code: -32601, data: { code: 'UNKNOWN_METHOD' } },
