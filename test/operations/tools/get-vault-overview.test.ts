@@ -4,11 +4,16 @@ import { buildGetVaultOverviewTool } from '../../../src/modules/operations/tools
 import type { VaultOverview } from '../../../src/lib/obsidian/vault-overview.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
-import { callTool } from '../../_gate.js';
+import { callTool, expectToolError } from '../../_gate.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { makeReader, readerOver } from './_helpers.js';
-import { graphWithBacklinks, makeVaultGraph } from '../../_vault-graph.js';
+import {
+  failingGraph,
+  graphReadFailure,
+  graphWithBacklinks,
+  makeVaultGraph,
+} from '../../_vault-graph.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 type SingleOverview = { vault: string } & VaultOverview;
@@ -223,5 +228,58 @@ describe('operations.getVaultOverview tool', () => {
       code: 'INVALID_PARAMS',
       details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
     });
+  });
+});
+
+describe('get_vault_overview: a failed graph read', () => {
+  it('fails a single-vault call with DEPENDENCY_ERROR', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const registry = makeTestRegistry([
+        {
+          name: 'v',
+          reader: readerOver({ 'a.md': { frontmatter: {} } }),
+          graph: failingGraph('backlinkCounts', 'daemon did not answer in time'),
+        },
+      ]);
+
+      const error = await expectToolError(
+        registerTool(buildGetVaultOverviewTool({ registry })),
+        {},
+      );
+
+      expect(error).toEqual(graphReadFailure('v', 'get_vault_overview'));
+      expect(stderr).toHaveBeenCalledExactlyOnceWith(
+        'neuro-vault graph: get_vault_overview failed for vault "v": daemon did not answer in time',
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('lists the vault in failed_vaults in a fan-out; the other vault answers', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const registry = makeTestRegistry([
+        { name: 'vault-a', reader: readerOver({ 'a.md': { frontmatter: {} } }) },
+        {
+          name: 'vault-b',
+          reader: readerOver({ 'b.md': { frontmatter: {} } }),
+          graph: failingGraph('backlinkCounts'),
+        },
+      ]);
+
+      const result = await callTool<{
+        results_by_vault: SingleOverview[];
+        failed_vaults: Array<{ vault: string; error: unknown }>;
+      }>(registerTool(buildGetVaultOverviewTool({ registry })), {});
+
+      expect(result.failed_vaults).toEqual([
+        { vault: 'vault-b', error: graphReadFailure('vault-b', 'get_vault_overview') },
+      ]);
+      expect(result.results_by_vault.map((r) => r.vault)).toEqual(['vault-a']);
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

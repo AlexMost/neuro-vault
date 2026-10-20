@@ -8,10 +8,15 @@ import { buildReadDailyTool } from '../../../src/modules/operations/tools/read-d
 import type { ReadDailyHandlerResult } from '../../../src/modules/operations/tools/read-daily.js';
 import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
-import { callTool } from '../../_gate.js';
+import { callTool, expectToolError } from '../../_gate.js';
 import { type ReadNotesItem, type VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import { makeProvider } from './_helpers.js';
-import { makeVaultGraph, graphWithBacklinks } from '../../_vault-graph.js';
+import {
+  failingGraph,
+  graphReadFailure,
+  graphWithBacklinks,
+  makeVaultGraph,
+} from '../../_vault-graph.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 interface FakeNote {
@@ -334,5 +339,29 @@ describe('operations.readDaily handler', () => {
       code: 'INVALID_PARAMS',
       details: { issues: [{ path: '<root>', message: expect.stringContaining('date') }] },
     });
+  });
+
+  it('a failed graph read for notes_today is DEPENDENCY_ERROR', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const registry = makeTestRegistry([
+        {
+          name: 'v',
+          path: tmpDir,
+          provider: dailyProvider('Daily/2026-05-12.md'),
+          reader: buildReader([{ path: 'Notes/a.md', frontmatter: { created: '2026-05-12' } }]),
+          graph: failingGraph('backlinkCounts', 'lost'),
+        },
+      ]);
+
+      const error = await expectToolError(registerTool(buildReadDailyTool({ registry })), {});
+
+      expect(error).toEqual(graphReadFailure('v', 'read_daily'));
+      expect(stderr).toHaveBeenCalledExactlyOnceWith(
+        'neuro-vault graph: read_daily failed for vault "v": lost',
+      );
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

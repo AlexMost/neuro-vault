@@ -84,6 +84,7 @@ Tool handlers access the registry through three patterns:
 - Vault names are unique. The registry builds a `Map<name, IRegisteredVault>` at construction time; duplicate names would shadow silently, but `parseConfig` rejects them first.
 - `backend` is present if and only if the semantic module is enabled server-wide (`--semantic`, the default). A per-vault `"semantic": false` in `.neuro-vault/config.json` still yields a present `backend` — the disabled one, whose `status()` always resolves to `{ state: 'disabled' }`.
 - `lexical` is present on every `IRegisteredVault`, whether or not the semantic module is enabled and whether or not the vault opted out with `"semantic": false`; its failures surface as `LexicalSearchError`, which `search_notes` maps to `DEPENDENCY_ERROR`.
+- `graph` is present on every `IRegisteredVault`. Its failures surface as `GraphReadError`. A tool reads it through `graphForTool(entry, operation)` (`src/lib/tool-graph.ts`), which maps that error to `DEPENDENCY_ERROR` ([`wikilink-graph.md`](./wikilink-graph.md#errors)).
 - `status().reason` is always set when `status().state === 'unavailable'`; it is never set otherwise. See [`semantic-backend.md`](./semantic-backend.md) for the full state model.
 
 ## What it deliberately does not do

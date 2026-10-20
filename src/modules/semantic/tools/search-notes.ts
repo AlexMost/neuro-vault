@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { graphForTool } from '../../../lib/tool-graph.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import type { IFanOutResult } from '../../../lib/fan-out.js';
@@ -102,7 +103,7 @@ async function runSearchForEntry(
     warn: (message: string) => void;
   },
 ): Promise<SearchNotesOutput> {
-  const { graph, listMatchingPaths } = entry;
+  const { listMatchingPaths } = entry;
   const { embeddingProvider, modelKey, similarity, warn } = deps;
 
   // Read once, up front — it describes the vault's index, not this
@@ -215,7 +216,9 @@ async function runSearchForEntry(
   const backlinks =
     result.candidates.length === 0
       ? []
-      : await graph.backlinkCounts(result.candidates.map((c) => c.path));
+      : await graphForTool(entry, 'search_notes', warn).backlinkCounts(
+          result.candidates.map((c) => c.path),
+        );
   const kindOrder = ['title', 'heading', 'body'] as const;
   const matches: UnifiedMatch[] = result.candidates.map((c, i) => {
     const { semantic: sem, lexical: lex, expansion: exp } = c;

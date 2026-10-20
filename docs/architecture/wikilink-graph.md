@@ -85,6 +85,12 @@ Tests read through the same interface: `makeVaultGraph()` (`test/_vault-graph.ts
 | `get_similar_notes` | one `resolve` over the query note's distinct link targets, parsed from its current text |
 | note filters (`listMatchingPaths`) | none: a filter names paths, `tags` and frontmatter keys, never `backlink_count` |
 
+### Errors
+
+A failed read is a `GraphReadError`, and nothing else, whichever host answers. The view maps the daemon's failures (above). Under `--no-semantic`, `createStandaloneGraphReader` (`src/modules/semantic/graph/standalone-reader.ts`) wraps `createGraphReader` and turns a build that threw into one. `createGraphReader` itself wraps nothing, because the vault entry's `graph` service reports its own failures as `GRAPH_FAILED`.
+
+Every consumer above reads the graph through `graphForTool(entry, operation)` (`src/lib/tool-graph.ts`), never through `entry.graph` directly. The function returns an `IGraphReader` that maps a `GraphReadError` to `DEPENDENCY_ERROR`, with message `Graph read failed` and `details: { vault, operation }`. `operation` is the tool's name, or the resource's URI for `vault://overview`. The cause goes to stderr, as `neuro-vault graph: <operation> failed for vault "<vault>": <reason>`, and never into the response. That is the same treatment `search_notes` gives a failed lexical leg ([`lexical-search.md`](./lexical-search.md)). A failed read fails that vault's call: the whole call for a single vault, or one `failed_vaults` entry in a fan-out (`DEPENDENCY_ERROR` is not fatal-class, [`fan-out.md`](./fan-out.md)). Nothing degrades to a count of 0. Any other error passes through unmapped.
+
 ## Build pipeline
 
 `rebuild()` is straightforward:
@@ -101,7 +107,7 @@ Tests read through the same interface: `makeVaultGraph()` (`test/_vault-graph.ts
 The registry asks `IRegisteredVaultDeps.graphFactory` — a module's factory, not `src/lib/`'s — for one `IGraphReader` per vault and exposes it as `entry.graph` ([`vault-registry.md`](./vault-registry.md)); tool handlers read it off the entry (table above). The semantic module supplies the factory both ways:
 
 - **With vault clients** (the default, and `--no-shared`): `createVaultClients` answers `createGraphReaderView(client)` over the vault's one client, the same client its semantic backend and lexical reader use, so the graph rides the vault's one attach (with the session's profile, or none for a vault with `"semantic": false`).
-- **`--no-semantic`**: no client, no attach, no daemon. `createLexicalOnlyVaultFactories()` builds one `WikilinkGraphIndex` per vault root over the session's reader, on the first factory call for that root, and hands it to both the graph reader (`createGraphReader`) and the standalone lexical reader's tie-break.
+- **`--no-semantic`**: no client, no attach, no daemon. `createLexicalOnlyVaultFactories()` builds one `WikilinkGraphIndex` per vault root over the session's reader, on the first factory call for that root, and hands it to both the graph reader (`createStandaloneGraphReader`, [Errors](#errors)) and the standalone lexical reader's tie-break.
 
 The vault entry (`IVaultEntry`) builds its own `WikilinkGraphIndex` over its scoped reader and starts its first build in the background with the entry and again after a scope change (later rebuilds follow the TTL, on demand). It is the vault directory's one graph: the lexical leg's tie-break reads it ([`lexical-search.md`](./lexical-search.md)), and `IVaultEntry.graph` exposes the same build as an `IGraphReader`, which `VaultEntries.graph(clientId, vault)` hands to the `graph` service for any connection attached to the vault, with any profiles or none. Every attached session reading `graph.*` therefore reads one build, and a scope change replaces it for all of them and the tie-break at once.
 

@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { buildGetSimilarNotesTool } from '../../../src/modules/semantic/tools/get-similar-notes.js';
 import type { ToolRegistration } from '../../../src/lib/tool-registration.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
-import { callTool } from '../../_gate.js';
+import { callTool, expectToolError } from '../../_gate.js';
 import { TEST_SIMILARITY } from '../../_identity.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
 import {
@@ -23,8 +23,13 @@ import type { SmartSource } from './_helpers.js';
 import { legacyFindNeighbors } from '../_legacy-retrieval.js';
 import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.js';
 import { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
-import { graphReaderOver, makeVaultGraph } from '../../_vault-graph.js';
-import { createGraphReader } from '../../../src/lib/obsidian/graph-reader.js';
+import {
+  failingGraph,
+  graphReadFailure,
+  graphReaderOver,
+  makeVaultGraph,
+} from '../../_vault-graph.js';
+import { createGraphReader, type IGraphReader } from '../../../src/lib/obsidian/graph-reader.js';
 
 type SimilarResults = Awaited<ReturnType<ReturnType<typeof buildGetSimilarNotesTool>['handler']>>;
 
@@ -525,6 +530,7 @@ describe('getSimilarNotes — graph signals', () => {
       sources?: Map<string, SmartSource>;
       body?: string;
       absentPaths?: string[];
+      graph?: IGraphReader;
     } = {},
   ): Promise<{
     tool: ReturnType<typeof buildGetSimilarNotesTool>;
@@ -553,7 +559,7 @@ describe('getSimilarNotes — graph signals', () => {
         path: vaultRoot,
         backend: toBackend(corpusIndex),
         reader,
-        graph: graphReaderOver(reader),
+        graph: opts.graph ?? graphReaderOver(reader),
       },
     ]);
     const tool = buildGetSimilarNotesTool({
@@ -596,6 +602,39 @@ describe('getSimilarNotes — graph signals', () => {
       expect(s).toBeDefined();
       expect(s!.signals).toEqual({ forward_link: true });
       expect(s!.similarity).toBeUndefined();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('a failed forward-link resolve is DEPENDENCY_ERROR, with the cause on stderr only', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { reg, cleanup } = await buildToolWithVault({
+      graph: failingGraph('resolve', 'daemon connection lost'),
+    });
+    try {
+      const error = await expectToolError(reg, { path: 'Folder/A.md' });
+
+      expect(error).toEqual(graphReadFailure('v', 'get_similar_notes'));
+      expect(stderr).toHaveBeenCalledExactlyOnceWith(
+        'neuro-vault graph: get_similar_notes failed for vault "v": daemon connection lost',
+      );
+    } finally {
+      stderr.mockRestore();
+      await cleanup();
+    }
+  });
+
+  it('a query note missing on disk is still NOT_FOUND, not a graph failure', async () => {
+    const { reg, cleanup } = await buildToolWithVault({
+      absentPaths: ['Folder/A.md'],
+      graph: failingGraph('resolve'),
+    });
+    try {
+      await expect(callTool(reg, { path: 'Folder/A.md' })).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        message: 'Query note file is missing on disk: Folder/A.md',
+      });
     } finally {
       await cleanup();
     }

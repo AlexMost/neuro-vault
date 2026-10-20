@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { ITool } from '../../../lib/tool-registry.js';
 import type { NoteLinks } from '../../../lib/obsidian/wikilink-graph.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
+import { graphForTool } from '../../../lib/tool-graph.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { invalidArgument } from '../tool-helpers.js';
 import { normalizeNotePath } from '../../../lib/obsidian/note-path.js';
@@ -44,7 +45,7 @@ export function buildGetNoteLinksTool(
       } catch (err) {
         throw invalidArgument((err as Error).message, 'path');
       }
-      const links = await entry.graph.noteLinks(path);
+      const links = await graphForTool(entry, 'get_note_links').noteLinks(path);
       return { vault: entry.name, ...links };
     },
   });

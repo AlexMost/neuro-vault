@@ -39,6 +39,7 @@ import {
   createDaemonVaultClient,
 } from '../../../src/modules/semantic/vault-client/index.js';
 import { makeLexicalVault, sourcesScoring, sourcesWithEmbeddingFor } from './_hybrid-helpers.js';
+import { failingGraph, graphReadFailure } from '../../_vault-graph.js';
 
 // Lightweight helpers for mock-only tests (no real corpus needed)
 function makeMockSource(p: string, embedding: number[] = [1, 0]): SmartSource {
@@ -1614,6 +1615,45 @@ describe('lexical reader failure', () => {
         vault: 'w',
         error: { code: 'DEPENDENCY_ERROR', message: 'Lexical search failed' },
       });
+    } finally {
+      await a.cleanup();
+      await b.cleanup();
+    }
+  });
+});
+
+describe('graph read failure', () => {
+  it('a failed backlink read is DEPENDENCY_ERROR, with the cause on warn only', async () => {
+    const { deps, cleanup } = await makeLexicalVault({ 'note.md': 'зміст' });
+    try {
+      deps.registry.list()[0].graph = failingGraph('backlinkCounts', 'daemon connection lost');
+      const warn = vi.fn();
+      const reg = registerTool(buildSearchNotesTool({ ...deps, warn }));
+
+      const payload = await expectToolError(reg, { query: 'зміст' });
+
+      expect(payload).toEqual(graphReadFailure('v', 'search_notes'));
+      expect(warn).toHaveBeenCalledWith(
+        'neuro-vault graph: search_notes failed for vault "v": daemon connection lost',
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('in a multi-vault fan-out it is one vault failing, not the whole call', async () => {
+    const a = await makeLexicalVault({ 'пошук a.md': '' });
+    const b = await makeLexicalVault({ 'пошук b.md': '' }, { semantic: false });
+    const registry = makeTestRegistry([...a.deps.registry.list(), ...b.deps.registry.list()]);
+    registry.list()[1].name = 'w';
+    registry.list()[1].graph = failingGraph('backlinkCounts');
+    try {
+      const reg = registerTool(buildSearchNotesTool({ ...a.deps, registry, warn: vi.fn() }));
+      const out = await callTool<IFanOutResult<SearchNotesOutput>>(reg, { query: 'пошук' });
+      expect(out.results_by_vault.map((r) => r.vault)).toEqual(['v']);
+      expect(out.failed_vaults).toEqual([
+        { vault: 'w', error: graphReadFailure('w', 'search_notes') },
+      ]);
     } finally {
       await a.cleanup();
       await b.cleanup();

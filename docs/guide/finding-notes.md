@@ -234,6 +234,7 @@ For more on the semantic pipeline (merge, cap, per-seed expansion, orphan-block 
 - Ranking is six deterministic tiers — title/heading/body × phrase/tokens — with density (matched-chars ÷ unit length) as the tie-break within a tier, then `backlink_count` desc, then `path` asc. No opaque scoring, byte-for-byte reproducible. This is the order rank fusion consumes for the lexical source — see [`rank-fusion.md`](../architecture/rank-fusion.md).
 - `mode: "lexical"` never touches the embedding corpus loader — it works even when the vault has a cold, disabled, or absent index. In this mode `matches[]` preserves the lexical leg's order exactly and every `found_in` is lexical-only.
 - The lexical leg is the one the semantic leg degrades to, so it has nothing to degrade to itself. If it cannot answer (the shared background process did not respond in time, was restarted mid-call, or failed while searching), `search_notes` fails for that vault with `DEPENDENCY_ERROR` ("Lexical search failed", `details: { vault, operation: "search_notes" }`) rather than returning a semantic-only list. Retrying is safe: the next call reconnects, starting the background process again if needed. `--no-shared` keeps the leg inside the server process.
+- Each match's `backlink_count` comes from one read of the vault's wikilink graph. If that read fails, `search_notes` fails for that vault with `DEPENDENCY_ERROR` ("Graph read failed", `details: { vault, operation: "search_notes" }`) rather than reporting counts of 0. The same holds for every tool that reads the graph ([Wikilink graph failures](./reading-and-modifying.md)).
 
 ### Tuning threshold (semantic leg)
 
@@ -443,6 +444,7 @@ Returns:
 ```
 
 - **Embeds count as wikilinks.** `![[X]]` produces an outgoing edge to `X`, exactly like `[[X]]`.
+- **A failed graph read** is `DEPENDENCY_ERROR` ("Graph read failed", `details: { vault, operation: "get_note_links" }`). The reason goes to the server's stderr, and retrying is safe.
 - **Unresolved targets are kept** (`resolved: false`) — useful when surfacing concepts the user has anchored but not yet written.
 - **Self-links are dropped** — a note linking to itself does not appear in its own `incoming` or `outgoing`.
 - **Backed by an in-memory index** that rebuilds lazily on query when older than 3 minutes; the first call after a stale window pays the rebuild cost. No watchers and no timers; one build starts in the background when a vault is first opened (except under `--no-semantic`) and again after the vault's scope changes. With the shared daemon (the default) there is one index per vault directory, shared by every session attached to it, so a link written in the last 3 minutes may not show yet even in a session that just started. Under `--no-semantic` each session builds its own.

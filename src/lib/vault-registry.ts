@@ -30,6 +30,8 @@ export interface IRegisteredVault {
    * vault's client, so the graph itself is the vault entry's — one per vault
    * directory, shared by every attached session (design D5). Under
    * `--no-semantic` it reads a graph this session builds over its reader.
+   * A failed read is a `GraphReadError`; a tool reads through `graphForTool`
+   * (`tool-graph.ts`), which maps it to `DEPENDENCY_ERROR`.
    */
   graph: IGraphReader;
   listMatchingPaths: ListMatchingPaths;
