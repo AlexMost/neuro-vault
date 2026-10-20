@@ -12,7 +12,7 @@ const sift: SiftFactory =
     ? siftModule
     : (siftModule as unknown as { default: SiftFactory }).default;
 import { ScanPathNotFoundError, type VaultReader } from '../vault-reader.js';
-import type { IVaultGraph } from '../wikilink-graph.js';
+import type { IGraphReader } from '../graph-reader.js';
 import { toNoteRecord } from './note-record.js';
 import type {
   NoteRecord,
@@ -59,11 +59,12 @@ export interface CollectedRow {
 
 interface CollectMatchingPathsDeps {
   reader: VaultReader;
-  graph?: IVaultGraph;
+  /** Absent: every record reads `backlink_count: 0` (a filter that cannot name it). */
+  graph?: Pick<IGraphReader, 'backlinkCounts'>;
 }
 
-// Caller is responsible for calling `graph.ensureFresh()` before invoking
-// when accurate backlink counts matter — this helper does not refresh.
+// One graph read per scan: the counts of every scanned note, fetched before the
+// read loop so the filter and the sort can use `backlink_count`.
 export async function collectMatchingPaths(
   input: CollectMatchingPathsInput,
   deps: CollectMatchingPathsDeps,
@@ -85,6 +86,12 @@ export async function collectMatchingPaths(
 
   if (paths.length === 0) {
     return [];
+  }
+
+  const backlinks = new Map<string, number>();
+  if (graph) {
+    const counts = await graph.backlinkCounts(paths);
+    paths.forEach((p, i) => backlinks.set(p, counts[i] ?? 0));
   }
 
   let matcher: (record: NoteRecord) => boolean;
@@ -119,7 +126,7 @@ export async function collectMatchingPaths(
       ) {
         continue;
       }
-      const backlinkCount = graph?.getBacklinkCount(item.path) ?? 0;
+      const backlinkCount = backlinks.get(item.path) ?? 0;
       const record = toNoteRecord(item, backlinkCount);
       let isMatch: boolean;
       try {
@@ -141,15 +148,11 @@ export async function collectMatchingPaths(
 export async function runQueryNotes(
   input: QueryNotesToolInput,
   reader: VaultReader,
-  graph?: IVaultGraph,
+  graph?: Pick<IGraphReader, 'backlinkCounts'>,
 ): Promise<QueryNotesResult> {
   const validated = validateInput(input);
   validateFilter(validated.filter);
   const effectiveFilter = applyDefaultRegexOptions(validated.filter);
-
-  if (graph) {
-    await graph.ensureFresh();
-  }
 
   // Early-exit is safe only when scan order already gives us the top of the
   // sorted output: scan returns paths in lexicographic ascending order, so

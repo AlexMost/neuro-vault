@@ -20,6 +20,8 @@ import { createSharedServices } from '../src/modules/semantic/shared-services.js
 import { createStandaloneLexicalReader } from '../src/modules/semantic/lexical/index.js';
 import type { IRegisteredVaultDeps } from '../src/lib/vault-registry.js';
 import { startNeuroVaultServer } from '../src/server.js';
+import { WikilinkGraphIndex } from '../src/lib/obsidian/wikilink-graph.js';
+import { graphReaderOver } from './_vault-graph.js';
 
 function createTempVaultPath() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'neuro-vault-server-'));
@@ -65,11 +67,12 @@ function fakeBackend(
  * The lexical leg for a test whose semantic backend is a double: the session's
  * own cache over its reader, so no vault entry is built and no daemon is asked.
  */
-const standaloneLexical: IRegisteredVaultDeps['lexicalReaderFactory'] = ({
-  vaultRoot,
-  reader,
-  graph,
-}) => createStandaloneLexicalReader({ vaultRoot, reader, graph });
+const standaloneLexical: IRegisteredVaultDeps['lexicalReaderFactory'] = ({ vaultRoot, reader }) =>
+  createStandaloneLexicalReader({ vaultRoot, reader, graph: new WikilinkGraphIndex({ reader }) });
+
+/** The graph to match: the session's own over its reader, so no vault entry is asked for it. */
+const standaloneGraph: IRegisteredVaultDeps['graphFactory'] = ({ reader }) =>
+  graphReaderOver(reader);
 
 /**
  * Boot the server over a real temp vault with the semantic backend replaced by
@@ -100,6 +103,7 @@ async function startWithBackendStatus(
       },
       vaultEntryDeps: {
         lexicalReaderFactory: standaloneLexical,
+        graphFactory: standaloneGraph,
         semanticBackendFactory: () => ({
           ...fakeBackend(status),
           nearest: () => Promise.reject(new Error('the corpus must not be read when not ready')),
@@ -163,6 +167,7 @@ async function startForShutdown(opts: {
       stdin: new PassThrough(),
       vaultEntryDeps: {
         lexicalReaderFactory: standaloneLexical,
+        graphFactory: standaloneGraph,
         semanticBackendFactory: ({ vaultName }) =>
           fakeBackend({ state: 'ready' }, () => opts.backendDispose(vaultName)),
       },
@@ -212,6 +217,7 @@ async function startOverPipedStdin(opts: {
       stdin,
       vaultEntryDeps: {
         lexicalReaderFactory: standaloneLexical,
+        graphFactory: standaloneGraph,
         semanticBackendFactory: () => fakeBackend({ state: 'ready' }, opts.backendDispose),
       },
     },
@@ -278,6 +284,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         vaultEntryDeps: {
           semanticBackendFactory: () => fakeBackend(),
           lexicalReaderFactory: standaloneLexical,
+          graphFactory: standaloneGraph,
         },
         serverFactory: () => createFakeServer() as never,
         transportFactory: () => ({}) as never,
@@ -309,6 +316,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         vaultEntryDeps: {
           semanticBackendFactory: () => fakeBackend(),
           lexicalReaderFactory: standaloneLexical,
+          graphFactory: standaloneGraph,
         },
         serverFactory: () => createFakeServer() as never,
         transportFactory: () => ({}) as never,
@@ -690,6 +698,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
           vaultEntryDeps: {
             semanticBackendFactory: () => fakeBackend(),
             lexicalReaderFactory: standaloneLexical,
+            graphFactory: standaloneGraph,
             providerFactory: () => fakeProvider,
             readerFactory: () => ({
               readNotes: vi.fn().mockResolvedValue([]),

@@ -82,7 +82,6 @@ async function resolveForwardLinks(args: {
   notePath: string;
   entry: IRegisteredVault;
 }): Promise<Set<string>> {
-  await args.entry.graph.ensureFresh();
   try {
     return await getNoteLinks({
       notePath: args.notePath,

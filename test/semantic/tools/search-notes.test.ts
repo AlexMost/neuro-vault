@@ -843,10 +843,30 @@ describe('searchNotes', () => {
     try {
       const output = await callTool<SearchNotesOutput>(reg, { query: 'topic', threshold: 0 });
 
-      expect(graph.ensureFresh).toHaveBeenCalled();
+      // One graph read stamps every match.
+      expect(graph.backlinkCounts).toHaveBeenCalledTimes(1);
       const byPath = new Map(output.matches.map((r) => [r.path, r]));
       expect(byPath.get('note-a.md')!.backlink_count).toBe(3);
       expect(byPath.get('note-b.md')!.backlink_count).toBe(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('reads no graph when nothing matched', async () => {
+    const graph = makeFakeGraph({ 'note-a.md': 3 });
+    const { deps, cleanup } = await makeSearchDeps({
+      sources: new Map(),
+      embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
+      modelKey: MODEL_KEY,
+      graph,
+    });
+    const reg = registerTool(buildSearchNotesTool(deps));
+    try {
+      const output = await callTool<SearchNotesOutput>(reg, { query: 'topic', threshold: 0 });
+
+      expect(output.matches).toEqual([]);
+      expect(graph.backlinkCounts).not.toHaveBeenCalled();
     } finally {
       await cleanup();
     }
@@ -870,7 +890,8 @@ describe('searchNotes', () => {
         threshold: 0,
       });
 
-      expect(graph.ensureFresh).toHaveBeenCalled();
+      // One graph read stamps every match.
+      expect(graph.backlinkCounts).toHaveBeenCalledTimes(1);
       const byPath = new Map(output.matches.map((r) => [r.path, r]));
       expect(byPath.get('note-a.md')!.backlink_count).toBe(5);
       expect(byPath.get('note-b.md')!.backlink_count).toBe(1);
@@ -1006,16 +1027,20 @@ describe('searchNotes', () => {
         ['note-a.md', { path: 'note-a.md', embedding: new Float32Array([1, 0]), blocks: [] }],
       ]);
       const corpusIndex1 = makeFakeCorpusIndex(sources1);
-      const corpusIndex2 = makeFakeCorpusIndex(new Map());
-      // Vault b fails before either leg runs — its wikilink graph cannot be
-      // refreshed. A *semantic-leg* failure would no longer land here: that
-      // degrades to the lexical leg per vault (see the degradation tests
-      // above), which is what keeps one vault's broken corpus from costing
-      // the envelope its lexical answers. This vault's failure is outside
-      // that boundary, so it still lands in `failed_vaults`.
+      const corpusIndex2 = makeFakeCorpusIndex(
+        new Map([
+          ['note-b.md', { path: 'note-b.md', embedding: new Float32Array([1, 0]), blocks: [] }],
+        ]),
+      );
+      // Vault b fails after both legs ran — its wikilink graph cannot stamp the
+      // matches' `backlink_count`. A *semantic-leg* failure would no longer land
+      // here: that degrades to the lexical leg per vault (see the degradation
+      // tests above), which is what keeps one vault's broken corpus from costing
+      // the envelope its lexical answers. This vault's failure is outside that
+      // boundary, so it still lands in `failed_vaults`.
       const brokenGraph = {
         ...makeFakeGraph(),
-        ensureFresh: vi
+        backlinkCounts: vi
           .fn()
           .mockRejectedValue(new ToolHandlerError('DEPENDENCY_ERROR', 'embedding lookup failed')),
       } as unknown as ReturnType<typeof makeFakeGraph>;
@@ -1026,6 +1051,7 @@ describe('searchNotes', () => {
       const vaultRoot1 = await fs2.mkdtemp(path2.join(os2.tmpdir(), 'partial-v1-'));
       const vaultRoot2 = await fs2.mkdtemp(path2.join(os2.tmpdir(), 'partial-v2-'));
       await fs2.writeFile(path2.join(vaultRoot1, 'note-a.md'), '', 'utf8');
+      await fs2.writeFile(path2.join(vaultRoot2, 'note-b.md'), '', 'utf8');
 
       try {
         const registry = makeTestRegistry([

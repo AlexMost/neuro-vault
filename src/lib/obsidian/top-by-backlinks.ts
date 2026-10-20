@@ -1,7 +1,5 @@
 import path from 'node:path';
 
-import type { IVaultGraph } from './wikilink-graph.js';
-
 export interface TopBacklinkedNote {
   path: string;
   title: string;
@@ -10,17 +8,18 @@ export interface TopBacklinkedNote {
 
 export interface TopByBacklinksInput {
   paths: string[];
-  graph: IVaultGraph;
+  /** One backlink count per path, in order (`IGraphReader.backlinkCounts`). */
+  counts: readonly number[];
   limit: number;
 }
 
 export function topByBacklinks(input: TopByBacklinksInput): TopBacklinkedNote[] {
-  const { paths, graph, limit } = input;
+  const { paths, counts, limit } = input;
   return paths
-    .map((p) => ({
+    .map((p, i) => ({
       path: p,
       title: basenameWithoutExt(p),
-      backlink_count: graph.getBacklinkCount(p),
+      backlink_count: counts[i] ?? 0,
     }))
     .sort((a, b) =>
       b.backlink_count !== a.backlink_count

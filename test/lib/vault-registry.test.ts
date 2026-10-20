@@ -13,10 +13,10 @@ import {
   type IRegisteredVaultDeps,
 } from '../../src/lib/vault-registry.js';
 import { FsVaultReader, type VaultReader } from '../../src/lib/obsidian/vault-reader.js';
-import { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import { createVaultScope } from '../../src/lib/obsidian/vault-scope.js';
 import { loadVaultScope } from '../../src/lib/obsidian/vault-scope-config.js';
 import type { IVaultConfig } from '../../src/types.js';
+import { makeVaultGraph } from '../_vault-graph.js';
 
 // Type-level guard: provider must be required on IRegisteredVault. If anyone
 // reintroduces optionality (e.g. by adding `?`), this assertion breaks at
@@ -30,7 +30,7 @@ void _providerIsRequired;
 function fakeDeps(): IRegisteredVaultDeps {
   return {
     readerFactory: ({ vaultRoot }) => ({ vaultRoot }) as never,
-    graphFactory: ({ reader }) => ({ reader, ensureFresh: async () => {} }) as never,
+    graphFactory: ({ vaultRoot }) => ({ vaultRoot }) as never,
     listMatchingPathsFactory: () => async () => new Set<string>(),
     providerFactory: ({ vaultName, vaultRoot, reader }) =>
       ({ vaultName, vaultRoot, reader }) as never,
@@ -192,7 +192,7 @@ describe('createVaultRegistry', () => {
     expect(seen).toEqual([false]);
   });
 
-  it('builds each entry a lexical reader from its own reader and graph, even with semantic off', async () => {
+  it('builds each entry a lexical reader from its own reader, even with semantic off', async () => {
     const deps = fakeDeps();
     const seen: Array<{ vaultName: string; enabled: boolean; sameReader: boolean }> = [];
     const built: unknown[] = [];
@@ -213,6 +213,33 @@ describe('createVaultRegistry', () => {
     );
     expect(seen).toEqual([{ vaultName: 'a', enabled: false, sameReader: true }]);
     expect(registry.list()[0].lexical).toBe(built[0]);
+  });
+
+  it('builds each entry a graph reader from its own reader and the vault flag', async () => {
+    const deps = fakeDeps();
+    const seen: Array<{
+      vaultName: string;
+      vaultRoot: string;
+      enabled: boolean;
+      sameReader: boolean;
+    }> = [];
+    deps.vaultConfigFactory = async () => ({ semantic: false });
+    const graph = makeVaultGraph();
+    deps.graphFactory = (opts) => {
+      seen.push({
+        vaultName: opts.vaultName,
+        vaultRoot: opts.vaultRoot,
+        enabled: opts.enabled,
+        sameReader: (opts.reader as unknown as { vaultRoot: string }).vaultRoot === opts.vaultRoot,
+      });
+      return graph;
+    };
+    const registry = await VaultRegistry.create(
+      { vaults: [vault('a', '/v/a')], semanticEnabled: true },
+      deps,
+    );
+    expect(seen).toEqual([{ vaultName: 'a', vaultRoot: '/v/a', enabled: false, sameReader: true }]);
+    expect(registry.list()[0].graph).toBe(graph);
   });
 
   it('passes the vault reader to providerFactory', async () => {
@@ -346,8 +373,9 @@ describe('createVaultRegistry', () => {
 describe('defaultVaultDeps', () => {
   /** The modules' slice from fakeDeps, so a test can tell it passed through untouched. */
   function moduleSlice(): IModuleVaultFactories {
-    const { providerFactory, semanticBackendFactory, lexicalReaderFactory } = fakeDeps();
-    return { providerFactory, semanticBackendFactory, lexicalReaderFactory };
+    const { providerFactory, semanticBackendFactory, lexicalReaderFactory, graphFactory } =
+      fakeDeps();
+    return { providerFactory, semanticBackendFactory, lexicalReaderFactory, graphFactory };
   }
 
   it("builds every src/lib capability over the vault on disk, and takes the modules' slice as given", async () => {
@@ -367,10 +395,7 @@ describe('defaultVaultDeps', () => {
       const entry = registry.require('v');
 
       expect(entry.reader).toBeInstanceOf(FsVaultReader);
-      expect(entry.graph).toBeInstanceOf(WikilinkGraphIndex);
-      await entry.graph.ensureFresh();
-      expect(entry.graph.resolve('B')).toBe('Notes/B.md');
-      expect(entry.graph.getBacklinkCount('Notes/B.md')).toBe(1);
+      expect(entry.graph).toEqual({ vaultRoot: root });
       expect(await entry.listMatchingPaths({ path_prefix: 'Notes/' })).toEqual(
         new Set(['Notes/A.md', 'Notes/B.md']),
       );
@@ -386,11 +411,12 @@ describe('defaultVaultDeps', () => {
 
   it('lets an override replace one factory and keeps the rest', () => {
     const modules = moduleSlice();
-    const graphFactory = vi.fn();
+    const listMatchingPathsFactory = vi.fn();
 
-    const deps = defaultVaultDeps(modules, { graphFactory });
+    const deps = defaultVaultDeps(modules, { listMatchingPathsFactory });
 
-    expect(deps.graphFactory).toBe(graphFactory);
+    expect(deps.listMatchingPathsFactory).toBe(listMatchingPathsFactory);
+    expect(deps.graphFactory).toBe(modules.graphFactory);
     expect(deps.providerFactory).toBe(modules.providerFactory);
     expect(deps.semanticBackendFactory).toBe(modules.semanticBackendFactory);
     expect(deps.lexicalReaderFactory).toBe(modules.lexicalReaderFactory);

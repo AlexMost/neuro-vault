@@ -7,6 +7,9 @@ import {
 } from './tools/index.js';
 import type { QueryEmbedder } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
+import { createGraphReader } from '../../lib/obsidian/graph-reader.js';
+import { WikilinkGraphIndex } from '../../lib/obsidian/wikilink-graph.js';
+import type { VaultReader } from '../../lib/obsidian/vault-reader.js';
 import type { IRegisteredVaultDeps, IVaultRegistry } from '../../lib/vault-registry.js';
 import { createStandaloneLexicalReader } from './lexical/index.js';
 
@@ -74,16 +77,34 @@ export function createLexicalOnlyTools(
 /**
  * The vault factories of a `--no-semantic` session (brainstorm F1): no vault
  * clients, so nothing attaches and no daemon starts. Every vault's lexical leg
- * is the session's own cache over its reader. The registry builds no backend
- * when `semanticEnabled` is false, so the semantic factory is never called.
+ * is the session's own cache over its reader, and its graph the session's own
+ * `WikilinkGraphIndex` — one per vault root, built on the first factory call
+ * for it, read by the graph reader and the lexical tie-break alike (design D5).
+ * The registry builds no backend when `semanticEnabled` is false, so the
+ * semantic factory is never called.
  */
-export const lexicalOnlyVaultFactories: Pick<
+export function createLexicalOnlyVaultFactories(): Pick<
   IRegisteredVaultDeps,
-  'semanticBackendFactory' | 'lexicalReaderFactory'
-> = {
-  semanticBackendFactory: () => {
-    throw new Error('no semantic backend is built under --no-semantic');
-  },
-  lexicalReaderFactory: ({ vaultRoot, reader, graph }) =>
-    createStandaloneLexicalReader({ vaultRoot, reader, graph }),
-};
+  'semanticBackendFactory' | 'lexicalReaderFactory' | 'graphFactory'
+> {
+  const graphs = new Map<string, WikilinkGraphIndex>();
+  const graphOf = (vaultRoot: string, reader: VaultReader): WikilinkGraphIndex => {
+    let graph = graphs.get(vaultRoot);
+    if (graph === undefined) {
+      graph = new WikilinkGraphIndex({ reader });
+      graphs.set(vaultRoot, graph);
+    }
+    return graph;
+  };
+  return {
+    semanticBackendFactory: () => {
+      throw new Error('no semantic backend is built under --no-semantic');
+    },
+    lexicalReaderFactory: ({ vaultRoot, reader }) =>
+      createStandaloneLexicalReader({ vaultRoot, reader, graph: graphOf(vaultRoot, reader) }),
+    graphFactory: ({ vaultRoot, reader }) => {
+      const graph = graphOf(vaultRoot, reader);
+      return createGraphReader(() => graph);
+    },
+  };
+}

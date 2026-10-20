@@ -3,7 +3,7 @@ import { createExistingPathFilter } from './obsidian/existing-paths.js';
 import { FsVaultReader, type VaultReader } from './obsidian/vault-reader.js';
 import type { VaultScope } from './obsidian/vault-scope.js';
 import { loadVaultScope } from './obsidian/vault-scope-config.js';
-import { WikilinkGraphIndex, type IVaultGraph } from './obsidian/wikilink-graph.js';
+import type { IGraphReader } from './obsidian/graph-reader.js';
 import { createListMatchingPaths, type ListMatchingPaths } from './obsidian/query/index.js';
 import type { VaultProvider } from './obsidian/vault-provider.js';
 import type { ILexicalReader } from './obsidian/lexical/index.js';
@@ -25,7 +25,13 @@ export interface IRegisteredVault {
   scope: VaultScope;
   reader: VaultReader;
   provider: VaultProvider;
-  graph: IVaultGraph;
+  /**
+   * This vault's wikilink graph, as the session reads it: a view over the
+   * vault's client, so the graph itself is the vault entry's — one per vault
+   * directory, shared by every attached session (design D5). Under
+   * `--no-semantic` it reads a graph this session builds over its reader.
+   */
+  graph: IGraphReader;
   listMatchingPaths: ListMatchingPaths;
   /**
    * Best-effort read of this vault's `.neuro-vault/for-external-agents.md`,
@@ -67,11 +73,17 @@ export interface IRegisteredVaultDeps {
   readerFactory: (opts: { vaultRoot: string; scope: VaultScope }) => VaultReader;
   vaultConfigFactory: (opts: { vaultRoot: string }) => Promise<VaultConfigFile>;
   scopeFactory: (opts: { vaultRoot: string; config: VaultConfigFile }) => Promise<VaultScope>;
-  graphFactory: (opts: { reader: VaultReader }) => IVaultGraph;
-  listMatchingPathsFactory: (opts: {
+  /**
+   * `enabled` is the same flag the semantic backend gets; a graph read over a
+   * vault entry rides the vault's one attach either way (design D5).
+   */
+  graphFactory: (opts: {
+    vaultRoot: string;
+    vaultName: string;
     reader: VaultReader;
-    graph: IVaultGraph;
-  }) => ListMatchingPaths;
+    enabled: boolean;
+  }) => IGraphReader;
+  listMatchingPathsFactory: (opts: { reader: VaultReader }) => ListMatchingPaths;
   providerFactory: (opts: {
     vaultName: string;
     vaultRoot: string;
@@ -96,7 +108,6 @@ export interface IRegisteredVaultDeps {
     vaultRoot: string;
     vaultName: string;
     reader: VaultReader;
-    graph: IVaultGraph;
     enabled: boolean;
   }) => ILexicalReader;
   conventionsReaderFactory: (opts: { vaultRoot: string }) => () => Promise<string | null>;
@@ -106,12 +117,13 @@ export interface IRegisteredVaultDeps {
 /**
  * The per-vault factories a module contributes: what `src/lib/` cannot build
  * itself, because the implementation lives in a module (`FsVaultProvider` in
- * operations; the semantic backend and the lexical reader in semantic). Each
- * module hands its slice over through its barrel; the server picks which.
+ * operations; the semantic backend, the lexical reader and the graph reader in
+ * semantic). Each module hands its slice over through its barrel; the server
+ * picks which.
  */
 export type IModuleVaultFactories = Pick<
   IRegisteredVaultDeps,
-  'providerFactory' | 'semanticBackendFactory' | 'lexicalReaderFactory'
+  'providerFactory' | 'semanticBackendFactory' | 'lexicalReaderFactory' | 'graphFactory'
 >;
 
 /**
@@ -128,11 +140,11 @@ export function defaultVaultDeps(
     readerFactory: ({ vaultRoot, scope }) => new FsVaultReader({ vaultRoot, scope }),
     vaultConfigFactory: ({ vaultRoot }) => loadVaultConfig(vaultRoot),
     scopeFactory: ({ vaultRoot, config }) => loadVaultScope(vaultRoot, { config }),
-    graphFactory: ({ reader }) => new WikilinkGraphIndex({ reader }),
-    listMatchingPathsFactory: ({ reader, graph }) => createListMatchingPaths({ reader, graph }),
+    listMatchingPathsFactory: ({ reader }) => createListMatchingPaths({ reader }),
     providerFactory: modules.providerFactory,
     semanticBackendFactory: modules.semanticBackendFactory,
     lexicalReaderFactory: modules.lexicalReaderFactory,
+    graphFactory: modules.graphFactory,
     conventionsReaderFactory:
       ({ vaultRoot }) =>
       () =>
@@ -187,8 +199,7 @@ export class VaultRegistry implements IVaultRegistry {
       const vaultConfig = await deps.vaultConfigFactory({ vaultRoot: v.path });
       const scope = await deps.scopeFactory({ vaultRoot: v.path, config: vaultConfig });
       const reader = deps.readerFactory({ vaultRoot: v.path, scope });
-      const graph = deps.graphFactory({ reader });
-      const listMatchingPaths = deps.listMatchingPathsFactory({ reader, graph });
+      const listMatchingPaths = deps.listMatchingPathsFactory({ reader });
       const provider = deps.providerFactory({
         vaultName: v.name,
         vaultRoot: v.path,
@@ -209,9 +220,9 @@ export class VaultRegistry implements IVaultRegistry {
         vaultRoot: v.path,
         vaultName: v.name,
         reader,
-        graph,
         enabled,
       });
+      const graph = deps.graphFactory({ vaultRoot: v.path, vaultName: v.name, reader, enabled });
 
       entries.push({
         name: v.name,

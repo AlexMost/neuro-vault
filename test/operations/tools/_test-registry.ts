@@ -11,17 +11,19 @@ import { makeVaultGraph } from '../../_vault-graph.js';
 // than throwing on `entry.reader` being undefined. Tests that DO care about
 // lexical behavior pass a real `reader` explicitly, which overrides this. The
 // graph defaults to an empty one (no links, nothing resolves); a test that
-// needs real links passes a `WikilinkGraphIndex` over its reader. The
-// entry's `lexical` reader defaults to the standalone one over whatever
-// `reader` and `graph` the entry ends up with, so a graph given for
-// `backlink_count` also feeds the lexical tie-break; a test of the failure
-// path passes its own `lexical`.
+// needs real links passes `graphReaderOver(reader)`. The entry's `lexical`
+// reader defaults to the standalone one over whatever `reader` the entry ends
+// up with, tie-broken by an empty graph (path order); a test that needs the
+// tie-break, or the failure path, passes its own `lexical`.
 const emptyReader: VaultReader = {
   scan: async () => [],
   readNotes: async () => [],
 };
 
 const noConventions = async (): Promise<string | null> => null;
+
+/** The default lexical reader's tie-break: no note has a backlink. */
+const noBacklinks = { ensureFresh: async () => {}, getBacklinkCount: () => 0 };
 
 export function makeTestRegistry(entries: Partial<IRegisteredVault>[]): IVaultRegistry {
   const list = entries.map((e) => {
@@ -36,12 +38,12 @@ export function makeTestRegistry(entries: Partial<IRegisteredVault>[]): IVaultRe
       filterExisting: createExistingPathFilter({ vaultRoot: e.path ?? '' }),
       ...e,
     } as IRegisteredVault;
-    // Built from the merged entry so the reader and graph it reads are the
-    // ones the rest of the entry shows.
+    // Built from the merged entry so the reader it reads is the one the rest
+    // of the entry shows.
     entry.lexical ??= createStandaloneLexicalReader({
       vaultRoot: entry.path ?? '',
       reader: entry.reader,
-      graph: entry.graph,
+      graph: noBacklinks,
     });
     return entry;
   });

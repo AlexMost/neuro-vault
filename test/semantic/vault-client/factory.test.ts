@@ -326,7 +326,6 @@ describe('createVaultClients', () => {
       vaultRoot: root,
       vaultName: root.slice(-1),
       reader: {} as never,
-      graph: {} as never,
       enabled,
     });
 
@@ -353,6 +352,44 @@ describe('createVaultClients', () => {
 
     const attaches = request.mock.calls.filter(([method]) => method === 'vault.attach');
     expect(attaches).toEqual([['vault.attach', { vault: '/v/a', profiles: [PROFILE] }, 10_000]]);
+    expect(createEntries).not.toHaveBeenCalled();
+  });
+
+  it("a vault's graph reader rides the same attach as its other views", async () => {
+    const { services, request } = fakeServices('daemon');
+    // The fake's answer type is fixed by its first implementation; this one answers more methods.
+    request.mockImplementation((async (method: string, params: Record<string, unknown>) => {
+      if (method === 'vault.attach') return { vault: params.vault, profiles: {} };
+      if (method === 'graph.backlinkCounts') return { counts: [4] };
+      return { state: 'ready' };
+    }) as never);
+    const { createEntries } = fakeEntries();
+    const clients = createVaultClients({
+      services,
+      shared: true,
+      profile: PROFILE,
+      embedder,
+      createEntries,
+    });
+
+    // An opted-out vault: its lexical reader and its graph attach with no profile.
+    const reader = lexicalFor(clients, '/v/a', false);
+    const graph = clients.graphFactory({
+      vaultRoot: '/v/a',
+      vaultName: 'a',
+      reader: {} as never,
+      enabled: false,
+    });
+    await reader.warm();
+    await expect(graph.backlinkCounts(['n.md'])).resolves.toEqual([4]);
+
+    const attaches = request.mock.calls.filter(([method]) => method === 'vault.attach');
+    expect(attaches).toEqual([['vault.attach', { vault: '/v/a', profiles: [] }, 10_000]]);
+    expect(request).toHaveBeenCalledWith(
+      'graph.backlinkCounts',
+      { paths: ['n.md'], vault: '/v/a' },
+      30_000,
+    );
     expect(createEntries).not.toHaveBeenCalled();
   });
 
@@ -489,7 +526,6 @@ describe('createVaultClients --no-shared over real vault entries', () => {
           vaultRoot: root,
           vaultName: 'v',
           reader: {} as never,
-          graph: {} as never,
           enabled: true,
         });
         await vi.waitFor(async () => expect(await backend.status()).toEqual({ state: 'ready' }), {

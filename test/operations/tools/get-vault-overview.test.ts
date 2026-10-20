@@ -46,7 +46,7 @@ describe('operations.getVaultOverview tool', () => {
     expect(result.vault).toBe('v');
     expect(result.total_notes).toBe(1);
     expect(result.top_tags).toEqual([{ name: 'x', count: 1 }]);
-    expect(graph.ensureFresh).toHaveBeenCalledTimes(1);
+    expect(graph.backlinkCounts).toHaveBeenCalledTimes(1);
   });
 
   it('fans out across two vaults when vault: is omitted in multi-vault mode', async () => {

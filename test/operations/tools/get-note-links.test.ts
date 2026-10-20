@@ -1,15 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildGetNoteLinksTool } from '../../../src/modules/operations/tools/get-note-links.js';
-import type { IVaultGraph, NoteLinks } from '../../../src/lib/obsidian/wikilink-graph.js';
+import type { IGraphReader } from '../../../src/lib/obsidian/graph-reader.js';
+import type { NoteLinks } from '../../../src/lib/obsidian/wikilink-graph.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
 import { makeVaultGraph } from '../../_vault-graph.js';
 import { makeTestRegistry } from './_test-registry.js';
 
-function makeLinksGraph(linksFor: Record<string, NoteLinks>): IVaultGraph {
+function makeLinksGraph(linksFor: Record<string, NoteLinks>): IGraphReader {
   return makeVaultGraph({
-    getNoteLinks: vi.fn((path: string) => linksFor[path] ?? { incoming: [], outgoing: [] }),
+    noteLinks: vi.fn(async (path: string) => linksFor[path] ?? { incoming: [], outgoing: [] }),
   });
 }
 
@@ -38,25 +39,18 @@ describe('get_note_links tool', () => {
         { target: 'Ghost', resolved: false },
       ],
     });
-    expect(graph.ensureFresh).toHaveBeenCalledTimes(1);
+    expect(graph.noteLinks).toHaveBeenCalledExactlyOnceWith('Folder/A.md');
   });
 
-  it('calls ensureFresh before reading the adjacency', async () => {
-    const order: string[] = [];
-    const graph = makeVaultGraph({
-      ensureFresh: vi.fn(async () => {
-        order.push('ensureFresh');
-      }),
-      getNoteLinks: vi.fn(() => {
-        order.push('getNoteLinks');
-        return { incoming: [], outgoing: [] };
-      }),
-    });
+  it('makes one graph read and no other', async () => {
+    const graph = makeVaultGraph();
     const registry = makeTestRegistry([{ name: 'v', graph }]);
 
     await callTool(registerTool(buildGetNoteLinksTool({ registry })), { path: 'X.md' });
 
-    expect(order).toEqual(['ensureFresh', 'getNoteLinks']);
+    expect(graph.noteLinks).toHaveBeenCalledExactlyOnceWith('X.md');
+    expect(graph.backlinkCounts).not.toHaveBeenCalled();
+    expect(graph.resolve).not.toHaveBeenCalled();
   });
 
   it('normalizes the input path before querying the graph', async () => {
@@ -67,7 +61,7 @@ describe('get_note_links tool', () => {
       path: '  Folder/A.md  ',
     });
 
-    expect(graph.getNoteLinks).toHaveBeenCalledWith('Folder/A.md');
+    expect(graph.noteLinks).toHaveBeenCalledWith('Folder/A.md');
   });
 
   it('auto-appends .md to a path without an extension', async () => {
@@ -81,7 +75,7 @@ describe('get_note_links tool', () => {
 
     await callTool(registerTool(buildGetNoteLinksTool({ registry })), { path: 'Folder/A' });
 
-    expect(graph.getNoteLinks).toHaveBeenCalledWith('Folder/A.md');
+    expect(graph.noteLinks).toHaveBeenCalledWith('Folder/A.md');
   });
 
   it('returns an empty adjacency for an unknown path', async () => {

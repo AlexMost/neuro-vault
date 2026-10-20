@@ -50,6 +50,9 @@ describe('operations.vaultOverview resource', () => {
 
     expect(payload.total_notes).toBe(1);
     expect(payload.top_tags).toEqual([{ name: 'x', count: 1 }]);
+    // One graph read, for every scanned note.
+    expect(graph.backlinkCounts).toHaveBeenCalledExactlyOnceWith(['Notes/a.md']);
+    expect(graph.noteLinks).not.toHaveBeenCalled();
   });
 
   it('carries the same conventions field as the tool', async () => {

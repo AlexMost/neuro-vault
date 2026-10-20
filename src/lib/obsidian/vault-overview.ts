@@ -1,5 +1,5 @@
+import type { IGraphReader } from './graph-reader.js';
 import type { VaultReader } from './vault-reader.js';
-import type { IVaultGraph } from './wikilink-graph.js';
 import { topByBacklinks, type TopBacklinkedNote } from './top-by-backlinks.js';
 import { capConventions } from './vault-conventions.js';
 import { listProperties, listTags } from './vault-aggregates.js';
@@ -35,7 +35,7 @@ export interface VaultOverview {
 
 export interface ComputeVaultOverviewDeps {
   reader: VaultReader;
-  graph: IVaultGraph;
+  graph: Pick<IGraphReader, 'backlinkCounts'>;
   readConventions: () => Promise<string | null>;
 }
 
@@ -64,13 +64,14 @@ async function conventionsFields(
 
 export async function computeVaultOverview(deps: ComputeVaultOverviewDeps): Promise<VaultOverview> {
   const { reader, graph, readConventions } = deps;
-  await graph.ensureFresh();
 
   const paths = await reader.scan();
-  const [tags, props, conventions] = await Promise.all([
+  // One graph read for every scanned note: the counts the top-by-backlinks list ranks by.
+  const [tags, props, conventions, counts] = await Promise.all([
     listTags(reader),
     listProperties(reader),
     conventionsFields(readConventions),
+    graph.backlinkCounts(paths),
   ]);
 
   if (paths.length === 0) {
@@ -95,7 +96,7 @@ export async function computeVaultOverview(deps: ComputeVaultOverviewDeps): Prom
     folders: sortFolders(folders),
     top_tags: tags.slice(0, TOP_TAGS_LIMIT),
     properties: props.slice(0, TOP_PROPERTIES_LIMIT),
-    top_by_backlinks: topByBacklinks({ paths, graph, limit: TOP_BACKLINKS_LIMIT }),
+    top_by_backlinks: topByBacklinks({ paths, counts, limit: TOP_BACKLINKS_LIMIT }),
     ...conventions,
   };
 }

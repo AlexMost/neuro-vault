@@ -5,11 +5,27 @@ import { getNoteLinks } from '../../../src/lib/obsidian/note-links.js';
 
 const VAULT_PATHS = ['Folder/A.md', 'Folder/B.md', 'Folder/C.md', 'Folder/D.md', 'Folder/Sub/E.md'];
 
+/** The vault's resolution as a graph reader answers it: one batched call, the basename index's order. */
 function makeIndex() {
-  return buildBasenameIndex(VAULT_PATHS);
+  const index = buildBasenameIndex(VAULT_PATHS);
+  return {
+    resolve: vi.fn(async (targets: readonly string[]) => targets.map((t) => index.resolve(t))),
+  };
 }
 
 describe('getNoteLinks', () => {
+  it('asks the resolver once, for every distinct normalized target', async () => {
+    const resolver = makeIndex();
+    await getNoteLinks({
+      notePath: 'Folder/A.md',
+      readNoteContent: async () =>
+        '---\nrelated: "[[D]]"\n---\nSee [[B|bee]], [[B#h]] and [[C]].\n',
+      resolver,
+    });
+    expect(resolver.resolve).toHaveBeenCalledTimes(1);
+    expect([...(resolver.resolve.mock.calls[0]?.[0] ?? [])].sort()).toEqual(['B', 'C', 'D']);
+  });
+
   it('extracts forward links from the body', async () => {
     const readNoteContent = vi.fn(async () => '# A\n\nSee [[B]] and [[C]].\n');
     const links = await getNoteLinks({

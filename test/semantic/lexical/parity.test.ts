@@ -39,6 +39,7 @@ import {
 } from '../../lib/obsidian/lexical/_fixture-vault.js';
 import { LegacyLexicalIndex } from '../../lib/obsidian/lexical/_legacy-lexical-index.js';
 import { makeTestRegistry } from '../../operations/tools/_test-registry.js';
+import { createGraphReader } from '../../../src/lib/obsidian/graph-reader.js';
 
 const posix = process.platform !== 'win32';
 const CAPS = { noteCap: 10, perNoteCap: 3 };
@@ -161,7 +162,7 @@ describe.skipIf(!posix)('the three lexical readers give one answer', () => {
           name: 'v',
           path: vaultRoot,
           reader,
-          graph,
+          graph: createGraphReader(() => graph),
           lexical,
           ...(backend === 'disabled' ? { backend: createDisabledSemanticBackend() } : {}),
         },
