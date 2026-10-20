@@ -61,6 +61,11 @@ treatment (brainstorm.md, Q1–Q6).
 ### D4: `operation` names
 - **Choice**: the tool name. The overview resource uses its URI (`vault://overview`,
   `vault://<name>/overview`).
+- **Found in review**: a resource read has no tool envelope. The SDK answers a thrown error
+  as JSON-RPC `InternalError` with the message only. A resource client therefore sees
+  `Graph read failed`, and the code and the URI reach only stderr. Giving resources a
+  structured error (`McpError` with `data: { code, details }` in `registerResource`) would
+  change every resource's errors, so it is left as a follow-up.
 
 ## Risks / Trade-offs
 

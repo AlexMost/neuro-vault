@@ -1633,7 +1633,7 @@ describe('graph read failure', () => {
       const payload = await expectToolError(reg, { query: 'зміст' });
 
       expect(payload).toEqual(graphReadFailure('v', 'search_notes'));
-      expect(warn).toHaveBeenCalledWith(
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
         'neuro-vault graph: search_notes failed for vault "v": daemon connection lost',
       );
     } finally {

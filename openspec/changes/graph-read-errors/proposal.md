@@ -44,4 +44,5 @@ None.
 - **Docs.** `docs/architecture/wikilink-graph.md`, `docs/architecture/vault-registry.md`, and
   `docs/guide/` (the failure note in `finding-notes.md` and `reading-and-modifying.md`).
 - **Not here.** Retrying a failed read and degrading instead of failing. The lexical leg's
-  mapping is unchanged.
+  mapping is unchanged. Resource reads get the generic message, not a structured
+  `DEPENDENCY_ERROR`: the resource error envelope is a separate change.
