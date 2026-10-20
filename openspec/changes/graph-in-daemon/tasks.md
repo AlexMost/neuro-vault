@@ -34,17 +34,17 @@ Parallelism: groups 1 and 2 are parallel-safe with each other (`src/lib/obsidian
 ## 7. PR 1 docs and gates (sequential, last in PR 1)
 
 - [x] 7.1 `docs/architecture/wikilink-graph.md` (the entry's one graph, `IGraphReader`, the `graph.*` reads, the session graph still in place until PR 2), `vault-entry.md` (the graph member and `VaultEntries.graph`), `shared-daemon.md` (method table rows, `GRAPH_FAILED`, the `graph` service in "how a new service attaches"), `lexical-search.md` (the tie-break reads the shared graph), `module-structure.md` (the `graph/` view). `docs/guide/` untouched: no tool behaviour changes in PR 1.
-- [ ] 7.2 `npm test`, `npm run lint`, `npm run typecheck`, `npm run format`, `npm run build`, `npx commitlint --from origin/main --to HEAD`; PR 1 with `Refs #172`; pause and report.
+- [x] 7.2 `npm test`, `npm run lint`, `npm run typecheck`, `npm run format`, `npm run build`, `npx commitlint --from origin/main --to HEAD`; PR 1 with `Refs #172`; pause and report.
 
 ## 8. The cut-over (PR 2; sequential — one type change with all its call sites)
 
-- [ ] 8.1 `IRegisteredVault.graph: IGraphReader`; `graphFactory` into `IModuleVaultFactories`; `createVaultClients` supplies the view; `lexicalOnlyVaultFactories` builds one memoized `WikilinkGraphIndex` per vault root for both `graphFactory` (through `createGraphReader`) and the standalone lexical reader; `lexicalReaderFactory` and `listMatchingPathsFactory` stop taking `graph`; every consumer moves to the batched reads (design D5); `makeVaultGraph` returns an `IGraphReader`. Tool tests through `registerTool` + `test/_gate.ts` keep passing with identical payloads.
-- [ ] 8.2 One-call-per-tool tests (spec "Each tool reads the graph in batches"): a spy reader counts calls for `get_note_links`, `get_vault_overview`, `vault://overview`, `query_notes` (one and two prefixes), `read_daily`, `search_notes` (matches and none), `get_similar_notes`, and a `search_notes` filter; `--no-semantic` builds one graph per vault and starts no daemon.
-- [ ] 8.3 `npm run eval` on the owner's vault: both pipelines identical to main.
+- [x] 8.1 `IRegisteredVault.graph: IGraphReader`; `graphFactory` into `IModuleVaultFactories`; `createVaultClients` supplies the view; `lexicalOnlyVaultFactories` builds one memoized `WikilinkGraphIndex` per vault root for both `graphFactory` (through `createGraphReader`) and the standalone lexical reader; `lexicalReaderFactory` and `listMatchingPathsFactory` stop taking `graph`; every consumer moves to the batched reads (design D5); `makeVaultGraph` returns an `IGraphReader`. Tool tests through `registerTool` + `test/_gate.ts` keep passing with identical payloads.
+- [x] 8.2 One-call-per-tool tests (spec "Each tool reads the graph in batches"): a spy reader counts calls for `get_note_links`, `get_vault_overview`, `vault://overview`, `query_notes` (one and two prefixes), `read_daily`, `search_notes` (matches and none), `get_similar_notes`, and a `search_notes` filter; `--no-semantic` builds one graph per vault and starts no daemon.
+- [x] 8.3 `npm run eval` on the owner's vault: both pipelines identical to main.
 
 ## 9. PR 2 docs (needs 8)
 
-- [ ] 9.1 Sweep all of `docs/` (architecture and guide) for the session graph, `ensureFresh`, `IVaultGraph` and "two graphs": `wikilink-graph.md`, `vault-registry.md`, `vault-entry.md`, `vault-scope.md` (scope-change difference), `module-structure.md`, `lexical-search.md`, the guide's `backlink_count` and freshness mentions; `GLOSSARY.md` only if a term is added.
+- [x] 9.1 Sweep all of `docs/` (architecture and guide) for the session graph, `ensureFresh`, `IVaultGraph` and "two graphs": `wikilink-graph.md`, `vault-registry.md`, `vault-entry.md`, `vault-scope.md` (scope-change difference), `module-structure.md`, `lexical-search.md`, the guide's `backlink_count` and freshness mentions; `GLOSSARY.md` only if a term is added.
 
 ## 10. Close out (sequential, last)
 
