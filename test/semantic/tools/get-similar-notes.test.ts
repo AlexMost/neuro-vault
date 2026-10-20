@@ -23,6 +23,8 @@ import type { SmartSource } from './_helpers.js';
 import { legacyFindNeighbors } from '../_legacy-retrieval.js';
 import { CorpusNotReadyError } from '../../../src/lib/obsidian/semantic-backend.js';
 import { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
+import { graphReaderOver, makeVaultGraph } from '../../_vault-graph.js';
+import { createGraphReader } from '../../../src/lib/obsidian/graph-reader.js';
 
 type SimilarResults = Awaited<ReturnType<ReturnType<typeof buildGetSimilarNotesTool>['handler']>>;
 
@@ -551,7 +553,7 @@ describe('getSimilarNotes — graph signals', () => {
         path: vaultRoot,
         backend: toBackend(corpusIndex),
         reader,
-        graph: new WikilinkGraphIndex({ reader }),
+        graph: graphReaderOver(reader),
       },
     ]);
     const tool = buildGetSimilarNotesTool({
@@ -737,7 +739,7 @@ describe('getSimilarNotes — graph signals', () => {
         path: vaultRoot,
         backend: toBackend(makeFakeCorpusIndex(sources)),
         reader,
-        graph,
+        graph: createGraphReader(() => graph),
       },
     ]);
     const reg = registerTool(
@@ -763,6 +765,49 @@ describe('getSimilarNotes — graph signals', () => {
       expect(scan).toHaveBeenCalledTimes(1);
       expect(resolve).toHaveBeenCalledWith('B');
       expect(resolve).toHaveBeenCalledWith('C');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('asks the graph once, for every link target of the note', async () => {
+    const sources = makeSources();
+    const { vaultRoot, cleanup } = await makeTempVault({
+      'Folder/A.md': '# A\n\n[[B]], [[C|see]] and [[B#part]]\n',
+      'Folder/B.md': '# B\n',
+      'Folder/C.md': '# C\n',
+    });
+    const graph = makeVaultGraph({
+      resolve: vi.fn(async (targets: readonly string[]) =>
+        targets.map((t) => (t === 'B' || t === 'C' ? `Folder/${t}.md` : null)),
+      ),
+    });
+    const registry = makeTestRegistry([
+      {
+        name: 'v',
+        path: vaultRoot,
+        backend: toBackend(makeFakeCorpusIndex(sources)),
+        reader: readerOf(sources),
+        graph,
+      },
+    ]);
+    const reg = registerTool(
+      buildGetSimilarNotesTool({
+        registry,
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
+        modelKey: MODEL_KEY,
+        similarity: TEST_SIMILARITY,
+      }),
+    );
+    try {
+      const results = await callTool<SimilarResults>(reg, { path: 'Folder/A.md', threshold: 0.9 });
+      expect(results.filter((r) => r.signals.forward_link).map((r) => r.path)).toEqual([
+        'Folder/B.md',
+        'Folder/C.md',
+      ]);
+      expect(graph.resolve).toHaveBeenCalledExactlyOnceWith(['B', 'C']);
+      expect(graph.backlinkCounts).not.toHaveBeenCalled();
+      expect(graph.noteLinks).not.toHaveBeenCalled();
     } finally {
       await cleanup();
     }

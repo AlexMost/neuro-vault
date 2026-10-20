@@ -1,6 +1,5 @@
 import { ToolHandlerError } from '../../tool-response.js';
 import type { VaultReader } from '../vault-reader.js';
-import type { IVaultGraph } from '../wikilink-graph.js';
 import { applyDefaultRegexOptions } from './default-regex-options.js';
 import {
   matchesAnyPrefix,
@@ -19,9 +18,12 @@ export interface NoteFilter {
 
 export type ListMatchingPaths = (filter: NoteFilter) => Promise<Set<string>>;
 
+/**
+ * No graph: a note filter names only paths, `tags` and frontmatter keys, so it
+ * never reads `backlink_count`, and listing the notes it matches reads no graph.
+ */
 export interface ListMatchingPathsDeps {
   reader: VaultReader;
-  graph?: IVaultGraph;
 }
 
 export function createListMatchingPaths(deps: ListMatchingPathsDeps): ListMatchingPaths {

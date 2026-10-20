@@ -44,8 +44,7 @@ export function buildGetNoteLinksTool(
       } catch (err) {
         throw invalidArgument((err as Error).message, 'path');
       }
-      await entry.graph.ensureFresh();
-      const links = entry.graph.getNoteLinks(path);
+      const links = await entry.graph.noteLinks(path);
       return { vault: entry.name, ...links };
     },
   });

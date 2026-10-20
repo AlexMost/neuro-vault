@@ -1,16 +1,16 @@
 # shared-lexical-search Specification
 
 ## Purpose
-The lexical leg of `search_notes` served from the vault entry: one read-through lexical cache and one tie-break wikilink graph per vault directory, warmed in the background and refreshed serially without evicting on `allowed`; the daemon's `lexical.search` with `NOT_ATTACHED` / `LEXICAL_FAILED`; the session's one lexical reader (daemon, in-process entry, or standalone under `--no-semantic`) and its error mapping; and the cache's line in `daemon status`. Rationale: ADR-0020; mechanism: `docs/architecture/lexical-search.md`.
+The lexical leg of `search_notes` served from the vault entry: one read-through lexical cache per vault directory, tie-broken by the vault entry's one wikilink graph (the shared-wikilink-graph capability), warmed in the background and refreshed serially without evicting on `allowed`; the daemon's `lexical.search` with `NOT_ATTACHED` / `LEXICAL_FAILED`; the session's one lexical reader (daemon, in-process entry, or standalone under `--no-semantic`) and its error mapping; and the cache's line in `daemon status`. Rationale: ADR-0020; mechanism: `docs/architecture/lexical-search.md`.
 ## Requirements
 ### Requirement: Each vault entry holds one lexical cache and one tie-break graph
 
-Each vault entry SHALL hold one lexical cache (parsed titles, headings and body blocks of every note in the entry's scope, keyed by path with the note's mtime) and one wikilink graph used only by lexical ranking's backlink tie-break, both over the entry's own scoped reader, created with the entry, warmed in the background when the entry is created and again after a scope change, and dropped with the entry. Neither SHALL have an idle timer of its own. An entry attached with `profiles: []`, or whose vault sets `"semantic": false`, SHALL hold them too. The same module SHALL serve the in-process fallback of a session.
+Each vault entry SHALL hold one lexical cache (parsed titles, headings and body blocks of every note in the entry's scope, keyed by path with the note's mtime) over the entry's own scoped reader, created with the entry, warmed in the background when the entry is created and again after a scope change, and dropped with the entry, and lexical ranking's backlink tie-break SHALL read the entry's one wikilink graph (the shared-wikilink-graph capability), the same graph every attached session reads. Neither SHALL have an idle timer of its own. An entry attached with `profiles: []`, or whose vault sets `"semantic": false`, SHALL hold them too. The same module SHALL serve the in-process fallback of a session.
 
 #### Scenario: N sessions, one cache
 
 - **WHEN** three sessions attach one vault and each runs `search_notes` in `mode: "lexical"`
-- **THEN** the daemon holds one lexical cache and one graph for that vault, and no session process parses a note for its lexical leg (a session still builds its own wikilink graph for each match's `backlink_count`)
+- **THEN** the daemon holds one lexical cache and one graph for that vault, and no session process parses a note for its lexical leg or builds a wikilink graph for each match's `backlink_count`
 
 #### Scenario: An opted-out vault is served
 
@@ -21,8 +21,6 @@ Each vault entry SHALL hold one lexical cache (parsed titles, headings and body 
 
 - **WHEN** the last connection on a vault closes and the entry's idle timeout fires
 - **THEN** its lexical cache and graph are freed with it, and the next attach warms a new one
-
----
 
 ### Requirement: lexical.search serves the lexical leg over the wire
 

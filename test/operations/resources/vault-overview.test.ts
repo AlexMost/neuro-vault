@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { buildVaultOverviewResource } from '../../../src/modules/operations/resources/vault-overview.js';
 import { buildOperationsResources } from '../../../src/modules/operations/resources/index.js';
@@ -50,6 +50,29 @@ describe('operations.vaultOverview resource', () => {
 
     expect(payload.total_notes).toBe(1);
     expect(payload.top_tags).toEqual([{ name: 'x', count: 1 }]);
+    // One graph read, for every scanned note.
+    expect(graph.backlinkCounts).toHaveBeenCalledExactlyOnceWith(['Notes/a.md']);
+    expect(graph.noteLinks).not.toHaveBeenCalled();
+  });
+
+  it('makes one graph read over every scanned note', async () => {
+    const reader = readerOver({
+      'Notes/a.md': { frontmatter: {} },
+      'Notes/b.md': { frontmatter: {} },
+    });
+    const graph = makeVaultGraph();
+    const res = buildVaultOverviewResource({
+      uri: 'vault://overview',
+      entry: makeEntry({ reader, graph }),
+    });
+
+    await res.handler(new URL('vault://overview'));
+
+    expect(graph.backlinkCounts).toHaveBeenCalledTimes(1);
+    expect([...(vi.mocked(graph.backlinkCounts).mock.calls[0]?.[0] ?? [])].sort()).toEqual([
+      'Notes/a.md',
+      'Notes/b.md',
+    ]);
   });
 
   it('carries the same conventions field as the tool', async () => {

@@ -35,6 +35,8 @@ import { callTool } from '../_gate.js';
 import { TEST_SIMILARITY } from '../_identity.js';
 import { makeTestRegistry } from '../operations/tools/_test-registry.js';
 import { daemonServices, recording, type IRecordedRequest } from './_daemon-fixture.js';
+import { graphReaderOver } from '../_vault-graph.js';
+import { createGraphReader } from '../../src/lib/obsidian/graph-reader.js';
 
 const PROFILE = 'granite-97m';
 const DEBOUNCE_MS = 100;
@@ -247,7 +249,7 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
         name: 'v',
         path: root,
         reader,
-        graph: new WikilinkGraphIndex({ reader }),
+        graph: graphReaderOver(reader),
         backend: s.backend,
         lexical,
       },
@@ -369,7 +371,7 @@ describe.skipIf(!posix)('sessions over a daemon socket', () => {
           name: 'v',
           path: root,
           reader,
-          graph,
+          graph: createGraphReader(() => graph),
           lexical: createStandaloneLexicalReader({ vaultRoot: root, reader, graph }),
         },
       ]);

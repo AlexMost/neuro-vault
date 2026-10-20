@@ -11,7 +11,7 @@ import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool } from '../../_gate.js';
 import { type ReadNotesItem, type VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import { makeProvider } from './_helpers.js';
-import { makeVaultGraph } from '../../_vault-graph.js';
+import { makeVaultGraph, graphWithBacklinks } from '../../_vault-graph.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 interface FakeNote {
@@ -176,9 +176,7 @@ describe('operations.readDaily handler', () => {
   });
 
   it('projects each entry to { vault, path, frontmatter, backlink_count } and drops content', async () => {
-    const graph = makeVaultGraph({
-      getBacklinkCount: vi.fn((p: string) => (p === 'Reflections/morning.md' ? 2 : 0)),
-    });
+    const graph = graphWithBacklinks({ 'Reflections/morning.md': 2 });
     const registry = makeTestRegistry([
       {
         name: 'v',
@@ -188,6 +186,10 @@ describe('operations.readDaily handler', () => {
           {
             path: 'Reflections/morning.md',
             frontmatter: { created: '2026-05-12', type: 'reflection' },
+          },
+          {
+            path: 'Reflections/old.md',
+            frontmatter: { created: '2026-05-01', type: 'reflection' },
           },
         ]),
         graph,
@@ -205,6 +207,11 @@ describe('operations.readDaily handler', () => {
         frontmatter: { created: '2026-05-12', type: 'reflection' },
         backlink_count: 2,
       },
+    ]);
+    // One graph read for the one scan, over every scanned note.
+    expect(graph.backlinkCounts).toHaveBeenCalledExactlyOnceWith([
+      'Reflections/morning.md',
+      'Reflections/old.md',
     ]);
     for (const item of result.notes_today) {
       expect(item).not.toHaveProperty('content');

@@ -20,6 +20,8 @@ import { createSharedServices } from '../src/modules/semantic/shared-services.js
 import { createStandaloneLexicalReader } from '../src/modules/semantic/lexical/index.js';
 import type { IRegisteredVaultDeps } from '../src/lib/vault-registry.js';
 import { startNeuroVaultServer } from '../src/server.js';
+import { WikilinkGraphIndex } from '../src/lib/obsidian/wikilink-graph.js';
+import { graphReaderOver } from './_vault-graph.js';
 
 function createTempVaultPath() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'neuro-vault-server-'));
@@ -65,11 +67,12 @@ function fakeBackend(
  * The lexical leg for a test whose semantic backend is a double: the session's
  * own cache over its reader, so no vault entry is built and no daemon is asked.
  */
-const standaloneLexical: IRegisteredVaultDeps['lexicalReaderFactory'] = ({
-  vaultRoot,
-  reader,
-  graph,
-}) => createStandaloneLexicalReader({ vaultRoot, reader, graph });
+const standaloneLexical: IRegisteredVaultDeps['lexicalReaderFactory'] = ({ vaultRoot, reader }) =>
+  createStandaloneLexicalReader({ vaultRoot, reader, graph: new WikilinkGraphIndex({ reader }) });
+
+/** The graph to match: the session's own over its reader, so no vault entry is asked for it. */
+const standaloneGraph: IRegisteredVaultDeps['graphFactory'] = ({ reader }) =>
+  graphReaderOver(reader);
 
 /**
  * Boot the server over a real temp vault with the semantic backend replaced by
@@ -100,6 +103,7 @@ async function startWithBackendStatus(
       },
       vaultEntryDeps: {
         lexicalReaderFactory: standaloneLexical,
+        graphFactory: standaloneGraph,
         semanticBackendFactory: () => ({
           ...fakeBackend(status),
           nearest: () => Promise.reject(new Error('the corpus must not be read when not ready')),
@@ -163,6 +167,7 @@ async function startForShutdown(opts: {
       stdin: new PassThrough(),
       vaultEntryDeps: {
         lexicalReaderFactory: standaloneLexical,
+        graphFactory: standaloneGraph,
         semanticBackendFactory: ({ vaultName }) =>
           fakeBackend({ state: 'ready' }, () => opts.backendDispose(vaultName)),
       },
@@ -212,6 +217,7 @@ async function startOverPipedStdin(opts: {
       stdin,
       vaultEntryDeps: {
         lexicalReaderFactory: standaloneLexical,
+        graphFactory: standaloneGraph,
         semanticBackendFactory: () => fakeBackend({ state: 'ready' }, opts.backendDispose),
       },
     },
@@ -278,6 +284,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         vaultEntryDeps: {
           semanticBackendFactory: () => fakeBackend(),
           lexicalReaderFactory: standaloneLexical,
+          graphFactory: standaloneGraph,
         },
         serverFactory: () => createFakeServer() as never,
         transportFactory: () => ({}) as never,
@@ -309,6 +316,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
         vaultEntryDeps: {
           semanticBackendFactory: () => fakeBackend(),
           lexicalReaderFactory: standaloneLexical,
+          graphFactory: standaloneGraph,
         },
         serverFactory: () => createFakeServer() as never,
         transportFactory: () => ({}) as never,
@@ -627,11 +635,15 @@ describe('Neuro Vault MCP server bootstrap', () => {
     }
   });
 
-  it('--no-semantic opens no connection, at startup or on a search_notes call', async () => {
+  it('--no-semantic opens no connection, at startup or on a search_notes or get_note_links call', async () => {
     const tempRoot = await createTempVaultPath();
     const vaultPath = path.join(tempRoot, 'vault');
     await fs.mkdir(vaultPath, { recursive: true });
-    await fs.writeFile(path.join(vaultPath, 'Heron.md'), '# Heron\n\nA wading bird.\n');
+    await fs.writeFile(
+      path.join(vaultPath, 'Heron.md'),
+      '# Heron\n\nA wading bird, see [[Egret]].\n',
+    );
+    await fs.writeFile(path.join(vaultPath, 'Egret.md'), 'A white bird.\n');
     const request = vi.fn();
     const sharedServices = {
       mode: 'pending' as const,
@@ -661,6 +673,13 @@ describe('Neuro Vault MCP server bootstrap', () => {
       };
       expect(result.isError).not.toBe(true);
       expect(result.structuredContent!.matches.map((m) => m.path)).toEqual(['Heron.md']);
+      // The session's own graph answers: the link is there, and nothing asked a daemon.
+      const links = (await server.toolHandlers.get('get_note_links')!({ path: 'Egret.md' })) as {
+        isError?: boolean;
+        structuredContent?: { incoming: { source: string }[] };
+      };
+      expect(links.isError).not.toBe(true);
+      expect(links.structuredContent!.incoming).toEqual([{ source: 'Heron.md' }]);
       expect(sharedServices.ensure).not.toHaveBeenCalled();
       expect(request).not.toHaveBeenCalled();
     } finally {
@@ -690,6 +709,7 @@ describe('Neuro Vault MCP server bootstrap', () => {
           vaultEntryDeps: {
             semanticBackendFactory: () => fakeBackend(),
             lexicalReaderFactory: standaloneLexical,
+            graphFactory: standaloneGraph,
             providerFactory: () => fakeProvider,
             readerFactory: () => ({
               readNotes: vi.fn().mockResolvedValue([]),

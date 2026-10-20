@@ -4,6 +4,7 @@ import type { IRegisteredVaultDeps } from '../../../lib/vault-registry.js';
 import { createDisabledSemanticBackend } from '../backend/index.js';
 import { createSemanticBackendView } from '../backend/view.js';
 import type { QueuedEmbedder } from '../embed-queue.js';
+import { createGraphReaderView } from '../graph/view.js';
 import { createLexicalReaderView } from '../lexical/view.js';
 import type { ISharedServices } from '../shared-services.js';
 import { createAttachment } from './attachment.js';
@@ -35,18 +36,21 @@ export interface IVaultClients {
   semanticBackendFactory: IRegisteredVaultDeps['semanticBackendFactory'];
   /** The registry's `lexicalReaderFactory`: one vault in, its lexical reader out. */
   lexicalReaderFactory: IRegisteredVaultDeps['lexicalReaderFactory'];
+  /** The registry's `graphFactory`: one vault in, the view of its entry's graph out. */
+  graphFactory: IRegisteredVaultDeps['graphFactory'];
   /**
    * Closes the in-process loopback, then disposes the in-process vault entries,
    * if any vault ever needed them. Final: a backend that needs them afterwards
-   * reads `unavailable` and fails its reads, and a lexical reader fails its searches.
+   * reads `unavailable` and fails its reads, a lexical reader fails its searches,
+   * and a graph reader fails its reads.
    */
   dispose(): Promise<void>;
 }
 
 /**
- * The process's vault-side clients (design D8): every vault's semantic backend
- * and lexical reader are views over one {@link IVaultClient} per vault root and
- * side. Under `--shared` a vault's client is the daemon client; under
+ * The process's vault-side clients (design D8): every vault's semantic backend,
+ * lexical reader and graph reader are views over one {@link IVaultClient} per
+ * vault root and side. Under `--shared` a vault's client is the daemon client; under
  * `--no-shared`, or once the daemon could not be located or started, it is the
  * in-process client — the same core over a loopback that calls the daemon's own
  * `vault`/`corpus`/`lexical`/`graph` handlers on this process's {@link VaultEntries}.
@@ -55,12 +59,12 @@ export interface IVaultClients {
  * corpus of its own.
  *
  * Each vault root has one client per side, built on the first factory call for
- * that root and shared by the vault's two views: the first of them to ask makes
+ * that root and shared by the vault's views: the first of them to ask makes
  * the one attach, so a vault sends one `vault.attach` per epoch. It names the
  * session's profile for a vault that takes part in semantic search and none for
  * one that opted out with `"semantic": false`, which still attaches for its
- * lexical leg. The registry passes the same `enabled` to both factory calls of
- * a vault; were they ever to disagree, the first call's would win.
+ * lexical leg and its graph. The registry passes the same `enabled` to every
+ * factory call of a vault; were they ever to disagree, the first call's would win.
  *
  * The entries index with the session's own embedder, for the session's one
  * profile; nothing in the process attaches another. They never idle out —
@@ -148,6 +152,7 @@ export function createVaultClients(opts: IVaultClientsOptions): IVaultClients {
     },
     lexicalReaderFactory: ({ vaultRoot, enabled }) =>
       createLexicalReaderView(clientOf(vaultRoot, enabled)),
+    graphFactory: ({ vaultRoot, enabled }) => createGraphReaderView(clientOf(vaultRoot, enabled)),
     dispose: async () => {
       disposed = true;
       try {

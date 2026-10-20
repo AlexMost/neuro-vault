@@ -10,11 +10,11 @@ import {
   type ReadNotesItem,
   type VaultReader,
 } from '../../../../src/lib/obsidian/vault-reader.js';
-import type { IVaultGraph } from '../../../../src/lib/obsidian/wikilink-graph.js';
-import { makeVaultGraph } from '../../../_vault-graph.js';
+import type { IGraphReader } from '../../../../src/lib/obsidian/graph-reader.js';
+import { graphWithBacklinks } from '../../../_vault-graph.js';
 
-function buildFakeGraph(counts: Record<string, number>): IVaultGraph {
-  return makeVaultGraph({ getBacklinkCount: vi.fn((p: string) => counts[p] ?? 0) });
+function buildFakeGraph(counts: Record<string, number>): IGraphReader {
+  return graphWithBacklinks(counts);
 }
 
 interface FakeNote {
@@ -372,7 +372,8 @@ describe('runQueryNotes', () => {
       { path: 'Projects/beta.md', backlink_count: 2 },
       { path: 'Projects/gamma.md', backlink_count: 0 },
     ]);
-    expect(graph.ensureFresh).toHaveBeenCalledTimes(1);
+    // One graph read for the one scan, before any filter ran.
+    expect(graph.backlinkCounts).toHaveBeenCalledTimes(1);
   });
 
   it('defaults backlink_count to 0 for results not present in the graph', async () => {
@@ -494,6 +495,26 @@ describe('runQueryNotes', () => {
     );
 
     expect(result.results.map((r) => r.path).sort()).toEqual(['A/a.md', 'B/b.md']);
+  });
+
+  it('reads the graph once per scanned prefix, each with that prefix’s paths', async () => {
+    const reader = makeReader({
+      'A/a.md': { frontmatter: { tags: ['x'] } },
+      'B/b.md': { frontmatter: { tags: ['x'] } },
+      'C/c.md': { frontmatter: { tags: ['x'] } },
+    });
+    const graph = buildFakeGraph({ 'A/a.md': 3 });
+
+    const result = await runQueryNotes(
+      { filter: { backlink_count: { $gte: 1 } }, path_prefix: ['A/', 'B/'] },
+      reader,
+      graph,
+    );
+
+    expect(result.results.map((r) => r.path)).toEqual(['A/a.md']);
+    expect(graph.backlinkCounts).toHaveBeenCalledTimes(2);
+    expect(graph.backlinkCounts).toHaveBeenCalledWith(['A/a.md']);
+    expect(graph.backlinkCounts).toHaveBeenCalledWith(['B/b.md']);
   });
 
   it('rejects empty path_prefix array with INVALID_PARAMS', async () => {

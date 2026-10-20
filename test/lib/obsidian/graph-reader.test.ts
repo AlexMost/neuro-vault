@@ -2,8 +2,18 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createGraphReader } from '../../../src/lib/obsidian/graph-reader.js';
 import type { ReadNotesInput, VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
-import { WikilinkGraphIndex } from '../../../src/lib/obsidian/wikilink-graph.js';
-import { makeVaultGraph } from '../../_vault-graph.js';
+import { WikilinkGraphIndex, type IVaultGraph } from '../../../src/lib/obsidian/wikilink-graph.js';
+
+/** An in-memory graph whose every method is a spy: empty unless overridden. */
+function indexDouble(overrides: Partial<IVaultGraph> = {}): IVaultGraph {
+  return {
+    ensureFresh: vi.fn(async () => {}),
+    getNoteLinks: vi.fn(() => ({ incoming: [], outgoing: [] })),
+    getBacklinkCount: vi.fn(() => 0),
+    resolve: vi.fn(() => null),
+    ...overrides,
+  };
+}
 
 /** `a.md` and `b.md` link `[[Alpha]]`; `a.md` also links a note that does not exist. */
 const NOTES: Record<string, string> = {
@@ -60,7 +70,7 @@ describe('createGraphReader', () => {
   });
 
   it('reads the current graph once and freshens it once per call', async () => {
-    const graph = makeVaultGraph();
+    const graph = indexDouble();
     const current = vi.fn(() => graph);
     const reader = createGraphReader(current);
     await reader.noteLinks('a.md');
@@ -71,8 +81,8 @@ describe('createGraphReader', () => {
   });
 
   it('answers one call from one graph; a swap reaches the next call', async () => {
-    const first = makeVaultGraph({ getBacklinkCount: vi.fn(() => 1) });
-    const second = makeVaultGraph({ getBacklinkCount: vi.fn(() => 2) });
+    const first = indexDouble({ getBacklinkCount: vi.fn(() => 1) });
+    const second = indexDouble({ getBacklinkCount: vi.fn(() => 2) });
     const graphs = [first, second];
     const reader = createGraphReader(() => graphs.shift() ?? second);
     await expect(reader.backlinkCounts(['a.md', 'b.md'])).resolves.toEqual([1, 1]);
@@ -83,7 +93,7 @@ describe('createGraphReader', () => {
 
   it('rejects a read with the refresh error as is', async () => {
     const failure = new Error('scan failed');
-    const graph = makeVaultGraph({ ensureFresh: vi.fn(async () => Promise.reject(failure)) });
+    const graph = indexDouble({ ensureFresh: vi.fn(async () => Promise.reject(failure)) });
     const reader = createGraphReader(() => graph);
     await expect(reader.backlinkCounts(['a.md'])).rejects.toBe(failure);
     expect(graph.getBacklinkCount).not.toHaveBeenCalled();

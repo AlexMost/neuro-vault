@@ -160,10 +160,6 @@ async function runSearchForEntry(
 
   const cap = limit ?? EFFORT_PROFILES[effort].mergedCap;
 
-  // The session keeps its own graph for each match's `backlink_count`; the
-  // lexical reader keeps whatever it needs for its tie-break. A filter that
-  // matched no notes leaves nothing to stamp, so it never refreshes the graph.
-  if (allowed?.size !== 0) await graph.ensureFresh();
   const backend = entry.backend;
   // The pipeline owns leg wiring, narrowing (a filter matching no notes reads
   // neither leg), existence filtering, fusion and the degrade-on-semantic-failure
@@ -215,8 +211,13 @@ async function runSearchForEntry(
   });
   if (warning !== undefined) warn(warning);
 
+  // Every match's `backlink_count` from one graph read; no match reads no graph.
+  const backlinks =
+    result.candidates.length === 0
+      ? []
+      : await graph.backlinkCounts(result.candidates.map((c) => c.path));
   const kindOrder = ['title', 'heading', 'body'] as const;
-  const matches: UnifiedMatch[] = result.candidates.map((c) => {
+  const matches: UnifiedMatch[] = result.candidates.map((c, i) => {
     const { semantic: sem, lexical: lex, expansion: exp } = c;
     const found_in: string[] = [
       ...(sem ? ['semantic'] : []),
@@ -233,7 +234,7 @@ async function runSearchForEntry(
     return {
       path: c.path,
       vault: entry.name,
-      backlink_count: graph.getBacklinkCount(c.path),
+      backlink_count: backlinks[i] ?? 0,
       found_in,
       ...(sem
         ? { similarity: sem.similarity, ...(sem.blocks.length > 0 ? { blocks: sem.blocks } : {}) }

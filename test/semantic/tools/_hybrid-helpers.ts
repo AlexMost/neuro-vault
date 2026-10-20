@@ -72,7 +72,11 @@ export async function makeLexicalVault(
         ? toBackend(makeFakeCorpusIndex(opts.sources ?? new Map()), opts.backendStatus)
         : undefined,
       graph,
-      lexical: createStandaloneLexicalReader({ vaultRoot, reader, graph }),
+      lexical: createStandaloneLexicalReader({
+        vaultRoot,
+        reader,
+        graph: { ensureFresh: async () => {}, getBacklinkCount: () => 0 },
+      }),
       listMatchingPaths: opts.listMatchingPaths ?? (async () => new Set(Object.keys(files))),
     },
   ]);

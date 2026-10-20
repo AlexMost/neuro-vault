@@ -1,15 +1,16 @@
 import { extractWikilinksFromFrontmatter } from './frontmatter-links.js';
 import { splitFrontmatter } from './frontmatter.js';
+import type { IGraphReader } from './graph-reader.js';
 import { normalizeWikilinkTarget, parseWikilinks } from './wikilink.js';
 
 export interface GetNoteLinksOptions {
   notePath: string;
   readNoteContent: (vaultRelativePath: string) => Promise<string>;
   /**
-   * Where a normalized wikilink target resolves, `null` for none. A vault's
-   * graph in production (`IVaultGraph.resolve`); a `BasenameIndex` also fits.
+   * Where each normalized wikilink target resolves, `null` for none: the
+   * vault's graph reader, asked once for every target of the note.
    */
-  resolver: { resolve(target: string): string | null };
+  resolver: Pick<IGraphReader, 'resolve'>;
 }
 
 /**
@@ -31,11 +32,14 @@ export async function getNoteLinks(opts: GetNoteLinksOptions): Promise<Set<strin
     ...(frontmatter ? extractWikilinksFromFrontmatter(frontmatter) : []),
   ];
 
-  const resolved = new Set<string>();
+  const targets = new Set<string>();
   for (const target of rawTargets) {
     const normalized = normalizeWikilinkTarget(target);
-    if (!normalized) continue;
-    const path = resolver.resolve(normalized);
+    if (normalized) targets.add(normalized);
+  }
+
+  const resolved = new Set<string>();
+  for (const path of await resolver.resolve([...targets])) {
     if (!path) continue;
     if (path === notePath) continue;
     resolved.add(path);

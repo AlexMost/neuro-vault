@@ -7,7 +7,7 @@ import {
 } from '../../../src/lib/obsidian/vault-overview.js';
 import { CONVENTIONS_CHAR_CAP } from '../../../src/lib/obsidian/vault-conventions.js';
 import type { ReadNotesItem, VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
-import { makeVaultGraph } from '../../_vault-graph.js';
+import { graphWithBacklinks, makeVaultGraph } from '../../_vault-graph.js';
 
 const noConventions = async (): Promise<string | null> => null;
 
@@ -55,7 +55,7 @@ describe('computeVaultOverview', () => {
       properties: [],
       top_by_backlinks: [],
     });
-    expect(graph.ensureFresh).toHaveBeenCalledTimes(1);
+    expect(graph.backlinkCounts).toHaveBeenCalledExactlyOnceWith([]);
   });
 
   it('aggregates folders by top-level segment (root → "/")', async () => {
@@ -140,17 +140,20 @@ describe('computeVaultOverview', () => {
     const reader = makeReader({
       scan: vi.fn().mockResolvedValue(['Projects/Alpha.md', 'Projects/Beta.md', 'Notes/Gamma.md']),
     });
-    const backlinks: Record<string, number> = {
+    const graph = graphWithBacklinks({
       'Projects/Alpha.md': 5,
       'Projects/Beta.md': 5,
       'Notes/Gamma.md': 1,
-    };
-    const graph = makeVaultGraph({
-      getBacklinkCount: vi.fn((p: string) => backlinks[p] ?? 0),
     });
 
     const result = await computeVaultOverview({ reader, graph, readConventions: noConventions });
 
+    // One graph read, for every scanned note.
+    expect(graph.backlinkCounts).toHaveBeenCalledExactlyOnceWith([
+      'Projects/Alpha.md',
+      'Projects/Beta.md',
+      'Notes/Gamma.md',
+    ]);
     expect(result.top_by_backlinks).toEqual([
       { path: 'Projects/Alpha.md', title: 'Alpha', backlink_count: 5 },
       { path: 'Projects/Beta.md', title: 'Beta', backlink_count: 5 },
@@ -164,7 +167,9 @@ describe('computeVaultOverview', () => {
       scan: vi.fn().mockResolvedValue(paths),
     });
     const graph = makeVaultGraph({
-      getBacklinkCount: vi.fn((p: string) => Number(p.replace(/[^0-9]/g, ''))),
+      backlinkCounts: vi.fn(async (ps: readonly string[]) =>
+        ps.map((p) => Number(p.replace(/[^0-9]/g, ''))),
+      ),
     });
 
     const result = await computeVaultOverview({ reader, graph, readConventions: noConventions });

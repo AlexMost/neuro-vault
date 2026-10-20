@@ -8,7 +8,7 @@ import {
   createSemanticModule,
   createSharedServices,
   createVaultClients,
-  lexicalOnlyVaultFactories,
+  createLexicalOnlyVaultFactories,
   SharedServicesClosedError,
   type EmbeddingProvider,
   type ISemanticModuleDeps,
@@ -135,7 +135,7 @@ export async function startNeuroVaultServer(
       semanticEnabled: config.semantic.enabled,
     },
     defaultVaultDeps(
-      { ...operationsVaultFactories, ...(clients ?? lexicalOnlyVaultFactories) },
+      { ...operationsVaultFactories, ...(clients ?? createLexicalOnlyVaultFactories()) },
       deps.vaultEntryDeps,
     ),
   );

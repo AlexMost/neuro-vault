@@ -445,7 +445,7 @@ Returns:
 - **Embeds count as wikilinks.** `![[X]]` produces an outgoing edge to `X`, exactly like `[[X]]`.
 - **Unresolved targets are kept** (`resolved: false`) — useful when surfacing concepts the user has anchored but not yet written.
 - **Self-links are dropped** — a note linking to itself does not appear in its own `incoming` or `outgoing`.
-- **Backed by an in-memory index** that rebuilds lazily on query when older than 3 minutes; the first call after a stale window pays the rebuild cost. No watchers, no background timers.
+- **Backed by an in-memory index** that rebuilds lazily on query when older than 3 minutes; the first call after a stale window pays the rebuild cost. No watchers and no timers; one build starts in the background when a vault is first opened (except under `--no-semantic`) and again after the vault's scope changes. With the shared daemon (the default) there is one index per vault directory, shared by every session attached to it, so a link written in the last 3 minutes may not show yet even in a session that just started. Under `--no-semantic` each session builds its own.
 - Reads directly from disk; does not require Obsidian to be running.
 
 Use this **after** `search_notes` or `query_notes` finds a starting note, to traverse the graph around it. For ranking by inbound popularity rather than walking edges, see `backlink_count` on `query_notes` and `search_notes` results.
