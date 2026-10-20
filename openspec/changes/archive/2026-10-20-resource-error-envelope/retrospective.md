@@ -6,7 +6,7 @@
 
 ## 0. Evidence
 
-- **Commit range**: `413d6e0..HEAD` (5 commits with the archive)
+- **Commit range**: `413d6e0..HEAD` (6 commits with the archive)
 - **Diff size**: about +600 lines across 17 files. Most of it is the change's own artifacts; the
   code is about 40 lines in `src/lib/resource-registry.ts` plus a 28-line test helper.
 - **Tasks done**: 6/6
@@ -24,6 +24,7 @@ a02d3c2 docs(openspec): propose resource-error-envelope
 d38132c feat(resources): carry a ToolHandlerError's code and details on the wire
 b499882 docs(resources): record resource read errors in an ADR and the docs
 8fa2749 docs(resources): say which error message the resource specs mean
+<verify> docs(openspec): verify and retrospective for resource-error-envelope
 <archive> chore(openspec): archive resource-error-envelope
 ```
 

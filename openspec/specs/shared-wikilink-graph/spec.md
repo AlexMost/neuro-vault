@@ -91,7 +91,7 @@ The graph SHALL rebuild on a TTL of three minutes, when a read or a lexical sear
 - **THEN** the read waits for a rebuild and answers from it
 
 ### Requirement: A failed graph read is a dependency error
-A graph read that fails SHALL fail that vault's tool call with `DEPENDENCY_ERROR`, the message `Graph read failed`, and `details: { vault, operation }` for `search_notes`, `get_note_links`, `get_vault_overview`, `query_notes`, `read_daily` and `get_similar_notes`, and SHALL fail a `vault://overview` resource read with the message `Graph read failed`. The read fails because the view could not answer, or because the session's own graph failed to build under `--no-semantic`. `operation` SHALL be the tool's name. A resource read carries no tool error envelope, so its code, and its `operation` (the resource's URI), SHALL reach only stderr. For a single-vault target the whole call SHALL fail. In a fan-out the vault SHALL appear in `failed_vaults` with that code, message and details, and the other vaults SHALL still answer. The failure's cause SHALL be written to stderr and SHALL NOT appear in the response. Under `--no-semantic`, the session's graph reader SHALL surface every failure as a `GraphReadError`. An error that is not a graph read failure SHALL propagate unchanged.
+A graph read that fails SHALL fail that vault's tool call or resource read with `DEPENDENCY_ERROR`, the message `Graph read failed`, and `details: { vault, operation }`, for `search_notes`, `get_note_links`, `get_vault_overview`, `query_notes`, `read_daily`, `get_similar_notes` and the `vault://overview` resources. The read fails because the view could not answer, or because the session's own graph failed to build under `--no-semantic`. `operation` SHALL be the tool's name, or the resource's URI for a resource read. A tool call SHALL carry the code and details in its tool error envelope, and a resource read SHALL carry them in the JSON-RPC error's `data`. For a single-vault target the whole call SHALL fail. In a fan-out the vault SHALL appear in `failed_vaults` with that code, message and details, and the other vaults SHALL still answer. The failure's cause SHALL be written to stderr and SHALL NOT appear in the response. Under `--no-semantic`, the session's graph reader SHALL surface every failure as a `GraphReadError`. An error that is not a graph read failure SHALL propagate unchanged.
 
 #### Scenario: A single-vault call fails with DEPENDENCY_ERROR
 
@@ -108,10 +108,10 @@ A graph read that fails SHALL fail that vault's tool call with `DEPENDENCY_ERROR
 - **WHEN** a graph read fails during `get_vault_overview`, `query_notes`, `read_daily` or `get_similar_notes`
 - **THEN** that call fails with `DEPENDENCY_ERROR` and message `Graph read failed`, with `operation` naming the tool
 
-#### Scenario: The overview resource hides the cause
+#### Scenario: The overview resource reports the code and hides the cause
 
 - **WHEN** a graph read fails during a `vault://overview` resource read
-- **THEN** the read fails with the message `Graph read failed`, and the cause and the resource URI are written to stderr only
+- **THEN** the read fails with the JSON-RPC error message `Graph read failed` and `data: { code: "DEPENDENCY_ERROR", details: { vault, operation: "vault://overview" } }`, and the cause is written to stderr only
 
 #### Scenario: A failed no-semantic build is a graph read failure
 
