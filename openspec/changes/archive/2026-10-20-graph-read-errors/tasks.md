@@ -25,4 +25,4 @@ disjoint files, so they are parallel-safe with each other. Group 4 is last.
 
 - [x] 4.1 Docs: `docs/architecture/wikilink-graph.md` (an Errors paragraph: the view and the standalone reader throw `GraphReadError`, and `graphForTool` maps it; consumer table and `--no-semantic` wiring), `docs/architecture/vault-registry.md` (`graph` failures), `docs/guide/finding-notes.md` and `docs/guide/reading-and-modifying.md` (what a client sees). `IRegisteredVault.graph` doc comment points to `graphForTool`.
 - [x] 4.2 Gates: `npm test`, `npm run lint`, `npm run typecheck`, `npm run format`, `npm run build`, `npx commitlint --from origin/main --to HEAD`.
-- [ ] 4.3 verify → retrospective → archive (`openspec archive graph-read-errors`) → PR with `Closes #212`.
+- [x] 4.3 verify → retrospective → archive (`openspec archive graph-read-errors`) → PR with `Closes #212`.
