@@ -4,7 +4,7 @@ import { buildVaultOverviewResource } from '../../../src/modules/operations/reso
 import { buildOperationsResources } from '../../../src/modules/operations/resources/index.js';
 import type { IRegisteredVault } from '../../../src/lib/vault-registry.js';
 import { makeReader, readerOver } from '../tools/_helpers.js';
-import { makeVaultGraph } from '../../_vault-graph.js';
+import { failingGraph, makeVaultGraph } from '../../_vault-graph.js';
 import { makeTestRegistry } from '../tools/_test-registry.js';
 
 function makeEntry(overrides: Partial<IRegisteredVault> = {}): IRegisteredVault {
@@ -143,4 +143,35 @@ describe('buildOperationsResources', () => {
     expect(readerA.readNotes).toHaveBeenCalled();
     expect(readerB.readNotes).toHaveBeenCalled();
   });
+});
+
+describe('operations.vaultOverview resource: a failed graph read', () => {
+  it.each(['vault://overview', 'vault://v/overview'])(
+    '%s rejects with DEPENDENCY_ERROR naming its URI; the cause goes to stderr',
+    async (uri) => {
+      const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const res = buildVaultOverviewResource({
+          uri,
+          entry: makeEntry({
+            reader: readerOver({ 'a.md': { frontmatter: {} } }),
+            graph: failingGraph('backlinkCounts', 'lost'),
+          }),
+        });
+
+        const error = await res.handler(new URL(uri)).catch((e: unknown) => e);
+
+        expect(error).toMatchObject({
+          code: 'DEPENDENCY_ERROR',
+          message: 'Graph read failed',
+          details: { vault: 'v', operation: uri },
+        });
+        expect(stderr).toHaveBeenCalledExactlyOnceWith(
+          `neuro-vault graph: ${uri} failed for vault "v": lost`,
+        );
+      } finally {
+        stderr.mockRestore();
+      }
+    },
+  );
 });

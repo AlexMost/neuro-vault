@@ -4,8 +4,8 @@ import { buildGetNoteLinksTool } from '../../../src/modules/operations/tools/get
 import type { IGraphReader } from '../../../src/lib/obsidian/graph-reader.js';
 import type { NoteLinks } from '../../../src/lib/obsidian/wikilink-graph.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
-import { callTool } from '../../_gate.js';
-import { makeVaultGraph } from '../../_vault-graph.js';
+import { callTool, expectToolError } from '../../_gate.js';
+import { failingGraph, makeVaultGraph } from '../../_vault-graph.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 function makeLinksGraph(linksFor: Record<string, NoteLinks>): IGraphReader {
@@ -121,5 +121,29 @@ describe('get_note_links tool', () => {
       code: 'INVALID_PARAMS',
       details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
     });
+  });
+
+  it('a failed graph read is DEPENDENCY_ERROR, with the cause on stderr only', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const registry = makeTestRegistry([
+        { name: 'v', graph: failingGraph('noteLinks', 'daemon connection lost') },
+      ]);
+
+      const error = await expectToolError(registerTool(buildGetNoteLinksTool({ registry })), {
+        path: 'A.md',
+      });
+
+      expect(error).toEqual({
+        code: 'DEPENDENCY_ERROR',
+        message: 'Graph read failed',
+        details: { vault: 'v', operation: 'get_note_links' },
+      });
+      expect(stderr).toHaveBeenCalledExactlyOnceWith(
+        'neuro-vault graph: get_note_links failed for vault "v": daemon connection lost',
+      );
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

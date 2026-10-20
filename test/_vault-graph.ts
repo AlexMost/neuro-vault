@@ -1,6 +1,10 @@
 import { vi } from 'vitest';
 
-import { createGraphReader, type IGraphReader } from '../src/lib/obsidian/graph-reader.js';
+import {
+  createGraphReader,
+  GraphReadError,
+  type IGraphReader,
+} from '../src/lib/obsidian/graph-reader.js';
 import type { VaultReader } from '../src/lib/obsidian/vault-reader.js';
 import { WikilinkGraphIndex, type IVaultGraph } from '../src/lib/obsidian/wikilink-graph.js';
 
@@ -25,8 +29,32 @@ export function graphWithBacklinks(counts: Record<string, number>): IGraphReader
   });
 }
 
+/**
+ * {@link makeVaultGraph} whose `read` fails as a view's does when the daemon cannot answer:
+ * with a {@link GraphReadError} carrying `message`.
+ */
+export function failingGraph(
+  read: keyof IGraphReader,
+  message = 'daemon did not answer graph read in time',
+): IGraphReader {
+  return makeVaultGraph({
+    [read]: vi.fn(async () => {
+      throw new GraphReadError(message);
+    }),
+  });
+}
+
 /** The reader over a real `WikilinkGraphIndex` on `reader`, as a `--no-semantic` session builds. */
 export function graphReaderOver(reader: VaultReader): IGraphReader {
   const graph: IVaultGraph = new WikilinkGraphIndex({ reader });
   return createGraphReader(() => graph);
+}
+
+/** The error envelope a tool answers with when its graph read fails (`graphForTool`). */
+export function graphReadFailure(vault: string, operation: string) {
+  return {
+    code: 'DEPENDENCY_ERROR',
+    message: 'Graph read failed',
+    details: { vault, operation },
+  };
 }

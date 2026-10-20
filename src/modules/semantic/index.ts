@@ -7,10 +7,10 @@ import {
 } from './tools/index.js';
 import type { QueryEmbedder } from './types.js';
 import type { ToolRegistration } from '../../lib/tool-registration.js';
-import { createGraphReader } from '../../lib/obsidian/graph-reader.js';
 import { WikilinkGraphIndex } from '../../lib/obsidian/wikilink-graph.js';
 import type { VaultReader } from '../../lib/obsidian/vault-reader.js';
 import type { IRegisteredVaultDeps, IVaultRegistry } from '../../lib/vault-registry.js';
+import { createStandaloneGraphReader } from './graph/index.js';
 import { createStandaloneLexicalReader } from './lexical/index.js';
 
 // What the composition root builds a session's semantic side from (ADR-0022):
@@ -102,9 +102,7 @@ export function createLexicalOnlyVaultFactories(): Pick<
     },
     lexicalReaderFactory: ({ vaultRoot, reader }) =>
       createStandaloneLexicalReader({ vaultRoot, reader, graph: graphOf(vaultRoot, reader) }),
-    graphFactory: ({ vaultRoot, reader }) => {
-      const graph = graphOf(vaultRoot, reader);
-      return createGraphReader(() => graph);
-    },
+    graphFactory: ({ vaultRoot, reader }) =>
+      createStandaloneGraphReader(graphOf(vaultRoot, reader)),
   };
 }

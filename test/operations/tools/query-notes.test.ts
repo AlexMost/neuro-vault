@@ -6,9 +6,9 @@ import { ToolHandlerError } from '../../../src/lib/tool-response.js';
 import { FAN_OUT_SUFFIX } from '../../../src/lib/vault-param.js';
 import type { IVaultRegistry } from '../../../src/lib/vault-registry.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
-import { callTool } from '../../_gate.js';
+import { callTool, expectToolError } from '../../_gate.js';
 import { makeReader } from './_helpers.js';
-import { makeVaultGraph } from '../../_vault-graph.js';
+import { failingGraph, graphReadFailure, makeVaultGraph } from '../../_vault-graph.js';
 import { makeTestRegistry } from './_test-registry.js';
 
 function registryOf(...names: string[]): IVaultRegistry {
@@ -252,5 +252,55 @@ describe('operations.queryNotes handler', () => {
       code: 'INVALID_PARAMS',
       details: { issues: [{ path: '<root>', message: expect.stringContaining('vault') }] },
     });
+  });
+});
+
+describe('query_notes: a failed graph read', () => {
+  const noteReader = () =>
+    makeReader({
+      scan: vi.fn().mockResolvedValue(['a.md']),
+      readNotes: vi.fn().mockResolvedValue([{ path: 'a.md', frontmatter: {}, content: '' }]),
+    });
+
+  it('fails a single-vault call with DEPENDENCY_ERROR', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const registry = makeTestRegistry([
+        { name: 'v', reader: noteReader(), graph: failingGraph('backlinkCounts', 'lost') },
+      ]);
+
+      const error = await expectToolError(regOf(registry), { filter: {} });
+
+      expect(error).toEqual(graphReadFailure('v', 'query_notes'));
+      expect(stderr).toHaveBeenCalledExactlyOnceWith(
+        'neuro-vault graph: query_notes failed for vault "v": lost',
+      );
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
+  it('lists the vault in failed_vaults in a fan-out; the other vault answers', async () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const registry = makeTestRegistry([
+        { name: 'vault-a', reader: noteReader() },
+        { name: 'vault-b', reader: noteReader(), graph: failingGraph('backlinkCounts') },
+      ]);
+
+      const result = await callTool<{
+        results_by_vault: Array<{ vault: string; count: number }>;
+        failed_vaults: Array<{ vault: string; error: unknown }>;
+      }>(regOf(registry), { filter: {} });
+
+      expect(result.failed_vaults).toEqual([
+        { vault: 'vault-b', error: graphReadFailure('vault-b', 'query_notes') },
+      ]);
+      expect(result.results_by_vault).toEqual([
+        expect.objectContaining({ vault: 'vault-a', count: 1 }),
+      ]);
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

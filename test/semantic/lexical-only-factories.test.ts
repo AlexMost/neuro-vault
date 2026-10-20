@@ -4,7 +4,8 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { FsVaultReader } from '../../src/lib/obsidian/vault-reader.js';
+import { GraphReadError } from '../../src/lib/obsidian/graph-reader.js';
+import { FsVaultReader, type VaultReader } from '../../src/lib/obsidian/vault-reader.js';
 import { WikilinkGraphIndex } from '../../src/lib/obsidian/wikilink-graph.js';
 import { createLexicalOnlyVaultFactories } from '../../src/modules/semantic/index.js';
 
@@ -73,5 +74,24 @@ describe('createLexicalOnlyVaultFactories (--no-semantic)', () => {
       })
       .backlinkCounts(['Z.md']);
     expect(builds).toHaveBeenCalledTimes(3);
+  });
+
+  it('a failed build reads as a GraphReadError', async () => {
+    const cause = new Error('EACCES: permission denied');
+    const reader = {
+      scan: vi.fn(async () => {
+        throw cause;
+      }),
+    } as unknown as VaultReader;
+    const graph = createLexicalOnlyVaultFactories().graphFactory({
+      vaultRoot: '/nowhere',
+      vaultName: 'v',
+      reader,
+      enabled: true,
+    });
+
+    const error = await graph.backlinkCounts(['Z.md']).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GraphReadError);
+    expect((error as GraphReadError).cause).toBe(cause);
   });
 });

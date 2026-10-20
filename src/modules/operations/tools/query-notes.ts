@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { graphForTool } from '../../../lib/tool-graph.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
@@ -45,7 +46,7 @@ async function runQueryForEntry(
   entry: IRegisteredVault,
   input: QueryNotesToolInput & { vault?: string },
 ): Promise<QueryNotesResultWithVault> {
-  const raw = await runQueryNotes(input, entry.reader, entry.graph);
+  const raw = await runQueryNotes(input, entry.reader, graphForTool(entry, 'query_notes'));
   const results: QueryNotesResultItemWithVault[] = raw.results.map((item) => ({
     vault: entry.name,
     ...item,

@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { getNoteLinks } from '../../../lib/obsidian/index.js';
 import type { ICorpusReader } from '../../../lib/obsidian/corpus/corpus.js';
+import { graphForTool } from '../../../lib/tool-graph.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
@@ -87,7 +88,7 @@ async function resolveForwardLinks(args: {
       notePath: args.notePath,
       readNoteContent: (vaultRelativePath) =>
         readNoteContentForEntry(args.entry, vaultRelativePath),
-      resolver: args.entry.graph,
+      resolver: graphForTool(args.entry, 'get_similar_notes'),
     });
   } catch (err) {
     if (isEnoent(err)) {

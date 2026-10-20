@@ -1,4 +1,5 @@
 import type { IResource } from '../../../lib/resource-registry.js';
+import { graphForTool } from '../../../lib/tool-graph.js';
 import type { IRegisteredVault } from '../../../lib/vault-registry.js';
 import { computeVaultOverview, type VaultOverview } from '../../../lib/obsidian/vault-overview.js';
 
@@ -21,7 +22,7 @@ export function buildVaultOverviewResource(
     handler: async () =>
       computeVaultOverview({
         reader: entry.reader,
-        graph: entry.graph,
+        graph: graphForTool(entry, uri),
         readConventions: entry.readConventions,
       }),
   };

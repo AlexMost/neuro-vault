@@ -1,5 +1,6 @@
 import type { ITool } from '../../../lib/tool-registry.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
+import { graphForTool } from '../../../lib/tool-graph.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
 
@@ -53,7 +54,7 @@ export function buildReadDailyTool(deps: ReadDailyDeps): ITool<Input, ReadDailyH
           limit: NOTES_TODAY_CAP,
         },
         entry.reader,
-        entry.graph,
+        graphForTool(entry, 'read_daily'),
       );
 
       const notesToday: NotesTodayItem[] = query.results.map((item) => ({
