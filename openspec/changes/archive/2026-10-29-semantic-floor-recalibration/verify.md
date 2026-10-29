@@ -57,9 +57,11 @@ is 5b256ba. Both ran on the same vault commit; reports are in the vault's privat
 
   Lowering the deep floor does not recover recall until 0.40, and 0.40 gives back half the noise
   win. Between 0.42 and 0.44 recall is lower than at 0.45: the extra weak seeds recruit expansion
-  neighbours that push relevant notes out of the 12-note cap. 0.45 is kept, as decided. Whether
-  the deep R@10 loss is acceptable is the owner's ruling at PR review. #232 (expansion as tail fill)
-  is the epic's change aimed at deep recall.
+  neighbours that push relevant notes out of the 12-note cap. 0.45 is kept, as decided.
+
+- **Owner's ruling (PR #235 review, 2026-10-30):** "Accept, keep 0.45". The deep R@10 loss is
+  accepted and the floors stay as they are. Deep recall is the lever of #232 (expansion as tail
+  fill), the epic's next change after this one.
 
 ## 1. Structural Validation
 
@@ -120,8 +122,9 @@ Commit range: `ea81059..1872712`.
 ## Overall Decision
 
 - [ ] ✅ PASS
-- [x] ⚠️ PASS WITH WARNINGS — the deep R@10 guard is not met (0.824 against about 0.843). It goes to
-      the owner's ruling at PR review, together with the open ADR question in design.md.
+- [x] ⚠️ PASS WITH WARNINGS — the deep R@10 guard is not met (0.824 against about 0.843). The
+      owner accepted it at PR review ("Accept, keep 0.45"); deep recall moves to #232. The ADR
+      question in design.md is still open.
 - [ ] ❌ FAIL
 
-**Next step:** retrospective → archive → PR, which flags the deep R@10 breach.
+**Next step:** owner review of PR #235; the ADR-0024 question is pending.
