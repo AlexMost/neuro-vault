@@ -8,10 +8,12 @@ import { TEST_SIMILARITY } from '../_identity.js';
 import { corpusOver } from '../_memory-corpus.js';
 import {
   EVAL_TOP_K,
+  POSITIONAL,
   bestRelevantSimilarity,
-  createFusedContext,
+  createLexicalContext,
   evalConfig,
   rankQuery,
+  type LexicalContext,
 } from '../../eval/pipelines.js';
 
 // 3-dim vectors are fine here: pipelines never touch ShardStore's dims guard.
@@ -30,8 +32,9 @@ describe('semantic pipeline', () => {
   it('ranks by cosine at threshold 0 and caps at top-10', async () => {
     const ranked = await rankQuery({
       pipeline: 'semantic',
-      query: 'q',
-      queryVector: QUERY_VECTOR,
+      queries: ['q'],
+      vectors: new Map([['q', QUERY_VECTOR]]),
+      shape: POSITIONAL,
       corpus: corpusOver(SOURCES),
       similarity: TEST_SIMILARITY,
     });
@@ -62,13 +65,14 @@ describe('fused pipeline', () => {
 
   it('fuses semantic and lexical legs with production fuseRanks', async () => {
     vaultRoot = await makeFusedVault();
-    const fusedContext = await createFusedContext(vaultRoot);
+    const context = await createLexicalContext(vaultRoot);
     const ranked = await rankQuery({
       pipeline: 'fused',
-      query: 'quirkyterm',
-      queryVector: QUERY_VECTOR,
+      queries: ['quirkyterm'],
+      vectors: new Map([['quirkyterm', QUERY_VECTOR]]),
+      shape: POSITIONAL,
       corpus: corpusOver(SOURCES),
-      fusedContext,
+      context,
       similarity: TEST_SIMILARITY,
     });
     const top = ranked.map((r) => r.path);
@@ -118,13 +122,14 @@ describe('fused pipeline', () => {
 
   it('ranks exactly as runRetrievalPipeline at deep effort, threshold 0, cap top-k', async () => {
     vaultRoot = await makeFanVault();
-    const fusedContext = await createFusedContext(vaultRoot);
+    const context = await createLexicalContext(vaultRoot);
     const ranked = await rankQuery({
       pipeline: 'fused',
-      query: 'quirkyterm',
-      queryVector: QUERY_VECTOR,
+      queries: ['quirkyterm'],
+      vectors: new Map([['quirkyterm', QUERY_VECTOR]]),
+      shape: POSITIONAL,
       corpus: corpusOver(fanSources()),
-      fusedContext,
+      context,
       similarity: TEST_SIMILARITY,
     });
     const { candidates } = await runRetrievalPipeline(
@@ -138,7 +143,7 @@ describe('fused pipeline', () => {
       },
       {
         corpus: corpusOver(fanSources()),
-        lexical: fusedContext.lexical,
+        lexical: context.lexical,
         filterExisting: (paths) => Promise.resolve(new Set(paths)),
         embeddingProvider: {
           initialize: () => Promise.resolve(),
@@ -147,7 +152,9 @@ describe('fused pipeline', () => {
         similarity: TEST_SIMILARITY,
       },
     );
-    expect(ranked).toEqual(candidates.map((c) => ({ path: c.path, score: c.score })));
+    expect(ranked.map(({ path, score }) => ({ path, score }))).toEqual(
+      candidates.map((c) => ({ path: c.path, score: c.score })),
+    );
     // Non-vacuity: top-k is the cut, and every leg reaches the fused list.
     expect(ranked).toHaveLength(EVAL_TOP_K);
     expect(candidates.some((c) => c.lexical !== undefined && c.semantic === undefined)).toBe(true);
@@ -157,16 +164,17 @@ describe('fused pipeline', () => {
 
   it('runs the legs with the knobs its config records', async () => {
     vaultRoot = await makeFanVault();
-    const fusedContext = await createFusedContext(vaultRoot);
-    const lexicalSearch = vi.spyOn(fusedContext.lexical, 'search');
+    const context = await createLexicalContext(vaultRoot);
+    const lexicalSearch = vi.spyOn(context.lexical, 'search');
     const corpus = corpusOver(fanSources());
     const nearest = vi.spyOn(corpus, 'nearest');
     await rankQuery({
       pipeline: 'fused',
-      query: 'quirkyterm',
-      queryVector: QUERY_VECTOR,
+      queries: ['quirkyterm'],
+      vectors: new Map([['quirkyterm', QUERY_VECTOR]]),
+      shape: POSITIONAL,
       corpus,
-      fusedContext,
+      context,
       similarity: TEST_SIMILARITY,
     });
     const config = evalConfig(TEST_SIMILARITY);
@@ -190,19 +198,140 @@ describe('fused pipeline', () => {
 
   it('fails instead of reporting a lexical-only run when the semantic leg throws', async () => {
     vaultRoot = await makeFusedVault();
-    const fusedContext = await createFusedContext(vaultRoot);
+    const context = await createLexicalContext(vaultRoot);
     const broken = corpusOver(SOURCES);
     broken.nearest = () => Promise.reject(new Error('corpus down'));
     await expect(
       rankQuery({
         pipeline: 'fused',
-        query: 'quirkyterm',
-        queryVector: QUERY_VECTOR,
+        queries: ['quirkyterm'],
+        vectors: new Map([['quirkyterm', QUERY_VECTOR]]),
+        shape: POSITIONAL,
         corpus: broken,
-        fusedContext,
+        context,
         similarity: TEST_SIMILARITY,
       }),
     ).rejects.toThrow('corpus down');
+  });
+
+  const fanArgs = (corpus: ReturnType<typeof corpusOver>, context: LexicalContext) => ({
+    queries: ['quirkyterm'],
+    vectors: new Map([['quirkyterm', QUERY_VECTOR]]),
+    corpus,
+    context,
+    similarity: TEST_SIMILARITY,
+  });
+
+  it('lexical is the mode: lexical path — no corpus read, every note from the lexical leg', async () => {
+    vaultRoot = await makeFanVault();
+    const context = await createLexicalContext(vaultRoot);
+    const corpus = corpusOver(fanSources());
+    const nearest = vi.spyOn(corpus, 'nearest');
+    const ranked = await rankQuery({
+      pipeline: 'lexical',
+      shape: POSITIONAL,
+      ...fanArgs(corpus, context),
+    });
+    expect(nearest).not.toHaveBeenCalled();
+    expect(ranked.map((r) => r.path)).toContain(FAN_LEXICAL_ONLY);
+    expect(ranked.every((r) => r.found_in?.join() === 'lexical')).toBe(true);
+  });
+
+  it.each(['quick', 'deep'] as const)(
+    'a production %s run leaves floors, fallback and cap to the profile, as search_notes does',
+    async (effort) => {
+      vaultRoot = await makeFanVault();
+      const context = await createLexicalContext(vaultRoot);
+      const corpus = corpusOver(fanSources());
+      const nearest = vi.spyOn(corpus, 'nearest');
+      const ranked = await rankQuery({
+        pipeline: 'fused',
+        shape: { run: 'production', effort },
+        ...fanArgs(corpus, context),
+      });
+      const { candidates } = await runRetrievalPipeline(
+        { queries: ['quirkyterm'], effort, semantic: true },
+        {
+          corpus: corpusOver(fanSources()),
+          lexical: context.lexical,
+          filterExisting: (paths) => Promise.resolve(new Set(paths)),
+          embeddingProvider: {
+            initialize: () => Promise.resolve(),
+            embedQuery: () => Promise.resolve(QUERY_VECTOR),
+          },
+          similarity: TEST_SIMILARITY,
+        },
+      );
+      expect(ranked.map(({ path, score }) => ({ path, score }))).toEqual(
+        candidates.map((c) => ({ path: c.path, score: c.score })),
+      );
+      const config = evalConfig(TEST_SIMILARITY, { run: 'production', effort });
+      expect(nearest.mock.calls[0][1]).toMatchObject({
+        threshold: TEST_SIMILARITY[effort],
+        limit: config.semantic_pool + 1,
+      });
+      expect(ranked.length).toBeLessThanOrEqual(config.top_k);
+      // Non-vacuity: the effort's merged cap is the cut, not eval's top-10.
+      expect(ranked).toHaveLength(effort === 'quick' ? 5 : 11);
+    },
+  );
+
+  it('ranks an array entry as one call: every string embedded, one seed read for all', async () => {
+    vaultRoot = await makeFanVault();
+    const context = await createLexicalContext(vaultRoot);
+    const corpus = corpusOver(fanSources());
+    const nearest = vi.spyOn(corpus, 'nearest');
+    const ranked = await rankQuery({
+      pipeline: 'fused',
+      shape: POSITIONAL,
+      queries: ['quirkyterm', 'filler'],
+      vectors: new Map([
+        ['quirkyterm', QUERY_VECTOR],
+        ['filler', [0, 1, 0]],
+      ]),
+      corpus,
+      context,
+      similarity: TEST_SIMILARITY,
+    });
+    expect(nearest.mock.calls[0][0]).toEqual([{ vector: QUERY_VECTOR }, { vector: [0, 1, 0] }]);
+    expect(ranked.map((r) => r.path)).toContain(FAN_LEXICAL_ONLY);
+  });
+
+  it('fails on a query string the caller did not embed', async () => {
+    vaultRoot = await makeFanVault();
+    const context = await createLexicalContext(vaultRoot);
+    await expect(
+      rankQuery({
+        pipeline: 'fused',
+        shape: POSITIONAL,
+        ...fanArgs(corpusOver(fanSources()), context),
+        queries: ['quirkyterm', 'unembedded'],
+      }),
+    ).rejects.toThrow(/no vector for query "unembedded"/);
+  });
+});
+
+describe('semantic pipeline guards', () => {
+  const base = {
+    pipeline: 'semantic' as const,
+    vectors: new Map([
+      ['a', QUERY_VECTOR],
+      ['b', QUERY_VECTOR],
+    ]),
+    corpus: corpusOver(SOURCES),
+    similarity: TEST_SIMILARITY,
+  };
+
+  it('ranks one string only', async () => {
+    await expect(rankQuery({ ...base, shape: POSITIONAL, queries: ['a', 'b'] })).rejects.toThrow(
+      /one embedded query string/,
+    );
+  });
+
+  it('runs positional only', async () => {
+    await expect(
+      rankQuery({ ...base, shape: { run: 'production', effort: 'quick' }, queries: ['a'] }),
+    ).rejects.toThrow(/positional only/);
   });
 });
 
@@ -214,12 +343,55 @@ describe('bestRelevantSimilarity', () => {
         ['near.md', { path: 'near.md', embedding: new Float32Array([1, 0]), blocks: [] }],
       ]),
     );
-    expect(await bestRelevantSimilarity([1, 0], ['far.md', 'gone.md'], corpus)).toBeCloseTo(0.6);
-    expect(await bestRelevantSimilarity([1, 0], ['gone.md'], corpus)).toBeNull();
+    expect(await bestRelevantSimilarity([[1, 0]], ['far.md', 'gone.md'], corpus)).toBeCloseTo(0.6);
+    expect(await bestRelevantSimilarity([[1, 0]], ['gone.md'], corpus)).toBeNull();
+  });
+
+  it('takes the best over every query vector of the call, and is null for a control', async () => {
+    const corpus = corpusOver(
+      new Map([
+        ['far.md', { path: 'far.md', embedding: new Float32Array([0.6, 0.8]), blocks: [] }],
+      ]),
+    );
+    expect(
+      await bestRelevantSimilarity(
+        [
+          [1, 0],
+          [0, 1],
+        ],
+        ['far.md'],
+        corpus,
+      ),
+    ).toBeCloseTo(0.8);
+    expect(await bestRelevantSimilarity([[1, 0]], [], corpus)).toBeNull();
   });
 });
 
 describe('evalConfig', () => {
+  it('a production run records the profile floors, its fallback and the effort’s pools and cap', () => {
+    expect(evalConfig(TEST_SIMILARITY, { run: 'production', effort: 'quick' })).toMatchObject({
+      run: 'production',
+      effort: 'quick',
+      top_k: 5,
+      semantic_threshold: TEST_SIMILARITY.quick,
+      fallback_threshold: TEST_SIMILARITY.fallback,
+      semantic_pool: 3,
+      expansion: false,
+    });
+    expect(evalConfig(TEST_SIMILARITY, { run: 'production', effort: 'deep' })).toMatchObject({
+      top_k: 12,
+      semantic_threshold: TEST_SIMILARITY.deep,
+      expansion: true,
+    });
+  });
+
+  it('a positional run records no fallback', () => {
+    expect(evalConfig(TEST_SIMILARITY)).toMatchObject({
+      run: 'positional',
+      fallback_threshold: null,
+    });
+  });
+
   // The pool numbers are pinned against the run itself in 'runs the legs with
   // the knobs its config records'; a retune must not need an edit here.
   it('records the fixed knobs', () => {

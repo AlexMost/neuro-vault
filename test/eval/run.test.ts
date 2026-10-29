@@ -23,12 +23,27 @@ import {
 } from '../../src/lib/model-profiles.js';
 
 describe('parseEvalArgs', () => {
-  it('parses value flags and defaults model and stats', () => {
+  it('parses value flags and defaults run, effort, model and stats', () => {
     expect(parseEvalArgs(['--vault', '/v', '--pipeline', 'fused'])).toEqual({
       vault: '/v',
       pipeline: 'fused',
+      run: 'positional',
+      effort: 'deep',
       model: resolveModelProfile(DEFAULT_MODEL_KEY),
       stats: false,
+    });
+  });
+
+  it('a production run defaults to the tool’s own default effort, and takes --effort', () => {
+    const base = ['--vault', '/v', '--run', 'production'];
+    expect(parseEvalArgs([...base, '--pipeline', 'lexical'])).toMatchObject({
+      pipeline: 'lexical',
+      run: 'production',
+      effort: 'quick',
+    });
+    expect(parseEvalArgs([...base, '--pipeline', 'fused', '--effort', 'deep'])).toMatchObject({
+      run: 'production',
+      effort: 'deep',
     });
   });
 
@@ -49,7 +64,12 @@ describe('parseEvalArgs', () => {
 
   it.each([
     [['--pipeline', 'semantic'], /--vault/],
-    [['--vault', '/v', '--pipeline', 'reranked'], /semantic.*fused/s],
+    [['--vault', '/v', '--pipeline', 'reranked'], /semantic.*fused.*lexical/s],
+    [['--vault', '/v', '--run', 'live'], /positional.*production/s],
+    [['--vault', '/v', '--run', 'production', '--effort', 'max'], /quick.*deep/s],
+    [['--vault', '/v', '--effort', 'quick'], /positional run is deep/],
+    [['--vault', '/v', '--run', 'production'], /semantic pipeline is a positional/],
+    [['--vault', '/v', '--pipeline', 'lexical', '--stats'], /drop --pipeline lexical/],
     [['--vault', '/v', '--pipeline', 'semantic', '--bogus'], /--bogus/],
     [['--vault', '--pipeline'], /--vault/],
     [
@@ -135,6 +155,7 @@ describe('runEval end-to-end (stub embedder)', () => {
   const GOLDEN = `
 - id: q001
   query: "the topic"
+  class: concept
   lang: en
   relevant:
     - Notes/target.md
@@ -143,7 +164,14 @@ describe('runEval end-to-end (stub embedder)', () => {
   it('runs semantic and writes a correct report', async () => {
     await makeVault(GOLDEN);
     const { report, reportFile } = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: false,
+      },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     expect(reportFile).toContain('semantic');
@@ -165,13 +193,20 @@ describe('runEval end-to-end (stub embedder)', () => {
   it('records the profile and the evidence behind each ranking', async () => {
     await makeVault(GOLDEN);
     const { report, reportFile } = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: false,
+      },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     expect(report.model_key).toBe('granite-97m');
     expect(report.identity).toEqual(identityOf(GRANITE));
     expect(report.model_id).toBe(report.identity.model_id);
-    expect(path.basename(reportFile)).toMatch(/-granite-97m-semantic\.json$/);
+    expect(path.basename(reportFile)).toMatch(/-granite-97m-positional-semantic-deep\.json$/);
     expect(report.per_query[0]).toMatchObject({
       top: ['Notes/target.md', 'Notes/other.md'],
       top_scores: [1, 0],
@@ -189,7 +224,14 @@ describe('runEval end-to-end (stub embedder)', () => {
     const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(outside);
     try {
       const { report } = await runEval(
-        { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
+        {
+          vault: vaultRoot,
+          pipeline: 'semantic',
+          run: 'positional',
+          effort: 'deep',
+          model: GRANITE,
+          stats: false,
+        },
         { embed: () => Promise.resolve(unitVec(0)), resultsDir },
       );
       expect(report.code_sha).not.toBeNull();
@@ -200,10 +242,19 @@ describe('runEval end-to-end (stub embedder)', () => {
   });
 
   it('broken relevant path: fails before ranking, writes no report', async () => {
-    await makeVault(`${GOLDEN}- id: q002\n  query: x\n  lang: en\n  relevant: [Gone/nope.md]\n`);
+    await makeVault(
+      `${GOLDEN}- id: q002\n  query: x\n  class: concept\n  lang: en\n  relevant: [Gone/nope.md]\n`,
+    );
     await expect(
       runEval(
-        { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
+        {
+          vault: vaultRoot,
+          pipeline: 'semantic',
+          run: 'positional',
+          effort: 'deep',
+          model: GRANITE,
+          stats: false,
+        },
         { embed: () => Promise.reject(new Error('embed must not run')), resultsDir },
       ),
     ).rejects.toThrow(GoldenSetError);
@@ -213,7 +264,14 @@ describe('runEval end-to-end (stub embedder)', () => {
   it('fused also completes on the fixture', async () => {
     await makeVault(GOLDEN);
     const { report } = await runEval(
-      { vault: vaultRoot, pipeline: 'fused', model: GRANITE, stats: false },
+      {
+        vault: vaultRoot,
+        pipeline: 'fused',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: false,
+      },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     expect(report.metrics.overall.n).toBe(1);
@@ -222,12 +280,19 @@ describe('runEval end-to-end (stub embedder)', () => {
 
   it('embeds each golden query exactly once, for the semantic and the fused pipeline alike', async () => {
     await makeVault(
-      `${GOLDEN}- id: q002\n  query: other\n  lang: en\n  relevant: [Notes/other.md]\n`,
+      `${GOLDEN}- id: q002\n  query: other\n  class: concept\n  lang: en\n  relevant: [Notes/other.md]\n`,
     );
     for (const pipeline of ['semantic', 'fused'] as const) {
       const embed = vi.fn(() => Promise.resolve(unitVec(0)));
       const { report } = await runEval(
-        { vault: vaultRoot, pipeline, model: GRANITE, stats: false },
+        {
+          vault: vaultRoot,
+          pipeline,
+          run: 'positional',
+          effort: 'deep',
+          model: GRANITE,
+          stats: false,
+        },
         { embed, resultsDir },
       );
       expect(report.golden.count).toBe(2);
@@ -238,7 +303,14 @@ describe('runEval end-to-end (stub embedder)', () => {
   it('leaves the statistics out of a report that did not ask for them', async () => {
     await makeVault(GOLDEN);
     const { report } = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: false,
+      },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     expect(report).not.toHaveProperty('stats');
@@ -247,7 +319,14 @@ describe('runEval end-to-end (stub embedder)', () => {
   it('with --stats, measures the populations against the selected profile', async () => {
     await makeVault(GOLDEN);
     const { report, reportFile } = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+      },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     expect(report.stats?.pass_rates.deep.threshold).toBe(GRANITE.similarity.deep);
@@ -266,13 +345,22 @@ describe('runEval end-to-end (stub embedder)', () => {
     await addExtraNotes();
     const embed = () => Promise.resolve(unitVec(0));
     const first = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+      },
       { embed, resultsDir },
     );
     const { report } = await runEval(
       {
         vault: vaultRoot,
         pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
         model: GRANITE,
         stats: true,
         baseline: first.reportFile,
@@ -291,13 +379,22 @@ describe('runEval end-to-end (stub embedder)', () => {
     await addExtraNotes();
     const embed = () => Promise.resolve(unitVec(0));
     const first = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+      },
       { embed, resultsDir },
     );
     const { report } = await runEval(
       {
         vault: vaultRoot,
         pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
         model: GRANITE,
         stats: true,
         baseline: path.relative(process.cwd(), first.reportFile),
@@ -318,13 +415,28 @@ describe('runEval end-to-end (stub embedder)', () => {
     await addExtraNotes();
     const embed = () => Promise.resolve(unitVec(0));
     const first = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+      },
       { embed, resultsDir },
     );
     const retired = path.join(resultsDir, 'retired-baseline.json');
     await writeFile(retired, JSON.stringify({ ...first.report, model_key: 'bge-micro-v2' }));
     const { report } = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: retired },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+        baseline: retired,
+      },
       { embed, resultsDir },
     );
     expect(report.stats?.baseline?.model_key).toBe('bge-micro-v2');
@@ -341,7 +453,14 @@ describe('runEval end-to-end (stub embedder)', () => {
     await addExtraNotes();
     const embed = vi.fn(() => Promise.resolve(unitVec(0)));
     const first = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+      },
       { embed, resultsDir },
     );
     const broken = JSON.parse(await readFile(first.reportFile, 'utf8')) as EvalReport;
@@ -350,7 +469,15 @@ describe('runEval end-to-end (stub embedder)', () => {
     await writeFile(brokenFile, JSON.stringify(broken));
     embed.mockClear();
     const run = runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: brokenFile },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+        baseline: brokenFile,
+      },
       { embed, resultsDir },
     );
     await expect(run).rejects.toThrow(UsageError);
@@ -363,7 +490,14 @@ describe('runEval end-to-end (stub embedder)', () => {
     await addExtraNotes();
     const embed = vi.fn(() => Promise.resolve(unitVec(0)));
     const first = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+      },
       { embed, resultsDir },
     );
     const ranked = structuredClone(first.report);
@@ -372,7 +506,15 @@ describe('runEval end-to-end (stub embedder)', () => {
     await writeFile(rankedFile, JSON.stringify(ranked));
     embed.mockClear();
     const run = runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: rankedFile },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+        baseline: rankedFile,
+      },
       { embed, resultsDir },
     );
     await expect(run).rejects.toThrow(UsageError);
@@ -385,7 +527,14 @@ describe('runEval end-to-end (stub embedder)', () => {
     await addExtraNotes();
     const embed = vi.fn(() => Promise.resolve(unitVec(0)));
     const first = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+      },
       { embed, resultsDir },
     );
     // An older report, written before a default existed.
@@ -395,7 +544,15 @@ describe('runEval end-to-end (stub embedder)', () => {
     await writeFile(olderFile, JSON.stringify(older));
     embed.mockClear();
     const run = runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: true, baseline: olderFile },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+        baseline: olderFile,
+      },
       { embed, resultsDir },
     );
     await expect(run).rejects.toThrow(/older-baseline\.json: pass_rates\.duplicates/);
@@ -405,7 +562,14 @@ describe('runEval end-to-end (stub embedder)', () => {
   it('refuses a --baseline that is not a --stats report, before embedding anything', async () => {
     await makeVault(GOLDEN);
     const plain = await runEval(
-      { vault: vaultRoot, pipeline: 'semantic', model: GRANITE, stats: false },
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: false,
+      },
       { embed: () => Promise.resolve(unitVec(0)), resultsDir },
     );
     const embed = vi.fn(() => Promise.resolve(unitVec(0)));
@@ -413,6 +577,8 @@ describe('runEval end-to-end (stub embedder)', () => {
       {
         vault: vaultRoot,
         pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
         model: GRANITE,
         stats: true,
         baseline: plain.reportFile,
@@ -430,6 +596,8 @@ describe('runEval end-to-end (stub embedder)', () => {
       {
         vault: vaultRoot,
         pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
         model: GRANITE,
         stats: true,
         baseline: path.join(resultsDir, 'missing.json'),
@@ -447,6 +615,8 @@ describe('runEval end-to-end (stub embedder)', () => {
       {
         vault: vaultRoot,
         pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
         model: resolveModelProfile('harrier-270m'),
         stats: false,
       },
@@ -457,6 +627,144 @@ describe('runEval end-to-end (stub embedder)', () => {
       `own corpus at ${modelCorpusDir(vaultRoot, 'harrier-270m')} is missing or empty (this vault has corpora for: granite-97m) — build it with: neuro-vault-mcp index --vault ${vaultRoot} --model harrier-270m`,
     );
     expect(embed).not.toHaveBeenCalled();
+  });
+
+  // One answerable string entry, one mixed-language array entry, one control.
+  const MIXED_GOLDEN = `${GOLDEN}- id: q002
+  query: ["topic", "тема"]
+  class: name
+  lang: mixed
+  relevant: [Notes/target.md]
+- id: c001
+  query: "absent subject"
+  class: control
+  lang: en
+  relevant: []
+`;
+
+  it('a production fused run scores controls for noise and records coverage and legs', async () => {
+    await makeVault(MIXED_GOLDEN);
+    const { report, reportFile } = await runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'fused',
+        run: 'production',
+        effort: 'quick',
+        model: GRANITE,
+        stats: false,
+      },
+      { embed: () => Promise.resolve(unitVec(0)), resultsDir },
+    );
+    expect(path.basename(reportFile)).toMatch(/-granite-97m-production-fused-quick\.json$/);
+    expect(report).toMatchObject({ format_version: 2, run: 'production', effort: 'quick' });
+    expect(report.config).toMatchObject({
+      top_k: 5,
+      semantic_threshold: GRANITE.similarity.quick,
+      fallback_threshold: GRANITE.similarity.fallback,
+    });
+    expect(report.golden).toMatchObject({ count: 3, scored: 3, skipped_ids: [] });
+    expect(report.metrics.overall).toMatchObject({ answerable: 2, controls: 1 });
+    // The stub embeds everything onto target.md, so the control returns it: noise.
+    expect(report.metrics.overall.control_hit_rate).toBe(1);
+    expect(report.metrics.class_lang['name/mixed']).toMatchObject({ n: 1, hit_at_3: 1 });
+    expect(report.coverage).toEqual({
+      relevant_paths_total: 2,
+      relevant_paths_indexed: 2,
+      entries_unwinnable: 0,
+      unwinnable_ids: [],
+      corpus_stale_paths: 0,
+    });
+    expect(report.diagnostics?.control.returned).toBe(report.per_query[2].result_count);
+    expect(report.per_query[2].top_found_in?.length).toBe(report.per_query[2].result_count);
+  });
+
+  it('a lexical production run completes without the semantic leg', async () => {
+    await makeVault(MIXED_GOLDEN);
+    const { report } = await runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'lexical',
+        run: 'production',
+        effort: 'quick',
+        model: GRANITE,
+        stats: false,
+      },
+      { embed: () => Promise.resolve(unitVec(0)), resultsDir },
+    );
+    expect(report.diagnostics?.answerable.semantic).toBe(0);
+    expect(report.per_query[0].top).toContain('Notes/target.md'); // "topic" is in its body
+  });
+
+  it('semantic skips array entries, naming them, and leaves out the leg diagnostics', async () => {
+    await makeVault(MIXED_GOLDEN);
+    const { report } = await runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: false,
+      },
+      { embed: () => Promise.resolve(unitVec(0)), resultsDir },
+    );
+    expect(report.golden).toMatchObject({ count: 3, scored: 2, skipped_ids: ['q002'] });
+    expect(report.per_query.map((q) => q.id)).toEqual(['q001', 'c001']);
+    expect(report).not.toHaveProperty('diagnostics');
+  });
+
+  it('embeds each distinct query string once, array strings included', async () => {
+    await makeVault(MIXED_GOLDEN);
+    const embed = vi.fn((_text: string) => Promise.resolve(unitVec(0)));
+    await runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'fused',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: false,
+      },
+      { embed, resultsDir },
+    );
+    expect(embed.mock.calls.map(([text]) => text).sort()).toEqual(
+      ['absent subject', 'the topic', 'topic', 'тема'].sort(),
+    );
+  });
+
+  it('with --stats, separates the top-1 of control and answerable entries, arrays included', async () => {
+    await makeVault(MIXED_GOLDEN);
+    const embed = (text: string) =>
+      Promise.resolve(text === 'absent subject' ? unitVec(40) : unitVec(0));
+    const { report } = await runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+      },
+      { embed, resultsDir },
+    );
+    expect(report.stats?.separation.answerable).toMatchObject({ n: 2, min: 1 });
+    expect(report.stats?.separation.control).toMatchObject({ n: 1, max: 0 });
+  });
+
+  it('writes the report beside the golden set when no results directory is given', async () => {
+    await makeVault(GOLDEN);
+    const { reportFile } = await runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: false,
+      },
+      { embed: () => Promise.resolve(unitVec(0)) },
+    );
+    expect(path.dirname(reportFile)).toBe(path.join(vaultRoot, '.neuro-vault/eval/results'));
   });
 });
 

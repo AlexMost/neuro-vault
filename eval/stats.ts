@@ -52,6 +52,23 @@ export interface Guards {
 
 export type DefaultKey = keyof SimilarityDefaults;
 
+/**
+ * Top-1 similarity on control vs answerable entries: how far apart the best match for a
+ * query the vault cannot answer sits from the best match for one it can. Input for the
+ * query-side thresholds — a floor between the two distributions drops control noise
+ * without dropping answers.
+ */
+export interface Separation {
+  answerable: Quantiles;
+  control: Quantiles;
+}
+
+/** One golden entry's top-1: the best cosine any of its query strings reaches on any note. */
+export interface EntryTop1 {
+  control: boolean;
+  similarity: number;
+}
+
 export interface CalibrationStats {
   populations: Record<keyof Populations, Quantiles>;
   pass_rates: Record<
@@ -59,6 +76,7 @@ export interface CalibrationStats {
     { population: keyof Populations; threshold: number; pass_rate: number }
   >;
   guards: Guards;
+  separation: Separation;
   /** `threshold` is null when this run's population is empty — there is nothing to match. */
   suggested?: Record<DefaultKey, { baseline_pass_rate: number; threshold: number | null }>;
   /** The report `suggested` was derived from; present exactly when `suggested` is. */
@@ -242,10 +260,18 @@ export function computeGuards(
   };
 }
 
+export function computeSeparation(top1: EntryTop1[]): Separation {
+  return {
+    answerable: quantiles(top1.filter((t) => !t.control).map((t) => t.similarity)),
+    control: quantiles(top1.filter((t) => t.control).map((t) => t.similarity)),
+  };
+}
+
 export function computeCalibrationStats(args: {
   populations: Populations;
   similarity: SimilarityDefaults;
   perQuery: QueryScore[];
+  top1: EntryTop1[];
   deepPool: number;
   baseline?: CalibrationStats;
 }): CalibrationStats {
@@ -269,6 +295,7 @@ export function computeCalibrationStats(args: {
     ) as CalibrationStats['populations'],
     pass_rates,
     guards: computeGuards(args.perQuery, args.similarity, args.deepPool),
+    separation: computeSeparation(args.top1),
   };
   const { baseline } = args;
   if (baseline) {

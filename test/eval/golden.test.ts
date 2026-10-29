@@ -2,17 +2,25 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { GoldenSetError, goldenSetPath, loadGoldenSet, parseGoldenSet } from '../../eval/golden.js';
+import {
+  GoldenSetError,
+  goldenSetPath,
+  loadGoldenSet,
+  parseGoldenSet,
+  queriesOf,
+} from '../../eval/golden.js';
 
 const VALID = `
 - id: q001
   query: "release flow"
+  class: concept
   lang: en
   source: 2026-W20
   relevant:
     - Reflections/release flow.md
 - id: q002
   query: "векторний пошук"
+  class: concept
   lang: ua
   relevant:
     - Ideas/embeddings.md
@@ -26,24 +34,85 @@ describe('parseGoldenSet', () => {
     expect(entries[0]).toEqual({
       id: 'q001',
       query: 'release flow',
+      class: 'concept',
       lang: 'en',
       source: '2026-W20',
       relevant: ['Reflections/release flow.md'],
     });
   });
 
+  it('parses an array query as one call, normalised as the tool normalises it', () => {
+    const [e] = parseGoldenSet(
+      '- id: q1\n  query: [" вектор ", vector, вектор]\n  class: concept\n  lang: mixed\n  relevant: [a.md]',
+    );
+    expect(e.query).toEqual(['вектор', 'vector']);
+    expect(e.lang).toBe('mixed');
+    expect(queriesOf(e)).toEqual(['вектор', 'vector']);
+    expect(queriesOf({ ...e, query: 'one' })).toEqual(['one']);
+  });
+
+  it('parses a control entry: class control with relevant []', () => {
+    const [e] = parseGoldenSet(
+      '- id: c1\n  query: x\n  class: control\n  lang: en\n  relevant: []',
+    );
+    expect(e).toMatchObject({ class: 'control', relevant: [] });
+  });
+
   it.each([
-    ['missing query', '- id: q1\n  lang: en\n  relevant: [a.md]', 'q1'],
-    ['unknown lang', '- id: q1\n  query: x\n  lang: fr\n  relevant: [a.md]', 'q1'],
-    ['empty relevant', '- id: q1\n  query: x\n  lang: en\n  relevant: []', 'q1'],
-    ['missing id', '- query: x\n  lang: en\n  relevant: [a.md]', 'entry 1'],
-  ])('rejects %s naming the entry', (_name, yamlText, needle) => {
+    [
+      'missing query',
+      '- id: q1\n  class: concept\n  lang: en\n  relevant: [a.md]',
+      /q1.*missing query/,
+    ],
+    [
+      'an empty query array',
+      '- id: q1\n  query: []\n  class: concept\n  lang: en\n  relevant: [a.md]',
+      /q1.*query array of 1\.\.8/,
+    ],
+    [
+      'an oversized query array',
+      `- id: q1\n  query: [${'a,b,c,d,e,f,g,h,i'}]\n  class: concept\n  lang: en\n  relevant: [a.md]`,
+      /q1.*1\.\.8/,
+    ],
+    [
+      'a blank string in a query array',
+      '- id: q1\n  query: [a, " "]\n  class: concept\n  lang: en\n  relevant: [a.md]',
+      /q1.*empty or non-string/,
+    ],
+    [
+      'unknown lang',
+      '- id: q1\n  query: x\n  class: concept\n  lang: fr\n  relevant: [a.md]',
+      /q1.*ua, en, mixed/,
+    ],
+    [
+      'missing class',
+      '- id: q1\n  query: x\n  lang: en\n  relevant: [a.md]',
+      /q1.*concept, name, single_token, control/,
+    ],
+    [
+      'unknown class',
+      '- id: q1\n  query: x\n  class: lookup\n  lang: en\n  relevant: [a.md]',
+      /q1.*unknown class/,
+    ],
+    [
+      'empty relevant on an answerable entry',
+      '- id: q1\n  query: x\n  class: name\n  lang: en\n  relevant: []',
+      /q1.*not class: control/,
+    ],
+    [
+      'relevant paths on a control entry',
+      '- id: q1\n  query: x\n  class: control\n  lang: en\n  relevant: [a.md]',
+      /q1.*control query and must have relevant: \[\]/,
+    ],
+    ['missing relevant', '- id: q1\n  query: x\n  class: control\n  lang: en', /q1.*relevant list/],
+    ['missing id', '- query: x\n  class: concept\n  lang: en\n  relevant: [a.md]', /entry 1/],
+  ])('rejects %s naming the entry', (_name, yamlText, pattern) => {
     expect(() => parseGoldenSet(yamlText)).toThrow(GoldenSetError);
-    expect(() => parseGoldenSet(yamlText)).toThrow(needle);
+    expect(() => parseGoldenSet(yamlText)).toThrow(pattern);
   });
 
   it('rejects duplicate ids', () => {
-    const dup = `${VALID}- id: q001\n  query: y\n  lang: en\n  relevant: [b.md]\n`;
+    const dup = `${VALID}- id: q001\n  query: y\n  class: concept\n  lang: en\n  relevant: [b.md]\n`;
     expect(() => parseGoldenSet(dup)).toThrow(/duplicate.*q001/i);
   });
 
@@ -76,7 +145,7 @@ describe('loadGoldenSet', () => {
   }
 
   function oneEntry(relevant: string): string {
-    return `- id: q001\n  query: x\n  lang: en\n  relevant:\n    - "${relevant}"\n`;
+    return `- id: q001\n  query: x\n  class: concept\n  lang: en\n  relevant:\n    - "${relevant}"\n`;
   }
 
   it('resolves the fixed conventional path', () => {

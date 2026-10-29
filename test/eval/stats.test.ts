@@ -4,6 +4,7 @@ import type { QueryScore } from '../../eval/metrics.js';
 import {
   collectPopulations,
   computeCalibrationStats,
+  computeSeparation,
   computeGuards,
   DEFAULT_KEYS,
   passRate,
@@ -74,15 +75,17 @@ function score(over: Partial<QueryScore>): QueryScore {
   return {
     id: 'q',
     query: 'q',
+    class: 'concept',
     lang: 'ua',
     top: [],
     top_scores: [],
+    result_count: 0,
     relevant_ranks: [],
     best_relevant_similarity: null,
     first_relevant_rank: null,
-    precision_at_3: 0,
     reciprocal_rank: 0,
     hit_at_3: false,
+    recall_at_10: 0,
     ...over,
   };
 }
@@ -103,6 +106,22 @@ describe('computeGuards', () => {
       score({ relevant_ranks: [2], top_scores: [0.9, 0.8] }), // kept
     ];
     expect(computeGuards(perQuery, TEST_SIMILARITY, 8).quick_hit_at_3_drop).toBe(1);
+  });
+});
+
+describe('computeSeparation', () => {
+  it('summarises top-1 similarity on answerable and control entries apart', () => {
+    const separation = computeSeparation([
+      { control: false, similarity: 0.8 },
+      { control: false, similarity: 0.6 },
+      { control: true, similarity: 0.3 },
+    ]);
+    expect(separation.answerable).toMatchObject({ n: 2, min: 0.6, max: 0.8 });
+    expect(separation.control).toMatchObject({ n: 1, min: 0.3, max: 0.3 });
+  });
+
+  it('reports an empty side as n 0 rather than failing', () => {
+    expect(computeSeparation([{ control: false, similarity: 0.5 }]).control.n).toBe(0);
   });
 });
 
@@ -141,6 +160,7 @@ describe('collectPopulations + computeCalibrationStats', () => {
       populations,
       similarity: TEST_SIMILARITY,
       perQuery: [],
+      top1: [],
       deepPool: 8,
     });
     expect(Object.keys(stats.populations).sort()).toEqual(Object.keys(populations).sort());
@@ -154,6 +174,7 @@ describe('collectPopulations + computeCalibrationStats', () => {
       populations,
       similarity: TEST_SIMILARITY,
       perQuery: [],
+      top1: [],
       deepPool: 8,
     });
     expect(stats.pass_rates.deep).toEqual({
@@ -177,6 +198,7 @@ describe('collectPopulations + computeCalibrationStats', () => {
       populations,
       similarity: TEST_SIMILARITY,
       perQuery: [],
+      top1: [],
       deepPool: 8,
     });
     // A "new model" whose similarities sit lower: every vector pair is rotated apart.
@@ -192,6 +214,7 @@ describe('collectPopulations + computeCalibrationStats', () => {
       populations: shifted,
       similarity: TEST_SIMILARITY,
       perQuery: [],
+      top1: [],
       deepPool: 8,
       baseline,
     });
@@ -212,12 +235,14 @@ describe('collectPopulations + computeCalibrationStats', () => {
       populations,
       similarity: TEST_SIMILARITY,
       perQuery: [],
+      top1: [],
       deepPool: 8,
     });
     const again = computeCalibrationStats({
       populations: { ...populations, seed_all: [] },
       similarity: TEST_SIMILARITY,
       perQuery: [],
+      top1: [],
       deepPool: 8,
       baseline,
     });
