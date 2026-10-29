@@ -197,7 +197,7 @@ Lexical matching SHALL reflect the vault state at request time: content is re-re
 
 ### Requirement: Rank fusion is reciprocal-rank with adaptive k
 
-The merged order SHALL be computed as `score(note) = Σ_sources w_source / (k + rank)` with 1-based ranks and `k = clamp(round(sqrt(N)), 5, 60)` where `N` is the vault's total note count independent of any `filter`. The semantic and lexical sources SHALL contribute at weight 1; the expansion source SHALL contribute at weight `w_expansion` — a fusion parameter with default `0.85`, not exposed on the tool's input schema. Ties SHALL break by source count descending, then `path` ascending; `backlink_count` SHALL NOT participate in fusion ordering (it remains a per-entry response field). The full ordering SHALL be deterministic for a fixed vault state. Fusion SHALL consume only source ranks — lexical entries SHALL NOT acquire a numeric score in the response.
+The merged order SHALL be computed as `score(note) = Σ_sources w_source / (k + rank)` with 1-based ranks and `k = clamp(round(sqrt(N)), 5, 60)` where `N` is the vault's total note count independent of any `filter`. The semantic and lexical sources SHALL contribute at weight 1; the expansion source SHALL contribute at weight `w_expansion` — a fusion parameter with default `0.5`, not exposed on the tool's input schema. Ties SHALL break by source count descending, then `path` ascending; `backlink_count` SHALL NOT participate in fusion ordering (it remains a per-entry response field). The full ordering SHALL be deterministic for a fixed vault state. Fusion SHALL consume only source ranks — lexical entries SHALL NOT acquire a numeric score in the response.
 
 #### Scenario: presence in two sources lifts a note over single-source top hits
 

@@ -408,7 +408,7 @@ describe('evalConfig', () => {
       top_k: 10,
       semantic_threshold: 0,
       expansion_floor: 0.35,
-      expansion_weight: 0.85,
+      expansion_weight: 0.5,
       k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
     });
   });
