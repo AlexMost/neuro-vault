@@ -18,6 +18,10 @@ _Avoid_: manifest (that is where it is recorded), model version
 One ranked list of notes for a search, produced from the corpus by vector similarity, with matching blocks and expansion neighbours per note.
 _Avoid_: semantic results, vector search
 
+**Semantic floor**:
+The lowest query↔note similarity at which a note counts as a semantic hit, set per model profile and effort. The deep block-evidence floor is separate, and so is the expansion floor.
+_Avoid_: threshold (that is the caller's override), cut-off
+
 **Lexical leg**:
 One ranked list of notes for a search, produced by exact and substring matching over note titles, headings and body.
 _Avoid_: keyword search, full-text search
