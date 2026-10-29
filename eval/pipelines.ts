@@ -53,12 +53,17 @@ export function evalConfig(similarity: SimilarityDefaults, shape: RunShape = POS
     effort: shape.effort,
     top_k: positional ? EVAL_TOP_K : profile.mergedCap,
     semantic_threshold: positional ? 0 : similarity[shape.effort],
-    /** The one-shot retry production makes when a default threshold finds nothing; null when off. */
-    fallback_threshold: positional ? null : similarity.fallback,
+    /**
+     * The one-shot retry production makes when a default threshold finds nothing; null when off,
+     * including under a profile that defines no fallback.
+     */
+    fallback_threshold: positional ? null : (similarity.fallback ?? null),
     semantic_pool: profile.semanticPool,
     expansion: profile.expansion,
     expansion_limit: profile.expansionLimit,
     expansion_floor: similarity.expansionFloor,
+    /** The deep block-evidence floor; blocks are not scored, so it is a record of the run. */
+    block_floor: similarity.blockFloor,
     lexical_note_cap: profile.lexicalNoteCap,
     lexical_per_note_cap: LEXICAL_PER_NOTE_CAP,
     expansion_weight: EXPANSION_WEIGHT,

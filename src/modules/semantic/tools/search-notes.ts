@@ -82,6 +82,13 @@ export interface SearchNotesDeps {
   warn?: (message: string) => void;
 }
 
+/** The `threshold` description's retry clause: the active profile's fallback, or none. */
+function retryClause(fallback: number | undefined): string {
+  return fallback === undefined
+    ? 'with no retry — zero hits are honest'
+    : `with one retry at ${fallback}`;
+}
+
 function isFilterEmpty(filter: NoteFilter): boolean {
   const hasInclude =
     filter.path_prefix !== undefined &&
@@ -314,7 +321,7 @@ export function buildSearchNotesTool(
         .max(1)
         .optional()
         .describe(
-          `Min semantic similarity 0-1 on the semantic leg's note scores. An explicit value is a hard filter with no fallback — zero hits are honest. Omitted: effort defaults (${similarity.quick} quick / ${similarity.deep} deep) with one retry at ${similarity.fallback}. Never affects the lexical or expansion leg.`,
+          `Min semantic similarity 0-1 on the semantic leg's note scores. An explicit value is a hard filter with no fallback — zero hits are honest. Omitted: effort defaults (${similarity.quick} quick / ${similarity.deep} deep) ${retryClause(similarity.fallback)}. Never affects the lexical or expansion leg.`,
         ),
       expansion_floor: z
         .number()

@@ -146,15 +146,22 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const hitsByQuery: INoteHit[][] = (
     await corpus.nearest(anchors, { threshold, limit: limit + 1, allowed })
   ).map((hits) => hits ?? []);
-  // Step 2 (per query): fallback threshold — default thresholds only, one
-  // read for every query left empty. An explicit threshold that filters
-  // everything returns an honest zero.
+  // Step 2 (per query): fallback threshold — default thresholds only, and only
+  // under a profile that defines one; one read for every query left empty. An
+  // explicit threshold that filters everything, or a profile without a
+  // fallback, returns an honest zero.
   const fallbackByQuery = queries.map(() => false);
   const emptyQueries = hitsByQuery.flatMap((hits, i) => (hits.length === 0 ? [i] : []));
-  if (emptyQueries.length > 0 && !explicitThreshold && threshold > input.similarity.fallback) {
+  const { fallback } = input.similarity;
+  if (
+    emptyQueries.length > 0 &&
+    !explicitThreshold &&
+    fallback !== undefined &&
+    threshold > fallback
+  ) {
     const retried = await corpus.nearest(
       emptyQueries.map((i) => anchors[i]),
-      { threshold: input.similarity.fallback, limit: limit + 1, allowed },
+      { threshold: fallback, limit: limit + 1, allowed },
     );
     emptyQueries.forEach((queryIndex, k) => {
       const hits = retried[k] ?? [];
@@ -196,13 +203,14 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
   const seedPathSet = new Set(seedPaths);
 
   // Step 4: block search for every query in one read, scoped to seed notes;
-  // merge by block-key keeping max similarity.
+  // merge by block-key keeping max similarity. Deep filters at the profile's
+  // block floor, never at a note floor, so a raised note floor cannot thin it.
   const blocksByPath = new Map<string, BlockMatch[]>();
   if (seeds.length > 0) {
     const rawByQuery = await corpus.nearestBlocks(
       anchors,
       mode === 'deep'
-        ? { paths: seedPaths, threshold: input.similarity.deep, limit }
+        ? { paths: seedPaths, threshold: input.similarity.blockFloor, limit }
         : { paths: seedPaths, threshold: 0, limit: QUICK_BLOCK_LIMIT },
     );
     const rawByKey = new Map<string, BlockMatch & { path: string }>();

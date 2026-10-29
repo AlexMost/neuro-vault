@@ -58,8 +58,11 @@ export interface ObservabilityContext {
   queries: string[];
   /** Whether the caller passed an array — `query_stats` is array-query-only. */
   isMulti: boolean;
-  /** The active profile's fallback-retry threshold, named in the fallback note. */
-  fallbackThreshold: number;
+  /**
+   * The active profile's fallback-retry threshold, named in the fallback note. Absent when
+   * the profile has no fallback; the retry then never fires.
+   */
+  fallbackThreshold?: number;
   /** The vault's name, for the stderr warning only. */
   vault: string;
 }
@@ -128,7 +131,7 @@ function queryStatsNote(args: {
   lexical: number;
   tokenCounts: Record<string, number> | undefined;
   fallback: boolean;
-  fallbackThreshold: number;
+  fallbackThreshold: number | undefined;
 }): string | undefined {
   const { semantic, lexical, tokenCounts, fallback, fallbackThreshold } = args;
   if (lexical === 0 && (semantic === null || semantic === 0)) {
@@ -141,7 +144,7 @@ function queryStatsNote(args: {
     }
     return 'No hits: every token matches on its own but they never co-occur in one title, heading or paragraph — split this variant into separate array entries.';
   }
-  if (fallback) {
+  if (fallback && fallbackThreshold !== undefined) {
     return `Semantic hits came from the ${fallbackThreshold} fallback retry, so they are weaker than a normal result.`;
   }
   return undefined;
@@ -150,7 +153,7 @@ function queryStatsNote(args: {
 function queryStatsEntry(
   query: string,
   { semantic, lexical }: Omit<LegOutcomes, 'truncated'>,
-  fallbackThreshold: number,
+  fallbackThreshold: number | undefined,
 ): QueryStatsEntry {
   const ran = semantic.status === 'ran' ? semantic : undefined;
   const tokenCounts = lexical.status === 'ran' ? lexical.perQueryTokenCounts[query] : undefined;

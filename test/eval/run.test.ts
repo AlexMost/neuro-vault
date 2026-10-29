@@ -374,6 +374,42 @@ describe('runEval end-to-end (stub embedder)', () => {
     expect(report.stats?.suggested?.deep.threshold).toBe(1);
   });
 
+  it('accepts a baseline carrying a default the current profile does not define', async () => {
+    await makeVault(GOLDEN);
+    await addExtraNotes();
+    const embed = () => Promise.resolve(unitVec(0));
+    const first = await runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: GRANITE,
+        stats: true,
+      },
+      { embed, resultsDir },
+    );
+    expect(first.report.stats?.pass_rates.fallback).toBeDefined();
+    const { fallback: _fallback, ...withoutFallback } = GRANITE.similarity;
+    const { report } = await runEval(
+      {
+        vault: vaultRoot,
+        pipeline: 'semantic',
+        run: 'positional',
+        effort: 'deep',
+        model: { ...GRANITE, similarity: withoutFallback },
+        stats: true,
+        baseline: first.reportFile,
+      },
+      { embed, resultsDir },
+    );
+    expect(report.stats?.pass_rates).not.toHaveProperty('fallback');
+    expect(report.stats?.suggested).not.toHaveProperty('fallback');
+    expect(report.stats?.suggested?.deep.baseline_pass_rate).toBe(
+      first.report.stats!.pass_rates.deep.pass_rate,
+    );
+  });
+
   it('records which baseline produced the suggested thresholds', async () => {
     await makeVault(GOLDEN);
     await addExtraNotes();

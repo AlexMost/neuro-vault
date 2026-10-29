@@ -50,7 +50,27 @@ export interface Guards {
   quick_hit_at_3_drop: number;
 }
 
-export type DefaultKey = keyof SimilarityDefaults;
+/**
+ * Every default `--stats` measures. The block floor is not one: its population,
+ * query↔every block, is not collected.
+ */
+export type DefaultKey = Exclude<keyof SimilarityDefaults, 'blockFloor'>;
+
+/** One default's pass rate over its population. */
+export interface PassRate {
+  population: keyof Populations;
+  threshold: number;
+  pass_rate: number;
+}
+
+/** One default's suggestion from a baseline; `threshold` is null for an empty population. */
+export interface SuggestedThreshold {
+  baseline_pass_rate: number;
+  threshold: number | null;
+}
+
+/** Keyed by default; `fallback` is absent under a profile that defines none. */
+type PerDefault<T> = Omit<Record<DefaultKey, T>, 'fallback'> & { fallback?: T };
 
 /**
  * Top-1 similarity on control vs answerable entries: how far apart the best match for a
@@ -71,14 +91,11 @@ export interface EntryTop1 {
 
 export interface CalibrationStats {
   populations: Record<keyof Populations, Quantiles>;
-  pass_rates: Record<
-    DefaultKey,
-    { population: keyof Populations; threshold: number; pass_rate: number }
-  >;
+  pass_rates: PerDefault<PassRate>;
   guards: Guards;
   separation: Separation;
   /** `threshold` is null when this run's population is empty — there is nothing to match. */
-  suggested?: Record<DefaultKey, { baseline_pass_rate: number; threshold: number | null }>;
+  suggested?: PerDefault<SuggestedThreshold>;
   /** The report `suggested` was derived from; present exactly when `suggested` is. */
   baseline?: {
     file: string;
@@ -104,6 +121,11 @@ export const POPULATION_OF: Record<DefaultKey, keyof Populations> = {
 
 /** Every default `--stats` reports on — derived, so a new `SimilarityDefaults` key cannot be missed. */
 export const DEFAULT_KEYS = Object.keys(POPULATION_OF) as DefaultKey[];
+
+/** The defaults `similarity` defines, in {@link DEFAULT_KEYS} order — the ones a run measures. */
+export function measuredKeys(similarity: SimilarityDefaults): DefaultKey[] {
+  return DEFAULT_KEYS.filter((key) => similarity[key] !== undefined);
+}
 
 export function quantiles(values: number[]): Quantiles {
   // A typed copy sorts numerically without a comparator, at 8 bytes a value —
@@ -275,10 +297,12 @@ export function computeCalibrationStats(args: {
   deepPool: number;
   baseline?: CalibrationStats;
 }): CalibrationStats {
+  const keys = measuredKeys(args.similarity);
   const pass_rates = Object.fromEntries(
-    DEFAULT_KEYS.map((key) => {
+    keys.map((key) => {
       const population = POPULATION_OF[key];
-      const threshold = args.similarity[key];
+      // `measuredKeys` keeps only the defaults the profile defines.
+      const threshold = args.similarity[key] as number;
       return [
         key,
         { population, threshold, pass_rate: passRate(args.populations[population], threshold) },
@@ -299,15 +323,19 @@ export function computeCalibrationStats(args: {
   };
   const { baseline } = args;
   if (baseline) {
+    // A default the baseline did not measure has no rate to reproduce.
     stats.suggested = Object.fromEntries(
-      DEFAULT_KEYS.map((key) => {
-        const rate = baseline.pass_rates[key].pass_rate;
+      keys.flatMap((key) => {
+        const rate = baseline.pass_rates[key]?.pass_rate;
+        if (rate === undefined) return [];
         return [
-          key,
-          {
-            baseline_pass_rate: rate,
-            threshold: thresholdForPassRate(args.populations[POPULATION_OF[key]], rate),
-          },
+          [
+            key,
+            {
+              baseline_pass_rate: rate,
+              threshold: thresholdForPassRate(args.populations[POPULATION_OF[key]], rate),
+            },
+          ],
         ];
       }),
     ) as CalibrationStats['suggested'];

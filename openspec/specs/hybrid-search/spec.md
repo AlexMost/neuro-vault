@@ -263,7 +263,7 @@ Expansion candidates SHALL be collected across all seeds' neighbour sets with `e
 
 ### Requirement: threshold is a hard semantic filter with default-only fallback
 
-An explicitly provided `threshold` SHALL be a hard filter on the semantic leg's note scores: notes scoring below it SHALL NOT become semantic seeds, and when every note falls below it the semantic leg SHALL return zero hits — no retry, no rescue. Only when `threshold` is not provided SHALL the active model profile's effort default apply (its `quick` or `deep` value), and only then, on zero semantic hits, SHALL the leg retry once at the profile's fallback threshold; the retry's engagement SHALL be observable via `query_stats` (see Requirement: query_stats reports pre-cap per-query hit counts). `threshold` SHALL NOT affect the expansion leg, the block-evidence pass, or the lexical leg.
+An explicitly provided `threshold` SHALL be a hard filter on the semantic leg's note scores: notes scoring below it SHALL NOT become semantic seeds, and when every note falls below it the semantic leg SHALL return zero hits — no retry, no rescue. Only when `threshold` is not provided SHALL the active model profile's effort default apply (its `quick` or `deep` value), and only then, on zero semantic hits, SHALL the leg retry once at the profile's fallback threshold, provided the profile defines one. Under a profile that defines no fallback, a query with no note at or above the effort default SHALL get zero semantic hits. The retry's engagement SHALL be observable via `query_stats` (see Requirement: query_stats reports pre-cap per-query hit counts). `threshold` SHALL NOT affect the expansion leg, the block-evidence pass, or the lexical leg.
 
 #### Scenario: an explicit threshold above the hit band yields honest zero
 
@@ -277,8 +277,13 @@ An explicitly provided `threshold` SHALL be a hard filter on the semantic leg's 
 
 #### Scenario: default calls keep the fallback rescue
 
-- **WHEN** `search_notes` runs without `threshold` and every note scores below the profile's effort default but at least one scores at or above the profile's fallback threshold
+- **WHEN** `search_notes` runs without `threshold` under a profile that defines a fallback, and every note scores below the profile's effort default but at least one scores at or above the profile's fallback threshold
 - **THEN** the semantic leg returns those notes via the fallback retry
+
+#### Scenario: a profile without a fallback returns an honest zero
+
+- **WHEN** `search_notes` runs with an array `query` and no `threshold` under a profile that defines no fallback, and every note scores below the profile's effort default for one query
+- **THEN** that query's `query_stats` entry reports `semantic: 0` with no `semantic_fallback` key, and no retry read is made
 
 ---
 
@@ -371,7 +376,7 @@ In `mode: "lexical"`, or whenever the vault's semantic backend is not `ready` (i
 
 ### Requirement: Semantic seeds carry backfilled block evidence
 
-The semantic leg SHALL guarantee per-seed block evidence after its shared block pass, and that pass SHALL be independent of the user `threshold`: in `effort: "deep"` the shared pass filters blocks at the active profile's deep default threshold, in `effort: "quick"` at threshold 0 — an explicitly provided `threshold` SHALL NOT change which blocks are selected. Every seed that ends the shared pass with zero blocks SHALL receive its own best block via a per-seed lookup scoped to that seed's source at threshold 0 with limit 1 (for an array `query`, the maximum-similarity block across all query vectors). Only when the note has no block embeddings at all SHALL the seed remain block-less, and its `matches[]` entry SHALL then omit the `blocks` key entirely.
+The semantic leg SHALL guarantee per-seed block evidence after its shared block pass, and that pass SHALL be independent of the user `threshold` and of the effort's note floor: in `effort: "deep"` the shared pass filters blocks at the active profile's block-evidence floor, in `effort: "quick"` at threshold 0 — an explicitly provided `threshold` SHALL NOT change which blocks are selected. Every seed that ends the shared pass with zero blocks SHALL receive its own best block via a per-seed lookup scoped to that seed's source at threshold 0 with limit 1 (for an array `query`, the maximum-similarity block across all query vectors). Only when the note has no block embeddings at all SHALL the seed remain block-less, and its `matches[]` entry SHALL then omit the `blocks` key entirely.
 
 #### Scenario: a seed starved by the shared block pass gets its own best block
 
@@ -385,10 +390,13 @@ The semantic leg SHALL guarantee per-seed block evidence after its shared block 
 
 #### Scenario: an explicit threshold does not thin block evidence
 
-- **WHEN** `effort: "deep"` runs with an explicit `threshold` inside the semantic note-score band, and a surviving seed's blocks score between the profile's deep default and that threshold
-- **THEN** those blocks still appear in the seed's `blocks[]` — block selection used the profile's deep default, not the user threshold
+- **WHEN** `effort: "deep"` runs with an explicit `threshold` inside the semantic note-score band, and a surviving seed's blocks score between the profile's block-evidence floor and that threshold
+- **THEN** those blocks still appear in the seed's `blocks[]` — block selection used the profile's block-evidence floor, not the user threshold
 
----
+#### Scenario: a raised note floor does not thin block evidence
+
+- **WHEN** `effort: "deep"` runs without `threshold` under a profile whose `deep` default is above its block-evidence floor, and a seed's blocks score between the two
+- **THEN** those blocks appear in the seed's `blocks[]`
 
 ### Requirement: Semantic retrieval is arity-invariant
 

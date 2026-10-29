@@ -20,7 +20,7 @@ search_notes({
   mode?: 'hybrid' | 'lexical',  // which legs run — default: 'hybrid'
   effort?: 'quick' | 'deep',    // candidate volume / exploration depth — default: 'quick'
   limit?: number,               // caps `matches[]` in every mode; does not change any leg's pool size
-  threshold?: number,           // semantic leg's note scores only, 0-1; hard filter when given, otherwise the active model's quick/deep default + a fallback retry
+  threshold?: number,           // semantic leg's note scores only, 0-1; hard filter when given, otherwise the active model's quick/deep default (+ a fallback retry if the model has one)
   expansion_floor?: number,     // expansion leg only, seed↔note scale, 0-1; default is the active model's expansion floor — threshold never reaches this leg
   filter?: {                    // optional: narrow candidate set before ranking, every leg
     path_prefix?: string | string[],
@@ -47,7 +47,7 @@ search_notes({
 | `quick` | Specific question, need 1–2 notes | up to 3        | ~5             | off         | 5                                                            |
 | `deep`  | Broad topic, need an overview     | up to 8        | ~10            | on          | 12                                                           |
 
-`limit` bounds only the final fused `matches[]` list, in every mode — it overrides the effort default merged-list cap but never changes a leg's internal pool size (semantic, lexical, or expansion). To widen a leg's own candidate pool, raise `effort` to `"deep"` instead. `threshold` only ever affects the semantic leg's note scores — not the block-evidence pass (always filtered at the active model's `deep` default), not the expansion leg (its own scale, owned by `expansion_floor`), and never the lexical leg, which has no similarity score to threshold. For how the three legs fuse into one order, see [`docs/architecture/rank-fusion.md`](../architecture/rank-fusion.md).
+`limit` bounds only the final fused `matches[]` list, in every mode — it overrides the effort default merged-list cap but never changes a leg's internal pool size (semantic, lexical, or expansion). To widen a leg's own candidate pool, raise `effort` to `"deep"` instead. `threshold` only ever affects the semantic leg's note scores — not the block-evidence pass (always filtered at the active model's block-evidence floor), not the expansion leg (its own scale, owned by `expansion_floor`), and never the lexical leg, which has no similarity score to threshold. For how the three legs fuse into one order, see [`docs/architecture/rank-fusion.md`](../architecture/rank-fusion.md).
 
 ### Pre-filter (`filter` parameter)
 
@@ -117,7 +117,7 @@ Every call returns `{ matches, truncated, semantic_status }`, plus `query_stats`
 Each entry carries `path`, `vault`, `backlink_count`, and `found_in` — a non-empty array naming every source that surfaced it, drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"` (one per distinct lexical kind matched), and `"expansion"`. Per-source evidence accompanies its provenance and only its provenance:
 
 - `similarity` — present iff `found_in` contains `"semantic"`.
-- `blocks[]` (section-level matches within the note) — present alongside `similarity` whenever the note has block-level evidence. **Never empty when present** — a semantic entry either carries at least one block or omits the key entirely; `blocks: []` never appears in a response. `blocks` is absent only when the note has no block embeddings at all (a note-level-only embedding, or a note the corpus never chunked). A semantic seed that the shared block pass happened to starve — e.g. every top-N block on this call went to other seeds — still gets its own best block via a per-seed fallback lookup before the response is built, so a starved-but-chunked note is not mistaken for an unchunked one. Block selection always uses the internal mode default (the active model's `deep` default in `deep`, 0 in `quick`) — a user-supplied `threshold` never thins `blocks[]`. See [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md#step-3b--per-seed-backfill-for-starved-seeds) for the mechanism.
+- `blocks[]` (section-level matches within the note) — present alongside `similarity` whenever the note has block-level evidence. **Never empty when present** — a semantic entry either carries at least one block or omits the key entirely; `blocks: []` never appears in a response. `blocks` is absent only when the note has no block embeddings at all (a note-level-only embedding, or a note the corpus never chunked). A semantic seed that the shared block pass happened to starve — e.g. every top-N block on this call went to other seeds — still gets its own best block via a per-seed fallback lookup before the response is built, so a starved-but-chunked note is not mistaken for an unchunked one. Block selection always uses the internal mode default (the active model's block-evidence floor in `deep`, 0 in `quick`) — a user-supplied `threshold` never thins `blocks[]`. See [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md#step-3b--per-seed-backfill-for-starved-seeds) for the mechanism.
 - `lexical[]` (capped ~3/note, `{ matched_in: "title" | "heading" | "body", snippet, lines?, heading? }`) — present iff `found_in` contains any `"lexical:*"` value. `heading` on a body match names its enclosing section. **No numeric score** on this evidence — order plus `matched_in` carried the ranking signal into the fused order already.
 - `expansion_similarity` (note-to-note similarity to the seed that surfaced it — a **different scale** from `similarity`, do not compare them numerically) — present iff `found_in` contains `"expansion"`. An expansion-only entry (like the second one above) is evidence-light by design: no `similarity`, no `blocks`, no `lexical` — path, provenance, `expansion_similarity`, and `backlink_count` only. Call `read_notes` or `get_similar_notes` on it for more.
 - `matched_queries` — array queries only, the union of queries that hit the note in any leg.
@@ -169,7 +169,7 @@ For an array `query`, the response also includes `query_stats` — one line per 
 
 **`semantic: null` means the semantic leg never ran for this call — not "ran and found nothing."** It's `null` under `mode: "lexical"`, when no semantic index is available for the vault (cold, disabled, or unavailable — check `semantic_status`), or when the `filter` matched zero notes (the empty-filter early return skips both legs). A *numeric* `semantic` — including `0` — always means the leg executed and counted; `{ semantic: 0, lexical: 3 }` says "this phrasing has no semantic neighbours, but it does match lexically," a different situation from `null`, which says "don't read anything into the missing semantic score, hybrid didn't run it this time." Check `mode` (or whether the vault has a corpus at all) before treating `null` as a dead-query signal — it usually isn't one.
 
-**`semantic_fallback: true` marks a query whose semantic hits came from the default-threshold fallback retry**, not from the effort default (the active model's `quick` / `deep` value) directly. It appears only when `threshold` was omitted from the call — an explicit `threshold` is a hard filter with no fallback, so its query_stats entries never carry this key, even when they report `semantic: 0`. The key is absent (not `false`) in every other case: no fallback fired, the semantic leg didn't run, or `threshold` was explicit.
+**`semantic_fallback: true` marks a query whose semantic hits came from the default-threshold fallback retry**, not from the effort default (the active model's `quick` / `deep` value) directly. It appears only when `threshold` was omitted from the call — an explicit `threshold` is a hard filter with no fallback, so its query_stats entries never carry this key, even when they report `semantic: 0`. The key is absent (not `false`) in every other case: no fallback fired, the semantic leg didn't run, or `threshold` was explicit. It never appears under a model without a fallback, such as the default `harrier-270m`.
 
 ```json
 {
@@ -238,28 +238,29 @@ For more on the semantic pipeline (merge, cap, per-seed expansion, orphan-block 
 
 ### Tuning threshold (semantic leg)
 
-`threshold` reaches only the semantic leg's note scores — never blocks (always filtered at the active model's `deep` default), never expansion (owned by `expansion_floor`, below), never the lexical leg. Passing it explicitly is a **hard filter**: notes scoring below it never become semantic seeds, and if none clear the bar the semantic leg returns an honest zero — no rescue, no retry. Leave it out and the effort default applies instead (the model's `quick` or `deep` value), with a one-shot retry at the model's `fallback` floor if that default finds nothing; that retry is flagged per query as `semantic_fallback: true` in `query_stats` (array `query` only — see above).
+`threshold` reaches only the semantic leg's note scores — never blocks (always filtered at the active model's block-evidence floor), never expansion (owned by `expansion_floor`, below), never the lexical leg. Passing it explicitly is a **hard filter**: notes scoring below it never become semantic seeds, and if none clear the bar the semantic leg returns an honest zero — no rescue, no retry. Leave it out and the effort default applies instead (the model's `quick` or `deep` value). Under a model with a `fallback` floor, a default that finds nothing is retried once at it; that retry is flagged per query as `semantic_fallback: true` in `query_stats` (array `query` only — see above). The default `harrier-270m` has no fallback, so a query with no semantic hit above its floor gets zero semantic results, while the lexical leg still runs.
 
 **The numbers depend on the embedding model.** Every model spreads its cosine scores over its own range, so each `--model` profile carries its own calibrated defaults and there is no universal "0.5". The defaults, per profile:
 
 | Default | `harrier-270m` (default) | `granite-97m` | `harrier-0.6b` | Governs |
 | --- | --- | --- | --- | --- |
-| `quick` | 0.20 | 0.71 | 0.25 | `search_notes` semantic floor, `effort: "quick"` |
-| `deep` | 0.13 | 0.66 | 0.19 | `search_notes` semantic floor, `effort: "deep"`; also the block-evidence floor |
-| `fallback` | 0.05 | 0.65 | 0.15 | the one-shot retry when a default finds nothing |
+| `quick` | 0.45 | 0.71 | 0.25 | `search_notes` semantic floor, `effort: "quick"` |
+| `deep` | 0.45 | 0.66 | 0.19 | `search_notes` semantic floor, `effort: "deep"` |
+| `fallback` | — (none) | 0.65 | 0.15 | the one-shot retry when a default finds nothing; without one, no retry |
+| `blockFloor` | 0.13 | 0.66 | 0.19 | block-evidence floor, `effort: "deep"` |
 | `expansionFloor` | 0.20 | 0.65 | 0.25 | `expansion_floor` default (seed↔note scale) |
 | `similarNotes` | 0.22 | 0.67 | 0.29 | `get_similar_notes` default `threshold` |
 | `duplicates` | 0.77 | 0.90 | 0.76 | `find_duplicates` default `threshold` |
 
-Same table, with the derivation, on the model page: [Embedding models → Similarity thresholds per model](./embedding-models.md#similarity-thresholds-per-model). The `search_notes` tool description quotes the active model's `quick` / `deep` / `fallback` / `expansionFloor`, so your assistant sees the numbers that apply to the running server.
+Same table, with the derivation, on the model page: [Embedding models → Similarity thresholds per model](./embedding-models.md#similarity-thresholds-per-model). The `search_notes` tool description quotes the active model's `quick` / `deep` / `fallback` (or says there is no retry) / `expansionFloor`, so your assistant sees the numbers that apply to the running server.
 
 How to use them, whatever the model:
 
-- **Leave `threshold` out** unless you have a reason. The defaults are calibrated so a normal call keeps the relevant notes, and the fallback retry rescues a call that would otherwise come back empty.
-- **Raise it above the default to tighten** — the notes that remain are the more confident ones; expect more misses. `quick` is the stricter default (it is never lower than `deep`), so `deep` is the broader net.
-- **Lower it below the default only to look at weaker matches.** The `fallback` value is already the floor the server retries at when a default finds nothing; passing it explicitly makes it a hard floor with no further rescue.
-- **A value is only meaningful on one model's scale.** A `threshold` that works on `harrier-270m` (0.2-ish) lets nearly everything through on `granite-97m` (0.7-ish), and the reverse filters nearly everything out. Re-tune when you switch `--model`; read the active numbers from the tool description.
-- **`semantic_fallback: true` tells you when the retry fired** — those hits cleared only the fallback floor, so treat them as weaker than a normal result.
+- **Leave `threshold` out** unless you have a reason. The defaults are calibrated so a normal call keeps the relevant notes. On a model with a fallback, the retry rescues a call that would otherwise come back empty; on the default model, an empty semantic leg means nothing scored above its noise level.
+- **Raise it above the default to tighten** — the notes that remain are the more confident ones; expect more misses. `quick` is never lower than `deep`; on the default model they are equal, and `deep` casts its wider net through larger pools and expansion instead.
+- **Lower it below the default only to look at weaker matches.** On the default model, notes under 0.45 are mostly noise, though an English query against Ukrainian notes can find its answer at 0.33–0.37. Where a model has a `fallback`, that value is already the floor the server retries at; passing it explicitly makes it a hard floor with no further rescue.
+- **A value is only meaningful on one model's scale.** A `threshold` that works on `harrier-270m` (0.45-ish) lets nearly everything through on `granite-97m` (0.7-ish), and the reverse filters nearly everything out. Re-tune when you switch `--model`; read the active numbers from the tool description.
+- **`semantic_fallback: true` tells you when the retry fired** — those hits cleared only the fallback floor, so treat them as weaker than a normal result. It never fires on a model without a fallback.
 
 There is no equivalent knob for the lexical leg — an exact/substring match either exists or it doesn't; use `filter` to narrow scope instead of a threshold.
 

@@ -22,11 +22,14 @@ export const TEST_IDENTITY: CorpusIdentity = corpusIdentityOf(TEST_EMBEDDING_IDE
 /**
  * Fixed defaults for fixtures that do not care about the scale — the retired
  * bge-micro-v2 values, which the fixtures' similarities were written against.
+ * It carries a fallback, and its block floor equals its `deep`, so fixtures
+ * written before either became independent keep their meaning.
  */
-export const TEST_SIMILARITY: SimilarityDefaults = {
+export const TEST_SIMILARITY: Required<SimilarityDefaults> = {
   quick: 0.5,
   deep: 0.35,
   fallback: 0.3,
+  blockFloor: 0.35,
   expansionFloor: 0.35,
   similarNotes: 0.5,
   duplicates: 0.9,

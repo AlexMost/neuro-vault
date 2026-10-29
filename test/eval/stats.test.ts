@@ -7,6 +7,7 @@ import {
   computeSeparation,
   computeGuards,
   DEFAULT_KEYS,
+  measuredKeys,
   passRate,
   POPULATION_OF,
   quantiles,
@@ -62,8 +63,18 @@ describe('passRate / thresholdForPassRate', () => {
 });
 
 describe('DEFAULT_KEYS', () => {
-  it('names every similarity default exactly once', () => {
-    expect([...DEFAULT_KEYS].sort()).toEqual(Object.keys(TEST_SIMILARITY).sort());
+  it('names every similarity default except the unmeasured block floor exactly once', () => {
+    expect([...DEFAULT_KEYS].sort()).toEqual(
+      Object.keys(TEST_SIMILARITY)
+        .filter((key) => key !== 'blockFloor')
+        .sort(),
+    );
+  });
+
+  it('measures only the defaults a profile defines', () => {
+    const { fallback: _fallback, ...withoutFallback } = TEST_SIMILARITY;
+    expect(measuredKeys(TEST_SIMILARITY)).toEqual(DEFAULT_KEYS);
+    expect(measuredKeys(withoutFallback)).toEqual(DEFAULT_KEYS.filter((key) => key !== 'fallback'));
   });
 
   it('is exactly the set of defaults POPULATION_OF assigns a population to', () => {
@@ -227,6 +238,30 @@ describe('collectPopulations + computeCalibrationStats', () => {
     expect(passRate(shifted.query_all, suggested?.deep.threshold ?? NaN)).toBeCloseTo(
       baseline.pass_rates.deep.pass_rate,
     );
+  });
+
+  it('measures no fallback for a profile without one', async () => {
+    const populations = await populationsOf([[1, 0]]);
+    const { fallback: _fallback, ...withoutFallback } = TEST_SIMILARITY;
+    const baseline = computeCalibrationStats({
+      populations,
+      similarity: TEST_SIMILARITY,
+      perQuery: [],
+      top1: [],
+      deepPool: 8,
+    });
+    const stats = computeCalibrationStats({
+      populations,
+      similarity: withoutFallback,
+      perQuery: [],
+      top1: [],
+      deepPool: 8,
+      baseline,
+    });
+    expect(stats.pass_rates).not.toHaveProperty('fallback');
+    expect(stats.pass_rates.deep.population).toBe('query_all');
+    expect(stats.suggested).not.toHaveProperty('fallback');
+    expect(stats.suggested?.deep.baseline_pass_rate).toBe(baseline.pass_rates.deep.pass_rate);
   });
 
   it('suggests nothing, rather than failing, for a default whose population is empty', async () => {

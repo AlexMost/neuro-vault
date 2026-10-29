@@ -10,9 +10,9 @@ This document covers the **semantic leg** of `search_notes` only. The lexical le
 
 The pipeline:
 
-1. Embed every query (in parallel, via `Promise.all`), then find every query's note-level neighbours in one corpus read — filtered by `threshold` (a hard filter when the caller supplies it; the active profile's default for the mode otherwise, with a one-shot fallback retry at the profile's `fallback`, one more read for every query that default left empty).
+1. Embed every query (in parallel, via `Promise.all`), then find every query's note-level neighbours in one corpus read — filtered by `threshold` (a hard filter when the caller supplies it; the active profile's default for the mode otherwise, with a one-shot fallback retry at the profile's `fallback`, when it has one, one more read for every query that default left empty).
 2. Merge the per-query note results into one seed list, keyed by path, then cap to `limit`.
-3. Find block-level neighbours for every query in one read (scoped to the merged seed notes, always filtered at the internal mode default — never by the caller's `threshold`), then backfill any seed that read left blockless with its own best block across all query vectors.
+3. Find block-level neighbours for every query in one read (scoped to the merged seed notes, always filtered at the internal mode default, the profile's `blockFloor` in deep — never by the caller's `threshold`), then backfill any seed that read left blockless with its own best block across all query vectors.
 4. Optionally expand per seed (deep mode only), one read anchored on every seed's own vector, filtered by `expansionFloor` (a separate seed↔note-scale parameter, defaulting to the profile's value — `threshold` never reaches this step).
 
 Each step is one corpus call carrying every query vector (or every seed) as an anchor, except the backfill, which is one call per starved seed. Under the daemon a search is therefore a handful of socket round trips, not one per query.
@@ -31,7 +31,8 @@ queries: string[]
 [nearest: every query vector, threshold, limit+1, allowed] ─► note hits per query
   │   threshold = caller's explicit value, or the profile's quick/deep default
   │   (queries that came back empty, when threshold was NOT explicit AND the
-  │    default > the profile's fallback: one more nearest at the fallback)
+  │    profile has a fallback AND the default > it: one more nearest at the
+  │    fallback)
   ▼
 slice(0, limit) ──► per-query neighbours (+ overflow flag)
   │
@@ -73,21 +74,21 @@ deep:  limit=8, threshold=profile.deep,  expansion=on, expansionLimit=3, expansi
 ```
 
 - `quick` is the default — used for specific lookups where the LLM expects a small, precise answer set.
-- `deep` lowers the threshold, doubles+ the limit, and turns on expansion — used for "tell me about X" exploration.
-- The mode's model-independent knobs (`limit`, `expansion`, `expansionLimit`) come from `EFFORT_PROFILES` (`effort-profiles.ts`). The similarity values do not: they depend on the embedding model's score scale, so they are read from the active profile's `similarity` record, passed to `executeRetrieval` as `input.similarity` (see [Calibration](#calibration)). `quick` and `deep` are the profile's two note-level floors, `fallback` is the retry floor, and `expansionFloor` is a separate default, fixed independently of mode and overridable via the caller's `expansionFloor` input — it is not part of `ModeConfig`.
+- `deep` doubles+ the limit and turns on expansion (on some profiles it also lowers the threshold; `harrier-270m` uses one floor for both) — used for "tell me about X" exploration.
+- The mode's model-independent knobs (`limit`, `expansion`, `expansionLimit`) come from `EFFORT_PROFILES` (`effort-profiles.ts`). The similarity values do not: they depend on the embedding model's score scale, so they are read from the active profile's `similarity` record, passed to `executeRetrieval` as `input.similarity` (see [Calibration](#calibration)). `quick` and `deep` are the profile's two note-level floors, `fallback` is the optional retry floor, `blockFloor` is the deep block-evidence floor, and `expansionFloor` is a separate default, fixed independently of mode and overridable via the caller's `expansionFloor` input — it is not part of `ModeConfig`.
 - `threshold` here is a *default*, not a hardcoded constant — the caller can override it (see Step 1).
 
 At the tool boundary this axis is called `effort` (`search_notes({ effort: "quick" | "deep" })`); the tool handler passes it into the policy as `mode`, which is the internal name this document uses. (The tool-level `mode` parameter is a different axis — it selects which legs run, `hybrid | lexical`.) The LLM picks the effort based on intent; the user can override per call.
 
 ## Step 1 — Per-query embedding and note-level neighbors, with a default-only threshold fallback
 
-`retrieval-policy.ts:136-173` runs this for every query at once:
+`retrieval-policy.ts:136-180` runs this for every query at once:
 
 ```
 query_vectors = Promise.all(queries.map(embeddingProvider.embedQuery))
 hits[q] = corpus.nearest(every query vector, threshold, limit: limit+1, allowed)
 empty = the queries whose hits[q] is empty
-if empty is not empty AND NOT explicitThreshold AND threshold > similarity.fallback:
+if empty is not empty AND NOT explicitThreshold AND similarity.fallback is defined AND threshold > similarity.fallback:
     retried = corpus.nearest(the vectors of `empty`, similarity.fallback, limit: limit+1, allowed)
     for q in empty: hits[q] = retried[q]; fallback[q] = hits[q].length > 0
 for each query:
@@ -100,11 +101,11 @@ for each query:
 `threshold` and `explicitThreshold` are computed once for the whole call (`input.threshold !== undefined`), not per query — every query in the array is filtered by the same threshold value:
 
 - **Explicit** (`input.threshold` is set): a **hard filter**. Notes scoring below it never become seeds, and if the read at `threshold` returns nothing for a given query, that's the final answer for that query — zero hits, no retry. This is deliberate: an explicit value is a promise the caller is opting out of the rescue, and a silent widening would contradict what they asked for.
-- **Omitted**: the active profile's default for the mode applies (`similarity.quick` or `similarity.deep`), and if that default returns nothing *for a given query*, the policy retries once at the profile's `similarity.fallback` for that query only (the retry is skipped when the default is already at or below it). The fallback exists because users rarely tune the threshold, and the difference between "no results" and "weak results" is more useful than silence. The floor is calibrated to stay high enough to keep results meaningful but low enough to surface weak matches the user can decide about.
+- **Omitted**: the active profile's default for the mode applies (`similarity.quick` or `similarity.deep`), and if that default returns nothing *for a given query*, the policy retries once at the profile's `similarity.fallback` for that query only (the retry is skipped when the default is already at or below it). The fallback is optional per profile. Where one exists, it is there because users rarely tune the threshold, and "weak results" can be more useful than silence. `harrier-270m` has none: its floor sits just above its junk level, so a retry would refill exactly the strings the floor empties, and a query with no hit above the floor gets an honest zero from this leg (the lexical leg still runs).
 
-Each query over-fetches `limit + 1` neighbours (`retrieval-policy.ts:147,157`) so a per-query pool overflow is observable via `neighbors.length > limit`, then is immediately sliced back to `limit` (`retrieval-policy.ts:169-170`) — `neighbors` (and therefore `per_query_hits` and the merge step below) keep exactly `limit`-bounded semantics; `overflow` is the only extra signal carried out of this step.
+Each query over-fetches `limit + 1` neighbours (`retrieval-policy.ts:147,164`) so a per-query pool overflow is observable via `neighbors.length > limit`, then is immediately sliced back to `limit` (`retrieval-policy.ts:176-177`) — `neighbors` (and therefore `per_query_hits` and the merge step below) keep exactly `limit`-bounded semantics; `overflow` is the only extra signal carried out of this step.
 
-`per_query_hits: Record<string, number>` and `per_query_fallback: Record<string, boolean>` (built at `retrieval-policy.ts:175-180`) record, per query, the post-slice hit count and whether that query's hits came from the fallback retry — `true` only when the retry fired and returned something for that query, always `false` for an explicit threshold. `deriveObservability` surfaces a `true` entry as `semantic_fallback: true` in that query's `query_stats` object; `false` entries surface as an absent key — see [`docs/guide/finding-notes.md`](../guide/finding-notes.md#query_stats-array-queries-only).
+`per_query_hits: Record<string, number>` and `per_query_fallback: Record<string, boolean>` (built at `retrieval-policy.ts:182-187`) record, per query, the post-slice hit count and whether that query's hits came from the fallback retry — `true` only when the retry fired and returned something for that query, always `false` for an explicit threshold. `deriveObservability` surfaces a `true` entry as `semantic_fallback: true` in that query's `query_stats` object; `false` entries surface as an absent key — see [`docs/guide/finding-notes.md`](../guide/finding-notes.md#query_stats-array-queries-only).
 
 ## Step 2 — Merge across queries and cap to `limit`
 
@@ -114,7 +115,7 @@ Each query over-fetches `limit + 1` neighbours (`retrieval-policy.ts:147,157`) s
 - `similarity` is `max` across the queries that matched it
 - `matched_queries: string[]` records which queries surfaced this path, in first-seen order, deduplicated
 
-The merged list is then sorted — `[...byPath.values()].sort((a, b) => b.similarity - a.similarity || a.path.localeCompare(b.path))` (`retrieval-policy.ts:120-122`) — and sliced to `limit` (`retrieval-policy.ts:194`). `truncated` is true when either this merge itself dropped candidates (`merged.length > limit`) or any single query's own per-query pool overflowed in Step 1 (`retrieval-policy.ts:191-193`).
+The merged list is then sorted — `[...byPath.values()].sort((a, b) => b.similarity - a.similarity || a.path.localeCompare(b.path))` (`retrieval-policy.ts:120-122`) — and sliced to `limit` (`retrieval-policy.ts:201`). `truncated` is true when either this merge itself dropped candidates (`merged.length > limit`) or any single query's own per-query pool overflowed in Step 1 (`retrieval-policy.ts:198-200`).
 
 ### The load-bearing invariant: re-sorting an already-sorted list is idempotent
 
@@ -133,26 +134,26 @@ This dependency is not decoration: it is part of what an `ICorpusReader` must ho
 
 ## Step 3 — Block-level results, scoped to seed notes, independent of `threshold`
 
-Block search runs over the **merged seed notes** from Step 2 (the top-K across all queries, capped to `limit`), not the whole corpus, and is one read carrying every query vector (`retrieval-policy.ts:198-235`). This is the source of the orphan-block guarantee: if a block's note did not make the seed set, the block is not surfaced.
+Block search runs over the **merged seed notes** from Step 2 (the top-K across all queries, capped to `limit`), not the whole corpus, and is one read carrying every query vector (`retrieval-policy.ts:205-243`). This is the source of the orphan-block guarantee: if a block's note did not make the seed set, the block is not surfaced.
 
-- `deep` mode: block search uses the **internal mode default**, the active profile's `similarity.deep` — never the caller's `threshold`, whether explicit or defaulted — plus the mode's `limit`.
+- `deep` mode: block search uses the **internal mode default**, the active profile's `similarity.blockFloor` — never the caller's `threshold`, whether explicit or defaulted, and never the note floor `similarity.deep` — plus the mode's `limit`.
 - `quick` mode: block search uses `threshold = 0` and `limit = QUICK_BLOCK_LIMIT = 5`.
 
-Per-query block hits are deduped by `(path, heading, lineRange)` keeping max similarity (`retrieval-policy.ts:208-223`) — the NUL character (`\0`) is used as the in-key separator so headings containing spaces cannot collide with the line-range portion of the key. Blocks per note are then sorted by `similarity` desc with `lines[0]` as tiebreak (`retrieval-policy.ts:233-235`).
+Per-query block hits are deduped by `(path, heading, lineRange)` keeping max similarity (`retrieval-policy.ts:216-231`) — the NUL character (`\0`) is used as the in-key separator so headings containing spaces cannot collide with the line-range portion of the key. Blocks per note are then sorted by `similarity` desc with `lines[0]` as tiebreak (`retrieval-policy.ts:241-243`).
 
-Block evidence is deliberately decoupled from the note-score `threshold`: a caller who raises `threshold` to see fewer, more confident seed *notes* still gets each surviving seed's normal block evidence, not a thinner slice of it. When seed-note count is 0, block search is skipped entirely (`retrieval-policy.ts:201`).
+Block evidence is deliberately decoupled from the note-score `threshold` and from the note floors: a caller who raises `threshold` to see fewer, more confident seed *notes* still gets each surviving seed's normal block evidence, not a thinner slice of it, and so does a profile whose note floor sits above its block floor (`harrier-270m`: 0.45 against 0.13). When seed-note count is 0, block search is skipped entirely (`retrieval-policy.ts:209`).
 
 ### Step 3b — Per-seed backfill for starved seeds
 
-(Named "Step 4b" in the source comments — `retrieval-policy.ts:237` — because the source's own step-comment numbering is offset from this document's: the `// Step 2` label is used twice in the source, once for the per-query fallback retry (`retrieval-policy.ts:149`, "Step 2 (per query): fallback threshold") and again for the cross-query merge (`retrieval-policy.ts:182`, "Step 2: merge seeds across queries") — so every source-comment step number after that point runs one ahead of this document's own numbering.)
+(Named "Step 4b" in the source comments — `retrieval-policy.ts:245` — because the source's own step-comment numbering is offset from this document's: the `// Step 2` label is used twice in the source, once for the per-query fallback retry (`retrieval-policy.ts:149`, "Step 2 (per query): fallback threshold") and again for the cross-query merge (`retrieval-policy.ts:189`, "Step 2: merge seeds across queries") — so every source-comment step number after that point runs one ahead of this document's own numbering.)
 
-The shared block read above applies a single global limit across *all* seeds' blocks in both modes (quick's top-5 `QUICK_BLOCK_LIMIT`, deep's `limit`) — deep additionally filters at the internal `deep` default on top of that shared cap, quick does not (`threshold: 0`). Either mechanism, alone or combined, can leave a seed with zero blocks even though the note has block embeddings: quick's shared cap may hand every one of its top-5 blocks to other seeds; deep's shared cap can do the same, and its internal-default filter can *additionally* exclude all of a seed's blocks while still admitting the seed itself at the note level. After the shared read, every seed that ended up with zero blocks gets a second, per-seed lookup (`retrieval-policy.ts:241-256`): one `nearestBlocks` read per starved seed, carrying every query vector, scoped to that seed alone (`paths: [seed]`) at `threshold: 0`, `limit: 1` — its single best block per query, regardless of how weak. The backfill keeps the max-similarity hit across all the query vectors (the first query wins a tie), so a multi-query seed still gets one best block, not one per query; for a single-query call this reduces to that one query's own best block. The starved seeds' reads run concurrently.
+The shared block read above applies a single global limit across *all* seeds' blocks in both modes (quick's top-5 `QUICK_BLOCK_LIMIT`, deep's `limit`) — deep additionally filters at the profile's `blockFloor` on top of that shared cap, quick does not (`threshold: 0`). Either mechanism, alone or combined, can leave a seed with zero blocks even though the note has block embeddings: quick's shared cap may hand every one of its top-5 blocks to other seeds; deep's shared cap can do the same, and its internal-default filter can *additionally* exclude all of a seed's blocks while still admitting the seed itself at the note level. After the shared read, every seed that ended up with zero blocks gets a second, per-seed lookup (`retrieval-policy.ts:249-264`): one `nearestBlocks` read per starved seed, carrying every query vector, scoped to that seed alone (`paths: [seed]`) at `threshold: 0`, `limit: 1` — its single best block per query, regardless of how weak. The backfill keeps the max-similarity hit across all the query vectors (the first query wins a tie), so a multi-query seed still gets one best block, not one per query; for a single-query call this reduces to that one query's own best block. The starved seeds' reads run concurrently.
 
 This makes "no `blocks[]`" mean exactly one thing: the note has no block embeddings at all. A seed that has *any* block embeddings always surfaces at least one block after this backfill — the tool layer (`search-notes.ts`) relies on this to omit the `blocks` key entirely rather than ever emitting `blocks: []` (see [`docs/guide/finding-notes.md`](../guide/finding-notes.md#output-shape)).
 
 ## Step 4 — Per-seed expansion, floored by `expansionFloor`, not `threshold`
 
-If `expansion` is on and there are seeds, each seed gets its own `related[]` list (`retrieval-policy.ts:259-269`, via `computeRelatedPerSeed` at `retrieval-policy.ts:42-61`). `computeRelatedPerSeed` makes one `nearest` read with every seed as a `{ path }` anchor, so the corpus uses each seed's own vector and no vector reaches the session, with `exclude` = every seed, `limit` = `perSeedLimit` and the caller's `allowed`. Each anchor's list comes back sorted by similarity desc with path asc as tiebreak. Excluding the seeds before the limit returns exactly what asking for `perSeedLimit + seedCount` neighbours and filtering the seeds out afterwards did; a seed with no vector of its own has no neighbours.
+If `expansion` is on and there are seeds, each seed gets its own `related[]` list (`retrieval-policy.ts:267-277`, via `computeRelatedPerSeed` at `retrieval-policy.ts:42-61`). `computeRelatedPerSeed` makes one `nearest` read with every seed as a `{ path }` anchor, so the corpus uses each seed's own vector and no vector reaches the session, with `exclude` = every seed, `limit` = `perSeedLimit` and the caller's `allowed`. Each anchor's list comes back sorted by similarity desc with path asc as tiebreak. Excluding the seeds before the limit returns exactly what asking for `perSeedLimit + seedCount` neighbours and filtering the seeds out afterwards did; a seed with no vector of its own has no neighbours.
 
 The similarity floor of that read is `expansionFloor = input.expansionFloor ?? input.similarity.expansionFloor` — the caller's value, or the active profile's default — **not** `threshold`. This is a dedicated parameter (`expansion_floor` at the MCP boundary, `search_notes` only — the only expansion-related field in the tool's zod schema, `search-notes.ts:531`; `expansion` and `expansionLimit` stay internal, fixed by mode) because expansion similarity lives on a fundamentally different scale than the note-level `threshold`: `threshold` filters query↔note similarity (how well a note matches the search query), while `expansionFloor` filters seed↔note similarity (how well two notes match each other). The two are different measures, and on some models they sit on visibly different scales (on the measured vault, `harrier-270m`'s seed↔note median is 0.49 against 0.31 for query↔note, while `granite-97m`'s are close, 0.78 against 0.75), so a query-scale value can be nearly a no-op here, and conversely a `threshold` tuned for query-scale filtering would say nothing useful about expansion quality. The exact scale depends on the model, which is why the default is profile data and the tool description interpolates the active profile's value rather than quoting a range.
 
@@ -162,7 +163,7 @@ Crucially, there is **no global dedup across seeds**: the same neighbour path ma
 
 ## Assembling the tree
 
-The final step (`retrieval-policy.ts:271-278`) maps each capped seed to a `NoteResultNode` (`types.ts:37-47`): `{ path, similarity, matched_queries, blocks, related }`. `matched_queries` is always populated at this layer — for a single-query call it is `[query]`, since that query is the only one that could have produced the seed. Whether `matched_queries` reaches the MCP response is decided by the tool layer's `isMulti` flag (`search-notes.ts:313-321` for how `isMulti` is set, `search-notes.ts:428-441` for the conditional spread that includes it only `if (matchedQueries !== undefined)`) — a purely cosmetic decision about the response shape, made after retrieval has already finished.
+The final step (`retrieval-policy.ts:279-286`) maps each capped seed to a `NoteResultNode` (`types.ts:37-47`): `{ path, similarity, matched_queries, blocks, related }`. `matched_queries` is always populated at this layer — for a single-query call it is `[query]`, since that query is the only one that could have produced the seed. Whether `matched_queries` reaches the MCP response is decided by the tool layer's `isMulti` flag (`search-notes.ts:313-321` for how `isMulti` is set, `search-notes.ts:428-441` for the conditional spread that includes it only `if (matchedQueries !== undefined)`) — a purely cosmetic decision about the response shape, made after retrieval has already finished.
 
 ## Invariants
 
@@ -178,31 +179,33 @@ The final step (`retrieval-policy.ts:271-278`) maps each capped seed to a `NoteR
 
 ## Calibration
 
-Every similarity default is data on the active `ModelProfile` (`ModelProfile.similarity`, [`model-profiles.ts`](../../src/lib/model-profiles.ts)), because a model's similarity scale is its own: an encoder with CLS pooling and a decoder with last-token pooling do not spread their scores over the same range, so one threshold set would be wrong for most profiles. The record holds six values, and the table shows where each is applied (`deep` in two steps of `executeRetrieval`, the rest in one):
+Every similarity default is data on the active `ModelProfile` (`ModelProfile.similarity`, [`model-profiles.ts`](../../src/lib/model-profiles.ts)), because a model's similarity scale is its own: an encoder with CLS pooling and a decoder with last-token pooling do not spread their scores over the same range, so one threshold set would be wrong for most profiles. The record holds seven values, `fallback` optional, and the table shows where each is applied:
 
 | Default | Governs | Read by |
 | --- | --- | --- |
 | `quick` | note-level floor at effort `quick` | `executeRetrieval` (Step 1) |
-| `deep` | note-level floor at effort `deep`; the deep block-evidence floor | `executeRetrieval` (Steps 1 and 3) |
-| `fallback` | the one-shot retry floor when a default finds nothing | `executeRetrieval` (Step 1) |
+| `deep` | note-level floor at effort `deep` | `executeRetrieval` (Step 1) |
+| `fallback` | the one-shot retry floor when a default finds nothing; optional, no retry without it | `executeRetrieval` (Step 1) |
+| `blockFloor` | floor of the deep block-evidence pass | `executeRetrieval` (Step 3) |
 | `expansionFloor` | seed↔note floor of the expansion leg | `executeRetrieval` (Step 4) |
 | `similarNotes` | default `threshold` of `get_similar_notes` | `get_similar_notes` |
 | `duplicates` | default `threshold` of `find_duplicates` | `find_duplicates` |
 
-The `search_notes` descriptions for `threshold` and `expansion_floor` interpolate the active profile's `quick`, `deep`, `fallback` and `expansionFloor`, so what the model is told matches what the server applies; `get_similar_notes` and `find_duplicates` apply `similarNotes` and `duplicates` without quoting a number. The registry test pins the ordering `quick ≥ deep > fallback` on every profile.
+The `search_notes` descriptions for `threshold` and `expansion_floor` interpolate the active profile's `quick`, `deep`, `fallback` (or say there is no retry) and `expansionFloor`, so what the model is told matches what the server applies; `get_similar_notes` and `find_duplicates` apply `similarNotes` and `duplicates` without quoting a number. The registry test pins the ordering `quick ≥ deep`, and `deep > fallback` where a fallback exists, on every profile.
 
 ### Calibrated values
 
 | Default | `harrier-270m` (default) | `granite-97m` | `harrier-0.6b` |
 | --- | --- | --- | --- |
-| `quick` | 0.20 | 0.71 | 0.25 |
-| `deep` | 0.13 | 0.66 | 0.19 |
-| `fallback` | 0.05 | 0.65 | 0.15 |
+| `quick` | 0.45 | 0.71 | 0.25 |
+| `deep` | 0.45 | 0.66 | 0.19 |
+| `fallback` | — (none) | 0.65 | 0.15 |
+| `blockFloor` | 0.13 | 0.66 | 0.19 |
 | `expansionFloor` | 0.20 | 0.65 | 0.25 |
 | `similarNotes` | 0.22 | 0.67 | 0.29 |
 | `duplicates` | 0.77 | 0.90 | 0.76 |
 
-Golden-set guards at these values (targets: `deep_filtered_first_relevant` = 0, `quick_hit_at_3_drop` ≤ 1):
+Golden-set guards at the values the method below produced (targets: `deep_filtered_first_relevant` = 0, `quick_hit_at_3_drop` ≤ 1). `harrier-270m`'s note floors have since been recalibrated (see [Recalibration of `harrier-270m`'s note floors](#recalibration-of-harrier-270ms-note-floors)), so for it these guards describe the earlier 0.20 / 0.13:
 
 | Guard | `harrier-270m` | `granite-97m` | `harrier-0.6b` |
 | --- | --- | --- | --- |
@@ -227,6 +230,19 @@ The thresholds were set so that each profile treats the same share of the vault 
 4. **Golden-set guards.** With the new `deep`, no first-relevant hit that threshold 0 finds in the deep pool may be filtered out; with the new `quick`, hit@3 stays within one query of threshold 0. The guards model a plain filter without the fallback retry, so they are conservative. A guard failure lowers the threshold until it passes.
 
 `deep` and `similarNotes` come from the far tail of their populations (the bge-micro-v2 defaults cut 0.09 % and 0.03 %), so their calibrated values rest on a few dozen and a few hundred extreme pairs and move with them. Calibration ran on a single vault with a 25-query golden set (21 `ua`, 4 `en`); another vault will see somewhat different absolute scores, which is why every default stays overridable per call (`threshold`, `expansion_floor`).
+
+`blockFloor` was split out of `deep` without a measurement of its own: each profile's value is the `deep` it had before the split. `--stats` does not measure it, since it collects no query↔block population.
+
+### Recalibration of `harrier-270m`'s note floors
+
+The method above matched pass rates against bge-micro-v2, which says nothing about noise. On the extended golden set (80 entries, 17 of them control queries the vault cannot answer), `harrier-270m` at 0.20 / 0.13 with its 0.05 fallback returned notes for every control at both efforts: every control's semantic top-1 scored 0.32–0.56, above both floors. The `semantic-floor-recalibration` change (decided on issue #222, with #224) replaced its note floors:
+
+- `quick` and `deep` are both 0.45, the value at which controls returning anything drop from 17 to 6 at both efforts while quick hit@3 holds. It was chosen on the same answerable entries it is checked on, and quick hit@3 moves within 0.905–0.937 across 0.42–0.48, so it is due a re-check when the golden set is next revised.
+- The fallback is removed. With it kept, the raised floor did nothing, because the retry refilled every string the floor emptied.
+- `blockFloor` keeps the old 0.13, so `blocks[]` does not thin.
+- The known cost is cross-language recall. English concept queries against Ukrainian notes have relevant similarities of 0.33–0.37, the same band as English junk, so no scalar floor separates them.
+
+`granite-97m` and `harrier-0.6b` keep the values from the method above until a change makes one of them the default and calibrates it on the same eval.
 
 ## Leg outcome records and observability
 

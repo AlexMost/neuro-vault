@@ -217,7 +217,8 @@ and `--stats` read them.
   model change). It cannot see noise: with no floor, every query returns ten
   notes, so a control query's numbers say nothing here.
 - **`--run production`** — the profile's default floors (`quick` or `deep`)
-  with production's one-shot retry at `fallback`, the effort's own pools, and
+  with production's one-shot retry at `fallback` when the profile has one
+  (`config.fallback_threshold` is null otherwise), the effort's own pools, and
   the effort's merged cap (5 at quick, 12 at deep): the list an agent actually
   receives. The run for noise and thresholds: a control query returning nothing
   is a pass.
@@ -249,6 +250,10 @@ of that pipeline. The cost is a caveat, worth stating plainly:
 > read.** The floor actually in effect is always recorded as
 > `config.expansion_floor`, so a report never hides which value produced its
 > numbers.
+
+The deep block-evidence floor (`ModelProfile.similarity.blockFloor`) is recorded
+as `config.block_floor` too. Blocks are not scored, so it never moves a metric;
+it is there so a report names every floor the run applied.
 
 Within one model — an RRF re-tuning, for instance — the floor is a constant
 across runs and the caveat doesn't apply.
@@ -395,9 +400,11 @@ what they report. The ranked populations stay in the report for comparison. See
 design D11 in
 [`openspec/changes/archive/2026-10-13-embedding-model-profiles/design.md`](../openspec/changes/archive/2026-10-13-embedding-model-profiles/design.md).
 
-For each of the six defaults on the selected profile, `pass_rates` records its
+For each default the selected profile defines, `pass_rates` records its
 threshold, the population it filters and the share of that population at or
-above the threshold.
+above the threshold. A profile without a `fallback` (`harrier-270m`) has no
+`fallback` entry. `blockFloor` is never measured: its population, each query
+against every block, is not collected.
 
 `separation` sets the **top-1 similarity** of control entries against that of
 answerable ones, each as quantiles: the best cosine any of an entry's query
@@ -443,7 +450,7 @@ operator's step.
 
 `--baseline <report.json>` takes an earlier `--stats` report (anything else — an
 unreadable file or a report without `stats` — fails before any query is
-embedded). For each of the six defaults it reads the baseline's pass rate and
+embedded). For each default this run measures it reads the baseline's pass rate and
 adds a `suggested` entry to the new report: the threshold on _this_ run's
 population at which that same share passes (`baseline_pass_rate` and
 `threshold`). The printout appends `→ suggested <threshold>` to each line. The
@@ -454,9 +461,10 @@ together; the suggestion is the threshold whose pass rate comes closest to the
 baseline's, the more permissive one on an exact tie. On an empty population
 there is nothing to match: `threshold` is `null` and the printout says so.
 
-The baseline's pass rates are validated up front: each of the six must be a
-number in [0, 1], otherwise the run fails naming the file and the key. Each must
-also have been measured on the population this build uses for that default
+The baseline's pass rates are validated up front: each default this run
+measures must be a number in [0, 1], otherwise the run fails naming the file and
+the key. A baseline may carry more: one captured under a profile with a
+`fallback` serves a run under one without. Each must also have been measured on the population this build uses for that default
 (`pass_rates.<key>.population`): a baseline captured on the ranked populations
 is refused, naming the file, the key and both populations, because its pass
 rates mean something else — re-capture it with `--stats`. The new

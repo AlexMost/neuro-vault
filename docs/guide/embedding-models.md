@@ -95,20 +95,21 @@ More on when a corpus is rebuilt: [`docs/architecture/own-corpus.md`](../archite
 
 ## Similarity thresholds per model
 
-Every model spreads its cosine similarities over its own range, so a fixed cut-off would be right for one model and wrong for the others. Each profile therefore carries six calibrated defaults, used whenever you do not pass `threshold` / `expansion_floor` yourself:
+Every model spreads its cosine similarities over its own range, so a fixed cut-off would be right for one model and wrong for the others. Each profile therefore carries its own defaults, used whenever you do not pass `threshold` / `expansion_floor` yourself:
 
 | Default | `harrier-270m` (default) | `granite-97m` | `harrier-0.6b` | Governs |
 | --- | --- | --- | --- | --- |
-| `quick` | 0.20 | 0.71 | 0.25 | `search_notes` semantic floor at `effort: "quick"` |
-| `deep` | 0.13 | 0.66 | 0.19 | `search_notes` semantic floor at `effort: "deep"`; also the block-evidence floor |
-| `fallback` | 0.05 | 0.65 | 0.15 | one-shot retry floor when a default finds nothing |
+| `quick` | 0.45 | 0.71 | 0.25 | `search_notes` semantic floor at `effort: "quick"` |
+| `deep` | 0.45 | 0.66 | 0.19 | `search_notes` semantic floor at `effort: "deep"` |
+| `fallback` | — (none) | 0.65 | 0.15 | one-shot retry floor when a default finds nothing; without one, no retry |
+| `blockFloor` | 0.13 | 0.66 | 0.19 | block-evidence floor at `effort: "deep"` |
 | `expansionFloor` | 0.20 | 0.65 | 0.25 | `search_notes` expansion leg (`expansion_floor`) |
 | `similarNotes` | 0.22 | 0.67 | 0.29 | `get_similar_notes` `threshold` |
 | `duplicates` | 0.77 | 0.90 | 0.76 | `find_duplicates` `threshold` |
 
-How they were derived: on the author's vault, each model's threshold is the value at which the same share of the vault's similarity scores passes as did under the reference model the original defaults were tuned on, rounded down; floors that cut nothing on that reference are set just below each profile's own minimum; and two checks on the labelled queries then confirm that `deep` filters out no relevant first hit and that `quick` keeps hit@3 within one query of unfiltered. The full method, the guards and the aggregates are in [ADR-0017](../adr/0017-embedding-model-profiles.md) and [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md#calibration).
+How they were derived. `harrier-270m`'s `quick` and `deep` were set on the author's labelled queries, including control queries the vault cannot answer: 0.45 is where those stop returning notes while the answerable ones keep their top-3 hits. Its fallback was dropped, because a retry would refill exactly what the floor removes; a query with no semantic hit above 0.45 now gets zero semantic results, and the lexical leg still runs. The cost is English queries against Ukrainian notes, which score in the same band as English noise. For everything else: on the author's vault, each model's threshold is the value at which the same share of the vault's similarity scores passes as did under the reference model the original defaults were tuned on, rounded down; floors that cut nothing on that reference are set just below each profile's own minimum; and two checks on the labelled queries then confirm that `deep` filters out no relevant first hit and that `quick` keeps hit@3 within one query of unfiltered. The full method, the guards and the aggregates are in [ADR-0017](../adr/0017-embedding-model-profiles.md) and [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md#calibration).
 
-You can read the numbers in force from the `search_notes` tool description, which quotes the active model's `quick`, `deep`, `fallback` and `expansionFloor`; `get_similar_notes` and `find_duplicates` apply their defaults without quoting them.
+You can read the numbers in force from the `search_notes` tool description, which quotes the active model's `quick`, `deep`, `fallback` (or says there is no retry) and `expansionFloor`; `get_similar_notes` and `find_duplicates` apply their defaults without quoting them.
 
 **An explicit `threshold` is on the active model's scale and does not carry over to another model.** A value copied from a `granite-97m` setup (say `0.7`) filters nearly everything out on `harrier-270m`; one tuned on `harrier-270m` (say `0.2`) lets almost everything through on `granite-97m`. When you switch models, drop explicit thresholds and let the defaults apply, or re-tune against the new table. Tuning advice: [Finding Notes → Tuning threshold](./finding-notes.md#tuning-threshold-semantic-leg).
 

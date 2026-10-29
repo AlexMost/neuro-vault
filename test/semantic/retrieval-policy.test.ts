@@ -1186,6 +1186,16 @@ const DISTINCT: SimilarityDefaults = {
   quick: 0.7,
   deep: 0.6,
   fallback: 0.55,
+  blockFloor: 0.5,
+  expansionFloor: 0.9,
+  similarNotes: 0.8,
+  duplicates: 0.99,
+};
+// DISTINCT without its fallback, the shape a profile without one has.
+const NO_FALLBACK: SimilarityDefaults = {
+  quick: 0.7,
+  deep: 0.6,
+  blockFloor: 0.5,
   expansionFloor: 0.9,
   similarNotes: 0.8,
   duplicates: 0.99,
@@ -1194,6 +1204,24 @@ const QUERY = [1, 0];
 const embedder = { initialize: async () => {}, embedQuery: async () => QUERY };
 
 describe('executeRetrieval — profile similarity defaults', () => {
+  it('makes no retry under a profile without a fallback', async () => {
+    const thresholds: number[] = [];
+    const { corpus } = makeCorpus({
+      findNeighbors: (_anchor, { threshold }) => (thresholds.push(threshold), []),
+    });
+    const output = await executeRetrieval({
+      queries: ['q1', 'q2'],
+      mode: 'quick',
+      corpus,
+      embeddingProvider: embedder,
+      similarity: NO_FALLBACK,
+    });
+    expect(corpus.nearest).toHaveBeenCalledTimes(1);
+    expect(thresholds).toEqual([0.7, 0.7]);
+    expect(output.results).toEqual([]);
+    expect(output.per_query_fallback).toEqual({ q1: false, q2: false });
+  });
+
   it("filters at the profile's quick default, then retries at its fallback", async () => {
     const thresholds: number[] = [];
     const { corpus } = makeCorpus({
@@ -1209,7 +1237,7 @@ describe('executeRetrieval — profile similarity defaults', () => {
     expect(thresholds).toEqual([0.7, 0.55]);
   });
 
-  it("uses the profile's deep default for seeds and block evidence, and its expansion floor", async () => {
+  it("uses the profile's deep default for seeds, its block floor for block evidence, and its expansion floor", async () => {
     const calls: Array<[string, number]> = [];
     const { corpus } = makeCorpus({
       findNeighbors: (anchor, { threshold }) => {
@@ -1227,7 +1255,8 @@ describe('executeRetrieval — profile similarity defaults', () => {
       similarity: DISTINCT,
     });
     expect(calls).toContainEqual(['seed', 0.6]);
-    expect(calls).toContainEqual(['block', 0.6]);
+    expect(calls).toContainEqual(['block', 0.5]);
+    expect(calls).not.toContainEqual(['block', 0.6]);
     expect(calls).toContainEqual(['expansion', 0.9]);
   });
 
