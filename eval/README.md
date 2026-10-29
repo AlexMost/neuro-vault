@@ -464,8 +464,7 @@ there is nothing to match: `threshold` is `null` and the printout says so.
 The baseline's pass rates are validated up front: each default this run
 measures must be a number in [0, 1], otherwise the run fails naming the file and
 the key. A baseline may carry more: one captured under a profile with a
-`fallback` serves a run under one without. Each must
-also have been measured on the population this build uses for that default
+`fallback` serves a run under one without. Each must also have been measured on the population this build uses for that default
 (`pass_rates.<key>.population`): a baseline captured on the ranked populations
 is refused, naming the file, the key and both populations, because its pass
 rates mean something else — re-capture it with `--stats`. The new

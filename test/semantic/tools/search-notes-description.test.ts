@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
 
 import { EFFORT_PROFILES } from '../../../src/modules/semantic/effort-profiles.js';
-import type { SimilarityDefaults } from '../../../src/lib/model-profiles.js';
+import { resolveModelProfile, type SimilarityDefaults } from '../../../src/lib/model-profiles.js';
 
 // The advertisement-derivation pin (spec: hybrid-search "Effort-profile
 // advertisement derives from the retrieval constants"). Reads the SOURCE of
@@ -48,7 +48,7 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     const source = await readFile('src/modules/semantic/tools/search-notes.ts', 'utf8');
     expect(source).toContain('${similarity.quick}');
     expect(source).toContain('${similarity.deep}');
-    expect(source).toContain('${fallback}');
+    expect(source).toContain('${retryClause(similarity.fallback)}');
     expect(source).toContain('${similarity.expansionFloor}');
     expect(source).toContain('${EFFORT_PROFILES.quick.semanticPool}');
     expect(source).toContain('${EFFORT_PROFILES.quick.lexicalNoteCap}');
@@ -101,6 +101,18 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     ) as { properties: Record<string, { description?: string }> };
     expect(properties.threshold?.description).toContain(
       'effort defaults (0.61 quick / 0.47 deep) with no retry — zero hits are honest',
+    );
+    expect(properties.threshold?.description).not.toContain('retry at');
+  });
+
+  it('advertises no retry under the real harrier-270m profile', () => {
+    const { properties } = z.toJSONSchema(
+      registerTool(builtTool(resolveModelProfile('harrier-270m').similarity)).spec
+        .inputSchema as z.ZodType,
+      { io: 'input' },
+    ) as { properties: Record<string, { description?: string }> };
+    expect(properties.threshold?.description).toContain(
+      'effort defaults (0.45 quick / 0.45 deep) with no retry',
     );
     expect(properties.threshold?.description).not.toContain('retry at');
   });
