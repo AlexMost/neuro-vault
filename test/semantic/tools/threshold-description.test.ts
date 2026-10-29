@@ -14,6 +14,7 @@ const distinct = {
   quick: 0.61,
   deep: 0.47,
   fallback: 0.42,
+  blockFloor: 0.33,
   expansionFloor: 0.73,
   similarNotes: 0.37,
   duplicates: 0.83,

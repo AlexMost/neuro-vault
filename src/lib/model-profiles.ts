@@ -7,14 +7,21 @@ export type Pooling = 'mean' | 'cls' | 'last_token';
  * Default similarity thresholds, on this profile's own similarity scale
  * (design D10). Each profile carries values calibrated on its own corpus
  * (design D11; numbers in openspec/changes/archive/2026-10-13-embedding-model-profiles/calibration.md).
+ * `harrier-270m`'s note floors were recalibrated on the eval's control queries
+ * (openspec change semantic-floor-recalibration).
  */
 export interface SimilarityDefaults {
   /** `search_notes` semantic floor at effort "quick". */
   readonly quick: number;
-  /** `search_notes` semantic floor at effort "deep"; also the deep block-evidence floor. */
+  /** `search_notes` semantic floor at effort "deep". */
   readonly deep: number;
-  /** One-shot retry floor when a default threshold finds nothing. */
-  readonly fallback: number;
+  /**
+   * One-shot retry floor when a default threshold finds nothing. Absent: no retry, so a
+   * query with no hit above its effort default gets an honest zero.
+   */
+  readonly fallback?: number;
+  /** Floor of the deep block-evidence pass; independent of the note floors. */
+  readonly blockFloor: number;
   /** Default seed↔note floor for the expansion leg. */
   readonly expansionFloor: number;
   /** `get_similar_notes` default threshold. */
@@ -66,6 +73,7 @@ const GRANITE_97M: ModelProfile = {
     quick: 0.71,
     deep: 0.66,
     fallback: 0.65,
+    blockFloor: 0.66,
     expansionFloor: 0.65,
     similarNotes: 0.67,
     duplicates: 0.9,
@@ -86,10 +94,11 @@ const HARRIER_270M: ModelProfile = {
   queryPrefix: HARRIER_QUERY_PREFIX,
   documentPrefix: '',
   maxTokens: 512,
+  // No fallback: at 0.45 a retry would refill exactly the strings the floor empties.
   similarity: Object.freeze({
-    quick: 0.2,
-    deep: 0.13,
-    fallback: 0.05,
+    quick: 0.45,
+    deep: 0.45,
+    blockFloor: 0.13,
     expansionFloor: 0.2,
     similarNotes: 0.22,
     duplicates: 0.77,
@@ -110,6 +119,7 @@ const HARRIER_0_6B: ModelProfile = {
     quick: 0.25,
     deep: 0.19,
     fallback: 0.15,
+    blockFloor: 0.19,
     expansionFloor: 0.25,
     similarNotes: 0.29,
     duplicates: 0.76,

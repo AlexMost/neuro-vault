@@ -48,7 +48,7 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     const source = await readFile('src/modules/semantic/tools/search-notes.ts', 'utf8');
     expect(source).toContain('${similarity.quick}');
     expect(source).toContain('${similarity.deep}');
-    expect(source).toContain('${similarity.fallback}');
+    expect(source).toContain('${fallback}');
     expect(source).toContain('${similarity.expansionFloor}');
     expect(source).toContain('${EFFORT_PROFILES.quick.semanticPool}');
     expect(source).toContain('${EFFORT_PROFILES.quick.lexicalNoteCap}');
@@ -70,6 +70,7 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
       quick: 0.61,
       deep: 0.47,
       fallback: 0.42,
+      blockFloor: 0.33,
       expansionFloor: 0.73,
       similarNotes: 0.6,
       duplicates: 0.95,
@@ -83,6 +84,25 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     );
     expect(properties.expansion_floor?.description).toContain('Default 0.73');
     expect(properties.expansion_floor?.description).not.toContain('0.9+');
+  });
+
+  it('advertises no retry for a profile without a fallback', () => {
+    const noFallback: SimilarityDefaults = {
+      quick: 0.61,
+      deep: 0.47,
+      blockFloor: 0.33,
+      expansionFloor: 0.73,
+      similarNotes: 0.6,
+      duplicates: 0.95,
+    };
+    const { properties } = z.toJSONSchema(
+      registerTool(builtTool(noFallback)).spec.inputSchema as z.ZodType,
+      { io: 'input' },
+    ) as { properties: Record<string, { description?: string }> };
+    expect(properties.threshold?.description).toContain(
+      'effort defaults (0.61 quick / 0.47 deep) with no retry — zero hits are honest',
+    );
+    expect(properties.threshold?.description).not.toContain('retry at');
   });
 
   it('the input gate advertises every field description the tool declares', () => {

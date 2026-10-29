@@ -11,6 +11,7 @@ import {
   MODEL_KEYS,
   resolveModelProfile,
   type ModelProfile,
+  type SimilarityDefaults,
 } from '../src/lib/model-profiles.js';
 import type { SearchEffort } from '../src/modules/semantic/types.js';
 import { BackendError, loadCorpus, notesWithVectors } from './backends.js';
@@ -55,8 +56,8 @@ import {
 import {
   collectPopulations,
   computeCalibrationStats,
-  DEFAULT_KEYS,
   MAX_STATS_SOURCES,
+  measuredKeys,
   POPULATION_OF,
   type CalibrationStats,
   type EntryTop1,
@@ -157,7 +158,7 @@ interface Baseline {
   provenance: NonNullable<CalibrationStats['baseline']>;
 }
 
-async function readBaseline(file: string): Promise<Baseline> {
+async function readBaseline(file: string, similarity: SimilarityDefaults): Promise<Baseline> {
   let report: Partial<EvalReport>;
   try {
     report = JSON.parse(await readFile(file, 'utf8')) as Partial<EvalReport>;
@@ -170,7 +171,8 @@ async function readBaseline(file: string): Promise<Baseline> {
   if (stats?.pass_rates === undefined || typeof report.model_key !== 'string') {
     throw new UsageError(`--baseline ${file} is not a --stats report`);
   }
-  for (const key of DEFAULT_KEYS) {
+  // Only the defaults this run measures need a rate to reproduce; a baseline may carry more.
+  for (const key of measuredKeys(similarity)) {
     const entry = (
       stats.pass_rates as Record<string, { pass_rate?: unknown; population?: unknown } | undefined>
     )[key];
@@ -229,7 +231,8 @@ export async function runEval(
     );
   }
   // A bad baseline fails here, not after the whole golden set has been embedded.
-  const baseline = args.baseline === undefined ? undefined : await readBaseline(args.baseline);
+  const baseline =
+    args.baseline === undefined ? undefined : await readBaseline(args.baseline, profile.similarity);
   const embed =
     deps.embed ??
     (() => {

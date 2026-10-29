@@ -254,6 +254,17 @@ describe('deriveObservability — query_stats', () => {
     });
   });
 
+  it('derives no fallback flag or note under a profile without a fallback', () => {
+    const result = deriveObservability(
+      outcomes({
+        semantic: semanticRan({ a: 1, b: 0 }, { perQueryFallback: { a: false, b: false } }),
+      }),
+      multi(['a', 'b'], { fallbackThreshold: undefined }),
+    );
+    expect(result.query_stats?.a).toEqual({ semantic: 1, lexical: 0 });
+    expect(result.query_stats?.b).not.toHaveProperty('semantic_fallback');
+  });
+
   it('ranks a dead-variant diagnosis above the fallback note', () => {
     const result = deriveObservability(
       outcomes({ semantic: semanticRan({ a: 0 }, { perQueryFallback: { a: true } }) }),

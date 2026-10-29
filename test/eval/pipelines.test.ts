@@ -377,11 +377,20 @@ describe('evalConfig', () => {
       fallback_threshold: TEST_SIMILARITY.fallback,
       semantic_pool: 3,
       expansion: false,
+      expansion_floor: TEST_SIMILARITY.expansionFloor,
+      block_floor: TEST_SIMILARITY.blockFloor,
     });
     expect(evalConfig(TEST_SIMILARITY, { run: 'production', effort: 'deep' })).toMatchObject({
       top_k: 12,
       semantic_threshold: TEST_SIMILARITY.deep,
       expansion: true,
+    });
+  });
+
+  it('a production run under a profile without a fallback records a null fallback', () => {
+    const { fallback: _fallback, ...withoutFallback } = TEST_SIMILARITY;
+    expect(evalConfig(withoutFallback, { run: 'production', effort: 'quick' })).toMatchObject({
+      fallback_threshold: null,
     });
   });
 

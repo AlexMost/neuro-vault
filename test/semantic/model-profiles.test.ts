@@ -9,12 +9,16 @@ import {
   type SimilarityDefaults,
 } from '../../src/lib/model-profiles.js';
 
-/** Copied from calibration.md, "Chosen values". A retune edits the profile, this pin and that table together. */
+/**
+ * Copied from calibration.md, "Chosen values"; harrier-270m's note floors and fallback from the
+ * semantic-floor-recalibration design (D2, D3). A retune edits the profile, this pin and the
+ * thresholds tables in docs/ together.
+ */
 const CALIBRATED_SIMILARITY: Record<string, SimilarityDefaults> = {
   'harrier-270m': {
-    quick: 0.2,
-    deep: 0.13,
-    fallback: 0.05,
+    quick: 0.45,
+    deep: 0.45,
+    blockFloor: 0.13,
     expansionFloor: 0.2,
     similarNotes: 0.22,
     duplicates: 0.77,
@@ -23,6 +27,7 @@ const CALIBRATED_SIMILARITY: Record<string, SimilarityDefaults> = {
     quick: 0.71,
     deep: 0.66,
     fallback: 0.65,
+    blockFloor: 0.66,
     expansionFloor: 0.65,
     similarNotes: 0.67,
     duplicates: 0.9,
@@ -31,6 +36,7 @@ const CALIBRATED_SIMILARITY: Record<string, SimilarityDefaults> = {
     quick: 0.25,
     deep: 0.19,
     fallback: 0.15,
+    blockFloor: 0.19,
     expansionFloor: 0.25,
     similarNotes: 0.29,
     duplicates: 0.76,
@@ -118,12 +124,16 @@ describe('model profile registry', () => {
     });
   });
 
-  it('carries similarity defaults on every profile, ordered quick ≥ deep > fallback', () => {
+  it('carries similarity defaults on every profile, ordered quick ≥ deep > fallback where one exists', () => {
     for (const key of MODEL_KEYS) {
       const { quick, deep, fallback } = resolveModelProfile(key).similarity;
       expect(quick).toBeGreaterThanOrEqual(deep);
-      expect(deep).toBeGreaterThan(fallback);
+      if (fallback !== undefined) expect(deep).toBeGreaterThan(fallback);
     }
+  });
+
+  it('harrier-270m defines no fallback', () => {
+    expect('fallback' in resolveModelProfile('harrier-270m').similarity).toBe(false);
   });
 
   it('pins the calibrated similarity defaults (calibration.md, "Chosen values")', () => {

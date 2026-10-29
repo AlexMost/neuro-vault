@@ -170,7 +170,8 @@ export interface LegacyRetrievalInput {
   /** Already narrowed to the search's allowed set (see `legacyNarrowSources`). */
   sources: Map<string, SmartSource>;
   embeddingProvider: QueryEmbedder;
-  similarity: SimilarityDefaults;
+  /** The frozen leg predates the optional fallback, so it is fed only profiles that carry one. */
+  similarity: Required<SimilarityDefaults>;
 }
 
 interface MergedSeed {
