@@ -55,10 +55,10 @@ with each other once group 1 is in. Group 5 needs 1–4. Group 6 is last.
 
 ## 6. Measure, verify, archive (sequential, last)
 
-- [ ] 6.1 Gates: `npm test`, `npm run lint`, `npm run typecheck`, `npm run format`,
+- [x] 6.1 Gates: `npm test`, `npm run lint`, `npm run typecheck`, `npm run format`,
       `npm run build`, `npx commitlint --from origin/main --to HEAD`.
 - [x] 6.2 After-eval on the owner's vault, production fused quick and deep. Record aggregate
       deltas against the baseline in design §Context (controls, hit@3, R@10), and confirm the
       guard: no answerable loss beyond the one accepted cross-language entry.
-- [ ] 6.3 verify → retrospective → archive (`openspec archive semantic-floor-recalibration`) →
+- [x] 6.3 verify → retrospective → archive (`openspec archive semantic-floor-recalibration`) →
       PR with `Closes #230`.
