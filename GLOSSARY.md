@@ -26,6 +26,28 @@ _Avoid_: keyword search, full-text search
 Merging the semantic and lexical legs into the single ranked list a search returns.
 _Avoid_: merge, hybrid ranking
 
+### Retrieval eval
+
+**Golden set**:
+The owner-labelled list of queries with the notes that answer them, kept in the vault; eval scores retrieval against it.
+_Avoid_: test set, benchmark
+
+**Query class**:
+What kind of lookup an entry is: concept, name, single token, or control.
+_Avoid_: query type, category
+
+**Control query**:
+A golden entry the vault has no answer for; anything returned for it is noise.
+_Avoid_: negative query, empty query
+
+**Positional run**:
+An eval run with every floor at 0, measuring only where relevant notes rank.
+_Avoid_: raw run
+
+**Production run**:
+An eval run with the profile's default floors and caps, measuring the list an agent actually receives.
+_Avoid_: live run, real run
+
 ### Shared daemon
 
 **Vault entry**:

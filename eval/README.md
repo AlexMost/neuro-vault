@@ -24,31 +24,53 @@ It's a YAML list of entries:
 ```yaml
 - id: q001
   query: "release flow"
+  class: concept
   lang: en
   source: 2026-W20
   relevant:
     - Reflections/release flow.md
 - id: q002
-  query: "векторний пошук"
-  lang: ua
+  query: ["векторний пошук", "embeddings"]
+  class: concept
+  lang: mixed
   relevant:
     - Ideas/embeddings.md
     - Tasks/rag.md
+- id: c001
+  query: "quarterly tax filing"
+  class: control
+  lang: en
+  relevant: []
 ```
 
 - `id` — non-empty, unique within the file.
-- `query` — non-empty string, passed to the pipeline verbatim.
-- `lang` — `ua` or `en`; drives the per-language metric slice.
+- `query` — one `search_notes` call: a non-empty string, or an array of 1–8
+  non-empty strings passed as `queries` (relevance is judged per call, not per
+  string). It is normalised the way the tool normalises it: trimmed, an array
+  de-duplicated in order.
+- `class` — what kind of lookup the entry is: `concept`, `name`,
+  `single_token` or `control`. Drives the per-class slice.
+- `lang` — `ua`, `en`, or `mixed` (UA and EN strings in one call); drives the
+  per-language slice. Cross-language lookups are a language slice, not a class.
 - `source` — optional freeform provenance note (when/how the entry was curated); not used by scoring.
-- `relevant` — non-empty list of vault-relative note paths. Relevance is
+- `relevant` — list of vault-relative note paths. Relevance is
   **binary**: the pipeline ranking any one of these paths counts as a hit for
   that query. There's no partial credit and no graded relevance — a binary
   set is a degenerate graded set and upgrading later is easy, whereas
   strict top-1 or NDCG-style grading is brittle at the golden set's likely
   size ("different note but still relevant" would read as a false failure).
 
-Structural problems — a missing `query`, an unknown `lang`, a duplicate `id`,
-an empty `relevant` list — fail the run immediately, naming the offending
+**The control rule**: `class: control` ⇔ `relevant: []`. A control query is
+one the vault has no answer for, so anything returned for it is noise. An
+answerable entry with no labels, or a control with labels, is a golden-set
+error, not a scoring case.
+
+Entries carry no filters (`path_prefix` and the like): a filter narrows scope,
+not ranking quality.
+
+Structural problems — a missing `query`, an empty or oversized query array, an
+unknown `class` or `lang`, a duplicate `id`, a missing `relevant` list, a
+breach of the control rule — fail the run immediately, naming the offending
 entry.
 
 **Every `relevant` path is also checked against the vault's scoped note
@@ -67,10 +89,13 @@ re-run.
 ## Running
 
 ```sh
-npm run eval -- --vault <path> [--pipeline semantic|fused] [--model <key>] [--stats [--baseline <report.json>]]
+npm run eval -- --vault <path> [--run positional|production] [--pipeline semantic|fused|lexical] [--effort quick|deep] [--model <key>] [--stats [--baseline <report.json>]]
 ```
 
+- `--run` defaults to `positional` (see [Axis: run](#axis-run)).
 - `--pipeline` defaults to `semantic`.
+- `--effort` is `deep` on a positional run (the only effort it takes) and
+  defaults to `quick` on a production run — `search_notes`' own default.
 - `--model` names an embedding model profile and defaults to the registry
   default (`DEFAULT_MODEL_KEY` in `src/lib/model-profiles.ts`;
   currently `harrier-270m`; see [Axis: model](#axis-model)).
@@ -79,9 +104,22 @@ npm run eval -- --vault <path> [--pipeline semantic|fused] [--model <key>] [--st
 - `--baseline` names an earlier `--stats` report to calibrate against, and is
   only valid together with `--stats`.
 
-An unrecognized flag, a missing value, an unknown `--pipeline` or `--model`
-value, `--baseline` without `--stats`, or `--stats` with `--pipeline fused` fails
-immediately — naming the supported values where there are any.
+An unrecognized flag, a missing value, an unknown `--run`, `--pipeline`,
+`--effort` or `--model` value, `--effort quick` on a positional run,
+`--pipeline semantic` on a production run, `--baseline` without `--stats`, or
+`--stats` with any pipeline but `semantic` fails immediately — naming the
+supported values where there are any.
+
+The **baseline matrix** — the set of runs a ranking or threshold change is read
+against — is five runs, each reported per class × lang:
+
+```sh
+npm run eval -- --vault <vault> --pipeline semantic
+npm run eval -- --vault <vault> --pipeline fused
+npm run eval -- --vault <vault> --run production --pipeline fused --effort quick
+npm run eval -- --vault <vault> --run production --pipeline fused --effort deep
+npm run eval -- --vault <vault> --run production --pipeline lexical
+```
 
 The run reads `<vault>/.neuro-vault/corpus/<model_key>/` — the shard store this
 server owns and reconciles, in the directory of the profile you pass to
@@ -145,39 +183,63 @@ reports on `--pipeline semantic` (see [Scoring](#scoring)).
 
 - **`--pipeline`** — the ranking method.
   - `semantic` — embed the query, rank by pure embedding similarity
-    (`corpus.nearest` over the loaded corpus, threshold 0, top 10).
+    (`corpus.nearest` over the loaded corpus, threshold 0, top 10). A model
+    sanity check: it ranks one vector, so it scores **string entries only** and
+    lists the array entries it skipped in the report's `golden.skipped_ids`. It
+    runs positional only.
   - `fused` — the production RRF pipeline itself: `runRetrievalPipeline`, the
-    function `search_notes` calls, at deep effort — semantic leg at threshold 0,
-    expansion on with the selected profile's expansion floor, the standalone
-    lexical reader (`createStandaloneLexicalReader`) with its real
-    wikilink-graph backlink tie-break, RRF fusion, and the merged list capped
-    at top 10. The pool sizes come from `EFFORT_PROFILES.deep` and
+    function `search_notes` calls — semantic leg, expansion (at deep effort)
+    with the selected profile's expansion floor, the standalone lexical reader
+    (`createStandaloneLexicalReader`) with its real wikilink-graph backlink
+    tie-break, and RRF fusion. An array entry is passed as `queries`, one call,
+    as the tool passes it. The pool sizes come from `EFFORT_PROFILES` and
     `LEXICAL_PER_NOTE_CAP` (`src/modules/semantic/effort-profiles.ts`), the
     same values the pipeline reads, so the pool numbers the report's `config`
-    records cannot drift from the run. The existence filter admits every path: eval ranks the corpus as
-    loaded. A `fused` run measures the production ordering because it is the
+    records cannot drift from the run. The existence filter admits every path:
+    eval ranks the corpus as loaded (the report's `coverage` counts the stale
+    paths). A `fused` run measures the production ordering because it is the
     production code path, minus the MCP response envelope — there is no
     reimplementation to keep in sync. One difference is deliberate: where
     `search_notes` degrades a failed semantic leg to lexical-only matches, eval
     fails the run, so a lexical-only ranking is never reported as `fused`.
+  - `lexical` — the same pipeline with the semantic leg off: the
+    `mode: lexical` path of `search_notes`. It has no similarity score, so no
+    threshold applies to it on either run.
+
+Every query string of the set is embedded once per run, whichever pipeline
+runs: `lexical` does not rank by the vectors, but `best_relevant_similarity`
+and `--stats` read them.
+
+## Axis: run
+
+- **`--run positional`** — every query-side floor at 0, deep effort, top-10:
+  where relevant notes rank. The run for ranking comparisons (an RRF re-tune, a
+  model change). It cannot see noise: with no floor, every query returns ten
+  notes, so a control query's numbers say nothing here.
+- **`--run production`** — the profile's default floors (`quick` or `deep`)
+  with production's one-shot retry at `fallback`, the effort's own pools, and
+  the effort's merged cap (5 at quick, 12 at deep): the list an agent actually
+  receives. The run for noise and thresholds: a control query returning nothing
+  is a pass.
 
 ## Scoring
 
-Every query is scored against its pipeline's **top-10** ranked paths, computed
-at **query-side similarity threshold 0** — positions only, no score filtering.
-Production's query↔note thresholds (the profile's `quick` and `deep` defaults
-plus its `fallback`) sit on one embedding model's similarity scale, so they
-aren't comparable across models; the harness zeroes them rather than let
-threshold tuning masquerade as ranking quality. The ranked list still carries
-each path's score, so a threshold can be judged afterwards (see
-[Calibration](#calibration)).
+A positional run scores each query against its pipeline's **top-10** ranked
+paths, computed at **query-side similarity threshold 0** — positions only, no
+score filtering. Production's query↔note thresholds (the profile's `quick` and
+`deep` defaults plus its `fallback`) sit on one embedding model's similarity
+scale, so they aren't comparable across models; a positional run zeroes them
+rather than let threshold tuning masquerade as ranking quality. The ranked list
+still carries each path's score, so a threshold can be judged afterwards (see
+[Calibration](#calibration)). A production run scores the list the profile's
+floors and the effort's cap leave.
 
 The expansion leg's floor is the deliberate exception: **`expansion_floor` is
-the selected profile's own default** (`ModelProfile.similarity.expansionFloor`).
-It is a similarity threshold too, but on the seed↔note scale rather than the
-query↔note one, and zeroing it would stop the `fused` pipeline from being the
-production pipeline for that profile — which is the whole point of that
-pipeline. The cost is a caveat, worth stating plainly:
+the selected profile's own default** (`ModelProfile.similarity.expansionFloor`)
+on both runs. It is a similarity threshold too, but on the seed↔note scale
+rather than the query↔note one, and zeroing it would stop the `fused` pipeline
+from being the production pipeline for that profile — which is the whole point
+of that pipeline. The cost is a caveat, worth stating plainly:
 
 > A cross-model comparison of `fused` is not clean. Under a model change the
 > expansion leg's membership shifts with the new model's similarity
@@ -191,39 +253,80 @@ pipeline. The cost is a caveat, worth stating plainly:
 Within one model — an RRF re-tuning, for instance — the floor is a constant
 across runs and the caveat doesn't apply.
 
-From that top-10, three metrics are computed, each over three slices
-(`overall`, `ua`, `en`):
+**Answerable entries** (every class but `control`):
 
-- **precision@3** — mean of `|relevant ∩ top-3| / 3`.
+- **hit@3** — fraction of entries with at least one relevant path in the top-3.
 - **MRR** — mean of `1 / rank of first relevant hit`, `0` when no relevant
-  path appears in the top-10.
-- **hit@3** — fraction of queries with at least one relevant path in the
-  top-3.
+  path is returned.
+- **recall@10** — mean of `|relevant ∩ top-10| / |relevant|`; what matters for
+  lexical lookups and entries with several relevant notes.
+
+**Control entries**:
+
+- **control hit rate** — share of control entries that returned at least one
+  note.
+- **control mean results** — mean number of notes a control entry returned.
+
+Both are meaningful on a production run (and on `lexical`, which has no floor
+to zero); on a positional semantic or fused run every query returns ten notes.
+
+There is deliberately **no precision of the returned list**: labels are not
+exhaustive, so an unlabelled relevant note would read as noise. Noise is
+measured on control entries, where every returned note is noise by definition.
+
+Every metric is reported over `overall`, each `lang` (`ua`, `en`, `mixed`),
+each `class`, and each `class/lang` cell the set holds (`class_lang`, keyed
+`concept/ua` and so on). A slice records how many `answerable` and `controls`
+entries it holds; a metric whose population is empty in a slice is `null`.
 
 ## Reports and comparability
 
-Each run writes one JSON file to `eval/results/` (gitignored — reports are
-machine-generated and tied to a code SHA, not durable artifacts), named
-`<yyyy-mm-ddThh-mm-ss>-<model_key>-<pipeline>.json`. It carries:
+Each run writes one JSON file to `<vault>/.neuro-vault/eval/results/`, beside
+the golden set: reports name vault notes and quote golden queries, so they live
+in the vault's own private repository, never in this one. The file is named
+`<yyyy-mm-ddThh-mm-ss>-<model_key>-<run>-<pipeline>-<effort>.json`. It carries:
 
+- `format_version` — the report shape; bumped whenever a report's shape or
+  meaning changes (`REPORT_FORMAT_VERSION` in `eval/report.ts`). Version 2
+  added control entries, class slices, recall@10, run modes, coverage and leg
+  diagnostics, and dropped precision@3. Reports of different versions are not
+  comparable.
 - `code_sha`, `vault_sha` — `git rev-parse HEAD` in this repo and in the
   vault, respectively, with a `-dirty` suffix when the working tree has
   uncommitted changes. Either is `null` when that directory isn't a git
   repository, or git was unavailable — never a fabricated value.
-- `model_key`, `model_id`, `identity`, `pipeline` — which combination produced
-  this report. `model_key` is the profile the run was invoked with; `identity`
+- `model_key`, `model_id`, `identity`, `pipeline`, `run`, `effort` — which
+  combination produced this report. `model_key` is the profile the run was invoked with; `identity`
   is the full embedding identity the corpus was gated against and the queries
   were embedded under (provider, model key and id, revision, dtype, dimensions,
   pooling, max tokens); `model_id` repeats `identity.model_id`.
 - `config` — every knob in effect (pool sizes, thresholds, the profile's
   expansion floor, fusion weight, the adaptive-`k` policy), so a run with
   different knobs is distinguishable at a glance.
-- `golden` — the golden set's path and entry count.
-- `metrics` — the three slices described above.
-- `per_query` — for each query: its ranked top list (`top`) with the score each
-  path was ranked by (`top_scores`, parallel to `top`), the 1-based ranks of
-  every relevant path inside it (`relevant_ranks`), the first of them
-  (`first_relevant_rank`, `null` when none), the per-query metric values, and
+- `golden` — the golden set's path, its entry `count`, how many entries this
+  run `scored`, and the `skipped_ids` (`semantic` skips array entries).
+- `coverage` — the golden set against the loaded corpus (#104):
+  `relevant_paths_total` and `relevant_paths_indexed` (relevant paths the corpus
+  holds a vector for), `entries_unwinnable` and `unwinnable_ids` (answerable
+  entries none of whose relevant notes has a vector — the semantic leg cannot
+  win them; the lexical leg still can), and `corpus_stale_paths` (corpus notes
+  absent from the vault's scoped listing, which eval can still rank). A run with
+  unwinnable entries is not comparable with one without, whatever the
+  `vault_sha`.
+- `metrics` — the slices described in [Scoring](#scoring).
+- `diagnostics` — on a production run of `fused` or `lexical`: which legs the
+  returned notes came from, for answerable and control entries apart —
+  `returned`, `semantic_only` (the notes a semantic floor alone decides), the
+  count per leg (`semantic`, `lexical`, `expansion`), and of the returned
+  notes the labelled-relevant ones (`relevant`) and those of them only semantic
+  found (`relevant_semantic_only`).
+- `per_query` — for each entry: its `query`, `class` and `lang`, its ranked top
+  list (`top`) with the score each path was ranked by (`top_scores`, parallel to
+  `top`), the legs behind each path (`top_found_in`, parallel to `top`; absent
+  on `semantic`), how many notes it returned (`result_count`), the 1-based ranks
+  of every relevant path inside the list (`relevant_ranks`), the first of them
+  (`first_relevant_rank`, `null` when none), the per-entry metric values
+  (`reciprocal_rank`, `hit_at_3`, `recall_at_10`; `null` on a control entry), and
   `best_relevant_similarity` — the best cosine between the query and any of its
   relevant notes **whether or not that note was ranked** (`null` when none of
   them has a vector). It is the evidence a threshold needs for notes the top
@@ -251,10 +354,10 @@ corpus was freshly built or reconciled against that same vault state; a
 comparison against a stale corpus can look artificially better or worse than
 it should.
 
-Since reports are gitignored and local, there's no built-in history. Durable
-baseline numbers are meant to be transcribed by hand into wherever they need
-to live for the long term — a vault task note — rather than kept as a growing
-pile of JSON files.
+Reports are committed in the vault's repository alongside the golden set, so
+the baseline and the runs read against it keep their history there. Anything
+that leaves the vault — an issue, a PR, a commit message here — carries
+aggregate numbers only: never query text, note paths or titles.
 
 ## Calibration
 
@@ -295,6 +398,14 @@ design D11 in
 For each of the six defaults on the selected profile, `pass_rates` records its
 threshold, the population it filters and the share of that population at or
 above the threshold.
+
+`separation` sets the **top-1 similarity** of control entries against that of
+answerable ones, each as quantiles: the best cosine any of an entry's query
+strings reaches on any note. It covers every entry, array ones included — a
+call returns a note when any of its strings clears the floor, so its top-1 is
+the best over its strings. A query-side floor between the two distributions
+drops control noise without dropping answers; the overlap is what a floor
+cannot fix.
 
 `note_all` holds N·(N−1) similarities for N in-scope notes with a vector (787 656
 for the 888-vector vault measured here), and the run keeps them in memory, so
@@ -382,4 +493,7 @@ completes, and the suggestions are then only as good as the vaults are alike.
 
 ## Pointers
 
-- Golden-set curation (writing the real entries): #86.
+- Golden-set curation (writing the real entries): #86; the extended set and
+  its baseline: #220.
+- The eval design this harness implements (classes, controls, run modes):
+  #219.

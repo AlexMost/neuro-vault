@@ -5,13 +5,37 @@ import { parse } from 'yaml';
 
 import { FsVaultReader } from '../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../src/lib/obsidian/vault-scope-config.js';
+import { MAX_MULTI_QUERIES } from '../src/modules/semantic/tool-helpers.js';
+
+export const QUERY_CLASSES = ['concept', 'name', 'single_token', 'control'] as const;
+export type QueryClass = (typeof QUERY_CLASSES)[number];
+
+/** `mixed` is one call carrying UA and EN strings — cross-language is a language slice. */
+export const LANGS = ['ua', 'en', 'mixed'] as const;
+export type Lang = (typeof LANGS)[number];
 
 export interface GoldenEntry {
   id: string;
-  query: string;
-  lang: 'ua' | 'en';
+  /**
+   * One `search_notes` call: a string, or an array passed as `queries` (relevance is
+   * judged per call). Normalised the way the tool normalises it — trimmed, an array
+   * de-duplicated in order.
+   */
+  query: string | string[];
+  class: QueryClass;
+  lang: Lang;
   source?: string;
+  /** Empty exactly when `class` is `control`: a control query has no answer in the vault. */
   relevant: string[];
+}
+
+/** The strings one entry's call sends. */
+export function queriesOf(entry: GoldenEntry): string[] {
+  return typeof entry.query === 'string' ? [entry.query] : entry.query;
+}
+
+export function isControl(entry: GoldenEntry): boolean {
+  return entry.class === 'control';
 }
 
 /** Any golden-set failure — structural or broken path. The CLI maps it to exit 1. */
@@ -33,24 +57,46 @@ function asEntry(raw: unknown, index: number): GoldenEntry {
   }
   const e = raw as Record<string, unknown>;
   if (typeof e.id !== 'string' || e.id === '') fail(`golden set: ${label(e.id)} is missing id`);
-  if (typeof e.query !== 'string' || e.query.trim() === '')
-    fail(`golden set: ${label(e.id)} is missing query`);
-  if (e.lang !== 'ua' && e.lang !== 'en')
-    fail(`golden set: ${label(e.id)} has unknown lang (expected "ua" or "en")`);
+  const query = asQuery(e.query, label(e.id));
+  if (!QUERY_CLASSES.includes(e.class as QueryClass))
+    fail(`golden set: ${label(e.id)} has unknown class (expected ${QUERY_CLASSES.join(', ')})`);
+  const entryClass = e.class as QueryClass;
+  if (!LANGS.includes(e.lang as Lang))
+    fail(`golden set: ${label(e.id)} has unknown lang (expected ${LANGS.join(', ')})`);
   if (
     !Array.isArray(e.relevant) ||
-    e.relevant.length === 0 ||
     !e.relevant.every((p): p is string => typeof p === 'string' && p !== '')
   ) {
-    fail(`golden set: ${label(e.id)} needs a non-empty relevant list of paths`);
+    fail(`golden set: ${label(e.id)} needs a relevant list of paths`);
   }
+  // The control rule, both ways: an answerable entry with no labels would score as a
+  // miss, and a control with labels would never be read as noise.
+  if (entryClass === 'control' && e.relevant.length > 0)
+    fail(`golden set: ${label(e.id)} is a control query and must have relevant: []`);
+  if (entryClass !== 'control' && e.relevant.length === 0)
+    fail(`golden set: ${label(e.id)} has relevant: [] but is not class: control`);
   return {
     id: e.id,
-    query: e.query,
-    lang: e.lang,
+    query,
+    class: entryClass,
+    lang: e.lang as Lang,
     ...(typeof e.source === 'string' ? { source: e.source } : {}),
     relevant: e.relevant,
   };
+}
+
+/** The tool's own query rules (`normalizeQuery` / `normalizeQueryArray`), as golden-set errors. */
+function asQuery(raw: unknown, label: string): string | string[] {
+  if (typeof raw === 'string') {
+    if (raw.trim() === '') fail(`golden set: ${label} is missing query`);
+    return raw.trim();
+  }
+  if (!Array.isArray(raw)) fail(`golden set: ${label} is missing query`);
+  if (raw.length === 0 || raw.length > MAX_MULTI_QUERIES)
+    fail(`golden set: ${label} needs a query array of 1..${MAX_MULTI_QUERIES} strings`);
+  if (!raw.every((q): q is string => typeof q === 'string' && q.trim() !== ''))
+    fail(`golden set: ${label} has an empty or non-string query in its array`);
+  return [...new Set(raw.map((q) => q.trim()))];
 }
 
 export function parseGoldenSet(yamlText: string): GoldenEntry[] {
@@ -63,6 +109,13 @@ export function parseGoldenSet(yamlText: string): GoldenEntry[] {
     seen.add(entry.id);
   }
   return entries;
+}
+
+/** The vault's scoped note listing — the one the corpus and the lexical index are built from. */
+export async function scanVault(vaultRoot: string): Promise<Set<string>> {
+  const scope = await loadVaultScope(vaultRoot);
+  const reader = new FsVaultReader({ vaultRoot, scope });
+  return new Set(await reader.scan());
 }
 
 /**
@@ -87,9 +140,7 @@ export async function loadGoldenSet(vaultRoot: string): Promise<GoldenEntry[]> {
     fail(`golden set not found at ${file}`);
   }
   const entries = parseGoldenSet(text);
-  const scope = await loadVaultScope(vaultRoot);
-  const reader = new FsVaultReader({ vaultRoot, scope });
-  const known = new Set(await reader.scan());
+  const known = await scanVault(vaultRoot);
   const broken: string[] = [];
   for (const entry of entries) {
     for (const rel of entry.relevant) {

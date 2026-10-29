@@ -5,7 +5,8 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EvalReport } from '../../eval/report.js';
-import { gitSha, writeReport } from '../../eval/report.js';
+import { aggregate } from '../../eval/metrics.js';
+import { gitSha, REPORT_FORMAT_VERSION, resultsDirOf, writeReport } from '../../eval/report.js';
 import { TEST_EMBEDDING_IDENTITY } from '../_identity.js';
 
 const run = promisify(execFile);
@@ -38,24 +39,38 @@ describe('writeReport', () => {
   it('writes identity fields and a deterministic filename', async () => {
     dir = await mkdtemp(path.join(tmpdir(), 'eval-report-'));
     const report: EvalReport = {
+      format_version: REPORT_FORMAT_VERSION,
       code_sha: 'abc',
       vault_sha: null,
       model_id: 'onnx-community/harrier-oss-v1-270m-ONNX',
       model_key: 'harrier-270m',
       identity: { ...TEST_EMBEDDING_IDENTITY, model_key: 'harrier-270m' },
-      pipeline: 'semantic',
-      config: { top_k: 10 },
-      golden: { path: '/v/.neuro-vault/eval/golden.yaml', count: 2 },
-      metrics: {
-        overall: { n: 2, precision_at_3: 0.5, mrr: 0.75, hit_at_3: 1 },
-        ua: { n: 1, precision_at_3: 1 / 3, mrr: 0.5, hit_at_3: 1 },
-        en: { n: 1, precision_at_3: 2 / 3, mrr: 1, hit_at_3: 1 },
+      pipeline: 'fused',
+      run: 'production',
+      effort: 'quick',
+      config: { top_k: 5 },
+      golden: { path: '/v/.neuro-vault/eval/golden.yaml', count: 2, scored: 2, skipped_ids: [] },
+      coverage: {
+        relevant_paths_total: 1,
+        relevant_paths_indexed: 1,
+        entries_unwinnable: 0,
+        unwinnable_ids: [],
+        corpus_stale_paths: 0,
       },
+      metrics: aggregate([]),
       per_query: [],
     };
     const file = await writeReport(report, dir, new Date('2026-10-13T12:00:00Z'));
-    expect(path.basename(file)).toBe('2026-10-13T12-00-00-harrier-270m-semantic.json');
+    expect(path.basename(file)).toBe(
+      '2026-10-13T12-00-00-harrier-270m-production-fused-quick.json',
+    );
     const parsed = JSON.parse(await readFile(file, 'utf8')) as EvalReport;
     expect(parsed).toEqual(report);
+  });
+});
+
+describe('resultsDirOf', () => {
+  it('puts reports beside the golden set, in the vault', () => {
+    expect(resultsDirOf('/v')).toBe(path.join('/v', '.neuro-vault/eval/results'));
   });
 });
