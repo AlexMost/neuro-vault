@@ -117,6 +117,14 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     );
   });
 
+  it('advertises word-prefix lexical matching, not substring', () => {
+    const description = builtDescription();
+    expect(description).toContain(
+      'LEXICAL MATCHING: case/accent-insensitive word prefix (`пошук` finds `пошуком`);',
+    );
+    expect(description).not.toMatch(/substring/i);
+  });
+
   it('advertises no retry under the real harrier-270m profile', () => {
     const { properties } = z.toJSONSchema(
       registerTool(builtTool(resolveModelProfile('harrier-270m').similarity)).spec

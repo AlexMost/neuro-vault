@@ -1,6 +1,6 @@
 # Lexical Search
 
-The lexical leg of `search_notes` (`mode: "hybrid"`, the default, or `mode: "lexical"`) — a hand-rolled, deterministic exact/substring matcher over note titles, headings, and body, fully independent of the embedding corpus (it never touches the corpus loader and works on a cold or absent index). The matcher and its cache live in the [vault entry](./vault-entry.md) — in the shared daemon by default — and a session reads them through an `ILexicalReader` ([Who holds the cache](#who-holds-the-cache)).
+The lexical leg of `search_notes` (`mode: "hybrid"`, the default, or `mode: "lexical"`) — a hand-rolled, deterministic exact word-prefix matcher over note titles, headings, and body, fully independent of the embedding corpus (it never touches the corpus loader and works on a cold or absent index). The matcher and its cache live in the [vault entry](./vault-entry.md) — in the shared daemon by default — and a session reads them through an `ILexicalReader` ([Who holds the cache](#who-holds-the-cache)).
 
 ## What it is
 
@@ -71,7 +71,7 @@ mdast block extraction (blocks.ts) ──► title unit + heading/body units, ea
 normalize (normalize.ts) ──► lowercase → NFKD → strip marks → apostrophe unify → whitespace collapse
    │
    ▼
-AND-substring match (match.ts) ──► phrase match, else all-tokens-present, else no match
+AND word-prefix match (match.ts) ──► phrase match, else all-tokens-present, else no match
    │
    ▼
 six-tier ranking + density tie-break (rank.ts)
@@ -100,6 +100,7 @@ Refreshes are **serialised**, so a shared cache never runs two at once: a call t
 - The **title** unit is the file basename (no extension) — always compared separately from the body.
 - **Heading** nodes become their own unit (with the heading's own text and line range) and also become `currentHeading`, attached to subsequent body units so a body match can report its enclosing section.
 - **Paragraph, code, and table** nodes become **body** units (raw + normalized text, line range, enclosing heading).
+- A **code** node whose language is `compressed-json` produces no unit: it is the payload of an Excalidraw drawing (the plugin's encoded scene), and its letter runs matched short query tokens. The drawing's `Text Elements` section is ordinary paragraphs and stays searchable; a `json` or any other fence is still a body unit.
 - **List, list item, and blockquote** nodes are containers — recursed into rather than treated as leaf units, so a checklist item or quoted paragraph becomes its own body unit.
 
 Line positions come straight from mdast node positions, offset by `lineOffset` (the number of lines the frontmatter fence occupied) so `lines` in the response are file-relative, matching what a caller would see opening the note in Obsidian.
@@ -116,11 +117,13 @@ Query tokenization (`tokenizeQuery`) runs the query through the same normalize s
 
 A deliberate side effect: NFKD folds `й`→`и` and `ї`→`і`, which is accepted as a recall bias (pinned by test, not a surprise) — `і`/`и` themselves are distinct letters and are **not** merged.
 
-Matching is **substring**, not word-boundary, by design: Ukrainian declensions make substring the right recall bias (`пошук` is a substring of `пошуком`), and it lets `tolerant arguments` match `tolerant-arguments` / `tolerant_arguments` without a tokenizer that understands hyphenation.
+Matching is **word-prefix**: a token matches only where it starts a word, and its end is free. A stem therefore still matches its Ukrainian inflections (`пошук` matches `пошуком`), while a short token no longer matches inside a longer word, an identifier or a URL path segment (`api` does not match `rapid`). Whole-word matching was rejected because it loses those inflections. The rule was chosen in #228 on the extended eval, where every lexical hit on a control query had been one of those in-word matches.
 
-### 5. AND-substring matching
+### 5. AND word-prefix matching
 
-`matchUnit` (`match.ts`) first checks whether the whole normalized query appears as a contiguous substring in the unit — a **phrase match**. If not, it requires that every query token appear *somewhere* in the unit (AND semantics across tokens); if any token is missing, the unit does not match at all. Either way it records a **density** (matched characters ÷ unit length, capped at 1) and the first match position, used for tiering and snippeting respectively.
+`matchUnit` (`match.ts`) first checks whether the whole normalized query occurs contiguously in the unit at a word start — a **phrase match**. If not, it requires that every query token occur *somewhere* in the unit at a word start (AND semantics across tokens); if any token is missing, the unit does not match at all.
+
+A **word start** is index 0, or a position whose preceding code point is not a word character. A word character is a letter (`\p{L}`), a digit (`\p{N}`), `_` or the unified apostrophe: `'` sits inside Ukrainian words (`об'єкт`), and `_` follows `\w`. So `tolerant arguments` matches `tolerant-arguments` token by token (`-` is a boundary) but not `tolerant_arguments`, whose second part follows `_`; the whole identifier and its first part still match. A phrase or token whose first character is not a letter or digit (`/api`, `#tag`, `.env`) is its own boundary and matches at any occurrence. `matchUnit` takes the first qualifying occurrence, scanning past in-word ones, so the recorded position — and the snippet — is the match that counted. Either way it records a **density** (matched characters ÷ unit length, capped at 1) and the first match position, used for tiering and snippeting respectively.
 
 A multiword query split across two separate AST blocks does not match as a phrase — only as tokens, and only if every token lands within the *same* unit. This is an accepted trade-off (see design decision D7), not a bug: block boundaries are the matching unit.
 
@@ -149,7 +152,7 @@ A note's overall tier is the **best** (lowest-numbered) tier across all its unit
 
 An entry appears in `perQueryTokenCounts` only for a query that both (a) tokenizes to two or more tokens and (b) has zero AND-matches in `perQueryCounts` — a single-token miss or any non-zero hit count gets no entry at all, keeping the diagnostic silent in the common case. For a qualifying query, each unique normalized token (deduplicated — a repeated token is counted once, not once per occurrence) is matched independently against the same note set, same normalization, and same `allowed`/`filter` scope as the AND match — `matchUnit(unit.norm, token, [token])` against the title and every body/heading unit — and mapped to the number of notes where that token alone hits. A token with count `0` names a token absent from the (filtered) note set entirely — that is what killed the AND match. Because this per-token count hits if the token appears in *any* unit while the AND match requires all tokens to co-occur within *one* unit (title/heading/paragraph — see `matchUnit`), a query can come back with every token non-zero and still have zero AND-matches: the tokens all exist somewhere, just never together in the same unit. Either way the fix is the same — split the query into an array so each token can match independently instead of requiring one unit to contain all of them.
 
-This mirrors the AND-substring semantics exactly — it is not a fuzzy "closest match" search, just the same substring check run per-token instead of per-query.
+This mirrors the AND word-prefix semantics exactly — it is not a fuzzy "closest match" search, just the same word-start check run per-token instead of per-query.
 
 ## Response mapping
 
@@ -172,6 +175,6 @@ The tie-break graph follows the same rule: `lexicalSearch` awaits the `ensureFre
 - No watcher-driven invalidation and no FTS-backed implementation. Both would fit behind `lexical.search` later; today the cache is read-through.
 - No second cache per session: a daemon-served session holds no `LexicalIndex` for this leg at all. Only the standalone reader (`--no-semantic`) builds one in the session.
 - No numeric score in the response (design decisions D3/D10) — ordinal position and `matched_in` are considered sufficient signal for an LLM consumer, and it keeps the `similarity`-is-semantic invariant intact.
-- No word-boundary, regex, or fuzzy matching — pure normalized-substring AND, chosen deliberately for recall over Ukrainian declensions (see the normalize chain above). `mode: "semantic"`-style fuzzy tolerance is out of scope for this leg by design.
+- No whole-word, regex, or fuzzy matching — normalized word-prefix AND, so a stem keeps matching its Ukrainian declensions (see the normalize chain above). `mode: "semantic"`-style fuzzy tolerance is out of scope for this leg by design.
 - No BM25 or other opaque scoring — ranking is six ordinal tiers plus a density tie-break, chosen for determinism (design decision D7).
 - No cross-block phrase matching — a phrase split across two AST blocks matches only as independent tokens, and only if every token lands in one block.

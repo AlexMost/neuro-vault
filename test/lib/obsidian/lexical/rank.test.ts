@@ -161,7 +161,7 @@ describe('rankNotes', () => {
     expect(ranked[0].matches[0].matched_in).toBe('body');
   });
 
-  it('inflected forms match by substring (heading пошуком matches query пошук)', () => {
+  it('inflected forms match by word prefix (heading пошуком matches query пошук)', () => {
     const map = notes([['n.md', '# розмова про пошуком\n']]);
     const { notes: ranked } = rankNotes({
       notes: map,
@@ -172,6 +172,31 @@ describe('rankNotes', () => {
     });
     expect(ranked).toHaveLength(1);
     expect(ranked[0].matches[0].matched_in).toBe('heading');
+  });
+
+  it('an in-word occurrence is no candidate', () => {
+    const { notes: ranked, perQueryCounts } = rankNotes({
+      notes: notes([['n.md', 'rapid growth\n']]),
+      queries: ['api'],
+      noteCap: 10,
+      perNoteCap: 3,
+      getBacklinkCount: noBacklinks,
+    });
+    expect(ranked).toEqual([]);
+    expect(perQueryCounts).toEqual({ api: 0 });
+  });
+
+  it('a drawing payload is neither matched nor counted', () => {
+    const body = '## Drawing\n```compressed-json\nn4kak api\n```\n';
+    const { notes: ranked, perQueryCounts } = rankNotes({
+      notes: notes([['d.excalidraw.md', body]]),
+      queries: ['n4kak'],
+      noteCap: 10,
+      perNoteCap: 3,
+      getBacklinkCount: noBacklinks,
+    });
+    expect(ranked).toEqual([]);
+    expect(perQueryCounts).toEqual({ n4kak: 0 });
   });
 
   it('reports per-query candidate counts before the note cap', () => {
@@ -226,6 +251,20 @@ describe('rankNotes', () => {
         ретеншн: 0,
         алертів: 1,
       });
+    });
+
+    it('counts a token only where it starts a word', () => {
+      const { perQueryTokenCounts } = rankNotes({
+        notes: notes([
+          ['a.md', 'rapid api\n'],
+          ['b.md', 'rapid\n'],
+        ]),
+        queries: ['api zzz'],
+        noteCap: 10,
+        perNoteCap: 3,
+        getBacklinkCount: noBacklinks,
+      });
+      expect(perQueryTokenCounts['api zzz']).toEqual({ api: 1, zzz: 0 });
     });
 
     it('has no entry for a single-token dead query', () => {

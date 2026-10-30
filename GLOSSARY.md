@@ -23,7 +23,7 @@ The lowest query↔note similarity at which a note counts as a semantic hit, set
 _Avoid_: threshold (that is the caller's override), cut-off
 
 **Lexical leg**:
-One ranked list of notes for a search, produced by exact and substring matching over note titles, headings and body.
+One ranked list of notes for a search, produced by exact matching at word starts over note titles, headings and body.
 _Avoid_: keyword search, full-text search
 
 **Fusion**:

@@ -12,7 +12,7 @@ One thing it does **not** cover, deliberately: `read_notes` with an explicit pat
 
 ### `search_notes`
 
-`search_notes` is hybrid: one call fuses a **semantic leg** (embedding cosine similarity over the corpus the server builds and owns — fuzzy recall, topic exploration, cross-language), a **lexical leg** (exact/substring text matching over note titles, headings, and body — names, codes, terms), and (in `effort: "deep"`) an **expansion leg** (semantic neighbours of the top hits) into **one reciprocal-rank-fused list**, `matches[]`. A note surfaced by more than one leg is lifted in the merged order automatically — you never have to cross-reference separate lists by hand.
+`search_notes` is hybrid: one call fuses a **semantic leg** (embedding cosine similarity over the corpus the server builds and owns — fuzzy recall, topic exploration, cross-language), a **lexical leg** (exact word-prefix text matching over note titles, headings, and body — names, codes, terms), and (in `effort: "deep"`) an **expansion leg** (semantic neighbours of the top hits) into **one reciprocal-rank-fused list**, `matches[]`. A note surfaced by more than one leg is lifted in the merged order automatically — you never have to cross-reference separate lists by hand.
 
 ```typescript
 search_notes({
@@ -229,7 +229,8 @@ For more on the semantic pipeline (merge, cap, per-seed expansion, orphan-block 
 
 ### Lexical matching semantics
 
-- Case-, accent-, and apostrophe-variant-insensitive **substring** matching (not word-boundary) — Ukrainian declensions make substring the right recall bias (`пошук` ⊂ `пошуком`).
+- Case-, accent-, and apostrophe-variant-insensitive **word-prefix** matching: a token matches only where it starts a word, and its end is free, so a stem still finds its inflected forms (`пошук` finds `пошуком`) while `api` no longer matches inside `rapid`. A word character is a letter, a digit, `_` or an apostrophe, so `arguments` does not match inside `tolerant_arguments` but does in `tolerant-arguments`. A token that starts with punctuation (`/api`, `#tag`, `.env`) matches wherever it occurs.
+- Excalidraw drawing payloads (`compressed-json` code blocks) are not searched; a drawing matches on its title, headings and `Text Elements`.
 - A multiword query requires ALL tokens to appear somewhere in the same unit (AND semantics); a contiguous phrase match ranks higher than a scattered-tokens match at the same location.
 - Ranking is six deterministic tiers — title/heading/body × phrase/tokens — with density (matched-chars ÷ unit length) as the tie-break within a tier, then `backlink_count` desc, then `path` asc. No opaque scoring, byte-for-byte reproducible. This is the order rank fusion consumes for the lexical source — see [`rank-fusion.md`](../architecture/rank-fusion.md).
 - `mode: "lexical"` never touches the embedding corpus loader — it works even when the vault has a cold, disabled, or absent index. In this mode `matches[]` preserves the lexical leg's order exactly and every `found_in` is lexical-only.
@@ -262,7 +263,7 @@ How to use them, whatever the model:
 - **A value is only meaningful on one model's scale.** A `threshold` that works on `harrier-270m` (0.45-ish) lets nearly everything through on `granite-97m` (0.7-ish), and the reverse filters nearly everything out. Re-tune when you switch `--model`; read the active numbers from the tool description.
 - **`semantic_fallback: true` tells you when the retry fired** — those hits cleared only the fallback floor, so treat them as weaker than a normal result. It never fires on a model without a fallback.
 
-There is no equivalent knob for the lexical leg — an exact/substring match either exists or it doesn't; use `filter` to narrow scope instead of a threshold.
+There is no equivalent knob for the lexical leg — a word-prefix match either exists or it doesn't; use `filter` to narrow scope instead of a threshold.
 
 ### Tuning `expansion_floor` (expansion leg, `deep` effort only)
 
