@@ -52,6 +52,34 @@ describe('parseNote', () => {
     expect(texts).toEqual(['перший пункт', 'другий пункт', 'цитата тут']);
   });
 
+  it('drops an Excalidraw compressed-json payload, keeps its text elements', () => {
+    const body = [
+      '# Excalidraw Data',
+      '',
+      '## Text Elements',
+      'векторний пошук ^abc',
+      '',
+      '%%',
+      '## Drawing',
+      '```compressed-json',
+      'N4KAkARALgngDgUwgLgAQQQDwMYEMA2AlgCYBOuA',
+      '```',
+      '%%',
+      '',
+    ].join('\n');
+    const raws = parseNote({ path: 'd.excalidraw.md', body, lineOffset: 0 }).units.map(
+      (u) => u.raw,
+    );
+    expect(raws.some((r) => r.includes('N4KAk'))).toBe(false);
+    expect(raws.some((r) => r.includes('векторний пошук'))).toBe(true);
+  });
+
+  it('keeps a json fence as a body unit', () => {
+    const body = '```json\n{"api": 1}\n```\n';
+    const parsed = parseNote({ path: 'n.md', body, lineOffset: 0 });
+    expect(parsed.units).toEqual([expect.objectContaining({ kind: 'body', raw: '{"api": 1}' })]);
+  });
+
   it('shifts line numbers by lineOffset (frontmatter)', () => {
     const parsed = parseNote({ path: 'n.md', body: 'абзац\n', lineOffset: 4 });
     expect(parsed.units[0].lines).toEqual([5, 5]);
