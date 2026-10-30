@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Outline shape prototype</title>
+    <style>
+      :root {
+        --bg: #fbfbf9;
+        --fg: #1d1d1b;
+        --mute: #6b6b66;
+        --line: #e3e2dc;
+        --acc: #2f5fd0;
+        --warn: #b4541a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #17171a;
+          --fg: #e8e8e3;
+          --mute: #9a9a94;
+          --line: #2c2c30;
+          --acc: #7da2ff;
+          --warn: #f0a36b;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 16px 64px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      p.lead {
+        color: var(--mute);
+        margin: 0 0 20px;
+      }
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 12px 0;
+      }
+      button {
+        font: inherit;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--fg);
+        padding: 5px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      button.on {
+        border-color: var(--acc);
+        color: var(--acc);
+      }
+      .bytes {
+        font-variant-numeric: tabular-nums;
+      }
+      .over {
+        color: var(--warn);
+        font-weight: 600;
+      }
+      pre {
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        overflow: auto;
+        max-height: 60vh;
+        font:
+          12.5px/1.45 ui-monospace,
+          monospace;
+        white-space: pre;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-variant-numeric: tabular-nums;
+      }
+      td,
+      th {
+        border-bottom: 1px solid var(--line);
+        padding: 4px 8px;
+        text-align: left;
+      }
+      .why {
+        color: var(--mute);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>read_notes · content: 'outline' — shape prototype</h1>
+      <p class="lead">
+        PROTOTYPE, throwaway. Question: flat list or tree, which fields per heading block, how
+        frontmatter/preamble show, what a note with hundreds of headings returns, and whether a
+        500-line note stays under 2 KB. Pick a note, then a shape.
+      </p>
+      <div id="notes" class="tabs"></div>
+      <p id="why" class="why"></p>
+      <div id="shapes" class="tabs"></div>
+      <pre id="out"></pre>
+      <h2 style="font-size: 17px">Vault aggregates</h2>
+      <div id="agg"></div>
+    </main>
+    <script>
+      const DATA = /*DATA*/ null;
+      const SHAPE_LABEL = {
+        flat: 'A · flat',
+        flatOwn: 'B · flat + own',
+        tree: 'C · tree',
+        text: 'D · text TOC',
+        tuples: 'E · tuples',
+        budgeted: 'A under 2 KB budget',
+        capped: 'CHOSEN · A, 100-entry cap',
+      };
+      let ni = 0,
+        sk = 'flat';
+      function pretty(json) {
+        const v = JSON.parse(json);
+        if (typeof v.outline === 'string')
+          return JSON.stringify({ ...v, outline: '…see below…' }) + '\n\n' + v.outline;
+        if (Array.isArray(v.outline) && !v.outline.some((e) => e && e.children)) {
+          const head = { ...v };
+          delete head.outline;
+          return (
+            JSON.stringify(head).slice(0, -1) +
+            ',"outline":[\n' +
+            v.outline.map((e) => '  ' + JSON.stringify(e)).join(',\n') +
+            '\n]}'
+          );
+        }
+        return JSON.stringify(v, null, 1);
+      }
+      function render() {
+        const n = DATA.rendered[ni];
+        document.getElementById('notes').innerHTML = DATA.rendered
+          .map(
+            (r, i) =>
+              `<button class="${i === ni ? 'on' : ''}" onclick="ni=${i};render()">${r.name}</button>`,
+          )
+          .join('');
+        document.getElementById('why').textContent =
+          `${n.why} · ${n.lines} lines · ${n.entries} heading blocks · note ${n.bodyBytes} bytes`;
+        document.getElementById('shapes').innerHTML = Object.entries(n.variants)
+          .map(
+            ([k, v]) =>
+              `<button class="${k === sk ? 'on' : ''}" onclick="sk='${k}';render()">${SHAPE_LABEL[k]} · <span class="bytes ${v.bytes > DATA.budget ? 'over' : ''}">${v.bytes} B</span></button>`,
+          )
+          .join('');
+        document.getElementById('out').textContent = pretty(n.variants[sk].json);
+        const a = DATA.agg;
+        document.getElementById('agg').innerHTML = a
+          ? '<table>' +
+            Object.entries(a)
+              .map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`)
+              .join('') +
+            '</table>'
+          : '<p class="why">not computed</p>';
+      }
+      render();
+    </script>
+  </body>
+</html>
