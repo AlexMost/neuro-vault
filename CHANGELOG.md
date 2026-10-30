@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [17.4.0](https://github.com/AlexMost/neuro-vault/compare/v17.3.0...v17.4.0) (2026-10-30)
+
+
+### Features
+
+* **eval:** control queries, run modes and a lexical pipeline ([#227](https://github.com/AlexMost/neuro-vault/issues/227)) ([ea81059](https://github.com/AlexMost/neuro-vault/commit/ea81059bce0bb640db9c91051cc4c025382c6416)), closes [#219](https://github.com/AlexMost/neuro-vault/issues/219) [#104](https://github.com/AlexMost/neuro-vault/issues/104) [#220](https://github.com/AlexMost/neuro-vault/issues/220) [#220](https://github.com/AlexMost/neuro-vault/issues/220)
+* **lexical:** a lexical-only call pools the leg at the merged cap ([#238](https://github.com/AlexMost/neuro-vault/issues/238)) ([531e2bd](https://github.com/AlexMost/neuro-vault/commit/531e2bd4cd669673c04b0a0a111e2223eddf00d8)), closes [#216](https://github.com/AlexMost/neuro-vault/issues/216) [#229](https://github.com/AlexMost/neuro-vault/issues/229) [#233](https://github.com/AlexMost/neuro-vault/issues/233)
+* **lexical:** word-prefix matching, no Excalidraw payloads ([#237](https://github.com/AlexMost/neuro-vault/issues/237)) ([8652752](https://github.com/AlexMost/neuro-vault/commit/865275243810ad57b5ac4284d46a134ef4fd266b)), closes [#216](https://github.com/AlexMost/neuro-vault/issues/216) [#228](https://github.com/AlexMost/neuro-vault/issues/228) [#231](https://github.com/AlexMost/neuro-vault/issues/231)
+* **semantic:** expansion fills the tail of deep results ([#236](https://github.com/AlexMost/neuro-vault/issues/236)) ([2b8641d](https://github.com/AlexMost/neuro-vault/commit/2b8641d4015698220cffc65c9fed864b800a850b)), closes [#223](https://github.com/AlexMost/neuro-vault/issues/223) [#225](https://github.com/AlexMost/neuro-vault/issues/225) [#234](https://github.com/AlexMost/neuro-vault/issues/234) [#223](https://github.com/AlexMost/neuro-vault/issues/223) [#232](https://github.com/AlexMost/neuro-vault/issues/232)
+* **semantic:** recalibrate harrier-270m semantic floors ([#235](https://github.com/AlexMost/neuro-vault/issues/235)) ([ce2e718](https://github.com/AlexMost/neuro-vault/commit/ce2e718b79606353d42a62c17f543de72cf158d6)), closes [#222](https://github.com/AlexMost/neuro-vault/issues/222) [#224](https://github.com/AlexMost/neuro-vault/issues/224) [#234](https://github.com/AlexMost/neuro-vault/issues/234) [#222](https://github.com/AlexMost/neuro-vault/issues/222) [#232](https://github.com/AlexMost/neuro-vault/issues/232) [#230](https://github.com/AlexMost/neuro-vault/issues/230)
+
 ## [17.3.0](https://github.com/AlexMost/neuro-vault/compare/v17.2.0...v17.3.0) (2026-10-20)
 
 
