@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getNoteLinks } from '../../../lib/obsidian/index.js';
 import type { ICorpusReader } from '../../../lib/obsidian/corpus/corpus.js';
 import { graphForTool } from '../../../lib/tool-graph.js';
+import { READ_ONLY_TOOL } from '../../../lib/tool-annotations.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
@@ -156,6 +157,7 @@ export function buildGetSimilarNotesTool(
   return buildSingleVaultTool<Input, StampedSimilarNoteResult[]>(registry, {
     name: 'get_similar_notes',
     title: 'Get Similar Notes',
+    annotations: READ_ONLY_TOOL,
     description:
       'Find related notes — both semantically similar and explicitly linked from this note via [[wikilinks]]. Pass a vault-relative POSIX path (e.g. "Folder/note.md") as `path`. Forward-linked results rank ahead of semantic-only ones.' +
       ' Typical flow: `search_notes` surfaces a relevant note, then call this on its path to expand the surrounding context into a deeper neighbour profile.',

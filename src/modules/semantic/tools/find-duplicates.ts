@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { READ_ONLY_TOOL } from '../../../lib/tool-annotations.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { SimilarityDefaults } from '../../../lib/model-profiles.js';
@@ -82,6 +83,7 @@ export function buildFindDuplicatesTool(
   return buildSingleVaultTool<Input, StampedDuplicatePair[]>(registry, {
     name: 'find_duplicates',
     title: 'Find Duplicates',
+    annotations: READ_ONLY_TOOL,
     description: 'Identify note pairs with high embedding similarity.',
     semantic: true,
     inputShape: {

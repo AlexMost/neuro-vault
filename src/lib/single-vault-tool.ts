@@ -1,3 +1,4 @@
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
 import { CorpusNotReadyError, type ISemanticBackend } from './obsidian/semantic-backend.js';
@@ -10,6 +11,8 @@ import type { IRegisteredVault, IVaultRegistry } from './vault-registry.js';
 interface ISingleVaultSpecBase {
   name: ToolName;
   title: string;
+  /** The MCP annotations the tool advertises — `src/lib/tool-annotations.ts`. */
+  annotations: ToolAnnotations;
   /** Domain prose only. The explicit-vault contract is appended by the builder. */
   description: string;
   /**
@@ -64,6 +67,7 @@ export function buildSingleVaultTool<TInput extends { vault?: string }, TOutput>
   return {
     name: spec.name,
     title: spec.title,
+    annotations: spec.annotations,
     description: block === '' ? spec.description : `${spec.description}\n\n${block}`,
     inputSchema: z.object({ ...vaultParamShape(registry), ...spec.inputShape }),
     handler: async (input) => {

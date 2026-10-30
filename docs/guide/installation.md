@@ -58,6 +58,15 @@ npm install -g neuro-vault-mcp
 }
 ```
 
+### Tool permissions: reads run freely, writes confirm
+
+Every tool advertises MCP tool annotations, so a client that gates calls on them (for example a per-server "untrusted" mode that confirms every tool call, as in Hermes Agent) can let the reads through unprompted and still ask before anything changes the vault:
+
+- **Read-only** (`readOnlyHint: true`, `idempotentHint: true`): `search_notes`, `query_notes`, `read_notes`, `read_daily`, `get_vault_overview`, `list_tags`, `list_properties`, `get_note_links`, `get_similar_notes`, `find_duplicates`.
+- **Writes** (`readOnlyHint: false`, `destructiveHint: true`): `create_note` (it can `overwrite`), `edit_note` (it overwrites the whole body unless `replace` is passed), `set_property` (it overwrites an existing value), `remove_property`.
+
+All fourteen are closed-world (`openWorldHint: false`): the server touches nothing but the vaults you pass it. A scheduled job that only reads the vault therefore never blocks on a confirmation prompt; one that writes should run with a trust level that allows writes, or expect the prompt.
+
 ## Connect the vault as a second brain to a project
 
 The MCP server tells your agent that this vault is your personal knowledge base, but it cannot know which slice of it belongs to the project you are currently working on — the same vault is typically connected to many projects, and people scope notes differently (a tag, a folder, a frontmatter property, or a combination).

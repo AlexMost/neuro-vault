@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { graphForTool } from '../../../lib/tool-graph.js';
+import { READ_ONLY_TOOL } from '../../../lib/tool-annotations.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
 import { runQueryNotes } from '../../../lib/obsidian/query/index.js';
@@ -65,6 +66,7 @@ export function buildQueryNotesTool(
   return buildMultiVaultTool(deps.registry, {
     name: 'query_notes',
     title: 'Query Notes',
+    annotations: READ_ONLY_TOOL,
     description: QUERY_NOTES_DESCRIPTION,
     inputShape: {
       filter: z.record(z.string(), z.unknown()),

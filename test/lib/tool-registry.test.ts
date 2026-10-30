@@ -24,6 +24,19 @@ describe('registerTool', () => {
     expect(reg.spec.inputSchema).not.toBe(schema);
   });
 
+  it('carries the tool annotations onto spec, where the SDK advertises them', () => {
+    const annotations = { readOnlyHint: true, idempotentHint: true, openWorldHint: false };
+    const tool: ITool<Record<string, never>, { ok: true }> = {
+      name: 'annotated',
+      description: 'annotated',
+      inputSchema: z.object({}),
+      annotations,
+      handler: async () => ({ ok: true }),
+    };
+
+    expect(registerTool(tool).spec.annotations).toEqual(annotations);
+  });
+
   it('exposes a spec.inputSchema that itself coerces (the path the MCP SDK takes)', () => {
     const schema = z.object({
       limit: z.number().int().positive().optional(),

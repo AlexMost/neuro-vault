@@ -239,6 +239,8 @@ For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./
 ## 📚 Documentation
 
 > **Every tool accepts an optional `vault` parameter.** In multi-vault mode, `search_notes`, `query_notes`, `get_vault_overview`, `list_tags`, and `list_properties` fan out across all registered vaults when `vault` is omitted.
+>
+> **Every tool advertises MCP annotations.** The ten reads carry `readOnlyHint: true`; the four writes (`create_note`, `edit_note`, `set_property`, `remove_property`) carry `readOnlyHint: false, destructiveHint: true` — so a client that confirms untrusted calls lets reads through and still asks before a write. Details: [Installation → Tool permissions](./docs/guide/installation.md#tool-permissions-reads-run-freely-writes-confirm).
 
 User guide lives in [`docs/guide/`](./docs/guide/README.md):
 

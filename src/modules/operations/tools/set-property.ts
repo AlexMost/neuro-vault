@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { DESTRUCTIVE_WRITE_TOOL } from '../../../lib/tool-annotations.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
@@ -25,6 +26,7 @@ export function buildSetPropertyTool(
   return buildSingleVaultTool<Input, { vault: string; ok: true }>(registry, {
     name: 'set_property',
     title: 'Set Property',
+    annotations: DESTRUCTIVE_WRITE_TOOL,
     description:
       'Set a frontmatter property on a note. Provide either `name` (wikilink-style) or `path` (vault-relative). `key` is the frontmatter property name (e.g. `status`, `due`). `value` may be string/number/boolean/array — `type` is inferred from the JS type unless given. For `date`/`datetime` you MUST pass `type` explicitly AND use ISO format (`YYYY-MM-DD` for date, `YYYY-MM-DDTHH:mm:ss[.sss][Z|±HH:mm]` for datetime) — non-ISO values are rejected up front. List items must not contain commas. Existing properties are overwritten. Returns `{ vault, ok: true }`.',
     inputShape: {

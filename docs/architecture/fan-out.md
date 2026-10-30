@@ -17,8 +17,10 @@ has exactly one builder in `src/lib/`:
 | explicit-vault | `buildSingleVaultTool` (`single-vault-tool.ts`) | `read_notes`, `create_note`, `edit_note`, `read_daily`, `set_property`, `remove_property`, `get_note_links`, `get_similar_notes`, `find_duplicates` | `EXPLICIT_VAULT_SUFFIX`  | `resolveVault`, or `resolveSemanticVault` under `semantic: true` |
 
 A tool module never composes dispatch itself. It supplies only its domain
-specifics — `name`, `title`, domain `description`, `inputShape`, `runForEntry`
-(plus `single` for the fan-out class) — and the builder owns the rest: the
+specifics — `name`, `title`, domain `description`, `annotations` (one of the two
+shapes in `src/lib/tool-annotations.ts`; see
+[`mcp-server-shape.md`](./mcp-server-shape.md#annotations)), `inputShape`,
+`runForEntry` (plus `single` for the fan-out class) — and the builder owns the rest: the
 `vault` parameter via `vaultParamShape`, the shared suffix via
 `describeMultiVault`, and the resolver call. That boundary is CI-enforced: an
 ESLint `no-restricted-imports` override bans `src/modules/**` from importing

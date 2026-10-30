@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { READ_ONLY_TOOL } from '../../src/lib/tool-annotations.js';
 import { buildSingleVaultTool } from '../../src/lib/single-vault-tool.js';
 import {
   CorpusNotReadyError,
@@ -51,6 +52,7 @@ function regFor(registry: IVaultRegistry) {
     buildSingleVaultTool<Input, { vault: string; n: number | null }>(registry, {
       name: 'remove_property',
       title: 'Fake Tool',
+      annotations: READ_ONLY_TOOL,
       description: 'Domain prose.',
       inputShape: { n: z.number().optional() },
       runForEntry: async (entry, input) => ({ vault: entry.name, n: input.n ?? null }),
@@ -104,6 +106,7 @@ describe('buildSingleVaultTool', () => {
       buildSingleVaultTool<Input, string>(registryOf('a', 'b'), {
         name: 'get_note_links',
         title: 'Fake Multi-line',
+        annotations: READ_ONLY_TOOL,
         description: 'Line one.\nLine two.',
         inputShape: {},
         runForEntry: async (entry) => entry.name,
@@ -121,6 +124,7 @@ describe('buildSingleVaultTool', () => {
       buildSingleVaultTool<Input, string>(registry, {
         name: 'find_duplicates',
         title: 'Fake Semantic',
+        annotations: READ_ONLY_TOOL,
         description: 'Domain prose.',
         semantic: true,
         inputShape: {},
@@ -141,6 +145,7 @@ describe('buildSingleVaultTool', () => {
       buildSingleVaultTool<Input, string>(registry, {
         name: 'find_duplicates',
         title: 'Fake Semantic',
+        annotations: READ_ONLY_TOOL,
         description: 'Domain prose.',
         semantic: true,
         inputShape: {},
@@ -160,6 +165,7 @@ describe('buildSingleVaultTool', () => {
       buildSingleVaultTool<Input, string>(registry, {
         name: 'find_duplicates',
         title: 'Fake Semantic',
+        annotations: READ_ONLY_TOOL,
         description: 'Domain prose.',
         semantic: true,
         inputShape: {},
@@ -167,5 +173,19 @@ describe('buildSingleVaultTool', () => {
       }),
     );
     expect(await callTool(reg, { vault: 'a' })).toBe('ready');
+  });
+});
+
+describe('buildSingleVaultTool annotations', () => {
+  it('forwards the spec annotations onto the tool registerTool advertises', () => {
+    const tool = buildSingleVaultTool<Input, string>(registryOf('a'), {
+      name: 'get_note_links',
+      title: 'Fake Tool',
+      annotations: READ_ONLY_TOOL,
+      description: 'Domain prose.',
+      inputShape: {},
+      runForEntry: async (entry) => entry.name,
+    });
+    expect(tool.annotations).toBe(READ_ONLY_TOOL);
   });
 });
