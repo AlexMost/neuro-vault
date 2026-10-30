@@ -1,6 +1,6 @@
 import type { ICorpusReader } from '../../lib/obsidian/corpus/corpus.js';
 import type { ILexicalReader, RankedNote } from '../../lib/obsidian/lexical/index.js';
-import { EFFORT_PROFILES, LEXICAL_PER_NOTE_CAP } from './effort-profiles.js';
+import { EFFORT_PROFILES, LEXICAL_PER_NOTE_CAP, lexicalPool } from './effort-profiles.js';
 import { flattenExpansion, fuseRanks, type ExpansionCandidate } from './rank-fusion.js';
 import type { SimilarityDefaults } from '../../lib/model-profiles.js';
 import { executeRetrieval } from './retrieval-policy.js';
@@ -105,7 +105,7 @@ export async function runRetrievalPipeline(
   const lexical = await deps.lexical.search({
     queries: input.queries,
     allowed: input.allowed,
-    noteCap: profile.lexicalNoteCap,
+    noteCap: lexicalPool(input.effort, !input.semantic),
     perNoteCap: LEXICAL_PER_NOTE_CAP,
   });
 

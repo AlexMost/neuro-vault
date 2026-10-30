@@ -257,7 +257,7 @@ export async function runEval(
     args.pipeline === 'semantic' ? undefined : await createLexicalContext(vaultRoot);
   const shape = { run: args.run, effort: args.effort };
 
-  const config = evalConfig(profile.similarity, shape);
+  const config = evalConfig(profile.similarity, shape, args.pipeline);
   // `semantic` ranks one vector: an array entry is one call of several strings, which only
   // the retrieval pipeline can merge.
   const scored = entries.filter((e) => args.pipeline !== 'semantic' || typeof e.query === 'string');

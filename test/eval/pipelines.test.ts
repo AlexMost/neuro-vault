@@ -387,6 +387,13 @@ describe('evalConfig', () => {
     });
   });
 
+  it('records the lexical pool the pipeline runs with', () => {
+    const shape = { run: 'production', effort: 'deep' } as const;
+    expect(evalConfig(TEST_SIMILARITY, shape, 'lexical')).toMatchObject({ lexical_note_cap: 12 });
+    expect(evalConfig(TEST_SIMILARITY, shape, 'fused')).toMatchObject({ lexical_note_cap: 10 });
+    expect(evalConfig(TEST_SIMILARITY, shape)).toMatchObject({ lexical_note_cap: 10 });
+  });
+
   it('a production run under a profile without a fallback records a null fallback', () => {
     const { fallback: _fallback, ...withoutFallback } = TEST_SIMILARITY;
     expect(evalConfig(withoutFallback, { run: 'production', effort: 'quick' })).toMatchObject({

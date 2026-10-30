@@ -274,7 +274,7 @@ export function buildSearchNotesTool(
     '- A vault may hold notes in more than one language. When you have evidence of which languages are in use (earlier results, note titles, file names), add translations of the key concepts into each of those languages to the same array.',
     '',
     'AXES:',
-    '- mode: "hybrid" (default) runs all legs; "lexical" runs ONLY exact text matching — works even when no embedding corpus exists.',
+    '- mode: "hybrid" (default) runs all legs; "lexical" runs ONLY exact matching, up to the merged cap; needs no embedding corpus.',
     `- effort: "quick" (default) — compact lookup (${EFFORT_PROFILES.quick.semanticPool} semantic notes, ~${EFFORT_PROFILES.quick.lexicalNoteCap} lexical, no expansion, merged cap ${EFFORT_PROFILES.quick.mergedCap}); "deep" — exploration (${EFFORT_PROFILES.deep.semanticPool} semantic, ~${EFFORT_PROFILES.deep.lexicalNoteCap} lexical, expansion on, merged cap ${EFFORT_PROFILES.deep.mergedCap}).`,
     '',
     'PARAMETERS:',

@@ -11,7 +11,7 @@ import type { SearchEffort } from './types.js';
 export interface EffortProfile {
   /** Semantic-leg seed pool (retrieval-policy `limit`). */
   semanticPool: number;
-  /** Lexical-leg note pool (`noteCap`). */
+  /** Lexical-leg note pool (`noteCap`) when the semantic leg runs too. */
   lexicalNoteCap: number;
   /** Whether the expansion leg runs at this effort. */
   expansion: boolean;
@@ -37,6 +37,16 @@ export const EFFORT_PROFILES: Record<SearchEffort, EffortProfile> = {
     mergedCap: 12,
   },
 };
+
+/**
+ * The lexical leg's note pool. When it is the only source (`mode: lexical`, or no semantic
+ * leg to run), a pool below the merged cap would only return fewer notes than the call
+ * allows, so it fills the merged cap; beside the semantic leg it keeps its own cap (#229).
+ */
+export function lexicalPool(effort: SearchEffort, lexicalOnly: boolean): number {
+  const profile = EFFORT_PROFILES[effort];
+  return lexicalOnly ? profile.mergedCap : profile.lexicalNoteCap;
+}
 
 /** Per-note lexical evidence cap — effort-independent. */
 export const LEXICAL_PER_NOTE_CAP = 3;
