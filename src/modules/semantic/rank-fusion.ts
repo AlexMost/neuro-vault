@@ -39,10 +39,11 @@ export interface FusedCandidate {
 
 // Expansion answers someone else's hit, not the query — a second-order
 // signal. Its RRF contribution is down-weighted so it can reinforce and
-// fill thin lists but never outrank an equal-rank primary hit. Hand-picked
-// start; re-tuned via the retrieval eval harness (see change
+// fill the tail of a list but never outrank an equal-rank primary hit.
+// Tuned on the retrieval eval (issue #223): 0.5 gives the best deep recall
+// with hit@3 and MRR no worse than the 0.85 start (change
 // weighted-rrf-expansion, design D1).
-export const EXPANSION_WEIGHT = 0.85;
+export const EXPANSION_WEIGHT = 0.5;
 
 export function fuseRanks(args: {
   sources: { semantic: string[]; lexical: string[]; expansion: string[] };

@@ -288,6 +288,7 @@ export function buildSearchNotesTool(
     '- `matches[]` — one fused, ranked list; each note appears at most once. `found_in` names the leg(s) that surfaced it, and each leg that hit attaches its own evidence field. More than one leg on a note is the strongest relevance signal there is.',
     '- `truncated` — top-level, always present; true when candidates were dropped, either by the merged cap (recover by raising `limit`) or by a leg\'s internal pool cap (`limit` will NOT help — raise `effort` to "deep", or narrow `query`/`filter`).',
     '- `semantic_status` — top-level, always present: `{ state, indexed?, total? }` describing the VAULT\'s index, not this call. Every state but "ready" carries a `note` saying what it did to this response.',
+    '- `expansion_similarity` (deep): note-to-note similarity to a semantic hit, not the query; not comparable with `similarity`.',
     '- `query_stats` — array queries only: per input query, PRE-cap hit counts `{ semantic, lexical }`. `semantic` is `null` when the semantic leg did not run at all; a number always means it ran. An entry worth acting on carries its own `note` diagnosing it.',
     '',
     'LEXICAL MATCHING: accent- and case-insensitive substring; a multiword query needs ALL tokens (AND), and a contiguous phrase ranks higher.',
@@ -329,7 +330,7 @@ export function buildSearchNotesTool(
         .max(1)
         .optional()
         .describe(
-          `Min seed↔note similarity 0-1 for the expansion leg (deep effort only); distinct from the query-to-note \`threshold\`. Default ${similarity.expansionFloor}, and \`threshold\` never affects it.`,
+          `Min seed↔note similarity 0-1 for the expansion leg (deep effort only); distinct from the query-to-note \`threshold\`. Default ${similarity.expansionFloor}, and \`threshold\` never affects it. On harrier-270m neighbour similarities sit at 0.75-0.95, so the default does not bind.`,
         ),
       filter: filterSchema.optional(),
     },

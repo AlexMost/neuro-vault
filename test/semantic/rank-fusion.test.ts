@@ -48,7 +48,7 @@ describe('flattenExpansion', () => {
 describe('fuseRanks', () => {
   it('lifts a two-source mid-rank note over a single-source top hit', () => {
     // k = adaptiveK(25) = 5. A: semantic rank 1 → 1/6 ≈ 0.167.
-    // B: lexical rank 2 + expansion rank 2 → 1/7 + 0.85/7 ≈ 0.264.
+    // B: lexical rank 2 + expansion rank 2 → 1/7 + 0.5/7 ≈ 0.214.
     // Multi-source reinforcement must survive the expansion down-weight —
     // fusion, not raw similarity, is still the strongest relevance signal.
     const out = fuseRanks({
@@ -58,10 +58,20 @@ describe('fuseRanks', () => {
     expect(out[0].path).toBe('B.md');
     expect(out[0].sourceCount).toBe(2);
   });
+  it('expansion fills the tail: its top hit ranks below a primary hit at rank 3', () => {
+    // k = adaptiveK(25) = 5. Expansion rank 1 → 0.5/6 ≈ 0.083 sits below semantic rank 3
+    // → 1/8 = 0.125. At the old weight 0.85 (≈ 0.142) it would have outranked rank 3.
+    const out = fuseRanks({
+      sources: { semantic: ['s1.md', 's2.md', 's3.md'], lexical: [], expansion: ['e1.md'] },
+      totalNotes: 25,
+    });
+    expect(out.map((c) => c.path)).toEqual(['s1.md', 's2.md', 's3.md', 'e1.md']);
+  });
+
   it('a direct semantic hit outranks an expansion-only hub (Moby case, 2026-08-10)', () => {
     // Live report: the expansion-only "Дата-гігієна фіду" (hub, 72 backlinks)
     // outranked the direct semantic hit whose literal name was in the query.
-    // Large-k regime (k = adaptiveK(2500) = 50): 1/51 vs 0.85/51.
+    // Large-k regime (k = adaptiveK(2500) = 50): 1/51 vs 0.5/51.
     const out = fuseRanks({
       sources: {
         semantic: ['Projects/Moby dick bot.md'],

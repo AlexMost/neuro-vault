@@ -105,6 +105,18 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     expect(properties.threshold?.description).not.toContain('retry at');
   });
 
+  it('tells the agent expansion scores are not query similarities, and the floor does not bind', () => {
+    const { properties } = z.toJSONSchema(registerTool(builtTool()).spec.inputSchema as z.ZodType, {
+      io: 'input',
+    }) as { properties: Record<string, { description?: string }> };
+    expect(builtDescription()).toContain(
+      '`expansion_similarity` (deep): note-to-note similarity to a semantic hit, not the query; not comparable with `similarity`.',
+    );
+    expect(properties.expansion_floor?.description).toContain(
+      'On harrier-270m neighbour similarities sit at 0.75-0.95, so the default does not bind.',
+    );
+  });
+
   it('advertises no retry under the real harrier-270m profile', () => {
     const { properties } = z.toJSONSchema(
       registerTool(builtTool(resolveModelProfile('harrier-270m').similarity)).spec
