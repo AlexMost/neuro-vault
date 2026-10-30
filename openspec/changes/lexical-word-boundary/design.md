@@ -57,12 +57,17 @@ so it follows the rule without change.
 
 ### D2: What a boundary is
 
-- **Choice:** a word character is a letter (`\p{L}`), a digit (`\p{N}`), `_` or the unified
-  apostrophe `'`. An occurrence starts at a boundary when it is at index 0 or the code point
-  before it is not a word character. The check reads the preceding code point, not the
-  preceding UTF-16 unit, so a letter outside the BMP counts as a letter.
-- **Rationale:** it is the definition the #228 simulation measured, so its numbers carry over.
-  `'` is intra-word in Ukrainian (`об'єкт`). `_` follows `\w`.
+- **Choice:** a word character is a letter (`\p{L}`), a digit (`\p{N}`) or `_`; the unified
+  apostrophe `'` is one only when it follows a word character. An occurrence starts at a
+  boundary when it is at index 0 or the code point before it is not a word character. The
+  check reads the preceding code point, not the preceding UTF-16 unit, so a letter outside the
+  BMP counts as a letter.
+- **Rationale:** the #228 simulation measured `'` as always a word character. That keeps
+  `об'єкт` and `o'brien` in-word, but also hides a word in single quotes (`'vector'`,
+  `‘пошук’`, since normalization folds curly quotes to `'`), which substring matching found.
+  An apostrophe after a word character is intra-word; one at a word start is an opening
+  quote, so it is a boundary. This only adds matches over the measured rule (found in review).
+  `_` follows `\w`.
 - **Alternatives considered:** `_` as a boundary, so `tolerant arguments` keeps matching
   `tolerant_arguments` token by token. It departs from the measured rule and re-admits
   matches inside identifiers; left out. Hyphenated forms keep matching, since `-` is a
@@ -113,6 +118,9 @@ the `hybrid-search` spec and `docs/architecture/lexical-search.md`.
   key covers the CLI build, so a new build gets a new daemon (`shared-daemon.md`).
 - [Trade-off] `tolerant_arguments` stops matching the query `tolerant arguments` → accepted
   to keep the measured rule; tests pin it so the choice stays visible.
+- [Trade-off] Excalidraw with compression turned off stores its scene in a `json` fence, which
+  stays a unit → accepted: the plugin compresses by default, and a generic `json` fence cannot
+  be told apart from a note's own JSON without a path or heading convention.
 
 ## Migration Plan
 

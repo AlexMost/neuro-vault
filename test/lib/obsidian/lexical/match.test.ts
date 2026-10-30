@@ -29,8 +29,20 @@ describe('matchUnit word-prefix rule', () => {
     ).toMatchObject({ phrase: true, firstIndex: 16 });
   });
 
+  it('treats an opening single quote as a boundary', () => {
+    expect(matchUnit("he said 'vector' search", 'vector', ['vector'])).toMatchObject({
+      firstIndex: 9,
+    });
+    expect(matchUnit("'пошук' тут", 'пошук', ['пошук'])).toMatchObject({ firstIndex: 1 });
+    expect(matchUnit("o'brien", 'brien', ['brien'])).toBeNull();
+  });
+
   it('counts a letter outside the BMP as a word character', () => {
     expect(matchUnit('\u{1D400}api', 'api', ['api'])).toBeNull();
+  });
+
+  it('reads a lone low surrogate as no word character', () => {
+    expect(matchUnit('a\udc00api', 'api', ['api'])).not.toBeNull();
   });
 
   it('needs no boundary for a token that starts with neither a letter nor a digit', () => {
