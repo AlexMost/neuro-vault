@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { READ_ONLY_TOOL } from '../../../lib/tool-annotations.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import type { NoteLinks } from '../../../lib/obsidian/wikilink-graph.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
@@ -34,6 +35,7 @@ export function buildGetNoteLinksTool(
   return buildSingleVaultTool<Input, { vault: string } & NoteLinks>(registry, {
     name: 'get_note_links',
     title: 'Get Note Links',
+    annotations: READ_ONLY_TOOL,
     description: DESCRIPTION,
     inputShape: {
       path: z.string().min(1),

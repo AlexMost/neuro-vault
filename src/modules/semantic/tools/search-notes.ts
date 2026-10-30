@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { graphForTool } from '../../../lib/tool-graph.js';
+import { READ_ONLY_TOOL } from '../../../lib/tool-annotations.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { ToolHandlerError } from '../../../lib/tool-response.js';
 import type { IFanOutResult } from '../../../lib/fan-out.js';
@@ -305,6 +306,7 @@ export function buildSearchNotesTool(
   return buildMultiVaultTool(registry, {
     name: 'search_notes',
     title: 'Search Notes',
+    annotations: READ_ONLY_TOOL,
     description: SEARCH_NOTES_DESCRIPTION,
     multiVaultNote:
       'A vault without a semantic index still contributes lexically-sourced matches; none are skipped.',

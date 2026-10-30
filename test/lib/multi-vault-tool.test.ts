@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
+import { READ_ONLY_TOOL } from '../../src/lib/tool-annotations.js';
 import { buildMultiVaultTool, payloadOnly, withVaultName } from '../../src/lib/multi-vault-tool.js';
 import { ToolHandlerError } from '../../src/lib/tool-response.js';
 import { FAN_OUT_SUFFIX } from '../../src/lib/vault-param.js';
@@ -33,6 +34,7 @@ function toolFor(registry: IVaultRegistry, single: Single = withVaultName) {
   return buildMultiVaultTool<Input, { results: string[] }, unknown>(registry, {
     name: 'list_tags',
     title: 'List Tags',
+    annotations: READ_ONLY_TOOL,
     description: 'Domain prose.',
     inputShape: { n: z.number().optional() },
     runForEntry: async (entry) => ({ results: [entry.name] }),
@@ -95,6 +97,7 @@ describe('buildMultiVaultTool', () => {
     const tool = buildMultiVaultTool<Input, { results: string[] }, unknown>(registryOf('a', 'b'), {
       name: 'search_notes',
       title: 'Search Notes',
+      annotations: READ_ONLY_TOOL,
       description: 'Domain prose.',
       multiVaultNote: 'Vaults without a semantic index still contribute lexically.',
       inputShape: {},
@@ -110,6 +113,7 @@ describe('buildMultiVaultTool', () => {
     const tool = buildMultiVaultTool<Input, { results: string[] }, unknown>(registryOf('a', 'b'), {
       name: 'list_tags',
       title: 'List Tags',
+      annotations: READ_ONLY_TOOL,
       description: 'Line one.\nLine two.',
       inputShape: { n: z.number().optional() },
       runForEntry: async (entry) => ({ results: [entry.name] }),
@@ -124,6 +128,7 @@ describe('buildMultiVaultTool', () => {
     const tool = buildMultiVaultTool<Input, { results: string[] }, unknown>(registryOf('a', 'b'), {
       name: 'list_tags',
       title: 'List Tags',
+      annotations: READ_ONLY_TOOL,
       description: 'Domain prose.',
       inputShape: { n: z.number().optional() },
       runForEntry: async (entry) => ({ results: [entry.name] }),
@@ -143,6 +148,7 @@ describe('buildMultiVaultTool', () => {
       return buildMultiVaultTool<Input, { results: string[] }, unknown>(registry, {
         name: 'list_tags',
         title: 'List Tags',
+        annotations: READ_ONLY_TOOL,
         description: 'Domain prose.',
         inputShape: {
           n: z.number().optional(),
@@ -154,5 +160,20 @@ describe('buildMultiVaultTool', () => {
       });
     }
     expect(typeof _typeGuard).toBe('function');
+  });
+});
+
+describe('buildMultiVaultTool annotations', () => {
+  it('forwards the spec annotations onto the tool registerTool advertises', () => {
+    const tool = buildMultiVaultTool<Input, { results: string[] }, unknown>(registryOf('a'), {
+      name: 'list_tags',
+      title: 'List Tags',
+      annotations: READ_ONLY_TOOL,
+      description: 'Domain prose.',
+      inputShape: {},
+      runForEntry: async (entry) => ({ results: [entry.name] }),
+      single: payloadOnly,
+    });
+    expect(tool.annotations).toBe(READ_ONLY_TOOL);
   });
 });

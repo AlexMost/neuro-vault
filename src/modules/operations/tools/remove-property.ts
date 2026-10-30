@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { DESTRUCTIVE_WRITE_TOOL } from '../../../lib/tool-annotations.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
@@ -23,6 +24,7 @@ export function buildRemovePropertyTool(
   return buildSingleVaultTool<Input, { vault: string; ok: true }>(registry, {
     name: 'remove_property',
     title: 'Remove Property',
+    annotations: DESTRUCTIVE_WRITE_TOOL,
     description:
       'Remove a frontmatter property from a note. Provide `name` or `path`, plus `key`. Idempotent — succeeds whether or not the property existed. Returns `{ vault, ok: true }`.',
     inputShape: {

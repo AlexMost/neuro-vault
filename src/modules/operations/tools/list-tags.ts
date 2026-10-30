@@ -1,6 +1,7 @@
 import type { IFanOutResult } from '../../../lib/fan-out.js';
 import { listTags } from '../../../lib/obsidian/vault-aggregates.js';
 import { buildMultiVaultTool, withVaultName } from '../../../lib/multi-vault-tool.js';
+import { READ_ONLY_TOOL } from '../../../lib/tool-annotations.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import type { IRegisteredVault, IVaultRegistry } from '../../../lib/vault-registry.js';
 
@@ -27,6 +28,7 @@ export function buildListTagsTool(
   return buildMultiVaultTool(deps.registry, {
     name: 'list_tags',
     title: 'List Tags',
+    annotations: READ_ONLY_TOOL,
     description:
       'List all tags used across the vault, sorted by occurrence count desc. Returns `{ vault, results: [{name, count}] }`. Counts aggregate frontmatter `tags:` values and inline body `#tags` (Obsidian grammar), deduplicated per note — each distinct tag counts once per note. Note: the `tags` filter of `query_notes`/`search_notes` matches frontmatter tags only, so a tag that exists only inline is reported here but not filterable there.',
     inputShape: {},

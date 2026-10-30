@@ -53,7 +53,7 @@ What *pulls* that chain is wired in `startNeuroVaultServer` too, and has to be: 
 
 ## Tool handler contract
 
-There is no central tool-handlers module. Each tool lives in its own file under `src/modules/<module>/tools/<name>.ts` and exports a `buildXTool(deps)` factory that returns an `ITool<I, O>` — name, title, description, zod input schema, and an async `handler`.
+There is no central tool-handlers module. Each tool lives in its own file under `src/modules/<module>/tools/<name>.ts` and exports a `buildXTool(deps)` factory that returns an `ITool<I, O>` — name, title, description, annotations, zod input schema, and an async `handler`.
 
 A handler never sees raw arguments. `registerTool` (`src/lib/tool-registry.ts`) wraps the declared schema with `wrapSchemaWithCoercion`, which coerces each top-level field from realistic client stringification and then closes the object with `.strict()`, and `safeParse`s the arguments before dispatching. A failure there never reaches the handler — it becomes `ToolHandlerError('INVALID_PARAMS', ...)` carrying `details.issues`, one entry per violation. So the schema owns every constraint it can state (type, enum, bound, unknown key, coercion), and the handler owns only what the schema cannot say. See [`input-coercion.md`](./input-coercion.md) and [ADR-0015](../adr/0015-input-gate-owns-schema-validation.md).
 
@@ -62,6 +62,17 @@ With that boundary in place, each handler:
 - Throws `ToolHandlerError('INVALID_ARGUMENT', ...)` for the argument faults a schema cannot express — an exactly-one-of constraint across fields (`name` xor `path`), a path that escapes the vault root after normalization, list items containing commas, a value that does not match a separately declared `type`. It does **not** re-check type, enum, bound, or unknown-key constraints: the gate above has already rejected those, so such a check is unreachable ([ADR-0015](../adr/0015-input-gate-owns-schema-validation.md)).
 - Calls the embedding provider / semantic backend / lexical reader / vault provider via the dependencies passed into its factory.
 - Wraps unexpected dependency failures via `wrapDependencyError`, which keeps the original cause but adds the operation name and `modelKey` to `details`.
+
+### Annotations
+
+Every tool also advertises MCP `annotations` — the `readOnlyHint` / `destructiveHint` / `idempotentHint` / `openWorldHint` block clients read to decide how much to trust a call before it runs. A client with a per-server "confirm every call" mode (Hermes Agent's `trust: untrusted`, say) lets a `readOnlyHint: true` tool through unprompted and still asks before a write, so reads run freely from a cron job while writes keep their confirmation. The two shapes live in `src/lib/tool-annotations.ts`:
+
+| constant                 | tools                                                                                                                                                 | advertised                                                                              |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `READ_ONLY_TOOL`         | `search_notes`, `query_notes`, `read_notes`, `read_daily`, `get_vault_overview`, `list_tags`, `list_properties`, `get_note_links`, `get_similar_notes`, `find_duplicates` | `readOnlyHint: true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint: false` |
+| `DESTRUCTIVE_WRITE_TOOL` | `create_note`, `edit_note`, `set_property`, `remove_property`                                                                                          | `readOnlyHint: false`, `destructiveHint: true`, `openWorldHint: false`                   |
+
+The writes are all destructive in the MCP sense: `create_note` replaces an existing note under `overwrite: true`, `edit_note` overwrites the whole body unless `replace` is passed, `set_property` overwrites an existing value, and `remove_property` deletes a key. None claims `idempotentHint`, so it stays at the spec default (`false`). Every tool is closed-world — the server touches nothing but the local vault. A tool declares its annotations on the spec it hands its dispatch builder (`buildSingleVaultTool` / `buildMultiVaultTool`), where the field is required, and the builder places them on the `ITool` that `registerTool` copies onto `spec`. `test/tool-annotations.test.ts` pins the advertised block for every name in `TOOL_NAMES`, so a new tool reaches `main` only with its annotations declared and asserted.
 
 Per-module aggregators (`src/modules/semantic/tools/index.ts`, `src/modules/operations/tools/index.ts`) compose every tool factory with its dependencies and return a list of `ToolRegistration` objects via the `registerTool` helper from `src/lib/tool-registry.ts`. Dependencies (vault registry, search engine, embedding provider, modelKey) are passed into the factories — pure dependency injection, no module-level state. Tests inject mocks; runtime injects the real implementations.
 

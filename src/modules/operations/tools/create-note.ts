@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { DESTRUCTIVE_WRITE_TOOL } from '../../../lib/tool-annotations.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
@@ -27,6 +28,7 @@ export function buildCreateNoteTool(
   return buildSingleVaultTool<Input, { vault: string; path: string }>(registry, {
     name: 'create_note',
     title: 'Create Note',
+    annotations: DESTRUCTIVE_WRITE_TOOL,
     description:
       'Create a new note. Provide `name` or `path` (exactly one). ' +
       'Optionally provide `content` (raw markdown for the note body) and/or `frontmatter` ' +

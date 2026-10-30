@@ -1,3 +1,4 @@
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
 import { runFanOut, type IFanOutResult } from './fan-out.js';
@@ -34,6 +35,8 @@ export interface IMultiVaultToolSpec<
 > {
   name: ToolName;
   title: string;
+  /** The MCP annotations the tool advertises — `src/lib/tool-annotations.ts`. */
+  annotations: ToolAnnotations;
   /** Domain prose only. The multi-vault contract is appended by the builder. */
   description: string;
   /** Optional domain sentence appended after the shared fan-out suffix. */
@@ -75,6 +78,7 @@ export function buildMultiVaultTool<
   return {
     name: spec.name,
     title: spec.title,
+    annotations: spec.annotations,
     description:
       multiVaultBlock === '' ? spec.description : `${spec.description}\n\n${multiVaultBlock}`,
     inputSchema: z.object({ ...vaultParamShape(registry), ...spec.inputShape }),

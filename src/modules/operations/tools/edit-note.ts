@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { DESTRUCTIVE_WRITE_TOOL } from '../../../lib/tool-annotations.js';
 import type { ITool } from '../../../lib/tool-registry.js';
 import { buildSingleVaultTool } from '../../../lib/single-vault-tool.js';
 import type { IVaultRegistry } from '../../../lib/vault-registry.js';
@@ -22,6 +23,7 @@ export function buildEditNoteTool(deps: EditNoteDeps): ITool<Input, { vault: str
   return buildSingleVaultTool<Input, { vault: string }>(registry, {
     name: 'edit_note',
     title: 'Edit Note',
+    annotations: DESTRUCTIVE_WRITE_TOOL,
     description:
       'Edit an existing note. Pass `replace` for a targeted find/replace inside the body, or omit it to overwrite the entire body. Frontmatter is preserved byte-for-byte either way. ' +
       '\n\n' +
