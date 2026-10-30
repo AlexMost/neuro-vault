@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EFFORT_PROFILES,
   LEXICAL_PER_NOTE_CAP,
+  lexicalPool,
 } from '../../src/modules/semantic/effort-profiles.js';
 
 // Pins the model-independent retrieval knobs, so they cannot silently be
@@ -26,5 +27,12 @@ describe('effort profiles', () => {
       },
     });
     expect(LEXICAL_PER_NOTE_CAP).toBe(3);
+  });
+
+  it('pools the lexical leg at the merged cap only when it is the sole source', () => {
+    expect(lexicalPool('quick', true)).toBe(EFFORT_PROFILES.quick.mergedCap);
+    expect(lexicalPool('deep', true)).toBe(EFFORT_PROFILES.deep.mergedCap);
+    expect(lexicalPool('quick', false)).toBe(EFFORT_PROFILES.quick.lexicalNoteCap);
+    expect(lexicalPool('deep', false)).toBe(EFFORT_PROFILES.deep.lexicalNoteCap);
   });
 });

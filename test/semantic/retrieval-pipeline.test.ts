@@ -144,6 +144,20 @@ describe('runRetrievalPipeline', () => {
     });
   });
 
+  it('pools a lexical-only call at the effort’s merged cap, a fused one at its lexical cap', async () => {
+    const base = makeDeps().lexical;
+    const noteCapFor = async (input: RetrievalPipelineInput) => {
+      const search = vi.fn(base.search);
+      await runRetrievalPipeline(input, makeDeps({ lexical: { ...base, search } }));
+      return search.mock.calls[0][0].noteCap;
+    };
+    expect(await noteCapFor({ ...DEEP, semantic: false })).toBe(12);
+    expect(await noteCapFor({ ...DEEP, effort: 'quick', semantic: false })).toBe(5);
+    expect(await noteCapFor(DEEP)).toBe(10);
+    // `cap` (the caller's `limit`) still never steers a leg's pool.
+    expect(await noteCapFor({ ...DEEP, semantic: false, cap: 3 })).toBe(12);
+  });
+
   it('cap slices the fused list and reports merged-cap truncation', async () => {
     const result = await runRetrievalPipeline({ ...DEEP, cap: 3 }, makeDeps());
     expect(result.candidates).toHaveLength(3);

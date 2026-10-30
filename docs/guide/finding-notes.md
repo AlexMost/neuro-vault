@@ -45,9 +45,9 @@ search_notes({
 | Effort  | Use when                          | Semantic pool | Lexical pool | Expansion | Merged-list cap (`matches[]`, unless `limit` overrides) |
 | ------- | ---------------------------------- | -------------- | -------------- | ----------- | ---------------------------------------------------------- |
 | `quick` | Specific question, need 1–2 notes | up to 3        | ~5             | off         | 5                                                            |
-| `deep`  | Broad topic, need an overview     | up to 8        | ~10            | on          | 12                                                           |
+| `deep`  | Broad topic, need an overview     | up to 8        | ~10 (12 in `lexical` mode) | on          | 12                                                           |
 
-`limit` bounds only the final fused `matches[]` list, in every mode — it overrides the effort default merged-list cap but never changes a leg's internal pool size (semantic, lexical, or expansion). To widen a leg's own candidate pool, raise `effort` to `"deep"` instead. `threshold` only ever affects the semantic leg's note scores — not the block-evidence pass (always filtered at the active model's block-evidence floor), not the expansion leg (its own scale, owned by `expansion_floor`), and never the lexical leg, which has no similarity score to threshold. For how the three legs fuse into one order, see [`docs/architecture/rank-fusion.md`](../architecture/rank-fusion.md).
+In `mode: "lexical"` the lexical pool is the merged-list cap, so a lexical-only call can fill it. `limit` bounds only the final fused `matches[]` list, in every mode — it overrides the effort default merged-list cap but never changes a leg's internal pool size (semantic, lexical, or expansion). To widen a leg's own candidate pool, raise `effort` to `"deep"` instead. `threshold` only ever affects the semantic leg's note scores — not the block-evidence pass (always filtered at the active model's block-evidence floor), not the expansion leg (its own scale, owned by `expansion_floor`), and never the lexical leg, which has no similarity score to threshold. For how the three legs fuse into one order, see [`docs/architecture/rank-fusion.md`](../architecture/rank-fusion.md).
 
 ### Pre-filter (`filter` parameter)
 

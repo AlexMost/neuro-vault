@@ -4,7 +4,11 @@ import { FsVaultReader } from '../src/lib/obsidian/vault-reader.js';
 import { loadVaultScope } from '../src/lib/obsidian/vault-scope-config.js';
 import { WikilinkGraphIndex } from '../src/lib/obsidian/wikilink-graph.js';
 import type { SimilarityDefaults } from '../src/lib/model-profiles.js';
-import { EFFORT_PROFILES, LEXICAL_PER_NOTE_CAP } from '../src/modules/semantic/effort-profiles.js';
+import {
+  EFFORT_PROFILES,
+  LEXICAL_PER_NOTE_CAP,
+  lexicalPool,
+} from '../src/modules/semantic/effort-profiles.js';
 import { EXPANSION_WEIGHT } from '../src/modules/semantic/rank-fusion.js';
 import { createStandaloneLexicalReader } from '../src/modules/semantic/lexical/index.js';
 import { runRetrievalPipeline } from '../src/modules/semantic/retrieval-pipeline.js';
@@ -45,7 +49,11 @@ export type Leg = 'semantic' | 'lexical' | 'expansion';
  * (design D12). The pool numbers are read from the effort profile
  * `runRetrievalPipeline` itself reads, so they cannot drift from the run.
  */
-export function evalConfig(similarity: SimilarityDefaults, shape: RunShape = POSITIONAL) {
+export function evalConfig(
+  similarity: SimilarityDefaults,
+  shape: RunShape = POSITIONAL,
+  pipeline: PipelineId = 'fused',
+) {
   const profile = EFFORT_PROFILES[shape.effort];
   const positional = shape.run === 'positional';
   return {
@@ -64,7 +72,7 @@ export function evalConfig(similarity: SimilarityDefaults, shape: RunShape = POS
     expansion_floor: similarity.expansionFloor,
     /** The deep block-evidence floor; blocks are not scored, so it is a record of the run. */
     block_floor: similarity.blockFloor,
-    lexical_note_cap: profile.lexicalNoteCap,
+    lexical_note_cap: lexicalPool(shape.effort, pipeline === 'lexical'),
     lexical_per_note_cap: LEXICAL_PER_NOTE_CAP,
     expansion_weight: EXPANSION_WEIGHT,
     k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
@@ -133,7 +141,7 @@ async function rankRetrieval(args: {
   // effort's merged cap exactly as `search_notes` does. `semantic: false` is the
   // `mode: lexical` path. The existence filter admits every path: eval measures ranking
   // over the corpus as loaded (stale paths are counted in the report's coverage).
-  const config = evalConfig(args.similarity, args.shape);
+  const config = evalConfig(args.similarity, args.shape, args.semantic ? 'fused' : 'lexical');
   const positional = args.shape.run === 'positional';
   const { candidates, semantic } = await runRetrievalPipeline(
     {

@@ -44,6 +44,12 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     );
   });
 
+  it('says lexical mode fills the merged cap', () => {
+    expect(builtDescription()).toContain(
+      '"lexical" runs ONLY exact matching, up to the merged cap; needs no embedding corpus.',
+    );
+  });
+
   it('threshold and expansion-floor prose interpolate their constants', async () => {
     const source = await readFile('src/modules/semantic/tools/search-notes.ts', 'utf8');
     expect(source).toContain('${similarity.quick}');
