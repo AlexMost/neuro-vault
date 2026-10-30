@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Structured preview prototype</title>
+    <style>
+      :root {
+        --bg: #fbfbf9;
+        --fg: #1d1d1b;
+        --mute: #6b6b66;
+        --line: #e3e2dc;
+        --acc: #2f5fd0;
+        --warn: #b4541a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #17171a;
+          --fg: #e8e8e3;
+          --mute: #9a9a94;
+          --line: #2c2c30;
+          --acc: #7da2ff;
+          --warn: #f0a36b;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          15px/1.5 system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 16px 64px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 28px 0 8px;
+      }
+      p,
+      li {
+        color: var(--mute);
+      }
+      b,
+      code {
+        color: var(--fg);
+      }
+      .tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 10px 0;
+      }
+      button {
+        font: inherit;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--fg);
+        padding: 5px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      button.on {
+        border-color: var(--acc);
+        color: var(--acc);
+      }
+      .over {
+        color: var(--warn);
+        font-weight: 600;
+      }
+      pre {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        overflow: auto;
+        max-height: 60vh;
+        font:
+          12.5px/1.45 ui-monospace,
+          monospace;
+        white-space: pre-wrap;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-variant-numeric: tabular-nums;
+        font-size: 14px;
+      }
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 5px 8px;
+        text-align: right;
+      }
+      th:first-child,
+      td:first-child {
+        text-align: left;
+      }
+      .wrap {
+        overflow-x: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>PROTOTYPE — structured preview for <code>read_notes</code> (issue 247)</h1>
+      <p>
+        Throwaway. Four candidates for what <code>content: 'preview'</code> returns, on public repo
+        notes and synthetic edge cases, plus size aggregates over a ~1k-note vault (numbers only).
+      </p>
+      <ul>
+        <li>
+          <b>A — today:</b> 500-char prefix + <code>truncated</code>, plus a <code>lines</code> echo
+          (first..last line the prefix touches).
+        </li>
+        <li>
+          <b>B — outline + prefix:</b> A plus the outline from 246 (<code>outline</code>,
+          <code>preamble</code>, <code>collapsed</code>). Additive: existing fields unchanged.
+          Ladder becomes frontmatter ⊂ outline ⊂ preview ⊂ full.
+        </li>
+        <li>
+          <b>C — structured array:</b> <code>preview: [{ heading, level, lines, excerpt }]</code> —
+          outline entry + first ≤160 chars of the heading's own text; per-note total 1200 B
+          (variants: last-first degrade, 2 KB total). Over budget, excerpts drop (deepest first),
+          structure never does.
+        </li>
+        <li>
+          <b>D — markdown skim:</b> one string in <code>content</code>: heading lines verbatim, the
+          C excerpts under them, spans inlined as <code>&lt;!-- 14-22 --&gt;</code>; cut fences
+          re-closed.
+        </li>
+      </ul>
+      <h2>Samples</h2>
+      <div class="tabs" id="samples"></div>
+      <p id="why"></p>
+      <div class="tabs" id="variants"></div>
+      <pre id="out"></pre>
+      <h2>Vault aggregates (bytes per item, UTF-8)</h2>
+      <div class="wrap"><table id="agg"></table></div>
+      <p id="aggnote"></p>
+    </main>
+    <script>
+      const DATA = /*DATA*/ null;
+      let si = 0,
+        vk = 'B_outlinePlusPrefix';
+      const $ = (id) => document.getElementById(id);
+      function render() {
+        const s = DATA.rendered[si];
+        $('samples').innerHTML = DATA.rendered
+          .map((r, i) => `<button class="${i === si ? 'on' : ''}" data-i="${i}">${r.name}</button>`)
+          .join('');
+        $('why').textContent =
+          `${s.why} — ${s.lines} lines, ${s.headings} heading blocks, body ${s.bodyBytes} B`;
+        $('variants').innerHTML = Object.entries(s.variants)
+          .map(
+            ([k, v]) =>
+              `<button class="${k === vk ? 'on' : ''}" data-k="${k}">${k} · <span class="${v.bytes > 2048 ? 'over' : ''}">${v.bytes} B</span></button>`,
+          )
+          .join('');
+        $('out').textContent = s.variants[vk].json;
+        document.querySelectorAll('#samples button').forEach(
+          (b) =>
+            (b.onclick = () => {
+              si = +b.dataset.i;
+              render();
+            }),
+        );
+        document.querySelectorAll('#variants button').forEach(
+          (b) =>
+            (b.onclick = () => {
+              vk = b.dataset.k;
+              render();
+            }),
+        );
+      }
+      render();
+      if (DATA.agg) {
+        const a = DATA.agg;
+        $('agg').innerHTML =
+          '<tr><th>candidate</th><th>p50</th><th>p95</th><th>max</th><th>50 notes at p95</th></tr>' +
+          Object.entries(a.bytes)
+            .map(
+              ([k, v]) =>
+                `<tr><td>${k}</td><td>${v.p50}</td><td>${v.p95}</td><td>${v.max}</td><td>${(v.batch50AtP95 / 1024).toFixed(1)} KB</td></tr>`,
+            )
+            .join('');
+        $('aggnote').textContent =
+          `${a.notes} notes. C at 1.2 KB drops excerpts on ${a.C12_notesWithDroppedExcerpts}, at 2 KB on ${a.C20_notesWithDroppedExcerpts}. Of ${a.multiHeadingNotes} notes with 2+ headings, today's prefix reaches half or fewer of the headings on ${a.prefixReachesHalfOrLessOfHeadings} and all of them on ${a.prefixReachesAllHeadings}.`;
+      } else $('aggnote').textContent = 'Run with a vault dir for aggregates.';
+    </script>
+  </body>
+</html>
