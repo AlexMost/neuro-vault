@@ -60,6 +60,8 @@ export function parseNote(opts: { path: string; body: string; lineOffset: number
         visit((node as Parent).children);
         continue;
       }
+      // An Excalidraw drawing's encoded payload; its Text Elements stay units.
+      if (node.type === 'code' && node.lang === 'compressed-json') continue;
       if (node.type === 'paragraph' || node.type === 'code' || node.type === 'table') {
         const raw = nodeText(node).trim();
         if (raw.length === 0) continue;

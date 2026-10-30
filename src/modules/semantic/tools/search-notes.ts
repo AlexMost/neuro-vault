@@ -291,7 +291,7 @@ export function buildSearchNotesTool(
     '- `expansion_similarity` (deep): note-to-note similarity to a semantic hit, not the query; not comparable with `similarity`.',
     '- `query_stats` — array queries only: per input query, PRE-cap hit counts `{ semantic, lexical }`. `semantic` is `null` when the semantic leg did not run at all; a number always means it ran. An entry worth acting on carries its own `note` diagnosing it.',
     '',
-    'LEXICAL MATCHING: accent- and case-insensitive substring; a multiword query needs ALL tokens (AND), and a contiguous phrase ranks higher.',
+    'LEXICAL MATCHING: case/accent-insensitive word prefix (`пошук` finds `пошуком`); ALL tokens must match (AND); an exact phrase ranks higher.',
     '',
     'EXAMPLES:',
     '- "where did I write about X?" → search_notes({query: "X"}).',
