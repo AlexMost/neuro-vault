@@ -6,14 +6,14 @@ call sites are one task.
 
 ## 1. Foundation — PR 1/4 (no tool contract change)
 
-- [ ] 1.1 Chunker line splitting: a trailing newline terminates the last line. Test: `# A\ntext\n`
+- [x] 1.1 Chunker line splitting: a trailing newline terminates the last line. Test: `# A\ntext\n`
       gives `#A` span `[1, 2]` and text `# A\ntext`. The same note without a final newline gives
       the same span. Existing chunker spans and keys are otherwise unchanged
       (`embed-text-extraction` delta).
-- [ ] 1.2 Bump `EMBED_VERSION` 2 → 3. Test: a manifest recorded under version 2 no longer matches
+- [x] 1.2 Bump `EMBED_VERSION` 2 → 3. Test: a manifest recorded under version 2 no longer matches
       the active identity, so the corpus rebuilds. Add a CHANGELOG-facing note to the PR body: the
       corpus rebuilds once on upgrade.
-- [ ] 1.3 Read-time heading projection beside the chunker: heading blocks only (frontmatter, `#`
+- [x] 1.3 Read-time heading projection beside the chunker: heading blocks only (frontmatter, `#`
       preamble and `#{n}` sub-blocks dropped), each `{ heading, level, lines }` in source order,
       plus the note's body span and preamble span. Tests: levels, sibling `[n]`, headings in a list
       item / blockquote / fence produce no entry, a headless note, spans equal to `chunkNote`'s.

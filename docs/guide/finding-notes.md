@@ -95,7 +95,7 @@ Every call returns `{ matches, truncated, semantic_status }`, plus `query_stats`
       "similarity": 0.61,
       "blocks": [
         {
-          "heading": "Notes/embeddings.md#What is an embedding",
+          "heading": "What is an embedding",
           "lines": [3, 20],
           "similarity": 0.54
         }
