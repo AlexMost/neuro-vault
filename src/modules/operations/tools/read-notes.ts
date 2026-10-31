@@ -13,6 +13,7 @@ import type {
   ReadNotesResultItemSuccess,
 } from '../types.js';
 import { previewBody } from '../preview-body.js';
+import { effectiveMode, itemKey, toRequestItems, type PathsItem } from '../selection.js';
 import { collapseOutline, entriesWithin } from '../outline.js';
 import { noteStructure } from '../../../lib/obsidian/corpus/note-structure.js';
 import { frontmatterEnd, splitNoteLines } from '../../../lib/obsidian/corpus/chunker.js';
@@ -39,15 +40,9 @@ const pathItem = z.union([
     .strict(),
 ]);
 
-interface PathObjectItem {
-  path: string;
-  heading?: string;
-  lines?: [number, number];
-}
-
 interface Input {
   vault?: string;
-  paths: string | Array<string | PathObjectItem>;
+  paths: string | PathsItem[];
   content?: ContentMode;
 }
 
@@ -91,89 +86,98 @@ export function buildReadNotesTool(
     runForEntry: async (entry, input) => {
       // The registration gate has already enforced the schema: `paths` is a
       // non-empty string or a 1-50 item array, `content` is one of the four
-      // modes. All that is left is widening the single-string form. Until the
-      // selectors resolve, an object item reads its whole note.
-      const items = typeof input.paths === 'string' ? [input.paths] : input.paths;
-      const paths = items.map((p) => (typeof p === 'string' ? p : p.path));
-      const content = input.content;
+      // modes. What it cannot express — two selectors on one item — fails the
+      // call here, before any note is read.
+      const requested = toRequestItems(input.paths);
 
+      // Exact de-duplication on the path as sent plus the selector, before
+      // normalization; the default mode counts the items that remain.
       const seen = new Set<string>();
-      const deduped: string[] = [];
-      for (const p of paths) {
-        if (!seen.has(p)) {
-          seen.add(p);
-          deduped.push(p);
-        }
-      }
+      const items = requested.filter((item) => {
+        const key = itemKey(item);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
 
-      const effective = content ?? (deduped.length === 1 ? 'full' : 'preview');
-      const fields: ReadNotesField[] =
-        effective === 'frontmatter'
-          ? ['frontmatter']
-          : effective === 'outline'
-            ? ['frontmatter', 'raw']
-            : effective === 'preview'
-              ? ['frontmatter', 'content']
-              : ['frontmatter', 'content', 'raw'];
-
-      type Slot = { kind: 'invalid'; item: ReadNotesResultItem } | { kind: 'valid'; path: string };
-      const slots: Slot[] = deduped.map((raw) => {
+      // Until the selectors resolve, a selector item reads its whole note in its own mode.
+      type Slot =
+        | { kind: 'invalid'; item: ReadNotesResultItem }
+        | { kind: 'valid'; path: string; mode: ContentMode };
+      const slots: Slot[] = items.map((item): Slot => {
+        const mode = effectiveMode(item, items.length, input.content);
         try {
-          const normalized = normalizePath(raw);
-          return { kind: 'valid', path: normalized };
+          return { kind: 'valid', path: normalizePath(item.path), mode };
         } catch (err) {
           const message = err instanceof ToolHandlerError ? err.message : String(err);
           return {
             kind: 'invalid',
-            item: { path: raw, error: { code: 'INVALID_ARGUMENT' as const, message } },
+            item: { path: item.path, error: { code: 'INVALID_ARGUMENT' as const, message } },
           };
         }
       });
 
-      const validPaths = slots
-        .filter((s): s is { kind: 'valid'; path: string } => s.kind === 'valid')
-        .map((s) => s.path);
-
+      const valid = slots.filter((s): s is Extract<Slot, { kind: 'valid' }> => s.kind === 'valid');
+      // One read per distinct note, however many items name it, with every field any
+      // of its items' modes needs.
+      const notePaths = [...new Set(valid.map((s) => s.path))];
       const readerItems =
-        validPaths.length === 0 ? [] : await entry.reader.readNotes({ paths: validPaths, fields });
+        notePaths.length === 0
+          ? []
+          : await entry.reader.readNotes({
+              paths: notePaths,
+              fields: fieldsFor(valid.map((s) => s.mode)),
+            });
+      const byPath = new Map(notePaths.map((p, i) => [p, readerItems[i]]));
 
-      const projected: ReadNotesResultItem[] = readerItems.map((item) => {
-        if ('error' in item) {
-          return item;
-        }
-        const out: ReadNotesResultItemSuccess = {
-          path: item.path,
-          frontmatter: item.frontmatter,
-        };
-        if (effective === 'full') {
-          out.content = item.content;
-          const span = fullSpan(item);
-          if (span !== null) out.lines = span;
-        } else if (effective === 'outline') {
-          const s = noteStructure(rawOf(item));
-          if (s.body !== null) out.lines = s.body;
-          if (s.preamble !== null) out.preamble = s.preamble;
-          const { outline, collapsed } = collapseOutline(entriesWithin(s, s.body));
-          out.outline = outline;
-          if (collapsed) out.collapsed = true;
-        } else if (effective === 'preview') {
-          const { content: c, truncated } = previewBody(item.content);
-          out.content = c;
-          out.truncated = truncated;
-        }
-        return out;
-      });
-
-      let projectedIdx = 0;
       const results: ReadNotesResultItem[] = slots.map((slot) => {
         if (slot.kind === 'invalid') return slot.item;
-        return projected[projectedIdx++];
+        const item = byPath.get(slot.path);
+        if (item === undefined) {
+          throw new Error(`read_notes: the reader returned no item for ${slot.path}`);
+        }
+        return 'error' in item ? item : project(item, slot.mode);
       });
 
       const errors = results.reduce((n, r) => n + ('error' in r ? 1 : 0), 0);
       return { vault: entry.name, results, count: results.length, errors };
     },
   });
+}
+
+const FIELDS_BY_MODE: Record<ContentMode, readonly ReadNotesField[]> = {
+  frontmatter: ['frontmatter'],
+  outline: ['frontmatter', 'raw'],
+  preview: ['frontmatter', 'content'],
+  full: ['frontmatter', 'content', 'raw'],
+};
+
+/** The reader fields a call needs: every field any of its items' modes reads. */
+function fieldsFor(modes: readonly ContentMode[]): ReadNotesField[] {
+  const needed = new Set(modes.flatMap((m) => FIELDS_BY_MODE[m]));
+  return (['frontmatter', 'content', 'raw'] as const).filter((f) => needed.has(f));
+}
+
+/** One note read in one mode. */
+function project(item: ReadNotesItemSuccess, mode: ContentMode): ReadNotesResultItemSuccess {
+  const out: ReadNotesResultItemSuccess = { path: item.path, frontmatter: item.frontmatter };
+  if (mode === 'full') {
+    out.content = item.content;
+    const span = fullSpan(item);
+    if (span !== null) out.lines = span;
+  } else if (mode === 'outline') {
+    const s = noteStructure(rawOf(item));
+    if (s.body !== null) out.lines = s.body;
+    if (s.preamble !== null) out.preamble = s.preamble;
+    const { outline, collapsed } = collapseOutline(entriesWithin(s, s.body));
+    out.outline = outline;
+    if (collapsed) out.collapsed = true;
+  } else if (mode === 'preview') {
+    const { content: c, truncated } = previewBody(item.content);
+    out.content = c;
+    out.truncated = truncated;
+  }
+  return out;
 }
 
 /** The whole file the reader returned; the handler always requests it for a body mode. */

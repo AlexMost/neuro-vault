@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { buildReadNotesTool } from '../../../src/modules/operations/tools/read-notes.js';
 import { PREVIEW_CHAR_CAP, PREVIEW_MARKER } from '../../../src/modules/operations/preview-body.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool, expectToolError } from '../../_gate.js';
 import type { ReadNotesResult } from '../../../src/modules/operations/types.js';
-import type { VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
+import type { ReadNotesItem, VaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import { makeReader, readerOverFiles } from './_helpers.js';
 import { makeTestRegistry } from './_test-registry.js';
 
@@ -572,6 +572,21 @@ describe('operations.readNotes selector items at the gate', () => {
     expect(err.code).toBe('INVALID_PARAMS');
   });
 
+  it('fails the call with INVALID_ARGUMENT for heading + lines on one item, reading nothing', async () => {
+    const readNotes = vi.fn(async () => [] as ReadNotesItem[]);
+    const reader = makeReader({ readNotes });
+
+    const err = await expectToolError(buildReg(reader), {
+      paths: ['b.md', { path: 'a.md', heading: 'Top', lines: [3, 9] }],
+    });
+
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toBe(
+      'an item names one selection: pass either heading or lines, not both (a.md)',
+    );
+    expect(readNotes).not.toHaveBeenCalled();
+  });
+
   it('accepts a one-line range [n, n]', async () => {
     const reader = readerOverFiles(FILES);
 
@@ -580,5 +595,111 @@ describe('operations.readNotes selector items at the gate', () => {
     });
 
     expect(result.count).toBe(1);
+  });
+});
+
+describe('operations.readNotes request items', () => {
+  const FILES = {
+    'a.md': '---\nx: 1\n---\n# Top\nalpha\n',
+    'b.md': '---\ny: 2\n---\n# Other\nbeta\n',
+  };
+
+  it('{ path } with no selector returns exactly what the bare path does', async () => {
+    const asObject = await callTool<ReadNotesOut>(buildReg(readerOverFiles(FILES)), {
+      paths: [{ path: 'a.md' }],
+    });
+    const asString = await callTool<ReadNotesOut>(buildReg(readerOverFiles(FILES)), {
+      paths: ['a.md'],
+    });
+
+    expect(asObject).toStrictEqual(asString);
+  });
+
+  it('a path and the same path with a selector are two items', async () => {
+    const result = await callTool<ReadNotesOut>(buildReg(readerOverFiles(FILES)), {
+      paths: ['a.md', { path: 'a.md', lines: [1, 2] }],
+    });
+
+    expect(result.count).toBe(2);
+    expect(result.results.map((r) => r.path)).toStrictEqual(['a.md', 'a.md']);
+  });
+
+  it('the same selector item twice is one item', async () => {
+    const item = { path: 'a.md', heading: 'Top' };
+
+    const result = await callTool<ReadNotesOut>(buildReg(readerOverFiles(FILES)), {
+      paths: [item, { ...item }],
+    });
+
+    expect(result.count).toBe(1);
+  });
+
+  it('{ path } and the bare path are one item', async () => {
+    const result = await callTool<ReadNotesOut>(buildReg(readerOverFiles(FILES)), {
+      paths: ['a.md', { path: 'a.md' }],
+    });
+
+    expect(result.count).toBe(1);
+    expect(result.results[0]).toHaveProperty('lines');
+    expect(result.results[0]).not.toHaveProperty('truncated');
+  });
+
+  it('defaults a bare path to preview and a selector item to full in one call', async () => {
+    const result = await callTool<ReadNotesOut>(buildReg(readerOverFiles(FILES)), {
+      paths: ['a.md', { path: 'b.md', lines: [5, 6] }],
+    });
+
+    expect(result.results[0]).toHaveProperty('truncated', false);
+    expect(result.results[0]).not.toHaveProperty('lines');
+    expect(result.results[1]).toHaveProperty('content');
+    expect(result.results[1]).not.toHaveProperty('truncated');
+  });
+
+  it('counts a selector item toward the bare-path default', async () => {
+    const result = await callTool<ReadNotesOut>(buildReg(readerOverFiles(FILES)), {
+      paths: ['a.md', { path: 'a.md', heading: 'Top' }],
+    });
+
+    expect(result.count).toBe(2);
+    expect(result.results[0]).toHaveProperty('truncated', false);
+    expect(result.results[1]).not.toHaveProperty('truncated');
+  });
+
+  it('an explicit content applies to selector items too', async () => {
+    const result = await callTool<ReadNotesOut>(buildReg(readerOverFiles(FILES)), {
+      paths: ['a.md', { path: 'b.md', lines: [5, 6] }],
+      content: 'frontmatter',
+    });
+
+    expect(result.results).toStrictEqual([
+      { path: 'a.md', frontmatter: { x: 1 } },
+      { path: 'b.md', frontmatter: { y: 2 } },
+    ]);
+  });
+
+  it('an unsafe path on a selector item is a per-item INVALID_ARGUMENT beside a valid item', async () => {
+    const result = await callTool<ReadNotesOut>(buildReg(readerOverFiles(FILES)), {
+      paths: ['a.md', { path: '../x.md', lines: [1, 2] }],
+    });
+
+    expect(result.count).toBe(2);
+    expect(result.errors).toBe(1);
+    expect(result.results[0]).toMatchObject({ path: 'a.md', frontmatter: { x: 1 } });
+    expect(result.results[1]).toStrictEqual({
+      path: '../x.md',
+      error: { code: 'INVALID_ARGUMENT', message: expect.any(String) as string },
+    });
+  });
+
+  it('reads a note named by several items once', async () => {
+    const reader = readerOverFiles(FILES);
+    const spy = vi.spyOn(reader, 'readNotes');
+
+    await callTool<ReadNotesOut>(buildReg(reader), {
+      paths: ['a.md', { path: 'a.md', lines: [4, 5] }, { path: 'a.md', heading: 'Top' }, 'b.md'],
+    });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0][0].paths).toStrictEqual(['a.md', 'b.md']);
   });
 });
