@@ -101,4 +101,5 @@ export type EmbedDocumentsFn = (texts: string[]) => Promise<number[][]>;
 /** Notes and blocks shorter than this are not embedded. */
 export const MIN_CHARS = 200;
 export const EMBED_STRATEGY = 'token-window-v1';
-export const EMBED_VERSION = 2;
+/** 3: a block's last-line span no longer counts the phantom line after a trailing newline. */
+export const EMBED_VERSION = 3;

@@ -23,7 +23,7 @@ describe('corpusIdentityOf', () => {
         max_tokens: 512,
       }),
     ).toEqual({
-      embed_version: 2,
+      embed_version: 3,
       provider: 'transformers.js',
       model_key: 'bge-micro-v2',
       model_id: 'TaylorAI/bge-micro-v2',
@@ -65,23 +65,23 @@ describe('formatRebuild', () => {
   it('names each side by model and version when those differ', () => {
     const stored = { ...active, model_key: 'granite-97m', created };
     expect(formatRebuild(stored, active)).toEqual({
-      stored: 'granite-97m (embed_version 2)',
-      active: 'harrier-270m (embed_version 2)',
+      stored: 'granite-97m (embed_version 3)',
+      active: 'harrier-270m (embed_version 3)',
     });
   });
 
   it('names the differing fields when model and version agree', () => {
     const stored = { ...active, revision: 'old-revision', dtype: 'fp32', created };
     expect(formatRebuild(stored, active)).toEqual({
-      stored: 'harrier-270m (embed_version 2, revision old-revision, dtype fp32)',
-      active: 'harrier-270m (embed_version 2, revision new-revision, dtype q8)',
+      stored: 'harrier-270m (embed_version 3, revision old-revision, dtype fp32)',
+      active: 'harrier-270m (embed_version 3, revision new-revision, dtype q8)',
     });
   });
 
   it('marks a producer field a legacy manifest lacks as unset', () => {
     const { provider: _provider, ...legacy } = active;
     expect(formatRebuild(legacy, active).stored).toBe(
-      'harrier-270m (embed_version 2, provider unset)',
+      'harrier-270m (embed_version 3, provider unset)',
     );
   });
 
@@ -100,6 +100,10 @@ describe('identityMatches', () => {
   it('does not match when one identity field differs', () => {
     expect(identityMatches({ ...TEST_IDENTITY, revision: 'other' }, TEST_IDENTITY)).toBe(false);
     expect(identityMatches({ ...TEST_IDENTITY, embed_version: 1 }, TEST_IDENTITY)).toBe(false);
+  });
+
+  it('does not match a corpus recorded under embed_version 2, before the last-line span fix', () => {
+    expect(identityMatches({ ...TEST_IDENTITY, embed_version: 2 }, TEST_IDENTITY)).toBe(false);
   });
 
   it('does not match a legacy identity that lacks a producer field', () => {

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { chunkNote } from '../../../../src/lib/obsidian/corpus/chunker.js';
+import { chunkNote, splitNoteLines } from '../../../../src/lib/obsidian/corpus/chunker.js';
 
 const keys = (content: string) => chunkNote(content).map((b) => b.key);
 const byKey = (content: string, key: string) => chunkNote(content).find((b) => b.key === key);
@@ -205,6 +205,22 @@ describe('chunkNote', () => {
       ]
     `);
   });
+
+  it('a trailing newline adds no line', () => {
+    const blocks = chunkNote('# A\ntext\n');
+    const a = blocks.find((b) => b.key === '#A')!;
+    expect(a.lines).toEqual([1, 2]);
+    expect(a.text).toBe('# A\ntext');
+  });
+
+  it('a note without a trailing newline chunks identically', () => {
+    expect(chunkNote('# A\ntext')).toEqual(chunkNote('# A\ntext\n'));
+  });
+
+  it('the preamble of a headless note ending in a newline ends on its last real line', () => {
+    const pre = chunkNote('one\ntwo\n').find((b) => b.key === '#')!;
+    expect(pre.lines).toEqual([1, 2]);
+  });
 });
 
 // Block detection comes from the CommonMark AST, not line regexes. These are the cases a
@@ -320,5 +336,17 @@ describe('chunkNote block detection (CommonMark)', () => {
     );
     expect(keys(['# Title ###', 'body'].join('\n'))).toEqual(['#Title ###']);
     expect(byKey(['# Title ###', 'body'].join('\n'), '#Title ###')?.heading).toBe('Title ###');
+  });
+});
+
+describe('splitNoteLines', () => {
+  it('drops the empty element a trailing newline leaves behind', () => {
+    expect(splitNoteLines('a\nb\n')).toEqual(['a', 'b']);
+    expect(splitNoteLines('a\nb')).toEqual(['a', 'b']);
+  });
+
+  it('keeps an empty note as one empty line', () => {
+    expect(splitNoteLines('')).toEqual(['']);
+    expect(splitNoteLines('\n')).toEqual(['']);
   });
 });

@@ -81,7 +81,7 @@ Each match comes back with **its own provenance and evidence** — not just a pa
   "path": "Notes/embeddings.md",
   "found_in": ["semantic", "lexical:title"],
   "similarity": 0.82,
-  "blocks": [{ "heading": "Notes/embeddings.md#What is an embedding", "lines": [3, 20] }],
+  "blocks": [{ "heading": "What is an embedding", "lines": [3, 20] }],
   "lexical": [{ "matched_in": "title", "snippet": "embeddings" }],
   "backlink_count": 4
 }
