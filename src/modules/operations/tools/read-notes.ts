@@ -76,7 +76,7 @@ export function buildReadNotesTool(
       '',
       "LINE COORDINATES: every `lines` — in this tool's input and output and in `search_notes` evidence — is `[start, end]`, file-relative, 1-based, inclusive: frontmatter lines are counted, so the body starts after them, and frontmatter ends on the line before the body: a whole note's `lines[0] − 1`, not a selection's. A `lines` selector is clipped to the body: a partial overlap returns the overlapping lines, and the echoed `lines` shows what came back; only a range sharing no line with the body is a miss.",
       '',
-      'CONTENT is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item. It applies to each item\'s selection the way it applies to a whole note (the selection of a bare path is its body). Each rung shows more of the selection\'s text:',
+      'CONTENT is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item. It applies to each item\'s selection the way it applies to a whole note (the selection of a bare path is its body). Each rung shows more of the selection; `full` trades the outline fields for the whole text:',
       '- `frontmatter`: `{ path, frontmatter }`.',
       "- `outline`: frontmatter + `lines` (the selection's span; the body span for a whole note) + `preamble` (`[start, end]` of text before the first heading, only when non-blank) + `outline: [{ heading, level, lines }]` — heading blocks in source order. No body text.",
       "- `preview`: everything in `outline` + `content` (the selection's first 500 chars, verbatim, cut at a word or line boundary with `…` appended) + `truncated` (true when `content` stops before the selection's end).",

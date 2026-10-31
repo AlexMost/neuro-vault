@@ -10,7 +10,8 @@
 ## 0. Evidence
 
 - **Commit range:** `fa7b6e1..HEAD`. That is four squash commits on main (#256–#259) plus this
-  branch's commits. Inside them were 36 commits before squash, plus 5 on this branch before the archive.
+  branch's commits. Inside them were 36 commits before squash, plus 5 on this branch before
+  the archive.
 - **Diff size:** +6,449 / −302 lines across 56 files, before the archive commit.
 - **Tasks done:** 21 of 23 at verify time. 4.3 and 4.4 close with the archive commit and PR 4.
 - **Active hours:** about 7, on one day. PRs 2–4 ran without the user, under a `/goal`.

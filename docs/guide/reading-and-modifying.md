@@ -43,7 +43,7 @@ A `lines` selector is **clipped to the body** at both ends: a range that starts 
 
 #### `content` modes
 
-`content` is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item (a `content` key inside an item fails the call with `INVALID_PARAMS`). It applies to each item's selection exactly as it applies to a whole note; the selection of a bare path is its body. The modes form a ladder: each rung shows more of the selection's text than the one before; `full` returns the text without the outline fields. Frontmatter is returned in every mode:
+`content` is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item (a `content` key inside an item fails the call with `INVALID_PARAMS`). It applies to each item's selection exactly as it applies to a whole note; the selection of a bare path is its body. The modes form a ladder: each rung shows more of the selection than the one before, and `full` trades the outline fields for the whole text. Frontmatter is returned in every mode:
 
 | Mode          | Returns                                                                                                                                  |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
