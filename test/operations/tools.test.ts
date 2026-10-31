@@ -103,10 +103,23 @@ describe('buildOperationsTools', () => {
   it('read_notes description states 1–50, dedupe, per-item errors, and offline reads', () => {
     const tools = buildOperationsTools(noopDeps);
     const readNotes = tools.find((t) => t.name === 'read_notes')!;
-    expect(readNotes.spec.description).toMatch(/1[–-]50/);
-    expect(readNotes.spec.description).toMatch(/de-duplicated/i);
-    expect(readNotes.spec.description).toMatch(/per-item errors/i);
-    expect(readNotes.spec.description).toMatch(/do not require Obsidian/i);
+    const description = readNotes.spec.description;
+    expect(description).toMatch(/1[–-]50/);
+    expect(description).toMatch(/de-duplicated/i);
+    expect(description).toMatch(/per[- ]item/i);
+    expect(description).toMatch(/Obsidian need not run/);
+  });
+
+  it('read_notes description defines line coordinates and the outline', () => {
+    const tools = buildOperationsTools(noopDeps);
+    const readNotes = tools.find((t) => t.name === 'read_notes')!;
+    const description = readNotes.spec.description;
+    expect(description).toMatch(/file-relative/);
+    expect(description).toMatch(/1-based/);
+    expect(description).toMatch(/inclusive/);
+    expect(description).toMatch(/outline/);
+    expect(description).toMatch(/hidden: n/);
+    expect(description).toMatch(/headings below it/);
   });
 
   it('read_daily description mentions notes_today, projection, and the 200 cap', () => {
