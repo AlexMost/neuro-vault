@@ -74,19 +74,19 @@ export function buildReadNotesTool(
       '',
       'PATHS: one path string, or an array of 1–50 items. An item is a vault-relative path string (the whole note) or an object naming a selection: `{ path, heading: "<heading name>" }` (one heading block) or `{ path, lines: [start, end] }` (one line range). At most one selector per item; `{ path }` alone equals the string. To read several parts of one note, repeat the path. Exact duplicates (same path, same selector) are de-duplicated; results keep input order.',
       '',
-      "LINE COORDINATES: every `lines` — in this tool's input and output and in `search_notes` evidence — is `[start, end]`, file-relative, 1-based, inclusive: frontmatter lines are counted, so the body starts after them, and frontmatter ends on the item's `lines[0] − 1` (a `null` frontmatter above `lines[0]` is YAML that did not parse). A `lines` selector is clipped to the body: a partial overlap returns the overlapping lines, and the echoed `lines` shows what came back; only a range sharing no line with the body is a miss.",
+      "LINE COORDINATES: every `lines` — in this tool's input and output and in `search_notes` evidence — is `[start, end]`, file-relative, 1-based, inclusive: frontmatter lines are counted, so the body starts after them, and frontmatter ends on the line before the body: a whole note's `lines[0] − 1`, not a selection's. A `lines` selector is clipped to the body: a partial overlap returns the overlapping lines, and the echoed `lines` shows what came back; only a range sharing no line with the body is a miss.",
       '',
-      'CONTENT is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item. `frontmatter`, `outline` and `full` apply to each item\'s selection the way they apply to a whole note (the selection of a bare path is its body):',
+      'CONTENT is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item. It applies to each item\'s selection the way it applies to a whole note (the selection of a bare path is its body). Each rung shows more of the selection; `full` trades the outline fields for the whole text:',
       '- `frontmatter`: `{ path, frontmatter }`.',
       "- `outline`: frontmatter + `lines` (the selection's span; the body span for a whole note) + `preamble` (`[start, end]` of text before the first heading, only when non-blank) + `outline: [{ heading, level, lines }]` — heading blocks in source order. No body text.",
-      "- `preview`: frontmatter + `content` (a bounded slice of the whole note's body, even for a selector item) + `truncated` flag.",
-      '- `full`: frontmatter + `lines` + `content` (the whole selection).',
-      'A heading read in `outline` or `full` also echoes the matched `heading` and its `level`.',
+      "- `preview`: everything in `outline` + `content` (the selection's first 500 chars, verbatim, cut at a word or line boundary with `…` appended) + `truncated` (true when `content` stops before the selection's end).",
+      '- `full`: frontmatter + `lines` + `content` (the whole selection; no outline fields).',
+      'A heading read in `outline`, `preview` or `full` also echoes the matched `heading` and its `level`.',
       'Omitting `content`: a selector item returns its selection in `full`; a bare path returns `full` when the call has one item, `preview` otherwise.',
       '',
       'READING THE OUTLINE:',
       "- An entry's `lines` is its whole heading block: the heading line through the line before the next heading of the same or higher level, sub-headings included. A heading read returns exactly that span.",
-      '- `heading` is the heading name: pass it unchanged as `{ path, heading }`. `Notes[2]` (literally, as the `heading` value) is the second `Notes` directly under the same parent heading. Matching is exact, then case- and markup-insensitive if that finds exactly one block; never by prefix. A name that matches several blocks is `AMBIGUOUS_MATCH`.',
+      '- `heading` is the heading name: pass it unchanged as `{ path, heading }`. A repeat directly under the same parent carries its count: the second `Notes` is `Notes[2]` (literally, as the `heading` value), so a bare `Notes` names only the first. Matching is exact; only if nothing matches exactly, case- and markup-insensitive; never by prefix. A name that matches several blocks (the same heading under different parents) is `AMBIGUOUS_MATCH`.',
       "- Own text (lines before the first sub-heading): from the entry's `lines[0]` to the next entry's `lines[0]` − 1 when that next entry starts inside the entry's `lines`; otherwise all of the entry. Read it with `{ path, lines }`.",
       '- Over 100 entries, the deepest nesting levels are dropped: the item carries `collapsed: true`, and `hidden: n` on an entry means n headings below it (all depths) are not listed. Hidden headings are still readable by name; list them by reading that entry\'s outline: `{ paths: [{ path, heading: "<the entry\'s heading>" }], content: "outline" }`.',
       '- Preview `content` is raw text and may show headings that a collapsed outline does not list.',
@@ -97,9 +97,9 @@ export function buildReadNotesTool(
       '- `LINES_OUT_OF_RANGE`: the range shares no line with the body; + body `lines`.',
       '- `NOT_FOUND`: the note does not exist.',
       'The whole call fails with `INVALID_PARAMS` for an empty `heading` or malformed `lines` (two integers, 1 ≤ start ≤ end); `INVALID_ARGUMENT` for both selectors in one item.',
-      "Successful items always carry parsed `frontmatter`. Before citing or editing, read the part you need in `full`; re-read a previewed note with `content: 'full'`.",
+      'Successful items always carry `frontmatter`: the parsed object, or `null` when the note has none or its YAML did not parse. Before citing or editing, read the part you need in `full`.',
       '',
-      "FROM A SEARCH HIT: read any body evidence row with `lines` (a `search_notes` `blocks[]` or `lexical[]` entry) as `{ path, lines: row.lines }`. A semantic block with a non-empty `heading` also reads as `{ path, heading: row.heading }`. A `---frontmatter---` row is the frontmatter, outside the body: read it with `content: 'frontmatter'` on its path. `heading: \"\"` marks a paragraph inside a heading block, or the preamble: it does not name the block around it, and passing `\"\"` fails the call. A lexical `heading` is the nearest heading's text, a label only: as an address it can silently pick the wrong block — a bare `Notes` matches the first of sibling headings `Notes` and `Notes[2]` exactly, with no error. A heading read echoes its `lines`: if the hit's `lines` fall outside them, it read the wrong block. To get the heading block around a hit, read the outline and take the deepest entry whose `lines` contain the hit's.",
+      "FROM A SEARCH HIT: read any body evidence row with `lines` (a `search_notes` `blocks[]` or `lexical[]` entry) as `{ path, lines: row.lines }`. A semantic block with a non-empty `heading` also reads as `{ path, heading: row.heading }`. A `---frontmatter---` row is the frontmatter, outside the body: read it as `{ paths: [path], content: 'frontmatter' }`. `heading: \"\"` marks a paragraph inside a heading block, or the preamble: it does not name the block around it, and passing `\"\"` fails the call. A lexical `heading` is the nearest heading's text, a label only: as an address it can silently pick the wrong block — a bare `Notes` matches the first of sibling headings `Notes` and `Notes[2]` exactly, with no error. A heading read echoes its `lines`: if the hit's `lines` fall outside them, it read the wrong block. To get the heading block around a hit, read the outline and take the deepest entry whose `lines` contain the hit's.",
     ].join('\n'),
     inputShape: {
       paths: z.union([z.string().min(1), z.array(pathItem).min(1).max(50)]),
@@ -173,8 +173,7 @@ export function buildReadNotesTool(
           throw new Error(`read_notes: the reader returned no item for ${slot.path}`);
         }
         if ('error' in item) return item;
-        // A preview still reads the whole note, whatever the item selects.
-        if (slot.selector.kind === 'whole' || slot.mode === 'preview') {
+        if (slot.selector.kind === 'whole') {
           return project(item, slot.mode, () => structureOf(item));
         }
         return projectSelection(item, structureOf(item), slot.selector, slot.mode);
@@ -189,7 +188,7 @@ export function buildReadNotesTool(
 const FIELDS_BY_MODE: Record<ContentMode, readonly ReadNotesField[]> = {
   frontmatter: ['frontmatter'],
   outline: ['frontmatter', 'raw'],
-  preview: ['frontmatter', 'content'],
+  preview: ['frontmatter', 'content', 'raw'],
   full: ['frontmatter', 'content', 'raw'],
 };
 
@@ -217,30 +216,30 @@ function project(
     out.content = item.content;
     const span = fullSpan(item);
     if (span !== null) out.lines = span;
-  } else if (mode === 'outline') {
+  } else if (mode === 'outline' || mode === 'preview') {
+    // A bare-path preview slices the reader's `content` (the body, or the raw file when its
+    // YAML does not parse), so it equals `previewBody` of what `full` returns.
+    if (mode === 'preview') Object.assign(out, previewBody(item.content));
     const s = structure();
     if (s.body !== null) out.lines = [s.body[0], s.body[1]];
     addOutlineFields(out, s, s.body);
-  } else if (mode === 'preview') {
-    const { content: c, truncated } = previewBody(item.content);
-    out.content = c;
-    out.truncated = truncated;
   }
   return out;
 }
 
 /**
  * One selection of a note, rendered from its resolved span in the item's mode: `full`
- * returns the span's verbatim text, `outline` the heading blocks inside it, and
- * `frontmatter` only the frontmatter. `full` and `outline` echo the span as `lines`,
- * plus `heading` and `level` for a heading selection. The selector is resolved in every
- * mode, so a miss is the same item in each.
+ * returns the span's verbatim text, `outline` the heading blocks inside it, `preview`
+ * both — the outline and a bounded slice of the span's text, from its first line — and
+ * `frontmatter` only the frontmatter. Every mode but `frontmatter` echoes the span as
+ * `lines`, plus `heading` and `level` for a heading selection. The selector is resolved
+ * in every mode, so a miss is the same item in each.
  */
 function projectSelection(
   item: ReadNotesItemSuccess,
   structure: NoteStructure,
   selector: Selection,
-  mode: Exclude<ContentMode, 'preview'>,
+  mode: ContentMode,
 ): ReadNotesResultItem {
   const r = resolveSelector(structure, selector, item.path, {
     unparsedFrontmatter: item.frontmatter === null && structure.frontmatterEnd > 0,
@@ -249,10 +248,13 @@ function projectSelection(
   const out: ReadNotesResultItemSuccess = { path: item.path, frontmatter: item.frontmatter };
   if (mode === 'frontmatter') return out;
   if (mode === 'full') out.content = spanText(structure, r.span);
+  // `spanText` drops a CRLF note's last `\r`, and `previewBody` trims before its marker,
+  // so neither returned text ends in a dangling `\r`.
+  if (mode === 'preview') Object.assign(out, previewBody(spanText(structure, r.span)));
   out.lines = r.span;
   if (r.heading !== undefined) out.heading = r.heading;
   if (r.level !== undefined) out.level = r.level;
-  if (mode === 'outline') addOutlineFields(out, structure, r.span);
+  if (mode === 'outline' || mode === 'preview') addOutlineFields(out, structure, r.span);
   return out;
 }
 

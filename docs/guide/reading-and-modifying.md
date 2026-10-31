@@ -43,25 +43,25 @@ A `lines` selector is **clipped to the body** at both ends: a range that starts 
 
 #### `content` modes
 
-`content` is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item (a `content` key inside an item fails the call with `INVALID_PARAMS`). `frontmatter`, `outline` and `full` apply to each item's selection exactly as they apply to a whole note; the selection of a bare path is its body. Frontmatter is returned in every mode:
+`content` is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item (a `content` key inside an item fails the call with `INVALID_PARAMS`). It applies to each item's selection exactly as it applies to a whole note; the selection of a bare path is its body. The modes form a ladder: each rung shows more of the selection than the one before, and `full` trades the outline fields for the whole text. Frontmatter is returned in every mode:
 
 | Mode          | Returns                                                                                                                                  |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `frontmatter` | `{ path, frontmatter }` — no body, no coordinates                                                                                        |
 | `outline`     | `{ path, frontmatter, lines, preamble?, outline, collapsed? }` — the heading blocks of the selection, no body text                       |
-| `preview`     | `{ path, frontmatter, content, truncated }` — bounded (~500-char) slice of the whole note's body; `truncated: true` when the body was cut |
+| `preview`     | everything in `outline`, plus `content` (the selection's first 500 characters, verbatim) and `truncated` |
 | `full`        | `{ path, frontmatter, lines, content }` — the whole selection                                                                            |
 
 - `lines` on the item is the **selection's span**. For a whole note it is the body span, `[first body line, last line]`, so the frontmatter ends on `lines[0] − 1`. A note with no body line (an empty file, or frontmatter only) carries no `lines`.
-- A heading read (`{ path, heading }`) in `full` or `outline` also echoes the matched `heading` and its `level` next to `lines`.
-- When the frontmatter holds YAML that does not parse, a whole-note `full` read returns `frontmatter: null` and the whole raw file as `content`, so its `lines` is `[1, last line]`. `outline`, and every selection, still treat the fence as frontmatter, so their `lines` start after it.
+- A heading read (`{ path, heading }`) in `outline`, `preview` or `full` also echoes the matched `heading` and its `level` next to `lines`.
+- When the frontmatter holds YAML that does not parse, a whole-note `full` read returns `frontmatter: null` and the whole raw file as `content`, so its `lines` is `[1, last line]`, and a whole-note `preview` returns a prefix of that raw file. `outline`, the outline fields of `preview`, and every selection still treat the fence as frontmatter, so their `lines` start after it.
 - `preamble: [start, end]` is the note's text before its first heading, intersected with the selection, and is present only when that part is non-blank. A heading read never has one.
-- `preview` does not apply to a selection yet: it previews the whole note's body whatever an item selects, and the selector is not resolved.
+- `truncated: true` means the preview `content` stops before the selection's end. The prefix starts at the selection's first line (a heading read's at its heading line) and is cut at a word or line boundary, ending in `…`. See [Structured preview](#structured-preview).
 - `frontmatter` still resolves an item's selector, so a selector that finds nothing is a miss in this mode too.
 
 **Default when `content` is omitted:** a selector item returns its selection in `full`; a bare path returns `full` when the call has one item and `preview` otherwise. Every item counts, selector items included, so `["a.md", { path: "b.md", heading: "Notes" }]` previews `a.md`. An explicit `content` applies to every item in the call.
 
-Re-read a previewed note with `content: 'full'`, or read the part you need, before citing or editing it.
+Before citing or editing a previewed note, read the part you need in `full` — usually one heading block from its outline.
 
 Returns `{ results, count, errors }` where each item in `results` is either a success object (shape depends on `content` mode) or `{ path, error: { code, message } }` plus retry data (failure). `count === results.length` (total items, including failures); `errors` is the subset of those that failed. To get the successful-read count, subtract: `count - errors`.
 
@@ -112,6 +112,32 @@ Returns `{ results, count, errors }` where each item in `results` is either a su
 
 Hidden headings are still readable by name. To list what an entry hides, read that entry's outline: `{ paths: [{ path: "logs/2026.md", heading: "2026-01" }], content: "outline" }`. The cap and the collapse count within the selection, so this lists the sub-headings the whole-note outline dropped.
 
+#### Structured preview
+
+A preview item is the outline plus a verbatim prefix. For the note above:
+
+```json
+{
+  "path": "projects/onboarding.md",
+  "frontmatter": { "type": "project" },
+  "content": "**Owner:** platform team\n**Start:** 2026-03-02\n\n## First 30 days\nPair with a buddy for the first…",
+  "truncated": true,
+  "lines": [4, 30],
+  "preamble": [4, 6],
+  "outline": [
+    { "heading": "First 30 days", "level": 2, "lines": [7, 18] },
+    { "heading": "Week 1", "level": 3, "lines": [11, 18] },
+    { "heading": "Decisions", "level": 2, "lines": [19, 30] },
+    { "heading": "Notes", "level": 3, "lines": [22, 25] },
+    { "heading": "Notes[2]", "level": 3, "lines": [26, 30] }
+  ]
+}
+```
+
+The prefix is cut short here; a real one runs to about 500 characters. The prefix is raw text, so it can show headings that a collapsed outline does not list — the outline is not wrong, those headings sit below its cut. To act on a preview, pick the entry and read it by `heading`; re-reading the whole note with `content: 'full'` is rarely needed.
+
+A preview of a selection is the selection's outline plus a prefix of the selection: `{ paths: [{ path: "projects/onboarding.md", heading: "Decisions" }], content: "preview" }` starts its `content` at the `## Decisions` line, lists `Decisions`, `Notes` and `Notes[2]`, echoes `heading` and `level`, and is `truncated` only when `content` stops before line 30.
+
 #### Reading a heading block
 
 `{ path, heading }` matches the heading name **exactly** first. Only when nothing matches exactly does it fall back to a looser comparison — case, extra whitespace, emphasis and code markup, wikilink and Markdown link brackets (the link text stays), and a leading `#` run are ignored — and the fallback is accepted only when it picks exactly one heading block. Case folding is Unicode-aware, so non-Latin names compare too. The heading's level is not part of the match, and a prefix never matches. Every heading block counts, including one a collapsed outline does not list.
@@ -131,7 +157,7 @@ A selector that finds nothing fails **its item only**; the other items are unaff
 
 A note with no body line (an empty file, or frontmatter only) carries no body `lines` on a miss, and every `lines` selector on it is `LINES_OUT_OF_RANGE`; for a frontmatter-only note the message points to `content: 'frontmatter'`. When the frontmatter fence holds YAML that does not parse, a miss in or around it points to a whole-note `content: 'full'` read instead, since that read returns the fence as text and a frontmatter read returns `null`. An unsafe path (one that escapes the vault) is a per-item `INVALID_ARGUMENT`, like a bare path.
 
-The miss shape does not depend on `content`: in `frontmatter`, `outline` and `full` the selector is always resolved.
+The miss shape does not depend on `content`: in every mode, `frontmatter` included, the selector is always resolved.
 
 #### Argument faults
 
@@ -156,7 +182,7 @@ Every `search_notes` body evidence row with `lines` reads back as `{ path, lines
 ```
 
 - **`{ path, heading: row.heading }`** is an equal alternative only for a semantic block with a non-empty `heading`; it reads the same span.
-- **A `---frontmatter---` block** is the frontmatter, which lies outside the body: its `lines` are `LINES_OUT_OF_RANGE`. Read it with `content: 'frontmatter'` on its path.
+- **A `---frontmatter---` block** is the frontmatter, which lies outside the body: its `lines` are `LINES_OUT_OF_RANGE`. Read it as `read_notes({ paths: [path], content: 'frontmatter' })`.
 - **`heading: ""`** on a semantic block marks a paragraph inside a heading block, or the preamble — it does not name the heading block around it. Read it with `lines`; passing `""` as `heading` fails the whole call.
 - **A lexical `heading`** is the text of the nearest heading before the match — a label. Nothing guarantees it names a heading block: it may be a setext heading, a heading inside a list, or one of several siblings with the same text, and then a bare `Notes` matches the first of `Notes` / `Notes[2]` exactly, with no error.
 - **Check the echo.** A heading read echoes its `lines`. If the hit's `lines` fall outside them, the name picked another block: read the outline and pick by `lines`.
@@ -170,13 +196,13 @@ Read a single note (defaults to `full`):
 { "paths": "Projects/neuro-vault.md" }
 ```
 
-Batch-read several notes (defaults to `preview` to keep the response bounded):
+Batch-read several notes (defaults to `preview`: frontmatter, outline and a prefix per note):
 
 ```json
 { "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md", "Archive/old-idea.md"] }
 ```
 
-Each item comes back with frontmatter and a preview body. When `truncated: true`, re-read the individual note with `content: 'full'`, or read the part you need, before citing or editing it.
+Each item comes back with frontmatter, the note's outline and a prefix of its body. When `truncated: true`, read the part you need — a heading block from the outline — before citing or editing it.
 
 The outline only, to see how a long note is organised before reading it:
 

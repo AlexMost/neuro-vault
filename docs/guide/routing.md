@@ -27,17 +27,19 @@ Tool routing and retrieval policy are related, but not the same thing. Routing i
 | "Read today's daily note"                    | `read_daily()`                                                                                                                       |
 | "Append a TODO to today"                     | `read_daily()` → `edit_note({ path, content: body + "- [ ] new todo" })` (see [Reading & Modifying](./reading-and-modifying.md))      |
 
-## Multi-note triage: preview first, then full
+## Multi-note triage: preview, then the part you need
 
-When `read_notes` is called with two or more paths (the typical `search_notes` / `query_notes` → `read_notes` triage pattern), it defaults to `content: 'preview'` — each item returns frontmatter plus a bounded body slice to keep the MCP response payload small. Items whose body was cut carry `truncated: true`. Before citing or editing a specific note, re-read it individually with `content: 'full'` to get the complete body.
+When `read_notes` is called with two or more items (the typical `search_notes` / `query_notes` → `read_notes` triage pattern), a bare path defaults to `content: 'preview'`: frontmatter, the note's outline (its heading blocks with their `lines`) and a ~500-character prefix. Items whose body was cut carry `truncated: true`. Before citing or editing, read the part you need — usually one heading block by name, straight from the outline — rather than the whole note.
 
 ```json
-// triage hop — multi-path, defaults to preview
+// triage hop — multi-path, defaults to preview (outline + prefix)
 { "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md", "Archive/old-idea.md"] }
 
-// follow-up for the note you want to quote or edit
-{ "paths": "Notes/embeddings.md", "content": "full" }
+// follow-up: the heading block you want to quote or edit (a selector item defaults to full)
+{ "paths": [{ "path": "Notes/embeddings.md", "heading": "What is an embedding" }] }
 ```
+
+From search hits, skip the preview: read each evidence row as `{ path, lines: row.lines }` (see [From a search hit to a read](./reading-and-modifying.md#from-a-search-hit-to-a-read)).
 
 ## Tag-driven questions are exact, not fuzzy
 

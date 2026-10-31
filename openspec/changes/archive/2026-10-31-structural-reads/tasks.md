@@ -85,21 +85,21 @@ call sites are one task.
       matching, misses, argument faults); `finding-notes.md` (the "Evidence coordinates and the
       hand-off to `read_notes`" subsection, lexical `heading` as a label); `heading` / `lines` rows
       in `mcp-parameter-dictionary.md`; `note-structure.md`; a sweep of the rest of `docs/`.
-- [ ] 3.9 Gates, PR "(3/4)" with `Refs` only, reviewer session, fixes, re-review. **Stop for the user.**
+- [x] 3.9 Gates, PR "(3/4)" with `Refs` only, reviewer session, fixes, re-review. **Stop for the user.**
 
 ## 4. Structured preview — PR 4/4
 
-- [ ] 4.1 `preview` gains `lines`, `preamble`, `outline` and `collapsed` for the selection; the
+- [x] 4.1 `preview` gains `lines`, `preamble`, `outline` and `collapsed` for the selection; the
       prefix starts at the selection's first line. Tests through `test/_gate.ts`: `content` and
       `truncated` byte-identical to today on bare paths (pinned against the pre-change
       `previewBody` output), outline fields present, a headless note gets `outline: []`,
       determinism.
-- [ ] 4.2 Wording and docs: the preview part of CONTENT; the `read-notes-content-modes` wording in
+- [x] 4.2 Wording and docs: the preview part of CONTENT; the `read-notes-content-modes` wording in
       `docs/guide/reading-and-modifying.md`; `docs/guide/routing.md` ("preview, then the part you
       need"); a final sweep of `docs/`.
-- [ ] 4.3 Gates. Verify (`verify.md`), including one manual Haiku probe of the composed
+- [x] 4.3 Gates. Verify (`verify.md`), including one manual Haiku probe of the composed
       `read_notes` description (the 253 probe set) with its result recorded. Then the
       retrospective, then archive (`openspec archive structural-reads`).
-- [ ] 4.4 After the retrospective and the archive: finishing-a-development-branch. Open PR "(4/4)"
+- [x] 4.4 After the retrospective and the archive: finishing-a-development-branch. Open PR "(4/4)"
       whose body closes #239, #152 and #189. Run the reviewer session, fix its findings and
       re-review.

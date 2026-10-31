@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildReadNotesTool } from '../../../src/modules/operations/tools/read-notes.js';
-import { PREVIEW_CHAR_CAP, PREVIEW_MARKER } from '../../../src/modules/operations/preview-body.js';
+import {
+  PREVIEW_CHAR_CAP,
+  PREVIEW_MARKER,
+  previewBody,
+} from '../../../src/modules/operations/preview-body.js';
 import { registerTool } from '../../../src/lib/tool-registry.js';
 import { callTool, expectToolError } from '../../_gate.js';
 import type { ReadNotesResult } from '../../../src/modules/operations/types.js';
@@ -51,12 +55,7 @@ describe('operations.readNotes handler', () => {
   });
 
   it('dedupes paths preserving first-occurrence order', async () => {
-    const reader = makeReader({
-      readNotes: async () => [
-        { path: 'a.md', frontmatter: null, content: '' },
-        { path: 'b.md', frontmatter: null, content: '' },
-      ],
-    });
+    const reader = readerOverFiles({ 'a.md': '', 'b.md': '' });
 
     const result = await callTool<ReadNotesOut>(buildReg(reader), {
       paths: ['a.md', 'b.md', 'a.md'],
@@ -95,26 +94,30 @@ describe('operations.readNotes handler', () => {
   });
 
   it('two or more paths + no content default to preview (each item has truncated)', async () => {
-    const reader = makeReader({
-      readNotes: async () => [
-        { path: 'a.md', frontmatter: { x: 1 }, content: 'short a' },
-        { path: 'b.md', frontmatter: { y: 2 }, content: 'short b' },
-      ],
+    const reader = readerOverFiles({
+      'a.md': '---\nx: 1\n---\nshort a',
+      'b.md': '---\ny: 2\n---\nshort b',
     });
 
     const result = await callTool<ReadNotesOut>(buildReg(reader), { paths: ['a.md', 'b.md'] });
 
-    expect(result.results[0]).toEqual({
+    expect(result.results[0]).toStrictEqual({
       path: 'a.md',
       frontmatter: { x: 1 },
       content: 'short a',
       truncated: false,
+      lines: [4, 4],
+      preamble: [4, 4],
+      outline: [],
     });
-    expect(result.results[1]).toEqual({
+    expect(result.results[1]).toStrictEqual({
       path: 'b.md',
       frontmatter: { y: 2 },
       content: 'short b',
       truncated: false,
+      lines: [4, 4],
+      preamble: [4, 4],
+      outline: [],
     });
   });
 
@@ -159,28 +162,27 @@ describe('operations.readNotes handler', () => {
   });
 
   it("content: 'preview' on a single path returns preview (override)", async () => {
-    const reader = makeReader({
-      readNotes: async () => [{ path: 'a.md', frontmatter: { x: 1 }, content: 'short body' }],
-    });
+    const reader = readerOverFiles({ 'a.md': '---\nx: 1\n---\nshort body' });
 
     const result = await callTool<ReadNotesOut>(buildReg(reader), {
       paths: ['a.md'],
       content: 'preview',
     });
 
-    expect(result.results[0]).toEqual({
+    expect(result.results[0]).toStrictEqual({
       path: 'a.md',
       frontmatter: { x: 1 },
       content: 'short body',
       truncated: false,
+      lines: [4, 4],
+      preamble: [4, 4],
+      outline: [],
     });
   });
 
   it("content: 'preview' with a short body keeps it intact and sets truncated: false", async () => {
     const shortBody = 'a'.repeat(PREVIEW_CHAR_CAP);
-    const reader = makeReader({
-      readNotes: async () => [{ path: 'a.md', frontmatter: null, content: shortBody }],
-    });
+    const reader = readerOverFiles({ 'a.md': shortBody });
 
     const result = await callTool<ReadNotesOut>(buildReg(reader), {
       paths: ['a.md'],
@@ -192,9 +194,7 @@ describe('operations.readNotes handler', () => {
 
   it("content: 'preview' with a long body cuts it and sets truncated: true", async () => {
     const longBody = 'word '.repeat(PREVIEW_CHAR_CAP);
-    const reader = makeReader({
-      readNotes: async () => [{ path: 'a.md', frontmatter: null, content: longBody }],
-    });
+    const reader = readerOverFiles({ 'a.md': longBody });
 
     const result = await callTool<ReadNotesOut>(buildReg(reader), {
       paths: ['a.md'],
@@ -235,9 +235,7 @@ describe('operations.readNotes handler', () => {
   });
 
   it('produces per-item INVALID_ARGUMENT for traversal paths and reads the rest', async () => {
-    const reader = makeReader({
-      readNotes: async () => [{ path: 'a.md', frontmatter: null, content: 'a' }],
-    });
+    const reader = readerOverFiles({ 'a.md': 'a' });
 
     const result = await callTool<ReadNotesOut>(buildReg(reader), {
       paths: ['a.md', '../etc/passwd'],
@@ -267,12 +265,7 @@ describe('operations.readNotes handler', () => {
   });
 
   it('passes through per-item NOT_FOUND from the reader', async () => {
-    const reader = makeReader({
-      readNotes: async () => [
-        { path: 'a.md', frontmatter: null, content: 'a' },
-        { path: 'missing.md', error: { code: 'NOT_FOUND', message: 'Note not found: missing.md' } },
-      ],
-    });
+    const reader = readerOverFiles({ 'a.md': 'a' });
 
     const result = await callTool<ReadNotesOut>(buildReg(reader), {
       paths: ['a.md', 'missing.md'],
@@ -315,12 +308,7 @@ describe('operations.readNotes handler', () => {
   });
 
   it('coerces a stringified paths array', async () => {
-    const reader = makeReader({
-      readNotes: async () => [
-        { path: 'a.md', frontmatter: null, content: 'a' },
-        { path: 'b.md', frontmatter: null, content: 'b' },
-      ],
-    });
+    const reader = readerOverFiles({ 'a.md': 'a', 'b.md': 'b' });
     const result = await callTool<ReadNotesOut>(buildReg(reader), {
       paths: '["a.md","b.md"]',
     });
@@ -699,8 +687,9 @@ describe('operations.readNotes request items', () => {
     });
 
     expect(result.results[0]).toHaveProperty('truncated', false);
-    expect(result.results[0]).not.toHaveProperty('lines');
+    expect(result.results[0]).toHaveProperty('outline');
     expect(result.results[1]).toHaveProperty('content');
+    expect(result.results[1]).not.toHaveProperty('outline');
     expect(result.results[1]).not.toHaveProperty('truncated');
   });
 
@@ -1456,7 +1445,7 @@ describe('operations.readNotes content modes over a selection', () => {
     });
   });
 
-  it.each(['outline', 'frontmatter'])(
+  it.each(['outline', 'preview', 'frontmatter'])(
     "a miss has the shape it has under content: 'full' under content: '%s'",
     async (content) => {
       const files = { 'log.md': LOG + '\n', 'x.md': '# A\n### Notes\na\n# B\n### Notes\nb\n' };
@@ -1493,5 +1482,301 @@ describe('operations.readNotes content modes over a selection', () => {
         level: 2,
       },
     ]);
+  });
+});
+
+describe("operations.readNotes content: 'preview'", () => {
+  const read = (paths: unknown, files: Record<string, string>, content = 'preview') =>
+    callTool<ReadNotesOut>(buildReg(readerOverFiles(files)), { paths, content });
+
+  /** What a bare-path preview returned before it carried the outline: `previewBody` of the body. */
+  const pinned = async (files: Record<string, string>, path: string) => {
+    const [item] = await readerOverFiles(files).readNotes({ paths: [path], fields: ['content'] });
+    if ('error' in item) throw new Error(`unreadable fixture ${path}`);
+    return previewBody(item.content);
+  };
+
+  it.each([
+    ['a short body', 'short body\n', { content: 'short body\n', truncated: false }],
+    [
+      'a body of exactly the cap',
+      'a'.repeat(PREVIEW_CHAR_CAP),
+      { content: 'a'.repeat(PREVIEW_CHAR_CAP), truncated: false },
+    ],
+    [
+      'a long body with no whitespace before the cap',
+      'x'.repeat(PREVIEW_CHAR_CAP + 40) + ' tail\n',
+      { content: 'x'.repeat(PREVIEW_CHAR_CAP) + PREVIEW_MARKER, truncated: true },
+    ],
+  ])(
+    'a bare path keeps its content and truncated byte-identical: %s',
+    async (_, body, expected) => {
+      const files = { 'n.md': '---\na: 1\n---\n' + body };
+
+      const result = await read('n.md', files);
+
+      const item = result.results[0] as { content: string; truncated: boolean };
+      expect({ content: item.content, truncated: item.truncated }).toStrictEqual(expected);
+      expect(expected).toStrictEqual(await pinned(files, 'n.md'));
+    },
+  );
+
+  it('carries the outline fields of the note: lines, preamble and outline', async () => {
+    // Lines: 1-3 frontmatter, 4 intro, 5 `## A`, 6-9 a, 10 `## B`, 11-14 b.
+    const note = ['---', 'a: 1', '---', 'intro', '## A', 'a6', 'a7', 'a8', 'a9', '## B'];
+    note.push('b11', 'b12', 'b13', 'b14');
+
+    const result = await read(['n.md'], { 'n.md': note.join('\n') + '\n' });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'n.md',
+        frontmatter: { a: 1 },
+        content: note.slice(3).join('\n') + '\n',
+        truncated: false,
+        lines: [4, 14],
+        preamble: [4, 4],
+        outline: [
+          { heading: 'A', level: 2, lines: [5, 9] },
+          { heading: 'B', level: 2, lines: [10, 14] },
+        ],
+      },
+    ]);
+  });
+
+  it('collapses a large outline as outline mode does, and says so', async () => {
+    const lines = ['# Title'];
+    for (let g = 0; g < 12; g++) {
+      lines.push(`## G${g}`);
+      for (let c = 0; c < 10; c++) lines.push(`### G${g}C${c}`);
+    }
+    const files = { 'big.md': lines.join('\n') + '\n' };
+
+    const preview = await read('big.md', files);
+    const outline = await read('big.md', files, 'outline');
+
+    expect(preview.results[0]).toHaveProperty('collapsed', true);
+    expect(preview.results[0]).toHaveProperty('truncated', true);
+    expect(preview.results[0]).toMatchObject(outline.results[0]);
+  });
+
+  it('a headless note previews with an empty outline and a preamble covering its body', async () => {
+    const result = await read('n.md', { 'n.md': '---\na: 1\n---\nplain\ntext\n' });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'n.md',
+        frontmatter: { a: 1 },
+        content: 'plain\ntext\n',
+        truncated: false,
+        lines: [4, 5],
+        preamble: [4, 5],
+        outline: [],
+      },
+    ]);
+  });
+
+  it('a headless note with a blank body carries no preamble', async () => {
+    const result = await read('n.md', { 'n.md': '---\na: 1\n---\n\n   \n' });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'n.md',
+        frontmatter: { a: 1 },
+        content: '\n   \n',
+        truncated: false,
+        lines: [4, 5],
+        outline: [],
+      },
+    ]);
+  });
+
+  it('a note with unparseable frontmatter previews the raw file, as before, with the outline', async () => {
+    const malformed = '---\na: [unclosed\n---\n# Top\nx\n';
+
+    const result = await read('n.md', { 'n.md': malformed });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'n.md',
+        frontmatter: null,
+        content: malformed,
+        truncated: false,
+        lines: [4, 5],
+        outline: [{ heading: 'Top', level: 1, lines: [4, 5] }],
+      },
+    ]);
+  });
+
+  it('a frontmatter-only note previews with no lines and an empty outline', async () => {
+    const result = await read('n.md', { 'n.md': '---\na: 1\n---\n' });
+
+    expect(result.results).toStrictEqual([
+      { path: 'n.md', frontmatter: { a: 1 }, content: '', truncated: false, outline: [] },
+    ]);
+  });
+
+  describe('over a selection', () => {
+    /**
+     * Lines: 1-3 frontmatter, 4 intro, 5 `# Log`, 6 `## Jan`, 7 `### Standup`, 8 `x`,
+     * 9 `## Feb`, 10-29 twenty 40-character filler lines.
+     */
+    const FILLER = Array.from({ length: 20 }, (_, i) => `filler ${i + 10} `.padEnd(40, 'f'));
+    const LOG = ['---', 'a: 1', '---', 'intro', '# Log', '## Jan', '### Standup', 'x', '## Feb'];
+    LOG.push(...FILLER);
+    const FILES = { 'log.md': LOG.join('\n') + '\n' };
+    const text = (s: number, e: number) => LOG.slice(s - 1, e).join('\n');
+
+    it('a heading read previews from its heading line, with its echo and its own outline', async () => {
+      const result = await read([{ path: 'log.md', heading: 'Jan' }], FILES);
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'log.md',
+          frontmatter: { a: 1 },
+          content: text(6, 8),
+          truncated: false,
+          lines: [6, 8],
+          heading: 'Jan',
+          level: 2,
+          outline: [
+            { heading: 'Jan', level: 2, lines: [6, 8] },
+            { heading: 'Standup', level: 3, lines: [7, 8] },
+          ],
+        },
+      ]);
+    });
+
+    it('a long heading block is truncated at the cap, starting at its heading line', async () => {
+      const result = await read([{ path: 'log.md', heading: 'Feb' }], FILES);
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'log.md',
+          frontmatter: { a: 1 },
+          ...previewBody(text(9, 29)),
+          lines: [9, 29],
+          heading: 'Feb',
+          level: 2,
+          outline: [{ heading: 'Feb', level: 2, lines: [9, 29] }],
+        },
+      ]);
+      const item = result.results[0] as { content: string; truncated: boolean };
+      expect(item.truncated).toBe(true);
+      expect(item.content.startsWith(`## Feb\n${FILLER[0]}`)).toBe(true);
+      expect(item.content.endsWith(PREVIEW_MARKER)).toBe(true);
+    });
+
+    it('a lines read previews from its first line, untruncated when it fits the cap', async () => {
+      // The note's body runs past the cap; the selection does not.
+      const result = await read([{ path: 'log.md', lines: [4, 7] }], FILES);
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'log.md',
+          frontmatter: { a: 1 },
+          content: text(4, 7),
+          truncated: false,
+          lines: [4, 7],
+          preamble: [4, 4],
+          outline: [
+            { heading: 'Log', level: 1, lines: [5, 29] },
+            { heading: 'Jan', level: 2, lines: [6, 8] },
+            { heading: 'Standup', level: 3, lines: [7, 8] },
+          ],
+        },
+      ]);
+    });
+
+    it('a lines read is truncated when it stops before the selection end', async () => {
+      const result = await read([{ path: 'log.md', lines: [10, 29] }], FILES);
+
+      const item = result.results[0] as { content: string; truncated: boolean };
+      expect(item).toMatchObject({ lines: [10, 29], outline: [], truncated: true });
+      expect(item.content.startsWith(FILLER[0])).toBe(true);
+      expect(item).not.toHaveProperty('preamble');
+    });
+
+    it('collapses the outline counted from the selection, keeping true spans', async () => {
+      // `# Root` holds `## Other` and `## Sel`; `## Sel` holds 12 `###`, each holding 10 `####`.
+      const note = ['# Root', '## Other', 'o', '## Sel'];
+      for (let g = 0; g < 12; g++) {
+        note.push(`### G${g}`);
+        for (let c = 0; c < 10; c++) note.push(`#### G${g}C${c}`);
+      }
+      const files = { 'big.md': note.join('\n') + '\n' };
+
+      const preview = await read([{ path: 'big.md', heading: 'Sel' }], files);
+      const outline = await read([{ path: 'big.md', heading: 'Sel' }], files, 'outline');
+
+      expect(preview.results[0]).toMatchObject({ ...outline.results[0], collapsed: true });
+      expect((preview.results[0] as { outline: unknown[] }).outline).toHaveLength(13);
+    });
+
+    it('a CRLF selection previews with interior CRLF kept and no dangling \\r', async () => {
+      const crlf = '# T\r\n## Sub\r\nx\r\ny\r\n## Next\r\nz\r\n';
+
+      const result = await read([{ path: 'c.md', heading: 'Sub' }], { 'c.md': crlf });
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'c.md',
+          frontmatter: null,
+          content: '## Sub\r\nx\r\ny',
+          truncated: false,
+          lines: [2, 4],
+          heading: 'Sub',
+          level: 2,
+          outline: [{ heading: 'Sub', level: 2, lines: [2, 4] }],
+        },
+      ]);
+    });
+
+    it('a truncated CRLF selection ends in the marker, not in \\r', async () => {
+      const rows = Array.from({ length: 120 }, (_, i) => `row ${i}`);
+      const crlf = ['# T', ...rows].join('\r\n') + '\r\n';
+
+      const result = await read([{ path: 'c.md', lines: [1, 121] }], { 'c.md': crlf });
+
+      const item = result.results[0] as { content: string; truncated: boolean };
+      expect(item.truncated).toBe(true);
+      expect(item.content).toMatch(/[^\r\n]…$/);
+    });
+  });
+
+  it('is deterministic: two identical calls deep-equal', async () => {
+    const files = {
+      'n.md': '---\na: 1\n---\nintro\n## A\n' + 'word '.repeat(200) + '\n## B\nb\n',
+    };
+    const paths = ['n.md', { path: 'n.md', heading: 'A' }, { path: 'n.md', lines: [4, 6] }];
+
+    const first = await read(paths, files);
+    const second = await read(paths, files);
+
+    expect(second).toStrictEqual(first);
+  });
+
+  it('climbs a ladder: frontmatter keys ⊂ outline keys ⊂ preview keys', async () => {
+    const files = { 'n.md': '---\na: 1\n---\nintro\n## A\na\n' };
+    const keys = async (content: string) =>
+      Object.keys((await read('n.md', files, content)).results[0]);
+
+    const [fm, outline, preview] = await Promise.all(
+      ['frontmatter', 'outline', 'preview'].map(keys),
+    );
+
+    expect(fm.every((k) => outline.includes(k))).toBe(true);
+    expect(outline.length).toBeGreaterThan(fm.length);
+    expect(outline.every((k) => preview.includes(k))).toBe(true);
+    expect(preview.length).toBeGreaterThan(outline.length);
+  });
+
+  it('asks the reader for the raw text the outline fields need', async () => {
+    const reader = readerOverFiles({ 'n.md': '# A\n' });
+    const spy = vi.spyOn(reader, 'readNotes');
+
+    await callTool(buildReg(reader), { paths: ['n.md'], content: 'preview' });
+
+    expect(spy.mock.calls[0][0].fields).toStrictEqual(['frontmatter', 'content', 'raw']);
   });
 });
