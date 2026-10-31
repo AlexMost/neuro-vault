@@ -17,7 +17,7 @@ call sites are one task.
       preamble and `#{n}` sub-blocks dropped), each `{ heading, level, lines }` in source order,
       plus the note's body span and preamble span. Tests: levels, sibling `[n]`, headings in a list
       item / blockquote / fence produce no entry, a headless note, spans equal to `chunkNote`'s.
-- [ ] 1.4 Docs and model in the PR: `docs/architecture/own-corpus.md` (line spans and the rebuild),
+- [x] 1.4 Docs and model in the PR: `docs/architecture/own-corpus.md` (line spans and the rebuild),
       the stale `blocks[].heading` example in `docs/guide/finding-notes.md`, and the pending
       `GLOSSARY.md` terms (*Block*, *Heading block*, *Heading name*, *Own text*, *Selection*)
       committed as they stand. Commit the change artifacts.
