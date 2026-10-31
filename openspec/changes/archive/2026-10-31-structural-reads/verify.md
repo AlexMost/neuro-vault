@@ -116,9 +116,12 @@ archive:
 This is pre-existing wording, inside a spec-governed description at 4,049 of its 4,050-character
 cap.
 
-**Known, by spec.** A bare-path `preview` of a note whose YAML does not parse returns the raw
-prefix but echoes the body span. That is the outline mode's `lines`, as the preview requirement
-says, and a test pins it.
+**Known, now in the spec.** A bare-path `preview` of a note whose YAML does not parse returns the
+raw prefix but echoes the body span, the outline mode's `lines`. A test pins it. The PR 4 review
+found that the preview requirement did not allow it, so the main spec now carves it out.
+
+**After the fixes.** The fixed `read_notes` description is 5,341 characters. The four fixes were
+checked against the code, not re-probed.
 
 ---
 

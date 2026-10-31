@@ -43,7 +43,7 @@ A `lines` selector is **clipped to the body** at both ends: a range that starts 
 
 #### `content` modes
 
-`content` is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item (a `content` key inside an item fails the call with `INVALID_PARAMS`). It applies to each item's selection exactly as it applies to a whole note; the selection of a bare path is its body. The modes form a ladder: each rung shows more of the selection than the one before. Frontmatter is returned in every mode:
+`content` is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item (a `content` key inside an item fails the call with `INVALID_PARAMS`). It applies to each item's selection exactly as it applies to a whole note; the selection of a bare path is its body. The modes form a ladder: each rung shows more of the selection's text than the one before; `full` returns the text without the outline fields. Frontmatter is returned in every mode:
 
 | Mode          | Returns                                                                                                                                  |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
@@ -120,7 +120,7 @@ A preview item is the outline plus a verbatim prefix. For the note above:
 {
   "path": "projects/onboarding.md",
   "frontmatter": { "type": "project" },
-  "content": "**Owner:** platform team\n**Start:** 2026-03-02\n\n## First 30 days\nPair with a buddy for the first …",
+  "content": "**Owner:** platform team\n**Start:** 2026-03-02\n\n## First 30 days\nPair with a buddy for the first…",
   "truncated": true,
   "lines": [4, 30],
   "preamble": [4, 6],
@@ -134,7 +134,7 @@ A preview item is the outline plus a verbatim prefix. For the note above:
 }
 ```
 
-The prefix is raw text, so it can show headings that a collapsed outline does not list — the outline is not wrong, those headings sit below its cut. To act on a preview, pick the entry and read it by `heading`; re-reading the whole note with `content: 'full'` is rarely needed.
+The prefix is cut short here; a real one runs to about 500 characters. The prefix is raw text, so it can show headings that a collapsed outline does not list — the outline is not wrong, those headings sit below its cut. To act on a preview, pick the entry and read it by `heading`; re-reading the whole note with `content: 'full'` is rarely needed.
 
 A preview of a selection is the selection's outline plus a prefix of the selection: `{ paths: [{ path: "projects/onboarding.md", heading: "Decisions" }], content: "preview" }` starts its `content` at the `## Decisions` line, lists `Decisions`, `Notes` and `Notes[2]`, echoes `heading` and `level`, and is `truncated` only when `content` stops before line 30.
 

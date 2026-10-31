@@ -76,11 +76,11 @@ export function buildReadNotesTool(
       '',
       "LINE COORDINATES: every `lines` — in this tool's input and output and in `search_notes` evidence — is `[start, end]`, file-relative, 1-based, inclusive: frontmatter lines are counted, so the body starts after them, and frontmatter ends on the line before the body: a whole note's `lines[0] − 1`, not a selection's. A `lines` selector is clipped to the body: a partial overlap returns the overlapping lines, and the echoed `lines` shows what came back; only a range sharing no line with the body is a miss.",
       '',
-      'CONTENT is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item. It applies to each item\'s selection the way it applies to a whole note (the selection of a bare path is its body). Each rung shows more:',
+      'CONTENT is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }` — never inside an item. It applies to each item\'s selection the way it applies to a whole note (the selection of a bare path is its body). Each rung shows more of the selection\'s text:',
       '- `frontmatter`: `{ path, frontmatter }`.',
       "- `outline`: frontmatter + `lines` (the selection's span; the body span for a whole note) + `preamble` (`[start, end]` of text before the first heading, only when non-blank) + `outline: [{ heading, level, lines }]` — heading blocks in source order. No body text.",
       "- `preview`: everything in `outline` + `content` (the selection's first 500 chars, verbatim, cut at a word or line boundary with `…` appended) + `truncated` (true when `content` stops before the selection's end).",
-      '- `full`: frontmatter + `lines` + `content` (the whole selection).',
+      '- `full`: frontmatter + `lines` + `content` (the whole selection; no outline fields).',
       'A heading read in `outline`, `preview` or `full` also echoes the matched `heading` and its `level`.',
       'Omitting `content`: a selector item returns its selection in `full`; a bare path returns `full` when the call has one item, `preview` otherwise.',
       '',
@@ -217,8 +217,8 @@ function project(
     const span = fullSpan(item);
     if (span !== null) out.lines = span;
   } else if (mode === 'outline' || mode === 'preview') {
-    // A bare-path preview slices the reader's `content`, exactly as it did before it
-    // carried the outline fields.
+    // A bare-path preview slices the reader's `content` (the body, or the raw file when its
+    // YAML does not parse), so it equals `previewBody` of what `full` returns.
     if (mode === 'preview') Object.assign(out, previewBody(item.content));
     const s = structure();
     if (s.body !== null) out.lines = [s.body[0], s.body[1]];

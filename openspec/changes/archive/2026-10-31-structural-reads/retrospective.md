@@ -10,14 +10,14 @@
 ## 0. Evidence
 
 - **Commit range:** `fa7b6e1..HEAD`. That is four squash commits on main (#256–#259) plus this
-  branch's commits. Inside the PRs there were about 45 commits before squash.
+  branch's commits. Inside them were 36 commits before squash, plus 5 on this branch before the archive.
 - **Diff size:** +6,449 / −302 lines across 56 files, before the archive commit.
-- **Tasks done:** 20 of 22 at verify time. 4.3 and 4.4 close with the archive commit and PR 4.
+- **Tasks done:** 21 of 23 at verify time. 4.3 and 4.4 close with the archive commit and PR 4.
 - **Active hours:** about 7, on one day. PRs 2–4 ran without the user, under a `/goal`.
 - **Subagent dispatches:** about 45.
   - Implementers, one per task or per two-task batch.
   - Task reviewers, fix rounds and scoped re-reviews.
-  - Three fresh whole-PR reviewers.
+  - Fresh whole-PR reviewers for #258 and #259, and then for this PR.
   - Three Haiku probe runs and a grader.
   - PR 1's review ran in a separate session.
 - **New external dependencies:** none.
@@ -72,8 +72,9 @@ dc8f960 docs: the structured preview in the description and guide
 - 🟡 [painful | PR 3 I1] The batch 3.1+3.2 review read the generic union message as out of
   scope (M1). The content-modes spec had a SHALL scenario for it. Deferring it would have
   archived a false scenario.
-- 📌 [nit | `0ac73e1`] A bare preview of a note with unparseable YAML returns the raw prefix but
-  echoes the body span. This is spec-consistent, but it differs from `full`'s `[1, n]`.
+- 📌 [nit | `0ac73e1`, PR 4 review M1] A bare preview of a note with unparseable YAML returns the
+  raw prefix but echoes the body span, which the preview requirement's "starts at the body's
+  first line" did not allow. The main spec now carves this case out.
 - 📌 [nit | worktree guard] Compound shell commands and a second worktree were refused. That
   cost a few retries, and one wedged cwd recovered with `EnterWorktree`.
 

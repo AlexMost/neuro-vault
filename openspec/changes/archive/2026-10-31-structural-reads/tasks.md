@@ -100,6 +100,6 @@ call sites are one task.
 - [x] 4.3 Gates. Verify (`verify.md`), including one manual Haiku probe of the composed
       `read_notes` description (the 253 probe set) with its result recorded. Then the
       retrospective, then archive (`openspec archive structural-reads`).
-- [ ] 4.4 After the retrospective and the archive: finishing-a-development-branch. Open PR "(4/4)"
+- [x] 4.4 After the retrospective and the archive: finishing-a-development-branch. Open PR "(4/4)"
       whose body closes #239, #152 and #189. Run the reviewer session, fix its findings and
       re-review.

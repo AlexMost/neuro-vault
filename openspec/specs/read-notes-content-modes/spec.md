@@ -2,7 +2,7 @@
 
 ## Purpose
 
-TBD - created by archiving change read-notes-preview. Update Purpose after archive.
+How `read_notes` chooses how much of each item's selection to return — frontmatter, an outline, a bounded preview or the full text — and the defaults that pick a mode when `content` is omitted.
 ## Requirements
 ### Requirement: read_notes selects body granularity via a `content` mode
 
@@ -121,7 +121,9 @@ In `'preview'` mode, `read_notes` SHALL return frontmatter plus a deterministic,
 slice of the item's selection, marked by a boolean `truncated` field, together with the outline
 fields of `'outline'` mode for the same selection: `lines`, `preamble` when non-blank, `outline`,
 and `collapsed` when the outline was collapsed. The slice SHALL start at the selection's first
-line (the body's first line for a bare path). When the selection's text is at or under the
+line (the body's first line for a bare path; when a bare path's frontmatter YAML does not parse,
+the slice is of the raw file, as `full` returns it, while `lines` and the outline fields stay
+those of `'outline'`). When the selection's text is at or under the
 preview bound, it SHALL be returned unchanged with `truncated: false`. When it exceeds the bound,
 the returned `content` SHALL be that text truncated at a word/line boundary at or before the
 bound, with a truncation marker appended, and `truncated: true`. For a bare path, `content` and
