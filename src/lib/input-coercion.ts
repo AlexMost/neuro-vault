@@ -90,30 +90,75 @@ function fitsStructurally(schema: ZodTypeAny, value: unknown): boolean {
   return false;
 }
 
-function coerceElements(array: ZodTypeAny, value: unknown[], where: Where): unknown[] | undefined {
-  const element = arrayElement(array);
-  if (!element) return undefined;
-  return value.map((v, i) => coerceAt(element, v, below(where, i)));
+/** A numeric string as its number; `CoerceError` for any other non-blank string. */
+function toNumber(value: unknown, where: Where): unknown {
+  if (typeof value !== 'string' || value.trim() === '') return value;
+  const n = Number(value);
+  if (Number.isFinite(n)) return n;
+  throw coerceError(where, `expected number or numeric string, got ${JSON.stringify(value)}`);
+}
+
+/** An array or tuple value's elements, each coerced by the beneath-an-array rules. */
+function coerceElements(schema: ZodTypeAny, value: unknown[], where: Where): unknown[] {
+  if (schema instanceof z.ZodTuple) {
+    const items = tupleItems(schema);
+    const rest = (schema as unknown as { _def: { rest?: ZodTypeAny | null } })._def.rest ?? null;
+    return value.map((v, i) => {
+      const item = i < items.length ? items[i] : rest;
+      return item === null ? v : coerceBeneathArray(item, v, below(where, i));
+    });
+  }
+  const element = arrayElement(schema);
+  if (!element) return value;
+  return value.map((v, i) => coerceBeneathArray(element, v, below(where, i)));
+}
+
+/**
+ * A value beneath an array: an element, a declared key of an object element, or a tuple
+ * item. The only conversion here is a numeric string to a number. A nested string is never
+ * JSON-parsed, a nested boolean string stays a string, and a `z.record` is left alone.
+ */
+function coerceBeneathArray(schema: ZodTypeAny, value: unknown, where: Where): unknown {
+  if (value === null || value === undefined) return value;
+  const inner = unwrap(schema);
+
+  if (inner instanceof z.ZodNumber) return toNumber(value, where);
+
+  if (inner instanceof z.ZodObject && isPlainObject(value)) {
+    const shape = inner.shape as Record<string, ZodTypeAny>;
+    const out: Record<string, unknown> = { ...value };
+    for (const key of Object.keys(shape)) {
+      if (key in out) out[key] = coerceBeneathArray(shape[key], out[key], below(where, key));
+    }
+    return out;
+  }
+
+  if ((inner instanceof z.ZodArray || inner instanceof z.ZodTuple) && Array.isArray(value)) {
+    return coerceElements(inner, value as unknown[], where);
+  }
+
+  if (inner instanceof z.ZodUnion && typeof value !== 'string') {
+    // A value one branch already accepts is the caller's intent: never re-shape it.
+    if (inner.safeParse(value).success) return value;
+    const option = getUnionOptions(inner as z.ZodUnion<z.ZodTypeAny[]>).find((o) =>
+      fitsStructurally(o, value),
+    );
+    return option === undefined ? value : coerceBeneathArray(option, value, where);
+  }
+
+  return value;
 }
 
 export function coerceFieldValue(schema: ZodTypeAny, value: unknown, fieldName = 'value'): unknown {
   return coerceAt(schema, value, { field: fieldName, path: [] });
 }
 
+/** A top-level field's value. Only an array (or a union's array branch) is descended into. */
 function coerceAt(schema: ZodTypeAny, value: unknown, where: Where): unknown {
   if (value === null || value === undefined) return value;
   const inner = unwrap(schema);
 
-  if (inner instanceof z.ZodNumber) {
-    if (typeof value === 'number') return value;
-    if (typeof value === 'string') {
-      if (value.trim() === '') return value;
-      const n = Number(value);
-      if (Number.isFinite(n)) return n;
-      throw coerceError(where, `expected number or numeric string, got ${JSON.stringify(value)}`);
-    }
-    return value;
-  }
+  if (inner instanceof z.ZodNumber) return toNumber(value, where);
 
   if (inner instanceof z.ZodBoolean) {
     if (typeof value === 'boolean') return value;
@@ -125,8 +170,9 @@ function coerceAt(schema: ZodTypeAny, value: unknown, where: Where): unknown {
     return value;
   }
 
+  // A top-level object's keys are never coerced: only a JSON-string is parsed.
   if (inner instanceof z.ZodObject || inner instanceof z.ZodRecord) {
-    if (isPlainObject(value)) return objectFields(inner, value, where);
+    if (isPlainObject(value)) return value;
     if (typeof value === 'string') {
       let parsed: unknown;
       try {
@@ -137,7 +183,7 @@ function coerceAt(schema: ZodTypeAny, value: unknown, where: Where): unknown {
           `expected object or JSON-string of one, failed to parse: ${JSON.stringify(value)}`,
         );
       }
-      if (isPlainObject(parsed)) return objectFields(inner, parsed, where);
+      if (isPlainObject(parsed)) return parsed;
       throw coerceError(
         where,
         `expected object, parsed JSON resolved to ${describeJsonShape(parsed)}`,
@@ -149,23 +195,19 @@ function coerceAt(schema: ZodTypeAny, value: unknown, where: Where): unknown {
   if (inner instanceof z.ZodUnion) {
     const options = getUnionOptions(inner as z.ZodUnion<z.ZodTypeAny[]>);
     if (typeof value === 'string') return unionString(options, value, where);
+    if (!Array.isArray(value)) return value;
     // A value one branch already accepts is the caller's intent: never re-shape it.
     if (inner.safeParse(value).success) return value;
-    const option = options.find((o) => fitsStructurally(o, value));
-    return option === undefined ? value : coerceAt(option, value, where);
+    const option = options
+      .map(unwrap)
+      .find(
+        (o) => (o instanceof z.ZodArray || o instanceof z.ZodTuple) && fitsStructurally(o, value),
+      );
+    return option === undefined ? value : coerceElements(option, value as unknown[], where);
   }
 
-  if (inner instanceof z.ZodTuple && Array.isArray(value)) {
-    const items = tupleItems(inner);
-    const rest = (inner as unknown as { _def: { rest?: ZodTypeAny | null } })._def.rest ?? null;
-    return (value as unknown[]).map((v, i) => {
-      const item = i < items.length ? items[i] : rest;
-      return item === null ? v : coerceAt(item, v, below(where, i));
-    });
-  }
-
-  if (inner instanceof z.ZodArray && Array.isArray(value)) {
-    return coerceElements(inner, value, where) ?? value;
+  if ((inner instanceof z.ZodArray || inner instanceof z.ZodTuple) && Array.isArray(value)) {
+    return coerceElements(inner, value as unknown[], where);
   }
 
   if (inner instanceof z.ZodArray && typeof value === 'string') {
@@ -178,7 +220,7 @@ function coerceAt(schema: ZodTypeAny, value: unknown, where: Where): unknown {
         `expected array or JSON-string of one, failed to parse: ${JSON.stringify(value)}`,
       );
     }
-    if (Array.isArray(parsed)) return coerceElements(inner, parsed, where) ?? parsed;
+    if (Array.isArray(parsed)) return coerceElements(inner, parsed as unknown[], where);
     throw coerceError(
       where,
       `expected array, parsed JSON resolved to ${describeJsonShape(parsed)}`,
@@ -189,56 +231,43 @@ function coerceAt(schema: ZodTypeAny, value: unknown, where: Where): unknown {
 }
 
 /**
- * A string sent for a union. When a branch is an array and the string is a JSON array
- * whose every element is a string or a plain object its element schema can hold, it is
- * that array, coerced element-wise. Otherwise it stays a string: JSON failure does not
- * throw here, because the union's string branch may still accept the raw value.
+ * A string sent for a top-level union. It becomes an array only when it is a JSON array
+ * whose every element is a string or a plain object, and some array branch's element
+ * schema can hold every one of them: the first such branch wins, and the elements are
+ * coerced by the beneath-an-array rules. A string that is not such a JSON array stays a
+ * string, because the union's string branch may still accept it. Once parsed, though, an
+ * element whose coercion fails (`lines: ["x", "2"]`) raises `CoerceError`.
  */
 function unionString(options: ZodTypeAny[], value: string, where: Where): unknown {
-  const array = options.map(unwrap).find((o) => o instanceof z.ZodArray);
-  const element = array === undefined ? undefined : arrayElement(array);
-  if (array === undefined || element === undefined) return value;
+  const arrays = options.map(unwrap).filter((o) => o instanceof z.ZodArray);
+  if (arrays.length === 0) return value;
   let parsed: unknown;
   try {
     parsed = JSON.parse(value) as unknown;
   } catch {
     return value;
   }
-  const fits =
-    Array.isArray(parsed) &&
-    parsed.every(
-      (x) => (typeof x === 'string' || isPlainObject(x)) && fitsStructurally(element, x),
-    );
-  return fits ? (coerceElements(array, parsed as unknown[], where) ?? parsed) : value;
-}
-
-/**
- * Coerces each declared key of a `z.object` value against its own schema, keeping
- * undeclared keys as sent so the strict schema can still reject them. A `z.record`'s
- * values are left alone: their schema is open, so there is no target shape.
- */
-function objectFields(
-  schema: ZodTypeAny,
-  value: Record<string, unknown>,
-  where: Where | null,
-): Record<string, unknown> {
-  if (!(schema instanceof z.ZodObject)) return value;
-  const shape = schema.shape as Record<string, ZodTypeAny>;
-  const out: Record<string, unknown> = { ...value };
-  for (const key of Object.keys(shape)) {
-    if (key in out) {
-      const at = where === null ? { field: key, path: [] } : below(where, key);
-      out[key] = coerceAt(shape[key], out[key], at);
-    }
-  }
-  return out;
+  if (!Array.isArray(parsed)) return value;
+  const elements = parsed as unknown[];
+  if (!elements.every((x) => typeof x === 'string' || isPlainObject(x))) return value;
+  const array = arrays.find((a) => {
+    const element = arrayElement(a);
+    return element !== undefined && elements.every((x) => fitsStructurally(element, x));
+  });
+  return array === undefined ? value : coerceElements(array, elements, where);
 }
 
 export function coerceInput(schema: ZodTypeAny, value: unknown): unknown {
   const inner = unwrap(schema);
   if (!(inner instanceof z.ZodObject)) return value;
   if (!isPlainObject(value)) return value;
-  return objectFields(inner, value, null);
+
+  const shape = inner.shape as Record<string, ZodTypeAny>;
+  const out: Record<string, unknown> = { ...value };
+  for (const key of Object.keys(shape)) {
+    if (key in out) out[key] = coerceFieldValue(shape[key], out[key], key);
+  }
+  return out;
 }
 
 type WrapperLayer =

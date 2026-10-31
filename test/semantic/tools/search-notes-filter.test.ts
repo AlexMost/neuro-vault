@@ -308,6 +308,52 @@ describe('search_notes — filter', () => {
     }
   });
 
+  // The input gate does not descend into a top-level object field: values nested
+  // in `filter` reach zod exactly as sent, never JSON-parsed.
+  describe('the gate leaves values nested in filter as sent', () => {
+    it('rejects a JSON-string tags array with INVALID_PARAMS', async () => {
+      const listMatchingPaths = vi.fn(async () => new Set<string>());
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: makeSources(['a.md']),
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn() },
+        modelKey: 'm',
+        listMatchingPaths,
+      });
+      const reg = registerTool(buildSearchNotesTool(deps));
+
+      try {
+        await expect(
+          callTool(reg, { query: 'q', filter: { tags: '["a"]' } }),
+        ).rejects.toMatchObject({
+          code: 'INVALID_PARAMS',
+          details: { issues: [{ path: 'filter.tags' }] },
+        });
+        expect(listMatchingPaths).not.toHaveBeenCalled();
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('keeps a JSON-array-looking path_prefix as one literal string prefix', async () => {
+      const listMatchingPaths = vi.fn(async () => new Set<string>());
+      const { deps, cleanup } = await makeSearchDeps({
+        sources: makeSources(['a.md']),
+        embeddingProvider: { initialize: vi.fn(), embedQuery: vi.fn().mockResolvedValue([1, 0]) },
+        modelKey: 'm',
+        listMatchingPaths,
+      });
+      const reg = registerTool(buildSearchNotesTool(deps));
+
+      try {
+        await callTool(reg, { query: 'q', filter: { path_prefix: '["A/","B/"]' } });
+        expect(listMatchingPaths).toHaveBeenCalledTimes(1);
+        expect(listMatchingPaths.mock.calls[0]).toStrictEqual([{ path_prefix: '["A/","B/"]' }]);
+      } finally {
+        await cleanup();
+      }
+    });
+  });
+
   // `filter.path_prefix` is declared `.min(1)`, so the gate rejects an empty
   // array before the handler's empty-filter fallback can see it.
   it('rejects an empty path_prefix array at the gate', async () => {
