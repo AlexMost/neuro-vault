@@ -15,7 +15,7 @@ describe('corpus parity constants', () => {
 
   it('names the extraction strategy', () => {
     expect(EMBED_STRATEGY).toBe('token-window-v1');
-    expect(EMBED_VERSION).toBe(2);
+    expect(EMBED_VERSION).toBe(3);
   });
 
   it('never imports from src/modules', () => {

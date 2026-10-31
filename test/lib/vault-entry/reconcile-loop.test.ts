@@ -465,7 +465,7 @@ describe('createReconcileLoop, one profile', () => {
     // Vectors of another identity are never read into memory, let alone served.
     expect(load).not.toHaveBeenCalled();
     const announcement =
-      'neuro-vault corpus: vault "Notes" (profile "p") was indexed with other (embed_version 99); active model is bge-micro-v2 (embed_version 2) — discarding the corpus and re-indexing in the background';
+      'neuro-vault corpus: vault "Notes" (profile "p") was indexed with other (embed_version 99); active model is bge-micro-v2 (embed_version 3) — discarding the corpus and re-indexing in the background';
     expect(h.warn).toHaveBeenCalledWith(announcement);
     expect(h.warn.mock.calls.filter(([m]) => m === announcement)).toHaveLength(1);
     expect(h.loop.status('p')).toEqual({ state: 'ready' });
@@ -1279,7 +1279,7 @@ describe('createReconcileLoop over an in-memory corpus', () => {
     await h.loop.whenSettled();
     expect(h.warn).toHaveBeenCalledWith(
       'neuro-vault corpus: vault "v" (profile "p") was indexed with second-model ' +
-        '(embed_version 2); active model is bge-micro-v2 (embed_version 2) — ' +
+        '(embed_version 3); active model is bge-micro-v2 (embed_version 3) — ' +
         'discarding the corpus and re-indexing in the background',
     );
     expect(corpus.store.identity).toEqual(TEST_IDENTITY);
