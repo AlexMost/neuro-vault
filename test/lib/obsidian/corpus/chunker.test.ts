@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { chunkNote } from '../../../../src/lib/obsidian/corpus/chunker.js';
+import { chunkNote, splitNoteLines } from '../../../../src/lib/obsidian/corpus/chunker.js';
 
 const keys = (content: string) => chunkNote(content).map((b) => b.key);
 const byKey = (content: string, key: string) => chunkNote(content).find((b) => b.key === key);
@@ -336,5 +336,17 @@ describe('chunkNote block detection (CommonMark)', () => {
     );
     expect(keys(['# Title ###', 'body'].join('\n'))).toEqual(['#Title ###']);
     expect(byKey(['# Title ###', 'body'].join('\n'), '#Title ###')?.heading).toBe('Title ###');
+  });
+});
+
+describe('splitNoteLines', () => {
+  it('drops the empty element a trailing newline leaves behind', () => {
+    expect(splitNoteLines('a\nb\n')).toEqual(['a', 'b']);
+    expect(splitNoteLines('a\nb')).toEqual(['a', 'b']);
+  });
+
+  it('keeps an empty note as one empty line', () => {
+    expect(splitNoteLines('')).toEqual(['']);
+    expect(splitNoteLines('\n')).toEqual(['']);
   });
 });

@@ -4,6 +4,8 @@ import { splitRawFrontmatter } from '../in-place-edit.js';
 
 import type { ChunkedBlock } from './types.js';
 
+const FRONTMATTER_KEY = '#---frontmatter---';
+
 /** The leading `#` run of an ATX heading plus the one whitespace that closes it. */
 const ATX_PREFIX_RE = /^ {0,3}#{1,6}(?:\s|$)/;
 
@@ -109,7 +111,7 @@ function scanHeadings(lines: string[], fmEnd: number): HeadingHit[] {
  * disagrees with `set_property`/`edit_note`/the lexical index about where
  * frontmatter ends — to them an indented `---` is body, so it must be body here too.
  */
-function frontmatterEnd(content: string): number {
+export function frontmatterEnd(content: string): number {
   const { prefix } = splitRawFrontmatter(content);
   if (prefix === '') return 0;
   const newlines = prefix.split('\n').length - 1;
@@ -128,73 +130,55 @@ export function splitNoteLines(content: string): string[] {
   return lines;
 }
 
-export function chunkNote(content: string): ChunkedBlock[] {
-  const lines = splitNoteLines(content);
-  const blocks: ChunkedBlock[] = [];
+/** One heading block: the heading's line to the line before the next heading of its level or higher. */
+export interface HeadingSection {
+  /** The heading's own text, disambiguated the same way the key's last segment is. */
+  title: string;
+  level: number;
+  /** 1-based inclusive span of the block. */
+  start: number;
+  end: number;
+  key: string;
+  /** 1-based line of this section's first child heading, if any. */
+  firstChildStart?: number;
+}
+
+/**
+ * The single source of heading blocks: `chunkNote` and the read-time note structure both
+ * take their heading spans, titles and keys from here, so they cannot drift. Returns the
+ * sections in source order.
+ *
+ * `onClose` fires as each section ends (deepest first) with the keys minted so far, which
+ * it may extend: the chunker mints a heading's numbered content chunks there, and a later
+ * heading's key must be disambiguated against them.
+ */
+export function headingSections(
+  lines: string[],
+  fmEnd: number,
+  onClose?: (section: HeadingSection, usedKeys: Set<string>) => void,
+): HeadingSection[] {
+  const sections: HeadingSection[] = [];
   const open: OpenSection[] = [];
   /** (parent key + title) -> occurrences, so a repeat is disambiguated at any level. */
   const headingCounts = new Map<string, number>();
   /** Every key minted so far: uniqueness is required across all block kinds. */
   const usedKeys = new Set<string>();
+  if (fmEnd > 0) usedKeys.add(FRONTMATTER_KEY);
 
   const close = (section: OpenSection, endLine: number) => {
-    blocks.push({
+    const closed: HeadingSection = {
+      title: section.title,
+      level: section.level,
+      start: section.start,
+      end: endLine,
       key: section.key,
-      heading: section.title,
-      lines: [section.start, endLine],
-      text: lines.slice(section.start - 1, endLine).join('\n'),
-    });
-
-    const ownStart = section.start + 1;
-    const ownEnd = section.firstChildStart !== undefined ? section.firstChildStart - 1 : endLine;
-    if (ownEnd >= ownStart) {
-      const chunks = splitContentChunks(lines, ownStart, ownEnd);
-      // A single own-content paragraph is already covered by the heading block above;
-      // only disambiguate when a heading directly owns more than one paragraph.
-      if (chunks.length > 1) {
-        // A child heading literally titled "{n}" may already own `#{n}` under this
-        // key; numbering skips past any taken key so no two blocks ever share one.
-        let n = 0;
-        chunks.forEach((chunk) => {
-          let key: string;
-          do {
-            n += 1;
-            key = `${section.key}#{${n}}`;
-          } while (usedKeys.has(key));
-          usedKeys.add(key);
-          blocks.push({
-            key,
-            heading: '',
-            lines: [chunk.start, chunk.end],
-            text: chunk.text,
-          });
-        });
-      }
-    }
+      firstChildStart: section.firstChildStart,
+    };
+    sections.push(closed);
+    onClose?.(closed, usedKeys);
   };
 
-  const fmEnd = frontmatterEnd(content);
-  if (fmEnd > 0) {
-    usedKeys.add('#---frontmatter---');
-    blocks.push({
-      key: '#---frontmatter---',
-      heading: '---frontmatter---',
-      lines: [1, fmEnd],
-      text: lines.slice(0, fmEnd).join('\n'),
-    });
-  }
-  const headings = scanHeadings(lines, fmEnd);
-  const preambleEnd = headings.length === 0 ? lines.length : headings[0].line - 1;
-  if (preambleEnd > fmEnd && lines.slice(fmEnd, preambleEnd).join('').trim() !== '') {
-    blocks.push({
-      key: '#',
-      heading: '',
-      lines: [fmEnd + 1, preambleEnd],
-      text: lines.slice(fmEnd, preambleEnd).join('\n'),
-    });
-  }
-
-  for (const hit of headings) {
+  for (const hit of scanHeadings(lines, fmEnd)) {
     const { level, line } = hit;
     let title = hit.title;
     while (open.length > 0 && open[open.length - 1].level >= level) {
@@ -228,6 +212,84 @@ export function chunkNote(content: string): ChunkedBlock[] {
     });
   }
   while (open.length > 0) close(open.pop()!, lines.length);
+
+  return sections.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * The text between the frontmatter and the first heading block (or the end of the note
+ * when there is none) as a 1-based inclusive span, or null when it holds only blanks.
+ */
+export function preambleSpan(
+  lines: string[],
+  fmEnd: number,
+  sections: readonly HeadingSection[],
+): [number, number] | null {
+  const end = sections.length === 0 ? lines.length : sections[0].start - 1;
+  if (end <= fmEnd || lines.slice(fmEnd, end).join('').trim() === '') return null;
+  return [fmEnd + 1, end];
+}
+
+export function chunkNote(content: string): ChunkedBlock[] {
+  const lines = splitNoteLines(content);
+  const blocks: ChunkedBlock[] = [];
+
+  const fmEnd = frontmatterEnd(content);
+  if (fmEnd > 0) {
+    blocks.push({
+      key: FRONTMATTER_KEY,
+      heading: '---frontmatter---',
+      lines: [1, fmEnd],
+      text: lines.slice(0, fmEnd).join('\n'),
+    });
+  }
+
+  const sections = headingSections(lines, fmEnd, (section, usedKeys) => {
+    blocks.push({
+      key: section.key,
+      heading: section.title,
+      lines: [section.start, section.end],
+      text: lines.slice(section.start - 1, section.end).join('\n'),
+    });
+
+    const ownStart = section.start + 1;
+    const ownEnd =
+      section.firstChildStart !== undefined ? section.firstChildStart - 1 : section.end;
+    if (ownEnd >= ownStart) {
+      const chunks = splitContentChunks(lines, ownStart, ownEnd);
+      // A single own-content paragraph is already covered by the heading block above;
+      // only disambiguate when a heading directly owns more than one paragraph.
+      if (chunks.length > 1) {
+        // A child heading literally titled "{n}" may already own `#{n}` under this
+        // key; numbering skips past any taken key so no two blocks ever share one.
+        let n = 0;
+        chunks.forEach((chunk) => {
+          let key: string;
+          do {
+            n += 1;
+            key = `${section.key}#{${n}}`;
+          } while (usedKeys.has(key));
+          usedKeys.add(key);
+          blocks.push({
+            key,
+            heading: '',
+            lines: [chunk.start, chunk.end],
+            text: chunk.text,
+          });
+        });
+      }
+    }
+  });
+
+  const preamble = preambleSpan(lines, fmEnd, sections);
+  if (preamble) {
+    blocks.push({
+      key: '#',
+      heading: '',
+      lines: preamble,
+      text: lines.slice(preamble[0] - 1, preamble[1]).join('\n'),
+    });
+  }
 
   return blocks.sort((a, b) => a.lines[0] - b.lines[0] || a.lines[1] - b.lines[1]);
 }
