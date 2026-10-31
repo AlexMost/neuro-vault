@@ -137,6 +137,17 @@ describe('buildOperationsTools', () => {
     expect(description).toMatch(/INVALID_PARAMS/);
   });
 
+  it('read_notes description states that a preview carries the outline, over any selection', () => {
+    const tools = buildOperationsTools(noopDeps);
+    const readNotes = tools.find((t) => t.name === 'read_notes')!;
+    const description = readNotes.spec.description;
+    expect(description).toMatch(/- `preview`: everything in `outline`/);
+    expect(description).toMatch(/Each rung shows more/);
+    // The PR-3 caveat is gone: a preview applies to the selection, not the whole note.
+    expect(description).not.toMatch(/whole note's body/);
+    expect(description).not.toMatch(/even for a selector item/);
+  });
+
   it('read_daily description mentions notes_today, projection, and the 200 cap', () => {
     const tools = buildOperationsTools(noopDeps);
     const readDaily = tools.find((t) => t.name === 'read_daily')!;
