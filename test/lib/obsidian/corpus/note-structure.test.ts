@@ -22,6 +22,14 @@ describe('noteStructure', () => {
     ]);
   });
 
+  it('gives a heading its own ATX level when levels are skipped', () => {
+    expect(noteStructure('# A\n### C\n## B\nx\n').headings).toEqual([
+      { heading: 'A', level: 1, lines: [1, 4] },
+      { heading: 'C', level: 3, lines: [2, 2] },
+      { heading: 'B', level: 2, lines: [3, 4] },
+    ]);
+  });
+
   it('disambiguates repeated sibling headings the way the chunker does', () => {
     expect(names('# P\n## Notes\na\n## Notes\nb\n')).toEqual(['P', 'Notes', 'Notes[2]']);
   });

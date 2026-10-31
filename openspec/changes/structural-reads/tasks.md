@@ -21,7 +21,7 @@ call sites are one task.
       the stale `blocks[].heading` example in `docs/guide/finding-notes.md`, and the pending
       `GLOSSARY.md` terms (*Block*, *Heading block*, *Heading name*, *Own text*, *Selection*)
       committed as they stand. Commit the change artifacts.
-- [ ] 1.5 Gates (`npm test`, `npm run lint`, `npm run typecheck`, `npm run format`,
+- [x] 1.5 Gates (`npm test`, `npm run lint`, `npm run typecheck`, `npm run format`,
       `npm run build`, `openspec validate --all`, `npx commitlint --from origin/main --to HEAD`).
       Then open PR "(1/4)" with `Refs #239`, `Refs #152`, `Refs #189` and no closing keyword. Then
       run the reviewer session, fix its findings and re-review. **Stop for the user.**
