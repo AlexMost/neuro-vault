@@ -7,12 +7,14 @@ import { splitFrontmatter } from './frontmatter.js';
 import { normalizeScanPrefix, toPosixSlashes } from './paths.js';
 import type { VaultScope } from './vault-scope.js';
 
-export type ReadNotesField = 'frontmatter' | 'content';
+export type ReadNotesField = 'frontmatter' | 'content' | 'raw';
 
 export interface ReadNotesItemSuccess {
   path: string;
   frontmatter: Record<string, unknown> | null;
   content: string;
+  /** The whole file, verbatim; present only when `fields` includes `'raw'`. */
+  raw?: string;
 }
 
 export interface ReadNotesItemError {
@@ -87,7 +89,8 @@ export class FsVaultReader implements VaultReader {
 
   async readNotes(input: ReadNotesInput): Promise<ReadNotesItem[]> {
     const includeContent = input.fields.includes('content');
-    return Promise.all(input.paths.map((p) => this.readOne(p, includeContent)));
+    const includeRaw = input.fields.includes('raw');
+    return Promise.all(input.paths.map((p) => this.readOne(p, includeContent, includeRaw)));
   }
 
   async scan(opts: ScanOptions = {}): Promise<string[]> {
@@ -132,6 +135,7 @@ export class FsVaultReader implements VaultReader {
   private async readOne(
     vaultRelativePath: string,
     includeContent: boolean,
+    includeRaw: boolean,
   ): Promise<ReadNotesItem> {
     const absPath = path.join(this.vaultRoot, vaultRelativePath);
     let raw: string;
@@ -161,6 +165,12 @@ export class FsVaultReader implements VaultReader {
     // When the caller only wants frontmatter, drop the body instead of retaining
     // it. listTags/listProperties/get_vault_overview read frontmatter across the
     // whole vault; holding every note's body would be a real memory cost there.
-    return { path: vaultRelativePath, frontmatter, content: includeContent ? content : '' };
+    const item: ReadNotesItemSuccess = {
+      path: vaultRelativePath,
+      frontmatter,
+      content: includeContent ? content : '',
+    };
+    if (includeRaw) item.raw = raw;
+    return item;
   }
 }

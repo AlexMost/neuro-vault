@@ -135,6 +135,33 @@ describe('FsVaultReader', () => {
       content: '',
     });
   });
+
+  it("returns the whole file as raw when fields includes 'raw'", async () => {
+    const file = '---\nstatus: done\n---\n\n# Title\nbody\n';
+    const readFile = fakeReadFile({ '/v/n.md': file });
+    const reader = new FsVaultReader({ vaultRoot: '/v', readFile });
+
+    const [item] = await reader.readNotes({ paths: ['n.md'], fields: ['frontmatter', 'raw'] });
+
+    expect(item).toEqual({
+      path: 'n.md',
+      frontmatter: { status: 'done' },
+      content: '',
+      raw: file,
+    });
+  });
+
+  it("carries no raw key when fields omits 'raw'", async () => {
+    const readFile = fakeReadFile({ '/v/n.md': '---\nstatus: done\n---\nbody\n' });
+    const reader = new FsVaultReader({ vaultRoot: '/v', readFile });
+
+    const [item] = await reader.readNotes({
+      paths: ['n.md'],
+      fields: ['frontmatter', 'content'],
+    });
+
+    expect(item).not.toHaveProperty('raw');
+  });
 });
 
 describe('FsVaultReader.scan', () => {
