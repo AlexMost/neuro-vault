@@ -205,6 +205,22 @@ describe('chunkNote', () => {
       ]
     `);
   });
+
+  it('a trailing newline adds no line', () => {
+    const blocks = chunkNote('# A\ntext\n');
+    const a = blocks.find((b) => b.key === '#A')!;
+    expect(a.lines).toEqual([1, 2]);
+    expect(a.text).toBe('# A\ntext');
+  });
+
+  it('a note without a trailing newline chunks identically', () => {
+    expect(chunkNote('# A\ntext')).toEqual(chunkNote('# A\ntext\n'));
+  });
+
+  it('the preamble of a headless note ending in a newline ends on its last real line', () => {
+    const pre = chunkNote('one\ntwo\n').find((b) => b.key === '#')!;
+    expect(pre.lines).toEqual([1, 2]);
+  });
 });
 
 // Block detection comes from the CommonMark AST, not line regexes. These are the cases a

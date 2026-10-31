@@ -116,8 +116,20 @@ function frontmatterEnd(content: string): number {
   return prefix.endsWith('\n') ? newlines : newlines + 1;
 }
 
-export function chunkNote(content: string): ChunkedBlock[] {
+/**
+ * Splits a note into its real lines: `content.split('\n')` minus the empty element a
+ * trailing newline leaves behind, so a note ending in `\n` has no phantom last line.
+ * The one line splitter shared by the chunker and the read-time note structure; `''`
+ * stays `['']`.
+ */
+export function splitNoteLines(content: string): string[] {
   const lines = content.split('\n');
+  if (content.endsWith('\n')) lines.pop();
+  return lines;
+}
+
+export function chunkNote(content: string): ChunkedBlock[] {
+  const lines = splitNoteLines(content);
   const blocks: ChunkedBlock[] = [];
   const open: OpenSection[] = [];
   /** (parent key + title) -> occurrences, so a repeat is disambiguated at any level. */

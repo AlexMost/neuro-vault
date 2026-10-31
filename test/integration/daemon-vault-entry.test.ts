@@ -588,7 +588,7 @@ describe.skipIf(!posix)('vault entry over a real socket', () => {
       });
 
       expect(answer.hits[0]?.map((hit) => hit.path)).toEqual(['b.md']);
-      expect(answer.hits[0]?.[0]).toMatchObject({ heading: 'beta', lines: [1, 4] });
+      expect(answer.hits[0]?.[0]).toMatchObject({ heading: 'beta', lines: [1, 3] });
       expect(answer.hits[1]).toBeNull();
     });
 
