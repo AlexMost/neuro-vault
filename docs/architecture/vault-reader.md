@@ -53,8 +53,12 @@ The handlers depend on each explicitly.
 `readNotes` returns one entry per input path. Successful entries carry
 `frontmatter` and `content`. The reader honours `fields` only coarsely: when
 `fields` omits `'content'` it drops the body (returns `content: ''`) rather than
-retaining every note's full text — the finer projection (full / preview /
-frontmatter shaping) still happens in the tool handler. Failed entries
+retaining every note's full text — the finer projection (full / outline /
+preview / frontmatter shaping) still happens in the tool handler. When
+`fields` includes `'raw'`, a successful entry also carries `raw`, the whole file
+verbatim: `read_notes` asks for it in its `full` and `outline` modes, because line coordinates
+and the heading projection ([`note-structure.md`](./note-structure.md)) count
+from the file's first line, frontmatter included. Failed entries
 carry an `error: { code, message }` with one of:
 
 - `NOT_FOUND` — `fs.readFile` returned `ENOENT`.
@@ -73,8 +77,8 @@ carry an `error: { code, message }` with one of:
   any modern OS; the kernel handles the parallelism.
 - It does not finely project fields. It drops the body when `fields` omits
   `'content'` (a memory-retention guard for whole-vault frontmatter scans), but
-  the handler still decides how much of `content` (full / preview / none) to
-  include in each successful item.
+  the handler still decides how much of the note (full / outline / preview /
+  none) to include in each successful item.
 - It does not normalise tags or interpret frontmatter. `query_notes` builds a
   `NoteRecord` (path / frontmatter / tags) from the reader's raw output in its
   own module — the reader stays a thin fs adapter.

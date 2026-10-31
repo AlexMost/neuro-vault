@@ -1,6 +1,9 @@
+import path from 'node:path';
+
 import { vi } from 'vitest';
 
 import type { VaultProvider } from '../../../src/lib/obsidian/vault-provider.js';
+import { FsVaultReader } from '../../../src/lib/obsidian/vault-reader.js';
 import type { VaultReader, ReadNotesItem } from '../../../src/lib/obsidian/vault-reader.js';
 
 export function makeProvider(overrides: Partial<VaultProvider> = {}): VaultProvider {
@@ -21,6 +24,27 @@ export function makeReader(overrides: Partial<VaultReader> = {}): VaultReader {
     scan: vi.fn().mockResolvedValue([] as string[]),
     ...overrides,
   };
+}
+
+/**
+ * A reader over in-memory note files, keyed by vault-relative path. It is the real
+ * `FsVaultReader` over a fake filesystem, so `frontmatter` / `content` come through
+ * `splitFrontmatter` and `raw` is the file verbatim; a path not in the map is NOT_FOUND.
+ */
+export function readerOverFiles(files: Record<string, string>): VaultReader {
+  const root = '/vault';
+  const byAbs = new Map(Object.entries(files).map(([p, text]) => [path.join(root, p), text]));
+  return new FsVaultReader({
+    vaultRoot: root,
+    readFile: async (absPath: string) => {
+      const text = byAbs.get(absPath);
+      if (text === undefined) {
+        throw Object.assign(new Error(`ENOENT: ${absPath}`), { code: 'ENOENT' });
+      }
+      return text;
+    },
+    glob: async () => Object.keys(files),
+  });
 }
 
 /**

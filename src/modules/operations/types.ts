@@ -23,13 +23,27 @@ export type OperationsErrorCode =
   | 'DAILY_NOTES_NOT_CONFIGURED'
   | 'CREATE_FAILED';
 
-export type ContentMode = 'full' | 'preview' | 'frontmatter';
+export type ContentMode = 'full' | 'outline' | 'preview' | 'frontmatter';
+
+/** One heading block of a note's outline; `lines` is the block's whole span. */
+export interface OutlineEntry {
+  heading: string;
+  level: number;
+  lines: [number, number];
+  hidden?: number;
+}
 
 export interface ReadNotesResultItemSuccess {
   path: string;
   frontmatter?: Record<string, unknown> | null;
   content?: string;
   truncated?: boolean;
+  lines?: [number, number];
+  heading?: string;
+  level?: number;
+  preamble?: [number, number];
+  outline?: OutlineEntry[];
+  collapsed?: true;
 }
 
 export interface ReadNotesResultItemError {

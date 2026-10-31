@@ -33,7 +33,7 @@ One concept = one parameter name across every tool the server exposes. New tools
 
 Some parameters are intentionally _not_ in the shared dictionary because they are meaningful only on one tool and should not be generalised. The dictionary table above covers only cross-tool shared concepts.
 
-**`content` on `read_notes`** is a body-granularity selector (`'full'` / `'preview'` / `'frontmatter'`) that is specific to `read_notes` and has no cross-tool meaning. It replaced the old `fields: ('frontmatter' | 'content')[]` parameter; that removal is a breaking change and was shipped as part of a major version increment. `content` does not appear in the dictionary table and must not be reused as a shared concept name for a different purpose on other tools.
+**`content` on `read_notes`** is a body-granularity mode (`'full'` / `'outline'` / `'preview'` / `'frontmatter'`) that is specific to `read_notes` and has no cross-tool meaning. It replaced the old `fields: ('frontmatter' | 'content')[]` parameter; that removal is a breaking change and was shipped as part of a major version increment. `content` does not appear in the dictionary table and must not be reused as a shared concept name for a different purpose on other tools.
 
 ## Change log
 
