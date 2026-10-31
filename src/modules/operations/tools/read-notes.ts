@@ -41,9 +41,9 @@ export function buildReadNotesTool(
       '',
       'PATHS: `paths` is a vault-relative POSIX path string or an array of 1–50 such paths; duplicates are de-duplicated and results returned in input order.',
       '',
-      "LINE COORDINATES: every `lines` in this tool's output is `[start, end]`, file-relative, 1-based, inclusive: frontmatter lines are counted, so the body starts after them, and frontmatter ends on the item's `lines[0] − 1`.",
+      "LINE COORDINATES: every `lines` in this tool's output is `[start, end]`, file-relative, 1-based, inclusive: frontmatter lines are counted, so the body starts after them, and frontmatter ends on the item's `lines[0] − 1` (when `frontmatter` is `null` there, its YAML did not parse).",
       '',
-      'CONTENT is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }`. Each rung shows more:',
+      'CONTENT is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }`:',
       '- `frontmatter`: `{ path, frontmatter }`.',
       '- `outline`: frontmatter + `lines` (the body span) + `preamble` (`[start, end]` of text before the first heading, only when non-blank) + `outline: [{ heading, level, lines }]` — heading blocks in source order. No body text.',
       '- `preview`: frontmatter + `content` (a bounded slice of the body) + `truncated` flag.',
@@ -53,7 +53,7 @@ export function buildReadNotesTool(
       'READING THE OUTLINE:',
       "- An entry's `lines` is its whole heading block: the heading line through the line before the next heading of the same or higher level, sub-headings included.",
       '- `heading` is the heading name; `Notes[2]` is the second `Notes` directly under the same parent heading.',
-      '- Over 100 entries, the deepest levels are dropped: the item carries `collapsed: true`, and `hidden: n` on an entry means n headings below it (all depths) are not listed.',
+      '- Over 100 entries, the deepest nesting levels are dropped: the item carries `collapsed: true`, and `hidden: n` on an entry means n headings below it (all depths) are not listed.',
       '',
       'One missing or unreadable path does not fail the others — per-item errors come back inline as `error: { code, message }` (`NOT_FOUND` when the note does not exist).',
     ].join('\n'),
@@ -83,7 +83,9 @@ export function buildReadNotesTool(
           ? ['frontmatter']
           : effective === 'outline'
             ? ['frontmatter', 'raw']
-            : ['frontmatter', 'content', 'raw'];
+            : effective === 'preview'
+              ? ['frontmatter', 'content']
+              : ['frontmatter', 'content', 'raw'];
 
       type Slot = { kind: 'invalid'; item: ReadNotesResultItem } | { kind: 'valid'; path: string };
       const slots: Slot[] = deduped.map((raw) => {

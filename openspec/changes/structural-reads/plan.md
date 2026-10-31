@@ -311,8 +311,8 @@ export function entriesWithin(structure: NoteStructure, span: [number, number] |
     earlier).
   - While `entries.length > 100` and the maximum depth exceeds the minimum, drop every entry at
     the maximum depth.
-  - Each kept entry gets `hidden` = the count of dropped entries whose span lies inside it, set only
-    on entries with at least one dropped descendant.
+  - Each dropped entry counts toward the `hidden` of its nearest kept ancestor only (ruling R15,
+    per the spec), so `hidden` sits on the deepest kept entries, set only where the count is ≥ 1.
   - `collapsed` is true iff anything was dropped.
 
 - [ ] **Step 1: Write the failing tests:**

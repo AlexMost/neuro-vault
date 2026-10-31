@@ -35,7 +35,7 @@ Returned text is verbatim (no line numbers inside it), so it can be pasted into 
 
 #### `content` modes
 
-`content` is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }`. Frontmatter is returned in every mode. The modes form a ladder; each rung shows more of the note than the one before:
+`content` is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }`. Frontmatter is returned in every mode:
 
 | Mode          | Returns                                                                                                               |
 | ------------- | --------------------------------------------------------------------------------------------------------------------- |
