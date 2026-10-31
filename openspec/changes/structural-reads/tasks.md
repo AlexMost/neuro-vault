@@ -28,21 +28,21 @@ call sites are one task.
 
 ## 2. Outline mode — PR 2/4
 
-- [ ] 2.1 Types: `ContentMode` gains `'outline'`; the success item gains optional `lines`,
+- [x] 2.1 Types: `ContentMode` gains `'outline'`; the success item gains optional `lines`,
       `preamble`, `outline` and `collapsed`; the outline entry type is `{ heading, level, lines,
       hidden? }`. Land the input enum, the handler branch and the `lines` echo on `full` items in
       the same task. Tests through `test/_gate.ts`: an outline item carries `frontmatter`, body
       `lines`, `preamble` only when non-blank and `outline`, and no `content`; a `full` item echoes
       the body `lines`; an invalid `content` names the four values.
-- [ ] 2.2 Depth collapse at 100 entries: the deepest level is dropped repeatedly, the shallowest is
+- [x] 2.2 Depth collapse at 100 entries: the deepest level is dropped repeatedly, the shallowest is
       never cut, `hidden` sits on the deepest kept entries (headings at all depths) and the item
       carries `collapsed: true`. A pure function with unit tests: the 12 × 10 case, 150 top-level
       headings, no collapse at ≤ 100.
-- [ ] 2.3 Description sections LINE COORDINATES, READING THE OUTLINE and the outline part of
+- [x] 2.3 Description sections LINE COORDINATES, READING THE OUTLINE and the outline part of
       CONTENT, ported from `prototype/structured-reads-wording` (candidate A), trimmed to what has
       shipped. Phrase tests on `spec.description`: "file-relative", "1-based", "inclusive"; the
       `hidden` unit.
-- [ ] 2.4 Docs (**parallel-safe** with 2.3): a new `docs/architecture/note-structure.md`; the
+- [x] 2.4 Docs (**parallel-safe** with 2.3): a new `docs/architecture/note-structure.md`; the
       `mcp-parameter-dictionary.md` `content` values; the outline in
       `docs/guide/reading-and-modifying.md`; the ADR (`docs/adr/0024-…`: the chunker heading model
       at read time, file-relative 1-based inclusive lines shared with search) and its `INDEX.md`
