@@ -16,24 +16,37 @@ Most tools on this page accept `name` (wikilink-style) **or** `path` (vault-rela
 
 ### `read_notes`
 
-Read one or more notes directly from disk. Returns per-item results in input order; failed paths carry an error rather than aborting the whole call. Does not require Obsidian to be running.
+Read one or more notes directly from disk — whole, as an outline of their heading blocks, as a preview, or as frontmatter only. Returns per-item results in input order; failed paths carry an error rather than aborting the whole call. Does not require Obsidian to be running.
 
 ```typescript
 read_notes({
-  paths: string | string[],                        // single path, or 1–50 vault-relative paths
-  content?: 'full' | 'preview' | 'frontmatter',    // optional; default derived from path count
+  paths: string | string[],                                   // single path, or 1–50 vault-relative paths
+  content?: 'full' | 'outline' | 'preview' | 'frontmatter',   // optional; default derived from path count
 })
 ```
 
 `paths` accepts either a single path string (single-note read) or an array of 1–50 paths (batch read). The result shape is identical in both cases. Duplicates are de-duplicated; results are returned in input order.
 
-**`content` modes — frontmatter is always returned regardless of mode:**
+#### Line coordinates
+
+Every `lines` value in a result is `[start, end]` in **file-relative, 1-based, inclusive** line numbers. Frontmatter lines are counted, so a note whose frontmatter occupies lines 1–3 has a body starting on line 4. These are the same numbers the evidence `lines` of [`search_notes`](./finding-notes.md#output-shape) reports, so a block has one coordinate pair across both tools.
+
+Returned text is verbatim (no line numbers inside it), so it can be pasted into [`edit_note`](#edit_note) `replace`. The coordinates travel beside the text, in `lines`.
+
+#### `content` modes
+
+`content` is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }`. Frontmatter is returned in every mode. The modes form a ladder; each rung shows more of the note than the one before:
 
 | Mode          | Returns                                                                                                               |
 | ------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `full`        | `{ path, frontmatter, content }` — complete body                                                                      |
+| `frontmatter` | `{ path, frontmatter }` — no body, no coordinates                                                                     |
+| `outline`     | `{ path, frontmatter, lines, preamble?, outline, collapsed? }` — the note's heading blocks, no body text              |
 | `preview`     | `{ path, frontmatter, content, truncated }` — bounded (~500-char) body slice; `truncated: true` when the body was cut |
-| `frontmatter` | `{ path, frontmatter }` — no body                                                                                     |
+| `full`        | `{ path, frontmatter, lines, content }` — the complete body                                                           |
+
+- `lines` on the item is the **body span**, `[first body line, last line]`, so the frontmatter ends on `lines[0] − 1`. A note with no body line (an empty file, or frontmatter only) carries no `lines`.
+- When the frontmatter holds YAML that does not parse, `full` returns `frontmatter: null` and the whole raw file as `content`, so its `lines` is `[1, last line]`. `outline` still lists the heading blocks after the fence, and its `lines` starts after it.
+- `preamble: [start, end]` is the note's text before its first heading, present only when that text is non-blank.
 
 **Default when `content` is omitted** is derived from the number of distinct requested paths: exactly one path → `full`; two or more paths → `preview`. An explicit `content` always overrides the count-based default.
 
@@ -41,31 +54,75 @@ Re-read a previewed note with `content: 'full'` before citing or editing it.
 
 Returns `{ results, count, errors }` where each item in `results` is either a success object (shape depends on `content` mode) or `{ path, error: { code, message } }` (failure). `count === results.length` (total items, including failures); `errors` is the subset of those that failed. To get the successful-read count, subtract: `count - errors`.
 
-**Example — read a single note (defaults to `full`):**
+#### The outline
 
 ```json
 {
-  "paths": "Projects/neuro-vault.md"
+  "path": "projects/onboarding.md",
+  "frontmatter": { "type": "project" },
+  "lines": [4, 30],
+  "preamble": [4, 6],
+  "outline": [
+    { "heading": "First 30 days", "level": 2, "lines": [7, 18] },
+    { "heading": "Week 1", "level": 3, "lines": [11, 18] },
+    { "heading": "Decisions", "level": 2, "lines": [19, 30] },
+    { "heading": "Notes", "level": 3, "lines": [22, 25] },
+    { "heading": "Notes[2]", "level": 3, "lines": [26, 30] }
+  ]
 }
 ```
 
-**Example — batch-read multiple notes (defaults to `preview` to keep the response bounded):**
+- **Entries are flat, in source order.** `level` is the `#` count (1–6); nesting shows in `level` and in nested `lines`.
+- **An entry's `lines` is its whole heading block:** from the heading line through the line before the next heading of the same or higher level, sub-headings included. "First 30 days" `[7, 18]` contains "Week 1" `[11, 18]`.
+- **`heading` is the heading name** — the heading's text as written, with `[n]` on a repeat among siblings: `Notes[2]` is the second `Notes` directly under the same parent heading. A `Notes` under a different parent is not suffixed. It is the same string semantic `search_notes` `blocks[].heading` carries for that block.
+- **Own text** — a heading's lines before its first sub-heading — runs from the entry's `lines[0]` to the next entry's `lines[0] − 1` when that next entry starts inside the entry's `lines`, and is the whole entry otherwise. Above, the own text of "First 30 days" is lines 7–10, and "Week 1" has no sub-heading, so all of `[11, 18]` is its own text.
+- **Only root-level ATX headings** (`#` … `######` at the start of a line) are heading blocks. Setext headings and headings inside lists or blockquotes are not listed; their lines belong to the heading block around them (or to the preamble).
+- **A note without headings** returns `outline: []`, with a `preamble` covering the body when it is non-blank.
+
+**Collapse.** An outline lists at most 100 entries. Past that, the deepest nesting level is dropped, again and again, until the outline fits, and the item carries `collapsed: true`. Nesting is by containment, not by `#` count: a `###` directly under a `#` is one level down. The shallowest level is never dropped, so a note with 150 top-level headings lists all 150. An entry whose sub-headings were dropped carries `hidden: n` — **n headings below it, at all depths, are not listed**:
 
 ```json
 {
-  "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md", "Archive/old-idea.md"]
+  "path": "logs/2026.md",
+  "frontmatter": { "type": "resource" },
+  "lines": [4, 1225],
+  "outline": [
+    { "heading": "Work log", "level": 1, "lines": [4, 1225] },
+    { "heading": "2026-01", "level": 2, "lines": [6, 111], "hidden": 31 },
+    { "heading": "2026-02", "level": 2, "lines": [112, 212], "hidden": 28 }
+  ],
+  "collapsed": true
 }
+```
+
+(The example is cut after two months; the real outline carries one entry per month.) An outline that fits carries neither `hidden` nor `collapsed`.
+
+#### Examples
+
+Read a single note (defaults to `full`):
+
+```json
+{ "paths": "Projects/neuro-vault.md" }
+```
+
+Batch-read several notes (defaults to `preview` to keep the response bounded):
+
+```json
+{ "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md", "Archive/old-idea.md"] }
 ```
 
 Each item comes back with frontmatter and a preview body. When `truncated: true`, re-read the individual note with `content: 'full'` before citing or editing it.
 
-**Example — read frontmatter only across a list of paths (`content: 'frontmatter'` whenever you need metadata across several notes):**
+The outline only, to see how a long note is organised before reading it:
 
 ```json
-{
-  "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md"],
-  "content": "frontmatter"
-}
+{ "paths": "logs/2026.md", "content": "outline" }
+```
+
+Frontmatter only across a list of paths (`content: 'frontmatter'` whenever you need metadata across several notes):
+
+```json
+{ "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md"], "content": "frontmatter" }
 ```
 
 Returns the parsed YAML frontmatter for each note without loading the note body — useful when you need metadata (status, tags, due dates) across many notes at once.

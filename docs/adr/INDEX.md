@@ -31,3 +31,4 @@ Template: [0000-template.md](0000-template.md).
 | 0021 | [One vault client per vault root; per-vault reads are views over it](0021-vault-client.md) | Accepted |
 | 0022 | [Modules hand the composition root their factories through their barrels](0022-modules-hand-the-composition-root-their-factories.md) | Accepted |
 | 0023 | [Resource read errors carry the error code in JSON-RPC `data`](0023-resource-errors-carry-the-error-code.md) | Accepted |
+| 0024 | [Structural reads use the chunker heading model at read time, with the line coordinates search reports](0024-structural-reads-share-search-coordinates.md) | Accepted |
