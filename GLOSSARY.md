@@ -30,6 +30,28 @@ _Avoid_: keyword search, full-text search
 Merging the semantic and lexical legs into the single ranked list a search returns.
 _Avoid_: merge, hybrid ranking
 
+### Note structure
+
+**Block**:
+A piece of a note the corpus embeds on its own: the frontmatter, the preamble before the first heading, a heading block, or one paragraph of a heading's own text.
+_Avoid_: chunk, unit, segment
+
+**Heading block**:
+A heading together with everything under it, sub-headings included, up to the next heading of the same or higher level.
+_Avoid_: section, heading section, `^block` (that is an Obsidian block reference, a different thing)
+
+**Heading name**:
+A heading's text as written, with a `[n]` suffix when an earlier sibling under the same parent has the same text — what names a heading block.
+_Avoid_: heading key, anchor, slug
+
+**Own text**:
+The lines under a heading before its first sub-heading — all of the heading block when it has no sub-headings, nothing when a sub-heading follows directly.
+_Avoid_: intro, direct content, heading body
+
+**Selection**:
+The part of a note one read asks for — the whole body, or a single heading block or line range named in the request; how much of it comes back is decided separately.
+_Avoid_: piece, fragment, slice, section
+
 ### Retrieval eval
 
 **Golden set**:
