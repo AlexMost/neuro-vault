@@ -77,10 +77,16 @@ export function effectiveMode(
  */
 export type Resolved =
   | { ok: true; span: [number, number]; heading?: string; level?: number }
-  | { ok: false; code: SelectorMissCode; message: string; matches?: OutlineEntry[] };
+  | { ok: false; code: 'AMBIGUOUS_MATCH'; message: string; matches: OutlineEntry[] }
+  | {
+      ok: false;
+      code: Exclude<SelectorMissCode, 'AMBIGUOUS_MATCH'>;
+      message: string;
+    };
 
-/** `a–b`, the way a miss message names a span. */
-const range = ([a, b]: readonly [number, number]): string => `${a}–${b}`;
+/** `lines a–b`, or `line a` for a one-line span: the way a miss message names a span. */
+const spanLabel = ([a, b]: readonly [number, number]): string =>
+  a === b ? `line ${a}` : `lines ${a}–${b}`;
 
 /** A selector that names part of its note: a heading block or a line range. */
 export type Selection = Exclude<Selector, { kind: 'whole' }>;
@@ -105,11 +111,12 @@ export function resolveSelector(
  * A heading name compared loosely: a leading `#{1,6}` and the space after it dropped,
  * wikilinks and Markdown links reduced to their display text, emphasis and code markup
  * (`**`, `__`, `*`, `_`, backticks) removed, whitespace collapsed, trimmed, and
- * lower-cased (Unicode case folding, so non-Latin names compare too). Emoji and
- * punctuation stay.
+ * case-folded. Folding is NFC, then upper case, then lower case: non-Latin names
+ * compare, `ß` meets `SS`, and a final `ς` meets `σ`. Emoji and punctuation stay.
  */
 export function normalizeHeadingName(s: string): string {
   return s
+    .normalize('NFC')
     .trim()
     .replace(/^#{1,6}[ \t]+/, '')
     .replace(/\[\[[^\]|]*\|([^\]]*)\]\]/g, '$1')
@@ -118,6 +125,7 @@ export function normalizeHeadingName(s: string): string {
     .replace(/[*_`]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
+    .toUpperCase()
     .toLowerCase();
 }
 
@@ -139,18 +147,24 @@ function resolveHeading(structure: NoteStructure, name: string, path: string): R
     return { ok: true, span: [h.lines[0], h.lines[1]], heading: h.heading, level: h.level };
   }
   if (hits.length === 0) {
-    return {
-      ok: false,
-      code: 'HEADING_NOT_FOUND',
-      message:
-        headings.length === 0
-          ? `no heading block of ${path} is named ${quoted}: the note has no headings; ` +
-            'read it whole, or a range with { path, lines: [start, end] }'
-          : `no heading block of ${path} is named ${quoted}, exactly or ignoring case and ` +
-            'markup; retry with a heading name from outline',
-    };
+    const missing = `no heading block of ${path} is named ${quoted}`;
+    let message: string;
+    if (structure.body === null) {
+      message =
+        structure.frontmatterEnd === 0
+          ? `${missing}: the note is empty and has nothing to read`
+          : `${missing}: the note has frontmatter (${spanLabel([1, structure.frontmatterEnd])}) ` +
+            "and no body; read the frontmatter with content: 'frontmatter'";
+    } else if (headings.length === 0) {
+      message =
+        `${missing}: the note has no headings; ` +
+        'read it whole, or a range with { path, lines: [start, end] }';
+    } else {
+      message = `${missing}, exactly or ignoring case and markup; retry with a heading name from outline`;
+    }
+    return { ok: false, code: 'HEADING_NOT_FOUND', message };
   }
-  const spans = hits.map((h) => `lines ${range(h.lines)}`).join(', ');
+  const spans = hits.map((h) => spanLabel(h.lines)).join(', ');
   return {
     ok: false,
     code: 'AMBIGUOUS_MATCH',
@@ -171,27 +185,30 @@ function resolveLines(
   path: string,
 ): Resolved {
   const miss = (message: string): Resolved => ({ ok: false, code: 'LINES_OUT_OF_RANGE', message });
-  const asked = `lines ${range(requested)} of ${path}`;
+  const one = requested[0] === requested[1];
+  const asked = `${spanLabel(requested)} of ${path}`;
+  const [are, lie] = one ? ['is', 'lies'] : ['are', 'lie'];
   const { body, frontmatterEnd } = structure;
   if (body === null) {
     return frontmatterEnd === 0
-      ? miss(`${asked} are out of range: the note is empty and has no line to read`)
+      ? miss(`${asked} ${are} out of range: the note is empty and has no line to read`)
       : miss(
-          `${asked} are out of range: the note has frontmatter (lines ${range([1, frontmatterEnd])}) ` +
-            "and no body; read the frontmatter with content: 'frontmatter'",
+          `${asked} ${are} out of range: the note has frontmatter ` +
+            `(${spanLabel([1, frontmatterEnd])}) and no body; ` +
+            "read the frontmatter with content: 'frontmatter'",
         );
   }
   const start = Math.max(requested[0], body[0]);
   const end = Math.min(requested[1], body[1]);
   if (start <= end) return { ok: true, span: [start, end] };
-  const bodySpan = `body: lines ${range(body)}`;
+  const bodySpan = `body: ${spanLabel(body)}`;
   return requested[1] < body[0]
     ? miss(
-        `${asked} lie in the frontmatter (${bodySpan}); ` +
+        `${asked} ${lie} in the frontmatter (${bodySpan}); ` +
           "read the frontmatter with content: 'frontmatter', or a range inside the body",
       )
     : miss(
-        `${asked} lie past the end of the note (${bodySpan}); retry with a range inside the body`,
+        `${asked} ${lie} past the end of the note (${bodySpan}); retry with a range inside the body`,
       );
 }
 

@@ -69,6 +69,21 @@ describe('resolveSelector: lines', () => {
     expect(r.message).toMatch(/content: 'frontmatter'/);
   });
 
+  it('a one-line range names its line in the singular', () => {
+    expect(resolveSelector(structure, lines(4, 4), 'n.md')).toStrictEqual({
+      ok: false,
+      code: 'LINES_OUT_OF_RANGE',
+      message:
+        "line 4 of n.md lies in the frontmatter (body: lines 5–40); read the frontmatter with content: 'frontmatter', or a range inside the body",
+    });
+    expect(resolveSelector(structure, lines(50, 50), 'n.md')).toMatchObject({
+      message: expect.stringMatching(/^line 50 of n\.md lies past the end/) as string,
+    });
+    expect(resolveSelector(noteStructure(''), lines(1, 1), 'e.md')).toMatchObject({
+      message: expect.stringMatching(/^line 1 of e\.md is out of range/) as string,
+    });
+  });
+
   it('any range on an empty note is LINES_OUT_OF_RANGE', () => {
     const r = resolveSelector(noteStructure(''), lines(1, 1), 'e.md');
 
@@ -95,6 +110,14 @@ describe('normalizeHeadingName', () => {
     ['Notes[2]', 'notes[2]'],
   ])('%j → %j', (input, expected) => {
     expect(normalizeHeadingName(input)).toBe(expected);
+  });
+
+  it.each([
+    ['straße', 'STRASSE'],
+    ['οδοσ', 'ΟΔΟΣ'],
+    ['Cafe\u0301 notes', 'Caf\u00e9 notes'],
+  ])('%j and %j compare equal (full case folding, NFC)', (a, b) => {
+    expect(normalizeHeadingName(a)).toBe(normalizeHeadingName(b));
   });
 });
 
@@ -152,6 +175,28 @@ describe('resolveSelector: heading', () => {
       code: 'HEADING_NOT_FOUND',
       message:
         'no heading block of n.md is named "2026-01", exactly or ignoring case and markup; retry with a heading name from outline',
+    });
+  });
+
+  it('a frontmatter-only note is HEADING_NOT_FOUND pointing at a frontmatter read', () => {
+    const r = resolveSelector(noteStructure('---\na: 1\n---\n'), heading('Notes'), 'n.md');
+
+    expect(r).toStrictEqual({
+      ok: false,
+      code: 'HEADING_NOT_FOUND',
+      message:
+        'no heading block of n.md is named "Notes": the note has frontmatter (lines 1–3) and no body; read the frontmatter with content: \'frontmatter\'',
+    });
+  });
+
+  it('an empty note is HEADING_NOT_FOUND saying the note is empty', () => {
+    const r = resolveSelector(noteStructure(''), heading('Notes'), 'e.md');
+
+    expect(r).toStrictEqual({
+      ok: false,
+      code: 'HEADING_NOT_FOUND',
+      message:
+        'no heading block of e.md is named "Notes": the note is empty and has nothing to read',
     });
   });
 

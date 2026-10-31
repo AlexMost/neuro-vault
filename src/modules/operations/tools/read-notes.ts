@@ -225,7 +225,7 @@ function projectSelection(
       error: { code: r.code, message: r.message },
     };
     if (r.code === 'AMBIGUOUS_MATCH') {
-      miss.matches = r.matches ?? [];
+      miss.matches = r.matches;
       return miss;
     }
     if (structure.body !== null) miss.lines = [structure.body[0], structure.body[1]];

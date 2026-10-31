@@ -517,7 +517,11 @@ describe('operations.readNotes outline and body spans', () => {
 });
 
 describe('operations.readNotes selector items at the gate', () => {
-  const FILES = { 'a.md': '# Top\none\ntwo\n', 'b.md': 'b1\nb2\nb3\nb4\n' };
+  /** `a.md`: `# Top` on line 1, then `l2` .. `l25`. `b.md`: four lines. */
+  const FILES = {
+    'a.md': ['# Top', ...Array.from({ length: 24 }, (_, i) => `l${i + 2}`)].join('\n') + '\n',
+    'b.md': 'b1\nb2\nb3\nb4\n',
+  };
 
   it('reads a stringified mixed array as two items', async () => {
     const reader = readerOverFiles(FILES);
@@ -529,6 +533,7 @@ describe('operations.readNotes selector items at the gate', () => {
     expect(result.count).toBe(2);
     expect(result.errors).toBe(0);
     expect(result.results.map((r) => r.path)).toStrictEqual(['a.md', 'b.md']);
+    expect(result.results[1]).toHaveProperty('lines', [3, 4]);
   });
 
   it("accepts numeric strings in a lines pair: lines: ['10', '20']", async () => {
@@ -539,7 +544,11 @@ describe('operations.readNotes selector items at the gate', () => {
     });
 
     expect(result.count).toBe(1);
-    expect(result.results[0].path).toBe('a.md');
+    expect(result.results[0]).toMatchObject({
+      path: 'a.md',
+      content: Array.from({ length: 11 }, (_, i) => `l${i + 10}`).join('\n'),
+      lines: [10, 20],
+    });
   });
 
   it.each([[''], ['  ']])(
