@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { noteStructure } from '../../src/lib/obsidian/corpus/note-structure.js';
-import { resolveSelector } from '../../src/modules/operations/selection.js';
+import { normalizeHeadingName, resolveSelector } from '../../src/modules/operations/selection.js';
 
 /** A 40-line note: lines 1-4 frontmatter, then `line 5` .. `line 40`. */
 function fortyLines(): string {
@@ -76,5 +76,92 @@ describe('resolveSelector: lines', () => {
     if (r.ok) return;
     expect(r.code).toBe('LINES_OUT_OF_RANGE');
     expect(r.message).toMatch(/empty/);
+  });
+});
+
+describe('normalizeHeadingName', () => {
+  it.each([
+    ['## **Open** questions', 'open questions'],
+    ['###### Deep', 'deep'],
+    ['####### Seven', '####### seven'],
+    ['#tag', '#tag'],
+    ['[[notes/alpha|Alpha]]', 'alpha'],
+    ['[[target]]', 'target'],
+    ['see [the docs](https://example.com/x)', 'see the docs'],
+    ['`code` __bold__ _it_ *em* **strong**', 'code bold it em strong'],
+    ['  Spread   \t out  ', 'spread out'],
+    ['🚀 Launch: v2!', '🚀 launch: v2!'],
+    ['Нотатки Зустрічі', 'нотатки зустрічі'],
+    ['Notes[2]', 'notes[2]'],
+  ])('%j → %j', (input, expected) => {
+    expect(normalizeHeadingName(input)).toBe(expected);
+  });
+});
+
+describe('resolveSelector: heading', () => {
+  const heading = (name: string) => ({ kind: 'heading' as const, heading: name });
+
+  it('resolves an exact name to its whole block, with the name and level', () => {
+    const s = noteStructure('# Top\n## Progress\na\n### Week 1\nb\n## Next\n');
+
+    expect(resolveSelector(s, heading('Progress'), 'n.md')).toStrictEqual({
+      ok: true,
+      span: [2, 5],
+      heading: 'Progress',
+      level: 2,
+    });
+  });
+
+  it('falls back to a normalized comparison that hits exactly one block', () => {
+    const s = noteStructure('## **Open** questions\nq\n');
+
+    expect(resolveSelector(s, heading('open questions'), 'n.md')).toStrictEqual({
+      ok: true,
+      span: [1, 2],
+      heading: '**Open** questions',
+      level: 2,
+    });
+  });
+
+  it('prefers an exact match over normalized ones', () => {
+    const s = noteStructure('## Plan\na\n## plan\nb\n');
+
+    expect(resolveSelector(s, heading('plan'), 'n.md')).toMatchObject({ ok: true, span: [3, 4] });
+  });
+
+  it('a normalized fallback that hits two blocks is AMBIGUOUS_MATCH with both', () => {
+    const s = noteStructure('## Plan\na\n## plan\nb\n');
+
+    expect(resolveSelector(s, heading('PLAN'), 'n.md')).toStrictEqual({
+      ok: false,
+      code: 'AMBIGUOUS_MATCH',
+      message:
+        'heading "PLAN" matches 2 heading blocks of n.md (lines 1–2, lines 3–4); read the one you want with { path, lines: [start, end] } from matches',
+      matches: [
+        { heading: 'Plan', level: 2, lines: [1, 2] },
+        { heading: 'plan', level: 2, lines: [3, 4] },
+      ],
+    });
+  });
+
+  it('a name matching no block is HEADING_NOT_FOUND pointing at the outline', () => {
+    const s = noteStructure('## 2026-01-15 standup\nx\n');
+
+    expect(resolveSelector(s, heading('2026-01'), 'n.md')).toStrictEqual({
+      ok: false,
+      code: 'HEADING_NOT_FOUND',
+      message:
+        'no heading block of n.md is named "2026-01", exactly or ignoring case and markup; retry with a heading name from outline',
+    });
+  });
+
+  it('a note without headings is HEADING_NOT_FOUND pointing at a whole or lines read', () => {
+    const r = resolveSelector(noteStructure('just text\n'), heading('Notes'), 'n.md');
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.code).toBe('HEADING_NOT_FOUND');
+    expect(r.message).toMatch(/has no headings/);
+    expect(r.message).toMatch(/\{ path, lines/);
   });
 });

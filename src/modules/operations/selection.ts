@@ -82,17 +82,87 @@ export type Resolved =
 /** `a–b`, the way a miss message names a span. */
 const range = ([a, b]: readonly [number, number]): string => `${a}–${b}`;
 
+/** A selector that names part of its note: a heading block or a line range. */
+export type Selection = Exclude<Selector, { kind: 'whole' }>;
+
 /**
  * Resolves a selector against the note's structure. A `lines` range is clipped to the
  * body at both ends; only a range sharing no line with the body is `LINES_OUT_OF_RANGE`.
- * `path` names the note in a miss message.
+ * A `heading` names one heading block by its heading name. `path` names the note in a
+ * miss message.
  */
 export function resolveSelector(
   structure: NoteStructure,
-  selector: Extract<Selector, { kind: 'lines' }>,
+  selector: Selection,
   path: string,
 ): Resolved {
-  return resolveLines(structure, selector.lines, path);
+  return selector.kind === 'lines'
+    ? resolveLines(structure, selector.lines, path)
+    : resolveHeading(structure, selector.heading, path);
+}
+
+/**
+ * A heading name compared loosely: a leading `#{1,6}` and the space after it dropped,
+ * wikilinks and Markdown links reduced to their display text, emphasis and code markup
+ * (`**`, `__`, `*`, `_`, backticks) removed, whitespace collapsed, trimmed, and
+ * lower-cased (Unicode case folding, so non-Latin names compare too). Emoji and
+ * punctuation stay.
+ */
+export function normalizeHeadingName(s: string): string {
+  return s
+    .trim()
+    .replace(/^#{1,6}[ \t]+/, '')
+    .replace(/\[\[[^\]|]*\|([^\]]*)\]\]/g, '$1')
+    .replace(/\[\[([^\]]*)\]\]/g, '$1')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Exact heading names first; only when none matches exactly, the normalized names, and
+ * then only a single hit resolves. Level is ignored, and a prefix never matches. Every
+ * heading block counts, including one a collapsed outline does not list.
+ */
+function resolveHeading(structure: NoteStructure, name: string, path: string): Resolved {
+  const { headings } = structure;
+  let hits = headings.filter((h) => h.heading === name);
+  if (hits.length === 0) {
+    const wanted = normalizeHeadingName(name);
+    hits = headings.filter((h) => normalizeHeadingName(h.heading) === wanted);
+  }
+  const quoted = JSON.stringify(name);
+  if (hits.length === 1) {
+    const [h] = hits;
+    return { ok: true, span: [h.lines[0], h.lines[1]], heading: h.heading, level: h.level };
+  }
+  if (hits.length === 0) {
+    return {
+      ok: false,
+      code: 'HEADING_NOT_FOUND',
+      message:
+        headings.length === 0
+          ? `no heading block of ${path} is named ${quoted}: the note has no headings; ` +
+            'read it whole, or a range with { path, lines: [start, end] }'
+          : `no heading block of ${path} is named ${quoted}, exactly or ignoring case and ` +
+            'markup; retry with a heading name from outline',
+    };
+  }
+  const spans = hits.map((h) => `lines ${range(h.lines)}`).join(', ');
+  return {
+    ok: false,
+    code: 'AMBIGUOUS_MATCH',
+    message:
+      `heading ${quoted} matches ${hits.length} heading blocks of ${path} (${spans}); ` +
+      'read the one you want with { path, lines: [start, end] } from matches',
+    matches: hits.map((h) => ({
+      heading: h.heading,
+      level: h.level,
+      lines: [h.lines[0], h.lines[1]],
+    })),
+  };
 }
 
 function resolveLines(

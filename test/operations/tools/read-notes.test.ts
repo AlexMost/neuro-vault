@@ -845,3 +845,277 @@ describe('operations.readNotes lines selections', () => {
     ]);
   });
 });
+
+describe('operations.readNotes heading selections', () => {
+  /**
+   * Lines: 1-3 frontmatter, 4 `# Title`, 5 intro, 6 blank, 7 `## Progress`, 8 text,
+   * 9 `### Week 1`, 10-40 filler, 41 `## **Open** questions`, 42 text.
+   */
+  const NOTE_LINES = [
+    '---',
+    'a: 1',
+    '---',
+    '# Title',
+    'intro',
+    '',
+    '## Progress',
+    'started',
+    '### Week 1',
+    ...Array.from({ length: 31 }, (_, i) => `w ${i + 10}`),
+    '## **Open** questions',
+    'q',
+  ];
+  const NOTE = NOTE_LINES.join('\n') + '\n';
+  const text = (s: number, e: number) => NOTE_LINES.slice(s - 1, e).join('\n');
+  const OUTLINE = [
+    { heading: 'Title', level: 1, lines: [4, 42] },
+    { heading: 'Progress', level: 2, lines: [7, 40] },
+    { heading: 'Week 1', level: 3, lines: [9, 40] },
+    { heading: '**Open** questions', level: 2, lines: [41, 42] },
+  ];
+
+  const read = (paths: unknown, files: Record<string, string> = { 'n.md': NOTE }) =>
+    callTool<ReadNotesOut>(buildReg(readerOverFiles(files)), { paths });
+
+  it('an exact heading name reads its whole block, sub-headings included', async () => {
+    const result = await read([{ path: 'n.md', heading: 'Progress' }]);
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'n.md',
+        frontmatter: { a: 1 },
+        content: text(7, 40),
+        lines: [7, 40],
+        heading: 'Progress',
+        level: 2,
+      },
+    ]);
+    expect((result.results[0] as { content: string }).content).toContain('### Week 1');
+  });
+
+  it('a heading read returns the same text and lines as the range of its block', async () => {
+    const result = await read([
+      { path: 'n.md', heading: 'Progress' },
+      { path: 'n.md', lines: [7, 40] },
+    ]);
+
+    const [byName, byLines] = result.results as { content: string; lines: number[] }[];
+    expect(byName.content).toBe(byLines.content);
+    expect(byName.lines).toStrictEqual(byLines.lines);
+  });
+
+  it('a normalized name resolves to the one block and echoes its heading name', async () => {
+    const result = await read([{ path: 'n.md', heading: 'open questions' }]);
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'n.md',
+        frontmatter: { a: 1 },
+        content: text(41, 42),
+        lines: [41, 42],
+        heading: '**Open** questions',
+        level: 2,
+      },
+    ]);
+  });
+
+  it('a name with its leading #s resolves to the heading', async () => {
+    const result = await read([{ path: 'n.md', heading: '## Progress' }]);
+
+    expect(result.results[0]).toMatchObject({ heading: 'Progress', lines: [7, 40] });
+  });
+
+  it('a name matches the display text of a wikilink heading', async () => {
+    const result = await read([{ path: 'w.md', heading: 'Alpha' }], {
+      'w.md': '# Top\n## [[notes/alpha|Alpha]]\nx\n',
+    });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'w.md',
+        frontmatter: null,
+        content: '## [[notes/alpha|Alpha]]\nx',
+        lines: [2, 3],
+        heading: '[[notes/alpha|Alpha]]',
+        level: 2,
+      },
+    ]);
+  });
+
+  it('case folding in the fallback covers non-Latin names', async () => {
+    const result = await read([{ path: 'u.md', heading: 'нотатки зустрічі' }], {
+      'u.md': '# Тема\n## Нотатки зустрічі\nтекст\n',
+    });
+
+    expect(result.results[0]).toMatchObject({
+      heading: 'Нотатки зустрічі',
+      level: 2,
+      lines: [2, 3],
+      content: '## Нотатки зустрічі\nтекст',
+    });
+  });
+
+  it('a sibling duplicate is addressed by its [n] suffix', async () => {
+    const result = await read([{ path: 's.md', heading: 'Notes[2]' }], {
+      's.md': '# Day\n## Notes\nfirst\n## Notes\nsecond\n',
+    });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 's.md',
+        frontmatter: null,
+        content: '## Notes\nsecond',
+        lines: [4, 5],
+        heading: 'Notes[2]',
+        level: 2,
+      },
+    ]);
+  });
+
+  it('a prefix of a heading name is HEADING_NOT_FOUND', async () => {
+    const result = await read([{ path: 'd.md', heading: '2026-01' }], {
+      'd.md': '## 2026-01-15 standup\nx\n',
+    });
+
+    expect(result.results[0]).toHaveProperty('error.code', 'HEADING_NOT_FOUND');
+  });
+
+  it('HEADING_NOT_FOUND carries the body lines and the outline, and no frontmatter', async () => {
+    const result = await read([{ path: 'n.md', heading: 'Progres' }]);
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'n.md',
+        error: {
+          code: 'HEADING_NOT_FOUND',
+          message:
+            'no heading block of n.md is named "Progres", exactly or ignoring case and markup; retry with a heading name from outline',
+        },
+        lines: [4, 42],
+        outline: OUTLINE,
+      },
+    ]);
+    expect(result.errors).toBe(1);
+  });
+
+  it('HEADING_NOT_FOUND on a large note carries the collapsed outline and collapsed: true', async () => {
+    const lines = ['# Title'];
+    for (let g = 0; g < 12; g++) {
+      lines.push(`## G${g}`);
+      for (let c = 0; c < 10; c++) lines.push(`### G${g}C${c}`);
+    }
+    const files = { 'big.md': lines.join('\n') + '\n' };
+
+    const result = await read([{ path: 'big.md', heading: 'Missing' }], files);
+
+    const item = result.results[0] as { outline: { level: number; hidden?: number }[] };
+    expect(result.results[0]).toHaveProperty('error.code', 'HEADING_NOT_FOUND');
+    expect(result.results[0]).toHaveProperty('lines', [1, 133]);
+    expect(result.results[0]).toHaveProperty('collapsed', true);
+    expect(result.results[0]).not.toHaveProperty('frontmatter');
+    expect(item.outline).toHaveLength(13);
+    expect(item.outline.slice(1).every((e) => e.level === 2 && e.hidden === 10)).toBe(true);
+  });
+
+  it('a heading hidden by a collapsed outline is still readable by name', async () => {
+    const lines = ['# Title'];
+    for (let g = 0; g < 12; g++) {
+      lines.push(`## G${g}`);
+      for (let c = 0; c < 10; c++) lines.push(`### G${g}C${c}`);
+    }
+
+    const result = await read([{ path: 'big.md', heading: 'G3C4' }], {
+      'big.md': lines.join('\n') + '\n',
+    });
+
+    expect(result.results[0]).toMatchObject({ heading: 'G3C4', level: 3, content: '### G3C4' });
+  });
+
+  it('HEADING_NOT_FOUND on a frontmatter-only note carries an empty outline and no lines', async () => {
+    const result = await read([{ path: 'f.md', heading: 'Notes' }], { 'f.md': '---\na: 1\n---\n' });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'f.md',
+        error: { code: 'HEADING_NOT_FOUND', message: expect.any(String) as string },
+        outline: [],
+      },
+    ]);
+  });
+
+  it('a cross-parent duplicate is AMBIGUOUS_MATCH listing both blocks', async () => {
+    const result = await read([{ path: 'x.md', heading: 'Notes' }], {
+      'x.md': '# A\n### Notes\na\n# B\n### Notes\nb\n',
+    });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'x.md',
+        error: {
+          code: 'AMBIGUOUS_MATCH',
+          message: expect.stringMatching(/\{ path, lines/) as string,
+        },
+        matches: [
+          { heading: 'Notes', level: 3, lines: [2, 3] },
+          { heading: 'Notes', level: 3, lines: [5, 6] },
+        ],
+      },
+    ]);
+    expect(result.errors).toBe(1);
+  });
+
+  it('a normalized fallback hitting two blocks is AMBIGUOUS_MATCH', async () => {
+    const result = await read([{ path: 'p.md', heading: 'PLAN' }], {
+      'p.md': '## Plan\na\n## plan\nb\n',
+    });
+
+    expect(result.results[0]).toHaveProperty('error.code', 'AMBIGUOUS_MATCH');
+    expect(result.results[0]).toHaveProperty('matches', [
+      { heading: 'Plan', level: 2, lines: [1, 2] },
+      { heading: 'plan', level: 2, lines: [3, 4] },
+    ]);
+  });
+
+  it('an exact match wins over the normalized ones', async () => {
+    const result = await read([{ path: 'p.md', heading: 'plan' }], {
+      'p.md': '## Plan\na\n## plan\nb\n',
+    });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'p.md',
+        frontmatter: null,
+        content: '## plan\nb',
+        lines: [3, 4],
+        heading: 'plan',
+        level: 2,
+      },
+    ]);
+  });
+
+  it('a heading miss does not fail the other items', async () => {
+    const result = await read(['n.md', { path: 'n.md', heading: 'Missing' }]);
+
+    expect(result.count).toBe(2);
+    expect(result.errors).toBe(1);
+    expect(result.results[0]).toHaveProperty('truncated');
+    expect(result.results[1]).toHaveProperty('error.code', 'HEADING_NOT_FOUND');
+  });
+
+  it('a CRLF note returns its heading block with interior CRLF kept and no dangling \\r', async () => {
+    const crlf = '# T\r\n## Sub\r\nx\r\ny\r\n## Next\r\nz\r\n';
+
+    const result = await read([{ path: 'c.md', heading: 'Sub' }], { 'c.md': crlf });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'c.md',
+        frontmatter: null,
+        content: '## Sub\r\nx\r\ny',
+        lines: [2, 4],
+        heading: 'Sub',
+        level: 2,
+      },
+    ]);
+  });
+});

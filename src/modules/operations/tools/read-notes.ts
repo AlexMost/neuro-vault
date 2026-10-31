@@ -21,6 +21,7 @@ import {
   spanText,
   toRequestItems,
   type PathsItem,
+  type Selection,
   type Selector,
 } from '../selection.js';
 import { collapseOutline, entriesWithin } from '../outline.js';
@@ -161,7 +162,7 @@ export function buildReadNotesTool(
         }
         if ('error' in item) return item;
         // Other modes over a selection still read the whole note.
-        if (slot.selector.kind === 'lines' && slot.mode === 'full') {
+        if (slot.selector.kind !== 'whole' && slot.mode === 'full') {
           return projectSelection(item, structureOf(item), slot.selector);
         }
         return project(item, slot.mode);
@@ -215,7 +216,7 @@ function project(item: ReadNotesItemSuccess, mode: ContentMode): ReadNotesResult
 function projectSelection(
   item: ReadNotesItemSuccess,
   structure: NoteStructure,
-  selector: Extract<Selector, { kind: 'lines' }>,
+  selector: Selection,
 ): ReadNotesResultItem {
   const r = resolveSelector(structure, selector, item.path);
   if (!r.ok) {
@@ -223,15 +224,27 @@ function projectSelection(
       path: item.path,
       error: { code: r.code, message: r.message },
     };
+    if (r.code === 'AMBIGUOUS_MATCH') {
+      miss.matches = r.matches ?? [];
+      return miss;
+    }
     if (structure.body !== null) miss.lines = [structure.body[0], structure.body[1]];
+    if (r.code === 'HEADING_NOT_FOUND') {
+      const { outline, collapsed } = collapseOutline(entriesWithin(structure, structure.body));
+      miss.outline = outline;
+      if (collapsed) miss.collapsed = true;
+    }
     return miss;
   }
-  return {
+  const out: ReadNotesResultItemSuccess = {
     path: item.path,
     frontmatter: item.frontmatter,
     content: spanText(structure, r.span),
     lines: r.span,
   };
+  if (r.heading !== undefined) out.heading = r.heading;
+  if (r.level !== undefined) out.level = r.level;
+  return out;
 }
 
 /** The whole file the reader returned; the handler always requests it for a body mode. */
