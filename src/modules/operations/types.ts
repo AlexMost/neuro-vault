@@ -46,12 +46,22 @@ export interface ReadNotesResultItemSuccess {
   collapsed?: true;
 }
 
+/** Why a selector named no part of its note: the per-item miss codes. */
+export type SelectorMissCode = 'HEADING_NOT_FOUND' | 'AMBIGUOUS_MATCH' | 'LINES_OUT_OF_RANGE';
+
 export interface ReadNotesResultItemError {
   path: string;
   error: {
-    code: 'NOT_FOUND' | 'INVALID_ARGUMENT' | 'READ_FAILED';
+    code: 'NOT_FOUND' | 'INVALID_ARGUMENT' | 'READ_FAILED' | SelectorMissCode;
     message: string;
   };
+  /** A selector miss: the body span, when the note has a body line. */
+  lines?: [number, number];
+  /** `HEADING_NOT_FOUND`: the note's outline, collapsed as outline mode collapses it. */
+  outline?: OutlineEntry[];
+  collapsed?: true;
+  /** `AMBIGUOUS_MATCH`: every heading block the name matches. */
+  matches?: OutlineEntry[];
 }
 
 export type ReadNotesResultItem = ReadNotesResultItemSuccess | ReadNotesResultItemError;

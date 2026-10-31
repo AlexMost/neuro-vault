@@ -517,7 +517,7 @@ describe('operations.readNotes outline and body spans', () => {
 });
 
 describe('operations.readNotes selector items at the gate', () => {
-  const FILES = { 'a.md': '# Top\none\ntwo\n', 'b.md': 'b body\n' };
+  const FILES = { 'a.md': '# Top\none\ntwo\n', 'b.md': 'b1\nb2\nb3\nb4\n' };
 
   it('reads a stringified mixed array as two items', async () => {
     const reader = readerOverFiles(FILES);
@@ -701,5 +701,147 @@ describe('operations.readNotes request items', () => {
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0][0].paths).toStrictEqual(['a.md', 'b.md']);
+  });
+});
+
+describe('operations.readNotes lines selections', () => {
+  /** A 40-line note: lines 1-4 frontmatter, then `line 5` .. `line 40`. */
+  const FORTY = (() => {
+    const body = Array.from({ length: 36 }, (_, i) => `line ${i + 5}`);
+    return ['---', 'a: 1', 'b: 2', '---', ...body].join('\n') + '\n';
+  })();
+  const bodyLines = (s: number, e: number) =>
+    Array.from({ length: e - s + 1 }, (_, i) => `line ${s + i}`).join('\n');
+
+  const read = (paths: unknown, files: Record<string, string> = { 'n.md': FORTY }) =>
+    callTool<ReadNotesOut>(buildReg(readerOverFiles(files)), { paths });
+
+  it('clips a range overlapping the frontmatter and echoes the clipped span', async () => {
+    const result = await read([{ path: 'n.md', lines: [2, 9] }]);
+
+    expect(result.results).toStrictEqual([
+      { path: 'n.md', frontmatter: { a: 1, b: 2 }, content: bodyLines(5, 9), lines: [5, 9] },
+    ]);
+  });
+
+  it('clips a range past the end to the last line', async () => {
+    const result = await read([{ path: 'n.md', lines: [30, 45] }]);
+
+    expect(result.results).toStrictEqual([
+      { path: 'n.md', frontmatter: { a: 1, b: 2 }, content: bodyLines(30, 40), lines: [30, 40] },
+    ]);
+  });
+
+  it('reads a one-line range', async () => {
+    const result = await read([{ path: 'n.md', lines: [7, 7] }]);
+
+    expect(result.results).toStrictEqual([
+      { path: 'n.md', frontmatter: { a: 1, b: 2 }, content: 'line 7', lines: [7, 7] },
+    ]);
+  });
+
+  it('returns the lines verbatim, blank lines and markup included', async () => {
+    const note = '---\nx: 1\n---\n# Top\n\n  - *item*  \n\n## Sub\ntail\n';
+
+    const result = await read([{ path: 'n.md', lines: [4, 7] }], { 'n.md': note });
+
+    expect(result.results).toStrictEqual([
+      { path: 'n.md', frontmatter: { x: 1 }, content: '# Top\n\n  - *item*  \n', lines: [4, 7] },
+    ]);
+  });
+
+  it('a range inside the frontmatter is a LINES_OUT_OF_RANGE miss with the body lines', async () => {
+    const result = await read([{ path: 'n.md', lines: [1, 3] }]);
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'n.md',
+        error: {
+          code: 'LINES_OUT_OF_RANGE',
+          message:
+            "lines 1–3 of n.md lie in the frontmatter (body: lines 5–40); read the frontmatter with content: 'frontmatter', or a range inside the body",
+        },
+        lines: [5, 40],
+      },
+    ]);
+    expect(result.errors).toBe(1);
+  });
+
+  it('a range past the end is the same miss, its message naming the body span', async () => {
+    const result = await read([{ path: 'n.md', lines: [50, 60] }]);
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'n.md',
+        error: {
+          code: 'LINES_OUT_OF_RANGE',
+          message: expect.stringMatching(/body: lines 5–40/) as string,
+        },
+        lines: [5, 40],
+      },
+    ]);
+  });
+
+  it('a range on a frontmatter-only note is a miss with no lines key', async () => {
+    const result = await read([{ path: 'n.md', lines: [1, 1] }], { 'n.md': '---\na: 1\n---\n' });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'n.md',
+        error: { code: 'LINES_OUT_OF_RANGE', message: expect.any(String) as string },
+      },
+    ]);
+  });
+
+  it('a range on an empty note is a miss with no lines key', async () => {
+    const result = await read([{ path: 'e.md', lines: [1, 1] }], { 'e.md': '' });
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'e.md',
+        error: { code: 'LINES_OUT_OF_RANGE', message: expect.any(String) as string },
+      },
+    ]);
+  });
+
+  it('a miss counts in errors and leaves the other items untouched', async () => {
+    const result = await read([
+      'n.md',
+      { path: 'n.md', lines: [50, 60] },
+      { path: 'n.md', lines: [5, 6] },
+    ]);
+
+    expect(result.count).toBe(3);
+    expect(result.errors).toBe(1);
+    expect(result.results[0]).toHaveProperty('truncated', false);
+    expect(result.results[1]).toHaveProperty('error.code', 'LINES_OUT_OF_RANGE');
+    expect(result.results[2]).toStrictEqual({
+      path: 'n.md',
+      frontmatter: { a: 1, b: 2 },
+      content: bodyLines(5, 6),
+      lines: [5, 6],
+    });
+  });
+
+  it('two ranges of one note each return their own text', async () => {
+    const result = await read([
+      { path: 'n.md', lines: [10, 12] },
+      { path: 'n.md', lines: [20, 21] },
+    ]);
+
+    expect(result.results.map((r) => ('content' in r ? r.content : null))).toStrictEqual([
+      bodyLines(10, 12),
+      bodyLines(20, 21),
+    ]);
+  });
+
+  it('a CRLF note returns its range with interior CRLF kept and no dangling \\r', async () => {
+    const crlf = '---\r\nx: 1\r\n---\r\none\r\ntwo\r\nthree\r\n';
+
+    const result = await read([{ path: 'n.md', lines: [4, 5] }], { 'n.md': crlf });
+
+    expect(result.results).toStrictEqual([
+      { path: 'n.md', frontmatter: { x: 1 }, content: 'one\r\ntwo', lines: [4, 5] },
+    ]);
   });
 });

@@ -1,5 +1,6 @@
 import { ToolHandlerError } from '../../lib/tool-response.js';
-import type { ContentMode } from './types.js';
+import type { NoteStructure } from '../../lib/obsidian/corpus/note-structure.js';
+import type { ContentMode, OutlineEntry, SelectorMissCode } from './types.js';
 
 /** What one `read_notes` item reads of its note: the whole body, one heading block, or a range. */
 export type Selector =
@@ -67,4 +68,70 @@ export function effectiveMode(
   if (explicit !== undefined) return explicit;
   if (item.selector.kind !== 'whole') return 'full';
   return itemCount === 1 ? 'full' : 'preview';
+}
+
+/**
+ * What a selector names in one note: the span of the selection, or a miss with the
+ * message that states its cause and the retry. A heading selection also carries the
+ * resolved heading name and its level.
+ */
+export type Resolved =
+  | { ok: true; span: [number, number]; heading?: string; level?: number }
+  | { ok: false; code: SelectorMissCode; message: string; matches?: OutlineEntry[] };
+
+/** `a–b`, the way a miss message names a span. */
+const range = ([a, b]: readonly [number, number]): string => `${a}–${b}`;
+
+/**
+ * Resolves a selector against the note's structure. A `lines` range is clipped to the
+ * body at both ends; only a range sharing no line with the body is `LINES_OUT_OF_RANGE`.
+ * `path` names the note in a miss message.
+ */
+export function resolveSelector(
+  structure: NoteStructure,
+  selector: Extract<Selector, { kind: 'lines' }>,
+  path: string,
+): Resolved {
+  return resolveLines(structure, selector.lines, path);
+}
+
+function resolveLines(
+  structure: NoteStructure,
+  requested: [number, number],
+  path: string,
+): Resolved {
+  const miss = (message: string): Resolved => ({ ok: false, code: 'LINES_OUT_OF_RANGE', message });
+  const asked = `lines ${range(requested)} of ${path}`;
+  const { body, frontmatterEnd } = structure;
+  if (body === null) {
+    return frontmatterEnd === 0
+      ? miss(`${asked} are out of range: the note is empty and has no line to read`)
+      : miss(
+          `${asked} are out of range: the note has frontmatter (lines ${range([1, frontmatterEnd])}) ` +
+            "and no body; read the frontmatter with content: 'frontmatter'",
+        );
+  }
+  const start = Math.max(requested[0], body[0]);
+  const end = Math.min(requested[1], body[1]);
+  if (start <= end) return { ok: true, span: [start, end] };
+  const bodySpan = `body: lines ${range(body)}`;
+  return requested[1] < body[0]
+    ? miss(
+        `${asked} lie in the frontmatter (${bodySpan}); ` +
+          "read the frontmatter with content: 'frontmatter', or a range inside the body",
+      )
+    : miss(
+        `${asked} lie past the end of the note (${bodySpan}); retry with a range inside the body`,
+      );
+}
+
+/**
+ * The text of a span, verbatim. A CRLF note's lines keep their `\r`, so the interior
+ * line endings stay CRLF; the last line's `\r` is dropped, since the span ends there.
+ */
+export function spanText(structure: NoteStructure, [start, end]: [number, number]): string {
+  return structure.lines
+    .slice(start - 1, end)
+    .join('\n')
+    .replace(/\r$/, '');
 }

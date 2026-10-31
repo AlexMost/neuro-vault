@@ -10,12 +10,21 @@ import type {
   ContentMode,
   ReadNotesResult,
   ReadNotesResultItem,
+  ReadNotesResultItemError,
   ReadNotesResultItemSuccess,
 } from '../types.js';
 import { previewBody } from '../preview-body.js';
-import { effectiveMode, itemKey, toRequestItems, type PathsItem } from '../selection.js';
+import {
+  effectiveMode,
+  itemKey,
+  resolveSelector,
+  spanText,
+  toRequestItems,
+  type PathsItem,
+  type Selector,
+} from '../selection.js';
 import { collapseOutline, entriesWithin } from '../outline.js';
-import { noteStructure } from '../../../lib/obsidian/corpus/note-structure.js';
+import { noteStructure, type NoteStructure } from '../../../lib/obsidian/corpus/note-structure.js';
 import { frontmatterEnd, splitNoteLines } from '../../../lib/obsidian/corpus/chunker.js';
 import type { ReadNotesField, ReadNotesItemSuccess } from '../../../lib/obsidian/vault-reader.js';
 
@@ -100,14 +109,18 @@ export function buildReadNotesTool(
         return true;
       });
 
-      // Until the selectors resolve, a selector item reads its whole note in its own mode.
       type Slot =
         | { kind: 'invalid'; item: ReadNotesResultItem }
-        | { kind: 'valid'; path: string; mode: ContentMode };
+        | { kind: 'valid'; path: string; mode: ContentMode; selector: Selector };
       const slots: Slot[] = items.map((item): Slot => {
         const mode = effectiveMode(item, items.length, input.content);
         try {
-          return { kind: 'valid', path: normalizePath(item.path), mode };
+          return {
+            kind: 'valid',
+            path: normalizePath(item.path),
+            mode,
+            selector: item.selector,
+          };
         } catch (err) {
           const message = err instanceof ToolHandlerError ? err.message : String(err);
           return {
@@ -129,6 +142,16 @@ export function buildReadNotesTool(
               fields: fieldsFor(valid.map((s) => s.mode)),
             });
       const byPath = new Map(notePaths.map((p, i) => [p, readerItems[i]]));
+      // One structure per note, however many of its items select from it.
+      const structures = new Map<string, NoteStructure>();
+      const structureOf = (item: ReadNotesItemSuccess): NoteStructure => {
+        let s = structures.get(item.path);
+        if (s === undefined) {
+          s = noteStructure(rawOf(item));
+          structures.set(item.path, s);
+        }
+        return s;
+      };
 
       const results: ReadNotesResultItem[] = slots.map((slot) => {
         if (slot.kind === 'invalid') return slot.item;
@@ -136,7 +159,12 @@ export function buildReadNotesTool(
         if (item === undefined) {
           throw new Error(`read_notes: the reader returned no item for ${slot.path}`);
         }
-        return 'error' in item ? item : project(item, slot.mode);
+        if ('error' in item) return item;
+        // Other modes over a selection still read the whole note.
+        if (slot.selector.kind === 'lines' && slot.mode === 'full') {
+          return projectSelection(item, structureOf(item), slot.selector);
+        }
+        return project(item, slot.mode);
       });
 
       const errors = results.reduce((n, r) => n + ('error' in r ? 1 : 0), 0);
@@ -178,6 +206,32 @@ function project(item: ReadNotesItemSuccess, mode: ContentMode): ReadNotesResult
     out.truncated = truncated;
   }
   return out;
+}
+
+/**
+ * One selection of a note read in `full`: its verbatim text and its span, or a miss
+ * item carrying the retry data for its code. A miss never carries `frontmatter`.
+ */
+function projectSelection(
+  item: ReadNotesItemSuccess,
+  structure: NoteStructure,
+  selector: Extract<Selector, { kind: 'lines' }>,
+): ReadNotesResultItem {
+  const r = resolveSelector(structure, selector, item.path);
+  if (!r.ok) {
+    const miss: ReadNotesResultItemError = {
+      path: item.path,
+      error: { code: r.code, message: r.message },
+    };
+    if (structure.body !== null) miss.lines = [structure.body[0], structure.body[1]];
+    return miss;
+  }
+  return {
+    path: item.path,
+    frontmatter: item.frontmatter,
+    content: spanText(structure, r.span),
+    lines: r.span,
+  };
 }
 
 /** The whole file the reader returned; the handler always requests it for a body mode. */
