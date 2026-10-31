@@ -564,6 +564,18 @@ describe('operations.readNotes selector items at the gate', () => {
     expect(err.code).toBe('INVALID_PARAMS');
   });
 
+  // The two cases zod reports as a specific issue: they prove the object item
+  // reached the lines schema, rather than being rejected wholesale.
+  it.each([
+    [[20, 10], 'paths.0.lines: lines: start must not exceed end'],
+    [[0, 3], 'paths.0.lines.0: Too small: expected number to be >=1'],
+  ])('reports lines %j at its own issue path', async (lines, message) => {
+    const err = await expectToolError(buildReg(), { paths: [{ path: 'a.md', lines }] });
+
+    expect(err.code).toBe('INVALID_PARAMS');
+    expect(err.message).toBe(message);
+  });
+
   it('rejects an unrecognized key on an item with INVALID_PARAMS', async () => {
     const err = await expectToolError(buildReg(), {
       paths: [{ path: 'a.md', content: 'full' }],
