@@ -128,7 +128,7 @@ Evidence `lines` — `blocks[].lines` and `lexical[].lines` — is `[start, end]
 
 - **Read any evidence row as `{ path, lines: row.lines }`** — the one hand-off that always works, semantic and lexical alike.
 - **`blocks[].heading`** is a heading name. When it is non-empty the block is a whole heading block, and `{ path, heading: row.heading }` reads the same span as `lines`.
-- **`heading: ""`** marks a paragraph or preamble block — a part of a heading block's text, not a heading block. About half of all blocks are of this kind. Read it with `lines`; never pass `""` as `heading`. A block whose `heading` is `"---frontmatter---"` is the frontmatter itself: read it with `content: "frontmatter"`.
+- **`heading: ""`** marks a paragraph inside a heading block, or the preamble — it does not name the heading block around it. About half of all blocks are of this kind. Read it with `lines`; never pass `""` as `heading`. A block whose `heading` is `"---frontmatter---"` is the frontmatter itself: read it with `content: "frontmatter"`.
 - **`lexical[].heading`** is a label: the text of the nearest heading of any kind, as rendered (markup removed), with no `[n]` suffix. It usually works as `{ path, heading }`, but it may name a setext heading or one inside a list, or match the first of several siblings with the same text. Prefer `lines`.
 - To read the whole heading block around a hit, read the note's outline and take the deepest entry whose `lines` contain the hit's.
 

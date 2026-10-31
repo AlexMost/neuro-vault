@@ -287,6 +287,8 @@ export function buildSearchNotesTool(
     '',
     'RESPONSE SHAPE:',
     '- `matches[]` — one fused, ranked list; each note appears at most once. `found_in` names the leg(s) that surfaced it, and each leg that hit attaches its own evidence field. More than one leg on a note is the strongest relevance signal there is.',
+    "- Evidence `lines` (`blocks[].lines`, `lexical[].lines`) is `[start, end]`, file-relative, 1-based, inclusive — frontmatter lines counted, the same coordinates `read_notes` takes. Read a hit with `read_notes({ paths: [{ path, lines }] })`.",
+    "- `blocks[].heading` is a heading name, readable as `{ path, heading }` when non-empty; `\"\"` marks a paragraph inside a heading block, or the preamble, and does not name the block around it (read it with `lines`). `lexical[].heading` is the nearest heading's text, a label only; prefer `lines`.",
     '- `truncated` — top-level, always present; true when candidates were dropped, either by the merged cap (recover by raising `limit`) or by a leg\'s internal pool cap (`limit` will NOT help — raise `effort` to "deep", or narrow `query`/`filter`).',
     '- `semantic_status` — top-level, always present: `{ state, indexed?, total? }` describing the VAULT\'s index, not this call. Every state but "ready" carries a `note` saying what it did to this response.',
     '- `expansion_similarity` (deep): note-to-note similarity to a semantic hit, not the query; not comparable with `similarity`.',

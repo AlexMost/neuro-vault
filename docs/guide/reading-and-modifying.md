@@ -39,11 +39,11 @@ Every `lines` value — the `lines` selector, every `lines` in a result, and the
 
 Returned text is verbatim (no line numbers inside it), so it can be pasted into [`edit_note`](#edit_note) `replace`. Each item that returns body coordinates echoes its span in `lines` instead.
 
-A `lines` selector is clipped to the body at both ends: a range that starts inside the frontmatter begins at the first body line, and one that runs past the end stops at the last line. The echoed `lines` shows the span actually returned. A range that shares no line with the body is a miss (`LINES_OUT_OF_RANGE`, below).
+A `lines` selector is clipped to the body at both ends: a range that starts inside the frontmatter begins at the first body line, and one that runs past the end stops at the last line. The echoed `lines` shows the span actually returned. A partial overlap is clipped, not a miss; only a range that shares no line with the body is a miss (`LINES_OUT_OF_RANGE`, below).
 
 #### `content` modes
 
-`content` applies to each item's selection exactly as it applies to a whole note. The modes form a ladder; each rung shows more of the selection than the one before:
+`content` is one value for the whole call, next to `paths` — never inside an item. It applies to each item's selection exactly as it applies to a whole note. The modes form a ladder; each rung shows more of the selection than the one before:
 
 | Mode          | Returns                                                                                                                              |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -81,7 +81,7 @@ A `lines` selector is clipped to the body at both ends: a range that starts insi
 - **Only root-level ATX headings** (`#` … `######` at the start of a line) are heading blocks. Setext headings and headings inside lists or blockquotes are not listed and cannot be read by `heading`.
 - **A note without headings** returns `outline: []` and a `preamble` covering the body.
 
-**Collapse.** An outline lists at most 100 entries. Past that, the deepest nesting level is dropped until the outline fits, and the item carries `collapsed: true`. An entry whose sub-headings were dropped carries `hidden: n` — **n sub-headings under it are not listed**. The shallowest level is never dropped. To list what an entry hides, read its outline: `{ paths: [{ path, heading: "2026-01" }], content: "outline" }`. The cap and the collapse count within the selection, so this lists the hidden sub-headings.
+**Collapse.** An outline lists at most 100 entries. Past that, the deepest nesting level is dropped until the outline fits, and the item carries `collapsed: true`. An entry whose sub-headings were dropped carries `hidden: n` — **n headings below it, at all depths, are not listed**. Hidden headings are still readable by name. The shallowest level is never dropped. To list what an entry hides, read its outline: `{ paths: [{ path, heading: "2026-01" }], content: "outline" }`. The cap and the collapse count within the selection, so this lists the hidden sub-headings.
 
 #### Structured preview
 
@@ -142,8 +142,8 @@ Every `search_notes` evidence row reads back as `{ path, lines: row.lines }` —
 ```
 
 - **`{ path, heading: row.heading }`** is an equal alternative only for a semantic block with a non-empty `heading`; it reads the same span.
-- **`heading: ""`** on a semantic block marks a paragraph or preamble block, not a heading block. Read it with `lines`; passing `""` as `heading` fails the whole call.
-- **A lexical `heading`** is the text of the nearest heading before the match — a label. It may be tried as an address, but nothing guarantees it names a heading block (it may be a setext heading, a heading inside a list, or one of several siblings with the same text).
+- **`heading: ""`** on a semantic block marks a paragraph inside a heading block, or the preamble — it does not name the heading block around it. Read it with `lines`; passing `""` as `heading` fails the whole call.
+- **A lexical `heading`** is the text of the nearest heading before the match — a label. It may be tried as an address, but nothing guarantees it names a heading block (it may be a setext heading, a heading inside a list, or one of several siblings with the same text — and then a bare `Notes` matches the first of `Notes` / `Notes[2]` exactly, with no error).
 - **Check the echo.** A heading read echoes its `lines`. If the hit's `lines` fall outside them, the name picked another block (a sibling duplicate): read the outline and pick by `lines`.
 - **The heading block around a hit:** read the outline and take the deepest entry whose `lines` contain the hit's `lines`, then read it by `heading`.
 

@@ -19,7 +19,7 @@
   { "path": "projects/onboarding.md",
     "frontmatter": { "type": "project", "status": "active" },
     "lines": [5, 41],
-    "content": "**Owner:** Dana · **Due:** 2026-12-01\n\n| Field | Value |\n|---|---|\n| Tier | free |\n\n## First 30 days\n\nPair every new hire with a buddy for the first two weeks; the buddy owns the checklist.\n\n### Week 1\n\n- laptop, accounts, repo access\n- …",
+    "content": "**Owner:** Dana · **Due:** 2026-12-01\n\n| Field | Value |\n|---|---|\n| Tier | free |\n| Seats | 12 |\n| Region | EU |\n| Plan | trial |\n\n## First 30 days\n\nPair every new hire with a buddy for the first two weeks; the buddy owns the checklist.\n\n### Week 1\n\n- laptop, accounts, repo access\n- …",
     "truncated": true,
     "preamble": [5, 13],
     "outline": [
@@ -29,8 +29,8 @@
       { "heading": "Open questions", "level": 2, "lines": [28, 31] },
       { "heading": "Snippets", "level": 2, "lines": [32, 41] } ] },
   { "path": "logs/2026.md",
-    "frontmatter": { "type": "resource" },
-    "lines": [4, 1225],
+    "frontmatter": { "type": "resource", "created": "2026-01-01" },
+    "lines": [5, 1225],
     "content": "# Work log\n\n## 2026-01\n\n### Week 1\n\n#### Notes\n\n- set up the staging box; DNS took a day…",
     "truncated": true,
     "outline": [

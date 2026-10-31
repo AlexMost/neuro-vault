@@ -15,3 +15,5 @@ Answer each question. Where a tool call is asked for, give the exact JSON argume
 13. **LINES_OUT_OF_RANGE.** In Fixture 3, the fourth item. Why did it miss, and what range is valid?
 14. **Frontmatter on a miss.** The miss items in Fixture 3 carry no `frontmatter`. Does that mean those notes have no frontmatter?
 15. **Silent mismatch.** Fixture 4: is the returned text the passage the search hit pointed at? What do you do next?
+16. **Clipping.** What `lines` does `read_notes({ paths: [{ "path": "projects/onboarding.md", "lines": [1, 20] }] })` echo, and why?
+17. **Call shape.** What is wrong with `read_notes({ paths: [{ "path": "logs/2026.md", "heading": "2026-01", "content": "outline" }] })`? Give the corrected call.
