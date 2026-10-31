@@ -130,7 +130,15 @@ export function splitNoteLines(content: string): string[] {
   return lines;
 }
 
-/** One heading block: the heading's line to the line before the next heading of its level or higher. */
+/** A numbered paragraph chunk a heading directly owns, keyed `<heading key>#{n}`. */
+export interface ContentChunk extends ContentSpan {
+  key: string;
+}
+
+/**
+ * One heading block: from the heading's line to the line before the next heading of its
+ * level or higher.
+ */
 export interface HeadingSection {
   /** The heading's own text, disambiguated the same way the key's last segment is. */
   title: string;
@@ -139,8 +147,8 @@ export interface HeadingSection {
   start: number;
   end: number;
   key: string;
-  /** 1-based line of this section's first child heading, if any. */
-  firstChildStart?: number;
+  /** The heading's own paragraphs, numbered; empty unless it directly owns more than one. */
+  chunks: ContentChunk[];
 }
 
 /**
@@ -148,15 +156,11 @@ export interface HeadingSection {
  * take their heading spans, titles and keys from here, so they cannot drift. Returns the
  * sections in source order.
  *
- * `onClose` fires as each section ends (deepest first) with the keys minted so far, which
- * it may extend: the chunker mints a heading's numbered content chunks there, and a later
- * heading's key must be disambiguated against them.
+ * Numbered content-chunk keys are reserved here as each section closes, because a later
+ * heading's key is disambiguated against them: the projection must name headings the way
+ * the chunker does even though it embeds nothing.
  */
-export function headingSections(
-  lines: string[],
-  fmEnd: number,
-  onClose?: (section: HeadingSection, usedKeys: Set<string>) => void,
-): HeadingSection[] {
+export function headingSections(lines: string[], fmEnd: number): HeadingSection[] {
   const sections: HeadingSection[] = [];
   const open: OpenSection[] = [];
   /** (parent key + title) -> occurrences, so a repeat is disambiguated at any level. */
@@ -166,16 +170,36 @@ export function headingSections(
   if (fmEnd > 0) usedKeys.add(FRONTMATTER_KEY);
 
   const close = (section: OpenSection, endLine: number) => {
-    const closed: HeadingSection = {
+    const chunks: ContentChunk[] = [];
+    const ownStart = section.start + 1;
+    const ownEnd = section.firstChildStart !== undefined ? section.firstChildStart - 1 : endLine;
+    if (ownEnd >= ownStart) {
+      const spans = splitContentChunks(lines, ownStart, ownEnd);
+      // A single own-content paragraph is already covered by the heading block above;
+      // only disambiguate when a heading directly owns more than one paragraph.
+      if (spans.length > 1) {
+        // A child heading literally titled "{n}" may already own `#{n}` under this
+        // key; numbering skips past any taken key so no two blocks ever share one.
+        let n = 0;
+        for (const span of spans) {
+          let key: string;
+          do {
+            n += 1;
+            key = `${section.key}#{${n}}`;
+          } while (usedKeys.has(key));
+          usedKeys.add(key);
+          chunks.push({ ...span, key });
+        }
+      }
+    }
+    sections.push({
       title: section.title,
       level: section.level,
       start: section.start,
       end: endLine,
       key: section.key,
-      firstChildStart: section.firstChildStart,
-    };
-    sections.push(closed);
-    onClose?.(closed, usedKeys);
+      chunks,
+    });
   };
 
   for (const hit of scanHeadings(lines, fmEnd)) {
@@ -244,42 +268,23 @@ export function chunkNote(content: string): ChunkedBlock[] {
     });
   }
 
-  const sections = headingSections(lines, fmEnd, (section, usedKeys) => {
+  const sections = headingSections(lines, fmEnd);
+  for (const section of sections) {
     blocks.push({
       key: section.key,
       heading: section.title,
       lines: [section.start, section.end],
       text: lines.slice(section.start - 1, section.end).join('\n'),
     });
-
-    const ownStart = section.start + 1;
-    const ownEnd =
-      section.firstChildStart !== undefined ? section.firstChildStart - 1 : section.end;
-    if (ownEnd >= ownStart) {
-      const chunks = splitContentChunks(lines, ownStart, ownEnd);
-      // A single own-content paragraph is already covered by the heading block above;
-      // only disambiguate when a heading directly owns more than one paragraph.
-      if (chunks.length > 1) {
-        // A child heading literally titled "{n}" may already own `#{n}` under this
-        // key; numbering skips past any taken key so no two blocks ever share one.
-        let n = 0;
-        chunks.forEach((chunk) => {
-          let key: string;
-          do {
-            n += 1;
-            key = `${section.key}#{${n}}`;
-          } while (usedKeys.has(key));
-          usedKeys.add(key);
-          blocks.push({
-            key,
-            heading: '',
-            lines: [chunk.start, chunk.end],
-            text: chunk.text,
-          });
-        });
-      }
+    for (const chunk of section.chunks) {
+      blocks.push({
+        key: chunk.key,
+        heading: '',
+        lines: [chunk.start, chunk.end],
+        text: chunk.text,
+      });
     }
-  });
+  }
 
   const preamble = preambleSpan(lines, fmEnd, sections);
   if (preamble) {

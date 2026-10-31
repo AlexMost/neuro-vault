@@ -15,7 +15,10 @@ export interface NoteStructure {
   lines: string[];
   /** Last frontmatter line, 0 when none (the chunker's frontmatterEnd). */
   frontmatterEnd: number;
-  /** [frontmatterEnd + 1, lines.length]; null when the note has no body line. */
+  /**
+   * [frontmatterEnd + 1, lines.length]; null when the note has no line after the
+   * frontmatter (an empty note, or frontmatter only). Blank body lines still count.
+   */
   body: [number, number] | null;
   /** Text before the first heading, only when non-blank. */
   preamble: [number, number] | null;
@@ -35,7 +38,8 @@ export function noteStructure(raw: string): NoteStructure {
   return {
     lines,
     frontmatterEnd: fmEnd,
-    body: fmEnd < lines.length ? [fmEnd + 1, lines.length] : null,
+    // An empty note is `['']` to the line splitter but has no line to read.
+    body: raw !== '' && fmEnd < lines.length ? [fmEnd + 1, lines.length] : null,
     preamble: preambleSpan(lines, fmEnd, sections),
     headings: sections.map((s) => ({ heading: s.title, level: s.level, lines: [s.start, s.end] })),
   };

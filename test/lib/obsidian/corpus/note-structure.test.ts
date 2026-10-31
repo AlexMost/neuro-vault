@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
@@ -64,11 +64,24 @@ describe('noteStructure', () => {
     expect(s.headings).toEqual([]);
   });
 
-  it('gives an empty note one blank line and no preamble', () => {
+  it('has no body and no preamble for an empty note', () => {
     const s = noteStructure('');
     expect(s.lines).toEqual(['']);
-    expect(s.body).toEqual([1, 1]);
+    expect(s.body).toBeNull();
     expect(s.preamble).toBeNull();
+    expect(s.headings).toEqual([]);
+  });
+
+  it('keeps the real span of a body made only of blank lines', () => {
+    const s = noteStructure('\n\n');
+    expect(s.body).toEqual([1, 2]);
+    expect(s.preamble).toBeNull();
+  });
+
+  it('names a heading clear of the numbered chunk keys the chunker reserved', () => {
+    // "# A" owns two paragraphs, so the chunker mints `#A#{1}`; a later heading literally
+    // titled "A#{1}" would key the same and is disambiguated.
+    expect(names('# A\np1\n\np2\n# A#{1}\nx\n')).toEqual(['A', 'A#{1}[2]']);
   });
 
   it('gives CRLF notes the LF spans and heading names, with no carriage return', () => {
@@ -82,13 +95,24 @@ describe('noteStructure', () => {
   });
 
   describe('parity with chunkNote', () => {
-    const sample = readFileSync(new URL('./fixtures/sample-note.md', import.meta.url), 'utf8');
+    const fixturesDir = new URL('./fixtures/', import.meta.url);
+    const fixtures: Array<[string, string]> = readdirSync(fixturesDir).map((file) => [
+      `fixture ${file}`,
+      readFileSync(new URL(file, fixturesDir), 'utf8'),
+    ]);
     const inputs: Array<[string, string]> = [
-      ['the sample fixture', sample],
+      ...fixtures,
       ['the projection fixture', FIXTURE],
       ['repeated and nested headings', '# P\n## Notes\na\n\nb\n## Notes\nc\n### Deep\nd\n'],
       ['a note without a trailing newline', '# A\nx\n## B\ny'],
+      ['a heading titled like a chunk key', '# A\np1\n\np2\n# A#{1}\nx\n'],
+      ['a sibling titled with the repeat suffix', '# A\n# A[2]\n# A\n'],
+      ['a child titled like a chunk number', '# Top\naaa\n\nbbb\n## {1}\nx\n'],
     ];
+
+    it('covers at least one fixture file', () => {
+      expect(fixtures.length).toBeGreaterThan(0);
+    });
 
     it.each(inputs)('matches the heading blocks of %s', (_name, raw) => {
       const blocks = chunkNote(raw).filter(
