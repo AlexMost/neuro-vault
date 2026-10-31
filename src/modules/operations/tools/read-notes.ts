@@ -41,7 +41,7 @@ export function buildReadNotesTool(
       '',
       'PATHS: `paths` is a vault-relative POSIX path string or an array of 1–50 such paths; duplicates are de-duplicated and results returned in input order.',
       '',
-      "LINE COORDINATES: every `lines` in this tool's output is `[start, end]`, file-relative, 1-based, inclusive: frontmatter lines are counted, so the body starts after them, and frontmatter ends on the item's `lines[0] − 1` (when `frontmatter` is `null` there, its YAML did not parse).",
+      "LINE COORDINATES: every `lines` in this tool's output is `[start, end]`, file-relative, 1-based, inclusive: frontmatter lines are counted, so the body starts after them, and frontmatter ends on the item's `lines[0] − 1` (a `null` frontmatter above `lines[0]` is YAML that did not parse).",
       '',
       'CONTENT is one value for the whole call, next to `paths` — `{ paths: [...], content: "outline" }`:',
       '- `frontmatter`: `{ path, frontmatter }`.',

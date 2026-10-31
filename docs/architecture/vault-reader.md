@@ -56,7 +56,7 @@ The handlers depend on each explicitly.
 retaining every note's full text — the finer projection (full / outline /
 preview / frontmatter shaping) still happens in the tool handler. When
 `fields` includes `'raw'`, a successful entry also carries `raw`, the whole file
-verbatim: `read_notes` asks for it in its body modes, because line coordinates
+verbatim: `read_notes` asks for it in its `full` and `outline` modes, because line coordinates
 and the heading projection ([`note-structure.md`](./note-structure.md)) count
 from the file's first line, frontmatter included. Failed entries
 carry an `error: { code, message }` with one of:
