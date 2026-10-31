@@ -1140,3 +1140,270 @@ describe('operations.readNotes heading selections', () => {
     ]);
   });
 });
+
+describe('operations.readNotes content modes over a selection', () => {
+  /**
+   * Lines: 1-3 frontmatter, 4 `intro one`, 5 `intro two`, 6 blank, 7 `# Log`, 8 `## 2026-01`,
+   * 9 `### 2026-01-15 standup`, 10 `x`, 11 `### 2026-01-20 review`, 12 `y`, 13 `## 2026-02`,
+   * 14 `### 2026-02-03 standup`, 15 `z`.
+   */
+  const LOG = [
+    '---',
+    'a: 1',
+    '---',
+    'intro one',
+    'intro two',
+    '',
+    '# Log',
+    '## 2026-01',
+    '### 2026-01-15 standup',
+    'x',
+    '### 2026-01-20 review',
+    'y',
+    '## 2026-02',
+    '### 2026-02-03 standup',
+    'z',
+  ].join('\n');
+  const LOG_OUTLINE = [
+    { heading: 'Log', level: 1, lines: [7, 15] },
+    { heading: '2026-01', level: 2, lines: [8, 12] },
+    { heading: '2026-01-15 standup', level: 3, lines: [9, 10] },
+    { heading: '2026-01-20 review', level: 3, lines: [11, 12] },
+    { heading: '2026-02', level: 2, lines: [13, 15] },
+    { heading: '2026-02-03 standup', level: 3, lines: [14, 15] },
+  ];
+
+  /** `groups` blocks named `G{g}` one level below `prefix`, each holding `perGroup` `G{g}C{c}`. */
+  const grouped = (groups: number, perGroup: number, prefix = '#'): string[] => {
+    const lines: string[] = [];
+    for (let g = 0; g < groups; g++) {
+      lines.push(`${prefix}# G${g}`);
+      for (let c = 0; c < perGroup; c++) lines.push(`${prefix}## G${g}C${c}`);
+    }
+    return lines;
+  };
+
+  const read = (
+    paths: unknown,
+    content?: string,
+    files: Record<string, string> = { 'log.md': LOG + '\n' },
+  ) =>
+    callTool<ReadNotesOut>(
+      buildReg(readerOverFiles(files)),
+      content === undefined ? { paths } : { paths, content },
+    );
+
+  describe("content: 'outline'", () => {
+    it('drills into a heading: its echo, then it and its descendants only, with true spans', async () => {
+      const result = await read([{ path: 'log.md', heading: '2026-01' }], 'outline');
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'log.md',
+          frontmatter: { a: 1 },
+          lines: [8, 12],
+          heading: '2026-01',
+          level: 2,
+          outline: LOG_OUTLINE.slice(1, 4),
+        },
+      ]);
+    });
+
+    it('lists the heading blocks a lines selection holds, never clipping their spans', async () => {
+      // Lines: 1 `# Top`, 2-19 filler, 20 `## B`, 21-45 filler, 46 `## C`, 47 filler.
+      const lines = ['# Top', ...Array.from({ length: 18 }, (_, i) => `t${i + 2}`), '## B'];
+      lines.push(...Array.from({ length: 25 }, (_, i) => `b${i + 21}`), '## C', 'c47');
+
+      const result = await read([{ path: 'n.md', lines: [12, 30] }], 'outline', {
+        'n.md': lines.join('\n') + '\n',
+      });
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'n.md',
+          frontmatter: null,
+          lines: [12, 30],
+          outline: [{ heading: 'B', level: 2, lines: [20, 45] }],
+        },
+      ]);
+    });
+
+    it('collapses a 133-entry heading selection by its own depth, keeping its shallowest level', async () => {
+      // `# Root` holds `## Other` and `## Sel`; `## Sel` holds 12 `###`, each holding 10 `####`.
+      const note = ['# Root', '## Other', 'o', '## Sel', ...grouped(12, 10, '##')].join('\n');
+
+      const result = await read([{ path: 'big.md', heading: 'Sel' }], 'outline', {
+        'big.md': note + '\n',
+      });
+
+      const item = result.results[0] as { outline: unknown[] };
+      expect(result.results[0]).toMatchObject({
+        lines: [4, 136],
+        heading: 'Sel',
+        level: 2,
+        collapsed: true,
+      });
+      expect(item.outline).toStrictEqual([
+        { heading: 'Sel', level: 2, lines: [4, 136] },
+        ...Array.from({ length: 12 }, (_, g) => ({
+          heading: `G${g}`,
+          level: 3,
+          lines: [5 + g * 11, 15 + g * 11],
+          hidden: 10,
+        })),
+      ]);
+    });
+
+    it('lists the headings a collapsed note outline hides when drilling into their parent', async () => {
+      const note = ['# Title', ...grouped(12, 10)].join('\n') + '\n';
+
+      const result = await read([{ path: 'big.md', heading: 'G3' }], 'outline', {
+        'big.md': note,
+      });
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'big.md',
+          frontmatter: null,
+          lines: [35, 45],
+          heading: 'G3',
+          level: 2,
+          outline: [
+            { heading: 'G3', level: 2, lines: [35, 45] },
+            ...Array.from({ length: 10 }, (_, c) => ({
+              heading: `G3C${c}`,
+              level: 3,
+              lines: [36 + c, 36 + c],
+            })),
+          ],
+        },
+      ]);
+    });
+
+    it('a lines selection over the preamble carries the preamble clipped to it', async () => {
+      const result = await read([{ path: 'log.md', lines: [5, 9] }], 'outline');
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'log.md',
+          frontmatter: { a: 1 },
+          lines: [5, 9],
+          preamble: [5, 6],
+          outline: LOG_OUTLINE.slice(0, 3),
+        },
+      ]);
+    });
+
+    it('carries no preamble when the part of it the selection holds is blank', async () => {
+      const result = await read([{ path: 'log.md', lines: [6, 7] }], 'outline');
+
+      expect(result.results).toStrictEqual([
+        { path: 'log.md', frontmatter: { a: 1 }, lines: [6, 7], outline: LOG_OUTLINE.slice(0, 1) },
+      ]);
+    });
+
+    it('a heading selection never carries a preamble', async () => {
+      const result = await read([{ path: 'log.md', heading: 'Log' }], 'outline');
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'log.md',
+          frontmatter: { a: 1 },
+          lines: [7, 15],
+          heading: 'Log',
+          level: 1,
+          outline: LOG_OUTLINE,
+        },
+      ]);
+    });
+  });
+
+  describe("content: 'frontmatter'", () => {
+    it('a resolved selection returns { path, frontmatter } only', async () => {
+      const result = await read(
+        [
+          { path: 'log.md', lines: [5, 6] },
+          { path: 'log.md', heading: '2026-02' },
+        ],
+        'frontmatter',
+      );
+
+      expect(result.results).toStrictEqual([
+        { path: 'log.md', frontmatter: { a: 1 } },
+        { path: 'log.md', frontmatter: { a: 1 } },
+      ]);
+      expect(result.errors).toBe(0);
+    });
+
+    it('still resolves its selector: an unknown heading is a HEADING_NOT_FOUND miss', async () => {
+      const result = await read([{ path: 'log.md', heading: 'Missing' }], 'frontmatter');
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'log.md',
+          error: {
+            code: 'HEADING_NOT_FOUND',
+            message:
+              'no heading block of log.md is named "Missing", exactly or ignoring case and markup; retry with a heading name from outline',
+          },
+          lines: [4, 15],
+          outline: LOG_OUTLINE,
+        },
+      ]);
+      expect(result.errors).toBe(1);
+    });
+
+    it('asks the reader for the raw text a selector item needs, and a bare item for no more', async () => {
+      const reader = readerOverFiles({ 'log.md': LOG });
+      const spy = vi.spyOn(reader, 'readNotes');
+      const reg = buildReg(reader);
+
+      await callTool(reg, { paths: [{ path: 'log.md', lines: [5, 6] }], content: 'frontmatter' });
+      await callTool(reg, { paths: ['log.md'], content: 'frontmatter' });
+
+      expect(spy.mock.calls.map((c) => c[0].fields)).toStrictEqual([
+        ['frontmatter', 'raw'],
+        ['frontmatter'],
+      ]);
+    });
+  });
+
+  it.each(['outline', 'frontmatter'])(
+    "a miss has the shape it has under content: 'full' under content: '%s'",
+    async (content) => {
+      const files = { 'log.md': LOG + '\n', 'x.md': '# A\n### Notes\na\n# B\n### Notes\nb\n' };
+      const paths = [
+        { path: 'log.md', heading: 'Missing' },
+        { path: 'x.md', heading: 'Notes' },
+        { path: 'log.md', lines: [1, 2] },
+      ];
+
+      const asFull = await read(paths, 'full', files);
+      const result = await read(paths, content, files);
+
+      expect(result).toStrictEqual(asFull);
+      expect(result.errors).toBe(3);
+      expect(result.results.map((r) => ('error' in r ? r.error.code : null))).toStrictEqual([
+        'HEADING_NOT_FOUND',
+        'AMBIGUOUS_MATCH',
+        'LINES_OUT_OF_RANGE',
+      ]);
+      expect(result.results.some((r) => 'frontmatter' in r)).toBe(false);
+    },
+  );
+
+  it("content: 'full' over a selection returns its text and echo, and no outline fields", async () => {
+    const result = await read([{ path: 'log.md', heading: '2026-02' }], 'full');
+
+    expect(result.results).toStrictEqual([
+      {
+        path: 'log.md',
+        frontmatter: { a: 1 },
+        content: '## 2026-02\n### 2026-02-03 standup\nz',
+        lines: [13, 15],
+        heading: '2026-02',
+        level: 2,
+      },
+    ]);
+  });
+});

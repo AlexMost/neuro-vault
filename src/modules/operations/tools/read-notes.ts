@@ -21,10 +21,11 @@ import {
   spanText,
   toRequestItems,
   type PathsItem,
+  type Resolved,
   type Selection,
   type Selector,
 } from '../selection.js';
-import { collapseOutline, entriesWithin } from '../outline.js';
+import { collapseOutline, entriesWithin, preambleWithin } from '../outline.js';
 import { noteStructure, type NoteStructure } from '../../../lib/obsidian/corpus/note-structure.js';
 import { frontmatterEnd, splitNoteLines } from '../../../lib/obsidian/corpus/chunker.js';
 import type { ReadNotesField, ReadNotesItemSuccess } from '../../../lib/obsidian/vault-reader.js';
@@ -140,7 +141,7 @@ export function buildReadNotesTool(
           ? []
           : await entry.reader.readNotes({
               paths: notePaths,
-              fields: fieldsFor(valid.map((s) => s.mode)),
+              fields: fieldsFor(valid),
             });
       const byPath = new Map(notePaths.map((p, i) => [p, readerItems[i]]));
       // One structure per note, however many of its items select from it.
@@ -161,11 +162,11 @@ export function buildReadNotesTool(
           throw new Error(`read_notes: the reader returned no item for ${slot.path}`);
         }
         if ('error' in item) return item;
-        // Other modes over a selection still read the whole note.
-        if (slot.selector.kind !== 'whole' && slot.mode === 'full') {
-          return projectSelection(item, structureOf(item), slot.selector);
+        // A preview still reads the whole note, whatever the item selects.
+        if (slot.selector.kind === 'whole' || slot.mode === 'preview') {
+          return project(item, slot.mode);
         }
-        return project(item, slot.mode);
+        return projectSelection(item, structureOf(item), slot.selector, slot.mode);
       });
 
       const errors = results.reduce((n, r) => n + ('error' in r ? 1 : 0), 0);
@@ -181,9 +182,16 @@ const FIELDS_BY_MODE: Record<ContentMode, readonly ReadNotesField[]> = {
   full: ['frontmatter', 'content', 'raw'],
 };
 
-/** The reader fields a call needs: every field any of its items' modes reads. */
-function fieldsFor(modes: readonly ContentMode[]): ReadNotesField[] {
-  const needed = new Set(modes.flatMap((m) => FIELDS_BY_MODE[m]));
+/**
+ * The reader fields a call needs: every field any of its items' modes reads, and `raw`
+ * for any item with a selector — resolving it needs the note's structure in every mode.
+ */
+function fieldsFor(items: readonly { mode: ContentMode; selector: Selector }[]): ReadNotesField[] {
+  const needed = new Set<ReadNotesField>();
+  for (const { mode, selector } of items) {
+    for (const f of FIELDS_BY_MODE[mode]) needed.add(f);
+    if (selector.kind !== 'whole') needed.add('raw');
+  }
   return (['frontmatter', 'content', 'raw'] as const).filter((f) => needed.has(f));
 }
 
@@ -210,41 +218,57 @@ function project(item: ReadNotesItemSuccess, mode: ContentMode): ReadNotesResult
 }
 
 /**
- * One selection of a note read in `full`: its verbatim text and its span, or a miss
- * item carrying the retry data for its code. A miss never carries `frontmatter`.
+ * One selection of a note, rendered from its resolved span in the item's mode: `full`
+ * returns the span's verbatim text, `outline` the heading blocks inside it, and
+ * `frontmatter` only the frontmatter. `full` and `outline` echo the span as `lines`,
+ * plus `heading` and `level` for a heading selection. The selector is resolved in every
+ * mode, so a miss is the same item in each.
  */
 function projectSelection(
   item: ReadNotesItemSuccess,
   structure: NoteStructure,
   selector: Selection,
+  mode: Exclude<ContentMode, 'preview'>,
 ): ReadNotesResultItem {
   const r = resolveSelector(structure, selector, item.path);
-  if (!r.ok) {
-    const miss: ReadNotesResultItemError = {
-      path: item.path,
-      error: { code: r.code, message: r.message },
-    };
-    if (r.code === 'AMBIGUOUS_MATCH') {
-      miss.matches = r.matches;
-      return miss;
-    }
-    if (structure.body !== null) miss.lines = [structure.body[0], structure.body[1]];
-    if (r.code === 'HEADING_NOT_FOUND') {
-      const { outline, collapsed } = collapseOutline(entriesWithin(structure, structure.body));
-      miss.outline = outline;
-      if (collapsed) miss.collapsed = true;
-    }
-    return miss;
-  }
-  const out: ReadNotesResultItemSuccess = {
-    path: item.path,
-    frontmatter: item.frontmatter,
-    content: spanText(structure, r.span),
-    lines: r.span,
-  };
+  if (!r.ok) return selectionMiss(item.path, structure, r);
+  const out: ReadNotesResultItemSuccess = { path: item.path, frontmatter: item.frontmatter };
+  if (mode === 'frontmatter') return out;
+  if (mode === 'full') out.content = spanText(structure, r.span);
+  out.lines = r.span;
   if (r.heading !== undefined) out.heading = r.heading;
   if (r.level !== undefined) out.level = r.level;
+  if (mode === 'outline') {
+    const preamble = preambleWithin(structure, r.span);
+    if (preamble !== null) out.preamble = preamble;
+    const { outline, collapsed } = collapseOutline(entriesWithin(structure, r.span));
+    out.outline = outline;
+    if (collapsed) out.collapsed = true;
+  }
   return out;
+}
+
+/**
+ * A selector miss as an error item carrying the retry data for its code. It never
+ * carries `frontmatter`, and its shape does not depend on the item's mode.
+ */
+function selectionMiss(
+  path: string,
+  structure: NoteStructure,
+  r: Extract<Resolved, { ok: false }>,
+): ReadNotesResultItemError {
+  const miss: ReadNotesResultItemError = { path, error: { code: r.code, message: r.message } };
+  if (r.code === 'AMBIGUOUS_MATCH') {
+    miss.matches = r.matches;
+    return miss;
+  }
+  if (structure.body !== null) miss.lines = [structure.body[0], structure.body[1]];
+  if (r.code === 'HEADING_NOT_FOUND') {
+    const { outline, collapsed } = collapseOutline(entriesWithin(structure, structure.body));
+    miss.outline = outline;
+    if (collapsed) miss.collapsed = true;
+  }
+  return miss;
 }
 
 /** The whole file the reader returned; the handler always requests it for a body mode. */

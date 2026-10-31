@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { collapseOutline, OUTLINE_ENTRY_CAP } from '../../src/modules/operations/outline.js';
+import { noteStructure } from '../../src/lib/obsidian/corpus/note-structure.js';
+import {
+  collapseOutline,
+  entriesWithin,
+  OUTLINE_ENTRY_CAP,
+  preambleWithin,
+} from '../../src/modules/operations/outline.js';
 import type { OutlineEntry } from '../../src/modules/operations/types.js';
 
 /** A `#` title over `groups` `##` blocks, each holding `perGroup` `###` blocks. */
@@ -138,5 +144,55 @@ describe('collapseOutline', () => {
 
   it('returns an empty outline for no entries', () => {
     expect(collapseOutline([])).toStrictEqual({ outline: [], collapsed: false });
+  });
+});
+
+describe('entriesWithin', () => {
+  // Lines: 1 `# Top`, 2-19 filler, 20 `## B`, 21-24 filler, 25 `### B1`, 26-45 filler,
+  // 46 `## C`, 47-50 filler.
+  const lines = ['# Top', ...Array.from({ length: 18 }, (_, i) => `t${i + 2}`), '## B'];
+  lines.push(...Array.from({ length: 4 }, (_, i) => `b${i + 21}`), '### B1');
+  lines.push(...Array.from({ length: 20 }, (_, i) => `b${i + 26}`), '## C');
+  lines.push(...Array.from({ length: 4 }, (_, i) => `c${i + 47}`));
+  const structure = noteStructure(lines.join('\n') + '\n');
+
+  it('lists the heading blocks whose heading line lies in the span, with their true spans', () => {
+    expect(entriesWithin(structure, [12, 30])).toStrictEqual([
+      { heading: 'B', level: 2, lines: [20, 45] },
+      { heading: 'B1', level: 3, lines: [25, 45] },
+    ]);
+  });
+
+  it('includes a heading on either edge of the span', () => {
+    expect(entriesWithin(structure, [20, 25]).map((e) => e.heading)).toStrictEqual(['B', 'B1']);
+  });
+
+  it('lists nothing for a span holding no heading line, or for a note with no body', () => {
+    expect(entriesWithin(structure, [26, 45])).toStrictEqual([]);
+    expect(entriesWithin(structure, null)).toStrictEqual([]);
+  });
+});
+
+describe('preambleWithin', () => {
+  // Lines: 1-3 frontmatter, 4 `intro one`, 5 `intro two`, 6 blank, 7 `# Top`, 8 `x`.
+  const structure = noteStructure('---\na: 1\n---\nintro one\nintro two\n\n# Top\nx\n');
+
+  it('is the whole preamble over the whole body', () => {
+    expect(preambleWithin(structure, structure.body)).toStrictEqual([4, 6]);
+  });
+
+  it('is the preamble clipped to the span', () => {
+    expect(preambleWithin(structure, [5, 8])).toStrictEqual([5, 6]);
+    expect(preambleWithin(structure, [4, 4])).toStrictEqual([4, 4]);
+  });
+
+  it('is null when the clipped preamble is blank, or the span misses it', () => {
+    expect(preambleWithin(structure, [6, 8])).toBeNull();
+    expect(preambleWithin(structure, [7, 8])).toBeNull();
+    expect(preambleWithin(structure, null)).toBeNull();
+  });
+
+  it('is null for a note with no preamble', () => {
+    expect(preambleWithin(noteStructure('# Top\nx\n'), [1, 2])).toBeNull();
   });
 });
