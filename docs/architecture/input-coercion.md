@@ -27,14 +27,20 @@ The companion goal is **error legibility**: when coercion cannot succeed, the re
 
 The layer walks the **top-level** input object (`z.object({...})`) and, for each declared field present in the input, applies one of the rules below. `z.optional`, `z.nullable`, `z.default` are unwrapped first, then re-applied around the coerced field in their original order, each with its own `.describe()`/`.meta()` metadata — the registry advertises the wrapped schema, so a field description must survive the rebuild. One loss is zod's, not ours: an input-mode JSON Schema omits `default` for any transforming schema, so a `z.default` value is honoured at parse time but not advertised.
 
-| Schema leaf                           | Coerced from         | Coerced to                                          | If the conversion fails                                                 |
-| ------------------------------------- | -------------------- | --------------------------------------------------- | ----------------------------------------------------------------------- |
-| `z.number()`                          | non-empty string     | `Number(value)` if finite                           | `CoerceError` → `INVALID_PARAMS` with the offending value               |
-| `z.boolean()`                         | `"true"` / `"false"` | `true` / `false`                                    | `CoerceError` if the string is anything else                            |
-| `z.object({...})` or `z.record(...)`  | string               | `JSON.parse(value)` if the result is a plain object | `CoerceError` with parse failure or shape mismatch                      |
-| `z.union([..., z.array(z.string())])` | string               | `JSON.parse(value)` if the result is `string[]`     | left unchanged — the union's other branches (e.g. `string`) still match |
+| Schema leaf                          | Coerced from         | Coerced to                                                                                                                                  | If the conversion fails                                                 |
+| ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `z.number()`                         | non-empty string     | `Number(value)` if finite                                                                                                                   | `CoerceError` → `INVALID_PARAMS` with the offending value               |
+| `z.boolean()`                        | `"true"` / `"false"` | `true` / `false`                                                                                                                            | `CoerceError` if the string is anything else                            |
+| `z.object({...})` or `z.record(...)` | string               | `JSON.parse(value)` if the result is a plain object                                                                                         | `CoerceError` with parse failure or shape mismatch                      |
+| `z.object({...})`                    | plain object         | the object, each declared key coerced against its own schema; undeclared keys kept as sent                                                  | per key, as for that key's schema                                       |
+| `z.array(...)`                       | string               | `JSON.parse(value)` if the result is an array, then element-wise                                                                            | `CoerceError` with parse failure or shape mismatch                      |
+| `z.array(...)` / `z.tuple([...])`    | array                | the array, each element coerced against the element schema (a tuple: its item schema by position, then its rest schema; extras kept as sent) | per element, as for its schema                                          |
+| `z.union([..., z.array(X)])`         | string               | `JSON.parse(value)` if the result is an array whose every element is a string or a plain object `X` can hold, then element-wise             | left unchanged — the union's other branches (e.g. `string`) still match |
+| `z.union([...])`                     | non-string           | unchanged if some branch already accepts it; else coerced against the first branch it fits structurally (an array → an array or tuple branch, a plain object → an object or record branch) | as for that branch                                                      |
 
-The union rule is the addition that covers the `read_notes.paths: string \| string[]` pattern: when at least one branch of the union accepts an array of strings, a stringified JSON array of strings is taken to be the array branch. JSON failure does not throw here — the string branch of the union may still legitimately accept it.
+The union-string rule covers the `read_notes.paths` pattern — a path string, or an array of items where an item is a path string or a `{ path, heading?, lines? }` object: a stringified JSON array of strings, objects, or a mix of both is taken to be the array branch, and its elements are coerced in turn, so `'["a.md",{"path":"b.md","lines":["3","9"]}]'` arrives as `['a.md', { path: 'b.md', lines: [3, 9] }]`. JSON failure does not throw here — the string branch of the union may still legitimately accept it — and neither does an array holding any other kind of element (`'[1,2]'` stays a string).
+
+The rules recurse: an array, tuple, object, or union value is coerced through its elements, items, keys, or branch, so a numeric string inside a `lines` pair of an item of `paths` becomes a number. Coercion never changes a value's shape otherwise: it never adds, drops, or reorders an element or a key, so a short `lines` pair, an extra item key, or an inverted range still reaches zod as sent and fails there.
 
 ## Predicting realistic stringification
 
@@ -42,21 +48,21 @@ When designing a new tool, assume any field may arrive as a string from a client
 
 - Numeric and boolean fields will sometimes arrive quoted. The layer covers this.
 - Object/record fields will sometimes arrive as a JSON-string. The layer covers this.
-- An array-of-strings field that is part of a `string | string[]` union (for "single or many" ergonomics) will sometimes arrive as a JSON-string. The layer covers this.
-- An array of objects (e.g. a list of items) is **not** covered; if a future tool needs that, the layer must be extended deliberately. Keep the array-of-strings rule narrow until a real second case arrives.
+- An array field, or the array branch of a `string | X[]` union (for "single or many" ergonomics), will sometimes arrive as a JSON-string, and its elements may themselves be strings, objects, or a mix (`read_notes.paths` items). The layer covers this, and coerces the elements in turn.
+- Numbers and booleans nested in an object or a tuple (a `lines: [start, end]` pair) will sometimes arrive quoted. The layer covers this.
 
-If a tool genuinely needs to accept a stringified-JSON-array of objects, prefer adding a new explicit rule here over working around it inside the tool — coercion belongs at the boundary, not inside the handler.
+If a tool needs another shape coerced, prefer adding a new explicit rule here over working around it inside the tool — coercion belongs at the boundary, not inside the handler.
 
 ## Out of scope (by design)
 
-- **Recursion into parsed structures.** Once a JSON-string parses to an object, its inner fields are not coerced. The layer is "lenient at the boundary, strict thereafter."
-- **Ambiguous unions.** When a string is itself a valid value for some branch (e.g. `set_property.value: string | number | boolean`), the raw string wins. The layer never tries to guess which branch the agent meant.
+- **Recursion into open structures.** A `z.record(...)` value's entries are not coerced, whether it arrived as an object or a JSON-string: an open schema has no target shape, so `filter: '{"limit":"5"}'` keeps `"5"`. Only declared shapes — object keys, array elements, tuple items, union branches — are recursed into.
+- **Ambiguous unions.** When a string is itself a valid value for some branch (e.g. `set_property.value: string | number | boolean`), the raw string wins; the one exception is the union-string rule above, where a JSON array is taken to be the array branch. A non-string value that some branch already accepts is likewise left alone (`['1', '2']` for `number[] | string[]` stays strings). The layer never tries to guess which branch the agent meant.
 - **Reverse coercion.** `number → string` and similar are not performed. Coercion is one-directional — toward the strict declared type.
 - **Per-tool customization.** The wrapper has no escape hatch for tool-specific rules. If a rule is needed, it goes here so every tool inherits it.
 
 ## Error path
 
-When coercion is intended but fails, the layer raises `CoerceError(fieldName, bareMessage)`. The wrapper catches this inside `z.preprocess`, calls `ctx.addIssue({ code: 'custom', message: bareMessage })`, and returns `z.NEVER` to short-circuit the inner schema. `tool-registry.ts` then formats every issue as `<path>: <message>` and produces:
+When coercion is intended but fails, the layer raises `CoerceError(fieldName, bareMessage, path)`, where `path` is the value's place below the field (`[1, 'lines', 0]`, empty for the field itself). The wrapper catches this inside `z.preprocess`, calls `ctx.addIssue({ code: 'custom', message: bareMessage, path })`, and returns `z.NEVER` to short-circuit the inner schema — so a nested failure is reported at `paths.1.lines.0`, the way zod reports its own nested issues. `tool-registry.ts` then formats every issue as `<path>: <message>` and produces:
 
 ```ts
 ToolHandlerError('INVALID_PARAMS', message, { details: { issues: [{ path, message, expected? }] } })

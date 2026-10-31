@@ -18,9 +18,36 @@ import { noteStructure } from '../../../lib/obsidian/corpus/note-structure.js';
 import { frontmatterEnd, splitNoteLines } from '../../../lib/obsidian/corpus/chunker.js';
 import type { ReadNotesField, ReadNotesItemSuccess } from '../../../lib/obsidian/vault-reader.js';
 
+export const EMPTY_HEADING_MESSAGE =
+  'heading must name a heading block; read a block without a heading with { path, lines: [start, end] }';
+
+/** One `paths` item: a bare path, or `{ path }` with at most one selector of its note. */
+const pathItem = z.union([
+  z.string().min(1),
+  z
+    .object({
+      path: z.string().min(1),
+      heading: z
+        .string()
+        .refine((s) => s.trim() !== '', { message: EMPTY_HEADING_MESSAGE })
+        .optional(),
+      lines: z
+        .tuple([z.number().int().min(1), z.number().int().min(1)])
+        .refine(([a, b]) => a <= b, { message: 'lines: start must not exceed end' })
+        .optional(),
+    })
+    .strict(),
+]);
+
+interface PathObjectItem {
+  path: string;
+  heading?: string;
+  lines?: [number, number];
+}
+
 interface Input {
   vault?: string;
-  paths: string | string[];
+  paths: string | Array<string | PathObjectItem>;
   content?: ContentMode;
 }
 
@@ -58,14 +85,16 @@ export function buildReadNotesTool(
       'One missing or unreadable path does not fail the others — per-item errors come back inline as `error: { code, message }` (`NOT_FOUND` when the note does not exist).',
     ].join('\n'),
     inputShape: {
-      paths: z.union([z.string().min(1), z.array(z.string()).min(1).max(50)]),
+      paths: z.union([z.string().min(1), z.array(pathItem).min(1).max(50)]),
       content: z.enum(['full', 'outline', 'preview', 'frontmatter']).optional(),
     },
     runForEntry: async (entry, input) => {
       // The registration gate has already enforced the schema: `paths` is a
-      // non-empty string or a 1-50 string array, `content` is one of the four
-      // modes. All that is left is widening the single-string form.
-      const paths = typeof input.paths === 'string' ? [input.paths] : input.paths;
+      // non-empty string or a 1-50 item array, `content` is one of the four
+      // modes. All that is left is widening the single-string form. Until the
+      // selectors resolve, an object item reads its whole note.
+      const items = typeof input.paths === 'string' ? [input.paths] : input.paths;
+      const paths = items.map((p) => (typeof p === 'string' ? p : p.path));
       const content = input.content;
 
       const seen = new Set<string>();

@@ -515,3 +515,70 @@ describe('operations.readNotes outline and body spans', () => {
     expect(result.errors).toBe(1);
   });
 });
+
+describe('operations.readNotes selector items at the gate', () => {
+  const FILES = { 'a.md': '# Top\none\ntwo\n', 'b.md': 'b body\n' };
+
+  it('reads a stringified mixed array as two items', async () => {
+    const reader = readerOverFiles(FILES);
+
+    const result = await callTool<ReadNotesOut>(buildReg(reader), {
+      paths: '["a.md",{"path":"b.md","lines":[3,9]}]',
+    });
+
+    expect(result.count).toBe(2);
+    expect(result.errors).toBe(0);
+    expect(result.results.map((r) => r.path)).toStrictEqual(['a.md', 'b.md']);
+  });
+
+  it("accepts numeric strings in a lines pair: lines: ['10', '20']", async () => {
+    const reader = readerOverFiles(FILES);
+
+    const result = await callTool<ReadNotesOut>(buildReg(reader), {
+      paths: [{ path: 'a.md', lines: ['10', '20'] }],
+    });
+
+    expect(result.count).toBe(1);
+    expect(result.results[0].path).toBe('a.md');
+  });
+
+  it.each([[''], ['  ']])(
+    'rejects heading: %j with INVALID_PARAMS naming { path, lines }',
+    async (heading) => {
+      const err = await expectToolError(buildReg(), { paths: [{ path: 'a.md', heading }] });
+
+      expect(err.code).toBe('INVALID_PARAMS');
+      expect(err.message).toContain('{ path, lines');
+    },
+  );
+
+  it.each([
+    ['inverted', [20, 10]],
+    ['one number', [10]],
+    ['three numbers', [10, 20, 30]],
+    ['a fraction', [1.5, 3]],
+    ['a zero start', [0, 3]],
+  ])('rejects a lines value that is %s with INVALID_PARAMS', async (_label, lines) => {
+    const err = await expectToolError(buildReg(), { paths: [{ path: 'a.md', lines }] });
+
+    expect(err.code).toBe('INVALID_PARAMS');
+  });
+
+  it('rejects an unrecognized key on an item with INVALID_PARAMS', async () => {
+    const err = await expectToolError(buildReg(), {
+      paths: [{ path: 'a.md', content: 'full' }],
+    });
+
+    expect(err.code).toBe('INVALID_PARAMS');
+  });
+
+  it('accepts a one-line range [n, n]', async () => {
+    const reader = readerOverFiles(FILES);
+
+    const result = await callTool<ReadNotesOut>(buildReg(reader), {
+      paths: [{ path: 'a.md', lines: [2, 2] }],
+    });
+
+    expect(result.count).toBe(1);
+  });
+});
