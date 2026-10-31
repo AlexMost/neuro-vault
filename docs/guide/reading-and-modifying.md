@@ -182,7 +182,7 @@ Every `search_notes` body evidence row with `lines` reads back as `{ path, lines
 ```
 
 - **`{ path, heading: row.heading }`** is an equal alternative only for a semantic block with a non-empty `heading`; it reads the same span.
-- **A `---frontmatter---` block** is the frontmatter, which lies outside the body: its `lines` are `LINES_OUT_OF_RANGE`. Read it with `content: 'frontmatter'` on its path.
+- **A `---frontmatter---` block** is the frontmatter, which lies outside the body: its `lines` are `LINES_OUT_OF_RANGE`. Read it as `read_notes({ paths: [path], content: 'frontmatter' })`.
 - **`heading: ""`** on a semantic block marks a paragraph inside a heading block, or the preamble — it does not name the heading block around it. Read it with `lines`; passing `""` as `heading` fails the whole call.
 - **A lexical `heading`** is the text of the nearest heading before the match — a label. Nothing guarantees it names a heading block: it may be a setext heading, a heading inside a list, or one of several siblings with the same text, and then a bare `Notes` matches the first of `Notes` / `Notes[2]` exactly, with no error.
 - **Check the echo.** A heading read echoes its `lines`. If the hit's `lines` fall outside them, the name picked another block: read the outline and pick by `lines`.

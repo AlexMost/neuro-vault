@@ -129,7 +129,7 @@ Evidence `lines` — `blocks[].lines` and `lexical[].lines` — is `[start, end]
 - **Read any body evidence row with `lines` as `{ path, lines: row.lines }`** — the one hand-off that works for semantic and lexical evidence alike: `read_notes({ paths: [{ path, lines }] })`.
 - **`blocks[].heading`** is a heading name. When it is non-empty the block is a whole heading block, and `{ path, heading: row.heading }` reads the same span as `lines`.
 - **`heading: ""`** marks a paragraph inside a heading block, or the preamble — it does not name the heading block around it. Read it with `lines`; never pass `""` as `heading`.
-- **`heading: "---frontmatter---"`** marks the frontmatter block, which lies outside the body: its `lines` are a `LINES_OUT_OF_RANGE` miss. Read it with `content: 'frontmatter'` on its path.
+- **`heading: "---frontmatter---"`** marks the frontmatter block, which lies outside the body: its `lines` are a `LINES_OUT_OF_RANGE` miss. Read it as `read_notes({ paths: [path], content: 'frontmatter' })`.
 - **`lexical[].heading`** is a label: the text of the nearest heading of any kind, as rendered (markup removed), with no `[n]` suffix. It often works as `{ path, heading }`, but it may name a setext heading or one inside a list, or match the first of several siblings with the same text. Prefer `lines`.
 - To read the whole heading block around a hit, read the note's outline and take the deepest entry whose `lines` contain the hit's.
 
