@@ -75,7 +75,8 @@ call sites are one task.
 - [ ] 3.6 Round-trip tests: every semantic block of a note with frontmatter, a preamble,
       own-paragraph sub-blocks and a heading block reads back exactly through `{ path, lines }`;
       the non-empty-`heading` block reads the same through `{ path, heading }`; a lexical body
-      match's `lines` returns its unit.
+      match's `lines` returns its unit; an unclosed-fence lexical unit clips, not misses; the
+      `---frontmatter---` block hands off as `content: 'frontmatter'` (D11).
 - [ ] 3.7 Wording: the description sections PATHS, MISSES and FROM A SEARCH HIT, and the two
       `search_notes` RESPONSE SHAPE lines. Phrase tests: `content` as one call-level value; the
       three miss codes; the `{ path, lines }` hand-off; "file-relative", "1-based" and "inclusive"
