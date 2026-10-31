@@ -16,59 +16,173 @@ Most tools on this page accept `name` (wikilink-style) **or** `path` (vault-rela
 
 ### `read_notes`
 
-Read one or more notes directly from disk. Returns per-item results in input order; failed paths carry an error rather than aborting the whole call. Does not require Obsidian to be running.
+Read one or more notes directly from disk — whole, or one heading block or line range of each. Returns per-item results in input order; a failed item carries an error rather than aborting the whole call. Does not require Obsidian to be running.
 
 ```typescript
 read_notes({
-  paths: string | string[],                        // single path, or 1–50 vault-relative paths
-  content?: 'full' | 'preview' | 'frontmatter',    // optional; default derived from path count
+  paths: Item | Item[],                                       // 1–50 items
+  content?: 'full' | 'preview' | 'outline' | 'frontmatter',   // optional; default derived per item
 })
+
+type Item =
+  | string                                    // the whole note
+  | { path: string }                          // same as the string
+  | { path: string; heading: string }         // one heading block, by heading name
+  | { path: string; lines: [number, number] } // one line range
 ```
 
-`paths` accepts either a single path string (single-note read) or an array of 1–50 paths (batch read). The result shape is identical in both cases. Duplicates are de-duplicated; results are returned in input order.
+An item names the note and, optionally, a **selection**: the part of the note to read. A bare path selects the whole body. An item takes at most one selector — `heading` and `lines` together fail the whole call with `INVALID_ARGUMENT`. To read several parts of one note, repeat the path with a different selector. Exact duplicates (same path, same selector) are de-duplicated; results keep input order. The 50-item cap counts items, not distinct notes.
 
-**`content` modes — frontmatter is always returned regardless of mode:**
+#### Line coordinates
 
-| Mode          | Returns                                                                                                               |
-| ------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `full`        | `{ path, frontmatter, content }` — complete body                                                                      |
-| `preview`     | `{ path, frontmatter, content, truncated }` — bounded (~500-char) body slice; `truncated: true` when the body was cut |
-| `frontmatter` | `{ path, frontmatter }` — no body                                                                                     |
+Every `lines` value — the `lines` selector, every `lines` in a result, and the evidence `lines` of [`search_notes`](./finding-notes.md#output-shape) — is `[start, end]` in **file-relative, 1-based, inclusive** line numbers. Frontmatter lines are counted, so a note whose frontmatter occupies lines 1–4 has a body starting on line 5. A search hit's `lines` reads back unchanged.
 
-**Default when `content` is omitted** is derived from the number of distinct requested paths: exactly one path → `full`; two or more paths → `preview`. An explicit `content` always overrides the count-based default.
+Returned text is verbatim (no line numbers inside it), so it can be pasted into [`edit_note`](#edit_note) `replace`. Each item that returns body coordinates echoes its span in `lines` instead.
 
-Re-read a previewed note with `content: 'full'` before citing or editing it.
+A `lines` selector is clipped to the body at both ends: a range that starts inside the frontmatter begins at the first body line, and one that runs past the end stops at the last line. The echoed `lines` shows the span actually returned. A range that shares no line with the body is a miss (`LINES_OUT_OF_RANGE`, below).
 
-Returns `{ results, count, errors }` where each item in `results` is either a success object (shape depends on `content` mode) or `{ path, error: { code, message } }` (failure). `count === results.length` (total items, including failures); `errors` is the subset of those that failed. To get the successful-read count, subtract: `count - errors`.
+#### `content` modes
 
-**Example — read a single note (defaults to `full`):**
+`content` applies to each item's selection exactly as it applies to a whole note. The modes form a ladder; each rung shows more of the selection than the one before:
+
+| Mode          | Returns                                                                                                                              |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `frontmatter` | `{ path, frontmatter }` — no body, no coordinates                                                                                    |
+| `outline`     | `{ path, frontmatter, lines, preamble?, outline, collapsed? }` — the heading blocks of the selection, no text                        |
+| `preview`     | everything in `outline`, plus `content` (the selection's first 500 characters, verbatim) and `truncated`                            |
+| `full`        | `{ path, frontmatter, lines, content }` — the whole selection; a heading read also echoes `heading` and `level`                     |
+
+- `lines` on the item is the selection's span. For a whole note it is the body span, `[first body line, last line]`, so the frontmatter ends on `lines[0] − 1`.
+- `preamble: [start, end]` is the note's text before its first heading, intersected with the selection, and is present only when that text is non-blank. A heading read never has one.
+- `truncated: true` means the preview `content` stops before the selection's end.
+
+**Default when `content` is omitted:** a selector item returns its selection in `full`; a bare path returns `full` when the call has one item and `preview` otherwise (counting every item, selector items included). An explicit `content` applies to every item in the call.
+
+#### The outline
 
 ```json
 {
-  "paths": "Projects/neuro-vault.md"
+  "path": "logs/2026.md",
+  "frontmatter": { "type": "resource" },
+  "lines": [4, 1225],
+  "outline": [
+    { "heading": "Work log", "level": 1, "lines": [5, 1225] },
+    { "heading": "2026-01", "level": 2, "lines": [7, 111], "hidden": 9 },
+    { "heading": "2026-02", "level": 2, "lines": [112, 212], "hidden": 8 }
+  ],
+  "collapsed": true
 }
 ```
 
-**Example — batch-read multiple notes (defaults to `preview` to keep the response bounded):**
+- **Entries are flat, in source order.** `level` is the `#` count (1–6); nesting shows in `level` and in nested `lines`.
+- **An entry's `lines` is its whole heading block:** from the heading line through the line before the next heading of the same or higher level, sub-headings included. A heading read of that entry returns exactly this span.
+- **`heading` is the heading name** — the heading's text as written, with `[n]` on a repeat among siblings (`Notes[2]` is the second `Notes` under the same parent). Pass it unchanged as `{ path, heading }`. It is the same string semantic `search_notes` `blocks[].heading` carries.
+- **Own text** — a heading's lines before its first sub-heading — runs from the entry's `lines[0]` to the next entry's `lines[0] − 1` when that next entry starts inside the entry's `lines`, and is the whole entry otherwise. In the [structured preview example](#structured-preview) below, "First 30 days" `[14, 22]` is followed by "Week 1" `[18, 22]`, so its own text is lines 14–17: read it with `{ path, lines: [14, 17] }`.
+- **Only root-level ATX headings** (`#` … `######` at the start of a line) are heading blocks. Setext headings and headings inside lists or blockquotes are not listed and cannot be read by `heading`.
+- **A note without headings** returns `outline: []` and a `preamble` covering the body.
+
+**Collapse.** An outline lists at most 100 entries. Past that, the deepest nesting level is dropped until the outline fits, and the item carries `collapsed: true`. An entry whose sub-headings were dropped carries `hidden: n` — **n sub-headings under it are not listed**. The shallowest level is never dropped. To list what an entry hides, read its outline: `{ paths: [{ path, heading: "2026-01" }], content: "outline" }`. The cap and the collapse count within the selection, so this lists the hidden sub-headings.
+
+#### Structured preview
+
+A preview item is the outline plus a verbatim prefix:
 
 ```json
 {
-  "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md", "Archive/old-idea.md"]
+  "path": "projects/onboarding.md",
+  "frontmatter": { "type": "project" },
+  "lines": [5, 41],
+  "content": "**Owner:** … | Field | Value | … ## First 30 days …",
+  "truncated": true,
+  "preamble": [5, 13],
+  "outline": [
+    { "heading": "First 30 days", "level": 2, "lines": [14, 22] },
+    { "heading": "Week 1", "level": 3, "lines": [18, 22] },
+    { "heading": "Decisions", "level": 2, "lines": [23, 27] }
+  ]
 }
 ```
 
-Each item comes back with frontmatter and a preview body. When `truncated: true`, re-read the individual note with `content: 'full'` before citing or editing it.
+The prefix is raw text, so it can show headings that a collapsed outline does not list — the outline is not wrong, those headings sit below its cut. To act on a preview, pick the entry and read it by `heading`; re-reading the whole note with `content: 'full'` is rarely needed.
 
-**Example — read frontmatter only across a list of paths (`content: 'frontmatter'` whenever you need metadata across several notes):**
+#### Reading a heading block
+
+`{ path, heading }` matches the heading name exactly first. Only when nothing matches exactly, it falls back to a comparison that ignores case, extra whitespace, inline markup, link brackets and leading `#` markers — accepted only if it picks exactly one heading block. The heading's level is not part of the match, and a prefix never matches. A heading read echoes the matched `heading` (as the outline prints it) and its `level` next to `lines`.
+
+#### Misses
+
+A selector that finds nothing fails **its item only**; the other items are unaffected and the item counts toward `errors`. A miss item carries `error: { code, message }` plus retry data under the names successful items use, and no `frontmatter`:
+
+| Code                 | Cause                                                                   | Retry data                                             | Retry with                          |
+| -------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------- |
+| `HEADING_NOT_FOUND`  | no heading block with that name, exactly or by the fallback             | body `lines` + the note's full `outline` (+ `collapsed`) | a `heading` from the outline        |
+| `AMBIGUOUS_MATCH`    | the name matches several heading blocks (the same name under different parents) | `matches: [{ heading, level, lines }]`                 | `{ path, lines }` of the one you want |
+| `LINES_OUT_OF_RANGE` | the range shares no line with the body                                  | body `lines`                                           | a range inside it                   |
+| `NOT_FOUND`          | the note does not exist                                                 | —                                                      | —                                   |
+
+The miss shape is the same under every `content` mode, `frontmatter` included: the selector is always resolved.
+
+Argument faults fail the **whole call** with `INVALID_ARGUMENT`: both `heading` and `lines` in one item, an empty `heading` (a block without a heading is read with `lines`), or a malformed `lines` (it must be two integers with `1 ≤ start ≤ end`; `[a, a]` reads one line).
+
+Successful items always carry parsed `frontmatter`. Before citing or editing, read the part you need in `full`.
+
+Returns `{ results, count, errors }`. `count === results.length` (total items, including failures); `errors` is the subset of those that failed. To get the successful-read count, subtract: `count - errors`.
+
+#### From a search hit to a read
+
+Every `search_notes` evidence row reads back as `{ path, lines: row.lines }` — a semantic `blocks[]` entry and a lexical match alike. Read several hits in one call, one item per hit; with `content` omitted each returns its selection in full.
 
 ```json
 {
-  "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md"],
-  "content": "frontmatter"
+  "paths": [
+    { "path": "projects/onboarding.md", "lines": [15, 16] },
+    { "path": "logs/2026.md", "lines": [188, 188] }
+  ]
 }
 ```
 
-Returns the parsed YAML frontmatter for each note without loading the note body — useful when you need metadata (status, tags, due dates) across many notes at once.
+- **`{ path, heading: row.heading }`** is an equal alternative only for a semantic block with a non-empty `heading`; it reads the same span.
+- **`heading: ""`** on a semantic block marks a paragraph or preamble block, not a heading block. Read it with `lines`; passing `""` as `heading` fails the whole call.
+- **A lexical `heading`** is the text of the nearest heading before the match — a label. It may be tried as an address, but nothing guarantees it names a heading block (it may be a setext heading, a heading inside a list, or one of several siblings with the same text).
+- **Check the echo.** A heading read echoes its `lines`. If the hit's `lines` fall outside them, the name picked another block (a sibling duplicate): read the outline and pick by `lines`.
+- **The heading block around a hit:** read the outline and take the deepest entry whose `lines` contain the hit's `lines`, then read it by `heading`.
+
+#### Examples
+
+Read a single note (defaults to `full`):
+
+```json
+{ "paths": "Projects/neuro-vault.md" }
+```
+
+Batch-read several notes (defaults to `preview`: frontmatter, outline and a prefix per note):
+
+```json
+{ "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md", "Archive/old-idea.md"] }
+```
+
+Outline only, before deciding what to read in a long note:
+
+```json
+{ "paths": "logs/2026.md", "content": "outline" }
+```
+
+One heading block, and the own text of another (each defaults to `full`):
+
+```json
+{
+  "paths": [
+    { "path": "projects/onboarding.md", "heading": "Decisions" },
+    { "path": "projects/onboarding.md", "lines": [14, 17] }
+  ]
+}
+```
+
+Frontmatter only across a list of paths:
+
+```json
+{ "paths": ["Projects/neuro-vault.md", "Notes/embeddings.md"], "content": "frontmatter" }
+```
 
 ### `create_note`
 
