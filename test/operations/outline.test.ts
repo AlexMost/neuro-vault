@@ -94,6 +94,38 @@ describe('collapseOutline', () => {
     expect(outline.every((e) => e.level === 1 && e.hidden === 1)).toBe(true);
   });
 
+  it('measures depth by containment, not by heading level', () => {
+    // `# Root` holds 50 x (`### X` > `#### Y`, skipping `##`) and 3 x (`## D` > `### E`), then
+    // a childless `## Short`. By containment X and D sit at depth 1, Y and E at depth 2. A depth
+    // taken from `level - 1` would put D at 1 but X and E at 2, keeping E and leaving D bare.
+    const entries: OutlineEntry[] = [];
+    let line = 2;
+    for (let i = 0; i < 50; i++, line += 2) {
+      entries.push({ heading: `X${i}`, level: 3, lines: [line, line + 1] });
+      entries.push({ heading: `Y${i}`, level: 4, lines: [line + 1, line + 1] });
+    }
+    for (let j = 0; j < 3; j++, line += 2) {
+      entries.push({ heading: `D${j}`, level: 2, lines: [line, line + 1] });
+      entries.push({ heading: `E${j}`, level: 3, lines: [line + 1, line + 1] });
+    }
+    entries.push({ heading: 'Short', level: 2, lines: [line, line] });
+    entries.unshift({ heading: 'Root', level: 1, lines: [1, line] });
+    expect(entries).toHaveLength(108);
+
+    const { outline, collapsed } = collapseOutline(entries);
+
+    expect(collapsed).toBe(true);
+    expect(outline.map((e) => e.heading)).toStrictEqual([
+      'Root',
+      ...Array.from({ length: 50 }, (_, i) => `X${i}`),
+      ...Array.from({ length: 3 }, (_, j) => `D${j}`),
+      'Short',
+    ]);
+    expect(outline[0].hidden).toBeUndefined();
+    expect(outline.slice(1, 54).every((e) => e.hidden === 1)).toBe(true);
+    expect(outline[54].hidden).toBeUndefined();
+  });
+
   it('leaves the input array and its entries untouched', () => {
     const entries = titledGroups(12, 10);
     const snapshot = structuredClone(entries);

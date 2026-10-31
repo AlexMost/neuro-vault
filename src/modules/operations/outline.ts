@@ -59,8 +59,11 @@ export function collapseOutline(entries: OutlineEntry[]): {
       keptOpen.push(copy);
       return;
     }
+    // Depth 0 is always kept and nests every deeper entry, so a dropped entry always has an owner.
     const owner = keptOpen[keptOpen.length - 1];
-    if (owner !== undefined) owner.hidden = (owner.hidden ?? 0) + 1;
+    if (owner === undefined)
+      throw new Error('collapseOutline: a dropped entry has no kept ancestor');
+    owner.hidden = (owner.hidden ?? 0) + 1;
   });
 
   return { outline, collapsed: outline.length < entries.length };
