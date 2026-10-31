@@ -434,6 +434,26 @@ describe('operations.readNotes outline and body spans', () => {
     });
   });
 
+  it("content: 'outline' on a 133-heading note collapses and carries collapsed: true", async () => {
+    const lines = ['# Title'];
+    for (let g = 0; g < 12; g++) {
+      lines.push(`## G${g}`);
+      for (let c = 0; c < 10; c++) lines.push(`### G${g}C${c}`);
+    }
+    const reader = readerOverFiles({ 'big.md': lines.join('\n') + '\n' });
+
+    const result = await callTool<ReadNotesOut>(buildReg(reader), {
+      paths: 'big.md',
+      content: 'outline',
+    });
+
+    const item = result.results[0] as { outline: { level: number; hidden?: number }[] };
+    expect(result.results[0]).toHaveProperty('collapsed', true);
+    expect(item.outline).toHaveLength(13);
+    expect(item.outline[0].hidden).toBeUndefined();
+    expect(item.outline.slice(1).every((e) => e.level === 2 && e.hidden === 10)).toBe(true);
+  });
+
   it("content: 'outline' on a frontmatter-only note has no lines, no preamble and an empty outline", async () => {
     const reader = readerOverFiles({ 'n.md': '---\na: 1\n---\n' });
 

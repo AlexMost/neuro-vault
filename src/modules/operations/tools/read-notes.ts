@@ -13,7 +13,7 @@ import type {
   ReadNotesResultItemSuccess,
 } from '../types.js';
 import { previewBody } from '../preview-body.js';
-import { entriesWithin } from '../outline.js';
+import { collapseOutline, entriesWithin } from '../outline.js';
 import { noteStructure } from '../../../lib/obsidian/corpus/note-structure.js';
 import { frontmatterEnd, splitNoteLines } from '../../../lib/obsidian/corpus/chunker.js';
 import type { ReadNotesField, ReadNotesItemSuccess } from '../../../lib/obsidian/vault-reader.js';
@@ -103,7 +103,9 @@ export function buildReadNotesTool(
           const s = noteStructure(rawOf(item));
           if (s.body !== null) out.lines = s.body;
           if (s.preamble !== null) out.preamble = s.preamble;
-          out.outline = entriesWithin(s, s.body);
+          const { outline, collapsed } = collapseOutline(entriesWithin(s, s.body));
+          out.outline = outline;
+          if (collapsed) out.collapsed = true;
         } else if (effective === 'preview') {
           const { content: c, truncated } = previewBody(item.content);
           out.content = c;
