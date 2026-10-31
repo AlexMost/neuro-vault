@@ -111,8 +111,9 @@ export function resolveSelector(
  * A heading name compared loosely: a leading `#{1,6}` and the space after it dropped,
  * wikilinks and Markdown links reduced to their display text, emphasis and code markup
  * (`**`, `__`, `*`, `_`, backticks) removed, whitespace collapsed, trimmed, and
- * case-folded. Folding is NFC, then upper case, then lower case: non-Latin names
- * compare, `ß` meets `SS`, and a final `ς` meets `σ`. Emoji and punctuation stay.
+ * case-folded. Folding is NFC, then lower, upper and lower case again: non-Latin
+ * names compare, `ß`, `ẞ` and `SS` meet, a final `ς` meets `σ`, a ligature meets its
+ * letters (`ﬁ` meets `fi`), and the dotless `ı` meets `i`. Emoji and punctuation stay.
  */
 export function normalizeHeadingName(s: string): string {
   return s
@@ -125,6 +126,7 @@ export function normalizeHeadingName(s: string): string {
     .replace(/[*_`]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
+    .toLowerCase()
     .toUpperCase()
     .toLowerCase();
 }

@@ -59,6 +59,14 @@ const NOTE = [
 const FILE = NOTE + '\n';
 const CRLF_FILE = NOTE.replace(/\n/g, '\r\n') + '\r\n';
 const FRONTMATTER_HEADING = '---frontmatter---';
+/** The fixture's frontmatter as the reader parses it. */
+const FRONTMATTER = {
+  title: 'Round trip fixture',
+  status: 'active',
+  summary:
+    'A fixture note whose frontmatter is long enough for the chunker to embed it as its own block, so a search can return the frontmatter block as evidence for this note.',
+  tags: ['fixture', 'round-trip'],
+};
 
 function read(files: Record<string, string>, args: Record<string, unknown>) {
   const reader = readerOverFiles(files);
@@ -162,13 +170,7 @@ describe('a search hit reads back through its lines', () => {
       expect(result.results).toStrictEqual([
         {
           path: 'n.md',
-          frontmatter: {
-            title: 'Round trip fixture',
-            status: 'active',
-            summary:
-              'A fixture note whose frontmatter is long enough for the chunker to embed it as its own block, so a search can return the frontmatter block as evidence for this note.',
-            tags: ['fixture', 'round-trip'],
-          },
+          frontmatter: FRONTMATTER,
         },
       ]);
     });
@@ -199,14 +201,17 @@ describe('a search hit reads back through its lines', () => {
       stat: () => Promise.resolve({ mtimeMs: 1 }),
       readFile: (abs) => Promise.resolve(byAbs.get(abs) ?? ''),
     });
-    const cases: [string, [number, number]][] = [
-      ['Preamble', [9, 9]],
-      ['verbatim', [15, 15]],
-      ['second item', [17, 17]],
-      ['nested paragraph', [26, 26]],
+    // The query, the match's lines, and the text the read returns for them. The matched unit
+    // is the whole text, except a list item's, which the source writes after its marker.
+    const cases: [string, [number, number], string][] = [
+      ['Preamble', [9, 9], 'Preamble paragraph before any heading.'],
+      ['verbatim', [15, 15], 'Keep the reader verbatim.'],
+      ['second item', [17, 17], '- second item'],
+      ['on two lines', [22, 23], 'Second own paragraph,\non two lines.'],
+      ['nested paragraph', [26, 26], 'A nested paragraph.'],
     ];
 
-    for (const [query, lines] of cases) {
+    for (const [query, lines, text] of cases) {
       const { notes } = await index.search({
         queries: [query],
         noteCap: 10,
@@ -218,10 +223,12 @@ describe('a search hit reads back through its lines', () => {
 
       const result = await read(files, { paths: [{ path: 'n.md', lines: match.lines }] });
 
-      expect(result.results[0]).toMatchObject({
-        content: expect.stringContaining(match.snippet) as string,
-        lines,
-      });
+      expect(result.results).toStrictEqual([
+        { path: 'n.md', frontmatter: FRONTMATTER, content: text, lines },
+      ]);
+      // A unit shorter than the snippet window comes back whole, so the read contains it.
+      expect(match.snippet).not.toContain('…');
+      expect(text).toContain(match.snippet);
     }
   });
 });

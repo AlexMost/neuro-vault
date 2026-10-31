@@ -1280,6 +1280,38 @@ describe('operations.readNotes content modes over a selection', () => {
       ]);
     });
 
+    it('collapses a lines selection with roots at mixed levels by depth, not by level', async () => {
+      // Lines: 1 `# Title`, then `## G{g}` at 2 + 11g, each holding ten one-line `### G{g}C{c}`.
+      // Lines 4-133 start inside G0: its `###` G0C1..G0C9 and the `##` G1..G11 are all roots.
+      const note = ['# Title', ...grouped(12, 10)].join('\n') + '\n';
+
+      const result = await read([{ path: 'big.md', lines: [4, 133] }], 'outline', {
+        'big.md': note,
+      });
+
+      expect(result.results).toStrictEqual([
+        {
+          path: 'big.md',
+          frontmatter: null,
+          lines: [4, 133],
+          outline: [
+            ...Array.from({ length: 9 }, (_, i) => ({
+              heading: `G0C${i + 1}`,
+              level: 3,
+              lines: [4 + i, 4 + i],
+            })),
+            ...Array.from({ length: 11 }, (_, i) => ({
+              heading: `G${i + 1}`,
+              level: 2,
+              lines: [13 + i * 11, 23 + i * 11],
+              hidden: 10,
+            })),
+          ],
+          collapsed: true,
+        },
+      ]);
+    });
+
     it('a lines selection over the preamble carries the preamble clipped to it', async () => {
       const result = await read([{ path: 'log.md', lines: [5, 9] }], 'outline');
 

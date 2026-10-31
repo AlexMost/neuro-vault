@@ -174,7 +174,7 @@ export function buildReadNotesTool(
         if ('error' in item) return item;
         // A preview still reads the whole note, whatever the item selects.
         if (slot.selector.kind === 'whole' || slot.mode === 'preview') {
-          return project(item, slot.mode);
+          return project(item, slot.mode, () => structureOf(item));
         }
         return projectSelection(item, structureOf(item), slot.selector, slot.mode);
       });
@@ -206,19 +206,20 @@ function fieldsFor(items: readonly { mode: ContentMode; selector: Selector }[]):
 }
 
 /** One note read in one mode. */
-function project(item: ReadNotesItemSuccess, mode: ContentMode): ReadNotesResultItemSuccess {
+function project(
+  item: ReadNotesItemSuccess,
+  mode: ContentMode,
+  structure: () => NoteStructure,
+): ReadNotesResultItemSuccess {
   const out: ReadNotesResultItemSuccess = { path: item.path, frontmatter: item.frontmatter };
   if (mode === 'full') {
     out.content = item.content;
     const span = fullSpan(item);
     if (span !== null) out.lines = span;
   } else if (mode === 'outline') {
-    const s = noteStructure(rawOf(item));
-    if (s.body !== null) out.lines = s.body;
-    if (s.preamble !== null) out.preamble = s.preamble;
-    const { outline, collapsed } = collapseOutline(entriesWithin(s, s.body));
-    out.outline = outline;
-    if (collapsed) out.collapsed = true;
+    const s = structure();
+    if (s.body !== null) out.lines = [s.body[0], s.body[1]];
+    addOutlineFields(out, s, s.body);
   } else if (mode === 'preview') {
     const { content: c, truncated } = previewBody(item.content);
     out.content = c;
@@ -248,14 +249,25 @@ function projectSelection(
   out.lines = r.span;
   if (r.heading !== undefined) out.heading = r.heading;
   if (r.level !== undefined) out.level = r.level;
-  if (mode === 'outline') {
-    const preamble = preambleWithin(structure, r.span);
-    if (preamble !== null) out.preamble = preamble;
-    const { outline, collapsed } = collapseOutline(entriesWithin(structure, r.span));
-    out.outline = outline;
-    if (collapsed) out.collapsed = true;
-  }
+  if (mode === 'outline') addOutlineFields(out, structure, r.span);
   return out;
+}
+
+/**
+ * The outline fields of `span` — the whole body for a bare path, a selection's span
+ * otherwise: `preamble` when its part inside the span is non-blank, the heading blocks
+ * whose heading line lies in the span, and `collapsed` when they were collapsed.
+ */
+function addOutlineFields(
+  out: ReadNotesResultItemSuccess,
+  structure: NoteStructure,
+  span: [number, number] | null,
+): void {
+  const preamble = preambleWithin(structure, span);
+  if (preamble !== null) out.preamble = preamble;
+  const { outline, collapsed } = collapseOutline(entriesWithin(structure, span));
+  out.outline = outline;
+  if (collapsed) out.collapsed = true;
 }
 
 /**

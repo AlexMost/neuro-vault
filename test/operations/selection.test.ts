@@ -114,6 +114,8 @@ describe('normalizeHeadingName', () => {
 
   it.each([
     ['straße', 'STRASSE'],
+    ['STRAẞE', 'straße'],
+    ['ﬁnal', 'FINAL'],
     ['οδοσ', 'ΟΔΟΣ'],
     ['Cafe\u0301 notes', 'Caf\u00e9 notes'],
   ])('%j and %j compare equal (full case folding, NFC)', (a, b) => {
