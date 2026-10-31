@@ -87,7 +87,7 @@ Each match comes back with **its own provenance and evidence** — not just a pa
 }
 ```
 
-`found_in` names every leg that surfaced the note — here both of them, which is the strongest relevance signal the server can give you. `blocks[]` points at the specific section and line range that matched, so the assistant can pull twenty lines instead of the whole note: that is where the low-token part of "low-token retrieval" actually comes from.
+`found_in` names every leg that surfaced the note — here both of them, which is the strongest relevance signal the server can give you. `blocks[]` points at the specific heading block and line range that matched, and `read_notes` reads those lines straight back (`{ path, lines }`), so the assistant can pull twenty lines instead of the whole note: that is where the low-token part of "low-token retrieval" actually comes from.
 
 **Fusion is the point.** A note found by two legs is lifted in the merged order automatically (reciprocal rank fusion) and still appears exactly once — there is no caller-side merging to write, and no way to double-count a note that both legs liked.
 

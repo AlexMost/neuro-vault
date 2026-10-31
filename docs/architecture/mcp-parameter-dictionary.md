@@ -9,7 +9,9 @@ One concept = one parameter name across every tool the server exposes. New tools
 | Concept                                              | Param                 | Used by                                                                            |
 | ----------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------- |
 | Vault-relative POSIX path                            | `path`                | `create_note`, `edit_note`, `set_property`, `remove_property`, `get_similar_notes` |
-| Vault-relative POSIX path list                       | `paths`               | `read_notes`                                                                       |
+| Vault-relative POSIX path list (an item may name a selection) | `paths`      | `read_notes`                                                                       |
+| Heading name (one heading block of a note)           | `heading`             | `read_notes` (a `paths`-item field)                                                |
+| Line span `[start, end]`: file-relative, 1-based, inclusive | `lines`        | `read_notes` (a `paths`-item field), matching `search_notes` evidence `lines`      |
 | Vault-relative POSIX path subtree (or list)          | `path_prefix`         | `query_notes`, `search_notes` (inside `filter`)                                    |
 | Subtrees to exclude (string or list)                 | `exclude_path_prefix` | `query_notes`, `search_notes` (inside `filter`)                                    |
 | Wikilink-style note identifier                       | `name`                | `create_note`, `edit_note`, `set_property`, `remove_property`                      |
@@ -25,6 +27,8 @@ One concept = one parameter name across every tool the server exposes. New tools
 
 `name` vs `path` (note identifier): tools that take both for the same concept require **exactly one** — both or neither produces `INVALID_ARGUMENT`. `read_notes` is paths-only (batch reads from disk); to read by wikilink, resolve to a path first via `search_notes` or another path-producing tool.
 
+`heading` vs `lines` (a `read_notes` selection): a `paths` item names **at most one** — both on one item fail the whole call with `INVALID_ARGUMENT`, the same exactly-one-of fault as `name` vs `path`; neither reads the whole note. `lines` carries the coordinates `search_notes` evidence reports, so an evidence row reads back as `{ path, lines }`. See [`note-structure.md`](./note-structure.md#selections).
+
 `.md` auto-append: when the target is an _individual note_, `.md` is appended if the final path segment has no extension (`Tasks/Foo` → `Tasks/Foo.md`). This applies to `create_note`, `edit_note`, `set_property`, `remove_property`, `get_note_links`, and `get_similar_notes`. Subtree-prefix uses (`path_prefix`, `exclude_path_prefix`) and `read_notes` paths do not auto-append.
 
 `threshold` on `search_notes` reaches the semantic leg's note scores only — never the block-evidence pass (always filtered at the active profile's internal block-evidence floor), never the expansion leg (owned by `expansion_floor` below), never the lexical leg (no similarity score to threshold). An explicit value is a hard filter: notes scoring below it are excluded with no rescue, and zero hits is an honest answer. Omitting `threshold` applies the active profile's effort default (`quick` / `deep`) and, only in that default case and only under a profile that has a `fallback`, retries once at it if nothing passes — surfaced per query as `semantic_fallback: true` in `query_stats` (array `query` only; see [`docs/guide/finding-notes.md`](../guide/finding-notes.md)). `expansion_floor` (`search_notes` only) is a separate knob for the expansion leg's seed↔note similarity scale — incomparable to the semantic leg's query↔note scale — defaulting to the active profile's `expansionFloor`; `threshold` never reaches it. All of these defaults are per-profile values (see [`retrieval-policy.md`](./retrieval-policy.md#calibration)), and the tool descriptions state the active profile's numbers. `expansion_floor` shares its note↔note similarity scale with `get_similar_notes`' `threshold` (not `search_notes`' `threshold`, which is query↔note-scaled).
@@ -33,7 +37,7 @@ One concept = one parameter name across every tool the server exposes. New tools
 
 Some parameters are intentionally _not_ in the shared dictionary because they are meaningful only on one tool and should not be generalised. The dictionary table above covers only cross-tool shared concepts.
 
-**`content` on `read_notes`** is a body-granularity mode (`'full'` / `'outline'` / `'preview'` / `'frontmatter'`) that is specific to `read_notes` and has no cross-tool meaning. It replaced the old `fields: ('frontmatter' | 'content')[]` parameter; that removal is a breaking change and was shipped as part of a major version increment. `content` does not appear in the dictionary table and must not be reused as a shared concept name for a different purpose on other tools.
+**`content` on `read_notes`** is a body-granularity mode (`'full'` / `'outline'` / `'preview'` / `'frontmatter'`) that is specific to `read_notes` and has no cross-tool meaning. It replaced the old `fields: ('frontmatter' | 'content')[]` parameter; that removal is a breaking change and was shipped as part of a major version increment. It is one value for the whole call, never a field of a `paths` item. `content` does not appear in the dictionary table and must not be reused as a shared concept name for a different purpose on other tools.
 
 ## Change log
 

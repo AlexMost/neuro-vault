@@ -56,7 +56,8 @@ The handlers depend on each explicitly.
 retaining every note's full text — the finer projection (full / outline /
 preview / frontmatter shaping) still happens in the tool handler. When
 `fields` includes `'raw'`, a successful entry also carries `raw`, the whole file
-verbatim: `read_notes` asks for it in its `full` and `outline` modes, because line coordinates
+verbatim: `read_notes` asks for it in its `full` and `outline` modes, and in every mode for
+an item that names a selection, because line coordinates
 and the heading projection ([`note-structure.md`](./note-structure.md)) count
 from the file's first line, frontmatter included. Failed entries
 carry an `error: { code, message }` with one of:
@@ -65,6 +66,10 @@ carry an `error: { code, message }` with one of:
 - `READ_FAILED` — any other fs error (`EACCES`, `EISDIR`, `EIO`, …).
 - `INVALID_ARGUMENT` — never produced by the reader; reserved for handler-side
   per-item validation (e.g. path traversal).
+
+The selection misses (`HEADING_NOT_FOUND`, `AMBIGUOUS_MATCH`, `LINES_OUT_OF_RANGE`)
+are the handler's too: it resolves a selector against the `raw` text the reader
+returned (see [`note-structure.md`](./note-structure.md#selections)).
 
 ## What it deliberately does not do
 
