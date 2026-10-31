@@ -353,7 +353,7 @@ describe('operations.readNotes outline and body spans', () => {
       content: 'outline',
     });
 
-    expect(result.results).toEqual([
+    expect(result.results).toStrictEqual([
       { path: 'n.md', frontmatter: { a: 1 }, lines: [4, 8], preamble: [4, 5], outline: ENTRIES },
     ]);
   });
@@ -366,7 +366,7 @@ describe('operations.readNotes outline and body spans', () => {
       content: 'outline',
     });
 
-    expect(result.results).toEqual([
+    expect(result.results).toStrictEqual([
       {
         path: 'n.md',
         frontmatter: { a: 1 },
@@ -381,7 +381,7 @@ describe('operations.readNotes outline and body spans', () => {
 
     const result = await callTool<ReadNotesOut>(buildReg(reader), { paths: 'n.md' });
 
-    expect(result.results).toEqual([
+    expect(result.results).toStrictEqual([
       {
         path: 'n.md',
         frontmatter: { a: 1 },
@@ -396,7 +396,7 @@ describe('operations.readNotes outline and body spans', () => {
 
     const result = await callTool<ReadNotesOut>(buildReg(reader), { paths: 'n.md' });
 
-    expect(result.results).toEqual([
+    expect(result.results).toStrictEqual([
       { path: 'n.md', frontmatter: null, content: '# Top\nx\n', lines: [1, 2] },
     ]);
   });
@@ -410,7 +410,7 @@ describe('operations.readNotes outline and body spans', () => {
 
       const result = await callTool<ReadNotesOut>(buildReg(reader), { paths: 'n.md' });
 
-      expect(result.results).toEqual([
+      expect(result.results).toStrictEqual([
         { path: 'n.md', frontmatter: null, content: MALFORMED, lines: [1, 5] },
       ]);
     });
@@ -423,7 +423,7 @@ describe('operations.readNotes outline and body spans', () => {
         content: 'outline',
       });
 
-      expect(result.results).toEqual([
+      expect(result.results).toStrictEqual([
         {
           path: 'n.md',
           frontmatter: null,
@@ -442,7 +442,36 @@ describe('operations.readNotes outline and body spans', () => {
       content: 'outline',
     });
 
-    expect(result.results).toEqual([{ path: 'n.md', frontmatter: { a: 1 }, outline: [] }]);
+    expect(result.results).toStrictEqual([{ path: 'n.md', frontmatter: { a: 1 }, outline: [] }]);
+  });
+
+  describe('an empty note', () => {
+    it("content: 'outline' has no lines, no preamble and an empty outline", async () => {
+      const reader = readerOverFiles({ 'e.md': '' });
+
+      const result = await callTool<ReadNotesOut>(buildReg(reader), {
+        paths: 'e.md',
+        content: 'outline',
+      });
+
+      expect(result.results).toStrictEqual([{ path: 'e.md', frontmatter: null, outline: [] }]);
+    });
+
+    it('a full read returns the empty content and no lines', async () => {
+      const reader = readerOverFiles({ 'e.md': '' });
+
+      const result = await callTool<ReadNotesOut>(buildReg(reader), { paths: 'e.md' });
+
+      expect(result.results).toStrictEqual([{ path: 'e.md', frontmatter: null, content: '' }]);
+    });
+  });
+
+  it('a full read of a frontmatter-only note returns the empty body and no lines', async () => {
+    const reader = readerOverFiles({ 'n.md': '---\na: 1\n---\n' });
+
+    const result = await callTool<ReadNotesOut>(buildReg(reader), { paths: 'n.md' });
+
+    expect(result.results).toStrictEqual([{ path: 'n.md', frontmatter: { a: 1 }, content: '' }]);
   });
 
   it("content: 'outline' lists every item of a multi-path call", async () => {
@@ -453,7 +482,7 @@ describe('operations.readNotes outline and body spans', () => {
       content: 'outline',
     });
 
-    expect(result.results).toEqual([
+    expect(result.results).toStrictEqual([
       { path: 'a.md', frontmatter: { a: 1 }, lines: [4, 8], preamble: [4, 5], outline: ENTRIES },
       {
         path: 'b.md',

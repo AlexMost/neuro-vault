@@ -15,6 +15,7 @@ import type {
 import { previewBody } from '../preview-body.js';
 import { entriesWithin } from '../outline.js';
 import { noteStructure } from '../../../lib/obsidian/corpus/note-structure.js';
+import { frontmatterEnd, splitNoteLines } from '../../../lib/obsidian/corpus/chunker.js';
 import type { ReadNotesField, ReadNotesItemSuccess } from '../../../lib/obsidian/vault-reader.js';
 
 interface Input {
@@ -135,10 +136,13 @@ function rawOf(item: ReadNotesItemSuccess): string {
  * The span of the text a `full` read returns. That is the body after the frontmatter,
  * unless the frontmatter fence holds YAML that failed to parse: the reader then returns
  * the raw file as `content`, so the span is every line of it. `null` for an empty note
- * or a frontmatter-only one, which have no body line.
+ * or a frontmatter-only one, which have no body line. It uses the same frontmatter and
+ * line helpers as `noteStructure`, without its markdown parse, so a full read stays cheap.
  */
 function fullSpan(item: ReadNotesItemSuccess): [number, number] | null {
-  const s = noteStructure(rawOf(item));
-  if (item.frontmatter === null && s.frontmatterEnd > 0) return [1, s.lines.length];
-  return s.body;
+  const raw = rawOf(item);
+  const fmEnd = frontmatterEnd(raw);
+  const n = splitNoteLines(raw).length;
+  if (item.frontmatter === null && fmEnd > 0) return [1, n];
+  return raw !== '' && fmEnd < n ? [fmEnd + 1, n] : null;
 }
