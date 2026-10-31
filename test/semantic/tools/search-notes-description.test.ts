@@ -162,3 +162,13 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     expect(describedFields(registerTool(tool).spec.inputSchema as z.ZodType)).toEqual(declared);
   });
 });
+
+describe('search_notes evidence coordinates', () => {
+  it('states the coordinates read_notes takes and the { path, lines } hand-off', () => {
+    const description = builtDescription();
+    expect(description).toMatch(/file-relative/);
+    expect(description).toMatch(/1-based/);
+    expect(description).toMatch(/inclusive/);
+    expect(description).toMatch(/\{ path, lines \}/);
+  });
+});

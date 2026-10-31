@@ -241,8 +241,10 @@ Constraints:
     as that is a non-goal.
   - `heading` is an equal address only on a semantic block whose `heading` is non-empty and not
     `---frontmatter---`. Lexical `heading` is a label.
-  - `search_notes` changes by two RESPONSE SHAPE lines: the coordinates + the hand-off, and what
-    `blocks[].heading` / `""` and lexical `heading` mean.
+  - `search_notes` changes by one RESPONSE SHAPE line: the coordinates, the `{ path, lines }`
+    hand-off, a non-empty `blocks[].heading` as `{ path, heading }`, and lexical `heading` as a
+    label. The `hybrid-search` delta makes it the one exception to its "no `matches[]` field
+    enumeration" rule and raises the description budget to 4,050 characters.
   - The `read_notes` description is sectioned: PATHS, LINE COORDINATES, CONTENT, READING THE
     OUTLINE, MISSES, FROM A SEARCH HIT.
   - The text is ported from the throwaway branch `prototype/structured-reads-wording`
