@@ -363,10 +363,15 @@ export function entriesWithin(structure: NoteStructure, span: [number, number] |
 
 - [ ] **Step 1:** Write `note-structure.md`:
   - the read-time projection;
-  - heading names;
+  - heading names, with the full `[n]` rule: the suffix keeps a name unique against every chunk
+    key already minted. It is usually the occurrence count, but not always:
+    - `# A\n# A[2]\n# A` names the third heading `A[3]`;
+    - a body heading titled `---frontmatter---` under frontmatter becomes `---frontmatter---[2]`;
   - coordinates;
   - the body span;
-  - the collapse rule.
+  - the collapse rule;
+  - the known limitation: a leading UTF-8 BOM hides the frontmatter fence and a first-line
+    heading from the projection, and the lexical leg strips the BOM.
 
   Selection resolution is added in Task 3.8.
 - [ ] **Step 2:** Write ADR-0024 in the repo's ADR format. Decision: structural reads use the
@@ -595,9 +600,17 @@ export function resolveSelector(structure: NoteStructure, selector: Selector, pa
 
 - [ ] **Step 1:** Write the tests against a fixture note: frontmatter, a non-blank preamble, a
   `## Decisions` heading block, and a heading with two own paragraphs (so `#{n}` sub-blocks exist).
-  - **Every block by `lines`:** for every `chunkNote(raw)` block except `---frontmatter---`,
-    `callTool(read_notes, { paths: [{ path, lines: block.lines }] })` returns `content === block.text`
-    and `lines` deep-equal to `block.lines`.
+  - **Every body block by `lines`:** for every `chunkNote(raw)` block except the frontmatter
+    block, `callTool(read_notes, { paths: [{ path, lines: block.lines }] })` returns
+    `content === block.text` and `lines` deep-equal to `block.lines`.
+  - **The frontmatter block** (give the fixture frontmatter of 200 chars or more, so
+    `---frontmatter---` is embedded):
+    - its `lines` read as `{ path, lines }` is a `LINES_OUT_OF_RANGE` miss;
+    - `content: 'frontmatter'` on the bare path returns the parsed frontmatter, which is the
+      hand-off (D11).
+  - **An unclosed fence** (`'# A\n```\ncode\n'`): the lexical unit's `lines` end one past the
+    last line. `{ path, lines: unit.lines }` clips to the body and returns the fence text, not a
+    miss.
   - **The non-empty-`heading` block by name:** `{ path, heading: block.heading }` returns the same
     `content` and `lines`.
   - **A lexical match:** for a `parseNote({ path, body, lineOffset })` body unit
@@ -618,11 +631,13 @@ export function resolveSelector(structure: NoteStructure, selector: Selector, pa
     - `/one value for the whole call/`, `/never inside an item/`;
     - `/HEADING_NOT_FOUND/`, `/AMBIGUOUS_MATCH/`, `/LINES_OUT_OF_RANGE/`;
     - `/\{ path, lines: row\.lines \}/`;
+    - `/---frontmatter---/` near `/content: 'frontmatter'/` (the frontmatter-block hand-off);
     - `/INVALID_PARAMS/`.
   - **`search_notes`:** `/file-relative/`, `/1-based/`, `/inclusive/`, `/\{ path, lines \}/`.
 - [ ] **Step 2:** Run the tests. Expected: FAIL.
 - [ ] **Step 3:** Port candidate A in full: PATHS, the selector clauses removed in 2.3, MISSES
-  (with the Q13 line from Global Constraints) and FROM A SEARCH HIT. Add the two `search_notes`
+  (with the Q13 line from Global Constraints) and FROM A SEARCH HIT, which gains one sentence: a
+  `---frontmatter---` row is read with `content: 'frontmatter'`. Add the two `search_notes`
   RESPONSE SHAPE lines after its `matches[]` line.
 - [ ] **Step 4:** Run `npx vitest run test/operations test/semantic`. Expected: PASS.
 - [ ] **Step 5:** Commit `docs(read-notes): selections, misses and the search hand-off`.

@@ -202,15 +202,25 @@ item SHALL still resolve its selector.
 ### Requirement: A search hit reads back through its lines
 
 `read_notes` SHALL return exactly a `search_notes` evidence row's text from the unchanged note when
-that row's `lines` — a semantic block's or a lexical match's — is read as `{ path, lines }`. For a
-semantic block with a non-empty `heading`, `{ path, heading }` SHALL return the same text and the
-same `lines`.
+that row's `lines` — a body block's or a lexical match's — is read as `{ path, lines }`. For a
+semantic block whose `heading` is non-empty and not `---frontmatter---`, `{ path, heading }` SHALL
+return the same text and the same `lines`. The frontmatter block (`heading: '---frontmatter---'`)
+lies outside the body, so its `lines` are `LINES_OUT_OF_RANGE`. It SHALL be read with
+`content: 'frontmatter'` on its path, and the description SHALL say so.
 
 #### Scenario: every semantic block of a note round-trips
 
 - **WHEN** a note with frontmatter, a preamble, a heading block, and own-paragraph sub-blocks is
-  chunked, and each block's `lines` is read as `{ path, lines }`
+  chunked, and each block's `lines` other than the frontmatter block's is read as
+  `{ path, lines }`
 - **THEN** each read returns exactly that block's text
+
+#### Scenario: a frontmatter block hands off as a frontmatter read
+
+- **WHEN** a semantic `---frontmatter---` block with `lines: [1, 4]` is read as
+  `{ path, lines: [1, 4] }`
+- **THEN** the item is a `LINES_OUT_OF_RANGE` miss, and `content: 'frontmatter'` on that path
+  returns the note's frontmatter
 
 #### Scenario: a heading block reads the same by name and by lines
 

@@ -235,8 +235,12 @@ Constraints:
 ### D11: Search hand-off is `{ path, lines: row.lines }`; wording is a deliverable
 
 - **Choice:**
-  - Every evidence row reads back through its `lines`. `heading` is an equal address only on a
-    semantic block with a non-empty `heading`, and lexical `heading` is a label.
+  - Every body evidence row reads back through its `lines`. The frontmatter block
+    (`---frontmatter---`, embedded when frontmatter is long) lies outside the body, so its
+    hand-off is `content: 'frontmatter'` on the path. `search_notes` evidence is left unchanged,
+    as that is a non-goal.
+  - `heading` is an equal address only on a semantic block whose `heading` is non-empty and not
+    `---frontmatter---`. Lexical `heading` is a label.
   - `search_notes` changes by two RESPONSE SHAPE lines: the coordinates + the hand-off, and what
     `blocks[].heading` / `""` and lexical `heading` mean.
   - The `read_notes` description is sectioned: PATHS, LINE COORDINATES, CONTENT, READING THE
