@@ -173,8 +173,7 @@ export function buildReadNotesTool(
           throw new Error(`read_notes: the reader returned no item for ${slot.path}`);
         }
         if ('error' in item) return item;
-        // A preview still reads the whole note, whatever the item selects.
-        if (slot.selector.kind === 'whole' || slot.mode === 'preview') {
+        if (slot.selector.kind === 'whole') {
           return project(item, slot.mode, () => structureOf(item));
         }
         return projectSelection(item, structureOf(item), slot.selector, slot.mode);
@@ -189,7 +188,7 @@ export function buildReadNotesTool(
 const FIELDS_BY_MODE: Record<ContentMode, readonly ReadNotesField[]> = {
   frontmatter: ['frontmatter'],
   outline: ['frontmatter', 'raw'],
-  preview: ['frontmatter', 'content'],
+  preview: ['frontmatter', 'content', 'raw'],
   full: ['frontmatter', 'content', 'raw'],
 };
 
@@ -217,30 +216,30 @@ function project(
     out.content = item.content;
     const span = fullSpan(item);
     if (span !== null) out.lines = span;
-  } else if (mode === 'outline') {
+  } else if (mode === 'outline' || mode === 'preview') {
+    // A bare-path preview slices the reader's `content`, exactly as it did before it
+    // carried the outline fields.
+    if (mode === 'preview') Object.assign(out, previewBody(item.content));
     const s = structure();
     if (s.body !== null) out.lines = [s.body[0], s.body[1]];
     addOutlineFields(out, s, s.body);
-  } else if (mode === 'preview') {
-    const { content: c, truncated } = previewBody(item.content);
-    out.content = c;
-    out.truncated = truncated;
   }
   return out;
 }
 
 /**
  * One selection of a note, rendered from its resolved span in the item's mode: `full`
- * returns the span's verbatim text, `outline` the heading blocks inside it, and
- * `frontmatter` only the frontmatter. `full` and `outline` echo the span as `lines`,
- * plus `heading` and `level` for a heading selection. The selector is resolved in every
- * mode, so a miss is the same item in each.
+ * returns the span's verbatim text, `outline` the heading blocks inside it, `preview`
+ * both — the outline and a bounded slice of the span's text, from its first line — and
+ * `frontmatter` only the frontmatter. Every mode but `frontmatter` echoes the span as
+ * `lines`, plus `heading` and `level` for a heading selection. The selector is resolved
+ * in every mode, so a miss is the same item in each.
  */
 function projectSelection(
   item: ReadNotesItemSuccess,
   structure: NoteStructure,
   selector: Selection,
-  mode: Exclude<ContentMode, 'preview'>,
+  mode: ContentMode,
 ): ReadNotesResultItem {
   const r = resolveSelector(structure, selector, item.path, {
     unparsedFrontmatter: item.frontmatter === null && structure.frontmatterEnd > 0,
@@ -249,10 +248,13 @@ function projectSelection(
   const out: ReadNotesResultItemSuccess = { path: item.path, frontmatter: item.frontmatter };
   if (mode === 'frontmatter') return out;
   if (mode === 'full') out.content = spanText(structure, r.span);
+  // `spanText` drops a CRLF note's last `\r`, and `previewBody` trims before its marker,
+  // so neither returned text ends in a dangling `\r`.
+  if (mode === 'preview') Object.assign(out, previewBody(spanText(structure, r.span)));
   out.lines = r.span;
   if (r.heading !== undefined) out.heading = r.heading;
   if (r.level !== undefined) out.level = r.level;
-  if (mode === 'outline') addOutlineFields(out, structure, r.span);
+  if (mode === 'outline' || mode === 'preview') addOutlineFields(out, structure, r.span);
   return out;
 }
 
