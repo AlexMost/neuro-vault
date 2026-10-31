@@ -129,7 +129,7 @@ A selector that finds nothing fails **its item only**; the other items are unaff
 | `LINES_OUT_OF_RANGE` | the range shares no line with the body                                          | body `lines`                                                     | a range inside it                     |
 | `NOT_FOUND`          | the note does not exist                                                         | —                                                                | —                                     |
 
-A note with no body line (an empty file, or frontmatter only) carries no body `lines` on a miss, and every `lines` selector on it is `LINES_OUT_OF_RANGE`; for a frontmatter-only note the message points to `content: 'frontmatter'`. An unsafe path (one that escapes the vault) is a per-item `INVALID_ARGUMENT`, like a bare path.
+A note with no body line (an empty file, or frontmatter only) carries no body `lines` on a miss, and every `lines` selector on it is `LINES_OUT_OF_RANGE`; for a frontmatter-only note the message points to `content: 'frontmatter'`. When the frontmatter fence holds YAML that does not parse, a miss in or around it points to a whole-note `content: 'full'` read instead, since that read returns the fence as text and a frontmatter read returns `null`. An unsafe path (one that escapes the vault) is a per-item `INVALID_ARGUMENT`, like a bare path.
 
 The miss shape does not depend on `content`: in `frontmatter`, `outline` and `full` the selector is always resolved.
 
@@ -144,7 +144,7 @@ Quoted numbers in `lines` (`["3", "9"]`) and a `paths` array sent as a JSON stri
 
 #### From a search hit to a read
 
-Every `search_notes` evidence row reads back as `{ path, lines: row.lines }` — a semantic `blocks[]` entry and a lexical match alike. Read several hits in one call, one item per hit; with `content` omitted each returns its selection in `full`.
+Every `search_notes` body evidence row with `lines` reads back as `{ path, lines: row.lines }` — a semantic `blocks[]` entry and a lexical body or heading match alike. Read several hits in one call, one item per hit; with `content` omitted each returns its selection in `full`.
 
 ```json
 {

@@ -816,6 +816,34 @@ describe('operations.readNotes lines selections', () => {
     expect(result.errors).toBe(1);
   });
 
+  it('a range inside a fence whose YAML does not parse points at a whole-note read', async () => {
+    const files = { 'bad.md': '---\na: [x\n---\n# H\nbody\n' };
+
+    const miss = await read([{ path: 'bad.md', lines: [1, 3] }], files);
+    const whole = await read(['bad.md'], files);
+
+    expect(miss.results).toStrictEqual([
+      {
+        path: 'bad.md',
+        error: {
+          code: 'LINES_OUT_OF_RANGE',
+          message:
+            "lines 1–3 of bad.md lie in a frontmatter fence whose YAML does not parse (body: lines 4–5); read the note whole with content: 'full', or a range inside the body",
+        },
+        lines: [4, 5],
+      },
+    ]);
+    // The read the message points at returns the fence as text.
+    expect(whole.results).toStrictEqual([
+      {
+        path: 'bad.md',
+        frontmatter: null,
+        content: '---\na: [x\n---\n# H\nbody\n',
+        lines: [1, 5],
+      },
+    ]);
+  });
+
   it('a range past the end is the same miss, its message naming the body span', async () => {
     const result = await read([{ path: 'n.md', lines: [50, 60] }]);
 

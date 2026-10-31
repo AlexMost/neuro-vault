@@ -80,7 +80,8 @@ export function buildReadNotesTool(
       '- `frontmatter`: `{ path, frontmatter }`.',
       "- `outline`: frontmatter + `lines` (the selection's span; the body span for a whole note) + `preamble` (`[start, end]` of text before the first heading, only when non-blank) + `outline: [{ heading, level, lines }]` — heading blocks in source order. No body text.",
       "- `preview`: frontmatter + `content` (a bounded slice of the whole note's body, even for a selector item) + `truncated` flag.",
-      '- `full`: frontmatter + `lines` + `content` (the whole selection). A heading read also echoes the matched `heading` and its `level`.',
+      '- `full`: frontmatter + `lines` + `content` (the whole selection).',
+      'A heading read in `outline` or `full` also echoes the matched `heading` and its `level`.',
       'Omitting `content`: a selector item returns its selection in `full`; a bare path returns `full` when the call has one item, `preview` otherwise.',
       '',
       'READING THE OUTLINE:',
@@ -98,7 +99,7 @@ export function buildReadNotesTool(
       'The whole call fails with `INVALID_PARAMS` for an empty `heading` or malformed `lines` (two integers, 1 ≤ start ≤ end); `INVALID_ARGUMENT` for both selectors in one item.',
       "Successful items always carry parsed `frontmatter`. Before citing or editing, read the part you need in `full`; re-read a previewed note with `content: 'full'`.",
       '',
-      "FROM A SEARCH HIT: read any `search_notes` evidence row (a `blocks[]` or `lexical[]` entry) as `{ path, lines: row.lines }`. A semantic block with a non-empty `heading` also reads as `{ path, heading: row.heading }`. A `---frontmatter---` row is the frontmatter, outside the body: read it with `content: 'frontmatter'` on its path. `heading: \"\"` marks a paragraph inside a heading block, or the preamble: it does not name the block around it, and passing `\"\"` fails the call. A lexical `heading` is the nearest heading's text, a label only: as an address it can silently pick the wrong block — a bare `Notes` matches the first of sibling headings `Notes` and `Notes[2]` exactly, with no error. A heading read echoes its `lines`: if the hit's `lines` fall outside them, it read the wrong block. To get the heading block around a hit, read the outline and take the deepest entry whose `lines` contain the hit's.",
+      "FROM A SEARCH HIT: read any body evidence row with `lines` (a `search_notes` `blocks[]` or `lexical[]` entry) as `{ path, lines: row.lines }`. A semantic block with a non-empty `heading` also reads as `{ path, heading: row.heading }`. A `---frontmatter---` row is the frontmatter, outside the body: read it with `content: 'frontmatter'` on its path. `heading: \"\"` marks a paragraph inside a heading block, or the preamble: it does not name the block around it, and passing `\"\"` fails the call. A lexical `heading` is the nearest heading's text, a label only: as an address it can silently pick the wrong block — a bare `Notes` matches the first of sibling headings `Notes` and `Notes[2]` exactly, with no error. A heading read echoes its `lines`: if the hit's `lines` fall outside them, it read the wrong block. To get the heading block around a hit, read the outline and take the deepest entry whose `lines` contain the hit's.",
     ].join('\n'),
     inputShape: {
       paths: z.union([z.string().min(1), z.array(pathItem).min(1).max(50)]),
@@ -241,7 +242,9 @@ function projectSelection(
   selector: Selection,
   mode: Exclude<ContentMode, 'preview'>,
 ): ReadNotesResultItem {
-  const r = resolveSelector(structure, selector, item.path);
+  const r = resolveSelector(structure, selector, item.path, {
+    unparsedFrontmatter: item.frontmatter === null && structure.frontmatterEnd > 0,
+  });
   if (!r.ok) return selectionMiss(item.path, structure, r);
   const out: ReadNotesResultItemSuccess = { path: item.path, frontmatter: item.frontmatter };
   if (mode === 'frontmatter') return out;

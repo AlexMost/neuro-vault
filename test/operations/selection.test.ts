@@ -84,6 +84,44 @@ describe('resolveSelector: lines', () => {
     });
   });
 
+  describe('a frontmatter fence whose YAML does not parse', () => {
+    const bad = noteStructure('---\na: [x\n---\n# H\nbody\n');
+    const unparsed = { unparsedFrontmatter: true };
+    const heading = (name: string) => ({ kind: 'heading' as const, heading: name });
+
+    it('a range inside it points at a whole-note read, not a frontmatter read', () => {
+      expect(resolveSelector(bad, lines(1, 3), 'bad.md', unparsed)).toStrictEqual({
+        ok: false,
+        code: 'LINES_OUT_OF_RANGE',
+        message:
+          "lines 1–3 of bad.md lie in a frontmatter fence whose YAML does not parse (body: lines 4–5); read the note whole with content: 'full', or a range inside the body",
+      });
+    });
+
+    it('with no body, a range or a heading points at a whole-note read', () => {
+      const only = noteStructure('---\na: [x\n---\n');
+      const rangeMiss = resolveSelector(only, lines(1, 1), 'bad.md', unparsed);
+      const headingMiss = resolveSelector(only, heading('Notes'), 'bad.md', unparsed);
+
+      for (const r of [rangeMiss, headingMiss]) {
+        expect(r.ok).toBe(false);
+        if (r.ok) return;
+        expect(r.message).toMatch(
+          /a frontmatter fence whose YAML does not parse \(lines 1–3\) and no body; read the note whole with content: 'full'$/,
+        );
+        expect(r.message).not.toMatch(/content: 'frontmatter'/);
+      }
+    });
+
+    it('is a frontmatter read again when the fence parses', () => {
+      expect(resolveSelector(bad, lines(1, 3), 'bad.md')).toMatchObject({
+        message: expect.stringMatching(
+          /read the frontmatter with content: 'frontmatter'/,
+        ) as string,
+      });
+    });
+  });
+
   it('any range on an empty note is LINES_OUT_OF_RANGE', () => {
     const r = resolveSelector(noteStructure(''), lines(1, 1), 'e.md');
 

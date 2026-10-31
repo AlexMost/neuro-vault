@@ -164,11 +164,21 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
 });
 
 describe('search_notes evidence coordinates', () => {
-  it('states the coordinates read_notes takes and the { path, lines } hand-off', () => {
-    const description = builtDescription();
-    expect(description).toMatch(/file-relative/);
-    expect(description).toMatch(/1-based/);
-    expect(description).toMatch(/inclusive/);
-    expect(description).toMatch(/\{ path, lines \}/);
+  it('states the coordinates read_notes takes and the { path, lines } hand-off in one line', () => {
+    const lines = builtDescription()
+      .split('\n')
+      .filter((line) => /1-based/.test(line));
+    expect(lines).toHaveLength(1);
+    const [line] = lines as [string];
+    expect(line).toMatch(/file-relative/);
+    expect(line).toMatch(/inclusive/);
+    expect(line).toContain('read_notes({ paths: [{ path, lines }] })');
+  });
+
+  it('does not offer the frontmatter block as a { path, heading } address', () => {
+    const line = builtDescription()
+      .split('\n')
+      .find((l) => l.includes('{ path, heading }'));
+    expect(line).toContain('`---frontmatter---`');
   });
 });

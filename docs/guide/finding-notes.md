@@ -126,7 +126,7 @@ Each entry carries `path`, `vault`, `backlink_count`, and `found_in` — a non-e
 
 Evidence `lines` — `blocks[].lines` and `lexical[].lines` — is `[start, end]` in **file-relative, 1-based, inclusive** line numbers: frontmatter lines are counted. These are the coordinates [`read_notes`](./reading-and-modifying.md#line-coordinates) takes and returns, so a hit reads back with no offset.
 
-- **Read any evidence row as `{ path, lines: row.lines }`** — the one hand-off that works for semantic and lexical evidence alike: `read_notes({ paths: [{ path, lines }] })`.
+- **Read any body evidence row with `lines` as `{ path, lines: row.lines }`** — the one hand-off that works for semantic and lexical evidence alike: `read_notes({ paths: [{ path, lines }] })`.
 - **`blocks[].heading`** is a heading name. When it is non-empty the block is a whole heading block, and `{ path, heading: row.heading }` reads the same span as `lines`.
 - **`heading: ""`** marks a paragraph inside a heading block, or the preamble — it does not name the heading block around it. Read it with `lines`; never pass `""` as `heading`.
 - **`heading: "---frontmatter---"`** marks the frontmatter block, which lies outside the body: its `lines` are a `LINES_OUT_OF_RANGE` miss. Read it with `content: 'frontmatter'` on its path.

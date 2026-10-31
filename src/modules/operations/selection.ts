@@ -95,16 +95,29 @@ export type Selection = Exclude<Selector, { kind: 'whole' }>;
  * Resolves a selector against the note's structure. A `lines` range is clipped to the
  * body at both ends; only a range sharing no line with the body is `LINES_OUT_OF_RANGE`.
  * A `heading` names one heading block by its heading name. `path` names the note in a
- * miss message.
+ * miss message. `unparsedFrontmatter` says the note's frontmatter fence holds YAML that
+ * did not parse: a frontmatter read then returns `null`, so a miss in or around the fence
+ * points at a whole-note read, which returns the fence as text, instead.
  */
 export function resolveSelector(
   structure: NoteStructure,
   selector: Selection,
   path: string,
+  { unparsedFrontmatter = false }: { unparsedFrontmatter?: boolean } = {},
 ): Resolved {
   return selector.kind === 'lines'
-    ? resolveLines(structure, selector.lines, path)
-    : resolveHeading(structure, selector.heading, path);
+    ? resolveLines(structure, selector.lines, path, unparsedFrontmatter)
+    : resolveHeading(structure, selector.heading, path, unparsedFrontmatter);
+}
+
+/** A miss's cause and retry for a note with frontmatter and no body. */
+function frontmatterOnly(structure: NoteStructure, unparsed: boolean): string {
+  const fence = spanLabel([1, structure.frontmatterEnd]);
+  return unparsed
+    ? `the note has a frontmatter fence whose YAML does not parse (${fence}) and no body; ` +
+        "read the note whole with content: 'full'"
+    : `the note has frontmatter (${fence}) and no body; ` +
+        "read the frontmatter with content: 'frontmatter'";
 }
 
 /**
@@ -136,7 +149,12 @@ export function normalizeHeadingName(s: string): string {
  * then only a single hit resolves. Level is ignored, and a prefix never matches. Every
  * heading block counts, including one a collapsed outline does not list.
  */
-function resolveHeading(structure: NoteStructure, name: string, path: string): Resolved {
+function resolveHeading(
+  structure: NoteStructure,
+  name: string,
+  path: string,
+  unparsedFrontmatter: boolean,
+): Resolved {
   const { headings } = structure;
   let hits = headings.filter((h) => h.heading === name);
   if (hits.length === 0) {
@@ -155,8 +173,7 @@ function resolveHeading(structure: NoteStructure, name: string, path: string): R
       message =
         structure.frontmatterEnd === 0
           ? `${missing}: the note is empty and has nothing to read`
-          : `${missing}: the note has frontmatter (${spanLabel([1, structure.frontmatterEnd])}) ` +
-            "and no body; read the frontmatter with content: 'frontmatter'";
+          : `${missing}: ${frontmatterOnly(structure, unparsedFrontmatter)}`;
     } else if (headings.length === 0) {
       message =
         `${missing}: the note has no headings; ` +
@@ -185,6 +202,7 @@ function resolveLines(
   structure: NoteStructure,
   requested: [number, number],
   path: string,
+  unparsedFrontmatter: boolean,
 ): Resolved {
   const miss = (message: string): Resolved => ({ ok: false, code: 'LINES_OUT_OF_RANGE', message });
   const one = requested[0] === requested[1];
@@ -194,24 +212,24 @@ function resolveLines(
   if (body === null) {
     return frontmatterEnd === 0
       ? miss(`${asked} ${are} out of range: the note is empty and has no line to read`)
-      : miss(
-          `${asked} ${are} out of range: the note has frontmatter ` +
-            `(${spanLabel([1, frontmatterEnd])}) and no body; ` +
-            "read the frontmatter with content: 'frontmatter'",
-        );
+      : miss(`${asked} ${are} out of range: ${frontmatterOnly(structure, unparsedFrontmatter)}`);
   }
   const start = Math.max(requested[0], body[0]);
   const end = Math.min(requested[1], body[1]);
   if (start <= end) return { ok: true, span: [start, end] };
   const bodySpan = `body: ${spanLabel(body)}`;
-  return requested[1] < body[0]
-    ? miss(
-        `${asked} ${lie} in the frontmatter (${bodySpan}); ` +
-          "read the frontmatter with content: 'frontmatter', or a range inside the body",
-      )
-    : miss(
-        `${asked} ${lie} past the end of the note (${bodySpan}); retry with a range inside the body`,
-      );
+  if (requested[1] < body[0]) {
+    return miss(
+      unparsedFrontmatter
+        ? `${asked} ${lie} in a frontmatter fence whose YAML does not parse (${bodySpan}); ` +
+            "read the note whole with content: 'full', or a range inside the body"
+        : `${asked} ${lie} in the frontmatter (${bodySpan}); ` +
+            "read the frontmatter with content: 'frontmatter', or a range inside the body",
+    );
+  }
+  return miss(
+    `${asked} ${lie} past the end of the note (${bodySpan}); retry with a range inside the body`,
+  );
 }
 
 /**
