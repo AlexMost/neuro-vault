@@ -585,12 +585,40 @@ describe('operations.readNotes selector items at the gate', () => {
     expect(err.message).toBe(message);
   });
 
-  it('rejects an unrecognized key on an item with INVALID_PARAMS', async () => {
-    const err = await expectToolError(buildReg(), {
-      paths: [{ path: 'a.md', content: 'full' }],
-    });
+  // A malformed object item fails both branches of the item union; the gate
+  // reports the object branch's own issue, not the union's bare "Invalid input".
+  it.each([
+    [[10], 'paths.0.lines.1: Invalid input: expected number, received undefined'],
+    [[1.5, 3], 'paths.0.lines.0: Invalid input: expected int, received number'],
+  ])('reports lines %j at paths.0.lines', async (lines, message) => {
+    const err = await expectToolError(buildReg(), { paths: [{ path: 'a.md', lines }] });
 
     expect(err.code).toBe('INVALID_PARAMS');
+    expect(err.message).toContain('paths.0.lines');
+    expect(err.message).toBe(message);
+  });
+
+  it.each([
+    ['an array', [{ path: 'a.md', content: 'full' }]],
+    ['a stringified array', JSON.stringify([{ path: 'a.md', content: 'full' }])],
+  ])(
+    'rejects content inside an item (%s) with INVALID_PARAMS naming the key',
+    async (_label, paths) => {
+      const err = await expectToolError(buildReg(), { paths });
+
+      expect(err.code).toBe('INVALID_PARAMS');
+      expect(err.message).toBe('paths.0: Unrecognized key: "content"');
+      expect(err.details?.issues).toEqual([
+        { path: 'paths.0', message: 'Unrecognized key: "content"' },
+      ]);
+    },
+  );
+
+  it('reports a non-object item that fits neither branch as the union did before', async () => {
+    const err = await expectToolError(buildReg(), { paths: [5] });
+
+    expect(err.code).toBe('INVALID_PARAMS');
+    expect(err.message).toBe('paths: Invalid input');
   });
 
   it('fails the call with INVALID_ARGUMENT for heading + lines on one item, reading nothing', async () => {

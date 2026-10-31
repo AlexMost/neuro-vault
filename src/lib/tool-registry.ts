@@ -29,7 +29,8 @@ export function registerTool<I, O>(tool: ITool<I, O>): ToolRegistration {
     },
     handler: async (args) =>
       invokeTool(async () => {
-        const result = coercingSchema.safeParse(args);
+        // `reportInput` lets `formatZodError` tell a rejected object from any other input.
+        const result = coercingSchema.safeParse(args, { reportInput: true });
         if (!result.success) {
           const { message, issues } = formatZodError(result.error);
           throw new ToolHandlerError('INVALID_PARAMS', message, { details: { issues } });

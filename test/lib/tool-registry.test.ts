@@ -183,6 +183,53 @@ describe('registerTool', () => {
     expect(paths).toEqual(['filter', 'include_content']);
   });
 
+  describe('a failed union', () => {
+    const item = z.union([z.string(), z.object({ id: z.string() }).strict()]);
+    const twoObjects = z.union([
+      z.object({ vector: z.array(z.number()) }).strict(),
+      z.object({ path: z.string() }).strict(),
+    ]);
+    const tool: ITool<unknown, { ok: true }> = {
+      name: 'union-check',
+      description: 'union-check',
+      inputSchema: z.object({
+        item: item.optional(),
+        items: z.array(item).optional(),
+        anchor: twoObjects.optional(),
+      }),
+      handler: async () => ({ ok: true }),
+    };
+
+    async function messageFor(args: unknown): Promise<string> {
+      const result = await registerTool(tool).handler(args);
+      expect(result.isError).toBe(true);
+      const payload = result.structuredContent as { code: string; message: string };
+      expect(payload.code).toBe('INVALID_PARAMS');
+      return payload.message;
+    }
+
+    it('reports an object input by the issues of the one branch that took an object', async () => {
+      expect(await messageFor({ item: { id: 'a', extra: 1 } })).toBe(
+        'item: Unrecognized key: "extra"',
+      );
+      expect(await messageFor({ items: ['a', { id: 2 }] })).toBe(
+        'items.1.id: Invalid input: expected string, received number',
+      );
+    });
+
+    it.each([
+      ['a non-object input', { item: 5 }, 'item: Invalid input'],
+      ['a non-object array item', { items: [5] }, 'items.0: Invalid input'],
+      [
+        'an object two branches took',
+        { anchor: { vector: [1], path: 'a' } },
+        'anchor: Invalid input',
+      ],
+    ])('keeps its own issue for %s', async (_label, args, message) => {
+      expect(await messageFor(args)).toBe(message);
+    });
+  });
+
   it('rejects unknown top-level parameters with INVALID_PARAMS naming the key', async () => {
     const schema = z.object({ content: z.string().optional() });
     const tool: ITool<{ content?: string }, { ok: true }> = {
