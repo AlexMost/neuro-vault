@@ -4,7 +4,7 @@ import { splitRawFrontmatter } from '../in-place-edit.js';
 
 import type { ChunkedBlock } from './types.js';
 
-const FRONTMATTER_KEY = '#---frontmatter---';
+export const FRONTMATTER_KEY = '#---frontmatter---';
 
 /** The leading `#` run of an ATX heading plus the one whitespace that closes it. */
 const ATX_PREFIX_RE = /^ {0,3}#{1,6}(?:\s|$)/;
@@ -139,7 +139,7 @@ export interface ContentChunk extends ContentSpan {
  * One heading block: from the heading's line to the line before the next heading of its
  * level or higher.
  */
-export interface HeadingSection {
+export interface HeadingBlock {
   /** The heading's own text, disambiguated the same way the key's last segment is. */
   title: string;
   level: number;
@@ -154,14 +154,14 @@ export interface HeadingSection {
 /**
  * The single source of heading blocks: `chunkNote` and the read-time note structure both
  * take their heading spans, titles and keys from here, so they cannot drift. Returns the
- * sections in source order.
+ * blocks in source order.
  *
- * Numbered content-chunk keys are reserved here as each section closes, because a later
+ * Numbered content-chunk keys are reserved here as each heading block closes, because a later
  * heading's key is disambiguated against them: the projection must name headings the way
  * the chunker does even though it embeds nothing.
  */
-export function headingSections(lines: string[], fmEnd: number): HeadingSection[] {
-  const sections: HeadingSection[] = [];
+export function headingBlocks(lines: string[], fmEnd: number): HeadingBlock[] {
+  const blocks: HeadingBlock[] = [];
   const open: OpenSection[] = [];
   /** (parent key + title) -> occurrences, so a repeat is disambiguated at any level. */
   const headingCounts = new Map<string, number>();
@@ -192,7 +192,7 @@ export function headingSections(lines: string[], fmEnd: number): HeadingSection[
         }
       }
     }
-    sections.push({
+    blocks.push({
       title: section.title,
       level: section.level,
       start: section.start,
@@ -237,7 +237,7 @@ export function headingSections(lines: string[], fmEnd: number): HeadingSection[
   }
   while (open.length > 0) close(open.pop()!, lines.length);
 
-  return sections.sort((a, b) => a.start - b.start);
+  return blocks.sort((a, b) => a.start - b.start);
 }
 
 /**
@@ -247,9 +247,9 @@ export function headingSections(lines: string[], fmEnd: number): HeadingSection[
 export function preambleSpan(
   lines: string[],
   fmEnd: number,
-  sections: readonly HeadingSection[],
+  blocks: readonly HeadingBlock[],
 ): [number, number] | null {
-  const end = sections.length === 0 ? lines.length : sections[0].start - 1;
+  const end = blocks.length === 0 ? lines.length : blocks[0].start - 1;
   if (end <= fmEnd || lines.slice(fmEnd, end).join('').trim() === '') return null;
   return [fmEnd + 1, end];
 }
@@ -268,15 +268,15 @@ export function chunkNote(content: string): ChunkedBlock[] {
     });
   }
 
-  const sections = headingSections(lines, fmEnd);
-  for (const section of sections) {
+  const headings = headingBlocks(lines, fmEnd);
+  for (const headingBlock of headings) {
     blocks.push({
-      key: section.key,
-      heading: section.title,
-      lines: [section.start, section.end],
-      text: lines.slice(section.start - 1, section.end).join('\n'),
+      key: headingBlock.key,
+      heading: headingBlock.title,
+      lines: [headingBlock.start, headingBlock.end],
+      text: lines.slice(headingBlock.start - 1, headingBlock.end).join('\n'),
     });
-    for (const chunk of section.chunks) {
+    for (const chunk of headingBlock.chunks) {
       blocks.push({
         key: chunk.key,
         heading: '',
@@ -286,7 +286,7 @@ export function chunkNote(content: string): ChunkedBlock[] {
     }
   }
 
-  const preamble = preambleSpan(lines, fmEnd, sections);
+  const preamble = preambleSpan(lines, fmEnd, headings);
   if (preamble) {
     blocks.push({
       key: '#',

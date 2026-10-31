@@ -67,7 +67,8 @@ the code.
    `preamble`, and `outline: []`. Any `lines` selector is `LINES_OUT_OF_RANGE`, and the miss item
    carries no `lines`. Owner: Task 1.3 (projection) and Task 3.3.
 3. **CRLF files.** Heading names carry no `\r`, and line counts equal the LF version of the same
-   note. Owner: Task 1.3.
+   note. `NoteStructure.lines` keeps a trailing `\r` on CRLF lines, so text returned from a span
+   must not end in a dangling `\r`. Owner: Task 1.3 (names, spans) and Tasks 3.3/3.4 (returned text).
 4. **Non-Latin heading names in the normalized fallback.** `heading: 'нотатки зустрічі'` resolves to
    `## Нотатки зустрічі` (case folding is Unicode, via `toLocaleLowerCase('und')` or `toLowerCase`).
    Owner: Task 3.4.
@@ -167,7 +168,8 @@ export function noteStructure(raw: string): NoteStructure;
 
   `heading` equals the chunker's `ChunkedBlock.heading` for that block (`[n]` included), and
   `lines` equals its span. To get there, refactor `chunkNote`'s heading loop into an exported
-  `headingSections(lines, fmEnd): Array<{ title: string; level: number; start: number; end: number }>`.
+  `headingBlocks(lines, fmEnd): HeadingBlock[]` (each block carries `title`, `level`, `start`,
+  `end`, `key` and its numbered `chunks`; it reserves the `#{n}` chunk keys as each block closes).
   `chunkNote` consumes it, so keys and output stay byte-identical (the existing chunker tests are
   the guard).
 
@@ -191,7 +193,7 @@ export function noteStructure(raw: string): NoteStructure;
     `---frontmatter---`, and the counts match.
 - [ ] **Step 2:** Run `npx vitest run test/lib/obsidian/corpus/note-structure.test.ts`. Expected:
   FAIL (module missing).
-- [ ] **Step 3:** Implement `headingSections` (refactor) and `noteStructure`.
+- [ ] **Step 3:** Implement `headingBlocks` (refactor) and `noteStructure`.
 - [ ] **Step 4:** Run `npx vitest run test/lib/obsidian/corpus`. Expected: PASS, including the
   unchanged chunker tests.
 - [ ] **Step 5:** Commit `feat(corpus): a read-time projection of a note's heading blocks`.

@@ -11,6 +11,7 @@ The pieces, all under `src/lib/obsidian/corpus/` and deliberately free of any im
 | File | Responsibility |
 | --- | --- |
 | `chunker.ts` | Splits a note into keyed blocks with line spans. |
+| `note-structure.ts` | `noteStructure`: the read-time projection of a note's heading blocks, body and preamble spans, built on the chunker's own `headingBlocks` so the two cannot drift. |
 | `embed-text.ts` | Turns a note and its blocks into the exact strings sent to the model, and applies the size gate. |
 | `layout.ts` | The path vocabulary: the corpus root, one model's directory, the reconcile lock's name, and the rule for a legal directory name. |
 | `shard-store.ts` | `ShardStore`: reads, writes, lists and deletes the shards and manifest of one model's directory; atomic writes; `.gitignore` upkeep. |
@@ -42,7 +43,7 @@ A block's key is its heading path within the note; the note path is prepended on
 
 Block boundaries come from parsing the note as CommonMark (`mdast-util-from-markdown`), not from a line scanner: fence nesting, fences of four or more backticks, indented code and HTML blocks are all beyond a regex, and each one a scanner gets wrong loses content into no block at all. Only root-level ATX headings open a block — headings inside a blockquote or a list item, setext headings, and a `#` with an empty title do not. The title is read from the raw source line, so `# **Bold** title` and `# Title ###` keep the keys they had.
 
-Spans are 1-based and inclusive, and a heading block's span covers its whole section including nested subsections, so parent and child spans overlap. Spans count real lines: a trailing newline ends the last line instead of opening an empty one, so no span reaches past the note's last line (`splitNoteLines` is the one line splitter, shared with the read-time projection `noteStructure`, which takes its heading spans, names and keys from the same `headingSections` as the chunker). `EMBED_VERSION` 3 is the version that made the count real — a note ending in a newline used to report a phantom final line — so a corpus recorded at version 2 is incompatible and is discarded and re-embedded once on upgrade, like any other `embed_version` bump (see [An identity change within a model is a rebuild](#an-identity-change-within-a-model-is-a-rebuild-and-never-silent)).
+Spans are 1-based and inclusive, and a heading block's span covers its whole section including nested subsections, so parent and child spans overlap. Spans count real lines: a trailing newline ends the last line instead of opening an empty one, so no span reaches past the note's last line (`splitNoteLines` is the one line splitter, shared with the read-time projection `noteStructure`, which takes its heading spans, names and keys from the same `headingBlocks` as the chunker). `EMBED_VERSION` 3 is the version that made the count real — a note ending in a newline used to report a phantom final line — so a corpus recorded at version 2 is incompatible and is discarded and re-embedded once on upgrade, like any other `embed_version` bump (see [An identity change within a model is a rebuild](#an-identity-change-within-a-model-is-a-rebuild-and-never-silent)).
 
 ### The two embed-text formulas
 

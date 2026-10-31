@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { chunkNote } from '../../../../src/lib/obsidian/corpus/chunker.js';
+import { chunkNote, FRONTMATTER_KEY } from '../../../../src/lib/obsidian/corpus/chunker.js';
 import { noteStructure } from '../../../../src/lib/obsidian/corpus/note-structure.js';
 
 const names = (raw: string) => noteStructure(raw).headings.map((h) => h.heading);
@@ -108,6 +108,11 @@ describe('noteStructure', () => {
       ['a heading titled like a chunk key', '# A\np1\n\np2\n# A#{1}\nx\n'],
       ['a sibling titled with the repeat suffix', '# A\n# A[2]\n# A\n'],
       ['a child titled like a chunk number', '# Top\naaa\n\nbbb\n## {1}\nx\n'],
+      ['a heading titled like the frontmatter block', '# ---frontmatter---\nx\n'],
+      [
+        'a heading titled like the frontmatter block, under frontmatter',
+        '---\na: 1\n---\n# ---frontmatter---\nx\n',
+      ],
     ];
 
     it('covers at least one fixture file', () => {
@@ -115,10 +120,13 @@ describe('noteStructure', () => {
     });
 
     it.each(inputs)('matches the heading blocks of %s', (_name, raw) => {
+      const structure = noteStructure(raw);
+      // The frontmatter block is told apart by its key, and only when the note has
+      // frontmatter: without it a body heading titled `---frontmatter---` owns that key.
       const blocks = chunkNote(raw).filter(
-        (b) => b.heading !== '' && b.heading !== '---frontmatter---',
+        (b) => b.heading !== '' && !(structure.frontmatterEnd > 0 && b.key === FRONTMATTER_KEY),
       );
-      const entries = noteStructure(raw).headings;
+      const entries = structure.headings;
       expect(entries).toHaveLength(blocks.length);
       expect(entries.map((e) => ({ heading: e.heading, lines: e.lines }))).toEqual(
         blocks.map((b) => ({ heading: b.heading, lines: b.lines })),
