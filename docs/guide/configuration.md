@@ -126,13 +126,15 @@ A daemon that answers but fails to load the model is not a fallback; that error 
 
 ## Lenient input coercion
 
-Some MCP clients serialize every tool-call argument as a string. To keep these calls working, the server coerces stringified primitives at the top level of each tool's input schema before validation:
+Some MCP clients serialize every tool-call argument as a string. To keep these calls working, the server coerces stringified values in each tool's top-level input fields before validation:
 
 - `number` fields accept numeric strings: `limit: "5"` → `5`, `threshold: "0.35"` → `0.35`.
 - `boolean` fields accept `"true"` / `"false"`: `include_content: "true"` → `true`.
 - `object` / `record` fields accept stringified JSON: `filter: '{"tags":"x"}'` → `{ tags: "x" }`.
+- Array fields, and "one or many" fields such as `read_notes.paths`, accept a stringified JSON array — for `paths`, one that mixes path strings and `{ path, lines }` / `{ path, heading }` items: `paths: '["a.md",{"path":"b.md","lines":[3,9]}]'`.
+- Beneath an array, numeric strings become numbers: `paths: [{ path: "a.md", lines: ["10", "20"] }]` → `lines: [10, 20]`.
 
-Coercion only fires when the schema unambiguously expects the target primitive — fields typed as `string | number` (e.g. `set_property.value`) are left as strings. Coercion is one level deep; the contents of a parsed `filter` object are not further transformed.
+Coercion only fires when the schema unambiguously expects the target primitive — fields typed as `string | number` (e.g. `set_property.value`) are left as strings. The contents of a top-level object are never transformed: the values inside a `filter` object, sent directly or parsed from a string, reach validation as sent. Beneath an array, nothing but a numeric string is converted, and nothing is JSON-parsed.
 
 When validation still fails, the server returns a structured `INVALID_PARAMS` error with a `details.issues` array (`[{ path, message, expected }]`) — not a raw zod dump.
 

@@ -1502,8 +1502,13 @@ describe('search_notes advertised description', () => {
    * next cut — do NOT lower this number by compressing `QUERY WRITING` or
    * `EXAMPLES` instead, which are the only sections that change how a model
    * writes a query, and the only ones no harness here can regression-test.
+   *
+   * 4,050 adds room for the one RESPONSE SHAPE line that hands a hit to
+   * `read_notes` (evidence coordinates and the `{ path, lines }` read). It is
+   * call-time guidance for the next call, and design D11 of `structural-reads`
+   * keeps `search_notes` evidence unchanged, so it cannot move onto the response.
    */
-  const DESCRIPTION_BUDGET = 3800;
+  const DESCRIPTION_BUDGET = 4050;
 
   it('stays inside its always-paid budget', () => {
     // The multi-vault variant is the longer of the two.

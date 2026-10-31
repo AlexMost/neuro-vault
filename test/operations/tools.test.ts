@@ -122,6 +122,21 @@ describe('buildOperationsTools', () => {
     expect(description).toMatch(/headings below it/);
   });
 
+  it('read_notes description states selections, misses and the search hand-off', () => {
+    const tools = buildOperationsTools(noopDeps);
+    const readNotes = tools.find((t) => t.name === 'read_notes')!;
+    const description = readNotes.spec.description;
+    expect(description).toMatch(/one value for the whole call/);
+    expect(description).toMatch(/never inside an item/);
+    expect(description).toMatch(/HEADING_NOT_FOUND/);
+    expect(description).toMatch(/AMBIGUOUS_MATCH/);
+    expect(description).toMatch(/LINES_OUT_OF_RANGE/);
+    expect(description).toMatch(/\{ path, lines: row\.lines \}/);
+    // The frontmatter block lies outside the body: its hand-off is a frontmatter read.
+    expect(description).toMatch(/`---frontmatter---`[^\n.]*content: 'frontmatter'/);
+    expect(description).toMatch(/INVALID_PARAMS/);
+  });
+
   it('read_daily description mentions notes_today, projection, and the 200 cap', () => {
     const tools = buildOperationsTools(noopDeps);
     const readDaily = tools.find((t) => t.name === 'read_daily')!;

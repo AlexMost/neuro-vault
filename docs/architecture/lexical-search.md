@@ -98,7 +98,7 @@ Refreshes are **serialised**, so a shared cache never runs two at once: a call t
 `parseNote` (`blocks.ts`) runs the note body through `mdast-util-from-markdown` and walks the resulting tree:
 
 - The **title** unit is the file basename (no extension) — always compared separately from the body.
-- **Heading** nodes become their own unit (with the heading's own text and line range) and also become `currentHeading`, attached to subsequent body units so a body match can report its enclosing section.
+- **Heading** nodes become their own unit (with the heading's own text and line range) and also become `currentHeading`, attached to subsequent body units so a body match can report the nearest heading before it — a label, not a `read_notes` address (see [`note-structure.md`](./note-structure.md#selections)).
 - **Paragraph, code, and table** nodes become **body** units (raw + normalized text, line range, enclosing heading).
 - A **code** node whose language is `compressed-json` produces no unit: it is the payload of an Excalidraw drawing (the plugin's encoded scene), and its letter runs matched short query tokens. The drawing's `Text Elements` section is ordinary paragraphs and stays searchable; a `json` or any other fence is still a body unit, so a drawing saved with compression turned off (its scene in a `json` fence) still matches on its payload.
 - **List, list item, and blockquote** nodes are containers — recursed into rather than treated as leaf units, so a checklist item or quoted paragraph becomes its own body unit.

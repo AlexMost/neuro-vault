@@ -47,41 +47,41 @@ call sites are one task.
       `docs/guide/reading-and-modifying.md`; the ADR (`docs/adr/0024-…`: the chunker heading model
       at read time, file-relative 1-based inclusive lines shared with search) and its `INDEX.md`
       row; a sweep of the rest of `docs/`.
-- [ ] 2.5 Gates, PR "(2/4)" with `Refs` only, reviewer session, fixes, re-review. **Stop for the user.**
+- [x] 2.5 Gates, PR "(2/4)" with `Refs` only, reviewer session, fixes, re-review. **Stop for the user.**
 
 ## 3. Selection reads — PR 3/4
 
-- [ ] 3.1 Input gate: `paths` items `string | { path, heading?, lines? }`. Coercion in
+- [x] 3.1 Input gate: `paths` items `string | { path, heading?, lines? }`. Coercion in
       `src/lib/input-coercion.ts` for a stringified mixed array and numeric strings in `lines`.
       Schema constraints: `heading` non-blank (the message names `{ path, lines }`); `lines`
       exactly two integers with `1 ≤ start ≤ end`. Tests through `test/_gate.ts`: both coercions,
       each `INVALID_PARAMS` case, `content` inside an item rejected. Update
       `docs/architecture/input-coercion.md`.
-- [ ] 3.2 Item model and default: exact de-duplication over (path, selector), input order, the
+- [x] 3.2 Item model and default: exact de-duplication over (path, selector), input order, the
       50-item cap counting reads, `heading` + `lines` on one item → call-level `INVALID_ARGUMENT`,
       and the per-item default (selector → `full`; bare path → `full` for one item, `preview`
       otherwise, all items counted). Tests through `test/_gate.ts`.
-- [ ] 3.3 `lines` selections: clipped to the body at both ends with the clipped span echoed,
+- [x] 3.3 `lines` selections: clipped to the body at both ends with the clipped span echoed,
       `LINES_OUT_OF_RANGE` with body `lines` on no overlap. Widen the error-code union in the same
       task. Tests: frontmatter overlap, past the end, wholly inside frontmatter, `[n, n]`.
-- [ ] 3.4 `heading` selections: exact match, then a unique normalized fallback (case, whitespace,
+- [x] 3.4 `heading` selections: exact match, then a unique normalized fallback (case, whitespace,
       inline markup, wikilink / Markdown link text, leading `#`s); level ignored; no prefix match.
       Each read echoes `heading` / `level` / `lines`. `HEADING_NOT_FOUND` carries body `lines` +
       the collapsed `outline`; `AMBIGUOUS_MATCH` carries `matches`. Miss items carry no
       `frontmatter`. Tests for each, plus `Notes[2]`.
-- [ ] 3.5 `content` over a selection: `outline` drill-down (entries keep their true span, collapse
+- [x] 3.5 `content` over a selection: `outline` drill-down (entries keep their true span, collapse
       counted from the selection), `frontmatter` still resolves the selector (a miss stays a miss),
       `preamble` = the note preamble ∩ the selection. Tests through `test/_gate.ts`.
-- [ ] 3.6 Round-trip tests: every semantic block of a note with frontmatter, a preamble,
+- [x] 3.6 Round-trip tests: every semantic block of a note with frontmatter, a preamble,
       own-paragraph sub-blocks and a heading block reads back exactly through `{ path, lines }`;
       the non-empty-`heading` block reads the same through `{ path, heading }`; a lexical body
       match's `lines` returns its unit; an unclosed-fence lexical unit clips, not misses; the
       `---frontmatter---` block hands off as `content: 'frontmatter'` (D11).
-- [ ] 3.7 Wording: the description sections PATHS, MISSES and FROM A SEARCH HIT, and the two
-      `search_notes` RESPONSE SHAPE lines. Phrase tests: `content` as one call-level value; the
+- [x] 3.7 Wording: the description sections PATHS, MISSES and FROM A SEARCH HIT, and one
+      `search_notes` RESPONSE SHAPE line (hybrid-search delta). Phrase tests: `content` as one call-level value; the
       three miss codes; the `{ path, lines }` hand-off; "file-relative", "1-based" and "inclusive"
       in `search_notes`.
-- [ ] 3.8 Docs (**parallel-safe** with 3.7): `docs/guide/reading-and-modifying.md` (selections,
+- [x] 3.8 Docs (**parallel-safe** with 3.7): `docs/guide/reading-and-modifying.md` (selections,
       matching, misses, argument faults); `finding-notes.md` (the "Evidence coordinates and the
       hand-off to `read_notes`" subsection, lexical `heading` as a label); `heading` / `lines` rows
       in `mcp-parameter-dictionary.md`; `note-structure.md`; a sweep of the rest of `docs/`.

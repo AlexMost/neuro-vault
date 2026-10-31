@@ -16,6 +16,27 @@ export function entriesWithin(
     .map((h) => ({ heading: h.heading, level: h.level, lines: [h.lines[0], h.lines[1]] }));
 }
 
+/**
+ * The note's preamble — its text before the first heading — clipped to `span`, or `null`
+ * when the clipped part is blank or there is none. Over the whole body it is the preamble.
+ */
+export function preambleWithin(
+  structure: NoteStructure,
+  span: [number, number] | null,
+): [number, number] | null {
+  const { preamble } = structure;
+  if (preamble === null || span === null) return null;
+  const start = Math.max(preamble[0], span[0]);
+  const end = Math.min(preamble[1], span[1]);
+  if (start > end) return null;
+  const blank =
+    structure.lines
+      .slice(start - 1, end)
+      .join('')
+      .trim() === '';
+  return blank ? null : [start, end];
+}
+
 /** The most heading blocks an outline lists before it collapses by depth. */
 export const OUTLINE_ENTRY_CAP = 100;
 

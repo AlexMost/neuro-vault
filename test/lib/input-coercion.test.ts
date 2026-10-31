@@ -184,6 +184,188 @@ describe('wrapSchemaWithCoercion — string | array(string) union, end-to-end', 
   });
 });
 
+describe('coerceInput — string | array(string | object) union (read_notes.paths items)', () => {
+  const item = z.union([
+    z.string().min(1),
+    z
+      .object({
+        path: z.string().min(1),
+        heading: z.string().optional(),
+        lines: z.tuple([z.number().int().min(1), z.number().int().min(1)]).optional(),
+      })
+      .strict(),
+  ]);
+  const schema = z.object({
+    paths: z.union([z.string().min(1), z.array(item).min(1).max(50)]),
+  });
+
+  it('parses a stringified mixed array of strings and objects', () => {
+    expect(coerceInput(schema, { paths: '["a.md",{"path":"b.md","lines":[3,9]}]' })).toStrictEqual({
+      paths: ['a.md', { path: 'b.md', lines: [3, 9] }],
+    });
+  });
+
+  it('coerces numeric strings in a lines pair inside an array item', () => {
+    expect(coerceInput(schema, { paths: [{ path: 'a.md', lines: ['10', '20'] }] })).toStrictEqual({
+      paths: [{ path: 'a.md', lines: [10, 20] }],
+    });
+  });
+
+  it('coerces numeric strings in a lines pair inside a stringified array', () => {
+    expect(
+      coerceInput(schema, { paths: '["a.md",{"path":"b.md","lines":["3","9"]}]' }),
+    ).toStrictEqual({ paths: ['a.md', { path: 'b.md', lines: [3, 9] }] });
+  });
+
+  it('still parses a stringified array of strings into a string array', () => {
+    expect(coerceInput(schema, { paths: '["a.md","b.md"]' })).toStrictEqual({
+      paths: ['a.md', 'b.md'],
+    });
+  });
+
+  it('leaves a non-JSON string alone', () => {
+    expect(coerceInput(schema, { paths: 'not json' })).toStrictEqual({ paths: 'not json' });
+  });
+
+  it('leaves a stringified array with a non-string, non-object element alone', () => {
+    expect(coerceInput(schema, { paths: '["a.md",3]' })).toStrictEqual({ paths: '["a.md",3]' });
+  });
+
+  it('leaves an already-valid mixed array unchanged', () => {
+    const paths = ['a.md', { path: 'b.md', heading: 'Top' }];
+    expect(coerceInput(schema, { paths })).toStrictEqual({ paths });
+  });
+
+  it('does not change the shape of an item: extra keys and short pairs stay as sent', () => {
+    expect(
+      coerceInput(schema, { paths: [{ path: 'a.md', lines: ['10'], content: 'full' }] }),
+    ).toStrictEqual({ paths: [{ path: 'a.md', lines: [10], content: 'full' }] });
+  });
+
+  it('end-to-end: the wrapped schema accepts the stringified mixed array', () => {
+    const result = wrapSchemaWithCoercion(schema).safeParse({
+      paths: '["a.md",{"path":"b.md","lines":["3","9"]}]',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toStrictEqual({ paths: ['a.md', { path: 'b.md', lines: [3, 9] }] });
+    }
+  });
+
+  it('end-to-end: a non-numeric string in lines fails, naming its place under the field', () => {
+    const result = wrapSchemaWithCoercion(schema).safeParse({
+      paths: ['a.md', { path: 'b.md', lines: ['ten', '20'] }],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].path).toStrictEqual(['paths', 1, 'lines', 0]);
+      expect(result.error.issues[0].message).toBe('expected number or numeric string, got "ten"');
+    }
+  });
+});
+
+describe('coerceInput — array and tuple values are coerced element-wise', () => {
+  const schema = z.object({
+    ids: z.array(z.number()).optional(),
+    pair: z.tuple([z.number(), z.boolean()]).optional(),
+  });
+
+  it('coerces each element of an array value', () => {
+    expect(coerceInput(schema, { ids: ['1', 2] })).toStrictEqual({ ids: [1, 2] });
+  });
+
+  it('coerces a numeric tuple item; beneath an array a boolean string stays a string', () => {
+    expect(coerceInput(schema, { pair: ['1', 'true'] })).toStrictEqual({ pair: [1, 'true'] });
+  });
+
+  it('leaves tuple elements past the declared items alone', () => {
+    expect(coerceInput(schema, { pair: ['1', 'true', '3'] })).toStrictEqual({
+      pair: [1, 'true', '3'],
+    });
+  });
+});
+
+describe('coerceInput — beneath an array only numeric strings become numbers', () => {
+  const item = z.object({
+    path: z.string(),
+    lines: z.tuple([z.number(), z.number()]).optional(),
+    tags: z.array(z.string()).optional(),
+    meta: z.object({ n: z.number() }).optional(),
+    flag: z.boolean().optional(),
+  });
+  const schema = z.object({ items: z.array(item) });
+
+  it('never JSON-parses a nested string for a tuple, array or object', () => {
+    const items = [{ path: 'a.md', lines: '[3,9]', tags: '["x"]', meta: '{"n":1}' }];
+    expect(coerceInput(schema, { items })).toStrictEqual({ items });
+  });
+
+  it('leaves a nested boolean string as sent', () => {
+    expect(coerceInput(schema, { items: [{ path: 'a.md', flag: 'true' }] })).toStrictEqual({
+      items: [{ path: 'a.md', flag: 'true' }],
+    });
+  });
+
+  it('descends object keys and tuple items beneath the array', () => {
+    expect(
+      coerceInput(schema, { items: [{ path: 'a.md', lines: ['3', '9'], meta: { n: '2' } }] }),
+    ).toStrictEqual({ items: [{ path: 'a.md', lines: [3, 9], meta: { n: 2 } }] });
+  });
+});
+
+describe('coerceInput — a top-level object field is not descended into', () => {
+  const schema = z.object({
+    filter: z
+      .object({
+        n: z.number().optional(),
+        tags: z.array(z.string()).optional(),
+        prefix: z.union([z.string(), z.array(z.string())]).optional(),
+      })
+      .optional(),
+  });
+
+  it('keeps nested values of an object value as sent', () => {
+    const filter = { n: '5', tags: '["a"]', prefix: '["A/","B/"]' };
+    expect(coerceInput(schema, { filter })).toStrictEqual({ filter });
+  });
+
+  it('keeps nested values of a parsed JSON-string object as sent', () => {
+    expect(coerceInput(schema, { filter: '{"n":"5","tags":"[\\"a\\"]"}' })).toStrictEqual({
+      filter: { n: '5', tags: '["a"]' },
+    });
+  });
+});
+
+describe('coerceInput — a union string picks the first array branch that fits', () => {
+  it('skips an array(number) branch for a JSON array of strings', () => {
+    const schema = z.object({
+      value: z.union([z.string(), z.array(z.number()), z.array(z.string())]),
+    });
+    expect(coerceInput(schema, { value: '["a","b"]' })).toStrictEqual({ value: ['a', 'b'] });
+  });
+
+  it('stays a string when no array branch holds every element', () => {
+    const schema = z.object({ value: z.union([z.string(), z.array(z.number())]) });
+    expect(coerceInput(schema, { value: '["a","b"]' })).toStrictEqual({ value: '["a","b"]' });
+  });
+});
+
+describe('coerceInput — a union value the raw form already satisfies is left alone', () => {
+  it('keeps ["1","2"] as strings when an array(string) branch accepts it', () => {
+    const schema = z.object({
+      value: z.union([z.array(z.number()), z.array(z.string())]),
+    });
+    expect(coerceInput(schema, { value: ['1', '2'] })).toStrictEqual({ value: ['1', '2'] });
+  });
+
+  it('keeps a top-level union object value as sent', () => {
+    const schema = z.object({
+      value: z.union([z.string(), z.object({ n: z.number() }).strict()]),
+    });
+    expect(coerceInput(schema, { value: { n: '1' } })).toStrictEqual({ value: { n: '1' } });
+  });
+});
+
 describe('coerceInput — plain array fields', () => {
   const schema = z.object({
     fields: z

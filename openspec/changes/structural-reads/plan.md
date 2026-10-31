@@ -637,8 +637,8 @@ export function resolveSelector(structure: NoteStructure, selector: Selector, pa
 - [ ] **Step 2:** Run the tests. Expected: FAIL.
 - [ ] **Step 3:** Port candidate A in full: PATHS, the selector clauses removed in 2.3, MISSES
   (with the Q13 line from Global Constraints) and FROM A SEARCH HIT, which gains one sentence: a
-  `---frontmatter---` row is read with `content: 'frontmatter'`. Add the two `search_notes`
-  RESPONSE SHAPE lines after its `matches[]` line.
+  `---frontmatter---` row is read with `content: 'frontmatter'`. Add one `search_notes`
+  RESPONSE SHAPE line after its `matches[]` line, under the hybrid-search delta (R21).
 - [ ] **Step 4:** Run `npx vitest run test/operations test/semantic`. Expected: PASS.
 - [ ] **Step 5:** Commit `docs(read-notes): selections, misses and the search hand-off`.
 

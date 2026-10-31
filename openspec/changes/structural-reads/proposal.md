@@ -57,8 +57,8 @@ read exactly the selection needed (#152, #189, #239).
 - Impact: a one-time re-embed. Search evidence `lines` on the last block shrink by one.
 
 **Descriptions and guide**
-- To: a sectioned `read_notes` description (~4.6 KB), and two `search_notes` RESPONSE SHAPE
-  lines teaching the `{ path, lines }` hand-off. The guide gains coordinates, the outline,
+- To: a sectioned `read_notes` description (~4.6 KB), and one `search_notes` RESPONSE SHAPE
+  line teaching the `{ path, lines }` hand-off. The guide gains coordinates, the outline,
   misses and the hand-off.
 
 ## Capabilities
@@ -77,6 +77,8 @@ read exactly the selection needed (#152, #189, #239).
   - `content` applies to a selection.
 - `embed-text-extraction`: a block's line span ends on the note's last real line. A trailing
   newline adds no line.
+- `hybrid-search`: the `search_notes` description may carry one RESPONSE SHAPE line with the
+  evidence coordinates and the `read_notes` hand-off, and its budget rises to 4,050 characters.
 
 ## Impact
 
