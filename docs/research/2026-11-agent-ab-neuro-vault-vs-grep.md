@@ -160,11 +160,12 @@ Ordered by strength of evidence:
 2. **Visible, pageable lexical completeness** — a total hit count per query and a cursor, so an agent knows when it is seeing part of the answer.
 3. **A "keep looking" hint in the response itself** (truncation, an alternative phrasing), to counter early stopping without giving up the call savings.
 4. **Less semantic-only noise** — rank single-leg semantic hits below two-leg hits, or a `min_legs` option.
-5. **A lexical mode that survives `--no-semantic`** — a cheap mode for large vaults and a clean ablation of what the semantic leg adds.
+5. **Run the lexical-only mode as a third arm.** It already exists: under `--no-semantic` (or a vault's `"semantic": false`) `search_notes` keeps answering from its lexical leg. This study did not use it; an agent-level arm with it would measure exactly what the semantic leg adds on top of ranking, provenance and structured reads.
 6. **Visible index rebuilds** — after the 17.x upgrade, Vault B's corpus rebuilt for 72 minutes with no surfaced progress, and the first call during warm-up returned a dependency error rather than a status.
 
 ## Next measurements
 
+- **Semantic ablation**: a third arm, neuro-vault with `--no-semantic`, on the same questions — separates the semantic leg's share of the effect from the lexical leg's ranking and the structured reads.
 - **Size ablation**: the same Vault B questions against only its ~700 structured cards vs the full ~4.9k notes, to separate size from content type.
 - **Long sessions**: 10–15 questions in one session, comparing answer quality at the end vs the start, to see whether the context savings matter.
 - **Embedding models**: retrieval-level first (semantic-leg recall@k on concept questions via the [eval harness](../../eval/README.md)); agent-level only if retrieval moves.
