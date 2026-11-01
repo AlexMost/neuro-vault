@@ -7,6 +7,7 @@ import type {
 } from '../../src/modules/semantic/retrieval-pipeline.js';
 import {
   deriveObservability,
+  CUT_NOTE_CEILING,
   type LegOutcomes,
   type ObservabilityContext,
 } from '../../src/modules/semantic/search-observability.js';
@@ -38,6 +39,8 @@ function lexicalRan(
     status: 'ran',
     perQueryCounts,
     perQueryTokenCounts: {},
+    // Every match shown unless a test says otherwise: no cut note.
+    perQueryShown: perQueryCounts,
     totalNotes: 10,
     truncated: false,
     ...overrides,
@@ -57,7 +60,8 @@ function context(overrides: Partial<ObservabilityContext> = {}): ObservabilityCo
   return {
     pinnedStatus: { state: 'ready' },
     queries: ['q'],
-    isMulti: false,
+    hasFilter: false,
+    pinnedVault: false,
     fallbackThreshold: 0.3,
     vault: 'v',
     ...overrides,
@@ -121,12 +125,15 @@ describe('deriveObservability — semantic_status', () => {
 
 describe('deriveObservability — query_stats', () => {
   const multi = (queries: string[], overrides: Partial<ObservabilityContext> = {}) =>
-    context({ queries, isMulti: true, ...overrides });
+    context({ queries, ...overrides });
 
-  it('is absent for a single string query', () => {
+  it('has one entry for a single string query', () => {
     expect(
-      deriveObservability(outcomes({ semantic: semanticRan({ q: 1 }) }), context()),
-    ).not.toHaveProperty('query_stats');
+      deriveObservability(
+        outcomes({ semantic: semanticRan({ q: 1 }), lexical: lexicalRan({ q: 2 }) }),
+        context(),
+      ).query_stats,
+    ).toEqual({ q: { semantic: 1, lexical: 2 } });
   });
 
   it('reports pre-cap counts per query, 0 for a query a leg did not count', () => {
@@ -212,7 +219,7 @@ describe('deriveObservability — query_stats', () => {
       }),
       multi(['a b c']),
     );
-    expect(result.query_stats!['a b c'].note).toBe(
+    expect(result.query_stats['a b c'].note).toBe(
       'No hits: "a", "b" match no note alone, which kills the AND match — drop or replace them.',
     );
   });
@@ -222,7 +229,7 @@ describe('deriveObservability — query_stats', () => {
       outcomes({ lexical: lexicalRan({}, { perQueryTokenCounts: { 'a b': { a: 2, b: 1 } } }) }),
       multi(['a b']),
     );
-    expect(result.query_stats!['a b'].note).toBe(SPLIT);
+    expect(result.query_stats['a b'].note).toBe(SPLIT);
   });
 
   it('keeps a token diagnosis silent while the semantic leg found the variant', () => {
@@ -320,5 +327,84 @@ describe('deriveObservability — warning', () => {
     expect(
       deriveObservability(outcomes({ semantic: semanticRan({}) }), context()),
     ).not.toHaveProperty('warning');
+  });
+});
+
+describe('deriveObservability — the cut note', () => {
+  const CUT =
+    '"trading" matched 14 notes lexically, 3 shown. For all of them: search_notes({ query: "trading", mode: "lexical", limit: 14 }).';
+  const stats = (lexical: LexicalLegOutcome, overrides: Partial<ObservabilityContext> = {}) =>
+    deriveObservability(outcomes({ lexical }), context({ queries: ['trading'], ...overrides }))
+      .query_stats.trading;
+
+  it("names N, k and the one call that fetches them all when a variant's matches were cut", () => {
+    expect(stats(lexicalRan({ trading: 14 }, { perQueryShown: { trading: 3 } }))).toEqual({
+      semantic: null,
+      lexical: 14,
+      note: CUT,
+    });
+  });
+
+  it('keeps the filter in the suggested call', () => {
+    expect(
+      stats(lexicalRan({ trading: 14 }, { perQueryShown: { trading: 3 } }), { hasFilter: true })
+        ?.note,
+    ).toBe(
+      '"trading" matched 14 notes lexically, 3 shown. For all of them: search_notes({ query: "trading", mode: "lexical", limit: 14 }) with the same filter.',
+    );
+  });
+
+  it('names the vault when the call pinned one', () => {
+    expect(
+      stats(lexicalRan({ trading: 14 }, { perQueryShown: { trading: 3 } }), { pinnedVault: true })
+        ?.note,
+    ).toBe(
+      '"trading" matched 14 notes lexically, 3 shown. For all of them: search_notes({ query: "trading", mode: "lexical", limit: 14, vault: "v" }).',
+    );
+  });
+
+  it('is absent when the lexical leg did not run (a filter that matched no notes)', () => {
+    expect(
+      deriveObservability(
+        outcomes({ lexical: { status: 'skipped' } }),
+        context({ queries: ['trading'], hasFilter: true }),
+      ).query_stats.trading,
+    ).toEqual({ semantic: null, lexical: 0 });
+  });
+
+  it('is absent for a variant shown in full', () => {
+    expect(stats(lexicalRan({ trading: 14 }))).not.toHaveProperty('note');
+  });
+
+  it(`is absent above the ${CUT_NOTE_CEILING}-match ceiling`, () => {
+    const n = CUT_NOTE_CEILING + 1;
+    expect(stats(lexicalRan({ trading: n }, { perQueryShown: { trading: 3 } }))).not.toHaveProperty(
+      'note',
+    );
+    expect(
+      stats(lexicalRan({ trading: CUT_NOTE_CEILING }, { perQueryShown: { trading: 3 } }))?.note,
+    ).toContain(`limit: ${CUT_NOTE_CEILING} `);
+  });
+
+  it('comes before the fallback note', () => {
+    const result = deriveObservability(
+      outcomes({
+        semantic: semanticRan({ trading: 2 }, { perQueryFallback: { trading: true } }),
+        lexical: lexicalRan({ trading: 14 }, { perQueryShown: { trading: 3 } }),
+      }),
+      context({ queries: ['trading'] }),
+    );
+    expect(result.query_stats.trading).toMatchObject({ semantic_fallback: true });
+    expect(result.query_stats.trading?.note).toMatch(
+      /^"trading" matched 14 notes lexically, 3 shown/,
+    );
+  });
+
+  it('quotes the variant as JSON, so a quote inside it stays a valid call', () => {
+    const result = deriveObservability(
+      outcomes({ lexical: lexicalRan({ 'say "hi"': 4 }, { perQueryShown: { 'say "hi"': 1 } }) }),
+      context({ queries: ['say "hi"'] }),
+    );
+    expect(result.query_stats['say "hi"']?.note).toContain('query: "say \\"hi\\""');
   });
 });

@@ -22,7 +22,7 @@ export interface SemanticStatusField {
 }
 
 /**
- * Pre-cap hit counts for one array-query variant. `semantic` is `null` when
+ * Pre-cap hit counts for one query variant (a plain string is one variant). `semantic` is `null` when
  * the semantic leg did not run (lexical mode, no corpus, a failed leg, a filter
  * that matched no notes) — a number always means the leg ran and counted (0 =
  * ran, found nothing). `lexical` counts over the leg's candidate set pre
@@ -56,14 +56,16 @@ export interface ObservabilityContext {
   pinnedStatus: BackendStatus | undefined;
   /** Normalized queries, in input order. */
   queries: string[];
-  /** Whether the caller passed an array — `query_stats` is array-query-only. */
-  isMulti: boolean;
+  /** Whether the call carried a `filter`, which the cut note's suggested call must keep. */
+  hasFilter: boolean;
+  /** Whether the call named its `vault`, which the cut note's suggested call then names too. */
+  pinnedVault: boolean;
   /**
    * The active profile's fallback-retry threshold, named in the fallback note. Absent when
    * the profile has no fallback; the retry then never fires.
    */
   fallbackThreshold?: number;
-  /** The vault's name, for the stderr warning only. */
+  /** The vault's name, for the stderr warning and a pinned-vault cut note. */
   vault: string;
 }
 
@@ -71,7 +73,7 @@ export interface ObservabilityContext {
 export interface Observability {
   truncated: boolean;
   semantic_status: SemanticStatusField;
-  query_stats?: Record<string, QueryStatsEntry>;
+  query_stats: Record<string, QueryStatsEntry>;
   /** For stderr when the semantic leg failed and degraded; never on the payload. */
   warning?: string;
 }
@@ -118,6 +120,13 @@ function semanticStatus(
   return toStatusField({ state: 'unavailable' });
 }
 
+/**
+ * The cut note fires only while fetching every match is a reasonable next call:
+ * above this many lexical matches the variant is too broad to read in full, and
+ * a note on every broad variant would be the new `truncated`.
+ */
+export const CUT_NOTE_CEILING = 50;
+
 // What to do about a query variant that misfired, decided per entry and
 // emitted only when there is something to do. This is the response channel of
 // ADR-0010: the same guidance in the tool's description would be paid for on
@@ -125,15 +134,21 @@ function semanticStatus(
 // caller reading one of these entries is holding the numbers the advice is
 // about. Ordered by what a caller acts on first: a variant that hit nothing
 // anywhere is dropped before its tokens are worth diagnosing, and a token
-// diagnosis outranks a note about the quality of hits that did come back.
+// diagnosis outranks a note about the quality of hits that did come back. A
+// variant whose lexical matches were cut comes before the fallback note: it
+// names the one call that recovers notes this response never showed (#266).
 function queryStatsNote(args: {
+  query: string;
   semantic: number | null;
   lexical: number;
+  shown: number | undefined;
+  hasFilter: boolean;
+  vault: string | undefined;
   tokenCounts: Record<string, number> | undefined;
   fallback: boolean;
   fallbackThreshold: number | undefined;
 }): string | undefined {
-  const { semantic, lexical, tokenCounts, fallback, fallbackThreshold } = args;
+  const { query, semantic, lexical, shown, tokenCounts, fallback, fallbackThreshold } = args;
   if (lexical === 0 && (semantic === null || semantic === 0)) {
     if (tokenCounts === undefined) {
       return 'No hits in any leg that ran — rephrase or drop this variant.';
@@ -144,6 +159,12 @@ function queryStatsNote(args: {
     }
     return 'No hits: every token matches on its own but they never co-occur in one title, heading or paragraph — split this variant into separate array entries.';
   }
+  if (shown !== undefined && shown < lexical && lexical <= CUT_NOTE_CEILING) {
+    const q = JSON.stringify(query);
+    const vault = args.vault !== undefined ? `, vault: ${JSON.stringify(args.vault)}` : '';
+    const filter = args.hasFilter ? ' with the same filter' : '';
+    return `${q} matched ${lexical} notes lexically, ${shown} shown. For all of them: search_notes({ query: ${q}, mode: "lexical", limit: ${lexical}${vault} })${filter}.`;
+  }
   if (fallback && fallbackThreshold !== undefined) {
     return `Semantic hits came from the ${fallbackThreshold} fallback retry, so they are weaker than a normal result.`;
   }
@@ -153,8 +174,9 @@ function queryStatsNote(args: {
 function queryStatsEntry(
   query: string,
   { semantic, lexical }: Omit<LegOutcomes, 'truncated'>,
-  fallbackThreshold: number | undefined,
+  context: Pick<ObservabilityContext, 'fallbackThreshold' | 'hasFilter' | 'pinnedVault' | 'vault'>,
 ): QueryStatsEntry {
+  const { fallbackThreshold } = context;
   const ran = semantic.status === 'ran' ? semantic : undefined;
   const tokenCounts = lexical.status === 'ran' ? lexical.perQueryTokenCounts[query] : undefined;
   const semanticCount = ran !== undefined ? (ran.perQueryHits[query] ?? 0) : null;
@@ -166,8 +188,12 @@ function queryStatsEntry(
   const note =
     ran !== undefined || lexical.status === 'ran'
       ? queryStatsNote({
+          query,
           semantic: semanticCount,
           lexical: lexicalCount,
+          shown: lexical.status === 'ran' ? (lexical.perQueryShown[query] ?? 0) : undefined,
+          hasFilter: context.hasFilter,
+          vault: context.pinnedVault ? context.vault : undefined,
           tokenCounts,
           fallback,
           fallbackThreshold,
@@ -192,11 +218,11 @@ export function deriveObservability(
   context: ObservabilityContext,
 ): Observability {
   const { semantic, lexical } = outcomes;
-  const query_stats = context.isMulti
-    ? Object.fromEntries(
-        context.queries.map((q) => [q, queryStatsEntry(q, outcomes, context.fallbackThreshold)]),
-      )
-    : undefined;
+  // Every query gets an entry, a plain string included: without one there is no
+  // total to read "3 of 14" against (#266).
+  const query_stats = Object.fromEntries(
+    context.queries.map((q) => [q, queryStatsEntry(q, outcomes, context)]),
+  );
   const legTruncated =
     (semantic.status === 'ran' && semantic.truncated) ||
     (lexical.status === 'ran' && lexical.truncated);
@@ -204,7 +230,7 @@ export function deriveObservability(
   return {
     truncated: outcomes.truncated || legTruncated,
     semantic_status: semanticStatus(semantic, context.pinnedStatus),
-    ...(query_stats !== undefined ? { query_stats } : {}),
+    query_stats,
     ...(semantic.status === 'failed'
       ? {
           warning: `neuro-vault semantic: search_notes fell back to its lexical leg for vault "${context.vault}": ${String(semantic.error)}`,
