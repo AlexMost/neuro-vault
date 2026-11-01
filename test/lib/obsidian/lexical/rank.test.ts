@@ -135,6 +135,65 @@ describe('rankNotes', () => {
     for (const n of ranked) expect(n.matchedQueries).toHaveLength(1);
   });
 
+  describe('query variants fuse by weighted reciprocal rank', () => {
+    const rank = (map: ReturnType<typeof notes>, queries: string[], noteCap = 10) =>
+      rankNotes({
+        notes: map,
+        queries,
+        noteCap,
+        perNoteCap: 3,
+        getBacklinkCount: noBacklinks,
+      }).notes.map((n) => n.path);
+
+    it("a broad variant's title hits cannot crowd the first variant's body hits out of the pool", () => {
+      const map = notes([
+        ['Метрики A.md', ''],
+        ['Метрики B.md', ''],
+        ['Метрики C.md', ''],
+        ['x.md', 'тут згадано трейдинг\n'],
+        ['y.md', 'ще раз трейдинг у тексті абзацу\n'],
+      ]);
+      // One shared tier sort would take the three title hits first.
+      expect(rank(map, ['трейдинг', 'метрики'], 2)).toEqual(['x.md', 'y.md']);
+    });
+
+    it('weighs the first variant above the others at the same rank', () => {
+      const map = notes([
+        ['a.md', '# альфа\n'],
+        ['b.md', '# бета\n'],
+      ]);
+      expect(rank(map, ['бета', 'альфа'])).toEqual(['b.md', 'a.md']);
+      expect(rank(map, ['альфа', 'бета'])).toEqual(['a.md', 'b.md']);
+    });
+
+    it('a note several variants match outranks one matched by a single variant', () => {
+      const map = notes([
+        ['solo.md', '# трейдинг\n'],
+        ['both.md', 'трейдинг і біржа в одному абзаці, досить довгому, щоб знизити щільність\n'],
+        ['other.md', '# біржа\n'],
+      ]);
+      expect(rank(map, ['трейдинг', 'біржа'])[0]).toBe('both.md');
+    });
+
+    it('leaves matchedQueries and per-query counts as they were', () => {
+      const map = notes([
+        ['x.md', 'трейдинг\n'],
+        ['Метрики.md', 'трейдинг\n'],
+      ]);
+      const out = rankNotes({
+        notes: map,
+        queries: ['трейдинг', 'метрики'],
+        noteCap: 10,
+        perNoteCap: 3,
+        getBacklinkCount: noBacklinks,
+      });
+      expect(out.perQueryCounts).toEqual({ трейдинг: 2, метрики: 1 });
+      expect(out.notes.find((n) => n.path === 'Метрики.md')?.matchedQueries.sort()).toEqual(
+        ['метрики', 'трейдинг'].sort(),
+      );
+    });
+  });
+
   it('a phrase split across a hard-wrapped line still matches as one body unit at the paragraph line range', () => {
     const map = notes([['n.md', 'векторний\nпошук у vault\n']]);
     const { notes: ranked } = rankNotes({

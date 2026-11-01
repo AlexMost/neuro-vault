@@ -84,7 +84,7 @@ The lexical leg SHALL function whatever state the vault's embedding corpus is in
 
 ### Requirement: Lexical ranking is deterministic and tiered
 
-The lexical rank source SHALL order its candidates by six ordinal tiers — phrase-in-title, tokens-in-title, phrase-in-heading, tokens-in-heading, phrase-in-body-block, tokens-within-body-block — then within a tier by density (sum of matched token lengths / unit length) descending, then `backlink_count` descending, then `path` ascending. This ordering SHALL be deterministic for a fixed vault state and SHALL be the rank the fusion consumes for the lexical source. Lexically-sourced entries SHALL NOT carry a numeric lexical score field. An implementation MAY evaluate tiers lazily with early exit once the lexical cap is filled, provided the output is identical to full evaluation.
+The lexical rank source SHALL order its candidates by six ordinal tiers — phrase-in-title, tokens-in-title, phrase-in-heading, tokens-in-heading, phrase-in-body-block, tokens-within-body-block — then within a tier by density (sum of matched token lengths / unit length) descending, then `backlink_count` descending, then `path` ascending. For an array `query`, each variant SHALL be ordered this way on its own over the notes it matched, and the lexical source SHALL rank notes by weighted reciprocal rank over those per-variant orders (`weight / (k + rank)` summed over the variants that matched the note, the first variant weighted above the rest), ties broken by the single-list order above; a single `query` SHALL rank exactly by the single-list order. This ordering SHALL be deterministic for a fixed vault state and SHALL be the rank the fusion consumes for the lexical source. Lexically-sourced entries SHALL NOT carry a numeric lexical score field. An implementation MAY evaluate tiers lazily with early exit once the lexical cap is filled, provided the output is identical to full evaluation.
 
 #### Scenario: title match outranks body match
 
@@ -95,6 +95,11 @@ The lexical rank source SHALL order its candidates by six ordinal tiers — phra
 
 - **WHEN** the query is `пошук` in `mode: "lexical"` and two notes match in title: `Пошук` and `Довгі роздуми про пошук сенсу`
 - **THEN** `Пошук` precedes the longer title in `matches[]`
+
+#### Scenario: a broad variant cannot crowd out the first variant
+
+- **WHEN** the query is `["трейдинг", "метрики"]` in `mode: "lexical"` with a note cap of 2, three notes match `метрики` in their title and two notes match `трейдинг` only in body text
+- **THEN** the two `трейдинг` notes fill the pool
 
 #### Scenario: ordering is reproducible
 
