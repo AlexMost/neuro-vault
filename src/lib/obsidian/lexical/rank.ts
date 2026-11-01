@@ -24,7 +24,20 @@ interface Candidate {
   // the match survives the noteCap / perNoteCap trim.
   matches: Array<{ tier: number; density: number; key: string; build: () => LexicalMatch }>;
   matchedQueries: Set<string>;
+  // Best match per query variant: each variant ranks the notes on its own.
+  byQuery: Map<string, { tier: number; density: number }>;
 }
+
+/**
+ * Query variants are fused by weighted reciprocal rank (#265): each variant
+ * ranks its notes on its own, and a note scores `weight / (k + rank)` summed
+ * over the variants that matched it. So the title hits of a broad variant
+ * cannot push the exact term's body hits out of the pool. The first variant is
+ * the caller's own term and weighs more. A single query ranks as before.
+ */
+export const VARIANT_FUSION_K = 5;
+export const FIRST_VARIANT_WEIGHT = 1;
+export const OTHER_VARIANT_WEIGHT = 0.5;
 
 // tier = kindBase + (phrase ? 0 : 1); kindBase: title 0, heading 2, body 4
 function tierOf(kind: 'title' | 'heading' | 'body', hit: UnitHit): number {
@@ -79,6 +92,7 @@ export function rankNotes(opts: {
             density: hit.density,
             matches: [],
             matchedQueries: new Set(),
+            byQuery: new Map(),
           };
           byPath.set(notePath, cand);
         }
@@ -87,6 +101,10 @@ export function rankNotes(opts: {
           cand.density = hit.density;
         }
         cand.matchedQueries.add(q.original);
+        const best = cand.byQuery.get(q.original);
+        if (!best || tier < best.tier || (tier === best.tier && hit.density > best.density)) {
+          cand.byQuery.set(q.original, { tier, density: hit.density });
+        }
         // avoid duplicate evidence rows across queries for the same location
         const key = `${kind}:${lines?.[0] ?? -1}`;
         if (!cand.matches.some((m) => m.key === key)) {
@@ -115,11 +133,28 @@ export function rankNotes(opts: {
     }
   }
 
+  const tieBreak = (a: Candidate, b: Candidate) =>
+    opts.getBacklinkCount(b.path) - opts.getBacklinkCount(a.path) ||
+    (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+
+  const fused = new Map<Candidate, number>();
+  prepared.forEach((q, i) => {
+    const weight = i === 0 ? FIRST_VARIANT_WEIGHT : OTHER_VARIANT_WEIGHT;
+    const ranked = [...byPath.values()]
+      .filter((c) => c.byQuery.has(q.original))
+      .sort((a, b) => {
+        const qa = a.byQuery.get(q.original)!;
+        const qb = b.byQuery.get(q.original)!;
+        return qa.tier - qb.tier || qb.density - qa.density || tieBreak(a, b);
+      });
+    ranked.forEach((c, rank) => {
+      fused.set(c, (fused.get(c) ?? 0) + weight / (VARIANT_FUSION_K + rank + 1));
+    });
+  });
+
   const candidates = [...byPath.values()].sort(
     (a, b) =>
-      compareCandidates(a, b) ||
-      opts.getBacklinkCount(b.path) - opts.getBacklinkCount(a.path) ||
-      (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+      (fused.get(b) ?? 0) - (fused.get(a) ?? 0) || compareCandidates(a, b) || tieBreak(a, b),
   );
 
   const perQueryCounts: Record<string, number> = {};

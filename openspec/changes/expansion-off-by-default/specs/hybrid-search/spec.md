@@ -111,7 +111,7 @@ In `mode: "lexical"`, or whenever the vault's semantic backend is not `ready` (i
 
 ### Requirement: Semantic retrieval is arity-invariant
 
-The semantic leg SHALL treat query arity as a surfacing concern, not a retrieval one: a single string `query` and a one-element array `query` SHALL produce identical `matches[]` — same notes, same order, same `similarity`, same `blocks[]`, and the same top-level `truncated`. Every semantic-leg guarantee in this specification — mode defaults, the default-only fallback threshold, seed-scoped block selection, and per-seed block backfill — SHALL hold identically at both arities. The only permitted differences are the two response fields this specification already scopes to array queries: `matched_queries` on each match and the top-level `query_stats` object, both of which SHALL be absent for a single string `query` and present for an array `query` of any length, including one.
+The semantic leg SHALL treat query arity as a surfacing concern, not a retrieval one: a single string `query` and a one-element array `query` SHALL produce identical `matches[]` — same notes, same order, same `similarity`, same `blocks[]`, and the same top-level `truncated`. Every semantic-leg guarantee in this specification — mode defaults, the default-only fallback threshold, seed-scoped block selection, and per-seed block backfill — SHALL hold identically at both arities. The only permitted difference is the response field this specification scopes to array queries: `matched_queries` on each match, which SHALL be absent for a single string `query` and present for an array `query` of any length, including one. The top-level `query_stats` object SHALL be present, and identical, at both arities.
 
 #### Scenario: a one-element array matches the equivalent string query
 
@@ -121,12 +121,12 @@ The semantic leg SHALL treat query arity as a surfacing concern, not a retrieval
 #### Scenario: arity changes only which fields surface
 
 - **WHEN** the two calls above are compared field by field
-- **THEN** the array response additionally carries `query_stats` and a `matched_queries` array on each match, and the string response carries neither key — no other field differs
+- **THEN** the array response additionally carries a `matched_queries` array on each match, the string response does not, and both carry the same `query_stats` — no other field differs
 
 #### Scenario: the fallback threshold behaves identically at both arities
 
 - **WHEN** a query returns zero semantic hits at its mode-default threshold, called once as a string and once as a one-element array
-- **THEN** both calls retry at the active profile's fallback threshold and return the same seeds, and the array call additionally reports `query_stats.<q>.semantic_fallback: true`
+- **THEN** both calls retry at the active profile's fallback threshold and return the same seeds, and both report `query_stats.<q>.semantic_fallback: true`
 
 #### Scenario: leg-level pool truncation is reported identically at both arities
 
@@ -139,7 +139,7 @@ The semantic leg SHALL treat query arity as a surfacing concern, not a retrieval
 
 ### Requirement: search_notes returns one two-source RRF-ranked matches list
 
-`search_notes` SHALL return `{ matches, truncated }` (plus `query_stats` for array queries) where `matches[]` is a single list ranked by reciprocal-rank fusion over two rank sources: the semantic leg's order and the lexical leg's order. Each entry SHALL carry `path`, `vault`, `backlink_count`, and provenance `found_in` — a non-empty array drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"` listing every source that surfaced the note (lexical kinds: every distinct `matched_in` present in the entry's capped `lexical[]` evidence). Per-source evidence SHALL accompany its provenance: `similarity` when `"semantic"` is present, `blocks[]` when `"semantic"` is present and the note has block-level evidence — `blocks[]` SHALL be non-empty whenever present and an empty `blocks` array SHALL never appear in a response — `lexical[]` (snippet matches) when any `"lexical:*"` value is present; evidence fields for absent sources SHALL be omitted. No entry SHALL carry `"expansion"` provenance or an `expansion_similarity` field. A note SHALL appear at most once in `matches[]`. An empty result SHALL be `matches: []`, never omitted. The response SHALL NOT contain `semantic_matches`, `lexical_matches`, or nested `related[]`.
+`search_notes` SHALL return `{ matches, truncated, query_stats }` where `matches[]` is a single list ranked by reciprocal-rank fusion over two rank sources: the semantic leg's order and the lexical leg's order. Each entry SHALL carry `path`, `vault`, `backlink_count`, and provenance `found_in` — a non-empty array drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"` listing every source that surfaced the note (lexical kinds: every distinct `matched_in` present in the entry's capped `lexical[]` evidence). Per-source evidence SHALL accompany its provenance: `similarity` when `"semantic"` is present, `blocks[]` when `"semantic"` is present and the note has block-level evidence — `blocks[]` SHALL be non-empty whenever present and an empty `blocks` array SHALL never appear in a response — `lexical[]` (snippet matches) when any `"lexical:*"` value is present; evidence fields for absent sources SHALL be omitted. No entry SHALL carry `"expansion"` provenance or an `expansion_similarity` field. A note SHALL appear at most once in `matches[]`. An empty result SHALL be `matches: []`, never omitted. The response SHALL NOT contain `semantic_matches`, `lexical_matches`, or nested `related[]`.
 
 #### Scenario: a two-source note carries both provenance and both evidence kinds
 

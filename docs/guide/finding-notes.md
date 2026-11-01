@@ -82,7 +82,7 @@ Example — carve out absorbed atoms and dead notes from a broad query:
 
 ### Output shape
 
-Every call returns `{ matches, truncated, semantic_status }`, plus `query_stats` when `query` is an array. `matches[]` is always present, `[]` when nothing matched on any leg.
+Every call returns `{ matches, truncated, semantic_status, query_stats }`. `matches[]` is always present, `[]` when nothing matched on any leg.
 
 ```json
 {
@@ -146,11 +146,11 @@ Each note appears **at most once** in `matches[]`, even when both legs surface i
 
 Every state but `ready` also carries a `note` — one sentence saying what that state did to the response in hand ("the semantic leg did not run … these matches are lexical-only"). It rides on the payload rather than in the tool's description on purpose: a description is sent on every `tools/list`, while this is read only on the responses it applies to. It is not the backend's failure `reason`, which travels on error payloads (`SEMANTIC_INDEX_BUILDING`, `SEMANTIC_DISABLED`, `SEMANTIC_INDEX_NOT_FOUND`) and is deliberately not exposed here.
 
-Anything other than `ready` explains why a hybrid-mode call degraded to lexical-only for that vault. `ready` is a necessary condition for the semantic leg, not a report that it ran — to know whether it contributed to `matches[]`, read `mode` and (for array queries) `query_stats.semantic`, which is `null` exactly when the leg did not run. `indexed`/`total` ride along only while `state === "indexing"` — check `state` before reading them, since they're omitted in every other state, including `ready`.
+Anything other than `ready` explains why a hybrid-mode call degraded to lexical-only for that vault. `ready` is a necessary condition for the semantic leg, not a report that it ran — to know whether it contributed to `matches[]`, read `mode` and `query_stats.semantic`, which is `null` exactly when the leg did not run. `indexed`/`total` ride along only while `state === "indexing"` — check `state` before reading them, since they're omitted in every other state, including `ready`.
 
-### `query_stats` (array queries only)
+### `query_stats`
 
-For an array `query`, the response also includes `query_stats` — one line per input query, with pre-cap hit counts from each leg:
+The response also includes `query_stats` — one line per input query (a plain string `query` is one line), with pre-cap hit counts from each leg:
 
 ```json
 {
@@ -170,7 +170,7 @@ For an array `query`, the response also includes `query_stats` — one line per 
 }
 ```
 
-`{ semantic, lexical }` counts are taken **before** cross-query merging and **before** the `matches[]` cap — a query whose hits were entirely cut by the merged-list cap still reports its real pre-cap counts, so `{ semantic: 0, lexical: 0 }` reliably means "this phrasing found nothing anywhere," not "this phrasing's hits lost out to a bigger cap." That's the dead-variant signal: rephrase or drop that query, keep the ones with non-zero counts. `query_stats` is omitted entirely for a single string `query`.
+`{ semantic, lexical }` counts are taken **before** cross-query merging and **before** the `matches[]` cap — a query whose hits were entirely cut by the merged-list cap still reports its real pre-cap counts, so `{ semantic: 0, lexical: 0 }` reliably means "this phrasing found nothing anywhere," not "this phrasing's hits lost out to a bigger cap." That's the dead-variant signal: rephrase or drop that query, keep the ones with non-zero counts.
 
 **`semantic: null` means the semantic leg never ran for this call — not "ran and found nothing."** It's `null` under `mode: "lexical"`, when no semantic index is available for the vault (cold, disabled, or unavailable — check `semantic_status`), or when the `filter` matched zero notes (the empty-filter early return skips both legs). A *numeric* `semantic` — including `0` — always means the leg executed and counted; `{ semantic: 0, lexical: 3 }` says "this phrasing has no semantic neighbours, but it does match lexically," a different situation from `null`, which says "don't read anything into the missing semantic score, hybrid didn't run it this time." Check `mode` (or whether the vault has a corpus at all) before treating `null` as a dead-query signal — it usually isn't one.
 
@@ -201,7 +201,19 @@ For an array `query`, the response also includes `query_stats` — one line per 
 
 The first query's notes all scored below the `deep` default but at least one cleared the fallback floor, so the retry rescued them — flagged per query, not per call, since one query in a batch can need the rescue while another doesn't.
 
-**An entry worth acting on carries its own `note`.** It is one sentence naming the fix, and it exists so the tool description does not have to teach how to read these numbers to every session that never sees a misfire. It diagnoses in order of what a caller acts on first: a variant with no hits in any leg that ran names the tokens whose zero killed the AND match, or tells you to split it into separate array entries when every token matches alone but they never co-occur, or — with nothing more specific to say — to rephrase or drop it; failing all that, a `semantic_fallback` entry says its hits are the weaker kind. Entries that need nothing carry no `note`.
+**An entry worth acting on carries its own `note`.** It is one sentence naming the fix, and it exists so the tool description does not have to teach how to read these numbers to every session that never sees a misfire. It diagnoses in order of what a caller acts on first: a variant with no hits in any leg that ran names the tokens whose zero killed the AND match, or tells you to split it into separate array entries when every token matches alone but they never co-occur, or — with nothing more specific to say — to rephrase or drop it; failing that, a variant whose lexical matches were cut — it matched N notes lexically, fewer of them reached `matches[]`, and N is at most 50 — names N, how many are shown, and the call that returns all of them; failing all that, a `semantic_fallback` entry says its hits are the weaker kind. Entries that need nothing carry no `note`.
+
+```json
+"query_stats": {
+  "трейдинг": {
+    "semantic": null,
+    "lexical": 14,
+    "note": "\"трейдинг\" matched 14 notes lexically, 5 shown. For all of them: search_notes({ query: \"трейдинг\", mode: \"lexical\", limit: 14 })."
+  }
+}
+```
+
+That is the note to act on when the term is the one you were asked about: `truncated` is true on almost every call and cannot tell "nearly everything" from "5 of 14", while this note can. A call with a `filter` is told to run it with the same filter, and a call that named its `vault` gets that vault in the suggested call. Above 50 matches the variant is too broad to read in full, so it gets no note.
 
 The one case that deliberately gets no `note` is the empty-filter early return, where neither leg ran: a zero there describes the `filter`, not the query, and calling an untried variant dead would send you to rewrite something that was never searched.
 
@@ -237,14 +249,14 @@ For more on the semantic pipeline (merge, cap, orphan-block scoping, per-seed bl
 - Case-, accent-, and apostrophe-variant-insensitive **word-prefix** matching: a token matches only where it starts a word, and its end is free, so a stem still finds its inflected forms (`пошук` finds `пошуком`) while `api` no longer matches inside `rapid`. A word character is a letter, a digit, `_`, or an apostrophe inside a word (an opening quote still starts a word), so `arguments` does not match inside `tolerant_arguments` but does in `tolerant-arguments`. A token that starts with punctuation (`/api`, `#tag`, `.env`) matches wherever it occurs.
 - Excalidraw drawing payloads (`compressed-json` code blocks) are not searched; a drawing matches on its title, headings and `Text Elements`.
 - A multiword query requires ALL tokens to appear somewhere in the same unit (AND semantics); a contiguous phrase match ranks higher than a scattered-tokens match at the same location.
-- Ranking is six deterministic tiers — title/heading/body × phrase/tokens — with density (matched-chars ÷ unit length) as the tie-break within a tier, then `backlink_count` desc, then `path` asc. No opaque scoring, byte-for-byte reproducible. This is the order rank fusion consumes for the lexical source — see [`rank-fusion.md`](../architecture/rank-fusion.md).
+- Ranking is six deterministic tiers — title/heading/body × phrase/tokens — with density (matched-chars ÷ unit length) as the tie-break within a tier, then `backlink_count` desc, then `path` asc. No opaque scoring, byte-for-byte reproducible. With an array `query`, each string is ranked this way on its own and the lists are fused by weighted reciprocal rank (the first string ×1, the others ×0.5), so put the exact term first; a single string ranks exactly as above. This is the order rank fusion consumes for the lexical source — see [`rank-fusion.md`](../architecture/rank-fusion.md).
 - `mode: "lexical"` never touches the embedding corpus loader — it works even when the vault has a cold, disabled, or absent index. In this mode `matches[]` preserves the lexical leg's order exactly and every `found_in` is lexical-only.
 - The lexical leg is the one the semantic leg degrades to, so it has nothing to degrade to itself. If it cannot answer (the shared background process did not respond in time, was restarted mid-call, or failed while searching), `search_notes` fails for that vault with `DEPENDENCY_ERROR` ("Lexical search failed", `details: { vault, operation: "search_notes" }`) rather than returning a semantic-only list. Retrying is safe: the next call reconnects, starting the background process again if needed. `--no-shared` keeps the leg inside the server process.
 - Each match's `backlink_count` comes from one read of the vault's wikilink graph. If that read fails, `search_notes` fails for that vault with `DEPENDENCY_ERROR` ("Graph read failed", `details: { vault, operation: "search_notes" }`) rather than reporting counts of 0. The same holds for every tool that reads the graph ([Wikilink graph failures](./reading-and-modifying.md)).
 
 ### Tuning threshold (semantic leg)
 
-`threshold` reaches only the semantic leg's note scores — never blocks (always filtered at the active model's block-evidence floor), never the lexical leg. Passing it explicitly is a **hard filter**: notes scoring below it never become semantic seeds, and if none clear the bar the semantic leg returns an honest zero — no rescue, no retry. Leave it out and the effort default applies instead (the model's `quick` or `deep` value). Under a model with a `fallback` floor, a default that finds nothing is retried once at it; that retry is flagged per query as `semantic_fallback: true` in `query_stats` (array `query` only — see above). The default `harrier-270m` has no fallback, so a query with no semantic hit above its floor gets zero semantic results, while the lexical leg still runs.
+`threshold` reaches only the semantic leg's note scores — never blocks (always filtered at the active model's block-evidence floor), never the lexical leg. Passing it explicitly is a **hard filter**: notes scoring below it never become semantic seeds, and if none clear the bar the semantic leg returns an honest zero — no rescue, no retry. Leave it out and the effort default applies instead (the model's `quick` or `deep` value). Under a model with a `fallback` floor, a default that finds nothing is retried once at it; that retry is flagged per query as `semantic_fallback: true` in `query_stats` (see above). The default `harrier-270m` has no fallback, so a query with no semantic hit above its floor gets zero semantic results, while the lexical leg still runs.
 
 **The numbers depend on the embedding model.** Every model spreads its cosine scores over its own range, so each `--model` profile carries its own calibrated defaults and there is no universal "0.5". The defaults, per profile:
 

@@ -128,8 +128,17 @@ describe('runRetrievalPipeline', () => {
       status: 'ran',
       perQueryCounts: { quirkyterm: 2 },
       perQueryTokenCounts: {},
+      perQueryShown: { quirkyterm: 2 },
       totalNotes: NOTE_COUNT + 1,
       truncated: false,
+    });
+  });
+
+  it("counts each query's lexical notes that survive the merged cap", async () => {
+    const result = await runRetrievalPipeline({ ...DEEP, semantic: false, cap: 1 }, makeDeps());
+    expect(result.lexical).toMatchObject({
+      perQueryCounts: { quirkyterm: 2 },
+      perQueryShown: { quirkyterm: 1 },
     });
   });
 

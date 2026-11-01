@@ -492,7 +492,7 @@ describe('query_stats', () => {
         // entry itself — the tool description no longer explains this case.
         Мобі: { semantic: 0, lexical: 0, note: expect.stringMatching(/rephrase or drop/i) },
       });
-      expect(out.query_stats!['пошук']).not.toHaveProperty('note');
+      expect(out.query_stats['пошук']).not.toHaveProperty('note');
     } finally {
       await cleanup();
     }
@@ -697,19 +697,19 @@ describe('arity invariance (SDK gate)', () => {
       const asString = await callTool<SearchNotesOutput>(reg, { query: 'alpha' });
       const asArray = await callTool<SearchNotesOutput>(reg, { query: ['alpha'] });
 
-      // String: neither array-only field is present.
-      expect(asString.query_stats).toBeUndefined();
+      // String: no matched_queries, but query_stats as for an array of one (#266).
+      expect(asString.query_stats).toEqual(asArray.query_stats);
       for (const match of asString.matches) {
         expect(match).not.toHaveProperty('matched_queries');
       }
 
-      // Array of one: both present, and matched_queries names the one query.
-      expect(Object.keys(asArray.query_stats!)).toEqual(['alpha']);
+      // Array of one: matched_queries names the one query.
+      expect(Object.keys(asArray.query_stats)).toEqual(['alpha']);
       for (const match of asArray.matches) {
         expect(match.matched_queries).toEqual(['alpha']);
       }
 
-      // Nothing else differs: strip the two array-only fields and compare.
+      // Nothing else differs: strip the array-only field and compare.
       const strip = (o: SearchNotesOutput) => ({
         truncated: o.truncated,
         matches: o.matches.map(({ matched_queries: _mq, ...rest }) => rest),
@@ -768,7 +768,7 @@ describe('arity invariance (SDK gate)', () => {
       expect(strip(asArray)).toEqual(strip(asString));
 
       // Array-only: the fallback flag itself.
-      expect(asArray.query_stats!['alpha'].semantic_fallback).toBe(true);
+      expect(asArray.query_stats['alpha'].semantic_fallback).toBe(true);
     } finally {
       await stringVault.cleanup();
       await arrayVault.cleanup();
