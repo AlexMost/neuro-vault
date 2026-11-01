@@ -70,7 +70,7 @@ export type SearchNotesOutput = {
   matches: UnifiedMatch[];
   truncated: boolean;
   semantic_status: SemanticStatusField;
-  query_stats?: Record<string, QueryStatsEntry>;
+  query_stats: Record<string, QueryStatsEntry>;
 };
 
 export interface SearchNotesDeps {
@@ -214,7 +214,7 @@ async function runSearchForEntry(
   const { warning, ...observability } = deriveObservability(result, {
     pinnedStatus,
     queries,
-    isMulti,
+    hasFilter: input.filter !== undefined,
     fallbackThreshold: similarity.fallback,
     vault: entry.name,
   });
@@ -291,7 +291,7 @@ export function buildSearchNotesTool(
     '- `truncated` — top-level, always present; true when candidates were dropped, either by the merged cap (recover by raising `limit`) or by a leg\'s internal pool cap (in hybrid, `limit` won\'t help — raise `effort` to "deep", or narrow `query`/`filter`).',
     '- `semantic_status` — top-level, always present: `{ state, indexed?, total? }` describing the VAULT\'s index, not this call. Every state but "ready" carries a `note` saying what it did to this response.',
     '- `expansion_similarity` (deep): note-to-note similarity to a semantic hit, not the query; not comparable with `similarity`.',
-    '- `query_stats` — array queries only: per input query, PRE-cap hit counts `{ semantic, lexical }`. `semantic` is `null` when the semantic leg did not run at all; a number always means it ran. An entry worth acting on carries its own `note` diagnosing it.',
+    '- `query_stats` — per input query (a string is one), PRE-cap hit counts `{ semantic, lexical }`. `semantic` is `null` when the semantic leg did not run at all; a number always means it ran. An entry worth acting on carries its own `note` diagnosing it.',
     '',
     'LEXICAL MATCHING: case/accent-insensitive word prefix (`пошук` finds `пошуком`); ALL tokens must match (AND); an exact phrase ranks higher.',
     '',

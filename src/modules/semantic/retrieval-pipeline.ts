@@ -58,7 +58,8 @@ export type SemanticLegOutcome =
 
 /**
  * What happened to the lexical leg: never ran (a filter that matched no notes), or ran — with
- * its pre-cap per-query counts and whether its note cap dropped candidates (`truncated`). It
+ * its pre-cap per-query counts, how many of each query's notes reached the final list after
+ * the merged cap (`perQueryShown`), and whether its note cap dropped candidates (`truncated`). It
  * has no `failed` variant: the lexical leg is what a semantic failure degrades to, so its
  * failure fails the search, and `runRetrievalPipeline` throws `LexicalSearchError` instead.
  */
@@ -68,6 +69,7 @@ export type LexicalLegOutcome =
       status: 'ran';
       perQueryCounts: Record<string, number>;
       perQueryTokenCounts: Record<string, Record<string, number>>;
+      perQueryShown: Record<string, number>;
       totalNotes: number;
       truncated: boolean;
     };
@@ -176,6 +178,12 @@ export async function runRetrievalPipeline(
     };
   });
 
+  const perQueryShown: Record<string, number> = Object.fromEntries(
+    input.queries.map((q) => [q, 0]),
+  );
+  for (const c of candidates)
+    for (const q of c.lexical?.matchedQueries ?? []) perQueryShown[q] = (perQueryShown[q] ?? 0) + 1;
+
   return {
     candidates,
     truncated: fused.length > cap,
@@ -184,6 +192,7 @@ export async function runRetrievalPipeline(
       status: 'ran',
       perQueryCounts: lexical.perQueryCounts,
       perQueryTokenCounts: lexical.perQueryTokenCounts,
+      perQueryShown,
       totalNotes: lexical.totalNotes,
       truncated: lexical.truncated,
     },

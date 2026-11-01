@@ -151,4 +151,47 @@ describe('search_notes end-to-end sanity fixture', () => {
       await cleanup();
     }
   });
+  describe('the cut note (#266)', () => {
+    const vaultOf = (n: number) =>
+      makeLexicalVault(
+        Object.fromEntries(
+          Array.from({ length: n }, (_, i) => [`Note ${i}.md`, `трейдинг номер ${i}\n`]),
+        ),
+      );
+
+    it('a plain string query returns query_stats, and a cut variant carries N, k and the call', async () => {
+      const { deps, cleanup } = await vaultOf(14);
+      try {
+        const reg = registerTool(buildSearchNotesTool(deps));
+        const out = await callTool<SearchNotesOutput>(reg, { query: 'трейдинг', mode: 'lexical' });
+        expect(out.matches).toHaveLength(5);
+        expect(out.query_stats['трейдинг']).toMatchObject({ semantic: null, lexical: 14 });
+        expect(out.query_stats['трейдинг']?.note).toBe(
+          '"трейдинг" matched 14 notes lexically, 5 shown. For all of them: search_notes({ query: "трейдинг", mode: "lexical", limit: 14 }).',
+        );
+
+        // The suggested call returns all of them, and carries no note.
+        const all = await callTool<SearchNotesOutput>(reg, {
+          query: 'трейдинг',
+          mode: 'lexical',
+          limit: 14,
+        });
+        expect(all.matches).toHaveLength(14);
+        expect(all.query_stats['трейдинг']).not.toHaveProperty('note');
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('a variant above the ceiling carries no note', async () => {
+      const { deps, cleanup } = await vaultOf(51);
+      try {
+        const reg = registerTool(buildSearchNotesTool(deps));
+        const out = await callTool<SearchNotesOutput>(reg, { query: 'трейдинг', mode: 'lexical' });
+        expect(out.query_stats['трейдинг']).toEqual({ semantic: null, lexical: 51 });
+      } finally {
+        await cleanup();
+      }
+    });
+  });
 });
