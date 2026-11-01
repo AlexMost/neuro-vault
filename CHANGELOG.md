@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [17.5.0](https://github.com/AlexMost/neuro-vault/compare/v17.4.0...v17.5.0) (2026-11-01)
+
+
+### Features
+
+* **corpus:** real-line spans with a one-time corpus rebuild, a heading projection (1/4) ([#256](https://github.com/AlexMost/neuro-vault/issues/256)) ([9050dd4](https://github.com/AlexMost/neuro-vault/commit/9050dd45be3d8012fc11026a2a426eaebca1ff9c)), closes [#239](https://github.com/AlexMost/neuro-vault/issues/239) [#152](https://github.com/AlexMost/neuro-vault/issues/152) [#189](https://github.com/AlexMost/neuro-vault/issues/189)
+* **read-notes:** heading and line selections (3/4) ([#259](https://github.com/AlexMost/neuro-vault/issues/259)) ([c9df2fa](https://github.com/AlexMost/neuro-vault/commit/c9df2fad301301f0faa0bcee21e785b8070c94a2)), closes [#239](https://github.com/AlexMost/neuro-vault/issues/239) [#152](https://github.com/AlexMost/neuro-vault/issues/152) [#189](https://github.com/AlexMost/neuro-vault/issues/189)
+* **read-notes:** outline mode (2/4) ([#258](https://github.com/AlexMost/neuro-vault/issues/258)) ([f9d3826](https://github.com/AlexMost/neuro-vault/commit/f9d3826ce2872880a42dab3d113ae7f1e12b8f8a)), closes [#239](https://github.com/AlexMost/neuro-vault/issues/239) [#152](https://github.com/AlexMost/neuro-vault/issues/152) [#189](https://github.com/AlexMost/neuro-vault/issues/189)
+* **read-notes:** structured preview (4/4) ([#260](https://github.com/AlexMost/neuro-vault/issues/260)) ([ec57314](https://github.com/AlexMost/neuro-vault/commit/ec57314a9ffdd8e8d29163931d760ba224acf62e)), closes [#239](https://github.com/AlexMost/neuro-vault/issues/239) [#152](https://github.com/AlexMost/neuro-vault/issues/152) [#189](https://github.com/AlexMost/neuro-vault/issues/189)
+* **tools:** advertise MCP annotations on every tool ([#250](https://github.com/AlexMost/neuro-vault/issues/250)) ([fa7b6e1](https://github.com/AlexMost/neuro-vault/commit/fa7b6e1fe1699c6ff2a03dd8ef5a4843aea08aa8)), closes [#249](https://github.com/AlexMost/neuro-vault/issues/249)
+
+
+### Bug Fixes
+
+* **corpus:** review follow-ups for the heading projection ([#257](https://github.com/AlexMost/neuro-vault/issues/257)) ([c4e9ac8](https://github.com/AlexMost/neuro-vault/commit/c4e9ac83f1b54cd87db8667d4b1318c4348d05af)), closes [#239](https://github.com/AlexMost/neuro-vault/issues/239) [#152](https://github.com/AlexMost/neuro-vault/issues/152) [#189](https://github.com/AlexMost/neuro-vault/issues/189)
+* **server:** the gate, not the SDK, validates tool arguments ([#261](https://github.com/AlexMost/neuro-vault/issues/261)) ([02025ea](https://github.com/AlexMost/neuro-vault/commit/02025eaa37ef5b2a9faa33f1d6048d452b078641))
+
 ## [17.4.0](https://github.com/AlexMost/neuro-vault/compare/v17.3.0...v17.4.0) (2026-10-30)
 
 
