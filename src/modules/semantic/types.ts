@@ -22,7 +22,8 @@ export interface SearchResult {
 }
 
 // Tree node types — what tools emit. Direct-result-per-note, with leaves for
-// blocks belonging to that note and expansion neighbours of that note.
+// blocks belonging to that note and, only when the policy is asked to expand
+// (no effort profile does, #270), expansion neighbours of that note.
 export interface BlockMatch {
   heading: string;
   lines: [number, number];

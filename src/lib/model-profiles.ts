@@ -22,7 +22,10 @@ export interface SimilarityDefaults {
   readonly fallback?: number;
   /** Floor of the deep block-evidence pass; independent of the note floors. */
   readonly blockFloor: number;
-  /** Default seed↔note floor for the expansion leg. */
+  /**
+   * Default seed↔note floor of the retired expansion step: measured by the
+   * eval's `--stats`, applied by no tool since no effort profile expands (#270).
+   */
   readonly expansionFloor: number;
   /** `get_similar_notes` default threshold. */
   readonly similarNotes: number;

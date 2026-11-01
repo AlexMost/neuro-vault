@@ -7,8 +7,8 @@ running server — by calling the production retrieval pipeline directly
 corpus and the standalone lexical reader (`createStandaloneLexicalReader`, a
 `LexicalIndex` over the vault's reader with the eval's graph). It exists to replace "judge a
 ranking change by hand-running a few queries" with a repeatable number: every
-RRF weight (`EXPANSION_WEIGHT`, pool sizes, adaptive `k`) was hand-picked and
-can only be re-tuned against measured data.
+fusion knob (pool sizes, adaptive `k`, and the expansion leg that #270 switched
+off on its evidence) was hand-picked and can only be re-tuned against measured data.
 
 ## Golden set
 
@@ -136,8 +136,8 @@ per-model directories is moved into its model's directory by the first server or
 - **`--model <key>`** — which embedding model profile the run uses. One profile
   per run: the same profile embeds every golden query (through the same provider
   the server uses, so a profile's query prefix is applied) and supplies the
-  similarity defaults the run reads (the `fused` expansion floor, and the
-  thresholds `--stats` reports on). An unknown key fails with the list of
+  similarity defaults the run reads (the thresholds `--stats` reports on, and
+  the `expansion_floor` the report echoes). An unknown key fails with the list of
   supported ones.
 
 A model's corpus holds vectors from exactly one model, and a query vector is only
@@ -188,8 +188,8 @@ reports on `--pipeline semantic` (see [Scoring](#scoring)).
     lists the array entries it skipped in the report's `golden.skipped_ids`. It
     runs positional only.
   - `fused` — the production RRF pipeline itself: `runRetrievalPipeline`, the
-    function `search_notes` calls — semantic leg, expansion (at deep effort)
-    with the selected profile's expansion floor, the standalone lexical reader
+    function `search_notes` calls — semantic leg (no expansion: no effort profile
+    runs that leg since #270), the standalone lexical reader
     (`createStandaloneLexicalReader`) with its real wikilink-graph backlink
     tie-break, and RRF fusion. An array entry is passed as `queries`, one call,
     as the tool passes it. The pool sizes come from `EFFORT_PROFILES` and
@@ -235,21 +235,14 @@ still carries each path's score, so a threshold can be judged afterwards (see
 [Calibration](#calibration)). A production run scores the list the profile's
 floors and the effort's cap leave.
 
-The expansion leg's floor is the deliberate exception: **`expansion_floor` is
-the selected profile's own default** (`ModelProfile.similarity.expansionFloor`)
-on both runs. It is a similarity threshold too, but on the seed↔note scale
-rather than the query↔note one, and zeroing it would stop the `fused` pipeline
-from being the production pipeline for that profile — which is the whole point
-of that pipeline. The cost is a caveat, worth stating plainly:
-
-> A cross-model comparison of `fused` is not clean. Under a model change the
-> expansion leg's membership shifts with the new model's similarity
-> distribution and with its own floor, while the semantic leg's (threshold 0)
-> does not, so part of a `fused` metric delta can come from the floor rather
-> than from ranking quality. **`--pipeline semantic` is the clean cross-model
-> read.** The floor actually in effect is always recorded as
-> `config.expansion_floor`, so a report never hides which value produced its
-> numbers.
+`expansion_floor` is still recorded as the selected profile's own default
+(`ModelProfile.similarity.expansionFloor`) on both runs, although no effort runs
+the expansion leg any more (#270): the pipeline accepts the value and applies it
+to nothing. The caveat that once came with it — a cross-model `fused` comparison
+moving with the expansion leg's membership under each model's floor — no longer
+applies. **`--pipeline semantic` remains the clean cross-model read**, because it
+carries no lexical leg either. The value in effect is always recorded as
+`config.expansion_floor`, so a report never hides which value it was run with.
 
 The deep block-evidence floor (`ModelProfile.similarity.blockFloor`) is recorded
 as `config.block_floor` too. Blocks are not scored, so it never moves a metric;
@@ -306,8 +299,9 @@ in the vault's own private repository, never in this one. The file is named
   were embedded under (provider, model key and id, revision, dtype, dimensions,
   pooling, max tokens); `model_id` repeats `identity.model_id`.
 - `config` — every knob in effect (pool sizes, thresholds, the profile's
-  expansion floor, fusion weight, the adaptive-`k` policy), so a run with
-  different knobs is distinguishable at a glance.
+  expansion floor, fusion weight, the adaptive-`k` policy; `expansion` reads
+  false and `expansion_limit` 0 since #270), so a run with different knobs is
+  distinguishable at a glance.
 - `golden` — the golden set's path, its entry `count`, how many entries this
   run `scored`, and the `skipped_ids` (`semantic` skips array entries).
 - `coverage` — the golden set against the loaded corpus (#104):
@@ -322,7 +316,8 @@ in the vault's own private repository, never in this one. The file is named
 - `diagnostics` — on a production run of `fused` or `lexical`: which legs the
   returned notes came from, for answerable and control entries apart —
   `returned`, `semantic_only` (the notes a semantic floor alone decides), the
-  count per leg (`semantic`, `lexical`, `expansion`), and of the returned
+  count per leg (`semantic`, `lexical`, and `expansion`, which reads 0 since #270
+  and stays so that older reports compare), and of the returned
   notes the labelled-relevant ones (`relevant`) and those of them only semantic
   found (`relevant_semantic_only`).
 - `per_query` — for each entry: its `query`, `class` and `lang`, its ranked top
@@ -376,15 +371,13 @@ metric (the harness ranks at threshold 0, so positions give a threshold nothing
 to maximise).
 
 A `--stats` run adds a `stats` object to the report and prints a summary. It
-measures seven populations, each summarised by quantiles (`n`, `min`, `p05`,
-`p10`, `p25`, `p50`, `p75`, `p90`, `p95`, `max`). Three are ranked (cut to a
-top-k), three are their unranked counterparts, and `note_max` is one value per
-note:
+measures six populations, each summarised by quantiles (`n`, `min`, `p05`,
+`p10`, `p25`, `p50`, `p75`, `p90`, `p95`, `max`). Two are ranked (cut to a
+top-k), three are unranked, and `note_max` is one value per note:
 
 | population             | what it holds                                                                          | thresholds it feeds         |
 | ---------------------- | -------------------------------------------------------------------------------------- | --------------------------- |
 | `query_candidates`     | query↔note similarities of each golden query's top-10 candidates (ranked)              | none (diagnostic)           |
-| `expansion_neighbours` | seed↔neighbour similarities the expansion leg sees, before its floor (ranked)          | none (diagnostic)           |
 | `note_top10`           | every note's top-10 neighbour similarities (ranked)                                    | none (diagnostic)           |
 | `query_all`            | each golden query against every note (unranked)                                        | `quick`, `deep`, `fallback` |
 | `seed_all`             | each seed against every note that is not one of that query's seeds (unranked)          | `expansionFloor`            |

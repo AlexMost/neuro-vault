@@ -87,7 +87,7 @@ Four practical rules:
 - **Keep `index` on the server's `--model`.** It is advice about pre-warming, not a guard against damage: `index` with that value warms the corpus the server serves, while any other value builds a separate corpus beside it that the server never reads.
 - **Upgrading from a release with a different default model indexes every vault once** with the new default, in the background. The old model's corpus stays where it is (migrated into its own directory). Run `neuro-vault-mcp index --vault <path>` after upgrading if you would rather pay that cost ahead of time.
 - **Corpora take disk, one per model, until you prune them.** A corpus is roughly tens of MB per thousand notes — about 20 MB for the default profile on a ~900-note vault, more for the wider models (`harrier-0.6b` is about 33 MB there). `neuro-vault-mcp index --vault <path> --model <key> --prune` reindexes as usual and then removes every other model's corpus (and a leftover single-corpus layout), printing `pruned <vault>: removed <names>` or `pruned <vault>: nothing to remove`. Pruning is skipped when the indexing threw (the error prints as `index <vault>: <message>` on stderr) and when it returned with notes in scope but none indexed (stderr says `not pruning <vault>: …`, which is what an offline first run of a new model looks like), so a failed run cannot leave you with nothing. It also refuses, and that vault fails, if the selected model's corpus is missing when the prune runs, so a concurrent prune by another model can never leave the vault empty. A prune that has to wait for another process prints the same `waiting for another neuro-vault process …` line as indexing does. If only some notes failed and others were indexed, it still prunes. A server still serving a pruned model keeps answering from the copy it holds in memory, and its next indexing pass writes the pruned directory back from that copy without re-embedding.
-- **Re-tune or drop an explicit `threshold` or `expansion_floor` when you switch models.** A value tuned on the old model (say `0.5`) is on a different scale under another one: on the measured vault, `harrier-270m` query-to-note similarities sit mostly below about 0.44 (95th percentile 0.440), so a `threshold` of 0.5 would cut nearly everything. Omit the parameter to get the active model's calibrated default.
+- **Re-tune or drop an explicit `threshold` when you switch models.** A value tuned on the old model (say `0.5`) is on a different scale under another one: on the measured vault, `harrier-270m` query-to-note similarities sit mostly below about 0.44 (95th percentile 0.440), so a `threshold` of 0.5 would cut nearly everything. Omit the parameter to get the active model's calibrated default.
 
 An unknown key fails at startup with an error that lists the valid keys.
 
@@ -95,7 +95,7 @@ More on when a corpus is rebuilt: [`docs/architecture/own-corpus.md`](../archite
 
 ## Similarity thresholds per model
 
-Every model spreads its cosine similarities over its own range, so a fixed cut-off would be right for one model and wrong for the others. Each profile therefore carries its own defaults, used whenever you do not pass `threshold` / `expansion_floor` yourself:
+Every model spreads its cosine similarities over its own range, so a fixed cut-off would be right for one model and wrong for the others. Each profile therefore carries its own defaults, used whenever you do not pass `threshold` yourself:
 
 | Default | `harrier-270m` (default) | `granite-97m` | `harrier-0.6b` | Governs |
 | --- | --- | --- | --- | --- |
@@ -103,13 +103,13 @@ Every model spreads its cosine similarities over its own range, so a fixed cut-o
 | `deep` | 0.45 | 0.66 | 0.19 | `search_notes` semantic floor at `effort: "deep"` |
 | `fallback` | — (none) | 0.65 | 0.15 | one-shot retry floor when a default finds nothing; without one, no retry |
 | `blockFloor` | 0.13 | 0.66 | 0.19 | block-evidence floor at `effort: "deep"` |
-| `expansionFloor` | 0.20 | 0.65 | 0.25 | `search_notes` expansion leg (`expansion_floor`) |
+| `expansionFloor` | 0.20 | 0.65 | 0.25 | profile data only; the `search_notes` expansion leg no longer runs and `expansion_floor` is inert |
 | `similarNotes` | 0.22 | 0.67 | 0.29 | `get_similar_notes` `threshold` |
 | `duplicates` | 0.77 | 0.90 | 0.76 | `find_duplicates` `threshold` |
 
 How they were derived. `harrier-270m`'s `quick` and `deep` were set on the author's labelled queries, including control queries the vault cannot answer: 0.45 is where those stop returning notes while the answerable ones keep their top-3 hits. Its fallback was dropped, because a retry would refill exactly what the floor removes; a query with no semantic hit above 0.45 now gets zero semantic results, and the lexical leg still runs. The cost is English queries against Ukrainian notes, which score in the same band as English noise. For everything else: on the author's vault, each model's threshold is the value at which the same share of the vault's similarity scores passes as did under the reference model the original defaults were tuned on, rounded down; floors that cut nothing on that reference are set just below each profile's own minimum; and two checks on the labelled queries then confirm that `deep` filters out no relevant first hit and that `quick` keeps hit@3 within one query of unfiltered. The full method, the guards and the aggregates are in [ADR-0017](../adr/0017-embedding-model-profiles.md) and [`docs/architecture/retrieval-policy.md`](../architecture/retrieval-policy.md#calibration).
 
-You can read the numbers in force from the `search_notes` tool description, which quotes the active model's `quick`, `deep`, `fallback` (or says there is no retry) and `expansionFloor`; `get_similar_notes` and `find_duplicates` apply their defaults without quoting them.
+You can read the numbers in force from the `search_notes` tool description, which quotes the active model's `quick`, `deep` and `fallback` (or says there is no retry); `get_similar_notes` and `find_duplicates` apply their defaults without quoting them.
 
 **An explicit `threshold` is on the active model's scale and does not carry over to another model.** A value copied from a `granite-97m` setup (say `0.7`) filters nearly everything out on `harrier-270m`; one tuned on `harrier-270m` (say `0.2`) lets almost everything through on `granite-97m`. When you switch models, drop explicit thresholds and let the defaults apply, or re-tune against the new table. Tuning advice: [Finding Notes → Tuning threshold](./finding-notes.md#tuning-threshold-semantic-leg).
 
@@ -126,7 +126,7 @@ Measured on **2026-10-13** on a copy of the author's private vault: **949 notes 
 | `granite-97m` | 0.549 | 0.463 | 1.000 | 0.600 | 0.524 | 1.000 |
 | `harrier-0.6b` | 0.769 | 0.749 | 0.875 | 0.880 | 0.857 | 1.000 |
 
-For the default model, the full `search_notes` pipeline (semantic + lexical + expansion fused) scores a **fused MRR of 0.792** on the same queries (0.752 on the Ukrainian slice, 1.000 on the English one).
+For the default model, the full `search_notes` pipeline as it was on that date (semantic + lexical + expansion fused; the expansion leg has since been switched off) scores a **fused MRR of 0.792** on the same queries (0.752 on the Ukrainian slice, 1.000 on the English one).
 
 **Read the English column with care.** It rests on four queries, and a single query moving from first place to seventh shifts English MRR by up to 0.25 (each English query is worth a quarter of the slice). `harrier-270m`'s 0.786 is exactly that: one query landing at rank 7 rather than near the top. The Ukrainian slice (21 queries) and the overall figures are the more reliable signal, and the vault is one person's, mostly Ukrainian — your notes may rank differently.
 

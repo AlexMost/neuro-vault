@@ -15,11 +15,11 @@ What produced a corpus's vectors: the embedding profile's producing fields plus 
 _Avoid_: manifest (that is where it is recorded), model version
 
 **Semantic leg**:
-One ranked list of notes for a search, produced from the corpus by vector similarity, with matching blocks and expansion neighbours per note.
+One ranked list of notes for a search, produced from the corpus by vector similarity, with matching blocks per note.
 _Avoid_: semantic results, vector search
 
 **Semantic floor**:
-The lowest query↔note similarity at which a note counts as a semantic hit, set per model profile and effort. The deep block-evidence floor is separate, and so is the expansion floor.
+The lowest query↔note similarity at which a note counts as a semantic hit, set per model profile and effort. The deep block-evidence floor is separate.
 _Avoid_: threshold (that is the caller's override), cut-off
 
 **Lexical leg**:
