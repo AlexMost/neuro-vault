@@ -58,12 +58,14 @@ export interface ObservabilityContext {
   queries: string[];
   /** Whether the call carried a `filter`, which the cut note's suggested call must keep. */
   hasFilter: boolean;
+  /** Whether the call named its `vault`, which the cut note's suggested call then names too. */
+  pinnedVault: boolean;
   /**
    * The active profile's fallback-retry threshold, named in the fallback note. Absent when
    * the profile has no fallback; the retry then never fires.
    */
   fallbackThreshold?: number;
-  /** The vault's name, for the stderr warning only. */
+  /** The vault's name, for the stderr warning and a pinned-vault cut note. */
   vault: string;
 }
 
@@ -118,6 +120,13 @@ function semanticStatus(
   return toStatusField({ state: 'unavailable' });
 }
 
+/**
+ * The cut note fires only while fetching every match is a reasonable next call:
+ * above this many lexical matches the variant is too broad to read in full, and
+ * a note on every broad variant would be the new `truncated`.
+ */
+export const CUT_NOTE_CEILING = 50;
+
 // What to do about a query variant that misfired, decided per entry and
 // emitted only when there is something to do. This is the response channel of
 // ADR-0010: the same guidance in the tool's description would be paid for on
@@ -128,19 +137,13 @@ function semanticStatus(
 // diagnosis outranks a note about the quality of hits that did come back. A
 // variant whose lexical matches were cut comes before the fallback note: it
 // names the one call that recovers notes this response never showed (#266).
-/**
- * The cut note fires only while fetching every match is a reasonable next call:
- * above this many lexical matches the variant is too broad to read in full, and
- * a note on every broad variant would be the new `truncated`.
- */
-export const CUT_NOTE_CEILING = 50;
-
 function queryStatsNote(args: {
   query: string;
   semantic: number | null;
   lexical: number;
   shown: number | undefined;
   hasFilter: boolean;
+  vault: string | undefined;
   tokenCounts: Record<string, number> | undefined;
   fallback: boolean;
   fallbackThreshold: number | undefined;
@@ -158,7 +161,9 @@ function queryStatsNote(args: {
   }
   if (shown !== undefined && shown < lexical && lexical <= CUT_NOTE_CEILING) {
     const q = JSON.stringify(query);
-    return `${q} matched ${lexical} notes lexically, ${shown} shown. For all of them: search_notes({ query: ${q}, mode: "lexical", limit: ${lexical}${args.hasFilter ? ', filter: <the same filter>' : ''} }).`;
+    const vault = args.vault !== undefined ? `, vault: ${JSON.stringify(args.vault)}` : '';
+    const filter = args.hasFilter ? ' with the same filter' : '';
+    return `${q} matched ${lexical} notes lexically, ${shown} shown. For all of them: search_notes({ query: ${q}, mode: "lexical", limit: ${lexical}${vault} })${filter}.`;
   }
   if (fallback && fallbackThreshold !== undefined) {
     return `Semantic hits came from the ${fallbackThreshold} fallback retry, so they are weaker than a normal result.`;
@@ -169,7 +174,7 @@ function queryStatsNote(args: {
 function queryStatsEntry(
   query: string,
   { semantic, lexical }: Omit<LegOutcomes, 'truncated'>,
-  context: Pick<ObservabilityContext, 'fallbackThreshold' | 'hasFilter'>,
+  context: Pick<ObservabilityContext, 'fallbackThreshold' | 'hasFilter' | 'pinnedVault' | 'vault'>,
 ): QueryStatsEntry {
   const { fallbackThreshold } = context;
   const ran = semantic.status === 'ran' ? semantic : undefined;
@@ -188,6 +193,7 @@ function queryStatsEntry(
           lexical: lexicalCount,
           shown: lexical.status === 'ran' ? (lexical.perQueryShown[query] ?? 0) : undefined,
           hasFilter: context.hasFilter,
+          vault: context.pinnedVault ? context.vault : undefined,
           tokenCounts,
           fallback,
           fallbackThreshold,

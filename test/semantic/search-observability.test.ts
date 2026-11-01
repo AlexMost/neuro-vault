@@ -61,6 +61,7 @@ function context(overrides: Partial<ObservabilityContext> = {}): ObservabilityCo
     pinnedStatus: { state: 'ready' },
     queries: ['q'],
     hasFilter: false,
+    pinnedVault: false,
     fallbackThreshold: 0.3,
     vault: 'v',
     ...overrides,
@@ -349,8 +350,26 @@ describe('deriveObservability — the cut note', () => {
       stats(lexicalRan({ trading: 14 }, { perQueryShown: { trading: 3 } }), { hasFilter: true })
         ?.note,
     ).toBe(
-      '"trading" matched 14 notes lexically, 3 shown. For all of them: search_notes({ query: "trading", mode: "lexical", limit: 14, filter: <the same filter> }).',
+      '"trading" matched 14 notes lexically, 3 shown. For all of them: search_notes({ query: "trading", mode: "lexical", limit: 14 }) with the same filter.',
     );
+  });
+
+  it('names the vault when the call pinned one', () => {
+    expect(
+      stats(lexicalRan({ trading: 14 }, { perQueryShown: { trading: 3 } }), { pinnedVault: true })
+        ?.note,
+    ).toBe(
+      '"trading" matched 14 notes lexically, 3 shown. For all of them: search_notes({ query: "trading", mode: "lexical", limit: 14, vault: "v" }).',
+    );
+  });
+
+  it('is absent when the lexical leg did not run (a filter that matched no notes)', () => {
+    expect(
+      deriveObservability(
+        outcomes({ lexical: { status: 'skipped' } }),
+        context({ queries: ['trading'], hasFilter: true }),
+      ).query_stats.trading,
+    ).toEqual({ semantic: null, lexical: 0 });
   });
 
   it('is absent for a variant shown in full', () => {

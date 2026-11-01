@@ -221,7 +221,7 @@ The first query's notes all scored below the `deep` default but at least one cle
 }
 ```
 
-That is the note to act on when the term is the one you were asked about: `truncated` is true on almost every call and cannot tell "nearly everything" from "5 of 14", while this note can. A call with a `filter` is told to keep it. Above 50 matches the variant is too broad to read in full, so it gets no note.
+That is the note to act on when the term is the one you were asked about: `truncated` is true on almost every call and cannot tell "nearly everything" from "5 of 14", while this note can. A call with a `filter` is told to run it with the same filter, and a call that named its `vault` gets that vault in the suggested call. Above 50 matches the variant is too broad to read in full, so it gets no note.
 
 The one case that deliberately gets no `note` is the empty-filter early return, where neither leg ran: a zero there describes the `filter`, not the query, and calling an untried variant dead would send you to rewrite something that was never searched.
 

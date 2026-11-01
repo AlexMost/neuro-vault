@@ -215,6 +215,7 @@ async function runSearchForEntry(
     pinnedStatus,
     queries,
     hasFilter: input.filter !== undefined,
+    pinnedVault: input.vault !== undefined,
     fallbackThreshold: similarity.fallback,
     vault: entry.name,
   });

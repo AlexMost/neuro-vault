@@ -37,9 +37,12 @@ data (the agent-level check measures the note as a whole).
 
 - **Choice:** dead-variant notes, then the cut note, then the fallback note; one `note` per
   entry. The variant is quoted with `JSON.stringify`, so the suggested call is valid as written.
-  A call with a filter gets `filter: <the same filter>` in the suggested call.
+  A call with a filter is told to run it "with the same filter", outside the call text, so the
+  call stays pasteable. A call that named its `vault` gets that vault in the suggested call;
+  otherwise the call has none, since a fan-out with `limit: N` still returns all N per vault.
 - **Rationale:** the cut note is the only one that recovers missing notes. Echoing the filter
-  back would repeat a possibly large object; naming it is enough.
+  back would repeat a possibly large object; naming it is enough. (Changed in review from a
+  `filter: <the same filter>` placeholder inside the call, which an agent could paste verbatim.)
 
 ### D4: `query_stats` for string queries
 
@@ -51,5 +54,11 @@ data (the agent-level check measures the note as a whole).
 
 - A note on more responses costs context. Mitigated by D2; the agent-level check guards cost
   (large vault × Haiku cost per answer +10% at most).
+- `k shown` counts notes that reached `matches[]` with this variant's lexical evidence. In
+  hybrid, a note the lexical pool cut but the semantic leg surfaced is in `matches[]` without
+  lexical evidence and is not counted, so k can be below what the caller sees. The suggested
+  call is still right.
+- In hybrid quick, almost any variant with 6–50 lexical matches carries the note. Whether that
+  is narrow enough is what the agent-level check measures.
 - Agents may follow the note on a variant that is not the user's term. Accepted: N ≤ 50 bounds
   the cost of one extra call.
