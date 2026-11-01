@@ -135,6 +135,108 @@ describe('rankNotes', () => {
     for (const n of ranked) expect(n.matchedQueries).toHaveLength(1);
   });
 
+  describe('query variants fuse by weighted reciprocal rank', () => {
+    const rank = (map: ReturnType<typeof notes>, queries: string[], noteCap = 10) =>
+      rankNotes({
+        notes: map,
+        queries,
+        noteCap,
+        perNoteCap: 3,
+        getBacklinkCount: noBacklinks,
+      }).notes.map((n) => n.path);
+
+    it('a single query ranks by tier, density, backlinks, then path, as before', () => {
+      const map = notes([
+        ['b.md', '# трейдинг\n'],
+        ['a.md', '# трейдинг\n'],
+        ['c.md', '# трейдинг\n'],
+        ['Трейдинг.md', ''],
+        ['d.md', 'трейдинг у тексті\n'],
+      ]);
+      const backlinks = (p: string) => (p === 'c.md' ? 2 : 0);
+      const ranked = rankNotes({
+        notes: map,
+        queries: ['трейдинг'],
+        noteCap: 10,
+        perNoteCap: 3,
+        getBacklinkCount: backlinks,
+      }).notes.map((n) => n.path);
+      expect(ranked).toEqual(['Трейдинг.md', 'c.md', 'a.md', 'b.md', 'd.md']);
+    });
+
+    it('does not depend on the order notes were read in', () => {
+      const entries: Array<[string, string]> = [
+        ['Метрики A.md', ''],
+        ['x.md', 'тут згадано трейдинг\n'],
+        ['y.md', '# метрики і трейдинг\n'],
+        ['z.md', 'метрики\n'],
+      ];
+      const forward = rank(notes(entries), ['трейдинг', 'метрики']);
+      expect(rank(notes([...entries].reverse()), ['трейдинг', 'метрики'])).toEqual(forward);
+    });
+
+    it('breaks an exact fused tie by the single-list order', () => {
+      // Rank 1 under weight 0.5 and rank 7 under weight 1 both score 1/12 at k = 5.
+      const filler = Array.from(
+        { length: 6 },
+        (_, i) => [`f${i}.md`, '# альфа\n'] as [string, string],
+      );
+      const map = notes([...filler, ['body.md', 'альфа в тексті\n'], ['Бета.md', '']]);
+      const ranked = rank(map, ['альфа', 'бета']);
+      // body.md is 7th for "альфа"; Бета.md is 1st for "бета", a title hit, so it wins the tie.
+      expect(ranked.indexOf('Бета.md')).toBeLessThan(ranked.indexOf('body.md'));
+      expect(ranked.indexOf('body.md')).toBe(ranked.indexOf('Бета.md') + 1);
+    });
+
+    it("a broad variant's title hits cannot crowd the first variant's body hits out of the pool", () => {
+      const map = notes([
+        ['Метрики A.md', ''],
+        ['Метрики B.md', ''],
+        ['Метрики C.md', ''],
+        ['x.md', 'тут згадано трейдинг\n'],
+        ['y.md', 'ще раз трейдинг у тексті абзацу\n'],
+      ]);
+      // One shared tier sort would take the three title hits first.
+      expect(rank(map, ['трейдинг', 'метрики'], 2)).toEqual(['x.md', 'y.md']);
+    });
+
+    it('weighs the first variant above the others at the same rank', () => {
+      const map = notes([
+        ['a.md', '# альфа\n'],
+        ['b.md', '# бета\n'],
+      ]);
+      expect(rank(map, ['бета', 'альфа'])).toEqual(['b.md', 'a.md']);
+      expect(rank(map, ['альфа', 'бета'])).toEqual(['a.md', 'b.md']);
+    });
+
+    it('a note several variants match outranks one matched by a single variant', () => {
+      const map = notes([
+        ['solo.md', '# трейдинг\n'],
+        ['both.md', 'трейдинг і біржа в одному абзаці, досить довгому, щоб знизити щільність\n'],
+        ['other.md', '# біржа\n'],
+      ]);
+      expect(rank(map, ['трейдинг', 'біржа'])[0]).toBe('both.md');
+    });
+
+    it('leaves matchedQueries and per-query counts as they were', () => {
+      const map = notes([
+        ['x.md', 'трейдинг\n'],
+        ['Метрики.md', 'трейдинг\n'],
+      ]);
+      const out = rankNotes({
+        notes: map,
+        queries: ['трейдинг', 'метрики'],
+        noteCap: 10,
+        perNoteCap: 3,
+        getBacklinkCount: noBacklinks,
+      });
+      expect(out.perQueryCounts).toEqual({ трейдинг: 2, метрики: 1 });
+      expect(out.notes.find((n) => n.path === 'Метрики.md')?.matchedQueries.sort()).toEqual(
+        ['метрики', 'трейдинг'].sort(),
+      );
+    });
+  });
+
   it('a phrase split across a hard-wrapped line still matches as one body unit at the paragraph line range', () => {
     const map = notes([['n.md', 'векторний\nпошук у vault\n']]);
     const { notes: ranked } = rankNotes({
