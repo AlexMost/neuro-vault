@@ -17,13 +17,14 @@ Your second brain stops being a folder you open between contexts and becomes a f
 
 ## ✨ Why Neuro Vault?
 
-- 🧠 **Hybrid search that already knows your vault** — a semantic leg runs on an embedding index the server builds and owns from your notes (no plugin, no API keys — the first run indexes in the background), and a lexical leg catches exact names, codes, and terms embeddings miss. One call, both answers; a note hit by both is the strongest relevance signal.
+- 🧠 **Hybrid search that already knows your vault** — a semantic leg runs on an embedding index the server builds and owns from your notes (no plugin, no API keys — the first run indexes in the background), and a lexical leg catches exact names, codes, and terms embeddings miss, matching word prefixes so a stem finds its inflected forms. One call, both answers; a note hit by both is the strongest relevance signal.
+- 📖 **Reads the part, not the whole note** — an outline of a note's headings with line numbers, then exactly one section by heading or one line range. A search hit hands its `lines` straight to `read_notes`. On a real 5,000-note knowledge base this pulled **5× less text** into the assistant's context than reading whole notes — **13–17× less** on 4,000-line notes — with the same answers.
 - 🎯 **Quick or deep, your call** — `effort: "quick"` for fast direct lookups, `effort: "deep"` for exploration with related-note expansion; `mode: "lexical"` when you want exact text matching only (works even without embeddings).
 - 🧾 **Context with provenance, not mystery memory** — results come back with paths, matched queries, block-level snippets, and backlink counts so the assistant can show where an answer came from.
 - 🧭 **A real navigation toolkit for your agent** — instead of grepping files and opening notes one by one, your assistant walks the vault like a database: filter by tags and properties, batch-read metadata, traverse the wikilink graph, discover the structure, jump to semantic neighbours.
 - 🔎 **Ask structured questions in plain language** — _"active projects tagged #ai"_, _"todo tasks with a deadline this week"_, _"meeting notes from `Work/` newest first"_. Your assistant turns them into a **MongoDB-style filter** over frontmatter, tags, and backlink counts — one call, ranked answer, no chains of reads.
 - ✍️ **Full write surface for your notes** — create, in-place replace, or rewrite the whole body; manage frontmatter, tags, and daily notes. Every write goes directly to disk; if you have Obsidian open, its own file watcher picks up the change on its usual cadence.
-- ⚡ **Zero infrastructure** — local stdio MCP server, no database, no API keys. One shared background process per machine holds the embedding model and each vault's index for every session; it starts on demand for a shared session with any registered vault, `"semantic": false` included (not under `--no-semantic` or `--no-shared`), keeps one text-search cache per vault, keeps the index fresh with a file watcher, and leaves when idle — nothing to run, nothing to babysit.
+- ⚡ **Zero infrastructure** — local stdio MCP server, no database, no API keys. One shared background process per machine holds the embedding model, each vault's index and its text-search cache for every session, keeps the index fresh with a file watcher, and leaves when idle — nothing to run, nothing to babysit ([details](./docs/architecture/shared-daemon.md)).
 - 🪶 **Obsidian optional** — a vault is just a directory of Markdown files, and the server reads and writes it headlessly: no plugin, no running app, nothing to install beyond this server. Obsidian-flavoured conventions (`[[wikilinks]]`, YAML frontmatter, inline `#tags`) are understood wherever they appear. The one tool that genuinely wants Obsidian is `read_daily` — it reads the Daily Notes plugin's `.obsidian/daily-notes.json` to learn your folder and date format, and returns `DAILY_NOTES_NOT_CONFIGURED` without it.
 - 🔌 **Drop-in for any MCP client** — Claude Code, Cursor, Windsurf — configuration is a single JSON block.
 
@@ -50,6 +51,12 @@ The two work together: hybrid search finds the right region of the vault, vault 
 
 **After:** _"Could you check my notes about that LangGraph experiment?"_
 → One hybrid search — semantic matches plus exact "LangGraph" hits in the same response — follow-up question already grounded in your own writing.
+
+**Before:** _"What did we decide in the onboarding doc?"_
+→ Assistant reads the whole 3,000-line note into context to find one section.
+
+**After:** the same question
+→ One `outline` call shows the note's headings with line numbers, one read pulls the 12-line "Decisions" section, and the answer cites the exact lines.
 
 A few more questions Neuro Vault makes one-shot:
 
@@ -87,13 +94,59 @@ Each match comes back with **its own provenance and evidence** — not just a pa
 }
 ```
 
-`found_in` names every leg that surfaced the note — here both of them, which is the strongest relevance signal the server can give you. `blocks[]` points at the specific heading block and line range that matched, and `read_notes` reads those lines straight back (`{ path, lines }`), so the assistant can pull twenty lines instead of the whole note: that is where the low-token part of "low-token retrieval" actually comes from.
+`found_in` names every leg that surfaced the note — here both of them, which is the strongest relevance signal the server can give you. `blocks[]` points at the specific heading block and line range that matched, and `read_notes` reads those lines straight back (`{ path, lines }`, [below](#-read-only-the-part-you-need)), so the assistant can pull twenty lines instead of the whole note: that is where the low-token part of "low-token retrieval" actually comes from.
 
 **Fusion is the point.** A note found by two legs is lifted in the merged order automatically (reciprocal rank fusion) and still appears exactly once — there is no caller-side merging to write, and no way to double-count a note that both legs liked.
 
 **It degrades instead of failing.** While the embedding index is still building — or if you turned semantic off entirely — `search_notes` keeps answering from its lexical leg alone and reports `semantic_status` so the assistant knows which legs actually ran. Add `mode: "lexical"` to ask for exact text matching only, and `effort: "quick" | "deep"` to trade breadth for speed.
 
 → Full reference: [docs/guide/finding-notes.md#search_notes](./docs/guide/finding-notes.md#search_notes)
+
+---
+
+### 📖 Read only the part you need
+
+Long notes — meeting logs, project docs, a year of daily entries — no longer have to go into the context whole. `read_notes` reads a note in four ways, from least to most text:
+
+- `frontmatter`: properties only.
+- `outline`: properties plus the note's map, with every heading block's level and line span. No body text.
+- `preview`: everything in `outline`, plus the opening of the text.
+- `full`: the text itself.
+
+The map comes first:
+
+```json
+{ "paths": "projects/onboarding.md", "content": "outline" }
+```
+
+```json
+{
+  "path": "projects/onboarding.md",
+  "frontmatter": { "type": "project" },
+  "lines": [4, 30],
+  "preamble": [4, 6],
+  "outline": [
+    { "heading": "First 30 days", "level": 2, "lines": [7, 18] },
+    { "heading": "Week 1", "level": 3, "lines": [11, 18] },
+    { "heading": "Decisions", "level": 2, "lines": [19, 30] }
+  ]
+}
+```
+
+Then one part, by heading or by lines. Each item in `paths` can name its own selection, so one call can read several parts of several notes:
+
+```json
+{ "paths": [{ "path": "projects/onboarding.md", "heading": "Decisions" }, { "path": "logs/2026.md", "lines": [40, 62] }] }
+```
+
+- 🧭 **One coordinate system.** Line numbers are file-relative, 1-based and inclusive — the same ones `search_notes` evidence carries — so a search hit reads back as `{ path, lines: row.lines }` with no translation.
+- 🗜 **Big outlines stay small.** Past 100 headings the deepest levels collapse, and `hidden: n` on an entry says how many headings sit under it; read that entry's outline to see them.
+- 🔁 **Misses tell the agent how to retry.** A heading that isn't there returns the note's real outline (`HEADING_NOT_FOUND`), a name that matches two blocks lists both (`AMBIGUOUS_MATCH`), and a range outside the body returns the body's span (`LINES_OUT_OF_RANGE`) — per item, without failing the rest of the call.
+- 👀 **Batch triage that knows where to look.** Reading many notes at once defaults to `preview`, which now carries each note's outline next to its opening.
+
+Measured on a real 5,000-note company knowledge base, with the same eight questions answered by the old and new versions: **5× less tool-response text overall**, **13–17× less** on 3,700–4,200-line notes, and the largest single response down from 566k to 21k characters, with every answer still correct. For notes under about 150 lines, `full` is just as cheap.
+
+→ Full reference: [docs/guide/reading-and-modifying.md](./docs/guide/reading-and-modifying.md) · how headings are named and matched: [docs/architecture/note-structure.md](./docs/architecture/note-structure.md)
 
 ---
 
@@ -224,13 +277,15 @@ To run another model, put `--model` in the server's `args`:
 }
 ```
 
-Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault, or after upgrading — an upgrade from a release with a different default model indexes every vault once with the new one; an explicit `threshold` or `expansion_floor` you tuned on the old model, say `0.5`, is on a different scale under `harrier-270m` — its query-to-note similarities sit mostly below about 0.44 on the measured vault — so re-tune or drop it):
+Indexing then runs in the background — the server boots immediately and `search_notes` answers from its lexical leg until the first pass finishes. To warm the index up front instead (before a demo, or for a large vault):
 
 ```bash
 neuro-vault-mcp index --vault /absolute/path/to/your/vault --model granite-97m
 ```
 
-Give `index` the same `--model` the server runs with (omit both for the default, `harrier-270m`) so it warms the index the server serves; each model keeps its own corpus in the vault, so another value builds a separate one and never mixes with it. Add `--prune` to delete the other models' corpora after indexing (it is skipped if the vault's indexing threw or indexed no note at all, and it refuses — failing that vault — if the selected model's corpus is missing when it runs, so neither a failed run nor a concurrent prune by another model ever leaves you without an index; if another process holds the vault, it prints the same waiting line as indexing).
+Give `index` the same `--model` the server runs with (omit both for the default, `harrier-270m`). Each model keeps its own corpus in the vault; add `--prune` to delete the other models' corpora once indexing succeeds ([details](./docs/guide/embedding-models.md)).
+
+> ⬆️ **Upgrading to 17.5.** The corpus now counts real lines (a note ending in a newline used to report one phantom line), so every vault re-embeds **once** on the first start after the upgrade. Search keeps answering from its lexical leg meanwhile; run `neuro-vault-mcp index` to get it over with up front. If you tuned `threshold` or `expansion_floor` on an older default model, re-tune or drop it — similarities are on a different scale under `harrier-270m`.
 
 For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./docs/guide/installation.md).
 
@@ -241,12 +296,14 @@ For other clients (Cursor / Windsurf / npx), see [docs/guide/installation.md](./
 > **Every tool accepts an optional `vault` parameter.** In multi-vault mode, `search_notes`, `query_notes`, `get_vault_overview`, `list_tags`, and `list_properties` fan out across all registered vaults when `vault` is omitted.
 >
 > **Every tool advertises MCP annotations.** The ten reads carry `readOnlyHint: true`; the four writes (`create_note`, `edit_note`, `set_property`, `remove_property`) carry `readOnlyHint: false, destructiveHint: true` — so a client that confirms untrusted calls lets reads through and still asks before a write. Details: [Installation → Tool permissions](./docs/guide/installation.md#tool-permissions-reads-run-freely-writes-confirm).
+>
+> **A malformed call says what to fix.** Bad arguments come back as `INVALID_PARAMS` with `details.issues` naming the field, e.g. `paths.0: Unrecognized key: "content"`, so the agent corrects the call on its next try.
 
 User guide lives in [`docs/guide/`](./docs/guide/README.md):
 
 - [Installation](./docs/guide/installation.md)
 - [Finding Notes](./docs/guide/finding-notes.md) — `search_notes` (hybrid semantic + lexical), structured queries (`query_notes`), `get_similar_notes`, `find_duplicates`, `get_note_links`
-- [Reading & Modifying](./docs/guide/reading-and-modifying.md) — note CRUD, daily notes, properties, tags, vault snapshot (`get_vault_overview`)
+- [Reading & Modifying](./docs/guide/reading-and-modifying.md) — `read_notes` modes (`outline`, `preview`, heading and line selections), note CRUD, daily notes, properties, tags, vault snapshot (`get_vault_overview`)
 - [Routing Between Tools](./docs/guide/routing.md)
 - [Embedding Models](./docs/guide/embedding-models.md) — choosing and configuring the embedding model (`--model`), switching cost, per-model thresholds, benchmarks
 - [Configuration](./docs/guide/configuration.md) — CLI args, vault conventions for external agents, troubleshooting, limitations, development
