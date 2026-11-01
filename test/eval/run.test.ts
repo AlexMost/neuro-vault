@@ -331,6 +331,9 @@ describe('runEval end-to-end (stub embedder)', () => {
     );
     expect(report.stats?.pass_rates.deep.threshold).toBe(GRANITE.similarity.deep);
     expect(report.stats?.populations.query_candidates.n).toBe(2); // both notes are top-k candidates
+    // No population for the retired expansion leg (#270); `seed_all` still feeds `expansionFloor`.
+    expect(Object.keys(report.stats?.populations ?? {})).not.toContain('expansion_neighbours');
+    expect(report.stats?.pass_rates.expansionFloor?.population).toBe('seed_all');
     expect(report.stats?.guards).toEqual({
       deep_filtered_first_relevant: 0,
       quick_hit_at_3_drop: 0,

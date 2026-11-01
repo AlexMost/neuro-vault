@@ -75,6 +75,7 @@ export function evalConfig(
     block_floor: similarity.blockFloor,
     lexical_note_cap: lexicalPool(shape.effort, pipeline === 'lexical'),
     lexical_per_note_cap: LEXICAL_PER_NOTE_CAP,
+    /** Recorded as a knob in effect; it weights a source that is empty while `expansion` is false. */
     expansion_weight: EXPANSION_WEIGHT,
     k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
   } as const;

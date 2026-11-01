@@ -564,12 +564,28 @@ describe('expansion_floor input schema (SDK gate)', () => {
     const { deps, cleanup } = await makeLexicalVault({ 'a.md': 'alpha text' });
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
-      await expect(
-        callTool(reg, { query: 'alpha', mode: 'lexical', expansion_floor: 0.9 }),
-      ).resolves.toMatchObject({ truncated: false });
-      await expect(
-        callTool(reg, { query: 'alpha', effort: 'quick', expansion_floor: 0.9 }),
-      ).resolves.toBeDefined();
+      // Inert means the same response as the same call without it.
+      const lexicalWith = await callTool<SearchNotesOutput>(reg, {
+        query: 'alpha',
+        mode: 'lexical',
+        expansion_floor: 0.9,
+      });
+      const lexicalWithout = await callTool<SearchNotesOutput>(reg, {
+        query: 'alpha',
+        mode: 'lexical',
+      });
+      expect(lexicalWith).toEqual(lexicalWithout);
+      expect(lexicalWith.matches.map((m) => m.path)).toEqual(['a.md']);
+      const quickWith = await callTool<SearchNotesOutput>(reg, {
+        query: 'alpha',
+        effort: 'quick',
+        expansion_floor: 0.9,
+      });
+      const quickWithout = await callTool<SearchNotesOutput>(reg, {
+        query: 'alpha',
+        effort: 'quick',
+      });
+      expect(quickWith).toEqual(quickWithout);
     } finally {
       await cleanup();
     }
