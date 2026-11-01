@@ -44,6 +44,25 @@ The two work together: hybrid search finds the right region of the vault, vault 
 
 ---
 
+## 📏 Measured: the same agent with and without Neuro Vault
+
+We ran an agent-level A/B: the same Claude Code agent answering questions about a vault, once with Neuro Vault and once with plain `Grep`/`Glob`/`Read`, on two private vaults (a ~1k-note personal vault and a ~4.9k-note corporate knowledge base) with two models, three repetitions per question — 720 runs, scored against a golden set and by a blind judge.
+
+|                                     | ~1k notes · Opus 5.5 | ~1k notes · Haiku 5.5 | ~4.9k notes · Opus 5.5 | ~4.9k notes · Haiku 5.5 |
+| ----------------------------------- | -------------------- | --------------------- | ---------------------- | ----------------------- |
+| Tool calls per answer (grep → NV)   | 6.4 → **3.4**        | 5.9 → **2.4**         | 6.1 → **3.3**          | 7.1 → **4.2**           |
+| Cost per answer                     | **−23%**             | **−39%**              | **−10%**               | **−20%**                |
+| Text pulled into context            | **−21%**             | **−56%**              | **−9%**                | **−40%**                |
+| Recall vs golden (grep → NV)        | 0.63 → 0.58          | 0.50 → 0.49           | 0.85 → 0.87            | 0.75 → **0.90**         |
+
+- 🪙 **Always leaner** — about half the tool calls, cheaper answers, less context, fewer cited paths that don't exist.
+- 📈 **Better where it counts most** — on the large vault with a small model, recall jumps from 0.75 to 0.90; there, Haiku with Neuro Vault out-recalls Opus with `grep` at ~3% of the cost per answer.
+- ⚖️ **Honest about the rest** — a strong model on a small vault does as well or slightly better with `grep` (it writes its own regexes and reads whole files); there, Neuro Vault's edge is efficiency, not answer quality.
+
+Full method, per-class and per-language breakdowns and caveats: [docs/research/2026-11-agent-ab-neuro-vault-vs-grep.md](docs/research/2026-11-agent-ab-neuro-vault-vs-grep.md).
+
+---
+
 ## ✨ What it looks like in practice
 
 **Before:** _"Could you check my notes about that LangGraph experiment?"_
@@ -308,7 +327,7 @@ User guide lives in [`docs/guide/`](./docs/guide/README.md):
 - [Embedding Models](./docs/guide/embedding-models.md) — choosing and configuring the embedding model (`--model`), switching cost, per-model thresholds, benchmarks
 - [Configuration](./docs/guide/configuration.md) — CLI args, vault conventions for external agents, troubleshooting, limitations, development
 
-Architecture / internals: [`docs/architecture/`](./docs/architecture/).
+Architecture / internals: [`docs/architecture/`](./docs/architecture/). Measurements: [`docs/research/`](./docs/research/) — embedding model bake-off, agent-level A/B against plain filesystem tools.
 
 📝 What changed between versions — including every `⚠ BREAKING CHANGES` block — lives in [`CHANGELOG.md`](./CHANGELOG.md) (shipped inside the npm package too). The same notes are published per version on [GitHub Releases](https://github.com/AlexMost/neuro-vault/releases).
 
