@@ -469,8 +469,10 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
     expect(output.results.every((r) => r.related.length === 0)).toBe(true);
   });
 
-  it('deep defaults give seeds a non-empty related[] when neighbours exist', async () => {
-    const { corpus } = makeCorpus({
+  it('deep defaults make no seed-anchored read and leave related[] empty (#270)', async () => {
+    // The neighbour exists, but no effort profile asks for it: only an
+    // explicit `expansion: true` (the tests above) reaches the seed-anchored read.
+    const { corpus, findNeighbors } = makeCorpus({
       findNeighbors: routedNeighbors({
         seeds: [makeSearchResult('note-a.md', 0.9)],
         relatedBySeed: { 'note-a.md': [makeSearchResult('note-b.md', 0.7)] },
@@ -485,8 +487,10 @@ describe.each(arities)('per-seed expansion, deep mode (%s)', (_label, queries) =
       embeddingProvider: makeEmbeddingProvider(),
     });
 
+    expect(expansionCalls(findNeighbors)).toHaveLength(0);
+    expect(findNeighbors).toHaveBeenCalledTimes(queries.length);
     const noteA = output.results.find((r) => r.path === 'note-a.md')!;
-    expect(noteA.related[0]).toEqual({ path: 'note-b.md', expansion_similarity: 0.7 });
+    expect(noteA.related).toEqual([]);
   });
 });
 
@@ -500,6 +504,8 @@ describe.each(arities)('expansion floor and block decoupling (%s)', (_label, que
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
+      expansion: true, // asked for explicitly: no effort profile expands (#270)
+      expansionLimit: 3,
       threshold: 0.7, // explicit, must NOT reach expansion
       expansionFloor: 0.93,
       corpus,
@@ -522,6 +528,8 @@ describe.each(arities)('expansion floor and block decoupling (%s)', (_label, que
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
+      expansion: true,
+      expansionLimit: 3,
       threshold: 0.7,
       corpus,
       embeddingProvider: makeEmbeddingProvider(),
@@ -568,12 +576,14 @@ describe.each(arities)('the allowed set (%s)', (_label, queries) => {
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
+      expansion: true,
+      expansionLimit: 3,
       allowed,
       corpus,
       embeddingProvider: makeEmbeddingProvider(),
     });
 
-    // Seeds, fallback, expansion.
+    // Seeds, fallback, expansion (asked for explicitly: no profile expands).
     expect(corpus.nearest).toHaveBeenCalledTimes(3);
     for (const [, opts] of corpus.nearest.mock.calls) expect(opts.allowed).toEqual(allowed);
     // Block reads are scoped to the seeds, which the allowed set already bounds.
@@ -707,6 +717,8 @@ describe.each(arities)('shape invariants (%s)', (_label, queries) => {
       similarity: TEST_SIMILARITY,
       queries,
       mode: 'deep',
+      expansion: true,
+      expansionLimit: 3,
       corpus,
       embeddingProvider: makeEmbeddingProvider(),
     });
@@ -1250,6 +1262,9 @@ describe('executeRetrieval — profile similarity defaults', () => {
     await executeRetrieval({
       queries: ['q'],
       mode: 'deep',
+      // Asked for explicitly: no effort profile expands (#270).
+      expansion: true,
+      expansionLimit: 3,
       corpus,
       embeddingProvider: embedder,
       similarity: DISTINCT,

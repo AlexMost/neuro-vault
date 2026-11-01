@@ -21,8 +21,8 @@ describe('effort profiles', () => {
       deep: {
         semanticPool: 8,
         lexicalNoteCap: 10,
-        expansion: true,
-        expansionLimit: 3,
+        expansion: false,
+        expansionLimit: 0,
         mergedCap: 12,
       },
     });
