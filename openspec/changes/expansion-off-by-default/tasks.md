@@ -6,12 +6,12 @@ Group 4 needs 1–3. Group 5 is last.
 
 ## 1. Profile and policy (sequential, first)
 
-- [ ] 1.1 `EFFORT_PROFILES.deep` (`src/modules/semantic/effort-profiles.ts`) becomes
+- [x] 1.1 `EFFORT_PROFILES.deep` (`src/modules/semantic/effort-profiles.ts`) becomes
       `expansion: false, expansionLimit: 0` (design D1). The doc comments on the profile field, on
       `RetrievalInput.expansion` and on step 5 of `executeRetrieval` say the leg is off in every
       profile and reachable only through an explicit input (D3). Pin the values in
       `test/semantic/effort-profiles.test.ts`.
-- [ ] 1.2 Tests that pin the retired step ask for it explicitly (`expansion: true,
+- [x] 1.2 Tests that pin the retired step ask for it explicitly (`expansion: true,
       expansionLimit: 3`): `test/semantic/calibration-curve.test.ts` (the deep-default cases now
       carry empty `related[]`; the floor and the threshold-decoupling cases ask to expand),
       `test/semantic/retrieval-parity.test.ts` (one explicit-expansion row in the matrix so the
@@ -21,7 +21,7 @@ Group 4 needs 1–3. Group 5 is last.
 
 ## 2. Tool contract (needs 1; parallel-safe with 3)
 
-- [ ] 2.1 `src/modules/semantic/tools/search-notes.ts`: `found_in` and the entry type lose
+- [x] 2.1 `src/modules/semantic/tools/search-notes.ts`: `found_in` and the entry type lose
       `"expansion"` and `expansion_similarity`, the response mapping drops the expansion branch,
       the description's first line and effort line say nothing of expansion and the
       `expansion_similarity` RESPONSE SHAPE line goes; the `threshold` description drops "or
@@ -35,13 +35,13 @@ Group 4 needs 1–3. Group 5 is last.
       `test/semantic/tools/search-notes-description.test.ts` (the new effort wording, no
       `expansion_similarity` line, the inert `expansion_floor` text, the source no longer
       interpolates `similarity.expansionFloor`).
-- [ ] 2.2 `test/semantic/retrieval-pipeline.test.ts`: the deep fan fixture yields no expansion
+- [x] 2.2 `test/semantic/retrieval-pipeline.test.ts`: the deep fan fixture yields no expansion
       candidates; the existence-filter test covers seeds. `retrieval-pipeline.ts` comments
       follow.
 
 ## 3. Eval (needs 1; parallel-safe with 2)
 
-- [ ] 3.1 `eval/stats.ts` drops `expansion_neighbours` and `collectPopulations`' `expansionLimit`
+- [x] 3.1 `eval/stats.ts` drops `expansion_neighbours` and `collectPopulations`' `expansionLimit`
       argument; `eval/run.ts` stops passing it; `eval/pipelines.ts` comments follow (D4). Tests:
       `test/eval/stats.test.ts` (no population; `seed_all` and the `expansionFloor` pass rate
       intact), `test/eval/pipelines.test.ts` (deep config `expansion: false, expansion_limit: 0`;
@@ -50,7 +50,7 @@ Group 4 needs 1–3. Group 5 is last.
 
 ## 4. Docs (needs 1–3)
 
-- [ ] 4.1 Sweep (D5): `docs/guide/finding-notes.md`, `docs/guide/embedding-models.md`,
+- [x] 4.1 Sweep (D5): `docs/guide/finding-notes.md`, `docs/guide/embedding-models.md`,
       `docs/guide/configuration.md`, `docs/architecture/retrieval-policy.md`,
       `docs/architecture/rank-fusion.md`, `docs/architecture/mcp-parameter-dictionary.md`,
       `docs/architecture/README.md`, `GLOSSARY.md`, `README.md`, `eval/README.md`. Afterwards
@@ -60,7 +60,7 @@ Group 4 needs 1–3. Group 5 is last.
 
 ## 5. Measure, verify, archive (sequential, last)
 
-- [ ] 5.1 Gates: `npm test`, `npm run lint`, `npm run typecheck`, `npm run format`,
+- [x] 5.1 Gates: `npm test`, `npm run lint`, `npm run typecheck`, `npm run format`,
       `npm run build`, `npx commitlint --from origin/main --to HEAD`.
 - [ ] 5.2 After-eval on the owner's vault, production fused deep, against the baseline in design
       §Context: `diagnostics.*.expansion` 0; hit@3 and MRR within ±0.02; R@10 down by at most
