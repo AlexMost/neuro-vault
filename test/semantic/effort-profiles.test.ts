@@ -35,4 +35,11 @@ describe('effort profiles', () => {
     expect(lexicalPool('quick', false)).toBe(EFFORT_PROFILES.quick.lexicalNoteCap);
     expect(lexicalPool('deep', false)).toBe(EFFORT_PROFILES.deep.lexicalNoteCap);
   });
+
+  it("follows the call's cap when the lexical leg is the sole source, never beside the semantic leg", () => {
+    expect(lexicalPool('quick', true, 20)).toBe(20);
+    expect(lexicalPool('deep', true, 3)).toBe(3);
+    expect(lexicalPool('quick', false, 20)).toBe(EFFORT_PROFILES.quick.lexicalNoteCap);
+    expect(lexicalPool('deep', false, 20)).toBe(EFFORT_PROFILES.deep.lexicalNoteCap);
+  });
 });

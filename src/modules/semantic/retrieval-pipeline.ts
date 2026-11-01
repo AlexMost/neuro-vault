@@ -105,7 +105,7 @@ export async function runRetrievalPipeline(
   const lexical = await deps.lexical.search({
     queries: input.queries,
     allowed: input.allowed,
-    noteCap: lexicalPool(input.effort, !input.semantic),
+    noteCap: lexicalPool(input.effort, !input.semantic, cap),
     perNoteCap: LEXICAL_PER_NOTE_CAP,
   });
 
@@ -113,11 +113,9 @@ export async function runRetrievalPipeline(
   let semantic: SemanticLegOutcome = { status: 'skipped' };
   if (input.semantic && deps.corpus !== undefined) {
     try {
-      // `cap`/`input.cap` bounds ONLY the final fused list (the `.slice(0,
-      // cap)` below) — it is deliberately NOT forwarded here, so it never
-      // steers either leg's internal pool volume. A caller raising `limit`
-      // recovers a merged-cap truncation but cannot recover a leg's own pool
-      // truncation; only `effort` controls that.
+      // `cap`/`input.cap` is deliberately NOT forwarded here, so it never
+      // steers the semantic leg's pool volume: only `effort` controls that.
+      // The lexical leg reads it only when it is the sole source (above).
       const leg = await executeRetrieval({
         queries: input.queries,
         mode: input.effort,
