@@ -21,6 +21,7 @@ import {
   VaultRegistry,
   type IRegisteredVaultDeps,
 } from './lib/vault-registry.js';
+import { dispatchToolCallsToGate } from './lib/tool-dispatch.js';
 import type { ToolRegistration } from './lib/tool-registration.js';
 import type { ResourceRegistration } from './lib/resource-registration.js';
 import type { ServerConfig } from './types.js';
@@ -28,7 +29,7 @@ import { packageMeta } from './package-meta.js';
 
 const { name: SERVER_NAME, version: SERVER_VERSION } = packageMeta;
 
-type ToolServer = Pick<McpServer, 'registerTool' | 'registerResource' | 'connect'>;
+type ToolServer = Pick<McpServer, 'registerTool' | 'registerResource' | 'connect' | 'server'>;
 
 /**
  * Just enough of the transport's input stream to notice a client hanging up.
@@ -172,6 +173,8 @@ export async function startNeuroVaultServer(
   for (const tool of toolRegistrations) {
     server.registerTool(tool.name, tool.spec, tool.handler);
   }
+  // The SDK lists the tools; the gate, not the SDK, validates their arguments.
+  dispatchToolCallsToGate(server.server, toolRegistrations);
   for (const resource of resourceRegistrations) {
     server.registerResource(resource.name, resource.uri, resource.metadata, resource.handler);
   }

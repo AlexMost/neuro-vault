@@ -82,5 +82,5 @@ The MCP response carries `code`, `message`, and `details.issues` so machine call
 ## Boundaries
 
 - The coercion module has no dependence on the tool registry; it is a pure function over `(ZodTypeAny, value)` pairs and is tested in isolation in `test/lib/input-coercion.test.ts`.
-- The tool registry calls the wrapper exactly once per registered tool, at registration time. The MCP SDK validates against the wrapped schema, so coercion is applied along whichever path the SDK takes — there is no "outside the dispatcher" code path.
+- The tool registry calls the wrapper exactly once per registered tool, at registration time. The gate validates against the wrapped schema, and the server's `tools/call` handler hands the gate the arguments as the client sent them ([ADR-0025](../adr/0025-the-gate-answers-tools-call.md)), so coercion runs exactly once per call — there is no "outside the dispatcher" code path. The MCP SDK only converts the wrapped schema to JSON Schema for `tools/list`.
 - The strict-typed contract is unchanged: callers passing the declared types continue to work without any coercion firing. Coercion is a one-way fallback that tightens, never loosens, the data the handler sees.
