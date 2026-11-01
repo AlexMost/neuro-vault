@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [17.6.0](https://github.com/AlexMost/neuro-vault/compare/v17.5.0...v17.6.0) (2026-11-01)
+
+
+### Features
+
+* **eval:** follow the retired expansion leg ([e58e05d](https://github.com/AlexMost/neuro-vault/commit/e58e05d943b7f35416f6a356b6ee32a5edb8db49)), closes [#270](https://github.com/AlexMost/neuro-vault/issues/270)
+* **search:** drop expansion provenance from the search_notes contract ([e659366](https://github.com/AlexMost/neuro-vault/commit/e659366ab5c499aaf1c478400e4ab3f4577cf7e1)), closes [#270](https://github.com/AlexMost/neuro-vault/issues/270)
+* **search:** fuse lexical query variants by weighted reciprocal rank ([7641c6a](https://github.com/AlexMost/neuro-vault/commit/7641c6a86da91d6ce3389b572c1bc6bb2241b278)), closes [#265](https://github.com/AlexMost/neuro-vault/issues/265)
+* **search:** tell the agent when its own variant's lexical matches were cut ([04e9e5c](https://github.com/AlexMost/neuro-vault/commit/04e9e5ce808831486da00e4ff559495221b0e2c8)), closes [#266](https://github.com/AlexMost/neuro-vault/issues/266)
+* **semantic:** switch the expansion leg off in the deep profile ([5e29069](https://github.com/AlexMost/neuro-vault/commit/5e29069f38230e22453181ac804e1a6f10cb3fd9)), closes [#270](https://github.com/AlexMost/neuro-vault/issues/270)
+
+
+### Bug Fixes
+
+* **search:** in lexical mode the lexical pool follows limit ([effaa96](https://github.com/AlexMost/neuro-vault/commit/effaa9659b246391af16afea3b982455bf85cc34)), closes [#229](https://github.com/AlexMost/neuro-vault/issues/229) [#264](https://github.com/AlexMost/neuro-vault/issues/264)
+* **search:** review follow-ups for the cut note ([187729f](https://github.com/AlexMost/neuro-vault/commit/187729fe47baa1878892f00b32b811755169add7)), closes [#266](https://github.com/AlexMost/neuro-vault/issues/266)
+* **search:** review follow-ups for the retired expansion leg ([f3d213a](https://github.com/AlexMost/neuro-vault/commit/f3d213ab0c91820db8e9d9f30e45a6e2685736db)), closes [#270](https://github.com/AlexMost/neuro-vault/issues/270)
+
 ## [17.5.0](https://github.com/AlexMost/neuro-vault/compare/v17.4.0...v17.5.0) (2026-11-01)
 
 
