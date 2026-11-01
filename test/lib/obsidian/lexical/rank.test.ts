@@ -145,6 +145,49 @@ describe('rankNotes', () => {
         getBacklinkCount: noBacklinks,
       }).notes.map((n) => n.path);
 
+    it('a single query ranks by tier, density, backlinks, then path, as before', () => {
+      const map = notes([
+        ['b.md', '# трейдинг\n'],
+        ['a.md', '# трейдинг\n'],
+        ['c.md', '# трейдинг\n'],
+        ['Трейдинг.md', ''],
+        ['d.md', 'трейдинг у тексті\n'],
+      ]);
+      const backlinks = (p: string) => (p === 'c.md' ? 2 : 0);
+      const ranked = rankNotes({
+        notes: map,
+        queries: ['трейдинг'],
+        noteCap: 10,
+        perNoteCap: 3,
+        getBacklinkCount: backlinks,
+      }).notes.map((n) => n.path);
+      expect(ranked).toEqual(['Трейдинг.md', 'c.md', 'a.md', 'b.md', 'd.md']);
+    });
+
+    it('does not depend on the order notes were read in', () => {
+      const entries: Array<[string, string]> = [
+        ['Метрики A.md', ''],
+        ['x.md', 'тут згадано трейдинг\n'],
+        ['y.md', '# метрики і трейдинг\n'],
+        ['z.md', 'метрики\n'],
+      ];
+      const forward = rank(notes(entries), ['трейдинг', 'метрики']);
+      expect(rank(notes([...entries].reverse()), ['трейдинг', 'метрики'])).toEqual(forward);
+    });
+
+    it('breaks an exact fused tie by the single-list order', () => {
+      // Rank 1 under weight 0.5 and rank 7 under weight 1 both score 1/12 at k = 5.
+      const filler = Array.from(
+        { length: 6 },
+        (_, i) => [`f${i}.md`, '# альфа\n'] as [string, string],
+      );
+      const map = notes([...filler, ['body.md', 'альфа в тексті\n'], ['Бета.md', '']]);
+      const ranked = rank(map, ['альфа', 'бета']);
+      // body.md is 7th for "альфа"; Бета.md is 1st for "бета", a title hit, so it wins the tie.
+      expect(ranked.indexOf('Бета.md')).toBeLessThan(ranked.indexOf('body.md'));
+      expect(ranked.indexOf('body.md')).toBe(ranked.indexOf('Бета.md') + 1);
+    });
+
     it("a broad variant's title hits cannot crowd the first variant's body hits out of the pool", () => {
       const map = notes([
         ['Метрики A.md', ''],
