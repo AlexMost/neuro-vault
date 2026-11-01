@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [17.6.0](https://github.com/AlexMost/neuro-vault/compare/v17.5.0...v17.6.0) (2026-11-01)
+
+
+### Features
+
+* **search:** fuse lexical query variants by weighted reciprocal rank ([7641c6a](https://github.com/AlexMost/neuro-vault/commit/7641c6a86da91d6ce3389b572c1bc6bb2241b278)), closes [#265](https://github.com/AlexMost/neuro-vault/issues/265)
+* **search:** tell the agent when its own variant's lexical matches were cut ([04e9e5c](https://github.com/AlexMost/neuro-vault/commit/04e9e5ce808831486da00e4ff559495221b0e2c8)), closes [#266](https://github.com/AlexMost/neuro-vault/issues/266)
+
+
+### Bug Fixes
+
+* **search:** in lexical mode the lexical pool follows limit ([effaa96](https://github.com/AlexMost/neuro-vault/commit/effaa9659b246391af16afea3b982455bf85cc34)), closes [#229](https://github.com/AlexMost/neuro-vault/issues/229) [#264](https://github.com/AlexMost/neuro-vault/issues/264)
+* **search:** review follow-ups for the cut note ([187729f](https://github.com/AlexMost/neuro-vault/commit/187729fe47baa1878892f00b32b811755169add7)), closes [#266](https://github.com/AlexMost/neuro-vault/issues/266)
+
 ## [17.5.0](https://github.com/AlexMost/neuro-vault/compare/v17.4.0...v17.5.0) (2026-11-01)
 
 
