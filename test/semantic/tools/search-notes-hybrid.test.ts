@@ -55,7 +55,7 @@ describe('unified matches shape', () => {
       for (const m of out.matches) {
         expect(m.found_in.every((s) => s.startsWith('lexical:'))).toBe(true);
         expect(m.similarity).toBeUndefined();
-        expect(m.expansion_similarity).toBeUndefined();
+        expect(m).not.toHaveProperty('expansion_similarity');
       }
     } finally {
       await cleanup();
@@ -576,11 +576,12 @@ describe('expansion_floor input schema (SDK gate)', () => {
   });
 });
 
-describe('expansion_floor wiring', () => {
-  it('forwards expansion_floor to the expansion leg as the per-seed neighbour floor', async () => {
+describe('expansion_floor is inert', () => {
+  it('changes nothing at deep effort, and no neighbour enters the list', async () => {
     // The seed sits 60° from the query (0.5); its neighbour 25° further on is
-    // out of the query's reach (≈0.09) but 0.906 from the seed — over a 0.9
-    // floor, under 0.91. Only the forwarded floor decides whether it expands.
+    // out of the query's reach (≈0.09) but 0.906 from the seed — the geometry
+    // that once made it an expansion-only entry. No effort profile expands
+    // (#270), so the floor has nothing to bound and the neighbour stays out.
     const at = (degrees: number) => {
       const r = (degrees * Math.PI) / 180;
       return Float32Array.from([Math.cos(r), Math.sin(r)]);
@@ -595,20 +596,18 @@ describe('expansion_floor wiring', () => {
     );
     try {
       const reg = registerTool(buildSearchNotesTool(deps));
-      const expanded = (out: SearchNotesOutput) =>
-        out.matches.filter((m) => m.found_in.includes('expansion')).map((m) => m.path);
-      const below = await callTool<SearchNotesOutput>(reg, {
+      const withFloor = await callTool<SearchNotesOutput>(reg, {
         query: 'alpha',
         effort: 'deep',
         expansion_floor: 0.9,
       });
-      const above = await callTool<SearchNotesOutput>(reg, {
+      const withoutFloor = await callTool<SearchNotesOutput>(reg, {
         query: 'alpha',
         effort: 'deep',
-        expansion_floor: 0.91,
       });
-      expect(expanded(below)).toEqual(['n.md']);
-      expect(expanded(above)).toEqual([]);
+      expect(withFloor).toEqual(withoutFloor);
+      expect(withoutFloor.matches.map((m) => m.path)).toEqual(['a.md']);
+      expect(withoutFloor.matches.every((m) => !m.found_in.includes('expansion'))).toBe(true);
     } finally {
       await cleanup();
     }
@@ -629,17 +628,16 @@ describe('arity invariance (SDK gate)', () => {
   }
 
   it('a one-element array produces the same matches as the equivalent string', async () => {
-    // Deep effort, plus a second source reachable only via expansion, so
-    // `blocks` and `expansion_similarity` carry real (non-empty/defined)
-    // values below. Under quick effort with no expansion these comparisons
-    // reduce to [] === [] and undefined === undefined — vacuously true, and
-    // blind to a fold that breaks block or expansion handling for one arity.
+    // Deep effort, so `blocks` carries real (non-empty) values below and the
+    // comparison is not vacuous. A second source sits where an expansion-only
+    // entry used to come from; no effort profile expands (#270), so it must
+    // stay out at both arities.
     const notePath = 'Projects/alpha.md';
     const relatedPath = 'Projects/related.md';
     // The query embeds as [1, 0] (the default mock). The seed sits 35° off
     // it (0.82), carrying a block the query reaches; the related note sits
     // 45° further on — out of the query's reach under the deep default
-    // (≈0.17), but 0.71 from the seed, so it surfaces only via expansion.
+    // (≈0.17), but 0.71 from the seed.
     const at = (degrees: number) => {
       const r = (degrees * Math.PI) / 180;
       return Float32Array.from([Math.cos(r), Math.sin(r)]);
@@ -658,8 +656,8 @@ describe('arity invariance (SDK gate)', () => {
     const { deps, cleanup } = await makeLexicalVault(
       {
         [notePath]: '# Alpha\n\nalpha beta gamma\n',
-        // Deliberately no "alpha" token, so this note surfaces ONLY via
-        // expansion, never the lexical leg.
+        // Deliberately no "alpha" token, so the lexical leg never surfaces
+        // this note either.
         [relatedPath]: '# Unrelated\n\nfiller text only\n',
       },
       { sources },
@@ -681,13 +679,12 @@ describe('arity invariance (SDK gate)', () => {
         asString.matches.map((m) => m.similarity),
       );
       expect(asArray.matches.map((m) => m.blocks)).toEqual(asString.matches.map((m) => m.blocks));
-      expect(asArray.matches.map((m) => m.expansion_similarity)).toEqual(
-        asString.matches.map((m) => m.expansion_similarity),
-      );
       // Preconditions: the comparisons above are not vacuous.
       expect(asString.matches.length).toBeGreaterThan(0);
       expect(asString.matches[0].blocks?.length ?? 0).toBeGreaterThan(0);
-      expect(asString.matches.some((m) => m.expansion_similarity !== undefined)).toBe(true);
+      // The neighbour stays out at both arities.
+      expect(asString.matches.some((m) => m.path === relatedPath)).toBe(false);
+      expect(asArray.matches.some((m) => m.path === relatedPath)).toBe(false);
     } finally {
       await cleanup();
     }

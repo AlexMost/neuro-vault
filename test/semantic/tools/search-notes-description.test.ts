@@ -37,10 +37,10 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     const description = builtDescription();
     const { quick, deep } = EFFORT_PROFILES;
     expect(description).toContain(
-      `"quick" (default) — compact lookup (${quick.semanticPool} semantic notes, ~${quick.lexicalNoteCap} lexical, no expansion, merged cap ${quick.mergedCap})`,
+      `"quick" (default) — compact lookup (${quick.semanticPool} semantic notes, ~${quick.lexicalNoteCap} lexical, merged cap ${quick.mergedCap})`,
     );
     expect(description).toContain(
-      `"deep" — exploration (${deep.semanticPool} semantic, ~${deep.lexicalNoteCap} lexical, expansion on, merged cap ${deep.mergedCap})`,
+      `"deep" — exploration (${deep.semanticPool} semantic, ~${deep.lexicalNoteCap} lexical, merged cap ${deep.mergedCap})`,
     );
   });
 
@@ -55,7 +55,8 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     expect(source).toContain('${similarity.quick}');
     expect(source).toContain('${similarity.deep}');
     expect(source).toContain('${retryClause(similarity.fallback)}');
-    expect(source).toContain('${similarity.expansionFloor}');
+    // The inert `expansion_floor` quotes no default (#270).
+    expect(source).not.toContain('${similarity.expansionFloor}');
     expect(source).toContain('${EFFORT_PROFILES.quick.semanticPool}');
     expect(source).toContain('${EFFORT_PROFILES.quick.lexicalNoteCap}');
     expect(source).toContain('${EFFORT_PROFILES.quick.mergedCap}');
@@ -88,8 +89,9 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     expect(properties.threshold?.description).toContain(
       'effort defaults (0.61 quick / 0.47 deep) with one retry at 0.42',
     );
-    expect(properties.expansion_floor?.description).toContain('Default 0.73');
-    expect(properties.expansion_floor?.description).not.toContain('0.9+');
+    // Inert since #270: it says so and quotes no number at all.
+    expect(properties.expansion_floor?.description).toContain('Has no effect');
+    expect(properties.expansion_floor?.description).not.toMatch(/\d/);
   });
 
   it('advertises no retry for a profile without a fallback', () => {
@@ -111,16 +113,16 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     expect(properties.threshold?.description).not.toContain('retry at');
   });
 
-  it('tells the agent expansion scores are not query similarities, and the floor does not bind', () => {
+  it('says nothing of expansion in the description and marks expansion_floor inert', () => {
+    // No effort profile runs the expansion leg (#270): the description has
+    // no expansion prose left, and the parameter's own description tells the
+    // caller it does nothing and when it goes.
     const { properties } = z.toJSONSchema(registerTool(builtTool()).spec.inputSchema as z.ZodType, {
       io: 'input',
     }) as { properties: Record<string, { description?: string }> };
-    expect(builtDescription()).toContain(
-      '`expansion_similarity` (deep): note-to-note similarity to a semantic hit, not the query; not comparable with `similarity`.',
-    );
-    expect(properties.expansion_floor?.description).toContain(
-      'On harrier-270m neighbour similarities sit at 0.75-0.95, so the default does not bind.',
-    );
+    expect(builtDescription()).not.toMatch(/expansion/i);
+    expect(properties.expansion_floor?.description).toContain('no longer runs at any effort');
+    expect(properties.expansion_floor?.description).toContain('next major');
   });
 
   it('advertises word-prefix lexical matching, not substring', () => {

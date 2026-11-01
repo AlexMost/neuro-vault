@@ -59,7 +59,6 @@ function at(degrees: number): number[] {
   const radians = (degrees * Math.PI) / 180;
   return [Math.cos(radians), Math.sin(radians)];
 }
-const cosDeg = (degrees: number): number => Math.cos((degrees * Math.PI) / 180);
 
 describe('searchNotes', () => {
   it('filters out search results whose paths no longer exist on disk', async () => {
@@ -701,9 +700,11 @@ describe('searchNotes', () => {
     }
   });
 
-  it('multi-query expansion (deep): an expansion-only neighbour surfaces with expansion_similarity, not similarity', async () => {
+  it("deep effort never surfaces a seed's neighbour on its own: no entry carries expansion provenance", async () => {
     // The seed sits 40° off the query (0.77); exp.md 45° further on is out
-    // of the query's reach (0.09) but 0.71 from the seed.
+    // of the query's reach (0.09) but 0.71 from the seed — inside the
+    // expansion floor. No effort profile expands (#270), so it stays out and
+    // nothing in the response says "expansion", at either query arity.
     const sources = makeMockSources(['note-a.md', 'exp.md']);
     sources.get('note-a.md')!.embedding = Float32Array.from(at(40));
     sources.get('exp.md')!.embedding = Float32Array.from(at(85));
@@ -717,88 +718,26 @@ describe('searchNotes', () => {
     const tool = buildSearchNotesTool(deps);
     const reg = registerTool(tool);
     try {
-      const output = await callTool<SearchNotesOutput>(reg, {
-        query: ['q1'],
-        effort: 'deep',
-        threshold: 0.5,
-      });
-
-      const noteA = output.matches.find((r) => r.path === 'note-a.md')!;
-      expect(noteA.matched_queries).toEqual(['q1']);
-      expect(noteA.found_in).toEqual(['semantic']);
-
-      const exp = output.matches.find((r) => r.path === 'exp.md')!;
-      expect(exp).toBeDefined();
-      expect(exp.found_in).toEqual(['expansion']);
-      expect(exp.expansion_similarity).toBeCloseTo(cosDeg(45), 6);
-      expect(exp.similarity).toBeUndefined();
+      for (const query of ['q1', ['q1']]) {
+        const output = await callTool<SearchNotesOutput>(reg, {
+          query,
+          effort: 'deep',
+          threshold: 0.5,
+        });
+        expect(output.matches.map((r) => r.path)).toEqual(['note-a.md']);
+        expect(output.matches[0].found_in).toEqual(['semantic']);
+        expect(output.matches.every((r) => !r.found_in.includes('expansion'))).toBe(true);
+        expect(output.matches.every((r) => !('expansion_similarity' in r))).toBe(true);
+      }
     } finally {
       await cleanup();
     }
   });
 
-  it('quick mode multi-query never surfaces expansion-only entries', async () => {
-    // Same geometry as the deep case above: exp.md is reachable only by
-    // expanding from note-a.md, which quick effort never does.
-    const sources = makeMockSources(['note-a.md', 'exp.md']);
-    sources.get('note-a.md')!.embedding = Float32Array.from(at(40));
-    sources.get('exp.md')!.embedding = Float32Array.from(at(85));
-    const embed = vi.fn().mockResolvedValue([1, 0]);
-    const { deps, cleanup } = await makeSearchDeps({
-      sources,
-      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      modelKey: MODEL_KEY,
-    });
-    const tool = buildSearchNotesTool(deps);
-    const reg = registerTool(tool);
-    try {
-      const output = await callTool<SearchNotesOutput>(reg, {
-        query: ['q1', 'q2'],
-        effort: 'quick',
-        threshold: 0.5,
-      });
-
-      expect(output.matches.every((r) => !r.found_in.includes('expansion'))).toBe(true);
-      expect(output.matches.every((r) => r.expansion_similarity === undefined)).toBe(true);
-      expect(output.matches.map((r) => r.path)).toEqual(['note-a.md']);
-    } finally {
-      await cleanup();
-    }
-  });
-
-  it('single-query deep mode surfaces the expansion neighbour of the seed', async () => {
-    const sources = makeMockSources(['note-a.md', 'exp.md']);
-    sources.get('note-a.md')!.embedding = Float32Array.from(at(40));
-    sources.get('exp.md')!.embedding = Float32Array.from(at(85));
-
-    const embed = vi.fn().mockResolvedValue([1, 0]);
-    const { deps, cleanup } = await makeSearchDeps({
-      sources,
-      embeddingProvider: { initialize: vi.fn(), embedQuery: embed },
-      modelKey: MODEL_KEY,
-    });
-    const tool = buildSearchNotesTool(deps);
-    const reg = registerTool(tool);
-    try {
-      const output = await callTool<SearchNotesOutput>(reg, {
-        query: 'test query',
-        effort: 'deep',
-        threshold: 0.5,
-      });
-
-      const exp = output.matches.find((r) => r.path === 'exp.md')!;
-      expect(exp.found_in).toEqual(['expansion']);
-      expect(exp.expansion_similarity).toBeCloseTo(cosDeg(45), 6);
-    } finally {
-      await cleanup();
-    }
-  });
-
-  it("multi-query deep: the same expansion neighbour fuses once at its best seed's expansion_similarity", async () => {
+  it('multi-query deep: a neighbour shared by two seeds stays out as well', async () => {
     // q1 sits on seed-a (0°), q2 on seed-b (20°); under the 0.95 threshold
     // each reaches only its own seed. shared.md at 50° is out of both
-    // queries' reach but a neighbour of both seeds: cos 50° via seed-a, cos
-    // 30° via seed-b.
+    // queries' reach and a neighbour of both seeds (cos 50°, cos 30°).
     const sources = makeMockSources(['seed-a.md', 'seed-b.md', 'shared.md']);
     sources.get('seed-a.md')!.embedding = Float32Array.from(at(0));
     sources.get('seed-b.md')!.embedding = Float32Array.from(at(20));
@@ -818,13 +757,8 @@ describe('searchNotes', () => {
         effort: 'deep',
         threshold: 0.95,
       });
-
-      // "shared.md" is a neighbour of both seeds; flattened expansion dedups
-      // to a single entry at the best (max) similarity — seed-b's.
-      const shared = output.matches.filter((r) => r.path === 'shared.md');
-      expect(shared).toHaveLength(1);
-      expect(shared[0].expansion_similarity).toBeCloseTo(cosDeg(30), 6);
-      expect(shared[0].similarity).toBeUndefined();
+      expect(output.matches.map((r) => r.path).sort()).toEqual(['seed-a.md', 'seed-b.md']);
+      expect(output.matches.some((r) => r.path === 'shared.md')).toBe(false);
     } finally {
       await cleanup();
     }
@@ -1277,8 +1211,8 @@ describe('semantic_status', () => {
   });
 
   it('reads the status once for a search whose semantic leg makes several corpus reads', async () => {
-    // Deep effort over two queries: seeds, blocks and expansion are separate
-    // corpus reads; the vault's status is read once for the whole call.
+    // Deep effort over two queries: seeds and blocks are separate corpus
+    // reads; the vault's status is read once for the whole call.
     const sources = new Map(
       ['Notes/a.md', 'Notes/b.md'].map((p) => [p, makeSyntheticSource(p)] as const),
     );

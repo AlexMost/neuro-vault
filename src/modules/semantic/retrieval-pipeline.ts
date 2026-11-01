@@ -127,10 +127,11 @@ export async function runRetrievalPipeline(
         embeddingProvider: deps.embeddingProvider,
         similarity: deps.similarity,
       });
-      // Existence check covers seeds AND their flattened expansion targets;
-      // expansion is recomputed below from the survivors so it reflects only
-      // surviving seeds/paths. Lexical notes are existence-safe by
-      // construction — they were read from disk this request.
+      // Existence check covers seeds AND any flattened expansion targets —
+      // none unless the policy was asked to expand, which no effort profile
+      // does (#270); expansion is recomputed below from the survivors so it
+      // reflects only surviving seeds/paths. Lexical notes are existence-safe
+      // by construction — they were read from disk this request.
       const rawExpansion = flattenExpansion(leg.results);
       const existing = await deps.filterExisting([
         ...leg.results.map((n) => n.path),
