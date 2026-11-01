@@ -5,7 +5,7 @@ TBD - created by archiving change hybrid-search-notes. Update Purpose after arch
 ## Requirements
 ### Requirement: Input axes mode and effort are orthogonal
 
-The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap, expansion only in `deep`) and the default merged-list cap (quick: 5, deep: 12). The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`. `threshold` SHALL affect only the semantic leg's note scores (see Requirement: threshold is a hard semantic filter with default-only fallback); `expansion_floor` SHALL affect only the expansion leg (see Requirement: expansion_floor bounds the expansion leg). Top-level `truncated` SHALL be present in every response and true when candidates were dropped on the way to `matches[]` — by the merged-list cap or by the semantic or lexical leg's internal pool cap. Expansion per-seed neighbour caps are not surfaced (a literal signal there would be near-always true in deep mode).
+The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap, expansion only in `deep`) and the default merged-list cap (quick: 5, deep: 12). The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`, except that when the lexical leg is the only source (`mode: "lexical"`, or no semantic leg to run) its pool SHALL equal `limit` (default: the effort's merged cap). `threshold` SHALL affect only the semantic leg's note scores (see Requirement: threshold is a hard semantic filter with default-only fallback); `expansion_floor` SHALL affect only the expansion leg (see Requirement: expansion_floor bounds the expansion leg). Top-level `truncated` SHALL be present in every response and true when candidates were dropped on the way to `matches[]` — by the merged-list cap or by the semantic or lexical leg's internal pool cap. Expansion per-seed neighbour caps are not surfaced (a literal signal there would be near-always true in deep mode).
 
 #### Scenario: old mode values are rejected
 
@@ -19,8 +19,10 @@ The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) 
 
 #### Scenario: limit steers the lexical list in lexical mode
 
-- **WHEN** `search_notes` is called with `{ query: "x", mode: "lexical", limit: 20 }`
-- **THEN** `matches[]` contains at most 20 lexically-sourced entries
+- **WHEN** `search_notes` is called with `{ query: "x", mode: "lexical", limit: 20 }` and 14 notes match `x`
+- **THEN** `matches[]` contains those 14 lexically-sourced entries and `truncated` is false
+- **AND WHEN** more than 20 notes match `x`
+- **THEN** `matches[]` contains exactly 20 entries and `truncated` is true
 
 #### Scenario: limit caps the merged list in any mode
 

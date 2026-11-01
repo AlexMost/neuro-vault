@@ -117,6 +117,7 @@ describe('search_notes end-to-end sanity fixture', () => {
       await cleanup();
     }
   });
+
   it('mode: "lexical" with `limit` above the effort cap returns `limit` notes, untruncated when nothing was cut', async () => {
     // Fourteen notes match; the quick merged cap is 5. With the lexical leg the
     // sole source, its pool follows `limit` (#264), so the call gets what it asked for.
