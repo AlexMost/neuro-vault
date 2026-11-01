@@ -14,6 +14,8 @@ export default defineConfig(
       // subagent-driven-development scratch (ledger, task briefs, review
       // diffs) — throwaway, deleted at the end of each apply run.
       '.superpowers/**',
+      // the user's local research data — not project code.
+      '.scratch/**',
     ],
   },
   js.configs.recommended,

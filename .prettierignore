@@ -5,6 +5,9 @@ dist/
 # reports, review diffs) — throwaway, deleted at the end of each apply run.
 .superpowers/
 
+# The user's local research data — not project code.
+.scratch/
+
 # Vendored OpenSpec schema bundle (superpowers-bridge) — upstream-maintained,
 # upgraded via rm -rf + cp -R; reformatting would diverge from upstream.
 openspec/schemas/
