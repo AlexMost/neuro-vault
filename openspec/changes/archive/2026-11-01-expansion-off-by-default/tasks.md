@@ -62,8 +62,8 @@ Group 4 needs 1–3. Group 5 is last.
 
 - [x] 5.1 Gates: `npm test`, `npm run lint`, `npm run typecheck`, `npm run format`,
       `npm run build`, `npx commitlint --from origin/main --to HEAD`.
-- [ ] 5.2 After-eval on the owner's vault, production fused deep, against the baseline in design
+- [x] 5.2 After-eval on the owner's vault, production fused deep, against the baseline in design
       §Context: `diagnostics.*.expansion` 0; hit@3 and MRR within ±0.02; R@10 down by at most
       about 0.02; fewer notes on controls. Aggregates in verify.md and the PR.
-- [ ] 5.3 One fresh whole-branch review subagent; verify → retrospective →
+- [x] 5.3 One fresh whole-branch review subagent; verify → retrospective →
       `openspec archive expansion-off-by-default` → PR with `Closes #270`.

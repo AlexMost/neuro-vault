@@ -2,7 +2,9 @@
 
 ## Purpose
 Which embedding model the server runs, and what that choice pins. The model is one profile from a closed, verified registry, selected by `--model` and served process-wide. The profile owns everything model-specific: repository and revision, dtype, dimension, pooling, prefixes, token window, template-aware truncation, and the similarity defaults calibrated on its own scale. Rationale: ADR-0017.
+
 ## Requirements
+
 ### Requirement: The embedding model is chosen from a closed registry of verified profiles
 
 The server SHALL embed only with a model profile from a closed registry compiled into the package, and SHALL NOT accept an arbitrary model repository id from any input. The registry SHALL contain exactly the profiles `harrier-270m`, `granite-97m` and `harrier-0.6b`, with `harrier-270m` as the default. Each profile SHALL pin everything that determines the vectors it produces and how they are compared: the model repository id and an exact repository revision, the weight dtype, the vector dimension, the pooling method, the query prefix and the document prefix, the maximum input length in tokens, and the default similarity thresholds the semantic tools apply. A profile SHALL be added to the registry only after it has been measured on the retrieval eval and verified against the pinned transformers.js version.
@@ -119,7 +121,7 @@ The repository's continuous integration SHALL load every registered profile's to
 
 ### Requirement: Similarity defaults belong to the profile
 
-Every default similarity threshold the semantic tools apply SHALL come from the active profile: the `search_notes` effort defaults for `quick` and `deep`, its fallback retry threshold when the profile defines one, the deep block-evidence floor, the default `expansion_floor`, the `get_similar_notes` default threshold, and the `find_duplicates` default threshold. The fallback retry threshold SHALL be optional per profile, and a profile without one SHALL NOT retry. The block-evidence floor SHALL be a default of its own, independent of the `deep` effort default. Tool descriptions that state a default SHALL state the active profile's value, and SHALL NOT state a fallback retry for a profile that defines none. A caller-supplied threshold SHALL be applied as given, on whatever scale the active profile produces.
+Every default similarity threshold the semantic tools apply SHALL come from the active profile: the `search_notes` effort defaults for `quick` and `deep`, its fallback retry threshold when the profile defines one, the deep block-evidence floor, the `get_similar_notes` default threshold, and the `find_duplicates` default threshold. `expansionFloor` SHALL remain a default of every profile, read by the retrieval eval's calibration statistics; no tool applies it, because no effort runs the expansion leg, and the `search_notes` `expansion_floor` description SHALL NOT state it as a default. The fallback retry threshold SHALL be optional per profile, and a profile without one SHALL NOT retry. The block-evidence floor SHALL be a default of its own, independent of the `deep` effort default. Tool descriptions that state a default SHALL state the active profile's value, and SHALL NOT state a fallback retry for a profile that defines none. A caller-supplied threshold SHALL be applied as given, on whatever scale the active profile produces.
 
 `harrier-270m` SHALL default to 0.45 at both `quick` and `deep`, SHALL define no fallback, and SHALL keep 0.13 as its block-evidence floor. `granite-97m` and `harrier-0.6b` SHALL keep their effort defaults and fallbacks, and each SHALL carry its `deep` default as its block-evidence floor.
 
@@ -143,3 +145,7 @@ Every default similarity threshold the semantic tools apply SHALL come from the 
 - **WHEN** a profile's `deep` default and its block-evidence floor differ
 - **THEN** the deep block-evidence pass filters at the block-evidence floor, not at the `deep` default
 
+#### Scenario: The expansion floor is profile data without a tool default
+
+- **WHEN** a client lists tools from a server started under any profile
+- **THEN** the `search_notes` `expansion_floor` description quotes no numeric default, while `--stats` on the retrieval eval still measures that profile's `expansionFloor` pass rate
