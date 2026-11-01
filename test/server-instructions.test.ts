@@ -55,6 +55,7 @@ describe('SERVER_INSTRUCTIONS', () => {
               registerTool: vi.fn() as never,
               registerResource: vi.fn() as never,
               connect: vi.fn().mockResolvedValue(undefined),
+              server: { setRequestHandler: vi.fn() } as never,
             };
           },
           transportFactory: () => ({}) as never,

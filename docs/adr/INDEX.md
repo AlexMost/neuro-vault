@@ -22,7 +22,7 @@ Template: [0000-template.md](0000-template.md).
 | 0012 | [Vault conventions leave the `instructions` channel](0012-conventions-leave-the-instructions-channel.md) | Accepted |
 | 0013 | [The server builds and owns its embedding corpus](0013-own-embedding-corpus.md)                        | Accepted; model identity and text bound refined in part by [0017](0017-embedding-model-profiles.md) |
 | 0014 | [Background corpus freshness, and the removal it enabled](0014-background-corpus-freshness.md)         | Accepted; in-process per-session watcher superseded in part by [0020](0020-per-vault-state-in-the-daemon.md) |
-| 0015 | [The registration gate owns schema validation; `INVALID_ARGUMENT` is for semantic faults](0015-input-gate-owns-schema-validation.md) | Accepted |
+| 0015 | [The registration gate owns schema validation; `INVALID_ARGUMENT` is for semantic faults](0015-input-gate-owns-schema-validation.md) | Accepted; the claim that the SDK enforces the same split corrected by [0025](0025-the-gate-answers-tools-call.md) |
 | 0016 | [One disk module owns note writes; `VaultProvider` survives only as a test seam](0016-one-disk-module-owns-note-writes.md) | Accepted |
 | 0017 | [Embedding models are a closed set of verified profiles](0017-embedding-model-profiles.md) | Accepted; per-profile directories adopted 2026-10-14 |
 | 0018 | [A shared-services daemon per installed build; the embedding provider is its first client](0018-shared-services-daemon.md) | Accepted |
@@ -32,3 +32,4 @@ Template: [0000-template.md](0000-template.md).
 | 0022 | [Modules hand the composition root their factories through their barrels](0022-modules-hand-the-composition-root-their-factories.md) | Accepted |
 | 0023 | [Resource read errors carry the error code in JSON-RPC `data`](0023-resource-errors-carry-the-error-code.md) | Accepted |
 | 0024 | [Structural reads use the chunker heading model at read time, with the line coordinates search reports](0024-structural-reads-share-search-coordinates.md) | Accepted |
+| 0025 | [The gate answers `tools/call`; the SDK only lists the tools](0025-the-gate-answers-tools-call.md) | Accepted |

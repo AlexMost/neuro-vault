@@ -13,16 +13,19 @@ MCP tools must return a uniform shape: `{ content, structuredContent?, isError? 
 ## How it interacts
 
 ```
-McpServer.registerTool(name, { title, description, inputSchema }, handler)
-  │
+McpServer.registerTool(name, { title, description, inputSchema }, handler)   → tools/list
+dispatchToolCallsToGate(server.server, registrations)                        → tools/call
+  │  params.arguments, as the client sent them
   ▼
-async (args) => invokeTool(() => handlers.foo(args))
+async (args) => invokeTool(() => gate(args) → handlers.foo(parsed))
   │
   ├─ success → toToolResponse(value) — JSON-stringified into a text content block
   └─ error   → toToolErrorResponse(error)
                  ├─ ToolHandlerError → structured { code, message, details }
                  └─ anything else    → { message }
 ```
+
+The SDK answers `tools/list` from the registered specs, but not `tools/call`. Its own `tools/call` handler parses the arguments against `spec.inputSchema` before any handler runs, and answers a failure with zod's text instead of the gate's envelope. So once the tools are registered, `dispatchToolCallsToGate` (`src/lib/tool-dispatch.ts`) replaces that handler with one that looks the tool up by name and passes it the raw arguments. An unknown tool gets the SDK's own answer. See [ADR-0025](../adr/0025-the-gate-answers-tools-call.md).
 
 `server.ts` is also where the server's `instructions` text lives, as the module constant `SERVER_INSTRUCTIONS`. It composes nothing at startup: it takes no registry, reads no file, and is byte-identical for every configuration. It is deliberately short. Claude Code truncates `instructions` at 2048 characters and hands sub-agents none of it, whereas every tool `description` reaches every client in full — so anything a tool can say about itself (parameters, result shape, multi-vault behaviour) belongs on that tool, not here. That principle is recorded in [ADR-0010](../adr/0010-context-delivery-channels.md); [ADR-0012](../adr/0012-conventions-leave-the-instructions-channel.md) is why the constant carries no vault content either.
 

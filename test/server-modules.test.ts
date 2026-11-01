@@ -47,6 +47,7 @@ function createFakeServer() {
       return {} as never;
     }) as never,
     connect: vi.fn().mockResolvedValue(undefined),
+    server: { setRequestHandler: vi.fn() } as never,
   };
 }
 

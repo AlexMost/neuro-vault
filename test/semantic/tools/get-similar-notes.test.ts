@@ -910,7 +910,7 @@ describe('getSimilarNotes — graph signals', () => {
 
   // `exclude_folders` is a plain (non-union) array param; these guard that the
   // central coercion layer parses a stringified array for it at the registration
-  // boundary (the schema the MCP SDK validates raw args against before the
+  // boundary (the schema the gate validates raw args against before the
   // handler runs). The array form's behaviour is covered by
   // 'removes results matching exclude_folders prefixes' above.
   it('coerces a stringified exclude_folders array at the registration boundary', async () => {

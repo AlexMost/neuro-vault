@@ -19,7 +19,8 @@ describe('registerTool', () => {
     expect(reg.spec.title).toBe('Noop');
     expect(reg.spec.description).toBe('does nothing');
     // spec.inputSchema is a coercion-wrapped variant of the original — the SDK
-    // validates against this so stringified primitives are accepted.
+    // advertises it, and the gate validates against it, so stringified
+    // primitives are accepted.
     expect(reg.spec.inputSchema).toBeDefined();
     expect(reg.spec.inputSchema).not.toBe(schema);
   });
@@ -37,7 +38,7 @@ describe('registerTool', () => {
     expect(registerTool(tool).spec.annotations).toEqual(annotations);
   });
 
-  it('exposes a spec.inputSchema that itself coerces (the path the MCP SDK takes)', () => {
+  it('exposes a spec.inputSchema that itself coerces (the schema the gate parses)', () => {
     const schema = z.object({
       limit: z.number().int().positive().optional(),
       filter: z.record(z.string(), z.unknown()).optional(),
