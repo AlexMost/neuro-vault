@@ -155,10 +155,11 @@ describe('fused pipeline', () => {
     expect(ranked.map(({ path, score }) => ({ path, score }))).toEqual(
       candidates.map((c) => ({ path: c.path, score: c.score })),
     );
-    // Non-vacuity: top-k is the cut, and every leg reaches the fused list.
+    // Non-vacuity: the list fills top-k and both legs reach it; nothing carries
+    // expansion evidence, since no effort profile expands (#270).
     expect(ranked).toHaveLength(EVAL_TOP_K);
     expect(candidates.some((c) => c.lexical !== undefined && c.semantic === undefined)).toBe(true);
-    expect(candidates.some((c) => c.expansion !== undefined)).toBe(true);
+    expect(candidates.every((c) => c.expansion === undefined)).toBe(true);
     expect(candidates.some((c) => c.semantic !== undefined)).toBe(true);
   });
 
@@ -184,15 +185,12 @@ describe('fused pipeline', () => {
         perNoteCap: config.lexical_per_note_cap,
       }),
     );
-    // The seed read over-fetches one past the pool to detect overflow; the
-    // expansion read is the last, floored by the profile's expansion floor.
+    // The seed read over-fetches one past the pool to detect overflow, and it
+    // is the only note read: no effort profile expands (#270).
+    expect(nearest).toHaveBeenCalledTimes(1);
     expect(nearest.mock.calls[0][1]).toMatchObject({
       threshold: config.semantic_threshold,
       limit: config.semantic_pool + 1,
-    });
-    expect(nearest.mock.calls.at(-1)?.[1]).toMatchObject({
-      threshold: config.expansion_floor,
-      limit: config.expansion_limit,
     });
   });
 
@@ -271,8 +269,11 @@ describe('fused pipeline', () => {
         limit: config.semantic_pool + 1,
       });
       expect(ranked.length).toBeLessThanOrEqual(config.top_k);
-      // Non-vacuity: the effort's merged cap is the cut, not eval's top-10.
-      expect(ranked).toHaveLength(effort === 'quick' ? 5 : 11);
+      // Non-vacuity: at quick the effort's merged cap (5) is the cut, not eval's
+      // top-10. At deep all ten candidates (eight seeds, the lexical-only note
+      // and n9) fit under the merged cap of 12; no effort profile expands
+      // (#270), so n8 no longer arrives as an eleventh.
+      expect(ranked).toHaveLength(effort === 'quick' ? 5 : 10);
     },
   );
 
@@ -383,7 +384,9 @@ describe('evalConfig', () => {
     expect(evalConfig(TEST_SIMILARITY, { run: 'production', effort: 'deep' })).toMatchObject({
       top_k: 12,
       semantic_threshold: TEST_SIMILARITY.deep,
-      expansion: true,
+      // No effort profile expands (#270).
+      expansion: false,
+      expansion_limit: 0,
     });
   });
 

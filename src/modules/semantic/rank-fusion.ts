@@ -42,7 +42,9 @@ export interface FusedCandidate {
 // fill the tail of a list but never outrank an equal-rank primary hit.
 // Tuned on the retrieval eval (issue #223): 0.5 gives the best deep recall
 // with hit@3 and MRR no worse than the 0.85 start (change
-// weighted-rrf-expansion, design D1).
+// weighted-rrf-expansion, design D1). Retired in production since #270: no
+// effort profile expands, so the third list is always empty and this weight
+// applies only when a caller of `executeRetrieval` asks to expand.
 export const EXPANSION_WEIGHT = 0.5;
 
 export function fuseRanks(args: {

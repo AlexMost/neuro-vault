@@ -1,18 +1,20 @@
 # Rank Fusion
 
-How `search_notes`' three rank sources — semantic, lexical, expansion — become one ranked `matches[]` list. This is the merge layer that sits **above** the two legs; it does not retrieve anything itself, only fuses orderings the legs already computed.
+How `search_notes`' two rank sources — semantic and lexical — become one ranked `matches[]` list. This is the merge layer that sits **above** the two legs; it does not retrieve anything itself, only fuses orderings the legs already computed. `fuseRanks` still takes a third list, the flattened expansion source; since #270 no effort profile runs the expansion leg, so that list is always empty and production fusion is two-source RRF. The sections below keep describing the third source as the code still carries it, marked as retired.
 
 ## What it is
 
 `src/modules/semantic/rank-fusion.ts` exports pure functions consumed by `runRetrievalPipeline` in `src/modules/semantic/retrieval-pipeline.ts` — the one function that runs both legs and fuses them, called by `search_notes` and by the retrieval eval harness ([`eval/README.md`](../../eval/README.md)) alike:
 
 - `adaptiveK(totalNotes)` — the RRF constant `k`, sized to the vault.
-- `flattenExpansion(seeds)` — collapses per-seed `related[]` into one ranked list, the third fusion source.
+- `flattenExpansion(seeds)` — collapses per-seed `related[]` into one ranked list, the third fusion source — always empty now that no effort profile expands (#270).
 - `fuseRanks({ sources, totalNotes, expansionWeight? })` — reciprocal-rank-fuses the three ordered source lists into one scored, sorted list of `{ path, score, sourceCount }`.
 
 Neither function touches the corpus, the lexical index, or the filesystem — they operate on path arrays already produced by the two legs (see [`retrieval-policy.md`](./retrieval-policy.md) for the semantic leg, [`lexical-search.md`](./lexical-search.md) for the lexical leg). `runRetrievalPipeline` calls `fuseRanks`, slices to the merged-list cap, and returns each candidate with its fused `score` and the evidence of every leg that produced it; `search_notes` turns that evidence into `found_in` provenance and per-source fields — that shaping is documented at the tool boundary in [`docs/guide/finding-notes.md`](../guide/finding-notes.md); this file covers only the fusion mechanism itself.
 
 ## Mechanism: three ordered sources → RRF
+
+**Retired third source (#270):** `sources.expansion` is `[]` in every production call, so the formula below runs over the semantic and lexical lists alone; the expansion weight and its rationale are kept here as the record of what the code still implements for an explicit expansion input.
 
 `fuseRanks` takes exactly three ordered path lists — `sources.semantic`, `sources.lexical`, `sources.expansion` — and computes, for every path appearing in at least one of them:
 
@@ -59,7 +61,7 @@ This chain (and everything upstream of it) is a pure function of vault state, so
 3. **Deduplicate** by path, keeping the **maximum** `expansion_similarity` seen across seeds (the same neighbour can appear under several seeds with different similarities — max wins, not sum or average; occurrence-counting expansion hits as a separate importance signal was considered and deliberately deferred).
 4. **Order** the deduplicated list by that kept `expansion_similarity`, descending, with `path` ascending as tiebreak.
 
-In `effort: "quick"` no expansion is computed at all (`related[]` is always empty), so the expansion source is empty and contributes nothing to fusion — quick-effort fusion is effectively two-source RRF over semantic and lexical alone.
+No effort profile computes expansion any more (#270): `related[]` is always empty, so the expansion source is empty and contributes nothing to fusion at either effort — production fusion is two-source RRF over semantic and lexical alone. The step is reachable only through `executeRetrieval`'s explicit `expansion` input, which the policy tests and the parity oracle use (see [`retrieval-policy.md`](./retrieval-policy.md#step-4--per-seed-expansion-floored-by-expansionfloor-not-threshold)).
 
 ## Truncated observability: the +1 over-fetch
 
@@ -67,17 +69,17 @@ Top-level `truncated` must be true whenever candidates were dropped **anywhere**
 
 The two legs detect overflow via distinct mechanisms: the semantic leg detects it by over-fetching one beyond the pool cap; the lexical leg computes the true candidate count and compares it to its cap. The semantic leg's `executeRetrieval` requests `limit + 1` neighbours per query and checks `neighbors.length > limit` before slicing back to `limit`; the lexical leg's `rankNotes` computes `candidates.length > opts.noteCap` before slicing to `noteCap`. Each cut is recorded where it happened: the semantic leg's overflow on its `ran` outcome record, the lexical leg's on its own `ran` record, and the merged cap's as the pipeline's top-level `truncated`, which therefore means the merged cut only. `deriveObservability` (`src/modules/semantic/search-observability.ts`) ORs the three into the response's `truncated` — see [Leg outcome records](./retrieval-policy.md#leg-outcome-records-and-observability) in `retrieval-policy.md`. See the semantic leg's own `RetrievalOutput.truncated` in [`retrieval-policy.md`](./retrieval-policy.md) and the lexical leg's `truncated` in [`lexical-search.md`](./lexical-search.md) for where each half of this signal originates.
 
-The two causes need different fixes, which is why the tool description calls this out explicitly: merged-cap truncation is recovered by raising `limit`; a leg's pool-cap truncation is not (raising `limit` never grows a leg's internal pool) — raise `effort` to `"deep"` (larger pools, plus expansion) or narrow `query`/`filter` instead.
+The two causes need different fixes, which is why the tool description calls this out explicitly: merged-cap truncation is recovered by raising `limit`; a leg's pool-cap truncation is not (raising `limit` never grows a leg's internal pool) — raise `effort` to `"deep"` (larger pools) or narrow `query`/`filter` instead.
 
 ## Degradation modes
 
 - **`mode: "lexical"`, or no semantic corpus available** (cold/absent index) — the semantic and expansion sources are both empty; `fuseRanks` degenerates to ordering by the lexical source's own reciprocal ranks alone, so `matches[]` preserves the lexical leg's ordering exactly. Every `found_in` is lexical-only. The corpus loader is never invoked in `mode: "lexical"`.
 - **Semantic leg failure or emptiness** never fails the lexical leg or the fusion — a leg contributing nothing simply doesn't contribute path entries to `fuseRanks`' input.
-- **`effort: "quick"`** — expansion source is always empty (see above); fusion runs over semantic + lexical only.
+- **Either effort** — the expansion source is always empty (see above); fusion runs over semantic + lexical only.
 - **Fan-out (multi-vault, `vault` omitted)** — fusion runs independently per vault; a vault without a semantic index still fuses (over lexical alone) rather than being skipped, matching `runFanOut`'s all-vaults contract (see [`fan-out.md`](./fan-out.md)).
 
 ## What is deliberately not here
 
-- **Further per-source weights** — expansion now carries a real weight (`EXPANSION_WEIGHT = 0.5`, see Mechanism above), but semantic and lexical are still equal at `1`, and there is no weighting *within* a leg (e.g. a heavier lexical-title vs. lexical-body split). Each leg's own internal ordering (lexical's title>heading>body tiers, semantic's similarity) still carries that finer-grained signal instead of a second weighting layer on top. Further fusion-level weights remain deferred pending measured data from the retrieval eval harness ([`eval/README.md`](../../eval/README.md)) — the 0.5 expansion default is the one fusion weight tuned on that harness so far (issue #223).
-- **Expansion occurrence-counting** — a path appearing under multiple seeds' `related[]` currently keeps only its max similarity (see Expansion flattening above); how *many* seeds agree on it is not folded into score. Deferred as a separate importance signal, not implemented.
+- **Further per-source weights** — the retired expansion source carries a real weight (`EXPANSION_WEIGHT = 0.5`, see Mechanism above), but semantic and lexical are still equal at `1`, and there is no weighting *within* a leg (e.g. a heavier lexical-title vs. lexical-body split). Each leg's own internal ordering (lexical's title>heading>body tiers, semantic's similarity) still carries that finer-grained signal instead of a second weighting layer on top. Further fusion-level weights remain deferred pending measured data from the retrieval eval harness ([`eval/README.md`](../../eval/README.md)) — the 0.5 expansion default is the one fusion weight tuned on that harness so far (issue #223).
+- **Expansion occurrence-counting** (moot while the source is retired) — a path appearing under multiple seeds' `related[]` keeps only its max similarity (see Expansion flattening above); how *many* seeds agree on it is not folded into score. Deferred as a separate importance signal, not implemented.
 - **ML re-ranking** — out of scope for this merge layer entirely; a separate research thread (vault note «Research reranker stage for search_notes») explores that direction independently. This file describes only the mechanical RRF merge that ships today.

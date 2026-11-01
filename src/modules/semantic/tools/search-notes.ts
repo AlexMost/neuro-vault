@@ -55,12 +55,12 @@ export interface UnifiedMatch {
   vault: string;
   backlink_count: number;
   // Ordered: "semantic", then distinct lexical kinds in title→heading→body
-  // order, then "expansion". Always non-empty.
+  // order. Always non-empty. No "expansion" value: no effort profile runs
+  // the expansion leg (#270).
   found_in: string[];
   similarity?: number;
   blocks?: BlockMatch[];
   lexical?: LexicalMatch[];
-  expansion_similarity?: number;
   matched_queries?: string[];
 }
 
@@ -229,8 +229,11 @@ async function runSearchForEntry(
           result.candidates.map((c) => c.path),
         );
   const kindOrder = ['title', 'heading', 'body'] as const;
+  // A candidate's `expansion` evidence is never set — no effort profile runs
+  // the expansion leg (#270) — and the contract carries no expansion
+  // provenance, so only the semantic and lexical evidence is read here.
   const matches: UnifiedMatch[] = result.candidates.map((c, i) => {
-    const { semantic: sem, lexical: lex, expansion: exp } = c;
+    const { semantic: sem, lexical: lex } = c;
     const found_in: string[] = [
       ...(sem ? ['semantic'] : []),
       ...(lex
@@ -238,7 +241,6 @@ async function runSearchForEntry(
             .filter((k) => lex.matches.some((m) => m.matched_in === k))
             .map((k) => `lexical:${k}`)
         : []),
-      ...(exp ? ['expansion'] : []),
     ];
     const matchedQueries = isMulti
       ? [...new Set([...(sem?.matched_queries ?? []), ...(lex?.matchedQueries ?? [])])]
@@ -252,7 +254,6 @@ async function runSearchForEntry(
         ? { similarity: sem.similarity, ...(sem.blocks.length > 0 ? { blocks: sem.blocks } : {}) }
         : {}),
       ...(lex ? { lexical: lex.matches } : {}),
-      ...(exp ? { expansion_similarity: exp.expansion_similarity } : {}),
       ...(matchedQueries !== undefined ? { matched_queries: matchedQueries } : {}),
     };
   });
@@ -268,7 +269,7 @@ export function buildSearchNotesTool(
 
   const entryDeps = { embeddingProvider, modelKey, similarity, warn };
   const SEARCH_NOTES_DESCRIPTION = [
-    'Hybrid search over notes: fuses a semantic leg (embedding similarity — fuzzy recall, topic exploration, cross-language), a lexical leg (exact text over titles, headings and body — names, codes, terms) and, at deep effort, an expansion leg (neighbours of the semantic hits) into ONE reciprocal-rank-fused list. Pass short keyword queries (1-4 words), not sentences.',
+    'Hybrid search over notes: fuses a semantic leg (embedding similarity — fuzzy recall, topic exploration, cross-language) and a lexical leg (exact text over titles, headings and body — names, codes, terms) into ONE reciprocal-rank-fused list. Pass short keyword queries (1-4 words), not sentences.',
     '',
     'QUERY WRITING:',
     '- Build the query from the core nouns and concepts in the user\'s message; drop filler words and verbs. "remind me what I wanted to build with LLM agents" → "LLM agents".',
@@ -277,7 +278,7 @@ export function buildSearchNotesTool(
     '',
     'AXES:',
     '- mode: "hybrid" (default) runs all legs; "lexical" runs ONLY exact matching, up to `limit`; needs no embedding corpus.',
-    `- effort: "quick" (default) — compact lookup (${EFFORT_PROFILES.quick.semanticPool} semantic notes, ~${EFFORT_PROFILES.quick.lexicalNoteCap} lexical, no expansion, merged cap ${EFFORT_PROFILES.quick.mergedCap}); "deep" — exploration (${EFFORT_PROFILES.deep.semanticPool} semantic, ~${EFFORT_PROFILES.deep.lexicalNoteCap} lexical, expansion on, merged cap ${EFFORT_PROFILES.deep.mergedCap}).`,
+    `- effort: "quick" (default) — compact lookup (${EFFORT_PROFILES.quick.semanticPool} semantic notes, ~${EFFORT_PROFILES.quick.lexicalNoteCap} lexical, merged cap ${EFFORT_PROFILES.quick.mergedCap}); "deep" — exploration (${EFFORT_PROFILES.deep.semanticPool} semantic, ~${EFFORT_PROFILES.deep.lexicalNoteCap} lexical, merged cap ${EFFORT_PROFILES.deep.mergedCap}).`,
     '',
     'PARAMETERS:',
     '- query (required): string, or array of 1-8 strings for synonyms/translations — merged into one ranked list per leg; each result carries `matched_queries`.',
@@ -291,7 +292,6 @@ export function buildSearchNotesTool(
     '- Evidence `lines` `[start, end]`: file-relative (frontmatter counted), 1-based, inclusive. Read: `read_notes({ paths: [{ path, lines }] })`; `blocks[].heading` (not `""`/`---frontmatter---`) also as `{ path, heading }`; `lexical[].heading` is a label.',
     '- `truncated` — top-level, always present; true when candidates were dropped, either by the merged cap (recover by raising `limit`) or by a leg\'s internal pool cap (in hybrid, `limit` won\'t help — raise `effort` to "deep", or narrow `query`/`filter`).',
     '- `semantic_status` — top-level, always present: `{ state, indexed?, total? }` describing the VAULT\'s index, not this call. Every state but "ready" carries a `note` saying what it did to this response.',
-    '- `expansion_similarity` (deep): note-to-note similarity to a semantic hit, not the query; not comparable with `similarity`.',
     '- `query_stats` — per input query (a string is one), PRE-cap hit counts `{ semantic, lexical }`. `semantic` is `null` when the semantic leg did not run at all; a number always means it ran. An entry worth acting on carries its own `note` diagnosing it.',
     '',
     'LEXICAL MATCHING: case/accent-insensitive word prefix (`пошук` finds `пошуком`); ALL tokens must match (AND); an exact phrase ranks higher.',
@@ -320,13 +320,16 @@ export function buildSearchNotesTool(
       // Documented here rather than in the tool description: both are expert
       // floors, rarely the right reach, and their prose was mostly a warning
       // against using them — so it belongs next to the field being filled.
+      // `expansion_floor` is inert: the expansion leg no longer runs at any
+      // effort (#270). It stays on the schema until the next major, because
+      // dropping a parameter is a breaking change (ADR-0005).
       threshold: z
         .number()
         .min(0)
         .max(1)
         .optional()
         .describe(
-          `Min semantic similarity 0-1 on the semantic leg's note scores. An explicit value is a hard filter with no fallback — zero hits are honest. Omitted: effort defaults (${similarity.quick} quick / ${similarity.deep} deep) ${retryClause(similarity.fallback)}. Never affects the lexical or expansion leg.`,
+          `Min semantic similarity 0-1 on the semantic leg's note scores. An explicit value is a hard filter with no fallback — zero hits are honest. Omitted: effort defaults (${similarity.quick} quick / ${similarity.deep} deep) ${retryClause(similarity.fallback)}. Never affects the lexical leg.`,
         ),
       expansion_floor: z
         .number()
@@ -334,7 +337,7 @@ export function buildSearchNotesTool(
         .max(1)
         .optional()
         .describe(
-          `Min seed↔note similarity 0-1 for the expansion leg (deep effort only); distinct from the query-to-note \`threshold\`. Default ${similarity.expansionFloor}, and \`threshold\` never affects it. On harrier-270m neighbour similarities sit at 0.75-0.95, so the default does not bind.`,
+          'Has no effect: the expansion leg it bounded no longer runs at any effort. Accepted for compatibility; removed at the next major version.',
         ),
       filter: filterSchema.optional(),
     },

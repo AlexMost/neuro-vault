@@ -2,7 +2,9 @@
 
 ## Purpose
 How a session reads a vault's corpus without holding its vectors: the daemon's `corpus.nearest` / `corpus.nearestBlocks` reads over a vault entry's corpus (path or vector anchors, `allowed` / `exclude`, `CORPUS_NOT_READY` / `CORPUS_FAILED`), the session's one semantic-backend facade with an asynchronous status, background attach at startup, reconnect after a daemon dies, and the semantic leg, `get_similar_notes` and `find_duplicates` composed in the session over those reads with unchanged ranking. Rationale: ADR-0019, ADR-0020; mechanism: `docs/architecture/semantic-backend.md`, `docs/architecture/retrieval-policy.md`.
+
 ## Requirements
+
 ### Requirement: corpus.nearest and corpus.nearestBlocks serve the corpus's reads
 
 The daemon SHALL serve `corpus.nearest { vault, profile, anchors, threshold, limit?, allowed?, exclude? }` answering `{ hits: ({ path, similarity }[] | null)[] }`, and `corpus.nearestBlocks { vault, profile, anchors, paths, threshold, limit? }` answering `{ hits: ({ path, heading, lines, similarity }[] | null)[] }`, each within 30 seconds. An anchor SHALL be either `{ vector }` or `{ path }`; for a path anchor the corpus SHALL use that note's own vector. `hits` SHALL hold one list per anchor, in order: `null` for a path anchor whose note has no vector, `[]` when nothing reaches the threshold. Results SHALL be ordered by similarity, then by path. `allowed` and `exclude` SHALL restrict note results before `limit` applies. No note or block vector SHALL appear in any answer. A call for a vault and profile this connection did not attach SHALL be answered `NOT_ATTACHED`; a vector anchor whose length is not the corpus's dimension `INVALID_PARAMS`; an unknown profile `UNKNOWN_PROFILE`. The daemon SHALL yield to its event loop between the anchors of one call.
@@ -93,19 +95,17 @@ When the connection to the daemon closes, the call in flight SHALL fail and the 
 
 ### Requirement: The semantic leg is composed in the session and ranks as before
 
-`search_notes`' semantic leg SHALL be composed in the session from `embed.query` and the corpus reads: per-query seeds with `limit + 1`, the fallback threshold for a query left empty under a default threshold, blocks within the seeds, a best-block backfill for each seed left without blocks, and expansion from each seed with the seeds excluded, all restricted by the search's `allowed` set. For the same corpus, queries, effort and overrides, it SHALL return the same seeds, similarities, blocks, related notes, `truncated`, `per_query_hits` and `per_query_fallback` as the in-memory composition it replaces. Every query of a search SHALL be sent in one corpus call per step.
+`search_notes`' semantic leg SHALL be composed in the session from `embed.query` and the corpus reads: per-query seeds with `limit + 1`, the fallback threshold for a query left empty under a default threshold, blocks within the seeds, and a best-block backfill for each seed left without blocks, all restricted by the search's `allowed` set. Expansion from each seed with the seeds excluded SHALL be composed only when the retrieval input asks for it, which no effort profile does. For the same corpus, queries, effort and overrides, it SHALL return the same seeds, similarities, blocks, related notes, `truncated`, `per_query_hits` and `per_query_fallback` as the in-memory composition it replaces. Every query of a search SHALL be sent in one corpus call per step.
 
 #### Scenario: Parity with the in-memory leg
 
-- **WHEN** the composed leg and the previous in-memory leg run over the same fixture corpus for `quick` and `deep`, with and without a filter
+- **WHEN** the composed leg and the previous in-memory leg run over the same fixture corpus for `quick` and `deep`, with and without a filter, and once with expansion asked for explicitly
 - **THEN** their outputs are identical
 
 #### Scenario: One call per step for several queries
 
 - **WHEN** `search_notes` runs three queries in `deep`
-- **THEN** the seeds of all three come from one `corpus.nearest` call
-
----
+- **THEN** the seeds of all three come from one `corpus.nearest` call, and no further `nearest` call follows it
 
 ### Requirement: get_similar_notes and find_duplicates compose over the corpus reads
 
@@ -120,4 +120,3 @@ When the connection to the daemon closes, the call in flight SHALL fail and the 
 
 - **WHEN** two notes are near-identical
 - **THEN** `find_duplicates` reports one pair for them, not two
-

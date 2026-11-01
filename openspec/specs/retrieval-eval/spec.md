@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change retrieval-eval-harness. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Golden set location and schema
 The eval runner SHALL read the golden set from the fixed conventional path `<vault>/.neuro-vault/eval/golden.yaml`, where `<vault>` comes from the required `--vault` argument, with no environment-variable or config override. The file SHALL be a YAML list of entries `{ id, query, lang, source, relevant }`: `id` non-empty and unique across the file, `query` a non-empty string, `lang` one of `ua` | `en`, `relevant` a non-empty list of vault-relative note paths. Relevance is binary — ranking any path from an entry's `relevant` list counts as a hit for that query.
 
@@ -78,7 +80,7 @@ The runner MUST rank queries by importing the production ranking modules directl
 
 ### Requirement: The pipeline axis selects the ranking method
 
-The runner SHALL accept `--pipeline` with values `semantic` (pure embedding-similarity ranking) or `fused` (the production RRF fusion of semantic, lexical and expansion legs). One run SHALL evaluate exactly one pipeline and record its value in the report. The runner SHALL NOT accept a corpus-selection axis: the corpus is the one the server owns for the selected model profile, so `--model` selects it.
+The runner SHALL accept `--pipeline` with values `semantic` (pure embedding-similarity ranking) or `fused` (the production RRF fusion of the semantic and lexical legs). One run SHALL evaluate exactly one pipeline and record its value in the report. The runner SHALL NOT accept a corpus-selection axis: the corpus is the one the server owns for the selected model profile, so `--model` selects it.
 
 #### Scenario: Two pipelines over one corpus
 
@@ -128,7 +130,7 @@ The runner SHALL load its snapshot from the selected profile's corpus directory,
 
 ### Requirement: The model axis selects the embedding profile
 
-The runner SHALL accept `--model <key>` with the same profile keys and the same default as the server's `--model`, SHALL embed every query with that profile's query embedding, and SHALL record the profile in the report. An unknown key SHALL exit non-zero listing the allowed keys. The fused pipeline's expansion floor SHALL be the selected profile's default `expansion_floor`, so a `fused` run remains the production pipeline for that profile.
+The runner SHALL accept `--model <key>` with the same profile keys and the same default as the server's `--model`, SHALL embed every query with that profile's query embedding, and SHALL record the profile in the report. An unknown key SHALL exit non-zero listing the allowed keys. The report SHALL record the selected profile's default `expansion_floor` in its `config` beside the other defaults in effect, although no leg applies it: no effort runs the expansion leg, so a `fused` run is the production pipeline for that profile without it.
 
 #### Scenario: One profile per run
 
@@ -143,18 +145,18 @@ The runner SHALL accept `--model <key>` with the same profile keys and the same 
 #### Scenario: The fused floor follows the profile
 
 - **WHEN** a `fused` run executes under a profile
-- **THEN** the report's `config.expansion_floor` equals that profile's default `expansion_floor`
+- **THEN** the report's `config.expansion_floor` equals that profile's default `expansion_floor`, and its `config.expansion` is false with `config.expansion_limit` 0
 
 ---
 
 ### Requirement: Calibration statistics
 
-With `--stats`, the runner SHALL add to its report the similarity distributions a threshold calibration needs, each summarised as quantiles. Three of them are ranked: the query↔note similarities of the golden queries' ranked candidates, the seed↔neighbour similarities the expansion leg sees, and every in-scope note's top-10 neighbour similarities. Three are unranked: each golden query's similarity to every note, each seed's similarity to every note that is not one of its query's seeds, and every note's similarity to every other note. A seventh holds each note's maximum similarity to any other note. Each similarity default's pass rate SHALL be measured on an unranked population, or for `duplicates` on the per-note maximum: `quick`, `deep` and `fallback` on query↔every note, `expansionFloor` on seed↔every note, `similarNotes` on note↔every note, and `duplicates` on each note's maximum similarity to any other. For each of these defaults that the selected profile defines, the report SHALL record that population and the share of it that the default lets through; a default the profile does not define SHALL have no pass rate. The block-evidence floor SHALL NOT be measured, because no query↔block population is collected. It SHALL also record two golden-set guards: how many first-relevant hits inside the deep semantic pool the deep default would filter out, and how far hit@3 drops when the quick default filters the ranking. With `--baseline <report>` naming an earlier `--stats` report, the runner SHALL additionally record, for each default the current profile defines, the threshold on the current profile's population that reproduces the baseline report's pass rate. It SHALL refuse a baseline that lacks one of those defaults or measured one on a different population, before embedding any query. Without `--stats` the report SHALL NOT carry these fields.
+With `--stats`, the runner SHALL add to its report the similarity distributions a threshold calibration needs, each summarised as quantiles. Two of them are ranked: the query↔note similarities of the golden queries' ranked candidates, and every in-scope note's top-10 neighbour similarities. Three are unranked: each golden query's similarity to every note, each seed's similarity to every note that is not one of its query's seeds, and every note's similarity to every other note. A sixth holds each note's maximum similarity to any other note. Each similarity default's pass rate SHALL be measured on an unranked population, or for `duplicates` on the per-note maximum: `quick`, `deep` and `fallback` on query↔every note, `expansionFloor` on seed↔every note, `similarNotes` on note↔every note, and `duplicates` on each note's maximum similarity to any other. For each of these defaults that the selected profile defines, the report SHALL record that population and the share of it that the default lets through; a default the profile does not define SHALL have no pass rate. The block-evidence floor SHALL NOT be measured, because no query↔block population is collected. It SHALL also record two golden-set guards: how many first-relevant hits inside the deep semantic pool the deep default would filter out, and how far hit@3 drops when the quick default filters the ranking. With `--baseline <report>` naming an earlier `--stats` report, the runner SHALL additionally record, for each default the current profile defines, the threshold on the current profile's population that reproduces the baseline report's pass rate. It SHALL refuse a baseline that lacks one of those defaults or measured one on a different population, before embedding any query. Without `--stats` the report SHALL NOT carry these fields.
 
 #### Scenario: Pass rates per default
 
 - **WHEN** the runner is invoked with `--stats`
-- **THEN** the report carries quantiles for each of the seven distributions and, for each measured similarity default of the selected profile, the fraction of its unranked population at or above it
+- **THEN** the report carries quantiles for each of the six distributions and, for each measured similarity default of the selected profile, the fraction of its unranked population at or above it
 
 #### Scenario: A profile without a fallback has no fallback pass rate
 
@@ -176,3 +178,7 @@ With `--stats`, the runner SHALL add to its report the similarity distributions 
 - **WHEN** the runner is invoked without `--stats`
 - **THEN** the report carries no distribution fields
 
+#### Scenario: No population for a leg that does not run
+
+- **WHEN** the runner is invoked with `--stats`
+- **THEN** the report carries no `expansion_neighbours` distribution, while the `seed_all` population and the `expansionFloor` pass rate are present

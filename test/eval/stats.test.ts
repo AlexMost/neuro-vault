@@ -143,7 +143,7 @@ describe('collectPopulations + computeCalibrationStats', () => {
     ['c.md', { path: 'c.md', embedding: new Float32Array([0, 1]), blocks: [] }],
   ]);
   // topK 2 < the three notes, so the ranked and unranked populations differ.
-  const shape = { seedPool: 1, expansionLimit: 1, topK: 2 };
+  const shape = { seedPool: 1, topK: 2 };
   /** The populations of `queryVectors` over `notes`, read through the corpus reads. */
   const populationsOf = (queryVectors: number[][], notes: Map<string, SmartSource> = sources) =>
     collectPopulations({
@@ -157,7 +157,9 @@ describe('collectPopulations + computeCalibrationStats', () => {
     const p = await populationsOf([[1, 0]]);
     expect(p.query_candidates).toHaveLength(2);
     expect(p.query_all).toHaveLength(3);
-    expect(p.expansion_neighbours).toEqual([expect.closeTo(0.8)]);
+    // No population for a leg that does not run (#270); `seed_all` below still
+    // feeds the `expansionFloor` pass rate.
+    expect(p).not.toHaveProperty('expansion_neighbours');
     // Seed a.md against b and c, never against itself.
     expect([...p.seed_all].sort()).toEqual([expect.closeTo(0), expect.closeTo(0.8)]);
     expect(p.note_max).toHaveLength(3);

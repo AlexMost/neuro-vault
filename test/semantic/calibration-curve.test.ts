@@ -5,7 +5,7 @@ import { TEST_SIMILARITY } from '../_identity.js';
 import { makeCalibrationFixture } from './tools/_calibration-fixture.js';
 
 describe('calibration fixture baseline (default inputs)', () => {
-  it('deep defaults: 8 seeds, expansion populated, truncated', async () => {
+  it('deep defaults: 8 seeds, no expansion, truncated', async () => {
     const { corpus, embeddingProvider } = makeCalibrationFixture();
     const output = await executeRetrieval({
       similarity: TEST_SIMILARITY,
@@ -28,53 +28,11 @@ describe('calibration fixture baseline (default inputs)', () => {
         "band-7.md",
       ]
     `);
-    expect(output.results.map((r) => r.related.map((n) => n.path))).toMatchInlineSnapshot(`
-      [
-        [
-          "neighbour-0.md",
-          "neighbour-1.md",
-          "neighbour-2.md",
-        ],
-        [
-          "neighbour-0.md",
-          "neighbour-1.md",
-          "neighbour-2.md",
-        ],
-        [
-          "neighbour-0.md",
-          "neighbour-1.md",
-          "neighbour-2.md",
-        ],
-        [
-          "neighbour-0.md",
-          "neighbour-1.md",
-          "neighbour-2.md",
-        ],
-        [
-          "neighbour-0.md",
-          "neighbour-1.md",
-          "neighbour-2.md",
-        ],
-        [
-          "neighbour-0.md",
-          "neighbour-1.md",
-          "neighbour-2.md",
-        ],
-        [
-          "neighbour-0.md",
-          "neighbour-1.md",
-          "neighbour-2.md",
-        ],
-        [
-          "neighbour-0.md",
-          "neighbour-1.md",
-          "neighbour-2.md",
-        ],
-      ]
-    `);
+    // No effort profile expands (#270): the neighbours stay out of `related`.
+    expect(output.results.every((r) => r.related.length === 0)).toBe(true);
     // Full-precision similarity lock — the byte-for-byte default guarantee.
     expect(JSON.stringify(output.results)).toMatchInlineSnapshot(
-      `"[{"path":"band-0.md","similarity":0.7964000010758245,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5964000047746127}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.934099997080652},{"path":"neighbour-1.md","expansion_similarity":0.9272000079325572},{"path":"neighbour-2.md","expansion_similarity":0.9258999888464803}]},{"path":"band-1.md","similarity":0.7939999973868838,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5939999807102775}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9355057811663207},{"path":"neighbour-1.md","expansion_similarity":0.9286753317346582},{"path":"neighbour-2.md","expansion_similarity":0.9273879972567148}]},{"path":"band-2.md","similarity":0.7909999940293255,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5910000117444751}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9372324301624453},{"path":"neighbour-1.md","expansion_similarity":0.9304885521626077},{"path":"neighbour-2.md","expansion_similarity":0.9292170099198248}]},{"path":"band-3.md","similarity":0.7880000089401535,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5880000136993917}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9389256928595326},{"path":"neighbour-1.md","expansion_similarity":0.9322680003023651},{"path":"neighbour-2.md","expansion_similarity":0.9310121808738647}]},{"path":"band-4.md","similarity":0.7850000164956892,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5849999778401138}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9405862076356558},{"path":"neighbour-1.md","expansion_similarity":0.9340143224738306},{"path":"neighbour-2.md","expansion_similarity":0.9327741578689601}]},{"path":"band-5.md","similarity":0.7810000038454644,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5809999741572168}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9427503297619003},{"path":"neighbour-1.md","expansion_similarity":0.9362922786905996},{"path":"neighbour-2.md","expansion_similarity":0.9350728836342996}]},{"path":"band-6.md","similarity":0.7780000121817701,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5780000074814766}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9443367293354901},{"path":"neighbour-1.md","expansion_similarity":0.9379636296745146},{"path":"neighbour-2.md","expansion_similarity":0.9367597354942704}]},{"path":"band-7.md","similarity":0.7749000145492986,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5748999924168203}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9459436379049019},{"path":"neighbour-1.md","expansion_similarity":0.9396579476492118},{"path":"neighbour-2.md","expansion_similarity":0.9384700038286504}]}]"`,
+      `"[{"path":"band-0.md","similarity":0.7964000010758245,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5964000047746127}],"related":[]},{"path":"band-1.md","similarity":0.7939999973868838,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5939999807102775}],"related":[]},{"path":"band-2.md","similarity":0.7909999940293255,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5910000117444751}],"related":[]},{"path":"band-3.md","similarity":0.7880000089401535,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5880000136993917}],"related":[]},{"path":"band-4.md","similarity":0.7850000164956892,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5849999778401138}],"related":[]},{"path":"band-5.md","similarity":0.7810000038454644,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5809999741572168}],"related":[]},{"path":"band-6.md","similarity":0.7780000121817701,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5780000074814766}],"related":[]},{"path":"band-7.md","similarity":0.7749000145492986,"matched_queries":["q"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5748999924168203}],"related":[]}]"`,
     );
   });
 
@@ -105,7 +63,7 @@ describe('calibration fixture baseline (default inputs)', () => {
     });
     expect(output.results).toHaveLength(8);
     expect(JSON.stringify(output.results)).toMatchInlineSnapshot(
-      `"[{"path":"band-0.md","similarity":0.7964000010758245,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5964000047746127}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.934099997080652},{"path":"neighbour-1.md","expansion_similarity":0.9272000079325572},{"path":"neighbour-2.md","expansion_similarity":0.9258999888464803}]},{"path":"band-1.md","similarity":0.7939999973868838,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5939999807102775}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9355057811663207},{"path":"neighbour-1.md","expansion_similarity":0.9286753317346582},{"path":"neighbour-2.md","expansion_similarity":0.9273879972567148}]},{"path":"band-2.md","similarity":0.7909999940293255,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5910000117444751}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9372324301624453},{"path":"neighbour-1.md","expansion_similarity":0.9304885521626077},{"path":"neighbour-2.md","expansion_similarity":0.9292170099198248}]},{"path":"band-3.md","similarity":0.7880000089401535,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5880000136993917}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9389256928595326},{"path":"neighbour-1.md","expansion_similarity":0.9322680003023651},{"path":"neighbour-2.md","expansion_similarity":0.9310121808738647}]},{"path":"band-4.md","similarity":0.7850000164956892,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5849999778401138}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9405862076356558},{"path":"neighbour-1.md","expansion_similarity":0.9340143224738306},{"path":"neighbour-2.md","expansion_similarity":0.9327741578689601}]},{"path":"band-5.md","similarity":0.7810000038454644,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5809999741572168}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9427503297619003},{"path":"neighbour-1.md","expansion_similarity":0.9362922786905996},{"path":"neighbour-2.md","expansion_similarity":0.9350728836342996}]},{"path":"band-6.md","similarity":0.7780000121817701,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5780000074814766}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9443367293354901},{"path":"neighbour-1.md","expansion_similarity":0.9379636296745146},{"path":"neighbour-2.md","expansion_similarity":0.9367597354942704}]},{"path":"band-7.md","similarity":0.7749000145492986,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5748999924168203}],"related":[{"path":"neighbour-0.md","expansion_similarity":0.9459436379049019},{"path":"neighbour-1.md","expansion_similarity":0.9396579476492118},{"path":"neighbour-2.md","expansion_similarity":0.9384700038286504}]}]"`,
+      `"[{"path":"band-0.md","similarity":0.7964000010758245,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5964000047746127}],"related":[]},{"path":"band-1.md","similarity":0.7939999973868838,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5939999807102775}],"related":[]},{"path":"band-2.md","similarity":0.7909999940293255,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5910000117444751}],"related":[]},{"path":"band-3.md","similarity":0.7880000089401535,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5880000136993917}],"related":[]},{"path":"band-4.md","similarity":0.7850000164956892,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5849999778401138}],"related":[]},{"path":"band-5.md","similarity":0.7810000038454644,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5809999741572168}],"related":[]},{"path":"band-6.md","similarity":0.7780000121817701,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5780000074814766}],"related":[]},{"path":"band-7.md","similarity":0.7749000145492986,"matched_queries":["q1","q2"],"blocks":[{"heading":"#b0","lines":[1,3],"similarity":0.5748999924168203}],"related":[]}]"`,
     );
   });
 });
@@ -117,6 +75,8 @@ describe('split thresholds on the calibration fixture', () => {
       similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
+      expansion: true,
+      expansionLimit: 3,
       expansionFloor: 0.93,
       corpus,
       embeddingProvider,
@@ -131,6 +91,8 @@ describe('split thresholds on the calibration fixture', () => {
       similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
+      expansion: true,
+      expansionLimit: 3,
       expansionFloor: 0.99,
       corpus,
       embeddingProvider,
@@ -146,6 +108,8 @@ describe('split thresholds on the calibration fixture', () => {
       similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
+      expansion: true,
+      expansionLimit: 3,
       threshold: 0.6,
       corpus,
       embeddingProvider,
@@ -154,6 +118,8 @@ describe('split thresholds on the calibration fixture', () => {
       similarity: TEST_SIMILARITY,
       queries: ['q'],
       mode: 'deep',
+      expansion: true,
+      expansionLimit: 3,
       corpus,
       embeddingProvider,
     });

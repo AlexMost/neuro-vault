@@ -65,6 +65,10 @@ export interface RetrievalInput {
   mode: SearchMode;
   limit?: number;
   threshold?: number;
+  /**
+   * Run the per-seed expansion step. No effort profile turns it on (#270);
+   * only the policy tests and the parity oracle pass `true`.
+   */
   expansion?: boolean;
   expansionLimit?: number;
   expansionFloor?: number;
@@ -264,7 +268,9 @@ export async function executeRetrieval(input: RetrievalInput): Promise<Retrieval
     });
   }
 
-  // Step 5: per-seed expansion (deep only)
+  // Step 5: per-seed expansion. Off in every effort profile (#270): it runs
+  // only when the input asks for it explicitly, so in production `related`
+  // stays empty.
   let relatedByPath = new Map<string, RelatedNote[]>();
   if (expansion && expansionLimit > 0 && seeds.length > 0) {
     relatedByPath = await computeRelatedPerSeed({

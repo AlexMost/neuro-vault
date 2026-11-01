@@ -6,14 +6,16 @@ import {
   type RetrievalPipelineDeps,
   type RetrievalPipelineInput,
 } from '../../src/modules/semantic/retrieval-pipeline.js';
-import { flattenExpansion, fuseRanks } from '../../src/modules/semantic/rank-fusion.js';
+import { fuseRanks } from '../../src/modules/semantic/rank-fusion.js';
 import { corpusOver } from '../_memory-corpus.js';
 import type { SmartSource } from '../../src/modules/semantic/types.js';
 import { TEST_SIMILARITY } from '../_identity.js';
 
 // Same geometry as the old production-fusion pin: 10 unit vectors fanned away
-// from the query vector, so at deep effort (pool 8) n0..n7 seed and n8/n9 are
-// expansion-only. No temp vault, registry, or tool construction anywhere.
+// from the query vector, so at deep effort (pool 8) n0..n7 seed and n8/n9 fall
+// outside the pool — n9 is also a lexical hit, n8 reaches nothing, since no
+// effort profile expands (#270). No temp vault, registry, or tool construction
+// anywhere.
 const NOTE_COUNT = 10;
 const QUERY_VECTOR = [1, 0, 0];
 const notePath = (i: number): string => `Notes/n${i}.md`;
@@ -77,14 +79,17 @@ const DEEP: RetrievalPipelineInput = {
 };
 
 describe('runRetrievalPipeline', () => {
-  it('fuses all three legs with per-leg provenance', async () => {
+  it('fuses the semantic and lexical legs with per-leg provenance', async () => {
     const result = await runRetrievalPipeline({ ...DEEP }, makeDeps());
     const byPath = new Map(result.candidates.map((c) => [c.path, c]));
-    // Lexical-only and expansion-only notes both survive into the fused list.
+    // Lexical-only notes survive into the fused list; a note outside the
+    // semantic pool that nothing else surfaces does not, and no candidate
+    // carries expansion evidence.
     expect(byPath.get(LEXICAL_ONLY)?.lexical).toBeDefined();
     expect(byPath.get(LEXICAL_ONLY)?.semantic).toBeUndefined();
-    const expansionOnly = [notePath(8), notePath(9)].filter((p) => byPath.get(p)?.expansion);
-    expect(expansionOnly.length).toBeGreaterThan(0);
+    expect(byPath.get(notePath(9))?.lexical).toBeDefined();
+    expect(byPath.has(notePath(8))).toBe(false);
+    expect(result.candidates.every((c) => c.expansion === undefined)).toBe(true);
     // A seed carries its semantic node; the fused order is not the pure semantic order.
     expect(byPath.get(notePath(0))?.semantic?.similarity).toBeTypeOf('number');
     expect(result.candidates.map((c) => c.path)).not.toEqual(
@@ -105,7 +110,8 @@ describe('runRetrievalPipeline', () => {
       sources: {
         semantic: seedNodes.map((n) => n.path),
         lexical: [LEXICAL_ONLY, notePath(9)],
-        expansion: flattenExpansion(seedNodes).map((e) => e.path),
+        // The third source is always empty: no effort profile expands (#270).
+        expansion: [],
       },
       totalNotes: NOTE_COUNT + 1,
     });
@@ -231,20 +237,15 @@ describe('runRetrievalPipeline', () => {
     });
   });
 
-  it('existence-filters seeds and their expansion targets before fusion', async () => {
+  it('existence-filters seeds before fusion', async () => {
     const deps = makeDeps({
-      filterExisting: (paths) =>
-        Promise.resolve(new Set(paths.filter((p) => p !== notePath(0) && p !== notePath(8)))),
+      filterExisting: (paths) => Promise.resolve(new Set(paths.filter((p) => p !== notePath(0)))),
     });
     const result = await runRetrievalPipeline({ ...DEEP }, deps);
     const paths = result.candidates.map((c) => c.path);
     expect(paths).not.toContain(notePath(0));
-    expect(paths).not.toContain(notePath(8));
-    for (const c of result.candidates) {
-      for (const rel of c.semantic?.related ?? []) {
-        expect(rel.path).not.toBe(notePath(8));
-      }
-    }
+    // The other seeds survive the check untouched.
+    expect(paths).toContain(notePath(1));
   });
 
   it('degrades to the already-computed lexical results when the semantic leg throws', async () => {

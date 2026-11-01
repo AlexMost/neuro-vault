@@ -225,16 +225,28 @@ const QUERY_SETS: Array<[label: string, queries: string[]]> = [
   ['2 queries tied on one seed', ['left', 'right']],
 ];
 
+// No effort profile expands (#270), so the explicit row is what keeps the
+// retired per-seed step under the parity check.
+const EXPANSION: Array<
+  [label: string, expansion: { expansion: boolean; expansionLimit: number } | undefined]
+> = [
+  ['profile default', undefined],
+  ['explicit expansion', { expansion: true, expansionLimit: 3 }],
+];
+
 const cases = MODES.flatMap((mode) =>
   ALLOWED_CASES.flatMap(([allowedLabel, allowed]) =>
     THRESHOLDS.flatMap(([thresholdLabel, threshold]) =>
-      QUERY_SETS.map(([queriesLabel, queries]) => ({
-        name: `${mode}, ${allowedLabel}, ${thresholdLabel}, ${queriesLabel}`,
-        mode,
-        allowed,
-        threshold,
-        queries,
-      })),
+      EXPANSION.flatMap(([expansionLabel, expansion]) =>
+        QUERY_SETS.map(([queriesLabel, queries]) => ({
+          name: `${mode}, ${allowedLabel}, ${thresholdLabel}, ${expansionLabel}, ${queriesLabel}`,
+          mode,
+          allowed,
+          threshold,
+          expansion,
+          queries,
+        })),
+      ),
     ),
   ),
 );
@@ -244,6 +256,7 @@ function legacyRun(c: (typeof cases)[number]): Promise<RetrievalOutput> {
     queries: c.queries,
     mode: c.mode,
     threshold: c.threshold,
+    ...c.expansion,
     sources: c.allowed === undefined ? SOURCES : legacyNarrowSources(SOURCES, c.allowed),
     embeddingProvider,
     similarity: TEST_SIMILARITY,
@@ -256,6 +269,7 @@ describe.each(READERS)('executeRetrieval over %s', (_label, makeReader) => {
       queries: c.queries,
       mode: c.mode,
       threshold: c.threshold,
+      ...c.expansion,
       corpus: makeReader(),
       ...(c.allowed !== undefined ? { allowed: c.allowed } : {}),
       embeddingProvider,
@@ -318,8 +332,9 @@ describe('one corpus call per step', () => {
     expect(seedAnchors).toHaveLength(3);
     expect(seedAnchors.every((a) => 'vector' in a)).toBe(true);
     expect(seedOpts).toMatchObject({ threshold: TEST_SIMILARITY.deep, limit: 9 });
-    // Seeds, then expansion: no fallback call, since every query found seeds.
-    expect(nearest).toHaveBeenCalledTimes(2);
+    // Seeds only: no fallback call, since every query found seeds, and no
+    // expansion read, since no effort profile expands (#270).
+    expect(nearest).toHaveBeenCalledTimes(1);
     expect(nearestBlocks.mock.calls[0][0]).toHaveLength(3);
   });
 });

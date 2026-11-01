@@ -2,10 +2,12 @@
 
 ## Purpose
 TBD - created by archiving change hybrid-search-notes. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Input axes mode and effort are orthogonal
 
-The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap, expansion only in `deep`) and the default merged-list cap (quick: 5, deep: 12). The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`, except that when the lexical leg is the only source (`mode: "lexical"`, or no semantic leg to run) its pool SHALL equal `limit` (default: the effort's merged cap). `threshold` SHALL affect only the semantic leg's note scores (see Requirement: threshold is a hard semantic filter with default-only fallback); `expansion_floor` SHALL affect only the expansion leg (see Requirement: expansion_floor bounds the expansion leg). Top-level `truncated` SHALL be present in every response and true when candidates were dropped on the way to `matches[]` — by the merged-list cap or by the semantic or lexical leg's internal pool cap. Expansion per-seed neighbour caps are not surfaced (a literal signal there would be near-always true in deep mode).
+The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) selecting which legs run, and `effort: "quick" | "deep"` (default `"quick"`) selecting candidate volume — the internal per-leg pools (semantic 3 vs 8 notes, lexical smaller vs larger cap) and the default merged-list cap (quick: 5, deep: 12). No effort SHALL run an expansion leg. The former depth values `"quick"` and `"deep"` SHALL be rejected as `mode` values by schema validation with no aliasing. `limit` SHALL bound `matches[]` in every mode, overriding the effort default; internal per-leg pool caps SHALL NOT change with `limit`, except that when the lexical leg is the only source (`mode: "lexical"`, or no semantic leg to run) its pool SHALL equal `limit` (default: the effort's merged cap). `threshold` SHALL affect only the semantic leg's note scores (see Requirement: threshold is a hard semantic filter with default-only fallback); `expansion_floor` SHALL be accepted and inert (see Requirement: expansion_floor is accepted and inert). Top-level `truncated` SHALL be present in every response and true when candidates were dropped on the way to `matches[]` — by the merged-list cap or by the semantic or lexical leg's internal pool cap.
 
 #### Scenario: old mode values are rejected
 
@@ -15,7 +17,7 @@ The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) 
 #### Scenario: effort controls volume in hybrid mode
 
 - **WHEN** `search_notes` is called with `{ query: "x", effort: "deep" }`
-- **THEN** `matches[]` contains at most 12 entries drawn from the deep candidate pools, and expansion participates as a fusion source
+- **THEN** `matches[]` contains at most 12 entries drawn from the deep semantic and lexical pools, and no entry carries `"expansion"` in `found_in`
 
 #### Scenario: limit steers the lexical list in lexical mode
 
@@ -33,6 +35,8 @@ The input schema SHALL expose `mode: "hybrid" | "lexical"` (default `"hybrid"`) 
 
 - **WHEN** a lexical-mode query matches more notes than the lexical leg's internal pool cap
 - **THEN** `truncated` is true even though the merged list itself was not capped
+
+---
 
 ### Requirement: Lexical leg matches title, headings, and body blocks
 
@@ -169,99 +173,9 @@ Lexical matching SHALL reflect the vault state at request time: content is re-re
 
 ---
 
-### Requirement: search_notes returns one RRF-ranked matches list
-
-`search_notes` SHALL return `{ matches, truncated, query_stats }` where `matches[]` is a single list ranked by reciprocal-rank fusion over three rank sources: the semantic leg's order, the lexical leg's order, and the flattened expansion order. Each entry SHALL carry `path`, `vault`, `backlink_count`, and provenance `found_in` — a non-empty array drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"`, `"expansion"` listing every source that surfaced the note (lexical kinds: every distinct `matched_in` present in the entry's capped `lexical[]` evidence). Per-source evidence SHALL accompany its provenance: `similarity` when `"semantic"` is present, `blocks[]` when `"semantic"` is present and the note has block-level evidence — `blocks[]` SHALL be non-empty whenever present and an empty `blocks` array SHALL never appear in a response — `lexical[]` (snippet matches) when any `"lexical:*"` value is present, `expansion_similarity` when `"expansion"` is present; evidence fields for absent sources SHALL be omitted. A note SHALL appear at most once in `matches[]`. An empty result SHALL be `matches: []`, never omitted. The response SHALL NOT contain `semantic_matches`, `lexical_matches`, or nested `related[]`.
-
-#### Scenario: a two-source note carries both provenance and both evidence kinds
-
-- **WHEN** a note with block embeddings is surfaced by both the semantic and lexical legs for `{ query: "retrieval" }`
-- **THEN** `matches[]` contains one entry for it whose `found_in` includes `"semantic"` and a `"lexical:*"` value, with `similarity`, non-empty `blocks[]`, and `lexical[]` present
-
-#### Scenario: expansion-only entry is provenance-complete but evidence-light
-
-- **WHEN** a note enters the merged list only via expansion under `{ query: "x", effort: "deep" }`
-- **THEN** its entry has `found_in: ["expansion"]`, `expansion_similarity`, `path`, `vault`, `backlink_count`, and no `similarity`, `blocks`, or `lexical` fields
-
-#### Scenario: the old split keys are gone
-
-- **WHEN** `search_notes` returns any response
-- **THEN** the response contains no `semantic_matches`, `lexical_matches`, or `related` keys
-
-#### Scenario: empty block arrays never ship
-
-- **WHEN** `search_notes` returns any response in any mode
-- **THEN** no `matches[]` entry contains `blocks: []`
-
-### Requirement: Rank fusion is reciprocal-rank with adaptive k
-
-The merged order SHALL be computed as `score(note) = Σ_sources w_source / (k + rank)` with 1-based ranks and `k = clamp(round(sqrt(N)), 5, 60)` where `N` is the vault's total note count independent of any `filter`. The semantic and lexical sources SHALL contribute at weight 1; the expansion source SHALL contribute at weight `w_expansion` — a fusion parameter with default `0.5`, not exposed on the tool's input schema. Ties SHALL break by source count descending, then `path` ascending; `backlink_count` SHALL NOT participate in fusion ordering (it remains a per-entry response field). The full ordering SHALL be deterministic for a fixed vault state. Fusion SHALL consume only source ranks — lexical entries SHALL NOT acquire a numeric score in the response.
-
-#### Scenario: presence in two sources lifts a note over single-source top hits
-
-- **WHEN** note A ranks first in the semantic leg only, and note B ranks mid-list in both the lexical leg and the expansion source
-- **THEN** B's RRF score is the weighted sum of its two reciprocal ranks and B precedes A whenever that sum exceeds A's single reciprocal rank
-
-#### Scenario: ordering is reproducible
-
-- **WHEN** the same query runs twice against an unchanged vault
-- **THEN** `matches[]` is byte-for-byte identical
-
-#### Scenario: an equal-rank expansion candidate does not outrank a primary hit
-
-- **WHEN** the lexical leg is empty and a semantic result and an expansion candidate hold the same rank in their respective sources, the expansion candidate having a higher `backlink_count`
-- **THEN** the semantic result precedes the expansion candidate in `matches[]` at every rank, because the expansion contribution is down-weighted and backlinks no longer arbitrate
-
-#### Scenario: backlinks do not decide residual ties
-
-- **WHEN** two notes tie exactly on fused score and source count while their backlink counts differ
-- **THEN** their relative order is by `path` ascending, unaffected by either note's `backlink_count`
-
-### Requirement: expansion_floor bounds the expansion leg
-
-The input schema SHALL expose `expansion_floor: number` (0–1, optional), subject to the same tolerant numeric coercion as `threshold`. The expansion leg SHALL discard neighbour candidates whose seed↔note similarity falls below `expansion_floor`; its default SHALL be the active model profile's default `expansion_floor`. `expansion_floor` SHALL be the only input that bounds expansion similarity — `threshold` SHALL NOT reach the expansion leg. In `effort: "quick"` and `mode: "lexical"` the parameter SHALL be accepted and inert, consistent with `threshold`'s behavior there.
-
-#### Scenario: the calibration curve reproduces on the new parameter
-
-- **WHEN** `search_notes` runs with `{ query: ["ретеншн алертів", "retention alerts"], effort: "deep", expansion_floor: 0.93 }` against a corpus whose expansion candidates score 0.9206, 0.9259, 0.9272, and 0.9341
-- **THEN** every entry carrying `"expansion"` provenance has `expansion_similarity` ≥ 0.93, at least one such entry survives, and every neighbour whose maximum seed↔note similarity falls below 0.93 (across all seeds it appears under) is absent from the expansion source — lower-ranked seeds can see higher neighbour similarities than higher-ranked ones, so the exact surviving count varies with seed geometry rather than being fixed at one
-
-#### Scenario: a floor above every candidate empties the expansion source
-
-- **WHEN** the same query runs with `expansion_floor: 0.99`
-- **THEN** no entry in `matches[]` carries `"expansion"` in `found_in`
-
-#### Scenario: threshold no longer cuts expansion
-
-- **WHEN** the same query runs with `{ threshold: 0.93 }` and no `expansion_floor`
-- **THEN** the expansion source is not filtered at 0.93 — its content is determined solely by the default floor and the surviving semantic seeds
-
----
-
-### Requirement: Expansion is a flattened third rank source
-
-Expansion candidates SHALL be collected across all seeds' neighbour sets with `expansion_floor` (default: the active profile's default `expansion_floor`) as the similarity floor — the user `threshold` SHALL NOT participate — SHALL exclude paths already present as semantic results, and SHALL be deduplicated to unique paths keeping the maximum `expansion_similarity`, ordered by it. This flattened list SHALL be the third fusion source. In `effort: "quick"` (no expansion computed) the source SHALL be empty.
-
-#### Scenario: a path repeated under several seeds fuses once at its best similarity
-
-- **WHEN** the same path appears in two seeds' neighbour sets with expansion similarities 0.82 and 0.89
-- **THEN** the expansion source contains that path once, ranked by 0.89, and its entry (if surfaced) carries `expansion_similarity: 0.89`
-
-#### Scenario: semantic seeds do not compete against themselves
-
-- **WHEN** a note is a semantic result and also appears in another seed's neighbour set
-- **THEN** the expansion source excludes it and its entry's `found_in` does not contain `"expansion"`
-
-#### Scenario: the floor, not the threshold, bounds neighbour similarity
-
-- **WHEN** `effort: "deep"` runs with an explicit `threshold` and no `expansion_floor`
-- **THEN** every seed's neighbour set is floored at the active profile's default `expansion_floor` and the explicit `threshold` value has no effect on which neighbours survive
-
----
-
 ### Requirement: threshold is a hard semantic filter with default-only fallback
 
-An explicitly provided `threshold` SHALL be a hard filter on the semantic leg's note scores: notes scoring below it SHALL NOT become semantic seeds, and when every note falls below it the semantic leg SHALL return zero hits — no retry, no rescue. Only when `threshold` is not provided SHALL the active model profile's effort default apply (its `quick` or `deep` value), and only then, on zero semantic hits, SHALL the leg retry once at the profile's fallback threshold, provided the profile defines one. Under a profile that defines no fallback, a query with no note at or above the effort default SHALL get zero semantic hits. The retry's engagement SHALL be observable via `query_stats` (see Requirement: query_stats reports pre-cap per-query hit counts). `threshold` SHALL NOT affect the expansion leg, the block-evidence pass, or the lexical leg.
+An explicitly provided `threshold` SHALL be a hard filter on the semantic leg's note scores: notes scoring below it SHALL NOT become semantic seeds, and when every note falls below it the semantic leg SHALL return zero hits — no retry, no rescue. Only when `threshold` is not provided SHALL the active model profile's effort default apply (its `quick` or `deep` value), and only then, on zero semantic hits, SHALL the leg retry once at the profile's fallback threshold, provided the profile defines one. Under a profile that defines no fallback, a query with no note at or above the effort default SHALL get zero semantic hits. The retry's engagement SHALL be observable via `query_stats` (see Requirement: query_stats reports pre-cap per-query hit counts). `threshold` SHALL NOT affect the block-evidence pass or the lexical leg.
 
 #### Scenario: an explicit threshold above the hit band yields honest zero
 
@@ -382,12 +296,14 @@ In `mode: "lexical"`, or whenever the vault's semantic backend is not `ready` (i
 #### Scenario: lexical mode yields a purely lexical merged list
 
 - **WHEN** `search_notes` is called with `{ query: "пошук", mode: "lexical" }`
-- **THEN** `matches[]` is ordered exactly as the lexical source and no entry carries `similarity`, `blocks`, or `expansion_similarity`
+- **THEN** `matches[]` is ordered exactly as the lexical source and no entry carries `similarity` or `blocks`
 
 #### Scenario: a non-ready backend degrades the same way
 
 - **WHEN** `search_notes` is called without `mode` against a vault whose backend is `indexing` or `disabled`
 - **THEN** `matches[]` carries only `lexical:*` provenance and the response reports the corresponding `semantic_status`
+
+---
 
 ### Requirement: Semantic seeds carry backfilled block evidence
 
@@ -415,12 +331,12 @@ The semantic leg SHALL guarantee per-seed block evidence after its shared block 
 
 ### Requirement: Semantic retrieval is arity-invariant
 
-The semantic leg SHALL treat query arity as a surfacing concern, not a retrieval one: a single string `query` and a one-element array `query` SHALL produce identical `matches[]` — same notes, same order, same `similarity`, same `blocks[]`, same `expansion_similarity`, and the same top-level `truncated`. Every semantic-leg guarantee in this specification — mode defaults, the default-only fallback threshold, seed-scoped block selection, per-seed block backfill, and per-seed expansion — SHALL hold identically at both arities. The only permitted difference is the response field this specification scopes to array queries: `matched_queries` on each match, which SHALL be absent for a single string `query` and present for an array `query` of any length, including one. The top-level `query_stats` object SHALL be present, and identical, at both arities.
+The semantic leg SHALL treat query arity as a surfacing concern, not a retrieval one: a single string `query` and a one-element array `query` SHALL produce identical `matches[]` — same notes, same order, same `similarity`, same `blocks[]`, and the same top-level `truncated`. Every semantic-leg guarantee in this specification — mode defaults, the default-only fallback threshold, seed-scoped block selection, and per-seed block backfill — SHALL hold identically at both arities. The only permitted difference is the response field this specification scopes to array queries: `matched_queries` on each match, which SHALL be absent for a single string `query` and present for an array `query` of any length, including one. The top-level `query_stats` object SHALL be present, and identical, at both arities.
 
 #### Scenario: a one-element array matches the equivalent string query
 
 - **WHEN** `search_notes` is called with `{ query: "векторний пошук" }` and again with `{ query: ["векторний пошук"] }` against the same vault state
-- **THEN** both responses carry the same `matches[]` in the same order with identical `similarity`, `blocks`, and `expansion_similarity` values, and the same `truncated`
+- **THEN** both responses carry the same `matches[]` in the same order with identical `similarity` and `blocks` values, and the same `truncated`
 
 #### Scenario: arity changes only which fields surface
 
@@ -436,6 +352,8 @@ The semantic leg SHALL treat query arity as a surfacing concern, not a retrieval
 
 - **WHEN** the semantic leg's own pool cap drops candidates for a query issued once as a string and once as a one-element array
 - **THEN** both responses report the same top-level `truncated` value
+
+---
 
 ### Requirement: search_notes reports the vault's semantic index state
 
@@ -572,3 +490,68 @@ Matching SHALL be case- and accent-insensitive word-prefix comparison over norma
 - **WHEN** a note body contains `GET v2/api/notes` and the query is `/api` in `mode: "lexical"`
 - **THEN** the note appears in `matches[]` with `found_in` containing `"lexical:body"`
 
+### Requirement: search_notes returns one two-source RRF-ranked matches list
+
+`search_notes` SHALL return `{ matches, truncated, query_stats }` where `matches[]` is a single list ranked by reciprocal-rank fusion over two rank sources: the semantic leg's order and the lexical leg's order. Each entry SHALL carry `path`, `vault`, `backlink_count`, and provenance `found_in` — a non-empty array drawn from `"semantic"`, `"lexical:title"`, `"lexical:heading"`, `"lexical:body"` listing every source that surfaced the note (lexical kinds: every distinct `matched_in` present in the entry's capped `lexical[]` evidence). Per-source evidence SHALL accompany its provenance: `similarity` when `"semantic"` is present, `blocks[]` when `"semantic"` is present and the note has block-level evidence — `blocks[]` SHALL be non-empty whenever present and an empty `blocks` array SHALL never appear in a response — `lexical[]` (snippet matches) when any `"lexical:*"` value is present; evidence fields for absent sources SHALL be omitted. No entry SHALL carry `"expansion"` provenance or an `expansion_similarity` field. A note SHALL appear at most once in `matches[]`. An empty result SHALL be `matches: []`, never omitted. The response SHALL NOT contain `semantic_matches`, `lexical_matches`, or nested `related[]`.
+
+#### Scenario: a two-source note carries both provenance and both evidence kinds
+
+- **WHEN** a note with block embeddings is surfaced by both the semantic and lexical legs for `{ query: "retrieval" }`
+- **THEN** `matches[]` contains one entry for it whose `found_in` includes `"semantic"` and a `"lexical:*"` value, with `similarity`, non-empty `blocks[]`, and `lexical[]` present
+
+#### Scenario: a neighbour of a seed does not enter the list on its own
+
+- **WHEN** `search_notes` runs with `{ query: "x", effort: "deep" }` and a note lies within the active profile's `expansionFloor` of a semantic seed while scoring below the semantic floor for the query and matching it lexically nowhere
+- **THEN** that note is absent from `matches[]`, and no entry carries `"expansion"` in `found_in` or an `expansion_similarity` field
+
+#### Scenario: the old split keys are gone
+
+- **WHEN** `search_notes` returns any response
+- **THEN** the response contains no `semantic_matches`, `lexical_matches`, or `related` keys
+
+#### Scenario: empty block arrays never ship
+
+- **WHEN** `search_notes` returns any response in any mode
+- **THEN** no `matches[]` entry contains `blocks: []`
+
+---
+
+### Requirement: Rank fusion is two-source reciprocal-rank with adaptive k
+
+The merged order SHALL be computed as `score(note) = Σ_sources w_source / (k + rank)` with 1-based ranks and `k = clamp(round(sqrt(N)), 5, 60)` where `N` is the vault's total note count independent of any `filter`. The semantic and lexical sources SHALL contribute at weight 1, and no other source SHALL contribute. Ties SHALL break by source count descending, then `path` ascending; `backlink_count` SHALL NOT participate in fusion ordering (it remains a per-entry response field). The full ordering SHALL be deterministic for a fixed vault state. Fusion SHALL consume only source ranks — lexical entries SHALL NOT acquire a numeric score in the response.
+
+#### Scenario: presence in two sources lifts a note over single-source top hits
+
+- **WHEN** note A ranks first in the semantic leg only, and note B ranks mid-list in both the semantic and lexical legs
+- **THEN** B's RRF score is the sum of its two reciprocal ranks and B precedes A whenever that sum exceeds A's single reciprocal rank
+
+#### Scenario: ordering is reproducible
+
+- **WHEN** the same query runs twice against an unchanged vault
+- **THEN** `matches[]` is byte-for-byte identical
+
+#### Scenario: backlinks do not decide residual ties
+
+- **WHEN** two notes tie exactly on fused score and source count while their backlink counts differ
+- **THEN** their relative order is by `path` ascending, unaffected by either note's `backlink_count`
+
+---
+
+### Requirement: expansion_floor is accepted and inert
+
+The input schema SHALL expose `expansion_floor: number` (0–1, optional), subject to the same tolerant numeric coercion as `threshold`, for compatibility with callers that pass it. It SHALL be inert at every effort and in every mode: no expansion leg runs, so it bounds nothing, and a call that passes it SHALL return the same `matches[]` as the same call without it. Its schema description SHALL say that it has no effect and that it is removed at the next major version, and SHALL NOT state a numeric default. Removing the parameter SHALL be a breaking change (ADR-0005).
+
+#### Scenario: the parameter is advertised with coercion and bounds
+
+- **WHEN** the registered tool's `inputSchema` is inspected
+- **THEN** it accepts `expansion_floor: 0.93` and `expansion_floor: "0.93"`, rejects `1.5` and `-0.1`, and the field's description says the value has no effect and names its removal, quoting no default
+
+#### Scenario: the parameter changes nothing at deep effort
+
+- **WHEN** `search_notes` runs with `{ query: "x", effort: "deep", expansion_floor: 0.9 }` and with `{ query: "x", effort: "deep" }` against the same vault state
+- **THEN** both responses carry the same `matches[]`, and no entry carries `"expansion"` in `found_in`
+
+#### Scenario: the parameter is accepted in lexical mode and at quick effort
+
+- **WHEN** `search_notes` runs with `{ query: "x", mode: "lexical", expansion_floor: 0.9 }` and with `{ query: "x", effort: "quick", expansion_floor: 0.9 }`
+- **THEN** both calls succeed and return the matches the same calls return without the parameter

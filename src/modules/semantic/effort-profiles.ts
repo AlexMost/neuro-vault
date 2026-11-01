@@ -13,9 +13,15 @@ export interface EffortProfile {
   semanticPool: number;
   /** Lexical-leg note pool (`noteCap`) when the semantic leg runs too. */
   lexicalNoteCap: number;
-  /** Whether the expansion leg runs at this effort. */
+  /**
+   * Whether the expansion leg runs at this effort. Off in every profile since
+   * #270: notes that only this leg surfaced were relevant 4 % and 1 % of the
+   * time on two vaults, and switching it off raised precision with MRR held.
+   * The step stays in `executeRetrieval` behind an explicit `expansion` input
+   * that no caller sets.
+   */
   expansion: boolean;
-  /** Per-seed expansion neighbour cap. */
+  /** Per-seed expansion neighbour cap; 0 in every profile (see `expansion`). */
   expansionLimit: number;
   /** Default cap on the final fused `matches[]` list. */
   mergedCap: number;
@@ -32,8 +38,8 @@ export const EFFORT_PROFILES: Record<SearchEffort, EffortProfile> = {
   deep: {
     semanticPool: 8,
     lexicalNoteCap: 10,
-    expansion: true,
-    expansionLimit: 3,
+    expansion: false,
+    expansionLimit: 0,
     mergedCap: 12,
   },
 };
