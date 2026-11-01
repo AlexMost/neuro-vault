@@ -9,6 +9,7 @@ import {
   LEXICAL_PER_NOTE_CAP,
   lexicalPool,
 } from '../src/modules/semantic/effort-profiles.js';
+import { resolveScorerConfig } from '../src/lib/obsidian/lexical/scorer.js';
 import { EXPANSION_WEIGHT } from '../src/modules/semantic/rank-fusion.js';
 import { createStandaloneLexicalReader } from '../src/modules/semantic/lexical/index.js';
 import { runRetrievalPipeline } from '../src/modules/semantic/retrieval-pipeline.js';
@@ -57,6 +58,7 @@ export function evalConfig(
 ) {
   const profile = EFFORT_PROFILES[shape.effort];
   const positional = shape.run === 'positional';
+  const scorer = resolveScorerConfig();
   return {
     run: shape.run,
     effort: shape.effort,
@@ -78,6 +80,9 @@ export function evalConfig(
     /** Recorded as a knob in effect; it weights a source that is empty while `expansion` is false. */
     expansion_weight: EXPANSION_WEIGHT,
     k_policy: 'round(sqrt(totalNotes)) clamped 5..60',
+    // PROTOTYPE (#132): which within-leg order the lexical leg ranked by, and its knobs.
+    lexical_scorer: scorer.scorer,
+    lexical_bm25f: scorer.scorer === 'bm25f' ? scorer.bm25f : null,
   } as const;
 }
 
