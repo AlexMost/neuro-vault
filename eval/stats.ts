@@ -18,8 +18,6 @@ export interface Quantiles {
 export interface Populations {
   /** Query↔note similarities of each golden query's top-k candidates. */
   query_candidates: number[];
-  /** Seed↔neighbour similarities the expansion leg sees (unfloored). */
-  expansion_neighbours: number[];
   /** Every note's top-10 neighbour similarities. */
   note_top10: number[];
   /** Every note's maximum similarity to any other note. */
@@ -32,8 +30,9 @@ export interface Populations {
   query_all: number[];
   /**
    * Each seed against every source that is not one of that query's seeds —
-   * unranked, so the expansion floor is matched on more than the top few
-   * neighbours (design D11).
+   * unranked: the population the `expansionFloor` default is measured on
+   * (design D11). The expansion leg itself no longer runs (#270); the default
+   * stays profile data, so its pass rate is still reported.
    */
   seed_all: number[];
   /**
@@ -191,7 +190,6 @@ export async function collectPopulations(args: {
   /** Every note the corpus holds a vector for. */
   paths: readonly string[];
   seedPool: number;
-  expansionLimit: number;
   topK: number;
 }): Promise<Populations> {
   const { corpus } = args;
@@ -208,7 +206,6 @@ export async function collectPopulations(args: {
   };
   const query_candidates: number[] = [];
   const query_all: number[] = [];
-  const expansion_neighbours: number[] = [];
   const seed_all: number[] = [];
   // Each vector is ranked once over every note; the ranked populations are slices of it.
   for (const queryVector of args.queryVectors) {
@@ -223,8 +220,6 @@ export async function collectPopulations(args: {
       if (!neighbours) continue;
       const others = neighbours.filter((n) => !seedSet.has(n.path));
       seed_all.push(...others.map((n) => n.similarity));
-      // Mirrors the production expansion leg, minus its floor.
-      expansion_neighbours.push(...others.slice(0, args.expansionLimit).map((n) => n.similarity));
     }
   }
   const note_all: number[] = [];
@@ -239,7 +234,6 @@ export async function collectPopulations(args: {
   }
   return {
     query_candidates,
-    expansion_neighbours,
     note_top10,
     note_max,
     query_all,

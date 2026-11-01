@@ -300,7 +300,6 @@ export async function runEval(
       corpus,
       paths: await notesWithVectors(corpus),
       seedPool: config.semantic_pool,
-      expansionLimit: config.expansion_limit,
       topK: EVAL_TOP_K,
     });
     stats = computeCalibrationStats({

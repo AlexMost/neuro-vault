@@ -44,10 +44,11 @@ export type Leg = 'semantic' | 'lexical' | 'expansion';
  * Every knob in effect, echoed into the report's `config` (design D5/D7): a
  * run with different knobs must be distinguishable. A positional run zeroes the
  * query-side thresholds — it counts positions; a production run leaves them to
- * the profile, as `search_notes` does. The expansion floor is the profile's own
- * default either way, so `fused` stays the production pipeline for that profile
- * (design D12). The pool numbers are read from the effort profile
- * `runRetrievalPipeline` itself reads, so they cannot drift from the run.
+ * the profile, as `search_notes` does. The expansion floor is recorded as the
+ * profile's own default either way, although no effort runs the expansion leg
+ * (#270); `fused` stays the production pipeline for that profile (design D12).
+ * The pool numbers are read from the effort profile `runRetrievalPipeline`
+ * itself reads, so they cannot drift from the run.
  */
 export function evalConfig(
   similarity: SimilarityDefaults,
@@ -136,7 +137,7 @@ async function rankRetrieval(args: {
   shape: RunShape;
 }): Promise<RankedPath[]> {
   // The production pipeline itself (design D7). A positional run passes threshold 0, the
-  // profile's expansion floor and the top-k cap explicitly; a production run passes none of
+  // profile's expansion floor (inert: no effort expands, #270) and the top-k cap explicitly; a production run passes none of
   // them, so the pipeline applies the profile's defaults, its fallback retry and the
   // effort's merged cap exactly as `search_notes` does. `semantic: false` is the
   // `mode: lexical` path. The existence filter admits every path: eval measures ranking

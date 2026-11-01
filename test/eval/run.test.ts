@@ -105,7 +105,7 @@ describe('runEval end-to-end (stub embedder)', () => {
     return v;
   }
 
-  // More notes than the seed pool, so the expansion leg has non-seed neighbours to measure.
+  // More notes than the seed pool, so the seed↔every-other-note population has entries.
   async function addExtraNotes(): Promise<void> {
     const store = new ShardStore(vaultRoot, { modelKey: GRANITE.key, dims: TEST_DIMS });
     for (let i = 1; i <= 10; i += 1) {
