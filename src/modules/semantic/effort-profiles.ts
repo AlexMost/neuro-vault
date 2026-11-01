@@ -40,12 +40,15 @@ export const EFFORT_PROFILES: Record<SearchEffort, EffortProfile> = {
 
 /**
  * The lexical leg's note pool. When it is the only source (`mode: lexical`, or no semantic
- * leg to run), a pool below the merged cap would only return fewer notes than the call
- * allows, so it fills the merged cap; beside the semantic leg it keeps its own cap (#229).
+ * leg to run), the pool is the call's merged cap — `limit` when the caller passed one,
+ * else the effort's default — so a caller asking for more notes gets them (#264). Beside
+ * the semantic leg it keeps its own cap: there the merged cap, not the leg pool, binds (#229).
+ * That includes a call whose semantic leg was requested but then failed: the lexical leg
+ * runs first, so its pool is already sized for a hybrid call.
  */
-export function lexicalPool(effort: SearchEffort, lexicalOnly: boolean): number {
+export function lexicalPool(effort: SearchEffort, lexicalOnly: boolean, cap?: number): number {
   const profile = EFFORT_PROFILES[effort];
-  return lexicalOnly ? profile.mergedCap : profile.lexicalNoteCap;
+  return lexicalOnly ? (cap ?? profile.mergedCap) : profile.lexicalNoteCap;
 }
 
 /** Per-note lexical evidence cap — effort-independent. */

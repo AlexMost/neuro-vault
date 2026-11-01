@@ -44,9 +44,9 @@ describe('search_notes advertised numbers derive from the effort profile', () =>
     );
   });
 
-  it('says lexical mode fills the merged cap', () => {
+  it('says lexical mode fills `limit`', () => {
     expect(builtDescription()).toContain(
-      '"lexical" runs ONLY exact matching, up to the merged cap; needs no embedding corpus.',
+      '"lexical" runs ONLY exact matching, up to `limit`; needs no embedding corpus.',
     );
   });
 

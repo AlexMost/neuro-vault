@@ -117,4 +117,38 @@ describe('search_notes end-to-end sanity fixture', () => {
       await cleanup();
     }
   });
+
+  it('mode: "lexical" with `limit` above the effort cap returns `limit` notes, untruncated when nothing was cut', async () => {
+    // Fourteen notes match; the quick merged cap is 5. With the lexical leg the
+    // sole source, its pool follows `limit` (#264), so the call gets what it asked for.
+    const files = Object.fromEntries(
+      Array.from({ length: 14 }, (_, i) => [`Note ${i}.md`, `пошук номер ${i}\n`]),
+    );
+    const { deps, cleanup } = await makeLexicalVault(files);
+    try {
+      const reg = registerTool(buildSearchNotesTool(deps));
+      const twenty = await callTool<SearchNotesOutput>(reg, {
+        query: 'пошук',
+        mode: 'lexical',
+        limit: 20,
+      });
+      expect(twenty.matches).toHaveLength(14);
+      expect(twenty.truncated).toBe(false);
+
+      const ten = await callTool<SearchNotesOutput>(reg, {
+        query: 'пошук',
+        mode: 'lexical',
+        limit: 10,
+      });
+      expect(ten.matches).toHaveLength(10);
+      expect(ten.truncated).toBe(true);
+
+      // No limit: the effort's merged cap, as before.
+      const capped = await callTool<SearchNotesOutput>(reg, { query: 'пошук', mode: 'lexical' });
+      expect(capped.matches).toHaveLength(5);
+      expect(capped.truncated).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
 });
