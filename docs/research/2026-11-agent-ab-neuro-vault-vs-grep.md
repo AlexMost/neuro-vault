@@ -2,7 +2,7 @@
 
 The [embedding bake-off](2026-10-embedding-model-bakeoff.md) measured the retrieval pipeline in isolation. This document measures the thing a user actually gets: **an agent answering questions about a vault**, once with neuro-vault and once with the plain filesystem tools every coding agent already has. The question is not "does the index rank well?" but "does an agent with this server answer better, cheaper, or both, than the same agent with `grep`?"
 
-Findings are as of 2026-11-01. Every number below comes from 720 agent runs across four conditions (two vaults × two models), each question run three times per arm, judged against a golden set and by a blind LLM judge. Both vaults are private; this report describes them only by size and shape and contains no queries, note titles or note content.
+Findings are as of 2026-11-01; § After the fixes re-measures two cells on `main` after the suggestions below shipped. Every number below comes from 720 agent runs across four conditions (two vaults × two models), each question run three times per arm, judged against a golden set and by a blind LLM judge. Both vaults are private; this report describes them only by size and shape and contains no queries, note titles or note content.
 
 ## TL;DR
 
@@ -13,6 +13,8 @@ Findings are as of 2026-11-01. Every number below comes from 720 agent runs acro
   - The other two cells sit in between, close to parity.
 - **neuro-vault narrows the gap between models.** On the large vault, Haiku with neuro-vault (recall 0.90) out-recalls Opus with `grep` (0.85) at **~3% of the cost per answer**. Moving from Opus to Haiku costs the `grep` agent twice as much grounding as the neuro-vault agent on the small vault (−0.50 vs −0.25).
 - **Single-token queries flip with vault size.** On the small vault they are neuro-vault's worst class (Δrecall −0.20 on both models); on the large vault they are its best (+0.36 on Haiku), because a single term matches dozens to hundreds of files and only a ranked list survives that.
+- **Most of the gain over `grep` is not the semantic leg.** A third arm — neuro-vault with `--no-semantic` — on Haiku: on the large vault recall goes `grep` 0.75 → lexical-only 0.86 → full 0.90, so about three quarters of the gain comes from lexical ranking, provenance and structured reads; the semantic leg adds the last quarter, almost all of it on paraphrase (concept) questions. On the small vault removing the semantic leg changes nothing measurable.
+- **The first fixes closed most of the small-vault gap.** After [#267](https://github.com/AlexMost/neuro-vault/issues/267) (lexical `limit`, weighted fusion of query variants, a per-variant cut hint) and the retired expansion leg ([#276](https://github.com/AlexMost/neuro-vault/pull/276)), Vault A · Opus moved from judge −0.29 to −0.11 against `grep` and from 5 vs 10 stable wins to 7 vs 7; single-token recall went 0.49 → 0.62 (`grep` 0.69). Vault B · Haiku did not regress (recall 0.90 → 0.91).
 - A strong model with `grep` is a strong baseline: it writes its own synonym regexes, guesses inflections and reads whole files. Against it, on a small vault, the server's edge is efficiency, not answer quality.
 
 ## Setup
@@ -131,16 +133,64 @@ Quality winners per repetition, nv / fs / tie:
 
 Within one question, the judge's score varies by ~0.25 points between repetitions; differences smaller than about half a point on a single question are noise. The direction of each condition holds in every repetition except A · Haiku, which is the closest cell to parity.
 
+### Semantic ablation (Haiku 5.5)
+
+A third arm — the same neuro-vault setup with `--no-semantic`, so `search_notes` answers from its lexical leg alone — ran on both Haiku cells with the same questions, three repetitions each. The judge compared it pairwise with the full neuro-vault arm. Recall against the golden set, answerable questions:
+
+| | Vault A `grep` | Vault A lexical-only | Vault A full | Vault B `grep` | Vault B lexical-only | Vault B full |
+|---|---|---|---|---|---|---|
+| all | 0.50 | 0.50 | 0.49 | 0.75 | 0.86 | **0.90** |
+| concept | 0.36 | 0.47 | 0.42 | 0.81 | 0.76 | **0.86** |
+| name | 0.52 | 0.53 | 0.59 | 0.80 | 0.95 | 0.95 |
+| single-token | 0.64 | 0.50 | 0.46 | 0.52 | **0.91** | 0.88 |
+
+Lexical-only vs full, judged pairwise: Vault A — mean judge score 1.95 vs 1.88, stable wins 5 / 3 (12 without a stable winner); Vault B — 2.59 vs 2.59, stable wins 13 / 9 (8 without), precision 0.37 vs 0.41. Cost, calls and context are the same within a few percent.
+
+The semantic leg's measurable contribution to answers is one cell: paraphrase questions on the large vault (recall +0.10, judge +0.17). Elsewhere it is noise-level. The log count points the same way: across all four main conditions, 5–11% of the golden notes the neuro-vault agent cited reached it through the semantic leg alone. That is a small share, not evidence of a noisy leg. A retrieval-level follow-up on the production pipeline found semantic-only results about as precise as lexical-only ones (15% vs 23% relevant on Vault A, 18% vs 6% on Vault B; results found by both legs: 70% and 45%), and there removing the semantic leg cost MRR 0.16 and 0.33. The agent closes most of that retrieval gap itself by rephrasing and searching again, which is why the agent-level difference is so much smaller than the retrieval-level one.
+
 ## What the logs show
 
 These come from the raw tool-call streams, not from the summary metrics.
 
-1. **The semantic leg contributes, narrowly, on the small vault.** In Vault A · Opus, 11 of the 112 golden notes the neuro-vault agent cited were surfaced *only* by the semantic leg (no lexical match). Two of those notes were effectively unreachable for the `grep` agent: cited 3/3 by nv vs 0/3 and 1/3 by fs — both cases where the question used different words than the note. The price is noise: 38% of all results the neuro-vault agent saw (284 of 748) came from the semantic leg alone, and nearly all of them were not in the golden set.
+1. **The semantic leg contributes, narrowly, on the small vault.** In Vault A · Opus, 11 of the 112 golden notes the neuro-vault agent cited were surfaced *only* by the semantic leg (no lexical match). Two of those notes were effectively unreachable for the `grep` agent: cited 3/3 by nv vs 0/3 and 1/3 by fs — both cases where the question used different words than the note. The price is a wider list: 38% of all results the neuro-vault agent saw (284 of 748) came from the semantic leg alone, and few of them were golden notes — though by retrieval-level precision they are no worse than lexical-only matches (see the ablation above).
 2. **The neuro-vault agent stops early.** It makes 40–60% fewer calls. A tidy ranked list reads as complete; on the small vault that costs recall on single-token queries, where the `grep` agent keeps going.
-3. **Word-prefix lexical matching misses what substring `grep` finds.** One small-vault failure was a numeric fragment that only occurs inside a longer ticket key; the lexical leg (word-prefix) cannot see it, `grep` can. The mirror image is a short abbreviation matching inside an unrelated surname.
-4. **Truncation is silent to the agent.** On a pre-study run against Vault B, an "every mention of X" query returned 18 of 25 notes with `truncated: true`; the agent has no count of what it is missing.
-5. **On a large vault the `grep` agent drowns.** Single-token queries on Vault B match 45–313 files each (five of six match more than 100). The `grep` agent with Haiku ends with single-token recall 0.52; the neuro-vault agent 0.88.
-6. **Where Opus + `grep` still wins on Vault B, it is answer completeness, not retrieval.** Grounding is tied in 72 of 105 judged pairs; the `grep` agent's usefulness edge comes from answers that pull more detail out of whole files on questions whose facts are spread across several notes.
+3. **The small-vault single-token gap is ranking inside the lexical leg, not word-prefix matching.** No golden note for a single-token question on Vault A contains the query only as a substring (0 of 23), so a substring mode would not have closed a single measured loss. The gap comes from three questions. In the largest one, broad synonyms the agent adds to its own query array share one lexical pool with the exact term, and their title-tier matches push the exact term's body matches out; replaying the agent's real calls through the production pipeline, the first term alone retrieves 2/2 golden notes, the agent's array 0/2, and a larger merged cap does not help. The second is a hyphenated term the notes spell as one word. The third is the agent searching too narrowly — most of its golden notes never contain the query.
+4. **`truncated` is on so often that it carries no signal.** It is `true` in 84% of deep hybrid calls on Vault A · Opus and 98% on Vault B · Opus; the agent stops right after a truncated result in 72–81% of runs. String queries (12–19% of calls) get no lexical totals at all.
+5. **`limit` is ignored in lexical mode.** In `mode: "lexical"` the leg returns the effort profile's cap whatever `limit` the call passes; agents asked for more 71 times across the four conditions, and most of those calls came back with five notes per vault and `truncated: true`.
+6. **On a large vault the `grep` agent drowns.** Single-token queries on Vault B match 45–313 files each (five of six match more than 100). The `grep` agent with Haiku ends with single-token recall 0.52; the neuro-vault agent 0.88.
+7. **Where Opus + `grep` still wins on Vault B, it is answer completeness, not retrieval.** Grounding is tied in 72 of 105 judged pairs; the `grep` agent's usefulness edge comes from answers that pull more detail out of whole files on questions whose facts are spread across several notes.
+
+## After the fixes
+
+Re-measured on `main` at `a107465`, which contains the three #267 changes — `limit` reaches the lexical pool in lexical mode ([#268](https://github.com/AlexMost/neuro-vault/pull/268)), query variants fused by weighted reciprocal rank inside the lexical leg ([#269](https://github.com/AlexMost/neuro-vault/pull/269)), a hint when the agent's own variant was cut ([#272](https://github.com/AlexMost/neuro-vault/pull/272)) — and the retired expansion leg ([#276](https://github.com/AlexMost/neuro-vault/pull/276)).
+
+Method: only the neuro-vault arm was re-run, with every question and three repetitions, against the **same `grep` answers** as before, so each judge comparison is the new neuro-vault answer against the old `grep` answer. The build was pinned in its own worktree and served by its own background process (the process key hashes the CLI build, so it never met the installed version's process), warmed until every vault reported `semantic_status: ready` before the first run. Two cells: where neuro-vault lost (Vault A · Opus) and where it won most (Vault B · Haiku, the regression risk).
+
+**Vault A · Opus 5.5** (answerable, n=20; `grep` unchanged)
+
+| | before | after | `grep` |
+|---|---|---|---|
+| recall | 0.58 | 0.60 | 0.63 |
+| judge, nv − `grep` | −0.29 | **−0.11** | — |
+| stable wins nv / `grep` / none | 5 / 10 / 5 | **7 / 7 / 6** | — |
+| single-token recall | 0.49 | **0.62** | 0.69 |
+| name — judge, nv − `grep` | −0.19 | **+0.12** | — |
+| concept — judge, nv − `grep` | −0.38 | −0.26 | — |
+
+**Vault B · Haiku 5.5** (answerable, n=30)
+
+| | before | after | `grep` |
+|---|---|---|---|
+| recall | 0.90 | **0.91** | 0.75 |
+| concept / name / single-token recall | 0.86 / 0.95 / 0.88 | 0.86 / 0.98 / 0.88 | 0.81 / 0.80 / 0.52 |
+| judge, nv − `grep` | +0.14 | +0.06 | — |
+| stable wins nv / `grep` / none | 14 / 10 / 6 | 15 / 12 / 3 | — |
+
+- **The small-vault gap mostly closed.** The clearest case is the single-token question whose exact term was crowded out by the agent's own synonyms: recall 0.33 → 1.00 in all three repetitions. The agent now follows its first search with a lexical call whose `limit` equals the match count the cut hint reported, and gets the whole list instead of five notes.
+- **No regression on the large vault.** Recall holds or rises in every class; the edge over `grep` (+0.16 recall) is intact. The judge delta moved by 0.08, within the repetition noise.
+- **One small-vault loss is a side effect of `limit` working.** On one concept question the golden note sits first in the lexical list in all three runs, but a 20–30-note list now also carries several notes that mention the query as an example, and the agent reads those instead. The retrieval is right; the choice is not.
+- **Cost of the change**: about 8% more text pulled into context and about 4% more per answer on both vaults — the expected price of `limit` returning what was asked for.
+- **What is left**: on the small vault, single-token recall still trails `grep` by 0.07 — one hyphenated-compound question (suggestion 4) and one where the agent searches too narrowly.
 
 ## Caveats
 
@@ -156,20 +206,25 @@ These come from the raw tool-call streams, not from the summary metrics.
 
 Ordered by strength of evidence:
 
-1. **A substring / whole-word option for the lexical leg** — the single-token loss on small vaults is the largest gap measured.
-2. **Visible, pageable lexical completeness** — a total hit count per query and a cursor, so an agent knows when it is seeing part of the answer.
-3. **A "keep looking" hint in the response itself** (truncation, an alternative phrasing), to counter early stopping without giving up the call savings.
-4. **Less semantic-only noise** — rank single-leg semantic hits below two-leg hits, or a `min_legs` option.
-5. **A lexical mode that survives `--no-semantic`** — a cheap mode for large vaults and a clean ablation of what the semantic leg adds.
-6. **Visible index rebuilds** — after the 17.x upgrade, Vault B's corpus rebuilt for 72 minutes with no surfaced progress, and the first call during warm-up returned a dependency error rather than a status.
+Tracked in [#267](https://github.com/AlexMost/neuro-vault/issues/267); items 1–3 shipped as [#268](https://github.com/AlexMost/neuro-vault/pull/268), [#269](https://github.com/AlexMost/neuro-vault/pull/269) and [#272](https://github.com/AlexMost/neuro-vault/pull/272) and are re-measured in § After the fixes:
+
+1. **Make `limit` reach the lexical pool in lexical mode** ([#264](https://github.com/AlexMost/neuro-vault/issues/264)) — the cheapest fix; the contract does not change.
+2. **Fuse query variants by weighted RRF inside the lexical leg** ([#265](https://github.com/AlexMost/neuro-vault/issues/265)), so broad variants cannot crowd out the exact term — the largest measured lever on small-vault single-token questions (replay: +0.09 recall at the same result count; a naive round-robin hurt the large vault, a weighted fusion did not).
+3. **Tell the agent when its own variant's lexical matches were cut** ([#266](https://github.com/AlexMost/neuro-vault/issues/266)), instead of a `truncated` flag that is almost always on; lexical totals for string queries and paging stay in [#187](https://github.com/AlexMost/neuro-vault/issues/187).
+4. **Normalise hyphenated and closed compounds in the lexical leg** — one measured loss.
+5. **Visible index rebuilds** — after the 17.x upgrade, Vault B's corpus rebuilt for 72 minutes with no surfaced progress, and the first call during warm-up returned a dependency error rather than a status.
+
+Not suggested, despite looking plausible from the summary tables: a substring mode (the data does not support it, and [#231](https://github.com/AlexMost/neuro-vault/issues/231) moved away from substring matching because of its noise) and demoting single-leg semantic hits ([#224](https://github.com/AlexMost/neuro-vault/issues/224) decided against it, and a replay shows no gain).
 
 ## Next measurements
 
+- **Semantic ablation on Opus**: the Haiku ablation is above; on Opus the semantic leg's share is not yet measured.
 - **Size ablation**: the same Vault B questions against only its ~700 structured cards vs the full ~4.9k notes, to separate size from content type.
 - **Long sessions**: 10–15 questions in one session, comparing answer quality at the end vs the start, to see whether the context savings matter.
 - **Embedding models**: retrieval-level first (semantic-leg recall@k on concept questions via the [eval harness](../../eval/README.md)); agent-level only if retrieval moves.
 - **An owner-labelled golden subset for Vault B**, and **a third model** between Opus and Haiku.
-- **Re-run Vault A · Opus after suggestions 1–3** — if the single-token gap closes, the remaining loss was a lexical-leg issue, not a property of indexed search.
+- **Separate the shipped changes**: § After the fixes measures #267 and the retired expansion leg together; their individual shares are not split.
+- **Hyphenated compounds** (suggestion 4) are the largest single-token loss left after the fixes.
 
 ## Reproducing
 
