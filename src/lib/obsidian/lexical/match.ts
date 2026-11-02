@@ -69,3 +69,18 @@ export function matchUnit(normUnit: string, normQuery: string, tokens: string[])
     matchLen: firstLen,
   };
 }
+
+/**
+ * PROTOTYPE (#132): how many times `needle` occurs at a word start in the
+ * normalized unit — the BM25 term frequency of a prefix token. Same boundary
+ * rule as {@link matchUnit}: a needle led by punctuation is its own boundary.
+ */
+export function countAtBoundary(normUnit: string, needle: string): number {
+  if (needle.length === 0 || normUnit.length === 0) return 0;
+  const boundary = LETTER_OR_DIGIT.test(needle);
+  let count = 0;
+  for (let i = normUnit.indexOf(needle); i >= 0; i = normUnit.indexOf(needle, i + 1)) {
+    if (!boundary || !endsWithWordChar(normUnit, i)) count += 1;
+  }
+  return count;
+}
